@@ -48,10 +48,10 @@ return function(api)
           seen = string.format('%s at %s, seen now', u.name, at(q)); break
         end
       end
-      -- (d17 territory) its state as the demolishers read gives it: has a demolisher, killed at T by X, none in it now
+      -- (d17 territory) its state as the demolishers read gives it: has a demolisher, killed at T by X, none seen in it
       local state, line
       if not seen and api.state then state, line = api.state(surface, force, f.t) end
-      if seen or state == 'has a demolisher' or state == 'not in sight' or not api.state then live = true end
+      if seen or state ~= 'killed' then live = true end
       parts[#parts+1] = string.format('%d chunk%s of it in a demolisher territory (%s)', f.chunks, f.chunks == 1 and '' or 's', seen or line or 'its demolisher not in sight now')
     end
     return string.format('the placement lies inside a demolisher territory on %s, as the map draws its border: %s%s',

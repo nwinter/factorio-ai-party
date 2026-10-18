@@ -42,15 +42,16 @@ local by={}
 for _,row in ipairs(r.territories) do by[row.charted_chunks]=row end
 eq(by[13*19].state,'killed')
 has(by[13*19].line,'its small-demolisher was killed at tick 4888121 (game 22h37m, 3h ago) by sol; none seen since')
-eq(by[5*7].state,'none'); has(by[5*7].line,'no demolisher in it now')
+eq(by[5*7].state,'not seen'); has(by[5*7].line,'no demolisher seen in it')
 eq(by[5*5].state,'has a demolisher'); has(by[5*5].line,'small-demolisher: head at (200,330)')
 
--- Build notes: a placement in the cleared territory says so, with no "attacks what is built" line; in the empty one,
--- none in it now; by the live one, the demolisher.
+-- Build notes: a placement in the cleared territory says so, with no "attacks what is built" line; in one where none
+-- was seen, that (a player cannot tell an empty territory from one whose demolisher is out of sight); by the live one,
+-- the demolisher.
 local n1=T.note(surface,force,{-225,30,-224,45})
 has(n1,'(its small-demolisher was killed at tick 4888121 (game 22h37m, 3h ago) by sol; none seen since)'); lacks(n1,'attacks what is built')
 local n2=T.note(surface,force,{140,-100,141,-99})
-has(n2,'(no demolisher in it now)'); lacks(n2,'attacks what is built')
+has(n2,'(no demolisher seen in it)'); has(n2,'attacks what is built')
 local n3=T.note(surface,force,{150,300,151,301})
 has(n3,'a demolisher attacks what is built in its territory')
 
@@ -58,4 +59,19 @@ has(n3,'a demolisher attacks what is built in its territory')
 D.died({entity={valid=true,type='segmented-unit',name='small-demolisher',surface=surface,position={x=170,y=-100},segmented_unit={unit_number=78,territory=t2}},
   cause={valid=true,type='artillery-turret',name='artillery-turret',last_user={name='opus'}},tick=5000000})
 eq(st.demolisher_deaths['vulcanus|4,-6'].by,'artillery-turret (built by opus)')
+-- Survival-fair (operator 17:40): a territory whose demolisher lives but was never seen reads the same as an empty one.
+t2.get_segmented_units=function() return {{unit_number=95,segments={{position={x=150,y=-100}}}}} end
+eq(select(1,D.state(surface,force,t2)),'killed')  -- the artillery kill above
+st.demolisher_deaths['vulcanus|4,-6']=nil
+local s2,l2=D.state(surface,force,t2); eq(s2,'not seen'); eq(l2,'no demolisher seen in it')
+
+-- The one-time seed (operator 17:40): Sol's kill in Vulcanus territory 1 from the team's record, applied once to the
+-- territory under (-225,37); a death recorded there already is kept.
+st={}
+game.get_surface=function(n) return n=='vulcanus' and surface or nil end
+local s1,l1=D.state(surface,force,t1)
+eq(s1,'killed'); has(l1,'its demolisher was killed at tick 4888121 (game 22h37m'); has(l1,'by sol (the team\'s record: chat seq 2143); none seen since')
+eq(st.demolisher_seeded['vulcanus-t1-sol'],true)
+st.demolisher_deaths['vulcanus|-10,-6']=nil
+eq(select(1,D.state(surface,force,t1)),'not seen','seeded once')
 print('d17_territory: ok')

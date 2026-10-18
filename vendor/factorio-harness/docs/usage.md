@@ -6768,11 +6768,14 @@ fh watch    # deploy on every change
   its smallest chunk, as a territory has no id; the unit's territory, else the one of its chunk), the tick, and what
   killed it (an agent's character by name; a driven vehicle as `NAME in a car`; another entity with who built it;
   none: the killing force). Its last-seen memory is dropped.
-- Each territory gets a `state`:
+- Each territory gets a `state`, from what the team saw only (operator 17:40: whether the game holds a demolisher in
+  a territory is not shown to a player):
   - `has a demolisher`: in sight now, or last seen.
   - `killed`: `its small-demolisher was killed at tick 4888121 (game 22h37m, 3h ago) by sol; none seen since`.
-  - `none`: `no demolisher in it now`: no segmented unit in it and no death recorded, so killed before this was
-    kept, or never had one.
-  - `not in sight`: one is in it and was never seen; this is the old line.
-- territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is said only
-  when the territory has one. tests/d17_territory.lua.
+  - `not seen`: `no demolisher seen in it`, both for a territory whose demolisher is out of sight and for one with none.
+- A one-time seed (storage demolisher_seeded) records the team's earlier kill: Vulcanus territory 1, Sol at tick
+  4888121 (chat seq 2143, the chronicle), applied to the territory under (-225,37) unless a death is already recorded
+  there. Copy: `territory with 87 charted chunks ...: its demolisher was killed at tick 4888121 (game 22h37m, 87h ago)
+  by sol (the team's record: chat seq 2143); none seen since`; a place_ghosts dry run at (-219.5,29.5) says the same.
+- territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is left out
+  only when it was killed. tests/d17_territory.lua.
