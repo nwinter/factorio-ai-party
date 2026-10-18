@@ -8060,3 +8060,12 @@ fh watch    # deploy on every change
   3.1-3.4 ms; in three reads a few minutes apart the robots were 201 holding cargo with no order (firearm-magazine 396,
   ice 348, agricultural-science-pack 36, cannon-shell 20) and 4 idle, then all 250 on orders (126 deliver, 124
   pickup) with 25 queued to charge, and nutrients read none free in the network for 21 short requesters.
+- `launch_needs` (A2, viewer Aurora 15:36: Swiftlet waited at a stop for carbon fiber while the silo there could not
+  finish rockets for want of processing units Swiftlet's hub held). On platform_schedule's reply, the platforms read
+  of one platform, and each silo line of shipment's readiness read: for a stop that waits on items (an item_count or
+  request wait) at the planet the platform is stopped at (else the stop it flies to), each rocket silo of ours there
+  whose input holds less than one rocket part's worth of an ingredient while it has parts left to make, and what of
+  that ingredient the waiting platform's own hub holds: `Swiftlet holds 400 processing-unit; rocket-silo (5.5,10.5)
+  on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)`. The silos come from the census pass (no
+  search; a whole-surface find took 10.5 ms on Nauvis); 0.01-0.25 ms a platform on world n. Only rocket parts are
+  read: a payload is the platform's own requests, which its hub already holds and asks more of.

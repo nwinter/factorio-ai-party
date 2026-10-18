@@ -1303,6 +1303,8 @@ return function(api)
           row.tile_removals=try(function() return M.tile_removals(pl) end)
           -- (d17 batch31 B9) the stop waits the harness keeps for it
           row.harness_waits=api.platwait and try(function() return api.platwait().line(pl.name) end) or nil
+          -- (d18 batch36 A2) a silo at its stop that lacks a rocket-part ingredient its own hub holds
+          row.launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil
           -- Its last stops and legs (expected, left, came aboard, spoiled, rockets) and its spoilable items now
           -- against the arrival (Luna, shift12 12:47).
           local fr=try(function() return freight.read(pl) end)
@@ -1596,6 +1598,7 @@ return function(api)
         edited=string.format('stop %d (%s): %d wait condition%s set in place; the records and the current stop (%d) %s; state %s%s',idx,station,#waits,#waits==1 and '' or 's',
           new_cur,new_cur~=cur and string.format('changed from %d (current)',cur) or 'kept',state,state~=before and ' (was '..tostring(before)..')' or ' (kept)'),
         leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,
+        launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil,
         harness_waits=W and W.line(pl.name) or nil}
     end
     local circuit_note,sent,go_error,rebuilt,one_stop_note
@@ -1715,7 +1718,8 @@ return function(api)
     return {name=pl.name,state=state,state_note=state_note,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),one_stop=one_stop_note,
       sent_to=sent and string.format('stop %d (%s): go to station called',sent.index,sent.station) or nil,go_error=go_error,rebuilt=rebuilt,note=note,circuit_note=circuit_note,
       current_note=current_note,leg=leg_note,read_as=read_as and #read_as>0 and read_as or nil,waits_run=runs and #runs>0 and runs or nil,fluid_count_note=fluid_note,
-      harness_waits=api.platwait and api.platwait().line(pl.name) or nil}
+      harness_waits=api.platwait and api.platwait().line(pl.name) or nil,
+      launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil}
   end
   -- Rocket cargo weight against the lift, in grams as the game counts them
   -- (item prototype weight; rocket_lift_weight 1000000 = 1000 kg). The game

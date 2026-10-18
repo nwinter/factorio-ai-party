@@ -56,3 +56,34 @@ do
   defines,game=nil,nil
 end
 print('d18_batch36 A1 logistics_audit backlog: ok')
+
+-- A2 (viewer Aurora 15:36: Swiftlet waited at a stop for carbon fiber while the silo there lacked processing units that
+-- Swiftlet's hub held): a silo at the stop that lacks a rocket-part ingredient the waiting platform's hub holds.
+do
+  defines={inventory={assembling_machine_input=2}}
+  local input={['processing-unit']=0,['low-density-structure']=40,['rocket-fuel']=12}
+  local silo={valid=true,name='rocket-silo',position={x=5.5,y=10.5},rocket_parts=12,prototype={rocket_parts_required=50},
+    get_recipe=function() return {ingredients={{type='item',name='processing-unit',amount=10},{type='item',name='low-density-structure',amount=10},{type='item',name='rocket-fuel',amount=10}}} end,
+    get_inventory=function() return {get_item_count=function(n) return input[n] or 0 end} end}
+  local hubitems={['processing-unit']=400,['carbon-fiber']=3}
+  local pl={name='Swiftlet',force={},space_location={name='fulgora'},hub={valid=true,get_item_count=function(n) return hubitems[n] or 0 end},
+    schedule={current=1,records={{station='fulgora',wait_conditions={{type='item_count'},{type='time',compare_type='or'}}}}}}
+  local fulgora={index=4}
+  game={planets={fulgora={surface=fulgora}}}
+  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){crafters=function(f,s) assert(s==fulgora); return {{valid=true,type='assembling-machine'},silo} end}
+  silo.type='rocket-silo'
+  local lines=N.for_platform(pl)
+  eq(#lines,1)
+  eq(lines[1],'Swiftlet holds 400 processing-unit; rocket-silo (5.5,10.5) on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)')
+  -- the silo holds enough for a part: nothing
+  input['processing-unit']=10; eq(N.for_platform(pl),nil)
+  -- a stop waiting on time alone: nothing read
+  input['processing-unit']=0; pl.schedule.records[1].wait_conditions={{type='time'}}; eq(N.for_platform(pl),nil)
+  -- flying to the stop: its station is the planet
+  pl.schedule.records[1].wait_conditions={{type='all_requests_satisfied'}}; pl.space_location=nil
+  eq(#N.for_platform(pl),1)
+  -- the hub holds none of what it lacks: nothing
+  hubitems['processing-unit']=nil; eq(N.for_platform(pl),nil)
+  defines,game=nil,nil
+end
+print('d18_batch36 A2 a silo its own cargo would feed: ok')
