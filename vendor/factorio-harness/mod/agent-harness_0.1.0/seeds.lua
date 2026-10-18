@@ -3,7 +3,7 @@
 -- spoils: pentapod-egg, copper-bacteria, iron-bacteria. Every CHECK ticks one surface in turn is read: our crafters
 -- whose recipe takes a seed (the census pass's list: no find), and what holds that seed there: the machines' input and
 -- output, the hands of the inserters round them, their feeders' sources outside a logistic network (chests, belts),
--- and the surface's logistic networks. A seed is low when that is under one craft for each machine using it (LOW_CRAFTS
+-- the surface's logistic networks and what our robots there carry (batch33 B1). A seed is low when that is under one craft for each machine using it (LOW_CRAFTS
 -- crafts) or when everything held spoils within SPOIL_SOON; zero when none is left. Each state change goes once to the
 -- builders of those machines and of their feeding inserters, as a line that wakes them (from "seed alert"); a loop that
 -- recovers is news again when it drops. Only the places read are counted: an egg on a belt no inserter of these
@@ -99,6 +99,9 @@ return function(api)
         local n = try(function() return ln.get_item_count(seed) end) or 0
         if n > 0 then row.count = row.count + n; row.in_network = (row.in_network or 0) + n end
       end
+      -- (batch33 B1, Grok: the last eggs rode in a robot) what our robots carry of it now
+      local k = api.robot_cargo and try(function() return api.robot_cargo(force, surface, seed) end) or 0
+      if k > 0 then row.count = row.count + k; row.in_robots = k end
     end
     return out
   end

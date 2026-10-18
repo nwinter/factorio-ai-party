@@ -48,6 +48,11 @@
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
+  The call fails (a failed queue step too) when the platform reads `no_schedule`, `no_path`, or paused without
+  `paused: true`, after it; the schedule stays as set, and the reply says what the journals showed: every one-stop
+  schedule read no_schedule, and so did longer ones whose current is the stop it waits at; with current on another
+  stop they left. One stop that is not where the platform is goes as `[where it is, that stop]`, current 2
+  (`one_stop` says so; after that stop's waits it goes back): `one_stop: "as given"` writes the one stop alone.
   `stop: 1, wait: [...]` replaces that stop's waits in place, the records, the current stop and the state kept
   (`edited`). An edit that makes it leave now is refused, nothing changed, unless `go: true`: `current` set to another
   stop while it waits, the stop it waits at left with no wait, or new waits there that hold now (time since arrival,
@@ -99,8 +104,9 @@
 - `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
-  take seconds) and gives its number; `floor_check: N` reads it: running, or done with `built`, `unbuilt_count`,
-  `by_reason` and the first 12 `unbuilt` with why. `floor: true`: the foundation the entity
+  take seconds) and gives its number; `floor_check: N` reads it: running, or done with `would_build` (the planned tiles
+  the hub's rules build in turn once their items come), `never_built`, `by_reason`, the first 12 `unbuilt` with why,
+  and `floor_now` (the foundation built now). `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
   ghosts counted as floor that the hub's foundation rules never build. `ready: {positions, area, tiles}`: one subset's
@@ -332,7 +338,8 @@
 - `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
   (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
-  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert. A spoilable item adds
+  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert; inserter hands and
+  what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
   `spoils_within_2_min` beside the total and per place.
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),

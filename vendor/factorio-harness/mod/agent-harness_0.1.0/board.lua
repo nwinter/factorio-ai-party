@@ -1286,7 +1286,7 @@ return function(api)
       title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
       returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
-    board_review = {id='optional: one item (a project) and the items under it; default every active item',
+    board_review = {ownership='optional true: who covers each system, per surface (surface= one): each electric network\'s machines (assemblers and furnaces, from the census pass), each logistic network, each platform, with the open claims covering it (how many of its sampled machines or roboports lie in each claim\'s area; a platform: a claim on it or titled with its name), overlaps, an open claim with no area on that surface (planet-wide) when no area covers it, else none; each claim\'s owner, their last activity there and the last inspection of the area (a read there, by whom); then each listed owner\'s blocked board items with the latest note: surfaces [{surface, systems [{kind, id, name, size, claims, owner_line, line}]}], lines, blocked',surface='with ownership: one surface',id='optional: one item (a project) and the items under it; default every active item',
       returns='flags [{id, kind, line}]: gone_platform (a title or open step naming a platform of ours no longer there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
     lesson_add = {rule='1..160 characters: the rule or symptom, short', cause='optional root cause (240)', fix='optional fix (240)',
       evidence_tick='optional game tick of the evidence (default now)', invalidated_when='optional: when it no longer holds, in words (160)',
@@ -1648,6 +1648,13 @@ return function(api)
   -- counts by items of one project, and items another one supersedes that are still active. Nothing changes.
   local REVIEW_STALE, REVIEW_ACTIVE = 2 * 216000, 30 * 3600
   M.handlers.board_review = function(p, a)
+    -- ownership (batch33 B2): who covers each system (claims.lua)
+    if a.ownership ~= nil then
+      assert(a.ownership == true, 'ownership is true')
+      assert(a.id == nil, 'ownership reads every claim: no id')
+      assert(api.claims, 'ownership is not available in this runtime')
+      return api.claims.ownership(p, a)
+    end
     local b = store()
     local live, seen = {}, {}
     for _, pl in pairs(try(function() return p.force.platforms end) or {}) do if pl.valid then live[pl.name:lower()] = true end end

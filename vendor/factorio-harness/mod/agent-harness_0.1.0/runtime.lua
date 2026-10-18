@@ -90,7 +90,7 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
-M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end,
+M.claims=require('claims'){state=state,crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end,
   -- the surface an agent is on now (a claim from before claims had one; claims.lua), nil in a pod or unknown
   owner_surface=function(name)
     for _,a in ipairs(M.board.agents()) do
@@ -15819,7 +15819,7 @@ function M.dispatch_inner(request)
       pcall(M.visuals.worked,p,request.action,request.args)
     end
     -- The owner's own request standing in a claim of theirs, or acting on a position in it, keeps it fresh (claims.lua).
-    if p and p.valid and not peek then pcall(M.claims.worked,p,request.args) end
+    if p and p.valid and not peek then pcall(M.claims.worked,p,request.args,request.action,M.is_read(request.action)) end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
       local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
@@ -16330,7 +16330,7 @@ M.floorcheck=require('floorcheck'){state=state}
 M.tc_once=require('tilecheck')()  -- (required at load: the game refuses require later)
 M.ghosttally=require('ghosttally'){state=state,quality_of=function(g) return M.tc_once.quality_of(g) end}
 -- Seed loops running out (seeds.lua; batch32 A3, Grok): a seed alert to the loop's builders when low or gone.
-M.seeds=require('seeds'){state=state,crafters=function(f,s) return M.census.crafters(f,s) end,deliver=function(i,t) return M.board.deliver(i,t) end,
+M.seeds=require('seeds'){state=state,crafters=function(f,s) return M.census.crafters(f,s) end,robot_cargo=function(f,s,item) return (M.stores.robot_cargo(f,s,item)) end,deliver=function(i,t) return M.board.deliver(i,t) end,
   index_of=function(name) for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index end end end}
 M.chain=require('chain'){makers=function(s) return M.census.makers(s) end,status_name=function(e) return M.machine_status(e) end}
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
