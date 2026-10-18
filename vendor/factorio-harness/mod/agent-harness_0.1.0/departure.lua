@@ -26,8 +26,10 @@ return function(api)
     -- both lanes (d17 batch12 C8, Grok: Swift read 59 minutes left at Vulcanus while a remote-lane queue was about to
     -- send it on: platform steps run in the remote lane, which was not read)
     local lanes = {}
-    for _, key in ipairs({api.queue_key or 'queues', 'remote_queues'}) do
-      for index, q in pairs(s[key] or {}) do lanes[#lanes+1] = {index=index, q=q, remote=key == 'remote_queues'} end
+    local keys = {api.queue_key or 'queues', 'remote_queues'}
+    for name in pairs(s.platform_lanes or {}) do keys[#keys+1] = 'lane_queues|' .. name end
+    for _, key in ipairs(keys) do
+      for index, q in pairs(s[key] or {}) do lanes[#lanes+1] = {index=index, q=q, remote=key ~= (api.queue_key or 'queues')} end
     end
     for _, lane in ipairs(lanes) do
       local index, q = lane.index, lane.q

@@ -13511,6 +13511,8 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
 }
 scheduler=scheduler_module(M.scheduler_api)
 scheduler=require('queue_lanes'){scheduler=scheduler,factory=scheduler_module,base=M.scheduler_api,is_read=function(action) return M.is_read(action) end}
+-- (d17 batch21 D1) a queue call for a platform's own lane: as the remote lane, no body
+function M.platform_lane(a) return type(a)=='table' and type(a.lane)=='string' and a.lane:match('^platform:.+$')~=nil end
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 -- A direct action a harness update stopped, started again from the call that started it (carry.lua), ending by
 -- the tick it would have (until_tick: a pending fh --wait budgets for that).
@@ -13592,7 +13594,8 @@ end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume','queue_pause'} do
   local handler=handlers[name]
   if handler then handlers[name]=function(p,a)
-    local key=a and a.lane=='remote' and 'remote_queues' or 'queues'
+    local pl=a and type(a.lane)=='string' and a.lane:match('^platform:(.+)$')
+    local key=a and a.lane=='remote' and 'remote_queues' or pl and scheduler.lane_key(pl) or 'queues'
     local q=state()[key] and state()[key][p.index]
     local revision=q and q.revision
     local ok,result=pcall(handler,p,a)
@@ -14747,7 +14750,7 @@ dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
   -- equipment too: the vehicle's grid and the armor's open seated, as their GUIs do (operator 09:13).
   M.seated_ok=(M.read_call(request.action,request.args) or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot'
-    or request.action=='equipment' or (request.action:match('^queue_') and (request.args or {}).lane=='remote')) and true or nil
+    or request.action=='equipment' or (request.action:match('^queue_') and ((request.args or {}).lane=='remote' or M.platform_lane(request.args)))) and true or nil
   local args_ok,args_err=pcall(check_args,request.action,request.args)
   if not args_ok then
     local ok,hint=pcall(M.entity_args,request)
@@ -14836,7 +14839,7 @@ dispatch_request=function(request)
   end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
   local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.remote(p,request.action,request.args)
-    or (request.action:match('^queue_') and (request.args or {}).lane=='remote')
+    or (request.action:match('^queue_') and ((request.args or {}).lane=='remote' or M.platform_lane(request.args)))
   -- A call refused by its own checks stops nothing: they run before the queue stops (M.preflight).
   if not reads[request.action] and not quiet and M.preflight and M.preflight[request.action] then
     local ok,err=pcall(M.preflight[request.action],p,request.args or {})

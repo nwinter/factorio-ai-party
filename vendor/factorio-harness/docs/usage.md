@@ -6847,3 +6847,13 @@ fh watch    # deploy on every change
   `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
   hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
   deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+### Group D
+- D1 (Sol): three couriers, and one platform's cargo wait held the steps of the others (the remote lane runs its steps
+  in turn; about 12 times a shift Sol's body walks also interrupted the Swiftlet wait he had queued in the body lane).
+  `lane: "platform:NAME"` on every queue call (queue_lanes.lua): a remote lane of its own for that platform, built as
+  the remote lane is (the same steps: platform waits and writes, body-independent reads), its queues in storage under
+  `lane_queues|NAME` and the lane names under `platform_lanes`; each is ticked as the remote lane. queue_status
+  `{lane: "platform:Swiftlet"}` reads it; every queue_status's `lanes.platforms` lists them (`{Swiftlet: {paused,
+  pending, active, ...}}`). A harness update keeps them as it keeps the remote lane (carry.lua), and clock, departure
+  and waiteta read them with the others. runtime_test.lua.

@@ -3798,6 +3798,21 @@ end)()
   eq(storage.agent_harness.active[1],body_action)
   fails(function() call('queue_submit',{lane='remote',steps={{action='wait_until',args={['until']='item_count',item='coal',at_least=1}}}}) end,'steps[1]')
   call('stop',{});call('queue_cancel',{lane='remote'})
+  -- (d17 batch21 D1, Sol) a lane per platform: its wait runs apart from the remote lane's and the body's
+  landed=0
+  call('queue_submit',{lane='platform:Freight',steps={{action='wait_until',args=c}}})
+  call('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=5}}}})
+  advance(12)
+  eq(call('queue_status',{lane='platform:Freight'}).active.action,'wait_until')
+  eq(call('queue_status',{lane='remote'}).active,false,'the remote lane went on')
+  eq(call('queue_status',{}).lanes.platforms.Freight.active.action,'wait_until')
+  landed=50; advance(10)
+  local pq=call('queue_status',{lane='platform:Freight'})
+  eq(pq.active,false); eq(pq.history[#pq.history].result.outcome,'met'); eq(pq.lane,'platform:Freight')
+  fails(function() call('queue_submit',{lane='platform:Freight',steps={{action='walk',args={direction='east',ticks=5}}}}) end,'not supported in the remote lane')
+  fails(function() call('queue_submit',{lane='Freight',steps={}}) end,'lane must be body, remote or platform:NAME')
+  call('queue_cancel',{lane='platform:Freight'})
+  tick=tick-22; game.tick=tick -- (the later tests count ticks from here as before)
   p.force.platforms,defines.inventory.hub_main=platforms,hub_id
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
