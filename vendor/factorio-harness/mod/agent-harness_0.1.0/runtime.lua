@@ -12249,7 +12249,7 @@ end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
 M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end,
-  pause_line=function(e) return M.silo_pause_line(e) end,
+  pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_loads()[e.unit_number] end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),

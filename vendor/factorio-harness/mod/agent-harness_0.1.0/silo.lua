@@ -412,6 +412,22 @@ return function(api)
       words[#words+1] = 'logistic robots bringing (carrying or reserved): ' .. row.robots_bringing .. (target and ' (automatic requests for platform ' .. target .. ')' or '')
     end
     row.requesting_for = target
+    -- (d17 batch32 B6, Gemini: multi-rocket manifests read in several calls) loading, in one line near the head: for
+    -- whom (the platform its automatic requests fill for, else the platform a hand load was for, by whom), the requests
+    -- it fills now, what is aboard, what robots bring, and a paused manifest's rockets left
+    do
+      local hand = not target and api.load_record and try(function() return api.load_record(e) end)
+      local filling = {}
+      for _, r in ipairs(okr and reqs or {}) do
+        if r.filling then filling[#filling+1] = string.format('%s %d asked (holds %d)', r.item, r.asks or 0, r.holds or 0) end
+      end
+      row.loading = string.format('for %s%s; aboard %s; robots bringing %s%s',
+        target and ('platform ' .. target .. ' (its automatic requests)') or (hand and string.format('%s (loaded by hand by %s, %s ago)', tostring(hand.platform), tostring(hand.by), ago(game.tick - (hand.tick or game.tick)))) or 'no platform',
+        #filling > 0 and ', filling ' .. table.concat(filling, ', ') or '',
+        row.cargo and row.cargo.items or 'nothing', row.robots_bringing or 'nothing', paused and '; ' .. paused or '')
+      if target or hand or #filling > 0 or row.robots_bringing or (row.cargo and row.cargo.items) then table.insert(words, 2, 'loading ' .. row.loading)
+      else row.loading = nil end
+    end
     row.send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false
     if row.send_to_orbit_automatically then words[#words+1] = 'send to orbit automatically on' end
     row.platforms_above = platforms_above(force, try(function() return e.surface.planet and e.surface.planet.name end))

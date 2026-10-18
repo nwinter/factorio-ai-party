@@ -116,7 +116,9 @@ eq(n.parts,nil); eq(n.next_parts,'0/50'); eq(n.rocket_ready,true); eq(n.crafting
 eq(n.rocket,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; no launch seen")
 eq(n.cargo.kg,933.3); eq(n.cargo.stacks,2); eq(n.cargo.items,'processing-unit*100 space-platform-foundation*30'); eq(n.cargo.over_kg,nil); eq(n.cargo.room_kg,66.7)
 eq(n.platforms_above[1],'Nest (waiting for its starter pack)'); eq(n.platforms_above[2],'Sunward'); eq(#n.platforms_above,2)
-assert(n.line:find("rocket-silo (15.5,59.5) on nauvis: rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; cargo 933.3/1000 kg (66.7 kg free), 2/20 slots: processing-unit*100 space-platform-foundation*30; automatic requests off; our platforms above: Nest (waiting for its starter pack), Sunward; no launch seen",1,true),n.line)
+-- (d17 batch32 B6, Gemini) loading in one line near the head: for whom, aboard, robots bringing
+eq(n.loading,'for no platform; aboard processing-unit*100 space-platform-foundation*30; robots bringing nothing')
+assert(n.line:find("rocket-silo (15.5,59.5) on nauvis: rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; loading for no platform; aboard processing-unit*100 space-platform-foundation*30; robots bringing nothing; cargo 933.3/1000 kg (66.7 kg free), 2/20 slots: processing-unit*100 space-platform-foundation*30; automatic requests off; our platforms above: Nest (waiting for its starter pack), Sunward; no launch seen",1,true),n.line)
 assert(not n.line:find('parts left',1,true),n.line)
 
 -- 4. A launch: the game's order event (cargo and destination), then the agent's call the same tick (who).
