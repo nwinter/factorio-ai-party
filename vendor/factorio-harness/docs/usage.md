@@ -7019,3 +7019,13 @@ fh watch    # deploy on every change
   bottleneck {area | positions} groups get `gate` (the first such maker: `assembling-machine-1 (0.5,0.5): off by its
   logistic condition stone-wall < 200 (network 5 ...: stone-wall 200)`); supply's and bottleneck {item}'s maker lines
   add it to the disabled_by_control_behavior count and to each such worst row. tests/rates.lua.
+- B3 (Muse): backup boilers gated on coal > 8000 in a network holding 3609 never started, and a viewer found it.
+  `gates {surface? | area?, page?}` (gates.lua, a read): every circuit and logistic condition on our entities there,
+  256 entities a call in reading order. A surface reads the entities the census's last pass found with a control
+  behavior (census.lua now keeps them: inserters, pumps, machines, drills, lamps, power switches, belts, train stops,
+  signals, agricultural towers, collectors, loaders; up to 1024 a surface); an area (up to 128x128) finds them now.
+  Each line: the condition as its GUI shows it, what it reads now (circuit: its signal on its wires; logistic: the
+  network's count, with the reserved-beyond-stock note under 0), true or false now, `it is off by it`. A logistic
+  `item > N`, `>= N` or `= N` above what the network can hold, its count and what its storage and provider chests could
+  still take of the item (up to 256 chests looked at), is flagged `CANNOT BE MET:` and listed first; so is one with no
+  logistic network over it. tests/d17_batch22.lua.

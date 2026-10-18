@@ -1951,6 +1951,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.gates and M.gates.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -11866,6 +11867,19 @@ M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,tr
   scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
   status=function(e) return M.machine_status(e) end}
 function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
+-- gates: every circuit and logistic condition there, what it reads now, and the ones the network can never meet
+-- (gates.lua; d17 batch22 B3, Muse).
+M.gates=require('gates'){position=position,integer=integer,circuit_read=function(e,cb) return M.circuits.read(e,cb) end,
+  negative_note=function(item,n) return M.circuits.negative_note(item,n) end,gated=function(f,s) return M.census.gated(f,s) end,
+  wire_value=function(e,sig)
+    local n,wired=0,false
+    for _,w in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+      local ok,net=pcall(function() return e.get_circuit_network(w) end)
+      if ok and net then wired=true; n=n+(net.get_signal(sig) or 0) end
+    end
+    return wired and n or nil
+  end}
+function handlers.gates(p,a) return M.gates.read(p,a) end
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
 M.details=require('details'){}
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
@@ -14107,6 +14121,7 @@ reads.logistics_audit=true
 reads.platform_gate=true
 reads.fleet=true
 reads.ingredient_gap=true
+reads.gates=true
 reads.demolishers=true
 reads.dependency=true
 reads.shipment=true

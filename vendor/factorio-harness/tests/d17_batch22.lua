@@ -57,3 +57,26 @@ do
   defines=nil
 end
 print('d17_batch22 B1 eggs and turrets near a point: ok')
+
+-- B3 (Muse): gates: a logistic condition the network can never reach is flagged; the others with what they read now.
+do
+  defines={inventory={chest=1},entity_status={disabled_by_control_behavior=9}}
+  local net={network_id=5,get_item_count=function(item) return item=='coal' and 3609 or 0 end,
+    storages={{get_inventory=function() return {get_insertable_count=function() return 400 end} end}},passive_provider_points={}}
+  local surface={name='nauvis',find_logistic_network_by_position=function() return net end}
+  local function inserter(x,cond,met)
+    return {valid=true,name='inserter',position={x=x,y=0},surface=surface,force='f',status=met and 1 or 9,
+      get_control_behavior=function() return {logistic_condition=cond} end,cond=cond,met=met}
+  end
+  local a=inserter(1,{first_signal={type='item',name='coal'},comparator='>',constant=8000},false)
+  local b=inserter(2,{first_signal={type='item',name='coal'},comparator='<',constant=5000},true)
+  local G=dofile('mod/agent-harness_0.1.0/gates.lua'){position=function(v) return v end,
+    circuit_read=function(e) return {logistic=e.cond.first_signal.name..' '..e.cond.comparator..' '..e.cond.constant,logistic_met=e.met} end,
+    gated=function() return {a,b},100 end}
+  local r=G.read({surface=surface,force='f'},{})
+  eq(r.gates,2); eq(r.cannot_be_met,1); eq(r.met,1)
+  eq(r.lines[1],'CANNOT BE MET: inserter (1,0): logistic condition coal > 8000 (network 5: coal 3609); it can never hold: the network holds 3609 and its storage and provider chests take 400 more (1 looked at): at most 4009: false now; it is off by it')
+  has(r.lines[2],'inserter (2,0): logistic condition coal < 5000 (network 5: coal 3609): true now')
+  defines=nil
+end
+print('d17_batch22 B3 gates: ok')

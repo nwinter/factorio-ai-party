@@ -28,6 +28,9 @@ return function(api)
     'cargo-wagon', 'asteroid-collector', 'thruster', 'space-platform-hub', 'agricultural-tower', 'cargo-landing-pad'}
   local SNAP = set(SNAP_LIST)
   local MACH = set{'assembling-machine', 'furnace', 'lab', 'mining-drill', 'rocket-silo', 'boiler', 'generator'}
+  local GATE = set{'inserter', 'pump', 'offshore-pump', 'assembling-machine', 'furnace', 'mining-drill', 'lamp', 'power-switch',
+    'transport-belt', 'train-stop', 'rail-signal', 'rail-chain-signal', 'agricultural-tower', 'asteroid-collector', 'loader', 'loader-1x1'}
+  local GATES_MAX = 1024
   -- The live map's categories (BASEMAP_LUA's CAT and EXTRA, OIL, RANK, LINE).
   local CAT = {['ammo-turret']='D', ['electric-turret']='D', ['fluid-turret']='D', ['artillery-turret']='D', wall='D', gate='D',
     lab='R', ['assembling-machine']='A', ['rocket-silo']='A', furnace='S', ['mining-drill']='M', ['offshore-pump']='M',
@@ -171,6 +174,15 @@ return function(api)
       job.towers[s.index] = job.towers[s.index] or {}
       job.towers[s.index][#job.towers[s.index]+1] = e
     end
+    -- (d17 batch22 B3, Muse) entities that may carry a circuit or logistic condition: those with a control behavior,
+    -- for the gates read (at most GATES_MAX a surface)
+    if GATE[t] and job.gated then
+      local list = job.gated[s.index]
+      if (not list or #list < GATES_MAX) and try(function() return e.get_control_behavior() end) then
+        if not list then list = {}; job.gated[s.index] = list end
+        list[#list+1] = e
+      end
+    end
     if t == 'rocket-silo' and job.silos then
       job.silos[s.index] = job.silos[s.index] or {}
       job.silos[s.index][#job.silos[s.index]+1] = e
@@ -313,7 +325,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, building_counts={}, fuel={}, planets={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, building_counts={}, fuel={}, planets={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -512,7 +524,7 @@ return function(api)
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
-        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel,
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -539,6 +551,13 @@ return function(api)
     return out, d and d.silos and (d.silos_as_of or d.start) or nil
   end
 
+  -- The entities of ours with a control behavior the last pass found on a surface (gates.lua), and its tick.
+  function M.gated(force, surface)
+    local d = (api.state().census or {}).done
+    local out = {}
+    for _, e in ipairs(d and d.gated and d.gated[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
+    return out, d and d.gated and d.start or nil
+  end
   function M.towers(force, surface)
     local d = (api.state().census or {}).done
     return d and d.towers and d.towers[surface.index] or {}, d and d.towers and d.start or nil
