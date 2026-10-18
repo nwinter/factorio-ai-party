@@ -23,7 +23,10 @@
     (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to
     (inside a machine, a silo, a landing pad) is walked near: it ends `arrived_near` at that spot (`last.near_walk`;
     `"near":false` ends `unreachable`). `unreachable` and `no_safe_route` name a `staging` spot or via point from
-    teammates' walks of the last 30 minutes near you and the goal.
+    teammates' walks of the last 30 minutes near you and the goal. A walk of yours through `via` points that arrived
+    is kept (per pair of 64-tile areas, start and goal); a walk with none between the same areas that ends
+    `unreachable` or `no_safe_route` walks again once through them, and `last.route_memory` says so (or that the
+    kept route failed too).
   - A target in a narrow gap no path leads into ends `arrived_near` before it (`last.pocket`); `"squeeze":true` walks
     in (ending short of the gap it says where, `squeezed`). Squeezed in, the walk gets out along the gaps first
     (`last.escaped`); closed in, `last.mine_to_get_out` names everything to mine to open ground (chests, accumulators,

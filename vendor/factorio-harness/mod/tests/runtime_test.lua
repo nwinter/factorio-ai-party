@@ -332,6 +332,33 @@ do
   eq(v.dry_run_ok,false)
   eq(v.verdict,'fails: 1 refused for the recipe (entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available), 2 foundation tiles the hub never builds ((3.5,4.5): no foundation among the 8 tiles round it), 1 inserter with no target (#3 inserter (4.5,2.5): no drop target)')
 end
+-- batch28 C2 (Opus: base to south copper failed unless given exact via points, 6 times): a move_to through via points
+-- that arrived is kept per agent and pair of 64-tile areas; one with none ending unreachable there walks again once
+-- through them (then_call), and says so; the retry failing too is said.
+do
+  local st=storage.agent_harness
+  local last={}
+  local arrived={kind='move_to',surface_name='nauvis',route_from={x=10,y=10},position={x=300,y=-200},
+    via={points={{x=100,y=0},{x=200,y=-100}},final={x=300,y=-200}},route_args={position={x=300,y=-200}}}
+  runtime.route_memory(9,arrived,'arrived',last)
+  assert(last.route_memory:find('^kept: the 2 via points of this walk'),last.route_memory)
+  local failed={kind='move_to',surface_name='nauvis',route_from={x=20,y=30},position={x=310,y=-210},route_args={position={x=310,y=-210},avoid_enemies=true}}
+  last={}
+  st.then_calls=nil
+  runtime.route_memory(9,failed,'no_safe_route',last)
+  eq(#st.then_calls,1); eq(st.then_calls[1].call.action,'move_to'); eq(#st.then_calls[1].call.args.via,2)
+  eq(st.then_calls[1].call.args.route_retry,true); eq(st.then_calls[1].call.args.avoid_enemies,true)
+  assert(last.route_memory:find('ended no_safe_route; it walks again through the 2 via points',1,true),last.route_memory)
+  -- the retry failing too: said, no third walk
+  st.then_calls=nil; last={}
+  failed.route_args.route_retry=true
+  runtime.route_memory(9,failed,'unreachable',last)
+  eq(st.then_calls,nil); assert(last.route_memory:find('ended unreachable too',1,true),last.route_memory)
+  -- another agent, or another pair of areas: nothing kept
+  last={}; failed.route_args.route_retry=nil
+  runtime.route_memory(8,failed,'unreachable',last); eq(last.route_memory,nil)
+  st.routes=nil; st.then_calls=nil
+end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
 advance(1)

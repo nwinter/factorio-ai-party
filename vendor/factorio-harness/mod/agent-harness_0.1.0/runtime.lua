@@ -782,6 +782,9 @@ local function finish(index, outcome)
   if action and action.kind~='drive' then s.last[index].on_belt=M.belt.note(body(M.lookup(index))) end
   stop(body(M.lookup(index)))
   if action and action.started_by and s.last[index] then s.last[index].started_by=action.started_by end
+  -- The route memory (batch28 C2): a move_to through via points that arrived keeps them; one with none that ended
+  -- unreachable or no_safe_route runs once more through a kept route between the same two areas.
+  if action and action.kind=='move_to' and s.last[index] then pcall(M.route_memory,index,action,outcome,s.last[index]) end
   -- A call to run once the wait is met (A2: rearm {retry_when_clear}): next tick, outside this finish.
   if action and action.then_call and s.last[index] then
     if outcome=='met' then
@@ -4251,6 +4254,53 @@ function M.via_report(action)
   end
   return legs
 end
+-- Route memory (batch28 C2, Opus: base to south copper failed unless given exact via points, 6 times): per agent, per
+-- pair of 64-tile areas (where the walk started, its goal), the via points of the last move_to through them that
+-- arrived (at most ROUTES a agent). A move_to with no via points that ends unreachable or no_safe_route between two
+-- such areas runs once more through them (then_call, next tick); last.route_memory says which.
+M.ROUTE_CELL,M.ROUTES=64,16
+M.ROUTE_KEYS={'position','target','tolerance','within','avoid_enemies','unsafe_goal','combat','retreat','ticks','pathfind','reach','near','squeeze','mine_out','stay_in_turret_coverage','max_uncovered','route_retry'}
+function M.route_args(a)
+  local out={}
+  for _,k in ipairs(M.ROUTE_KEYS) do out[k]=a[k] end
+  return out
+end
+function M.walk_route_key(surface,from,to)
+  local c=M.ROUTE_CELL
+  return string.format('%s|%d,%d|%d,%d',tostring(surface),math.floor(from.x/c),math.floor(from.y/c),math.floor(to.x/c),math.floor(to.y/c))
+end
+function M.route_memory(index,action,outcome,last)
+  local st=state()
+  st.routes=st.routes or {}
+  local mine=st.routes[index] or {}
+  st.routes[index]=mine
+  local from,to=action.route_from,action.via and action.via.final or action.position
+  if not (from and to) then return end
+  local key=M.walk_route_key(action.surface_name,from,to)
+  if (outcome=='arrived' or outcome=='arrived_near') and action.via and #(action.via.points or {})>0 then
+    local pts={}
+    for i,q in ipairs(action.via.points) do pts[i]={x=q.x,y=q.y} end
+    mine[key]={via=pts,tick=game.tick,from={x=from.x,y=from.y},to={x=to.x,y=to.y}}
+    local n,oldest,ok_=0,nil,nil
+    for k,r in pairs(mine) do n=n+1; if not oldest or r.tick<mine[oldest].tick then oldest=k end end
+    if n>M.ROUTES and oldest then mine[oldest]=nil end
+    last.route_memory=string.format('kept: the %d via points of this walk, for the next move_to from around (%d,%d) to around (%d,%d)',#pts,math.floor(from.x),math.floor(from.y),math.floor(to.x),math.floor(to.y))
+  elseif (outcome=='unreachable' or outcome=='no_safe_route') and not action.via then
+    local r=mine[key]
+    if not r then return end
+    if action.route_args and action.route_args.route_retry then
+      last.route_memory=string.format('the kept route (via %d points, kept %s ago) ended %s too',#r.via,ago(game.tick-r.tick),outcome)
+      return
+    end
+    local args={}
+    for k,v in pairs(action.route_args or {}) do args[k]=v end
+    args.via=r.via; args.route_retry=true
+    st.then_calls=st.then_calls or {}
+    st.then_calls[#st.then_calls+1]={index=index,call={action='move_to',args=args}}
+    last.route_memory=string.format('ended %s; it walks again through the %d via points of your walk from around (%d,%d) to around (%d,%d) that arrived %s ago',
+      outcome,#r.via,math.floor(r.from.x),math.floor(r.from.y),math.floor(r.to.x),math.floor(r.to.y),ago(game.tick-r.tick))
+  end
+end
 function handlers.move_to(p,a)
   -- target: an entity's reach (M.walk_target); its centre is the walk's position.
   local rt
@@ -4333,6 +4383,8 @@ function handlers.move_to(p,a)
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false,pocket_check=true,squeeze=a.squeeze==true or nil,
     avoid_mode=M.walk_mode(a),reach_target=rt,near=a.near,limit_text=limit_text,
     trail_pts={{x=p.position.x,y=p.position.y}},surface_name=p.surface.name,
+    -- (batch28 C2) the call's own arguments and where it started, for the route memory
+    route_args=M.route_args(a),route_from={x=p.position.x,y=p.position.y},
     -- (d17 batch23 A5, Opus) the limit set again from each path found unless ticks was given; what the straight line crosses
     limit_auto=a.ticks==nil and {start=game.tick,cap=36000,speed=speed,text=limit_text} or nil,
     straight=M.pathing.line_crossing and (function() local pts={{x=p.position.x,y=p.position.y}} for _,q in ipairs(via or {}) do pts[#pts+1]=q end pts[#pts+1]=target
