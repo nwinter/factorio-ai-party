@@ -263,3 +263,37 @@ do
   assert(not tostring(err):find('paused your queue',1,true),err)
 end
 print('d17_batch35 A5 a failed call that pauses the queue says so: ok')
+
+-- A6 (Muse: requests set {count} for {min} read 0..inf and fetched nothing; Sol 14:20: import_from for from, and
+-- circuit_set signals as an object, each ignored): the record lists in args are checked field by field.
+do
+  local check=runtime.check_args
+  fails(function() check('requests',{platform='Wren',set={{item='iron-plate',count=200}}}) end,
+    'requests set[1]: count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count: min is how much it asks for, max caps it)')
+  fails(function() check('requests',{platform='Wren',set={{item='iron-plate',min=200,import_from='vulcanus'}}}) end,
+    'requests set[1]: import_from is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for import_from: from)')
+  fails(function() check('circuit_set',{position={x=1,y=2},signals={['iron-plate']=5}}) end,
+    'circuit_set signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is not read as one')
+  fails(function() check('circuit_set',{position={x=1,y=2},signals={'iron-plate'}}) end,'circuit_set signals[1] must be a signal {signal, count, name?}, not a string')
+  fails(function() check('train',{position={x=1,y=2},schedule={station='A'}}) end,'train schedule must be an array of {station, wait?}')
+  fails(function() check('train',{position={x=1,y=2},schedule={{station='A',wait={{type='time',seconds=30}}}}}) end,
+    'train schedule[1].wait[1]: seconds is not a train wait field: type, ticks?, compare?, condition? (for seconds: ticks (60 a second))')
+  fails(function() check('build',{builds={{item='stone-furnace',position={x=1,y=2},modules={'speed-module'}}}}) end,
+    'build builds[1]: modules is not a build entry field: item, position, direction?, quality?, type?, size?, entity?, recipe?, name?, configure?, requests?, circuit?, wires?, settings? (for modules: configure {modules = ...})')
+  fails(function() check('drop',{items={['iron-plate']=5}}) end,'drop items must be an array of {item, count?, quality?}')
+  -- the forms each parser takes go through
+  check('requests',{platform='Wren',set={{item='iron-plate',min=200,max='inf',quality='rare',from='vulcanus',min_payload=false}}})
+  check('requests',{position={x=1,y=2},set={['iron-plate']=100}})
+  check('circuit_set',{position={x=1,y=2},signals={}})
+  check('circuit_set',{position={x=1,y=2},signals={{signal={type='item',name='iron-plate'},count=5},{name='copper-plate',count=1}}})
+  check('deliver',{position={x=1,y=2},items='coal',count=5}); check('deliver',{position={x=1,y=2},items={coal=5}})
+  check('load_silo',{position={x=1,y=2},items={{item='rocket-fuel',count=10,quality='normal'}}})
+  check('build',{item='wooden-chest',builds={{position={x=4,y=0},configure={recipe='iron-gear-wheel'}},{name='stone-furnace',position={x=6,y=0}}}})
+  check('train',{position={x=1,y=2},schedule={{station='A',wait={{type='time',ticks=600},{type='full',compare='or'}}}}})
+  -- a queued step is checked the same way at submit
+  fails(function() grok('queue_submit',{start=false,steps={{action='requests',args={set={{item='iron-plate',count=200}}}}}}) end,
+    'requests set[1]: count is not a request field')
+  -- and a direct call, before anything changes
+  fails(function() grok('requests',{set={{item='iron-plate',count=200}}}) end,'requests set[1]: count is not a request field')
+end
+print('d17_batch35 A6 record lists checked field by field: ok')

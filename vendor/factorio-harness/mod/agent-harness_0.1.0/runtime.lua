@@ -12119,6 +12119,7 @@ M.paste_plan=blueprint_handlers.plan
 -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
+M.argshapes=require('argshapes')()  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
@@ -15453,6 +15454,8 @@ function check_args(action,args)
         ..(closest and '; closest name: '..closest or ''),0)
     end
   end
+  -- (d17 batch35 A6) the record lists inside them: each record's fields, and a list where a list goes
+  M.argshapes.check(action,args)
 end
 M.check_args=check_args
 -- A transfer call that works for what the call seems to want (Muse, Luna, shift11: to_entity or to beside position,
