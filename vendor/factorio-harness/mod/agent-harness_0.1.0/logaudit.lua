@@ -151,10 +151,66 @@ return function(api)
     spoiled='spoilage it does not request takes slots, 4 or fewer free', waiting='deliveries on the way 5+ min', not_sent='free in the network, nothing on the way',
     shortage='short in the network'}
 
+  -- storage (d17 batch32 B7, Gemini: robots with no storage, the game's no_storage alert): the network's storage chests
+  -- (free slots, filters), its robots holding cargo with no order to put it anywhere (what the alert names), the items
+  -- they hold, and for each whether a storage chest of the network can take it now (a free slot, and no filter or a
+  -- filter of that item). Read only; at most ROBOTS robots read.
+  local ROBOTS = 4096
+  function M.storage(p, a, surface, ln)
+    local chests, free, filtered, full = 0, 0, {}, 0
+    local takers = {any=0, by={}}
+    for _, c in ipairs(try(function() return ln.storages end) or {}) do
+      if c.valid and c.type == 'logistic-container' then
+        chests = chests + 1
+        local inv = try(function() return c.get_inventory(defines.inventory.chest) end)
+        local empty = inv and (try(function() return inv.count_empty_stacks() end) or 0) or 0
+        free = free + empty
+        if empty == 0 then full = full + 1 end
+        local f = try(function() return c.storage_filter end)
+        local fname = f and name_of(f.name or f)
+        if fname then
+          filtered[fname] = (filtered[fname] or 0) + 1
+          if empty > 0 then takers.by[fname] = (takers.by[fname] or 0) + 1 end
+        elseif empty > 0 then takers.any = takers.any + 1 end
+      end
+    end
+    local stuck, items, read = 0, {}, 0
+    for _, list in ipairs({'logistic_robots', 'construction_robots'}) do
+      for _, r in ipairs(try(function() return ln[list] end) or {}) do
+        if read >= ROBOTS then break end
+        read = read + 1
+        local inv = try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
+        if inv and not try(function() return inv.is_empty() end) and #(try(function() return r.robot_order_queue end) or {}) == 0 then
+          stuck = stuck + 1
+          for _, st in ipairs(try(function() return inv.get_contents() end) or {}) do items[st.name] = (items[st.name] or 0) + st.count end
+        end
+      end
+    end
+    local item_lines = {}
+    for name, n in pairs(items) do
+      local can = takers.any + (takers.by[name] or 0)
+      item_lines[#item_lines+1] = string.format('%s %d: %s', name, n, can > 0 and string.format('%d storage chest%s can take it', can, can == 1 and '' or 's')
+        or (filtered[name] and 'its filtered storage chests are full and no unfiltered one has room' or 'no storage chest has room for it (a free slot, unfiltered or filtered to it)'))
+    end
+    table.sort(item_lines)
+    local fl = {}
+    for name, n in pairs(filtered) do fl[#fl+1] = name .. ' ' .. n end
+    table.sort(fl)
+    local line = string.format('logistic network #%d on %s: %d storage chest%s, %d free slots%s%s; %d robot%s hold cargo with nowhere to put it%s',
+      ln.network_id, surface.name, chests, chests == 1 and '' or 's', free, full > 0 and string.format(' (%d full)', full) or '',
+      #fl > 0 and ', filtered: ' .. table.concat(fl, ', ') or '', stuck, stuck == 1 and '' or 's',
+      #item_lines > 0 and ': ' .. table.concat(item_lines, '; ') or '')
+    return {network=ln.network_id, surface=surface.name, storage_chests=chests, free_slots=free, full_chests=full, filtered=#fl > 0 and fl or nil,
+      robots_stuck=stuck, stuck_items=#item_lines > 0 and item_lines or nil, robots_read=read, line=line}
+  end
   function M.read(p, a)
     a = a or {}
     local surface = (a.surface or a.platform) and api.surface_named and api.surface_named(p.force, a) or p.surface
     local ln = network(p, a, surface)
+    if a.storage ~= nil then
+      assert(a.storage == true, 'storage is true')
+      return M.storage(p, a, surface, ln)
+    end
     local n = (api.state() or {}).networks or {}
     local now = game.tick
     local points = try(function() return ln.requester_points end) or {}
@@ -224,7 +280,7 @@ return function(api)
     return {network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
       shown=#out, lines=lines, summary=summary, next_from=more}
   end
-  M.schema = {logistics_audit = {network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
+  M.schema = {logistics_audit = {storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 4096 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
     surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',
     returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary. Characters left out. Read only'}}
   return M

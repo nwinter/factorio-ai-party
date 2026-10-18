@@ -263,3 +263,25 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch33 batch32 B5 ammunition blocked by other ammunition ahead: ok')
+
+-- batch32 B7 (Gemini: robots with no storage): logistics_audit {storage}: storage room, robots holding cargo with no
+-- order, their items and whether a storage chest can take each.
+do
+  defines={inventory={chest=1,robot_cargo=2}}
+  local function chest(free,filter) return {valid=true,type='logistic-container',storage_filter=filter and {name=filter} or nil,
+    get_inventory=function() return {count_empty_stacks=function() return free end} end} end
+  local function robot(items,orders)
+    return {robot_order_queue=orders or {},get_inventory=function()
+      return {is_empty=function() return next(items)==nil end,get_contents=function() local out={} for n,c in pairs(items) do out[#out+1]={name=n,count=c} end return out end} end}
+  end
+  local ln={network_id=12,storages={chest(0,'iron-plate'),chest(3,'copper-plate')},
+    logistic_robots={robot({['steel-plate']=4}),robot({['iron-plate']=2},{{}}),robot({})},construction_robots={robot({['iron-plate']=1})}}
+  local L=dofile('mod/agent-harness_0.1.0/logaudit.lua'){state=function() return {} end}
+  local r=L.storage({},{},{name='nauvis'},ln)
+  eq(r.storage_chests,2); eq(r.free_slots,3); eq(r.full_chests,1); eq(r.robots_stuck,2)
+  eq(r.line,'logistic network #12 on nauvis: 2 storage chests, 3 free slots (1 full), filtered: copper-plate 1, iron-plate 1; 2 robots hold cargo with nowhere to put it: iron-plate 1: its filtered storage chests are full and no unfiltered one has room; steel-plate 4: no storage chest has room for it (a free slot, unfiltered or filtered to it)')
+  ln.storages[3]=chest(5,nil)
+  has(L.storage({},{},{name='nauvis'},ln).line,'steel-plate 4: 1 storage chest can take it')
+  defines=nil
+end
+print('d17_batch33 batch32 B7 network storage: ok')
