@@ -235,8 +235,9 @@ return function()
   -- ghosts on one side (an enclosed side all ghosted, some past the ones read) is not named: those go first.
   -- The ghosts played out by the build rules: {built = {key = true}, rule = function(g)} (rule: nil, a reason string,
   -- or the runs a split leaves). The cache holds the end state (a built ghost is not empty).
-  function M.play(s, ghosts, hub, thrusters, cache)
+  function M.play(s, ghosts, hub, thrusters, cache, steps_max)
     cache = cache or {}
+    steps_max = steps_max or STEPS
     local at_key, built = {}, {}
     for _, g in ipairs(ghosts) do at_key[key(g[1], g[2])] = g end
     local function rule(g)
@@ -257,7 +258,7 @@ return function()
     end
     local work, steps = {}, 0
     for i = #ghosts, 1, -1 do work[#work+1] = ghosts[i] end
-    while #work > 0 and steps < STEPS do
+    while #work > 0 and steps < steps_max do
       local g = table.remove(work)
       local k = key(g[1], g[2])
       steps = steps + 1
