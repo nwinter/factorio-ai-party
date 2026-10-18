@@ -211,4 +211,28 @@ do
   assert(not ok2 and tostring(err2):find('no logistic network of ours covers (50,0)',1,true),tostring(err2))
   assert(not pcall(C.validate,{['until']='item_count',item='copper-ore',network={x=0,y=0},positions={{x=1,y=1}},below=3}),'network excludes positions')
 end
+-- batch28 B1 (Luna: polled silo, shipment and where_is for each pod): pod_landed counts freight's receipts since the
+-- wait began: pods, or with item how many of it.
+do
+  game.tick=9000
+  prototypes.item['rocket-fuel']={}
+  local receipts={}
+  local C2=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,known=function() return true end,
+    receipts=function(pl,since) local out={} for _,r in ipairs(receipts) do if r.tick>since then out[#out+1]=r end end return out end}
+  local k2={valid=true,name='K2'}
+  local q={force={platforms={k2}}}
+  local rec={}
+  receipts[1]={tick=8000,kind='received',where='old pad',cargo={['rocket-fuel']=200}}
+  C2.validate({['until']='pod_landed',platform='K2',item='rocket-fuel',at_least=400})
+  local met,saw=C2.check(q,{['until']='pod_landed',platform='K2',item='rocket-fuel',at_least=400},nil,rec)
+  eq(met,false); eq(saw,'0 pods from K2 landed since the wait began with 0 rocket-fuel')
+  receipts[2]={tick=9100,kind='received',where='cargo-landing-pad (5.5,3.5) on nauvis',cargo={['rocket-fuel']=200}}
+  receipts[3]={tick=9200,kind='gone',where='gone before leaving the platform',cargo={['rocket-fuel']=200}}
+  receipts[4]={tick=9300,kind='landed',where='cargo-pod-container (40.5,2.5) on nauvis',cargo={['rocket-fuel']=200}}
+  game.tick=9400
+  met,saw=C2.check(q,{['until']='pod_landed',platform='K2',item='rocket-fuel',at_least=400},nil,rec)
+  eq(met,true); eq(saw,'2 pods from K2 landed since the wait began with 400 rocket-fuel (the last cargo-pod-container (40.5,2.5) on nauvis)')
+  eq(C2.check(q,{['until']='pod_landed',platform='K2'},nil,rec),true,'one pod at least')
+  assert(not pcall(C2.validate,{['until']='pod_landed'}),'platform required')
+end
 print('conditions: ok')

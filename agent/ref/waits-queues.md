@@ -6,7 +6,10 @@
   there (all of them summed), in the remote lane too; `network: {x,y}`: the one logistic network covering that spot;
   `platform`: the landed items in that hub, not incoming cargo or hub trash); `spoil_within` (`position`: an assembler,
   furnace or biochamber; `seconds` 1..3600; `item` optional: met when its input's first stack, of item or any,
-  spoils or hatches within seconds; saw names it and the seconds left);
+  spoils or hatches within seconds; saw names it and the seconds left); `pod_landed` (`platform`, `item`?,
+  `at_least`?: pods sent down from it that landed since the wait began, by freight's receipts: received by a pad or
+  landed as a container; with `item`, how many of it; default 1). A rocket's cargo loaded to N is `item_count` with
+  the silo's position; what a hub or a landing pad holds is `item_count` with `platform` or the pad's position;
   `rocket_ready` (`position`: the silo); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts`
   is the same name); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
