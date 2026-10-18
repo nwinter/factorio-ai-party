@@ -136,7 +136,7 @@ return function(api)
   -- when no area covers it, else none; each claim's owner, their last activity there (requests in the area, board
   -- updates) and the last inspection of the area (a read there, by whom). Then each owner's blocked board items with
   -- the latest note. Facts only; read only.
-  local SYSTEMS, SAMPLE = 32, 256
+  local SYSTEMS, SAMPLE = 32, 64
   function M.ownership(p, a)
     local board = api.state().board or {items={}}
     local force = p.force
@@ -167,6 +167,9 @@ return function(api)
     for _, s in ipairs(list) do
       local systems = {}
       local pl = s.platform
+      -- the claims on this surface, and those that may name a platform
+      local here = {}
+      for _, i in ipairs(claims) do if M.surface_of(i) == s.name or (pl and type(i.title) == 'string') then here[#here+1] = i end end
       if pl then
         systems[1] = {kind='platform', name=pl.name, n=0, positions={}}
       else
@@ -195,7 +198,7 @@ return function(api)
       for k, g in ipairs(systems) do
         if k > SYSTEMS then rows[#rows+1] = {line=string.format('+%d more systems', #systems - SYSTEMS)}; break end
         local cover, fallback = {}, {}
-        for _, i in ipairs(claims) do
+        for _, i in ipairs(here) do
           if M.surface_of(i) == s.name then
             if not i.area then fallback[#fallback+1] = i
             elseif g.kind ~= 'platform' then
