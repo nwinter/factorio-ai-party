@@ -490,5 +490,6 @@ test('--require-met: the first line and the exit status say whether the --until 
   }
   await assert.rejects(cli(1,['sleep','60','--require-met']),(error:any)=>/--require-met goes with --until and a condition/.test(error.stdout));
   await assert.rejects(cli(1,['wait','--until','tell','--require-met']),(error:any)=>/--require-met goes with --until and a condition/.test(error.stdout));
-  await assert.rejects(cli(1,['call','status','--require-met']),(error:any)=>/--require-met goes with fh sleep or fh wait/.test(error.stdout));
+  // (batch35 A1) refused with the command's flags before anything is sent
+  await assert.rejects(cli(1,['call','status','--require-met']),(error:any)=>/fh call status does not take --require-met \(--require-met is for fh sleep, fh wait\)/.test(error.stdout));
 });

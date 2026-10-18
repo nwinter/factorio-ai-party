@@ -53,7 +53,9 @@ fh call walk --args '{"direction":"east","ticks":60}' --wait
 fh call status
 ```
 
-- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
+- Arguments go in `--args JSON` or `--args-file F`. A flag the command does not read (`fh call ACTION --file X`), or words
+  after `fh call ACTION`, are refused before anything is sent, naming the flags the command takes and where the flag
+  belongs (`--file is for fh queue submit|repeat|edit, fh plan save, ...`). `fh describe` lists every action's arguments; `fh help ACTION`
   (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
   describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json

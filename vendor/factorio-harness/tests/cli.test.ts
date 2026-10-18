@@ -940,3 +940,36 @@ test('failed feed --wait retains the verified smaller-margin facts in compact ou
     assert.equal(code,1,stdout);assert.match(stdout,/largest_verified_margin=2/);assert.match(stdout,/largest verified margin 2 tiles/);
   });
 });
+test('a flag the command does not read is refused before anything is sent, naming the flags it takes (batch35 A1, Astra: --file on fh call sent {})',async()=>{
+  const sent:any[]=[];
+  await engine(request=>{ sent.push(request); return {ok:true,result:{}}; },async port=>{
+    const refused=async(args:string[])=>{ try { await cli(port,args); } catch (e:any) { assert.equal(e.code,1); const out=String(e.stdout).trim(); return out.startsWith('{') ? JSON.parse(out).error.message as string : out.replace(/^error: client_error: /,''); } assert.fail(`${args.join(' ')} was not refused`); };
+    let m=await refused(['call','upgrade_belts','--file','x.json','--bot','astra','--journal','/dev/null']);
+    assert.match(m,/^fh call upgrade_belts does not take --file \(--file is for fh queue submit\|repeat\|edit, fh plan save, fh blueprint import, fh run, fh deploy\); nothing was sent\. fh call upgrade_belts takes --args, --args-file, --since, --limit, --peek, the connection flags/);
+    m=await refused(['upgrade_belts','--file','x.json']);
+    assert.match(m,/^fh upgrade_belts does not take --file/);
+    m=await refused(['call','sleep','30','--until','crafting_done']);
+    assert.match(m,/^fh call sleep does not take --until \(--until is for fh sleep, fh wait\)/);
+    m=await refused(['sleep','30','--file','x']);
+    assert.match(m,/^fh sleep does not take --file .*fh sleep takes --args, --args-file, --until, --then, --require-met/);
+    m=await refused(['queue','status','--file','x']);
+    assert.match(m,/^fh queue status does not take --file/);
+    m=await refused(['view','--file','x']);
+    assert.match(m,/^fh view does not take --file .*fh view takes --args, --args-file, --out/);
+    // a flag no command has: node's error named neither the command nor its flags
+    m=await refused(['call','status','--argz','{}']);
+    assert.match(m,/^fh call status does not take --argz \(no fh command has it\); nothing was sent\. fh call status takes --args/);
+    m=await refused(['more','--wait']);
+    assert.match(m,/^fh more does not take --wait; nothing was sent\. fh more takes no flags of its own, the connection flags \(--player, --session, --socket, --timeout, --id \.\.\.\), and everywhere --format/);
+    m=await refused(['call','upgrade_belts','x.json']);
+    assert.equal(m,'fh call upgrade_belts takes its arguments as --args JSON or --args-file FILE; the words "x.json" after it are not read, so nothing was sent');
+    m=await refused(['upgrade_belts','a','b']);
+    assert.match(m,/the words "a" "b" after it are not read/);
+    assert.deepEqual(sent,[]);
+    // the flags each takes still go
+    await cli(port,['call','status','--args','{}','--wait','--bot','astra']);
+    await cli(port,['status','--no-wait','--wake-local','--limit','5']);
+    await cli(port,['call','blueprint_export','--args','{"layout":true}','--out','/dev/null']);
+    assert.equal(sent.length,3);
+  });
+});
