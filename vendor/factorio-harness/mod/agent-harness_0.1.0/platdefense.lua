@@ -125,6 +125,112 @@ return function(api)
     end
     return table.concat(w, ', ')
   end
+  -- (d17 batch35 B6, viewer Aurora 14:48: guns can read as covering big asteroids) damage apart from reach: for the
+  -- route asked (or the schedule's next leg), each asteroid that spawns on that connection, its health and resistances
+  -- (the prototypes, as the tooltips give them), and per turret and the ammo it holds now its damage a second against it
+  -- after them (the force's ammo damage, turret attack and gun speed bonuses counted), against its listed damage; the
+  -- engaging turrets together and the time to kill one. Read on world n (2.0.77): big-metallic-asteroid 2000 hp,
+  -- physical 2000 flat and 10%, explosion 10%; firearm-magazine 5 physical, piercing 8, uranium 24, railgun-ammo 10000;
+  -- gun-turret every 6 ticks, rocket-turret 120, railgun-turret 170. A projectile's damage (rockets) is not in the
+  -- runtime's prototypes: the base game's data (PROJECTILE). Under LITTLE % of its listed damage reads little damage.
+  M.LITTLE = 10
+  local PROJECTILE = {rocket={{amount=200, type='explosion'}}, ['explosive-rocket']={{amount=300, type='explosion'}}}
+  local function damages(action, out, from_data)
+    if type(action) ~= 'table' then return end
+    if action.type == 'damage' and type(action.damage) == 'table' and action.damage.amount then out[#out+1] = {amount=action.damage.amount, type=action.damage.type} end
+    if type(action.projectile) == 'string' and PROJECTILE[action.projectile] then
+      for _, d in ipairs(PROJECTILE[action.projectile]) do out[#out+1] = d end
+      from_data[1] = true
+    end
+    for _, v in pairs(action) do if type(v) == 'table' then damages(v, out, from_data) end end
+  end
+  local function after(amount, res)
+    local d, pct = res and res.decrease or 0, res and res.percent or 0
+    local v = amount > d and amount - d or 1 / (2 + d - amount)
+    return v * (1 - pct)
+  end
+  local function connection(pl, a)
+    local from, to
+    if type(a.route) == 'string' and prototypes.space_connection and prototypes.space_connection[a.route] then return prototypes.space_connection[a.route] end
+    if type(a.route) == 'string' then
+      from, to = a.route:match('^([%w%-_]+)%s*%->%s*([%w%-_]+)$')
+      if not from then from, to = a.route:match('^([%w_]+)%-([%w_]+)$') end
+      assert(from, 'route is "FROM->TO" (planet names) or a space connection name')
+    else
+      from = try(function() return pl.space_location.name end)
+      local sch = try(function() return pl.schedule end)
+      local rec = sch and sch.records and sch.records[sch.current]
+      to = rec and rec.station
+      if not from then
+        local c = try(function() return pl.space_connection end)
+        if c then return c end
+      end
+    end
+    if not (from and to) then return nil end
+    for _, c in pairs(prototypes.space_connection or {}) do
+      local f, t = try(function() return c.from.name end), try(function() return c.to.name end)
+      if (f == from and t == to) or (f == to and t == from) then return c end
+    end
+  end
+  function M.damage(force, turrets, conn)
+    local lines, rows = {}, {}
+    local seen = {}
+    for _, def in ipairs(try(function() return conn.asteroid_spawn_definitions end) or {}) do
+      local name = def.type == 'entity' and (type(def.asteroid) == 'string' and def.asteroid or try(function() return def.asteroid.name end))
+      local proto = name and not seen[name] and prototypes.entity[name]
+      if proto then
+        seen[name] = true
+        local hp = try(function() return proto.get_max_health() end) or 0
+        local res = try(function() return proto.resistances end) or {}
+        local groups, order, total, best_pct = {}, {}, 0, 0
+        for _, t in ipairs(turrets) do
+          if t.entity.valid and (t.only == nil or t.only[name]) and t.entity.type == 'ammo-turret' then
+            local inv = try(function() return t.entity.get_inventory(defines.inventory.turret_ammo) end)
+            local st = inv and inv[1] and inv[1].valid_for_read and inv[1]
+            local key = t.name .. '|' .. (st and st.name or '')
+            local g = groups[key]
+            if not g then
+              g = {turret=t.name, ammo=st and st.name, n=0}
+              if st then
+                local ap = prototypes.item[st.name]
+                local cat = try(function() return ap.ammo_category.name end)
+                local list, from_data = {}, {}
+                damages(try(function() return ap.get_ammo_type().action end), list, from_data)
+                local mult = (1 + (try(function() return force.get_ammo_damage_modifier(cat) end) or 0)) * (1 + (try(function() return force.get_turret_attack_modifier(t.name) end) or 0))
+                local cd = try(function() return t.entity.prototype.attack_parameters.cooldown end) or 60
+                local rate = 60 / cd * (1 + (try(function() return force.get_gun_speed_modifier(cat) end) or 0))
+                local listed, real = 0, 0
+                for _, d in ipairs(list) do listed = listed + d.amount * mult; real = real + after(d.amount * mult, res[d.type]) end
+                g.listed, g.dps, g.from_data = listed * rate, real * rate, from_data[1]
+                g.pct = listed > 0 and real / listed * 100 or 0
+              end
+              groups[key] = g; order[#order+1] = g
+            end
+            g.n = g.n + 1
+            if g.dps then total = total + g.dps; best_pct = math.max(best_pct, g.pct) end
+          end
+        end
+        local rtext = {}
+        for _, k in ipairs({'physical', 'explosion', 'laser', 'electric', 'fire'}) do
+          local r = res[k]
+          if r and ((r.decrease or 0) > 0 or (r.percent or 0) > 0) then rtext[#rtext+1] = string.format('%s %g/%d%%', k, r.decrease or 0, math.floor((r.percent or 0) * 100 + 0.5)) end
+        end
+        local parts = {}
+        for _, g in ipairs(order) do
+          parts[#parts+1] = g.ammo and string.format('%d %s with %s: %s/s each (%s%% of its listed %s/s)%s', g.n, g.turret, g.ammo, M.num(g.dps), M.num(g.pct), M.num(g.listed),
+            g.from_data and ' (the rocket\'s damage from the base game\'s data)' or '') or string.format('%d %s with no ammo', g.n, g.turret)
+        end
+        local verdict = #parts == 0 and 'no turret of ours engages it'
+          or total <= 0 and 'engaged, no damage (no ammo)'
+          or best_pct < M.LITTLE and string.format('reached, little damage: %s/s together, one in %s s', M.num(total), M.num(hp / total))
+          or string.format('%s/s together, one in %s s', M.num(total), M.num(hp / total))
+        rows[#rows+1] = {asteroid=name, hp=hp, dps=total, kill_s=total > 0 and hp / total or nil, little=best_pct < M.LITTLE or nil}
+        lines[#lines+1] = string.format('%s (%d hp; resists %s): %s%s', name, hp, #rtext > 0 and table.concat(rtext, ', ') or 'nothing', #parts > 0 and table.concat(parts, '; ') .. ': ' or '', verdict)
+      end
+    end
+    return lines, rows
+  end
+  function M.num(v) if v >= 100 then return string.format('%d', math.floor(v + 0.5)) elseif v >= 1 then return string.format('%.1f', v) else return string.format('%.3g', v) end end
   function M.read(p, a)
     memo = {}
     local pl = api.platform(p, a.platform)
@@ -260,10 +366,21 @@ return function(api)
         for _, l in ipairs(feed.lines) do lines[#lines+1] = l end
       else feed = {error=tostring(tr)} end
     end
+    -- (B6) damage apart from reach, for the route asked or the schedule's next leg
+    local conn = connection(pl, a)
+    local dlines, drows
+    if conn then
+      dlines, drows = M.damage(force, turrets, conn)
+      if #dlines > 0 then
+        lines[#lines+1] = string.format('damage on %s (the asteroids that spawn there; apart from reach):', conn.name)
+        for _, l in ipairs(dlines) do lines[#lines+1] = '  ' .. l end
+      end
+    end
     return {platform=pl.name, lines=lines, collectors=collectors, sides=side_rows, turrets=trows, feed=feed,
+      route=conn and conn.name or nil, damage=drows and #drows > 0 and drows or nil,
       kinds=kinds, note='a turret reaches what lies within its attack range of its centre and past its minimum range; it engages what its priority list allows (ignore unprioritised targets on: only those listed), by size: small, medium, big, huge, each covered where every kind of that size (kinds) is engaged by a turret reaching it; a collector\'s front is the middle of its collection area; the hull\'s edge tiles are foundation tiles with empty space beside them'}
   end
-  M.schema = {platform_defense = {platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
+  M.schema = {platform_defense = {route='optional "FROM->TO" (planets) or a space connection name; default the schedule\'s next leg (or the connection it flies): damage per asteroid that spawns there: its health and resistances, per turret and the ammo it holds now the damage a second after them against its listed damage, together and the time to kill one; under 10% of listed: reached, little damage (damage [{asteroid, hp, dps, kill_s, little}], lines)',platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
     returns='cover is per asteroid size (small, medium, big, huge): a turret engages what its priority list allows (ignore unprioritised targets on: only those listed; every turret, asteroid and ammo prototype has the same target mask) and reaches within its range and past its minimum range (a rocket turret: 15 tiles); a size is covered where every kind of it (kinds: metallic, carbonic, oxide, promethium when a turret lists one) is engaged by a turret reaching it. lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (by size: turrets engaging that size, none for the kinds no turret engages; each turret\'s ammo, what it engages, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with, per size, the edge tiles no turret engaging it reaches as runs, the longest first; by their priority lists: the turrets engaging only part of the asteroids; the turrets (empty, fed by hand); then the ammunition: what can reach a turret (turrets, the belts on their ways, sources, the hub when an inserter takes from it toward one) against what is stranded (on belts no turret\'s way reaches, by group with their area), and each turret low or stopped: what it holds, what can reach it (each inserter and its way: the hub, a chest or machine, or a belt with the ammo on the belts upstream and who puts items on them) and what stops it (no feeder, an inserter or belt switched off by its circuit, a filter leaving its ammo out, belts nothing feeds: dry after what is on them). Every turret\'s reach in one line (ammunition that can reach each turret), and per stranded group the belts holding it (most first) and the call that would recover it: pickup {belt, area} when your character stands on that surface, else deconstruct {platform, area, entity_types: the belts} (the hub takes the belts and the items on them; the other belts of ours in that area named), and whether the hub\'s ammunition reaches a turret. feed {reaches, stranded, stranded_groups, stranded_recover [{count, belts, area, other_belts_in_area}], hub_reaches, via_hub (ammo on belts running back into the hub, counted as reaching when the hub feeds a turret), at_end and at_end_rows (ammo on a belt ending just past a pickup on a turret\'s way: not stranded), turrets [{position, holds, reaches, stopped}], lines}. collectors [{position, front, covered_by, by_size {size: {covered, turrets, missing}}}], sides [{side, edge_tiles, uncovered (a size not covered), gaps, by_size {size: {uncovered, gaps}}}], turrets [{name, position, range, min_range, engages, ammo, feed}], kinds. Read only'}}
   return M
 end

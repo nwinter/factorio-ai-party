@@ -469,7 +469,8 @@ check("craig: every line but the chatter ('lol, this mental') relayed; chatter t
       [t for _, t in CRAIG if t in relayed] == [t for i, (_, t) in enumerate(CRAIG) if i != 3]
       and rq.dropped["author_gap"] == 0, (relayed, rq.dropped))
 lol = [m for m in qf.lane()[0] if m["text"] == CRAIG[3][1]][0]
-check("craig: chatter is in the lane, marked, with no delivery", lol["chatter"] and not lol.get("delivery"), lol)
+check("craig: chatter is in the lane, marked, not relayed as chatter (d17 batch35 D1)", lol["chatter"] and lol.get("delivery") == "not_relayed"
+      and lol.get("delivery_why", "").startswith("chatter"), lol)
 craig_to = {r[0]: r[1] for r in log_q}
 check("craig: all his lines go to the first agent (again within 5 min: same agent), questions or not",
       [craig_to[t] for i, (_, t) in enumerate(CRAIG) if i != 3] == ["astra"] * 6, craig_to)
@@ -541,8 +542,8 @@ fz.ingest([{"id": "z3", "source": "youtube", "author": "c", "name": "craig", "te
             "t": NOW + 80}], [], now=NOW + 80)
 rz.step(NOW + 80)
 dl = {m["id"]: (m.get("delivery"), m.get("to")) for m in fz.lane()[0]}
-check("delivery: chatter none, then sent to one agent, then waiting inside the author gap",
-      dl == {"z1": (None, None), "z2": ("sent", "astra"), "z3": ("waiting", None)}
+check("delivery: chatter not relayed, then sent to one agent, then waiting inside the author gap",
+      dl == {"z1": ("not_relayed", None), "z2": ("sent", "astra"), "z3": ("waiting", None)}
       and hz.says == [{"name": "craig", "text": "@astra All agents, always put walls around each gun turret", "source": "youtube"}], (dl, hz.says))
 # shift05 09:30, Nick: "'Not sent: too soon' ... does that get queued? was good suggestion": it waits, others go first
 fz.ingest([{"id": "z4", "source": "youtube", "author": "j", "name": "joon", "text": "astra, the coal belt has a kink",
@@ -560,7 +561,7 @@ for k in range(4):  # a burst inside the lane's own limits (4 a minute): three w
                 "text": f"one more idea number {k} for the walls", "t": NOW + 110 + 16 * k}], [], now=NOW + 110 + 16 * k)
 bl = {m["id"]: m.get("delivery") for m in fz.lane()[0] if m["id"].startswith("zb")}
 check("waiting: at most three of a viewer's lines wait; more are refused as too soon",
-      sum(1 for _, a in rz.q if a == "c") == 3 and bl == {"zb0": None, "zb1": None, "zb2": None, "zb3": "too_soon"}
+      sum(1 for _, a in rz.q if a == "c") == 3 and bl == {"zb0": "held", "zb1": "held", "zb2": "held", "zb3": "too_soon"}
       and rz.dropped["author_gap"] == 1, (bl, rz.dropped))
 check("waiting: nothing inside the gap (sent at +106)", rz.step(NOW + 150) is None)
 sent_b = [rz.step(NOW + t) for t in (151, 196, 241)]

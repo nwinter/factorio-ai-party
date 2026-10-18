@@ -130,6 +130,24 @@ def public_youtube(viewers, hidden=None):
     return rows[-YOUTUBE_MAX:]
 
 
+def public_delivery(status, keep=150):
+    """(d17 batch35 D1, viewer Aurora: four lines received and never relayed, no reason shown) each site line's delivery
+    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?}},
+    the newest `keep`. YouTube lines are not keyed by a site seq and stay out."""
+    out = {}
+    for r in (status or {}).get("delivery") or []:
+        i = str(r.get("id") or "")
+        if not i.startswith("site:") or r.get("status") not in ("relayed", "held", "operator", "not_relayed"):
+            continue
+        row = {"s": r["status"]}
+        if r.get("to"):
+            row["to"] = str(r["to"])[:40]
+        if r.get("why"):
+            row["why"] = str(r["why"])[:120]
+        out[i[5:]] = row
+    return dict(list(out.items())[-keep:])
+
+
 REPLY_MAX = 40  # agents' replies to viewers in the state (newest kept); the live page's chat shows them
 
 
@@ -236,6 +254,9 @@ def public_state(s):
     yt = public_youtube(s.get("viewers"), hidden_now())
     if yt:
         out["youtube_chat"] = yt
+    vd = public_delivery(s.get("viewers_status"))
+    if vd:
+        out["viewer_delivery"] = vd
     vr = public_replies(s.get("viewer_replies"), hidden_now())
     if vr:
         out["viewer_replies"] = vr
