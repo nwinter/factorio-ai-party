@@ -402,6 +402,14 @@ return function(api)
       placed and string.format(' (%d %s)',placed,step.action=='build' and 'built' or 'placed') or '',tostring(type(f)=='table' and f.index or '?'),tostring(what or '?'),at,
       tostring(type(f)=='table' and f.error or f)),#list
   end
+  -- A step that did part of what was asked (batch28 A2, Astra: a drop sent 200 of 400 rocket fuel and the remote queue
+  -- went on): its result's partial {sent, stayed, why}; such a step fails unless its args say partial: true.
+  local function partial_failed(step,result)
+    if type(result)~='table' or type(result.partial)~='table' then return nil end
+    if type(step.args)=='table' and step.args.partial==true then return nil end
+    local pr=result.partial
+    return string.format('%s partial: sent %s; %s stayed (%s); partial: true lets a queue go on',step.action,tostring(pr.sent),tostring(pr.stayed),tostring(pr.why))
+  end
   local function fail(q,p,step,result)
     minimum(step,result)
     moved(p,step,result)
@@ -954,6 +962,9 @@ return function(api)
                 step.result=result; q.current=step
               elseif entries_failed(step,result) then
                 result.reason,result.entries_failed=entries_failed(step,result)
+                fail(q,p,step,result)
+              elseif partial_failed(step,result) then
+                result.reason=partial_failed(step,result)
                 fail(q,p,step,result)
               elseif minimum(step,result) then moved(p,step,result); record(q,step,true,result)
               else fail(q,p,step,result) end

@@ -625,6 +625,9 @@ end
 d=space.drop(p,{platform='alpha',items=kit})
 eq(#d.dropped,1); eq(d.dropped[1],'iron-plate*1000'); eq(d.pods,nil)
 eq(d.short,'not sent, still in the hub: iron-plate*200 coal*300 (a cargo pod holds 10 slots and the list takes 2 pods; full: true sends them all)')
+-- batch28 A2 (Astra: 200 of 400 rocket fuel sent and the queue went on): partial says what went, stayed and why
+eq(d.partial.sent,'iron-plate*1000'); eq(d.partial.stayed,'iron-plate*200 coal*300')
+eq(d.partial.why,'a cargo pod holds 10 slots and the list takes 2 pods; without full only pod 1 goes')
 eq(hub_inv.get_item_count{name='iron-plate'},200)
 -- full: every pod, at once while hatches are free.
 for i=1,10 do hub_inv.insert(stack('iron-plate',100)) end

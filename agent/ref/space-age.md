@@ -275,8 +275,9 @@
   Example: `./fh call preflight --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","items":{"agricultural-science-pack":1000}}'`
 - `land`: from a platform stopped at a planet, drops you to it in a cargo pod (the core's Space Age part says where
   you land and with what).
-- `drop {items, platform?, full?, dry_run?}`: sends one cargo pod (10 slots) of hub items to the planet below a
-  stopped platform; `short` says what stays in the hub. `full: true` sends every pod the list takes (each pod's items
+- `drop {items, platform?, full?, dry_run?, partial?}`: sends one cargo pod (10 slots) of hub items to the planet below
+  a stopped platform; `short` says what stays in the hub, and `partial {sent, stayed, why}` when it sent part of the
+  list: a queue step with it fails unless `partial: true`. `full: true` sends every pod the list takes (each pod's items
   in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
   the rest; `spill`: what would land on the ground). A drop's landing line gives the container's exact position and
   the other cargo pod containers within 8 tiles with what each holds; one sent to a full landing pad says it landed
