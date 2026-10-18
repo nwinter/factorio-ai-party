@@ -7298,6 +7298,15 @@ fh watch    # deploy on every change
   - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
     no leg, or when the stops hold no stop for the destination.
   tests/space.lua.
+- C1 (Opus: artillery fed by an inserter from a requester chest asking shells sat empty for minutes, found by
+  looking): the no_ammo alert read ammo turrets only, and the alert scan did not read artillery turrets. pushalerts
+  now reads them, kind `artillery_empty`: an artillery turret with no shell in it for 5 min or more (since first read
+  empty; the turret memory by unit number), one line a 64-tile group: `1 artillery-turret with no shell for 5+ min
+  near (x,y): artillery-turret (x,y): empty for N min; inserter (x,y) takes from requester-chest (x,y) (asks 10
+  artillery-shell, holds 0); its logistic network holds 0 artillery-shell (robots bringing 0)` (up to 3 feeding
+  inserters; `no inserter drops into it` when none; an item request on the piece named), to its builder and the
+  builders of the inserters feeding it, as no_ammo; read again when shown (a refilled piece drops out).
+  tests/pushalerts.lua.
 - C2 (Grok: a plan's copper transfer refused past 64 tiles and the Swiftlet repair plan stopped): the limit is the
   64 tiles a transfer, collect, feed, rearm or refuel walks by default (32 for the rest; autowalk.lua), past which a
   call is refused naming the same call with walk: true. Only a repeating loop's steps ran with walk: true. Every
