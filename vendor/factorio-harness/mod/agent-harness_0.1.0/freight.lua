@@ -22,7 +22,7 @@
 -- in flight (their unit numbers and cargo).
 return function(api)
   local M = {}
-  M.KEEP, M.SHOW, M.ITEMS = 8, 6, 6
+  M.KEEP, M.SHOW, M.ITEMS, M.RECEIPTS = 8, 6, 6, 16
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function secs(ticks)
     local s = math.max(0, math.floor(ticks / 60 + 0.5))
@@ -30,7 +30,7 @@ return function(api)
     return s .. 's'
   end
   M.secs = secs
-  local POD_TICKS, POD_PENDING = 60, 64
+  local POD_TICKS, POD_PENDING, POD_AFTER = 60, 64, 600
   local function xy(pos) return {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
 
   -- Where a platform is ------------------------------------------------------
@@ -294,6 +294,7 @@ return function(api)
       seg.up = next(up) and up or nil
     else
       seg.kind, seg.from, seg.to = 'leg', w.leg.from, w.leg.to
+      seg.visited = try(function() return pl.last_visited_space_location.name end)
     end
     rec.segs[#rec.segs+1] = seg
     while #rec.segs > M.KEEP do table.remove(rec.segs, 1) end
@@ -385,6 +386,15 @@ return function(api)
     if key and key ~= rec.key then
       local was = seg and not seg['end'] and seg or nil
       if was then was['end'], was.last, was.ammo1, was.places1, was.built1 = tick, copy(rec.prev or counts), ammo_counts(pl), M.places_snapshot(pl), M.built_now(pl, was) end
+      -- (d17 batch23 A3, Sol: Swift dropped tungsten at Nauvis and left within the second; the stop and its pod's
+      -- receipt were never recorded) a leg to X followed by a leg from X, the location last visited become X during the
+      -- leg (a turn back in flight leaves it): a stop at X between two looks a second apart, recorded as a 0 s stop
+      if was and was.kind == 'leg' and w.leg and w.leg.from == was.to and was.visited ~= was.to
+        and try(function() return pl.last_visited_space_location.name end) == was.to then
+        local z = {start=tick, ['end']=tick, kind='stop', at=was.to, zero=true, first=copy(rec.prev or counts), last=copy(counts), spoiled={}}
+        rec.segs[#rec.segs+1] = z
+        M.event(pl, 'arrived', z.at, tick); M.event(pl, 'left', z.at, tick, w.leg.to)
+      end
       -- Arrivals and departures for the team alert (Gemini, 16:50); not the first look's stop.
       if was and was.kind == 'stop' then M.event(pl, 'left', was.at, tick, w.leg and w.leg.to) end
       seg = open(rec, pl, w, counts, tick, rec.key == nil)
@@ -726,14 +736,22 @@ return function(api)
     for _, seg in ipairs(rec.segs) do if seg.start == start then return seg end end
   end
   -- One pod gone: what it carried, counted on its stop by where it went.
+  -- (d17 batch23 A3) and a landed receipt per pod, kept apart from the stops (the last RECEIPTS): what, where, when,
+  -- which pod, from which stop
+  local function receipt(rec, p, tick, kind, where)
+    rec.receipts = rec.receipts or {}
+    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg})
+    while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
+  end
   local function pod_done(rec, p, tick)
-    local seg = seg_at(rec, p.seg)
-    if not seg then return end
+    local seg = seg_at(rec, p.seg) or {}
     seg.pods = seg.pods or {}
     local here = p.last and p.last.surface
     if here and here ~= p.from then
       if p.dest and p.dest.pad then
-        tally(seg.pods, 'received', p.cargo, string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here))
+        local where = string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here)
+        tally(seg.pods, 'received', p.cargo, where)
+        receipt(rec, p, tick, 'received', where)
       else
         -- The container it became, where it stands (Sonnet, shift14 22:50: a rounded spot sent a transfer a tile off);
         -- else the pod's last sighting, to a tenth of a tile.
@@ -746,12 +764,15 @@ return function(api)
           end
           return best
         end)
-        tally(seg.pods, 'landed', p.cargo, box and string.format('cargo-pod-container (%g,%g) on %s', box.position.x, box.position.y, here)
-          or string.format('(%.1f,%.1f) on %s (the pod\'s last sighting; no cargo pod container within 8 tiles of it)', pos.x, pos.y, here))
+        local where = box and string.format('cargo-pod-container (%g,%g) on %s', box.position.x, box.position.y, here)
+          or string.format('(%.1f,%.1f) on %s (the pod\'s last sighting; no cargo pod container within 8 tiles of it)', pos.x, pos.y, here)
+        tally(seg.pods, 'landed', p.cargo, where)
+        receipt(rec, p, tick, 'landed', where)
       end
       seg.pods.last_tick = tick
     else
       tally(seg.pods, 'gone', p.cargo)
+      receipt(rec, p, tick, 'gone', 'gone before leaving the platform')
     end
   end
   local function is_mine(pod, pl, hub)
@@ -779,9 +800,14 @@ return function(api)
       end
     end
     rec.pods = keep
-    -- New pods leaving the hub while it is at a stop.
-    local seg = rec.segs[#rec.segs]
-    if not (seg and seg.kind == 'stop' and not seg['end']) then return end
+    -- New pods leaving the hub while it is at a stop, or within POD_AFTER of the last stop's end (A3: a pod sent in the
+    -- last second of a stop, or at a 0 s stop, is still leaving the platform after it).
+    local seg
+    for i = #rec.segs, 1, -1 do
+      local x = rec.segs[i]
+      if x.kind == 'stop' then seg = x; break end
+    end
+    if not (seg and (not seg['end'] or tick - seg['end'] <= POD_AFTER)) then return end
     local s, hub = try(function() return pl.surface end), try(function() return pl.hub end)
     if not (s and hub) then return end
     local found
@@ -790,7 +816,7 @@ return function(api)
     for _, pod in ipairs(found or {}) do
       local known = false
       for _, p in ipairs(rec.pods) do if try(function() return p.pod == pod end) then known = true; break end end
-      if not known and #rec.pods < POD_PENDING and is_mine(pod, pl, hub) then
+      if not known and #rec.pods < POD_PENDING and try(function() return pod.valid end) and is_mine(pod, pl, hub) then
         rec.pods[#rec.pods+1] = {pod=pod, unit=try(function() return pod.unit_number end), seg=seg.start, at=seg.at, tick=tick,
           from=s.name, cargo=pod_cargo(pod), dest=pod_dest(pod), last={surface=s.name, position=xy(pod.position)}}
       end
@@ -818,6 +844,7 @@ return function(api)
     return #parts > 0 and table.concat(parts, ' ') .. (#list > (limit or M.ITEMS) and string.format(' +%d more', #list - (limit or M.ITEMS)) or '') or nil
   end
   local function when(seg, now)
+    if seg.zero then return string.format('0s, %s ago; arrived and left between two looks a second apart', secs(now - seg['end'])) end
     local text = seg['end'] and string.format('%s, %s ago', secs(seg['end'] - seg.start), secs(now - seg['end']))
       or string.format('%s so far', secs(now - seg.start))
     return seg.partial and text .. '; under way when first seen' or text
@@ -1065,6 +1092,19 @@ return function(api)
       rows[#rows+1] = text
     end
     return #rows > 0 and rows or nil
+  end
+  -- (A3) The landed receipts, newest first: what, where, when, which pod, from which stop.
+  function M.receipts(pl, limit)
+    local rec = store()[pl.index]
+    if not (rec and rec.receipts and #rec.receipts > 0) then return nil end
+    local out = {}
+    for i = #rec.receipts, math.max(1, #rec.receipts - (limit or 8) + 1), -1 do
+      local r = rec.receipts[i]
+      out[#out+1] = string.format('%s %s %s, %s ago (pod %s, left the hub %s ago, from the stop at %s)', items_text(r.cargo) or 'empty',
+        r.kind == 'received' and 'received by' or r.kind == 'landed' and 'landed as' or 'was', r.where, secs(game.tick - r.tick),
+        r.unit and '#' .. r.unit or '?', secs(game.tick - r.sent), tostring(r.stop))
+    end
+    return out
   end
   -- The platform's last stops and legs, newest first (at most SHOW).
   function M.read(pl)

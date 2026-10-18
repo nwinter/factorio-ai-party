@@ -7187,6 +7187,67 @@ fh watch    # deploy on every change
     part way sets the records back as given;
   - `state_note` says plainly when the state is no_schedule, no_path or paused (on every platform_schedule reply).
   tests/space.lua.
+- A1 (Sol): platform_defense counted Swiftlet's small asteroids as covered by rocket turrets that engage only big
+  ones. On n every turret, asteroid and ammo prototype has the same target mask (common) and no ammo a target filter,
+  so a turret engages what its priority list allows: with ignore unprioritised targets on, only the asteroids listed.
+  platform_defense now gives cover per asteroid size (small, medium, big, huge): a size is covered where every kind of
+  it (metallic, carbonic, oxide; promethium when a turret lists one) is engaged by a turret within its range and past
+  its minimum range (rocket turret 15, railgun 3.5, flamethrower 6). Collector lines carry `by size: ...` (turrets
+  engaging each size, `none for` the kinds no turret engages); side lines give per size the uncovered edge tiles and
+  their runs; a `by their priority lists:` line names the turrets that engage part of the asteroids. Rows:
+  collectors[].by_size, sides[].by_size, turrets[].min_range and engages, kinds. Measured on n (Swiftlet): as fast as
+  before. tests/d17_batch23.lua.
+- A2 (Astra, Kestrel II, every few minutes): the ammunition trace (ammofeed.lua: platform_defense's feed,
+  platform_endurance, preflight, the platform alerts) read as stranded the ammo on Kestrel II's belt back into the hub
+  (x 8.5, into the hub at (4.5,0.5)) while the hub fed the turrets, and the 8 rounds on each long-handed bridge's
+  belt end; it named the switched-off old loader (4.5,-0.5) beside bulk inserter (4.5,-1.5). Now:
+  - belts whose way ends in an inserter (not switched off) dropping into the hub count as reaching when the hub's
+    ammunition reaches a turret: `via_hub`, `belts back into the hub N` in the first line;
+  - a belt that ends (no belt after it) within 4 belts past a belt on a turret's way: `at_end`, `at_end_rows` (the
+    belt end, the belt before it and the inserter picking from it), a line `at belt ends past a pickup on a turret's
+    way (not counted as stranded; they move on when the belt beyond is joined)`. Not in `stranded` or the alert;
+  - switched-off inserters putting items on a turret's belts are named only when none is live (then in the stop);
+  - relays and bridges count when not switched off and their filters pass some ammunition.
+  Cost: main's trace read each turret's way afresh: 180 ms on Kestrel II (43 turrets, 1267 belts) on n. Each belt is
+  now read once per trace: the belts upstream of the turrets' belts as one graph, loops as one (Tarjan), each turret's
+  way summed along its chain from the nearest way found upstream. Measured on n: Swiftlet 4.3 ms (main 5.0),
+  Kestrel II with 4 turrets 23 ms (all 1209 belts walked; main with 2 turrets 19 ms); a full Kestrel II read about
+  25 ms (not run whole on n). The platform alert traces only while a turret holds under 20 rounds, at most once a
+  minute (it traced every 10 s). tests/d17_batch23.lua.
+- A3 (Sol: Swift dropped 250 tungsten plates at Nauvis and left within the second; the platform read's freight went
+  from leg vulcanus->nauvis to leg nauvis->fulgora with no stop, so the pod's receipt was nowhere). freight.lua looks
+  once a second; a stop shorter than that was never seen. Now:
+  - a leg to X followed by a leg from X, the platform's last visited location become X during the first leg, records
+    a stop at X: `stop at nauvis (0s, Ns ago; arrived and left between two looks a second apart)`, with the arrival and
+    departure events. A turn back in flight (the last visited location unchanged) is no stop;
+  - cargo pods leaving the hub are looked for up to 10 s after a stop ends (a pod sent in a stop's last second, or at
+    a 0 s stop, is still leaving the platform then);
+  - each pod gone is a landed receipt (the last 16 per platform, apart from the 8 stops and legs kept): `landed` in
+    the platform read, newest first: `tungsten-plate*250 received by cargo-landing-pad (52,54) on nauvis, 3m30s ago
+    (pod #5751033, left the hub 3m32s ago, from the stop at nauvis)`; `landed as cargo-pod-container ...` without a
+    pad; `was gone before leaving the platform`.
+  tests/d17_batch23.lua, tests/freight.lua.
+- A4 (Opus: robot_losses cancel failed with "LuaEntity API call when LuaEntity was invalid" at (-224,-30)): the
+  grouping read each job's target's unit number, and a target gone since the robots died (its ghost built, removed or
+  its job done) raised. A gone target is now kept by its place; `cancel` skips it and names it in `ended` ("construct
+  gun-turret ghost (-224.5,-30.5): ended before the cancel (built, removed or done), skipped") and `cancel_line` counts
+  them. tests/d17_batch23.lua.
+- A5 (Opus, four times: to (8,545) the walk went by (-106,506) and timed out; to (0,100) it timed out at (19,149)). In
+  Opus's journal (shift31, ticks 24927330 and 24942809) both walks went round enemy nests on or near the straight
+  line (`avoided_enemies` around (-6,357) and (0,357); a biter spawner at (0,345)), and on n the straight line from
+  (-4,78) to (8,545) crosses a lake from (4,376) to (7,521) (water, deepwater): the route goes round its west shore.
+  Each timed out with 12 and 15 path requests failed along the way, on a limit set from the straight line (467 and
+  475 tiles) that never grew with the detour. Now:
+  - without `ticks`, each path found sets the limit again: 1.5 times the walking time of what is left (the path, then
+    a straight line to the goal, through via points still ahead) plus 10 s, never lower than before, at most 36000
+    ticks from the start; `limit` says so (`set again to N ticks from the start when a path was found ...`);
+  - `straight_line` in the reply: what the straight line (through via points) crosses, sampled in 8-tile boxes every
+    8 tiles (at most 128 boxes): ground the character cannot cross (tile names, from and to), cliffs, buildings, trees
+    or rocks (count, the first, three names); or `nothing on the straight line (N tiles) ...`. 0.63 ms on n for
+    Opus's 467-tile line;
+  - `last.route`: `walked N tiles against M in a straight line, at most D tiles off it (at (x,y)); it went round: ...`
+    (what the straight line crosses, enemies' reach with avoided_enemies, a path off belts), or `on the straight line`.
+  mod/tests/runtime_test.lua.
 
 ## d17 study1 part 2
 - 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):

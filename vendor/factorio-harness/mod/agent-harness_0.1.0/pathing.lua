@@ -180,6 +180,83 @@ return function(api)
     nav.waypoints = path; nav.waypoint = 1; nav.path_state = 'found'; nav.avoided = avoided or nil
     nav.path_length = math.floor(M.length(path) + 0.5)
     nav.found = nil
+    M.extend(nav, path)
+  end
+  -- (d17 batch23 A5, Opus: walks to (8,545) and (0,100) timed out round a lake and two nests; the limit was set from the
+  -- straight line and never grew) a walk whose limit was not given: each path found sets the limit again from what is
+  -- left (this path, then a straight line from its end to the goal) as the call set it (1.5 times the walking time and
+  -- 10 s), never lower, at most `cap` from the start.
+  function M.extend(nav, path)
+    local L = nav.limit_auto
+    if not (L and path and #path > 0) then return end
+    local goal = nav.via and nav.via.final or nav.position
+    local left = M.length(path) + dist(path[#path].position, goal)
+    if nav.via then
+      local from = goal
+      for i = (nav.via.index or 1), #nav.via.points do left = left + dist(nav.via.points[i], from); from = nav.via.points[i] end
+    end
+    local want = math.min(L.start + L.cap, game.tick + math.ceil(left / L.speed * 1.5) + 600)
+    if want > (nav.until_tick or 0) then
+      nav.until_tick = want
+      L.extended = (L.extended or 0) + 1
+      nav.limit_text = string.format('%s; set again to %d ticks from the start when a path was found (%d tiles left on it and to the goal)',
+        L.text, want - L.start, math.floor(left + 0.5))
+    end
+  end
+  -- (A5) What the straight line (through via points) crosses, sampled in 8-tile boxes every 8 tiles (at most 128
+  -- boxes; longer lines are sampled sparser): water and other ground the character cannot cross, cliffs, and
+  -- entities it collides with (buildings, trees, rocks). {length, water {from, to, names}, cliffs {n, at}, solid {n,
+  -- at, names}, text}.
+  function M.line_crossing(surface, points)
+    local length = 0
+    for i = 2, #points do length = length + dist(points[i-1], points[i]) end
+    local step = math.max(8, length / 128)
+    local out = {length=length}
+    local water, cliffs, solid = nil, nil, nil
+    local function look(x, y)
+      x, y = math.floor(x + 0.5), math.floor(y + 0.5)
+      local area = {{x - 4, y - 4}, {x + 4, y + 4}}
+      local w = try(function() return surface.count_tiles_filtered{area=area, collision_mask='player'} end) or 0
+      if w > 0 then
+        water = water or {from={x=x, y=y}, names={}}
+        water.to = {x=x, y=y}
+        if #water.names < 3 then
+          local t = try(function() return surface.find_tiles_filtered{area=area, collision_mask='player', limit=1}[1].name end)
+          local seen = false
+          for _, n in ipairs(water.names) do if n == t then seen = true end end
+          if t and not seen then water.names[#water.names+1] = t end
+        end
+      end
+      local c = try(function() return surface.count_entities_filtered{area=area, type='cliff'} end) or 0
+      if c > 0 then cliffs = cliffs or {n=0, at={x=x, y=y}}; cliffs.n = cliffs.n + c end
+      local e = (try(function() return surface.count_entities_filtered{area=area, collision_mask='player'} end) or 0) - c
+      if e > 0 then
+        if not solid then
+          solid = {n=0, at={x=x, y=y}, names={}}
+          for _, x2 in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player', limit=8} end) or {}) do
+            local n = x2.name
+            local seen = false
+            for _, m in ipairs(solid.names) do if m == n then seen = true end end
+            if not seen and #solid.names < 3 and x2.type ~= 'cliff' and x2.type ~= 'character' then solid.names[#solid.names+1] = n end
+          end
+        end
+        solid.n = solid.n + e
+      end
+    end
+    for i = 2, #points do
+      local a, b = points[i-1], points[i]
+      local d = dist(a, b)
+      local n = math.max(1, math.floor(d / step + 0.5))
+      for k = (i == 2 and 0 or 1), n do look(a.x + (b.x - a.x) * k / n, a.y + (b.y - a.y) * k / n) end
+    end
+    out.water, out.cliffs, out.solid = water, cliffs, solid
+    local bits = {}
+    if water then bits[#bits+1] = string.format('ground it cannot cross (%s) from %s to %s', table.concat(water.names, ', '), at(water.from), at(water.to)) end
+    if cliffs then bits[#bits+1] = string.format('%d cliff%s, the first near %s', cliffs.n, cliffs.n == 1 and '' or 's', at(cliffs.at)) end
+    if solid then bits[#bits+1] = string.format('%d buildings, trees or rocks, the first near %s (%s)', solid.n, at(solid.at), table.concat(solid.names, ', ')) end
+    out.text = #bits > 0 and string.format('the straight line (%d tiles) crosses %s', math.floor(length + 0.5), table.concat(bits, '; '))
+      or string.format('nothing on the straight line (%d tiles): no water, cliff, building, tree or rock; the route is the straight line unless an enemy\'s reach or a belt is avoided', math.floor(length + 0.5))
+    return out
   end
   M.use = function(p, nav, path, avoided) return use(p, nav, path, avoided) end
   -- A path ending no nearer the goal than it started (the start already
