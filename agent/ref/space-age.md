@@ -71,14 +71,16 @@
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
-- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?}`: per item, what the ghosts
+- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item, what the ghosts
   still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
   rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
   built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
   removes it; `import_from`,
-  `area`; `min_payload: {item: N}`; a min_payload set on its slots is kept). `surface: "gleba"` with no platform:
+  `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
+  and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
+  request less what the hub holds). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).

@@ -6766,3 +6766,11 @@ fh watch    # deploy on every change
   a machine that does not face the direction asked is turned to it (as a player's rotate does): `direction_note`
   (`placed facing north (...); turned east once the recipe was set`, or that the game did not turn it). place_ghosts
   entries with a recipe and a direction do the same (`directions_turned`). runtime_test.lua.
+- A2 (Astra): crusher's minimum payload set 10 -> 9 by min_payload on Kestrel's platform_bom section went back to 10
+  every 10 s: the keeper (platbom.lua apply) wrote each slot from the request's own min_payload map, which won over the
+  slot. The keeper now remembers what it last wrote per item; a slot whose minimum payload differs from that was
+  changed by min_payload or requests, and the keeper takes it as its own (into its map; the line says `adopted from
+  the slot ...: 9`). A later platform_bom request with its own min_payload map still wins. min_payload's lines and
+  requests' section note say a platform_bom section's keeper takes such a change. `tail: true` (kept until false): an
+  item's minimum payload is no more than what is still to come (its request less what the hub holds), so the last 2
+  crushers go without waiting for a batch of 9 (`tail: 2 of the 9 set`). tests/d17_batch21.lua.
