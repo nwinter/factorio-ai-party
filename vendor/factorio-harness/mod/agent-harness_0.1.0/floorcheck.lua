@@ -89,15 +89,19 @@ return function(api)
         job.id, tostring(job.label), job.n, out.checks, M.CHECKS, queued, job.phase == 'why' and ' (naming why the unbuilt ones stay)' or '')
       return out
     end
-    out.state = 'done'; out.done_tick = job.done; out.built = job.built; out.unbuilt_count = job.unbuilt_n
+    -- (d17 batch33 A6, Sol 10:16: "built 2772" read as tiles already built while 660 were) would_build: the plan played
+    -- through the hub's rules; floor_now: the foundation tiles built on the surface now
+    local s = game.surfaces[job.surface]
+    local floor_now = s and try(function() return s.count_tiles_filtered{name='space-platform-foundation'} end) or nil
+    out.state = 'done'; out.done_tick = job.done; out.would_build = job.built; out.never_built = job.unbuilt_n; out.floor_now = floor_now
     out.unbuilt = #job.unbuilt > 0 and job.unbuilt or nil
     local parts = {}
     for why, k in pairs(job.by) do parts[#parts+1] = k .. ' ' .. why end
     table.sort(parts)
     out.by_reason = #parts > 0 and parts or nil
-    out.line = string.format('floor check #%d (%s): %d tiles checked by the hub\'s rules in %d s: %d built in turn, %d never built%s',
+    out.line = string.format('floor check #%d (%s): %d planned tiles played through the hub\'s rules in %d s: %d would be built in turn, %d never%s; the floor built now: %s tiles',
       job.id, tostring(job.label), job.n, math.floor((job.done - job.started) / 60), job.built or 0, job.unbuilt_n,
-      #parts > 0 and ' (' .. table.concat(parts, '; ') .. ')' or '')
+      #parts > 0 and ' (' .. table.concat(parts, '; ') .. ')' or '', floor_now and tostring(floor_now) or '?')
     return out
   end
   return M

@@ -136,7 +136,9 @@ return function(api)
   -- when no area covers it, else none; each claim's owner, their last activity there (requests in the area, board
   -- updates) and the last inspection of the area (a read there, by whom). Then each owner's blocked board items with
   -- the latest note. Facts only; read only.
-  local SYSTEMS, SAMPLE = 32, 64
+  -- SAMPLE: positions a system checks against each claim on its surface (batch33 B2: 64 sampled missed Astra's small
+  -- Nauvis claim inside a 612-machine network; every machine up to SAMPLE, on n about 4 ms for every surface)
+  local SYSTEMS, SAMPLE = 32, 2048
   function M.ownership(p, a)
     local board = api.state().board or {items={}}
     local force = p.force
@@ -227,7 +229,7 @@ return function(api)
           local parts = {}
           for _, c in ipairs(cover) do
             owners[c.i.owner or '?'] = true
-            parts[#parts+1] = claim_text(c.i) .. (g.kind ~= 'platform' and string.format(': %d of %d sampled', c.n, #g.positions) or (c.by_title and ': its title names it' or ''))
+            parts[#parts+1] = claim_text(c.i) .. (g.kind ~= 'platform' and string.format(': %d of %d%s %s in its area', c.n, #g.positions, #g.positions < g.n and ' read' or '', g.kind == 'power' and 'machines' or 'roboports') or (c.by_title and ': its title names it' or ''))
           end
           who = (#cover > 1 and 'overlap: ' or 'claim ') .. table.concat(parts, '; ')
         elseif #fallback > 0 then
@@ -256,7 +258,7 @@ return function(api)
     local bl = {}
     for j, b in ipairs(blockers) do if j <= 16 then bl[j] = b.line end end
     return {surfaces=out_surfaces, lines=lines, blocked=#bl > 0 and bl or nil,
-      note='machines from the census pass (assemblers and furnaces), grouped by electric network; coverage counts sampled positions inside each claim area; activity: the owner\'s requests in the area and board updates; inspection: the last read there by anyone. Read only'}
+      note='machines from the census pass (assemblers and furnaces), grouped by electric network; coverage counts the machines (or roboports) inside each claim area, up to 2048 a system; activity: the owner\'s requests in the area and board updates; inspection: the last read there by anyone. Read only'}
   end
   -- How a claim stands for reader p (or no reader): age, the owner's last
   -- activity on it and their state, and what that means for p.

@@ -104,8 +104,9 @@
 - `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
-  take seconds) and gives its number; `floor_check: N` reads it: running, or done with `built`, `unbuilt_count`,
-  `by_reason` and the first 12 `unbuilt` with why. `floor: true`: the foundation the entity
+  take seconds) and gives its number; `floor_check: N` reads it: running, or done with `would_build` (the planned tiles
+  the hub's rules build in turn once their items come), `never_built`, `by_reason`, the first 12 `unbuilt` with why,
+  and `floor_now` (the foundation built now). `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
   ghosts counted as floor that the hub's foundation rules never build. `ready: {positions, area, tiles}`: one subset's
