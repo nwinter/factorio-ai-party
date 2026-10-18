@@ -293,7 +293,8 @@ return function(api)
         local target=found or default_section()
         if #rest>0 then others[#others+1]=string.format('%s is requested in section%s %s too (the hub requests the sum; requests {section, clear} removes one)',
           name,#rest>1 and 's' or '',table.concat(rest,', ')) end
-        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI',name,target.index,target.group) end
+        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI%s',name,target.index,target.group,
+          target.group:find('^platform_bom: ') and '; platform_bom keeps this section to what the ghosts need: its keeper takes a min_payload changed here as its own, and sets min itself' or '') end
         return target
       end
       sec=(a.active~=nil or a.clear_all) and default_section() or nil

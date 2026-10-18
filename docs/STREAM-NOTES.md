@@ -617,6 +617,39 @@ a battle, a follow, an incoming group, a segment or an agent fighting on air, th
 replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
 `director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
 
+### Host view: Nick's own client on air (2026-10-17, eng/d17-hostview)
+
+Nick, 16:39, spectating world n from his client on pogwin (`tools/win/start-client.ps1 -PlayerName nick -Slot -nick
+-Human`): "it would be interesting for the stream viewers to also see my view, so I can show them things."
+
+- OBS: the game capture "stream host" of factorio-nick.exe, matched by executable (never his Steam game, factorio.exe),
+  slow hook rate, cursor shown. It sits in the on-air hole, cropped as the cameras, just above them and below the
+  overlay, off. `obs.py stream-scene` builds it in a fresh scene; `obs.py host-view-source` adds it to the live scene
+  and touches nothing else. A game capture with no window to hook draws nothing.
+- Control: `POST /hostview {on: true|false, seconds?, caption?, by?}` (`DELETE /hostview` too), as `/follow`. For example,
+  `curl -X POST http://127.0.0.1:8788/hostview -d '{"on": true, "caption": "the new smelting column"}'`. From his own chat
+  (the site's host link or his YouTube channel, viewers.py's `host` flag) only: `!view`, `!view CAPTION`, `!view off`.
+  Those lines are commands: not shown, not relayed. Anyone else's `!view` is chat.
+- While on (hostview.py, onecam.py `hosting`):
+  - cuts.py turns "stream host" on and in front of every camera (program `host`);
+  - the director holds: no cut, no inset (it would sit over his view), no trio; segments, cues and new replays wait,
+    and the cameras stay where they were;
+  - the on-air card reads "🎥 NickWinter (host) · CAPTION" (default "showing the stream around");
+  - the snapshot's `hostview` {label, caption, by, until, remaining_s}; `onair.host`, and `onair.agent` none (no agent
+    is on air behind his view).
+- It ends when turned off, when his client leaves the game, or after `seconds` (default 20 min, at most 60). The poll's
+  extras read lists the connected players (`connected_players`; his name `nick`, run config `host_player`). A start is
+  refused (409) while he is not in the game.
+- A notice line in the stream's chat feed when it starts ("Nick is showing his view on stream: CAPTION") and ends
+  ("... back to the cameras (its time ran out)").
+- Kept in `runs/RUN/director-host.json` ({until, caption, by}), so a restart keeps it; a hand edit works too.
+- One camera (POG_CAMS=1) and three alike: the host capture is not one of the director's cameras.
+- The vertical scene shows the cameras as before: it has no host capture.
+- Not now: his game audio (OBS takes game audio from factorio-cam1.exe only).
+- Deploy: `obs.py host-view-source` once, then restart the service.
+- Tests: tools/stream/test_hostview.py (commands, control, director with three clients and one, feed, HTTP),
+  tools/stream/test_cuts.py (5. host view), tools/test_obs_hostview.py (the source, the one-off).
+
 ### Artillery impacts (2026-10-17, eng/d17-artycam)
 
 Viewer Foobator, 12:48: "if there is only one arty shell in flight and nothing else interesting has happened, can you
@@ -1313,6 +1346,44 @@ agricultural count rose 3942 over shift12 while red rose 2149.
   and `science_packs_made_per_minute_all_colours`), the production card, the analyst (`game.spm`, `history.py`), the
   site's long run (SPM per shift and in 10-minute windows from the score logs' `consumed`; logs without it show none)
   and `/live/`.
+
+## Maiden flights (2026-10-17, eng/d17-maiden)
+
+Viewer Foobator (d17 14:24): "please show new ships on their maiden flight on stream". A platform's first departure
+since it was built is a maiden flight. The director holds the camera on the ship through the departure and the first
+minute and a half of flight, and the hosts get a card and a headline.
+
+- Which departure is the first: chronicle_log.platform_history reads the platform_created, platform_left and
+  platform_renamed events in the chronicle files along the run chain (runs/RUN/chronicle.jsonl, then each
+  resumed-from shift's) when the stream service starts (serve.py, model.set_platform_history). It keeps each name's
+  newest creation (who built it, where) and its departures since. A ship built again under an old name starts over:
+  three ships have been called Kestrel. A renamed ship keeps its history under the new name. The live chronicle
+  events keep it current. A platform with no creation record never counts: it was built before the chronicle, or renamed before
+  the harness recorded renames.
+- Renames: chronicle.lua tracks platforms by index and used to update a renamed one's name silently. It now records
+  `platform_renamed {platform, from}`, a runtime change that needs a deploy. Two ships were renamed before that, on
+  Oct 17, and have not flown since they were built: Spindle (built as Peregrine by Sol at 89h21m) and Kestrel II
+  (built as Kestrel by Astra at 110h41m). Their first departures are not shown as maiden flights.
+- model.py: a platform_left event with no departure since the creation is a `maiden_flight` moment and a "space"
+  headline: platform, from, to, built by (the creation event's agent), game time; title "Maiden flight of Swiftlet to
+  Aquilo". A departure read more than 2 game minutes late (a restart catching up) only goes into the history.
+- The card: segments.py starts the moment as a space_moment segment, as for the other moments: the director starts it
+  within 150 s as soon as nothing else runs. The card shows the platform, the route, who built it and the game time,
+  over the ship framed for flight. The hosts' headline call names the ship, where it is going and who built it.
+- The camera: onecam.py takes the moment as a departure held `maiden_hold` (105 s) instead of `depart_hold` (60 s),
+  captioned "Swiftlet · maiden flight · Nauvis to Aquilo · built by Luna". If the plain departure is already on air, it
+  becomes the maiden flight. A moment older than `maiden_late` (90 s) when the director sees it is not shown. Each
+  moment is taken once, so once per ship.
+- Rank: as a departure. An operator look, platform hold or follow, a key battle or incoming group, an urgent shot (a
+  death, a big loss), a segment (its own card first) and a platform in danger come first. A departure cut short comes
+  back for what is left of it. Host view (Nick's own view on air, hostview.py) comes first too: the director takes no
+  maiden moment while it is on, and takes it after if it is still within `maiden_late`.
+- One camera (POG_CAMS=1): plain departures and platform visits stay off with one client, but a maiden flight moves the
+  one client to the ship, as a segment does.
+- Tests: tools/stream/test_maiden.py covers the history along a run chain, a reused name and a rename, the moment
+  and what is not one, three cameras and one camera, a departure already on air, a big loss and a segment first, the
+  card's facts and camera, the overlay rows, and the hosts' call. vendor/factorio-harness/tests/chronicle.lua covers the
+  rename event.
 
 ## Verified
 

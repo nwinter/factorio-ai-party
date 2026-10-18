@@ -650,7 +650,7 @@ p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true
   p.surface.find_entities_filtered=function() return now and {now} or {} end
   p.build_from_cursor=function(args)
     p.cursor_stack.count=p.cursor_stack.count-1
-    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine,fluidbox={}}
+    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine,fluidbox={},direction=0}
     m.set_recipe=function(r) m.recipe=r; return {} end
     m.get_recipe=function() return m.recipe and {name=m.recipe} or nil end
     made[#made+1]=m; now=m
@@ -662,6 +662,12 @@ p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true
     'recipe sulfur (category chemistry) is not one assembling-machine-1 makes (its categories: advanced-crafting, crafting)')
   fails(function() call('build',{item='wooden-chest',position={x=6,y=0},recipe='locked'}) end,'recipe locked is unavailable')
   eq(#made,1,'nothing built for a refused recipe'); eq(wood.count,3)
+  -- (d17 batch21 A1, Sol) placed facing north by the game: turned the way asked once the recipe is set, said so
+  do
+    local turned=call('build',{item='wooden-chest',position={x=10,y=0},recipe='iron-gear-wheel',direction='east'})
+    eq(made[2].direction,4); eq(turned.direction_note,'placed facing north (the game keeps a machine without its recipe\'s fluid ports facing north); turned east once the recipe was set')
+    table.remove(made,2); wood.count=3
+  end
   local saved_prototypes=prototypes
   prototypes={item={['wooden-chest']={place_result=machine}},entity={}}
   r=call('build',{item='wooden-chest',recipe='iron-gear-wheel',builds={{position={x=6,y=0}},{position={x=8,y=0}}}})
@@ -5475,6 +5481,14 @@ do
   assert(q and q.x>=30 and runtime.reach_dist(q,rt)<=9.75,'a free spot within reach')
   local q2=runtime.reach_ring(p,rt,{q})
   assert(q2 and ((q2.x-q.x)^2+(q2.y-q.y)^2)^0.5>=2,'another spot, not the tried one')
+  -- (d17 batch21 A5, Gemini) the nearest spots in a closed pocket among machines: the nearest with a way out
+  rt.region=runtime.pathing.region
+  runtime.pathing.region=function(_,x) return {closed=x.x<36} end
+  q=runtime.reach_ring(p,rt,{})
+  assert(q and q.x>=36 and runtime.reach_dist(q,rt)<=9.75,'a spot with a way out: '..tostring(q and q.x))
+  runtime.pathing.region=function() return {closed=true} end
+  assert(runtime.reach_ring(p,rt,{}),'all closed: the nearest still')
+  runtime.pathing.region=rt.region
   blocked=function() return true end
   eq(runtime.reach_ring(p,rt,{}),nil,'nowhere free: none')
   p.position,p.surface=saved,surf

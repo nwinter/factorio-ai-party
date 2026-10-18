@@ -6810,3 +6810,39 @@ fh watch    # deploy on every change
     says so; with none (a 36-tile weapon against a 38-tile worm) it is refused naming them. Then a plain move_to there,
     with its avoidance on the way. The reply's `stand_off` names the spot, its distance from the target and the
     nearest reach edge. tests/d17_batch20.lua, runtime_test.lua.
+
+## d17 batch21 (operator 17:00: the agents' 16:50 poll)
+- A1 (Sol): an electromagnetic plant built east with recipe quantum-processor at (28,-3) on Aquilo read north
+  afterwards, its hot and cold ports swapped; a rotate east fixed it. The game places a machine whose fluid ports come
+  with its recipe facing north while it has no recipe; build set the recipe after placing. Now, with the recipe set,
+  a machine that does not face the direction asked is turned to it (as a player's rotate does): `direction_note`
+  (`placed facing north (...); turned east once the recipe was set`, or that the game did not turn it). place_ghosts
+  entries with a recipe and a direction do the same (`directions_turned`). runtime_test.lua.
+- A2 (Astra): crusher's minimum payload set 10 -> 9 by min_payload on Kestrel's platform_bom section went back to 10
+  every 10 s: the keeper (platbom.lua apply) wrote each slot from the request's own min_payload map, which won over the
+  slot. The keeper now remembers what it last wrote per item; a slot whose minimum payload differs from that was
+  changed by min_payload or requests, and the keeper takes it as its own (into its map; the line says `adopted from
+  the slot ...: 9`). A later platform_bom request with its own min_payload map still wins. min_payload's lines and
+  requests' section note say a platform_bom section's keeper takes such a change. `tail: true` (kept until false): an
+  item's minimum payload is no more than what is still to come (its request less what the hub holds), so the last 2
+  crushers go without waiting for a batch of 9 (`tail: 2 of the 9 set`). tests/d17_batch21.lua.
+- A3 (Grok): a walking load_silo whose rocket launched by another hand ended `rocket_launched` with what it carried
+  kept (350 packs went up, 7 stayed with him, 9 were in the next rocket). The tour now records each take (chest, item,
+  count); at that end what it took and did not load (counted off the earliest takes, so the latest chests get theirs
+  back) is given back: at the stop it is at when that is a source, and the other sources become the tour's next stops,
+  latest first (the rest of its trips dropped). `last.returned`: `agricultural-science-pack 16 to passive-provider-chest
+  (20.5,28.5)`; `kept`: what did not go back, by the chest it came from; `in_next_rocket`: the list's items in the
+  silo's rocket now (loaded under the launch, or by its automatic requests). tests/d17_batch21.lua.
+- A4 (Grok): `bioflux >= 0` held both Gleba makers off whenever the network read -2. That is the game's count: a
+  logistic network's item count is what it holds less what deliveries have reserved, and it goes under 0. Where a
+  logistic condition is shown with its count (circuits.lua logistic_reads: inspect's circuit block and supply's gate
+  line through thrust.state_text; condition_parts: inspect compact; the off_by_condition alert, pushalerts.lua) a count
+  under 0 now reads `network count -2: reserved beyond stock: deliveries have reserved 2 more bioflux than the network
+  holds, and a logistic condition reads -2; a wire from a provider or storage chest reads what that chest holds:
+  circuit_gate {source: the chest} compares that` (circuits.negative_note). tests/circuits.lua, tests/pushalerts.lua.
+- A5 (Gemini): transfer and collect walks to a chest among machines on Fulgora stalled (closed_in_goal in the dry
+  runs). When no path reaches a target, the walk tries other spots within reach (M.reach_ring, d16 batch10 D8): those
+  were 16 points on one ring near reach's edge, 4 tries. Now rings at four distances within reach (16 points each),
+  nearest the character first; up to 8 of them are checked for a closed pocket (pathing.region, 16 tiles out, as the
+  dry runs' closed_in check reads it) and the first with a way out is walked to (else the nearest); up to 6 tries.
+  runtime_test.lua.

@@ -264,6 +264,21 @@ return function(api)
       end
     end
   end
+  -- Whose alert list the agents' game_alerts read: the game's alerts are the force's, so any connected player of it reads
+  -- the same list. A person first; else a camera client (d17 16:58: with no person connected nothing was read, so the
+  -- agents never got the game's no-storage or no-materials alerts; pog-cam1's list matched Nick's exactly; a camera's
+  -- clean view hides the alert panel, not the list).
+  function M.alert_reader(force, is_director)
+    is_director = is_director or M.director
+    local cam
+    for _, pl in pairs(force.players or {}) do
+      if pl.valid and pl.connected then
+        if not is_director(pl.index) then return pl end
+        cam = cam or pl
+      end
+    end
+    return cam
+  end
   -- Players who see the game chat: everyone connected but directors.
   function M.audience()
     local out = {}

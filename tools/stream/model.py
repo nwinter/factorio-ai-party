@@ -17,6 +17,7 @@ import json, math, os, re, time
 from collections import deque
 
 import attention
+import chronicle_log
 import pacing
 import waitcard
 import viewer_replies
@@ -56,6 +57,7 @@ def research_units(used):
     return best if best > 0 else max((v or 0 for v in used.values()), default=0)
 
 
+MAIDEN_STALE_S = 120  # game seconds: a platform_left read later than this (a restart catching up) is not shown
 PLANET_LABELS = {"nauvis": "Nauvis", "vulcanus": "Vulcanus", "fulgora": "Fulgora", "gleba": "Gleba", "aquilo": "Aquilo",
                  "solar-system-edge": "Solar system edge", "shattered-planet": "Shattered Planet"}
 # Items the production widget can show, by game stage (0 raw .. 5 rocket). The widget leads with science per minute
@@ -631,6 +633,7 @@ class Model:
         self.used_flows = {}  # pack -> 30 two-minute counts the labs used, oldest first (harness.USED_FLOW_LUA)
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
+        self.connected_players = None  # the game's connected player names, as last read (hostview.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
@@ -656,6 +659,9 @@ class Model:
         # entries and the events the harness saw, the newest kept for the state; a platform's loss as the harness read
         # it at its hub's death (where, what killed it, its cargo), by name, for the stream's own loss line
         self.chronicle_entries, self.chronicle_events, self.harness_lost = deque(maxlen=12), deque(maxlen=20), {}
+        # each platform's newest creation and its departures since (chronicle_log.platform_history, then the live
+        # events): its first departure is a maiden flight (viewer Foobator, d17 14:24)
+        self.platform_history = {}
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
@@ -720,6 +726,8 @@ class Model:
             self.flows = obs["flows"]
         if obs.get("darkness") is not None:
             self.darkness = obs["darkness"]
+        if obs.get("connected_players") is not None:
+            self.connected_players = list(obs["connected_players"])
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
@@ -1021,6 +1029,11 @@ class Model:
                 ag.last_activity_t = now
             ag.last_said = dict(said, t=now)
         ag.seen = True
+
+    def notice(self, text, now=None):
+        """A notice line of the stream's own in the chat feed (lane 'notice', as the harness's: hostview.py)."""
+        now = now or time.time()
+        self._ingest_chat({"seq": f"stream-notice-{int(now * 1000)}", "tick": None, "from": "stream", "text": text, "t": now, "notice": True}, now)
 
     def _ingest_chat(self, m, now):
         key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
@@ -1788,11 +1801,38 @@ class Model:
                                       "cargo", "cargo_items", "hit_by") if ev.get(k) is not None}
         row["t"] = now
         self.chronicle_events.append(row)
+        if ev.get("kind") in chronicle_log.PLATFORM_KINDS and ev.get("platform"):
+            before = chronicle_log.follow_platform(self.platform_history, ev)
+            if before is not None and not before["left"]:
+                self._maiden_flight(ev, before, now)
         if ev.get("kind") == "platform_lost" and ev.get("platform"):
             self.harness_lost[ev["platform"]] = (now, ev)
             for x in self.platforms_lost:  # the stream saw it go first: the harness's facts fill in
                 if x["name"] == ev["platform"] and now - x["t"] < 600:
                     x.update(lost_details(ev))
+
+    def set_platform_history(self, chronicle_path):
+        """Each platform's creation and departures from the chronicle files along the run chain (serve.py), so a
+        restart or a new shift knows which platforms have flown since they were built."""
+        self.platform_history = chronicle_log.platform_history(chronicle_path)
+
+    def _maiden_flight(self, ev, h, now):
+        """A platform's first departure since its creation (the history knows when it was built and by whom): a
+        maiden flight moment, which segments.py turns into a space_moment card and onecam.py into a held shot of the
+        ship. A departure read MAIDEN_STALE_S of game time late (a restart catching up) is history only."""
+        name, tick = ev["platform"], ev["tick"]
+        if self.tick and self.tick - tick > MAIDEN_STALE_S * 60:
+            return
+        ag = self.agents.get(h.get("by") or "")
+        built_by = ag.display_name if ag else (h["by"].capitalize() if h.get("by") else None)
+        frm = planet_label(ev["at"]) if ev.get("at") else None
+        to = planet_label(ev["to"]) if ev.get("to") else None
+        key = f"maiden:{name}:{h['created']}"
+        facts = {"platform": name, "from": frm, "to": to, "built_by": built_by, "game_time": fmt_game_time(tick / 60)}
+        m = {"kind": "maiden_flight", "title": f"Maiden flight of {name}" + (f" to {to}" if to else ""), "facts": facts,
+             "id": f"m-{key}", "key": key, "t": now, "game_time": facts["game_time"]}
+        self.moments.append(m)
+        self.alert("space", m["title"], key=f"space:{key}", ttl=40, facts=dict(facts, headline="maiden_flight"))
 
     def _platform_destroyed(self, p, now):
         where = platform_place(p)
@@ -2045,6 +2085,7 @@ class Model:
             "unused_unlocks": self.unused_unlocks(now),
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
+            "connected_players": self.connected_players,
             "basemap": self.basemap,
             "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)

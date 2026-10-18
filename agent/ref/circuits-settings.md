@@ -4,7 +4,10 @@
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
   of the entity's conditions is not met; a circuit condition counts only with a red or green wire on the entity
   (without one the game ignores it, and the line says `condition ignored`). A logistic condition reads the network
-  whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
+  whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
+  the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
+  condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
+  (`circuit_gate {source: the chest}`). inspect, supply's gate line and the off_by_condition alert say the same.
   - Decider rows keep AND and OR as given: `"conditions":["signal-A > 0","and iron-plate < 150"]` (a row after the
     first must say and or or), `{signal, comparator, value, compare, first_networks: "red"}`, or the game's own rows
     (`first_signal`, `constant`, `compare_type`); outputs `{signal, copy_input: true}` (the input count) or `{signal,

@@ -916,6 +916,19 @@
         label.classList.add("on");
         continue;
       }
+      if (slot === "main" && s.hostview) { // Nick's own client over the cameras (hostview.py): "🎥 NickWinter (host) · showing the stream around"
+        const hsig = "host|" + s.hostview.label;
+        if (label.dataset.sig !== hsig) {
+          label.dataset.sig = hsig;
+          label.textContent = "";
+          label.append(el("span", "ico", "🎥"), el("span", "", s.hostview.label));
+        }
+        label.classList.remove("attack", "death");
+        frame.style.borderColor = "";
+        frame.style.removeProperty("--bracket");
+        label.classList.add("on");
+        continue;
+      }
       if (slot === "main" && s.show) { // an image over the main camera (show.py): "🖼️ Aethera design (Sol, for LimeLight)"
         const ssig = "show|" + s.show.label;
         if (label.dataset.sig !== ssig) {
@@ -1296,6 +1309,8 @@
       if (f.where) body.append(factRow("Where", f.where));
       if (f.planet) body.append(factRow("Planet", f.planet));
       if (f.agent) body.append(factRow("Who", f.agent));
+      if (f.moment === "maiden_flight" && (f.from || f.to)) body.append(factRow("Route", [f.from, f.to].filter(Boolean).join(" to ")));
+      if (f.built_by) body.append(factRow("Built by", f.built_by));
       if (f.planets_reached) body.append(factRow("Planets reached", f.planets_reached));
       body.append(factRow("Game time", f.game_time));
     } else if (seg.type === "hauling") { // items moved by hand this shift, most first (segments.py build_hauling)

@@ -190,6 +190,10 @@ ONECAM = {
     "ammo_hold": 15.0,        # running out of ammo: on it this long
     "depart_hold": 60.0,      # a platform leaving for another planet: on it this long (Sol for awoo3391, 21:23)
     "depart_late": 30.0,      # a departure seen this long ago (a replay, an urgent shot in the way) is not shown
+    # A maiden flight (viewer Foobator, d17 14:24: "please show new ships on their maiden flight"): a platform's first
+    # departure since it was built (model.py's maiden_flight moment, from the chronicle), also with one camera
+    "maiden_hold": 105.0,     # on it this long: the departure and the first minute and a half of flight
+    "maiden_late": 90.0,      # a maiden moment older than this when the director sees it is not shown
     "work_hold": 25.0,        # an agent's platform action shows the platform this long ...
     "work_max": 90.0,         # ... more while its requests keep coming, up to this
     "work_fresh": 12.0,       # a platform action dispatched within this long is news
@@ -413,7 +417,8 @@ class OneCam(Director):
         self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
         self.plat_shown = {}   # name -> when it was last on air
         self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
-        self.departure = None  # {"name", "t", "label"}: a departure seen, not on air yet
+        self.departure = None  # {"name", "t", "label", "until"?, "maiden"?}: a departure seen, not on air yet
+        self.maiden_done = set()  # maiden_flight moment ids already taken (once per platform)
         self.work_shown = {}   # (agent, platform) -> when its work went on air
         self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
@@ -422,6 +427,7 @@ class OneCam(Director):
         self.platform_follow = None  # POST /platform: {name, until, label, by}; kept by PlatformControl
         self.plat = None       # the operator's platform available to pin this step (takes priority over fol)
         self.look_hold = None  # POST /look: {surface, position, zoom, until, label, by}; kept by LookControl (lookcam.py)
+        self.host_hold = None  # POST /hostview or the host's !view: {until, caption, label, by}; HostControl (hostview.py)
         self.look = None       # that look while it lasts (takes priority over plat and fol)
         self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
         self.battles = []      # (t, key, why, label): key battles seen
@@ -465,6 +471,8 @@ class OneCam(Director):
         out = {"onair": self.onair, "inset": self.inset and self.inset["slot"], "layout": self.mode}
         if self.trio:
             out["tiles"] = dict(self.trio["tiles"], main=self.onair)
+        if self.hosting(getattr(self, "step_t", None) or time.time()):
+            out["host"] = True  # cuts.py: the host's capture over the cameras
         return out
 
     def onair_frac(self):
@@ -520,7 +528,8 @@ class OneCam(Director):
         cp = (cur or {}).get("platform") or {}
         if cp.get("why") == "departure" and now < cur.get("until", 0) and not reason.startswith("platform"):
             # a departure cut short by an urgent shot: back to it after, for what is left of it (maybe_departure)
-            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"]}
+            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"],
+                              "maiden": cp.get("maiden")}
         nxt = self.next_slot()
         if not nxt:
             self.apply(self.slot(self.onair), dict(target, jump=True, since=now, framed=now), reason, scores, now)
@@ -908,6 +917,7 @@ class OneCam(Director):
 
     def step(self, snapshot, now=None, segment=None):
         now = now or time.time()
+        self.step_t = now
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
         self.track(agents, now)
@@ -922,6 +932,15 @@ class OneCam(Director):
         if not self.slots:
             return {}
         self.watch_platforms(snapshot, now)
+        # Host view (hostview.py; Nick 16:39: "it would be interesting for the stream viewers to also see my view"):
+        # his own client's capture is on air over the cameras; nothing cuts, no inset (it would sit over his view), no
+        # trio, segments and cues wait. The cameras stay where they are and the story goes on after it.
+        if self.hosting(now):
+            self.inset, self.pending, self.trio_pending = None, None, None
+            self.leave_trio("host view", now)
+            return self.public(now)
+        # (after host view: a maiden flight waits for it like a segment, and is shown after if still within maiden_late)
+        self.watch_maiden(snapshot, now)
         self.look = self.looking(now)
         self.plat = self.platform_following(now)
         self.fol = self.following(by_name, now)
@@ -1090,6 +1109,19 @@ class OneCam(Director):
             self.resume = None
 
     # -- operator look (lookcam.py) -------------------------------------------------------------------------
+    def set_host(self, host, now=None):
+        """Host view on until host["until"] (hostview.py), None: off."""
+        self.host_hold = dict(host, since=now or time.time()) if host else None
+
+    def hosting(self, now):
+        h = self.host_hold
+        return h if h and now < h["until"] else None
+
+    def host_info(self, now):
+        """snapshot["hostview"]: {label, caption, by, until, remaining_s, since}, or None."""
+        h = self.hosting(now)
+        return {k: h.get(k) for k in ("label", "caption", "by", "until", "since")} | {"remaining_s": int(h["until"] - now)} if h else None
+
     def set_look(self, look, now=None):
         """The operator points the camera on air at a charted spot until look["until"] (serve.py POST /look, or
         runs/RUN/director-look.json); None ends it. It takes the camera from a platform hold and a follow, which
@@ -1991,7 +2023,8 @@ class OneCam(Director):
         self.plat_rows = {p["name"]: p for p in rows}
         for p in rows:
             moving = self.travelling(p)
-            if moving and self.plat_moving.get(p["name"]) is False and p.get("view"):
+            if moving and self.plat_moving.get(p["name"]) is False and p.get("view") and \
+                    not (self.departure and self.departure.get("maiden") and self.departure["name"] == p["name"]):
                 self.departure = {"name": p["name"], "t": now, "label": self.platform_label(p["name"], "departure")}
                 print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} departure: "
                       f"{self.departure['label']}", flush=True)
@@ -2141,22 +2174,25 @@ class OneCam(Director):
         self.danger_seen[name] = (now, d.get("level", 0))
         if cp.get("why") == "departure" and now < cur.get("until", 0):
             # the departure comes back after (urgent's rule for an urgent shot), for what is left of it
-            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"]}
+            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"],
+                              "maiden": cp.get("maiden")}
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} platform danger: {d['reason']}", flush=True)
         self.show_platform(t, scores, now)
 
     def maybe_departure(self, scores, now, segment=None):
         d = self.departure
-        if not d or len(self.slots) < 2:
+        if not d or (len(self.slots) < 2 and not d.get("maiden")):  # one camera: only a maiden flight
             return
         if (now > d["until"] - self.cfg["platform_hold"] / 2) if d.get("until") else now - d["t"] > self.cfg["depart_late"]:
             self.departure = None  # a replay or an urgent shot was in the way the whole time: the moment has passed
             return
         cur = self.state.get(self.onair)
         if cur and cur.get("platform", {}).get("name") == d["name"] and now < cur.get("until", 0) and not self.pending:
-            cur["until"] = max(cur["until"], now + self.cfg["depart_hold"])  # on air already (a visit): stay
-            cur["platform"] = dict(cur["platform"], why="departure", label=d["label"])
-            self.departure = None
+            maiden = d.get("maiden") or cur["platform"].get("maiden")  # (a plain departure never relabels a maiden)
+            cur["until"] = max(cur["until"], d["until"] if d.get("maiden") else now + self.cfg["depart_hold"])
+            cur["platform"] = dict(cur["platform"], why="departure", maiden=maiden or None,
+                                   label=d["label"] if d.get("maiden") or not maiden else cur["platform"]["label"])
+            self.departure = None  # on air already (a visit, or the maiden flight's card on the same ship): stay
             return
         if self.plat_busy(now, segment) and not (cur and cur.get("subject") == "@map"):
             return  # (the base map gives way to a departure)
@@ -2164,7 +2200,37 @@ class OneCam(Director):
                                  label=d["label"])
         self.departure = None
         if t:
+            if d.get("maiden"):
+                t["platform"]["maiden"] = True
             self.show_platform(t, scores, now)
+
+    def watch_maiden(self, snapshot, now):
+        """A maiden flight (model.py moment maiden_flight: a platform's first departure since it was built): the
+        departure is held maiden_hold, captioned "Swiftlet · maiden flight · Nauvis to Aquilo · built by Luna", and shown
+        with one camera too. It ranks as a departure: below an operator look, platform hold or follow, a battle, an
+        urgent shot, a segment (its own space_moment card comes first) and a platform in danger; once per platform."""
+        for m in (snapshot.get("space") or {}).get("moments") or []:
+            if m.get("kind") != "maiden_flight" or m.get("id") in self.maiden_done:
+                continue
+            self.maiden_done.add(m.get("id"))
+            f = m.get("facts") or {}
+            name = f.get("platform")
+            if not name or now - m.get("t", now) > self.cfg["maiden_late"] or \
+                    not ((self.plat_rows.get(name) or {}).get("view") or {}).get("surface"):
+                continue
+            label = " · ".join(x for x in (name, "maiden flight", " to ".join(p for p in (f.get("from"), f.get("to")) if p),
+                                           f"built by {f['built_by']}" if f.get("built_by") else None) if x)
+            until = now + self.cfg["ready_s"] + self.cfg["maiden_hold"]
+            cur = self.state.get(self.onair)
+            cp = (cur or {}).get("platform") or {}
+            if cp.get("name") == name and now < cur.get("until", 0) and cp.get("why") in ("departure", "visit"):
+                cur["until"] = max(cur["until"], until)  # its departure is on air already: it becomes the maiden flight
+                cur["platform"] = dict(cp, why="departure", maiden=True, label=label)
+                if self.departure and self.departure["name"] == name:
+                    self.departure = None
+            else:
+                self.departure = {"name": name, "t": now, "label": label, "until": until, "maiden": True}
+            print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} maiden flight: {label}", flush=True)
 
     def maybe_platform(self, scores, now, segment=None):
         """A visit: about every platform_every while a platform can be shown, the one shown longest ago."""

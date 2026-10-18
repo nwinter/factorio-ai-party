@@ -620,9 +620,11 @@ do
   local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
     agents=function() return {{index=2,name='grok'}} end, who=function(p) return p.name end,
     place=function() return {key='nauvis',position={x=14,y=31}} end,
-    condition_text=function(c) return c.first_signal.name..' '..c.comparator..' '..c.constant end}
+    condition_text=function(c) return c.first_signal.name..' '..c.comparator..' '..c.constant end,
+    negative_note=function(item,n) return ' (network count '..n..': reserved beyond stock)' end}
   ents.nauvis={}; ents.vulcanus={}
-  local net={get_item_count=function(n) return n=='bioflux' and 150 or 900 end}
+  local bioflux=150
+  local net={get_item_count=function(n) return n=='bioflux' and bioflux or 900 end}
   local function chamber(x,cond)
     return ent('nauvis','biochamber','assembling-machine',x,31.5,{status=55,last_user=user('grok'),
       get_recipe=function() return {name='agricultural-science-pack'} end,
@@ -635,6 +637,16 @@ do
   eq(#g,1); eq(g[1].count,1)
   eq(g[1].line,'1 biochamber stopped by its own circuit or logistic condition near (14.5,31.5): biochamber (14.5,31.5) (agricultural-science-pack): off by its logistic condition bioflux > 200 (bioflux 150 now)')
   eq(g[1].to[1],'grok (built)')
+  -- (d17 batch21 A4, Grok) a network count under 0: said as the game's count, reserved beyond stock
+  ents.nauvis={}; bioflux=-2
+  chamber(14.5,{first_signal={type='item',name='bioflux'},comparator='>=',constant=0,fulfilled=false})
+  local R2=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {board={items={}}} end,
+    agents=function() return {{index=2,name='grok'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=14,y=31}} end,
+    condition_text=function(c) return c.first_signal.name..' '..c.comparator..' '..c.constant end,
+    negative_note=function(item,n) return ' (network count '..n..': reserved beyond stock)' end}
+  g=R2.read(sol,{kind='off_by_condition'}).groups
+  assert(g[1].line:find('off by its logistic condition bioflux >= 0 (network count -2: reserved beyond stock)',1,true),g[1].line)
   ents.nauvis={}
 end
 print('pushalerts: ok')
