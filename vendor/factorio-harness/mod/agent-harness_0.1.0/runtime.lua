@@ -15303,9 +15303,14 @@ M.DRY_READS={recover=true,construct=true,move_to=true,mine=true,feed=true,collec
 function M.read_call(action,args)
   return reads[action]==true or (M.DRY_READS[action] and type(args)=='table' and args.dry_run==true) or false
 end
+-- Talk: the board's, players', votes' and owed's calls (chat_ack among them) act on no character (batch26 A5, Sol: a
+-- chat_ack that closed 1 stopped the running load_silo and paused the body queue as a failed call).
+function M.talk(action)
+  return M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil or M.owed.handlers[action]~=nil
+end
 function M.keeps(action,args)
   return type(action)~='string' or not handlers[action] or M.read_call(action,args) or passive[action] or action:match('^queue_')~=nil
-    or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil or M.away(args)
+    or M.talk(action) or M.away(args)
 end
 -- A call on a platform by name or on another surface by name (args alone).
 function M.away(args) return type(args)=='table' and (args.platform~=nil or args.surface~=nil) end
@@ -15425,7 +15430,7 @@ dispatch_request=function(request)
     end
   end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
-  local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.remote(p,request.action,request.args)
+  local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.talk(request.action) or M.remote(p,request.action,request.args)
     or (request.action:match('^queue_') and ((request.args or {}).lane=='remote' or M.platform_lane(request.args)))
   -- A call refused by its own checks stops nothing: they run before the queue stops (M.preflight).
   if not reads[request.action] and not quiet and M.preflight and M.preflight[request.action] then
