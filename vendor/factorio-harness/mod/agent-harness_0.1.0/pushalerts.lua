@@ -354,6 +354,8 @@ return function(api)
     local ready = try(function() return e.rocket_silo_status == defines.rocket_silo_status.rocket_ready end)
     local parts = try(function() return e.rocket_parts end) or 0
     if m.parts ~= parts then m.parts, m.since = parts, game.tick end
+    -- (d17 batch23 B3) rocket parts made, sampled for silo's rate
+    if api.silo_sample then pcall(api.silo_sample, e) end
     if ready then m.ready = m.ready or game.tick else m.ready = nil end
     if ready and game.tick - m.ready >= SILO_IDLE then
       local inv = try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)

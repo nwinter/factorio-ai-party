@@ -76,6 +76,24 @@ return function(api)
     return {item=item,total=total,groups=list,places=places,makers=next(makers) and makers or nil}
   end
   -- One line an agent cannot skim past: how much, in what, and where.
+  -- (d17 batch23 B2, Sonnet: 4k copper cable read as ready twice; it sat in requester chests) a stock's places by what
+  -- can be taken: provider and storage chests (robots can take it), requester and buffer chests (held for a request),
+  -- plain chests, machine outputs, the rest.
+  function M.split(places)
+    local t={free=0,requested=0,chest=0,machine=0,other=0}
+    for _,x in ipairs(places) do
+      local ok,k=pcall(M.holder_kind,x.entity)
+      k=ok and k or 'other'
+      local slot=(k=='provider' or k=='storage') and 'free' or (k=='requester' or k=='buffer') and 'requested' or (k=='chest' or k=='machine') and k or 'other'
+      t[slot]=t[slot]+x.count
+    end
+    local bits={string.format('provider and storage chests %d (robots can take it)',t.free),string.format('requester and buffer chests %d (held for their requests)',t.requested)}
+    if t.chest>0 then bits[#bits+1]=string.format('plain chests %d',t.chest) end
+    if t.machine>0 then bits[#bits+1]=string.format('machine outputs %d',t.machine) end
+    if t.other>0 then bits[#bits+1]=string.format('elsewhere %d (landing pads, wagons, vehicles)',t.other) end
+    t.text=table.concat(bits,', ')
+    return t
+  end
   function M.line(s,centre)
     if s.total==0 then return nil end
     local parts={}
@@ -92,8 +110,9 @@ return function(api)
     for _,x in ipairs(s.places) do if x.spoil_tick and (not first or x.spoil_tick<first.spoil_tick) then first=x end end
     local spoil=first and string.format('; the first %s in %s at (%g,%g) in %s (%d%% spoiled)',api.spoil.hatch(s.item) and 'hatches into '..api.spoil.hatch(s.item).entity or 'spoils',
       first.name,first.position.x,first.position.y,api.spoil.secs(first.spoil_tick-game.tick),math.floor(first.spoil_percent*100+0.5)) or ''
-    return string.format('%d %s held by our factory (%s); nearest %d at (%g,%g) %d tiles away%s%s; collect item=%s radius=%d%s gathers it',
-      s.total,s.item,table.concat(parts,', '),near.count,near.position.x,near.position.y,math.floor(near.distance+0.5),largest,spoil,
+    local split=M.split(s.places)
+    return string.format('%d %s held by our factory (%s%s); nearest %d at (%g,%g) %d tiles away%s%s; collect item=%s radius=%d%s gathers it',
+      s.total,s.item,table.concat(parts,', '),(split.free>0 or split.requested>0) and '; '..split.text or '',near.count,near.position.x,near.position.y,math.floor(near.distance+0.5),largest,spoil,
       s.item,math.max(8,math.ceil(math.max(s.places[math.min(#s.places,4)].distance,big.distance))+2),chests and ' chests=true' or '')
   end
   -- Without an item: what our machines and chests hold, per item, largest
@@ -154,6 +173,7 @@ return function(api)
     local surface=opts and opts.surface or p.surface
     local whole=opts and opts.whole
     local s=M.scan(p,a.item,{position=centre,radius=radius,quality=a.quality,surface=surface,whole=whole})
+    local split=M.split(s.places)
     -- holders: only those kinds of place (the total and groups stay the whole stock).
     local want
     if a.holders~=nil then
@@ -225,7 +245,7 @@ return function(api)
       for _,x in ipairs(s.places) do soon2=soon2+(x.soon2 or 0) end
     end
     local h=api.spoil and api.spoil.hatch(a.item)
-    return {item=a.item,total=s.total,by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
+    return {item=a.item,total=s.total,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
       spoils_within_2_min=soon2,
       page=pages>1 and page or nil,pages=pages>1 and pages or nil,
       covered=whole and string.format('every machine output and chest of ours on %s',surface.name)

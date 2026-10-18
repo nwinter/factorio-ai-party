@@ -74,7 +74,10 @@
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
   ghosts counted as floor that the hub's foundation rules never build. `ready: {positions, area, tiles}`: one subset's
-  missing items, foundation support and settings. Floor and ready leave out the tiles a collector's rule keeps empty
+  missing items, foundation support and settings, and `pockets`: the empty space under each ghost's footprint as the
+  hub's rules see it (the 4-neighbour region of empty tiles bounded by foundation, up to 1024 tiles): its tiles, area,
+  those without a tile ghost (the hub fills a pocket only when every tile of it holds one) and `pocket_entries` for
+  place_ghosts to stamp them; past 1024 tiles, open space. Floor and ready leave out the tiles a collector's rule keeps empty
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
@@ -175,9 +178,12 @@
 - `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
   its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
-  `next_parts` counts parts for the rocket after it. `platform_requests` flags each request a platform above makes:
-  matched (the planet's network holds it), below_min_payload, split_networks (another network holds it), hub_full,
-  filling. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
+  `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min).
+  `platform_requests` flags each request a platform above makes: matched (the planet's network holds it),
+  below_min_payload, split_networks (another network holds it), hub_full, filling; each with what the silo's network
+  can give now (provider and storage chests, less robots' reservations; requester and buffer chests not counted) and
+  `next_launch` (an automatic launch for it goes under `min_payload N` or `full N` by weight); `next_auto_launch` names
+  the request the next automatic launch serves. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
   request and its network's stock), then that item's chain on the planet down to the root, with makers not working.
   `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically` on a silo)
   take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk. A silo's
@@ -299,7 +305,13 @@
   within 10/30/60 min) in `inspect`, `supply` and every `platforms` row (the hub; `drop` dry_run for the items to
   drop, `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a science
   pack: how many a unit the running research takes, and its units left). Eggs of ours hatching within 5 minutes on
-  your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`). Full `status` rechecks
+  your surface top `team.alerts`, one line a surface (`eggs hatching on gleba: N within 5 min in H holders; the first:
+  ...; by area: ...`), told again only when the set of holders due there changes, and wake `fh sleep` (`woke: eggs`). Full `status` rechecks
   nearby recorded egg sites: enemies visible now, the timer (future or elapsed), and gun range coverage with ammo; a
   timer alone is no live hatch. A site whose holder no longer holds the eggs before their time (moved or used) is
   neither told nor listed.
+- `eggs {surface?, limit?}`: every holder of eggs on a surface (default yours) from the egg sweep (every 30 s), the
+  first to hatch first: count, item, holder, position, who placed it, spoiled percent (mean and the first stack), the
+  first hatch (into what, when), how many within 5 min, and the turrets of ours ready in range (`limit` holders, default
+  64); a head line with the eggs due within 5 min by 64-tile area and the sweep's age. Example: `./fh call eggs --args
+  '{"surface":"gleba"}'`

@@ -236,13 +236,16 @@ return function(api)
     -- (d17 batch13 B1) each turret's way back to its ammunition: what can reach it and what is stranded
     local feed
     if api.ammofeed then
-      local ok, tr = pcall(api.ammofeed.trace, pl)
-      if ok then
+      local ok, tr, why = pcall(api.ammofeed.get or api.ammofeed.trace, pl)
+      if ok and not tr then feed = {pending=why}; lines[#lines+1] = why
+      elseif ok then
         local aboard = try(function() return p.character and p.character.valid and p.character.surface == s end) == true
         local per = {}
         for i, row in ipairs(tr.rows) do if i <= 64 then per[i] = {position=row.position, holds=row.own, reaches=row.reaches, stopped=#row.stops > 0 or nil} end end
         feed = {reaches=tr.reaches, stranded=tr.stranded, stranded_groups=tr.stranded_groups, stranded_recover=tr.stranded_recover, hub_reaches=tr.hub_reaches,
           via_hub=tr.via_hub, at_end=tr.at_end, at_end_rows=tr.at_end_rows, turrets=per, lines=api.ammofeed.lines(tr, a.feed == true, pl.name, aboard)}
+        feed.as_of = tr.as_of
+        if tr.as_of then table.insert(feed.lines, 1, 'ammunition trace ' .. tr.as_of) end
         for _, l in ipairs(feed.lines) do lines[#lines+1] = l end
       else feed = {error=tostring(tr)} end
     end

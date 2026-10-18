@@ -430,7 +430,7 @@ return function(api)
   -- the tile ghosts in tiles (one area or a list): what they need of each item against what the hub holds (missing),
   -- the support under each entity ghost's footprint (built foundation, a tile ghost, or empty space with none: never
   -- built), and settings (an assembler ghost with no recipe); positions that hold a built entity or nothing are said.
-  local READY_MAX = 2000
+  local READY_MAX, POCKET_MAX, POCKETS, PAGE_ENTRIES, LOOKS = 2000, 1024, 8, 512, 1536
   local function item_of(proto)
     local list = proto and try(function() return proto.items_to_place_this end)
     local f = list and list[1]
@@ -497,6 +497,57 @@ return function(api)
       end
     end
     local on_floor, waiting, empty, no_recipe = 0, {}, {}, {}
+    -- (d17 batch23 B4, Astra: tile_wait said no blocker while the game said a tile would split empty space; by hand,
+    -- water's pipe needed one 374-tile pocket, not 41 tiles nor all 1935 ghosts) the empty space under a ghost's
+    -- footprint as the hub's rules see it: the 4-neighbour region of empty tiles round it (bounded by foundation),
+    -- POCKET_MAX tiles at most (past that: open space). The hub builds no tile that splits empty space, so a pocket
+    -- fills only when every tile of it holds a tile ghost.
+    local pockets, pocket_of, empty_cache, looks, unread = {}, {}, {}, 0, 0
+    local function is_empty(x, y)
+      local key = k(x, y)
+      local v = empty_cache[key]
+      if v == nil then
+        local name = try(function() return s.get_tile(x, y).name end)
+        v = name == nil or name == 'empty-space' or name == 'out-of-map'
+        empty_cache[key] = v
+      end
+      return v
+    end
+    local function pocket(x, y, who)
+      local key0 = k(x, y)
+      if pocket_of[key0] then local pk = pocket_of[key0]; pk.for_ghosts[who] = true; return pk end
+      if #pockets >= POCKETS or looks >= LOOKS then unread = unread + 1; return nil end
+      local seen, queue, i, open = {[key0]=true}, {{x, y}}, 1, false
+      local x0, y0, x1, y1 = x, y, x, y
+      while queue[i] do
+        local c = queue[i]; i = i + 1
+        looks = looks + 1
+        if looks > LOOKS then open = 'budget'; break end
+        for _, d in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do
+          local nx, ny = c[1] + d[1], c[2] + d[2]
+          local nk = k(nx, ny)
+          if not seen[nk] and is_empty(nx, ny) then
+            seen[nk] = true
+            if #queue >= POCKET_MAX then open = true; break end
+            queue[#queue+1] = {nx, ny}
+            x0, y0, x1, y1 = math.min(x0, nx), math.min(y0, ny), math.max(x1, nx), math.max(y1, ny)
+          end
+        end
+        if open then break end
+      end
+      local pk = {tiles=#queue, open=open, x0=x0, y0=y0, x1=x1, y1=y1, for_ghosts={[who]=true}, bare={}}
+      if not open then
+        -- the tiles of it with no tile ghost (the ghosts in its box read once)
+        local ghosted = {}
+        for _, t in ipairs(try(function() return s.find_entities_filtered{area={{x0, y0}, {x1 + 1, y1 + 1}}, type='tile-ghost', force=force, limit=POCKET_MAX * 2} end) or {}) do
+          ghosted[k(math.floor(t.position.x), math.floor(t.position.y))] = true
+        end
+        for _, c in ipairs(queue) do if not ghosted[k(c[1], c[2])] then pk.bare[#pk.bare+1] = c end end
+      end
+      for _, c in ipairs(queue) do pocket_of[k(c[1], c[2])] = pk end
+      pockets[#pockets+1] = pk
+      return pk
+    end
     for _, g in ipairs(ghosts) do
       names[g.ghost_name] = (names[g.ghost_name] or 0) + 1
       local item, n = item_of(try(function() return g.ghost_prototype end))
@@ -507,6 +558,7 @@ return function(api)
         do
           local name = try(function() return s.get_tile(x, y).name end)
           if name ~= 'space-platform-foundation' then
+            if is_empty(x, y) then pocket(x, y, string.format('%s %s', g.ghost_name, at(g.position.x, g.position.y))) end
             local key = k(x, y)
             if not tg[key] then
               local t = s.find_entities_filtered{position={x + 0.5, y + 0.5}, radius=0.1, type='tile-ghost', force=force}[1]
@@ -542,7 +594,31 @@ return function(api)
     if #built_at > 0 then lines[#lines+1] = 'positions holding a built entity, no ghost: ' .. first(built_at) end
     if #none_at > 0 then lines[#lines+1] = 'positions with nothing of ours: ' .. first(none_at) end
     if #ghosts >= READY_MAX then lines[#lines+1] = string.format('the first %d ghosts read', READY_MAX) end
-    return {platform=pl.name, ready={ghosts=#ghosts, tile_ghosts=chosen_tiles, items=rows, on_foundation=on_floor, waiting_on_tiles=#waiting, over_empty=#empty,
+    -- (B4) each pocket of empty space under the subset's ghosts
+    local prow, entries = {}, {}
+    for i, pk in ipairs(pockets) do
+      local who = {}
+      for w in pairs(pk.for_ghosts) do who[#who+1] = w end
+      table.sort(who)
+      local area = {left_top={x=pk.x0, y=pk.y0}, right_bottom={x=pk.x1 + 1, y=pk.y1 + 1}}
+      local row = {tiles=pk.open and nil or pk.tiles, open=pk.open or nil, area=not pk.open and area or nil, without_ghost=not pk.open and #pk.bare or nil, under=who}
+      if pk.open == 'budget' then
+        row.line = string.format('pocket %d: the empty space under %s runs past the %d tiles this read looks at (%d read here); read it alone with ready {positions}', i, first(who), LOOKS, pk.tiles)
+      elseif pk.open then
+        row.line = string.format('pocket %d: the empty space under %s runs past %d tiles (open space beside the hull, or a pocket larger than that): the hub builds open space from the foundation\'s edge, a tile at a time, each with foundation among its 8 neighbours and no split',
+          i, first(who), POCKET_MAX)
+      else
+        for _, c in ipairs(pk.bare) do if #entries < PAGE_ENTRIES then entries[#entries+1] = {name='space-platform-foundation', position={x=c[1] + 0.5, y=c[2] + 0.5}} end end
+        row.line = string.format('pocket %d: %d empty tiles enclosed by foundation in (%d,%d)-(%d,%d) under %s; %s', i, pk.tiles, pk.x0, pk.y0, pk.x1 + 1, pk.y1 + 1, first(who),
+          #pk.bare == 0 and 'every tile of it holds a tile ghost: the hub fills it whole'
+          or string.format('%d of them hold no tile ghost, and the hub builds none of the pocket\'s tiles that would split it: place_ghosts {platform, entities: pocket_entries} stamps them', #pk.bare))
+      end
+      prow[i] = row
+      lines[#lines+1] = row.line
+    end
+    if unread > 0 then lines[#lines+1] = string.format('%d more footprint tiles over empty space not read for pockets (at most %d pockets and %d tile looks a read)', unread, POCKETS, LOOKS) end
+    return {platform=pl.name, pockets=#prow > 0 and prow or nil, pocket_entries=#entries > 0 and entries or nil,
+      ready={ghosts=#ghosts, tile_ghosts=chosen_tiles, items=rows, on_foundation=on_floor, waiting_on_tiles=#waiting, over_empty=#empty,
       over_empty_list=#empty > 0 and empty or nil, no_recipe=#no_recipe > 0 and no_recipe or nil, built_at=#built_at > 0 and built_at or nil, nothing_at=#none_at > 0 and none_at or nil},
       lines=lines}
   end
@@ -618,7 +694,7 @@ return function(api)
     return {platform=pl.name, foundation_tiles=ntiles, hub_group=main and main.size or nil, islands=islands, belts=nbelts, loops=loops,
       head_on=#head > 0 and head or nil, side_loads=#side > 0 and side or nil, lines=lines}
   end
-  M.schema = {platform_plan = {platform='platform name',ready='optional {positions (1..512 {x,y}), area (an area or a list), tiles (an area or a list of areas)}: that subset only (D2): the entity ghosts at the positions and in the area, the tile ghosts in tiles; what they need of each item against the hub (lines: missing from the hub), the support under each entity ghost (on built foundation, waiting on tile ghosts, over empty space with no tile ghost: never built), settings (assembler ghosts with no recipe), and positions holding a built entity or nothing: ready {ghosts, tile_ghosts, items [{item, need, hub, missing}], on_foundation, waiting_on_tiles, over_empty, over_empty_list, no_recipe, built_at, nothing_at}, lines',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor; a tunnel runs to the next underground of its name facing the same way, one crossing it passed over), rows, tile_ghosts_held (tile ghosts counted as floor that the hub\'s foundation rules never build, each with why), place_ghosts_entries (one page of 256 tiles as place_ghosts entries, in reading order: page, pages, next), line; tiles built or with a tile ghost count as there',page='with floor: 1..pages (default 1): which 256 entries place_ghosts_entries holds; the order is the same every read',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground belt or pipe span under it or at its ends, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
+  M.schema = {platform_plan = {platform='platform name',ready='optional {positions (1..512 {x,y}), area (an area or a list), tiles (an area or a list of areas)}: that subset only (D2): the entity ghosts at the positions and in the area, the tile ghosts in tiles; what they need of each item against the hub (lines: missing from the hub), the support under each entity ghost (on built foundation, waiting on tile ghosts, over empty space with no tile ghost: never built), settings (assembler ghosts with no recipe), and positions holding a built entity or nothing; pockets [{tiles, area, without_ghost, under, open, line}] (the empty space under each ghost\'s footprint: the 4-neighbour region bounded by foundation, up to 1024 tiles; it fills only when every tile holds a tile ghost) and pocket_entries (place_ghosts entries for its tiles without one): ready {ghosts, tile_ghosts, items [{item, need, hub, missing}], on_foundation, waiting_on_tiles, over_empty, over_empty_list, no_recipe, built_at, nothing_at}, lines',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor; a tunnel runs to the next underground of its name facing the same way, one crossing it passed over), rows, tile_ghosts_held (tile ghosts counted as floor that the hub\'s foundation rules never build, each with why), place_ghosts_entries (one page of 256 tiles as place_ghosts entries, in reading order: page, pages, next), line; tiles built or with a tile ghost count as there',page='with floor: 1..pages (default 1): which 256 entries place_ghosts_entries holds; the order is the same every read',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground belt or pipe span under it or at its ends, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
     returns='a platform as planned, built and ghosts together (read only): foundation_tiles (built and tile ghosts), hub_group (the 4-joined tiles with the hub), islands [{size, ghost_tiles, tile, line}] (groups no foundation joins with the hub), belts (transport belts, undergrounds and splitters, built and ghosts), loops [{belts, ghosts, exits, first, line}] (belts whose items come round again; exits 0: no belt leaves it), head_on (a belt moving its items into one facing it), side_loads (a belt feeding the side of another), lines'}}
   return M
 end
