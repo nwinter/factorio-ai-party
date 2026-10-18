@@ -141,3 +141,54 @@ do
   game=nil
 end
 print('d17_batch30 B1 reminder checklists: ok')
+
+-- B2 (Sonnet 05:39: 12 advanced-circuit assemblers starved the low-density-structure row of plastic; its requesters
+-- asked for none): supply {item, requesters}: who gets it, and requesters feeding its users without asking for it.
+do
+  defines={flow_precision_index={ten_minutes=2},logistic_member_index={logistic_container=1}}
+  prototypes={item={['plastic-bar']={},['copper-plate']={},['steel-plate']={}},recipe={
+    ['advanced-circuit']={name='advanced-circuit',energy=6,ingredients={{type='item',name='plastic-bar',amount=2},{type='item',name='copper-cable',amount=4}}},
+    ['low-density-structure']={name='low-density-structure',energy=15,ingredients={{type='item',name='plastic-bar',amount=5},{type='item',name='copper-plate',amount=20},{type='item',name='steel-plate',amount=2}}}}}
+  local n=0
+  local function asm(x,y,recipe,working)
+    n=n+1
+    return {valid=true,unit_number=n,name='assembling-machine-2',type='assembling-machine',position={x=x,y=y},crafting_speed=0.75,working=working,
+      get_recipe=function() return prototypes.recipe[recipe] end}
+  end
+  local ac={asm(0,0,'advanced-circuit',true),asm(3,0,'advanced-circuit',true),asm(6,0,'advanced-circuit',true)}
+  local lds={asm(0,20,'low-density-structure',false),asm(3,20,'low-density-structure',false)}
+  local net={network_id=5,available_logistic_robots=12,all_logistic_robots=300,get_item_count=function(_,m) return 0 end}
+  local function chest(u,x,y,filters,held,coming)
+    return {valid=true,unit_number=u,type='logistic-container',name='requester-chest',position={x=x,y=y},prototype={logistic_mode='requester'},logistic_network=net,
+      get_item_count=function(i) return i=='plastic-bar' and held or 0 end,
+      get_logistic_point=function() return {filters=filters,targeted_items_deliver=coming and {{name='plastic-bar',count=coming}} or {}} end}
+  end
+  local A=chest(101,1.5,2.5,{{name='plastic-bar',count=200}},150,40)
+  local B=chest(102,1.5,22.5,{{name='copper-plate',count=100},{name='steel-plate',count=20}},0)
+  local C=chest(103,60.5,60.5,{{name='plastic-bar',count=100}},0)
+  local D=chest(104,80.5,60.5,{{name='plastic-bar',count=50}},60)
+  local inserters={}
+  for _,m in ipairs(ac) do inserters[#inserters+1]={valid=true,type='inserter',position={x=m.position.x,y=1.5},drop_target=m,pickup_target=A} end
+  for _,m in ipairs(lds) do inserters[#inserters+1]={valid=true,type='inserter',position={x=m.position.x,y=21.5},drop_target=m,pickup_target=B} end
+  local function inside(e,ar) return e.position.x>=ar[1][1] and e.position.x<=ar[2][1] and e.position.y>=ar[1][2] and e.position.y<=ar[2][2] end
+  local surface={name='nauvis',find_entities_filtered=function(f)
+    local out={}
+    if type(f.type)=='table' then for _,e in ipairs(ac) do out[#out+1]=e end; for _,e in ipairs(lds) do out[#out+1]=e end; return out end
+    if f.type=='inserter' then for _,e in ipairs(inserters) do if inside(e,f.area) then out[#out+1]=e end end return out end
+    if f.type=='logistic-container' then return {D,C,B,A} end
+    return out
+  end}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.working and 'working' or 'item_ingredient_shortage' end,position=function(v) return v end,integer=function(v,d) return v or d end}
+  local r=S.supply({surface=surface,force={}},{item='plastic-bar',requesters=true})
+  eq(r.lines[1],'plastic-bar on nauvis: 3 requester or buffer chests ask for it; network #5: 0 free in providers and storage, 12 of 300 logistic robots idle, 3 chests asking')
+  eq(r.lines[2],'requester-chest (1.5,2.5) #5: asks 200, holds 150; served now: robots bringing 40; feeds 3 assembling-machine-2 (advanced-circuit), 3 working, taking 45/min at full speed')
+  eq(r.lines[3],'requester-chest (60.5,60.5) #5: asks 100, holds 0; unmet: none free in network #5; feeds none of the machines that use it')
+  eq(r.lines[4],'requester-chest (80.5,60.5) #5: asks 50, holds 60; met; feeds none of the machines that use it')
+  eq(r.lines[5],'requester-chest (1.5,22.5) feeds 2 assembling-machine-2 (low-density-structure), 0 working, taking 30/min at full speed, and asks for no plastic-bar (asks copper-plate 100, steel-plate 20)')
+  eq(#r.lines,5)
+  eq(r.requesters[1].coming,40); eq(r.requesters[1].use_per_min,45); eq(r.requesters[2].state,'unmet: none free in network #5')
+  eq(r.unasked[1].asks,'copper-plate 100, steel-plate 20')
+  fails(function() S.supply({surface=surface,force={}},{item='plastic-bar',requesters=1}) end,'requesters is true')
+  defines,prototypes=nil,nil
+end
+print('d17_batch30 B2 who gets an item: ok')
