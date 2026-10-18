@@ -7153,6 +7153,26 @@ fh watch    # deploy on every change
     (-284.5,-313.5), ...`.
   - The hourly team line carries these after the radar lines. Copy: lines for fulgora, gleba, nauvis and vulcanus.
     tests/d17_territory.lua.
+- Part 4, lightning (operator 17:35, 23:12). How a strike picks its target, measured on the copy (2.0.77,
+  execute_lightning on empty Fulgora ground; the runtime has no range_elongation or search_radius):
+  - A strike at a point goes to a lightning attractor whose reach holds the point, from the attractor's position,
+    connected or not: reach = Fulgora's search_radius 10 + range_elongation (rod 15, collector 25, ruin attractor 20) x
+    (1 + 0.3 x quality level). Rod 25.0 hit, 25.5 missed; collector 34.8/35.0; uncommon rod 29.4/29.6; legendary rod
+    47.4/47.6; legendary collector 72.4/72.6.
+  - With no attractor in reach it hits an entity whose center lies within 10 tiles of the point (10.0 hit, 10.5
+    missed) for 100 electric damage, else the ground. A stone wall took none (the planet's exemption_rules: walls,
+    rails, signals, wagons, land mines, trees). A rod 22 tiles away took a strike 0.5 tiles from an assembler.
+  - A lightning death reaches on_entity_died with no cause, the neutral force and electric damage. The runtime now names
+    its cause `lightning` in the losses log and incidents (it had none).
+  - The background read gets a stage per lightning planet (lightning.lua): the attractors of every force indexed by
+    reach, our entities found, then 400 a step. A building (not walls, rails, ghosts, robots or vehicles) is exposed
+    when one of 25 points within 10 tiles of its center (the center, 8 at 5, 16 at 10) lies outside every reach.
+  - Cost on the copy: index 3.4 ms (158 attractors), find 3.8 ms (4188 entities), slices of 400 up to 2.3 ms. Number
+    cell keys: string keys cost about 16 us each there (the first index took 32 ms).
+  - Lines in status `alerts.outside_coverage` and the hourly team line: `outside every lightning attractor's protection
+    on fulgora (...; 158 attractors): 12 of 2307 buildings of ours in 3 areas (64 tiles): 1 accumulator, 1
+    fast-inserter, 1 medium-electric-pole, ... near (-38,214); ...` and `lost to lightning on fulgora: 1 in the last
+    hour (1 small-electric-pole); the last small-electric-pole (466.5,205.5) 1m ago`.
 
 ## d17 batch23 (the agents' 19:50 poll)
 - A0 (Sol 20:06, urgent): platform_schedule set Swiftlet's records at Aquilo and replied with state no_schedule and no
@@ -7330,3 +7350,25 @@ fh watch    # deploy on every change
   so a pocket fills only once every tile of it holds a ghost; `pocket_entries` (up to 512) are place_ghosts entries
   for those tiles. A read looks at most 1536 tiles and 8 pockets (about 4.6 ms on n for a 1024-tile open read on
   Kestrel III). tests/d17_batch23.lua.
+
+## d17 batch25 Group A (the agents' 22:50 poll)
+- A1 (Haiku ~4 times: rearm's dry run said the route was clear, then the walk ended `(-76,161): blocked` after a
+  minute). The dry run checks pockets along straight lines (the game's path is asked for only as the character walks,
+  by request; no read can wait for one). A tour leg or via point that ends `blocked` after its stalls now says where
+  it stopped, how far from the stop, and what stands within 2.5 tiles that the character collides with (by the
+  character prototype's collision layers: trees, cliffs, buildings), with enemy units within 6 tiles (pathing.lua
+  `stall_why`). rearm's `turrets` rows (dry run and the real reply before the walk): each turret's ammunition held by
+  name and what it gets, or what it wants when you carry none. tests/pathing.lua.
+- A2 (Astra: the harness belt graph's totals did not match the game's whole-belt signal; e.g. (9.5,4.5): graph 148
+  tiles with 118 explosives, the wires nothing, read in the tick its read was switched on, while the wired reader at
+  (8.5,4.5) already counted 118): a belt's `belt_segment` (inspect, circuit_set with entire_belt_hold) adds the belts on
+  its red and green networks that read their contents, each with its mode, this belt marked (`belt_readers`), and the
+  other entities on those networks by name; and says the wires are the game's own signal, a read switched on this tick
+  showing from the next. tests/d15_batch4.lua.
+- A3 (Luna: rates with surface, circuit_audit with surface, logistics_audit with area, ports with positions, each
+  refused again): an unknown-argument refusal adds `accepted:` (each argument the action takes with the first words of
+  its description, 14 at most) and, where the call corrects plainly, `for this call: fh call ACTION --args '...'`
+  built from the attempt: a singular name where the plural is taken (its value as a list of one), the plural where
+  the singular is (a list of one: its entry), any other unknown argument dropped, each change named; offered only when
+  the corrected call passes the argument check (else the action's stock example, as before). A scoped observe is
+  corrected as observe. runtime_test.

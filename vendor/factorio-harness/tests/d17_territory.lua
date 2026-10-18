@@ -137,3 +137,66 @@ do
   eq(#team,2); eq(#PA.sight_team({force={name='player'}},h),0)
 end
 print('d17_territory part 4 coverage: ok')
+
+-- Part 4, lightning (operator 17:35, 23:12): our buildings outside every lightning attractor's protection on a
+-- lightning planet (reach = 10 + range_elongation x (1 + 0.3 x quality level), measured on the copy), and our buildings
+-- lightning killed (no cause, the neutral force, electric damage), in status and the hourly team line.
+do
+  local st={}
+  game={tick=1000}
+  local L=dofile('mod/agent-harness_0.1.0/lightning.lua'){state=function() return st end}
+  eq(L.reach('lightning-rod',0),25); eq(L.reach('lightning-collector',0),35); eq(L.reach('fulgoran-ruin-attractor',0),30)
+  eq(L.reach('lightning-rod',5),47.5); eq(L.reach('lightning-rod',1),29.5); eq(L.reach('lightning-collector',5),72.5)
+  local function ent(name,type,x,y,level) return {valid=true,name=name,type=type,position={x=x,y=y},quality={level=level or 0}} end
+  local attractors={ent('lightning-rod','lightning-attractor',0,0),ent('lightning-rod','lightning-attractor',200,0,5)}
+  local ours={ent('assembling-machine-2','assembling-machine',10,0),   -- within 15 of the rod: every strike near it goes to the rod
+    ent('medium-electric-pole','electric-pole',20,0),                  -- (30,0) is 30 from the rod: exposed at the edge
+    ent('pipe','pipe',100,0),                                          -- its own center outside every reach
+    ent('stone-wall','wall',100,5),                                    -- walls are never hit
+    ent('logistic-robot','logistic-robot',100,0),                      -- not a building
+    ent('accumulator','accumulator',235,0),                            -- 35 from the legendary rod (reach 47.5): safe
+    {valid=false,type='pipe'}}
+  local finds={}
+  local fulgora={name='fulgora',planet={name='fulgora'},find_entities_filtered=function(f)
+    finds[#finds+1]=f
+    if f.type=='lightning-attractor' then return attractors end
+    eq(f.force,'player'); return ours end}
+  game.get_surface=function(n) return n=='fulgora' and fulgora or nil end
+  eq(L.exposure_cursor({name='nauvis',planet={name='nauvis'}},{name='player'}),nil)
+  local cur=L.exposure_cursor(fulgora,{name='player'})
+  eq(L.exposure_step(cur,3),false); eq(cur.attractors,2)                -- the index, a step
+  eq(L.exposure_step(cur,3),false); eq(#finds,2)                        -- the find, a step
+  eq(L.exposure_step(cur,3),false); eq(L.exposure_step(cur,3),false)    -- 3 a step
+  eq(L.exposure_step(cur,3),true)
+  eq(cur.result.checked,4)
+  local c00,c10=cur.result.cells[0],cur.result.cells[1048576]   -- 64-tile cells (0,0) and (1,0)
+  eq(c00.n,1); eq(c00.center,0); eq(c00.names['medium-electric-pole'],1)
+  eq(c10.n,1); eq(c10.center,1); eq(c10.names.pipe,1)
+  eq(cur.result.cells[3*1048576],nil)
+  -- A strike's death: no cause, the neutral force, electric damage, on a lightning planet; anything else is not.
+  local pole=ent('small-electric-pole','electric-pole',466.5,205.5); pole.surface=fulgora; pole.force={name='player'}
+  local electric={name='electric'}
+  eq(L.struck({entity=pole,force={name='neutral'},damage_type=electric}),'lightning')
+  eq(L.struck({entity=pole,force={name='enemy'},damage_type=electric}),nil)
+  eq(L.struck({entity=pole,cause={valid=true},force={name='neutral'},damage_type=electric}),nil)
+  eq(L.struck({entity=pole,force={name='neutral'},damage_type={name='physical'}}),nil)
+  local nauvis_pole=ent('small-electric-pole','electric-pole',0,0); nauvis_pole.surface={name='nauvis',planet={name='nauvis'}}
+  eq(L.struck({entity=nauvis_pole,force={name='neutral'},damage_type=electric}),nil)
+  L.lost(pole)
+  game.tick=1000+3600*5
+  local lines=L.exposure_lines({fulgora=cur.result},{name='player'},5)
+  eq(#lines,2)
+  eq(lines[1],"outside every lightning attractor's protection on fulgora (a point within 10 tiles of each lies outside every attractor's reach, and a strike there hits what stands within 10 tiles; 2 attractors): 2 of 4 buildings of ours (1 with the center itself outside every reach) in 2 areas (64 tiles): 1 medium-electric-pole near (20,0); 1 pipe near (100,0)")
+  eq(lines[2],'lost to lightning on fulgora: 1 in the last hour (1 small-electric-pole); the last small-electric-pole (466.5,205.5) 5m ago')
+  -- Through pushalerts: the coverage lines (status alerts.outside_coverage and the hourly team line) carry them.
+  st.push_alerts={player={tick=100,groups={},sight={cells={},radars={},strike={fulgora=cur.result}}}}
+  defines={entity_status={working=1}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function(p) return p.name end,
+    strike_lines=function(strike,force,areas) return L.exposure_lines(strike,force,areas) end}
+  local cl=PA.coverage_lines({name='player'})
+  eq(#cl,2); eq(cl[1],lines[1])
+  -- With no read yet, a lightning loss is still said.
+  st.push_alerts=nil
+  eq(#PA.coverage_lines({name='player'}),1)
+end
+print('d17_territory part 4 lightning: ok')

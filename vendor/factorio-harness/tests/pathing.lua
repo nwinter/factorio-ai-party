@@ -407,7 +407,6 @@ nav={position={x=60,y=5},tolerance=0.5}
 P2.give_up(p,nav); P2.on_finished(p,nav,{id=100+#asked})
 eq(nav.why,'no path request found a way for the character to (60,5), nor to anywhere within 42 tiles of it (the path requests take oil-ocean-deep, oil-ocean-shallow as ground, as the character walks it: it was not what blocked the way)')
 eq(wet_area[1][1],-4,'the box is cut to 64 tiles round the goal'); eq(wet_area[2][1],68); eq(wet_area[1][2],-3)
-print('pathing: ok')
 
 -- A narrow-corridor corner must not get the normal extra radius (it can cross a reach).
 do
@@ -456,3 +455,24 @@ do
   list,info=P.pockets(fake(built),0.2,planned,{})
   eq(#list,4);eq(info.pockets,4);eq(info.more,nil)
 end
+-- batch25 A1 (Haiku: a rearm tour ended "(-76,161): blocked"): what a stalled walk stopped among, by the character's
+-- collision layers; units near; nothing named when nothing collides.
+do
+  local kept=prototypes
+  prototypes={entity={character={collision_mask={layers={player=true,object=true}}}}}
+  local me={valid=true,type='character'}
+  local ents={
+    {valid=true,type='tree',name='tree-02',position={x=-75.5,y=160},prototype={collision_mask={layers={object=true}}}},
+    {valid=true,type='tree',name='tree-02',position={x=-77,y=161},prototype={collision_mask={layers={object=true}}}},
+    {valid=true,type='cliff',name='cliff',position={x=-76,y=163},prototype={collision_mask={layers={player=true}}}},
+    {valid=true,type='transport-belt',name='transport-belt',position={x=-75.5,y=161.5},prototype={collision_mask={layers={transport_belt=true}}}},
+    {valid=true,type='item-entity',name='item-on-ground',position={x=-76,y=161},prototype={collision_mask={layers={item=true}}}}}
+  local units=2
+  local p={character=me,position={x=-76,y=161},surface={
+    find_entities_filtered=function() return ents end,count_entities_filtered=function() return units end}}
+  eq(P.stall_why(p,{stalls=7},{x=-77,y=171}),'stalled 7 times at (-76,161), 10.0 tiles from (-77,171); within 2.5 tiles: 2 tree-02 (first at (-75.5,160)), 1 cliff (first at (-76,163)); 2 enemy units within 6 tiles')
+  ents={ents[4]}; units=0
+  eq(P.stall_why(p,{stalls=7},{x=-77,y=171}),'stalled 7 times at (-76,161), 10.0 tiles from (-77,171); within 2.5 tiles: nothing the character collides with (units, a belt carrying it, or the tiles)')
+  prototypes=kept
+end
+print('pathing: ok')

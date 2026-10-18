@@ -97,7 +97,11 @@
   Before it walks (and in `dry_run`), `magazines` gives per ammo type what the stops need to reach `count` against
   what you carry and craft, how many stops that completes in the tour's order, and the turrets left short; a tour
   it cannot finish is refused unless `partial: true` (`partial` then says how many stops get their full count).
-  When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
+  `turrets` (the reply before the walk and the dry run): each stop's turret with the ammunition it holds by name and
+  what it gets, and each one left out with the ammunition it wants. The dry run checks the route in straight lines
+  for pockets; it does not ask the game's path. A tour's walk that stalls and ends `blocked` names in
+  `first_unreached` where it stopped and what stands within 2.5 tiles that the character collides with (and enemy
+  units within 6 tiles). When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
   then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold

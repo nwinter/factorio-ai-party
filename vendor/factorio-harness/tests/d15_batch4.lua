@@ -716,6 +716,24 @@ do
   b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=15}}} or nil end
   has(C.belt_segment(b2),'What read_contents_mode entire_belt_hold reads is the whole belt: 4 tiles followed through its inputs and outputs')
   has(C.belt_segment(b2),'holding 15 iron-ore; the wires read 15 iron-ore')
+  -- batch25 A2 (Astra): who puts the signal on the wires: the belts there reading their contents (this one marked), the
+  -- other entities on the networks.
+  defines.wire_connector_id.combinator_output_red=3; defines.wire_connector_id.combinator_output_green=4
+  local cc={valid=true,unit_number=90,name='constant-combinator',type='constant-combinator',position={x=4,y=2}}
+  local poleo={valid=true,unit_number=91,name='small-electric-pole',type='electric-pole',position={x=3,y=2}}
+  local function conn(o,id) return {owner=o,wire_connector_id=id,connections={}} end
+  b1.unit_number=11; b2.unit_number=12
+  local c1,c2,c3,c4=conn(b1,2),conn(b2,2),conn(cc,1),conn(poleo,2)
+  c2.connections={{target=c1},{target=c4}}; c1.connections={{target=c2}}; c4.connections={{target=c2},{target=c3}}; c3.connections={{target=c4}}
+  b2.get_wire_connector=function(w) return w==2 and c2 or nil end
+  local kept=C.read
+  C.read=function(o) return o.fake end
+  b1.fake={settings={read_contents=true,read_contents_mode='entire_belt_hold'}}
+  b2.fake={settings={read_contents=true,read_contents_mode='entire_belt_hold'}}
+  local text,readers=C.belt_segment(b2)
+  has(text,"the wires read 15 iron-ore (the game's own signal, anything else on those networks included; a read switched on this tick shows from the next); belts reading their contents on those networks: transport-belt (1.5,0) (this belt) entire_belt_hold, transport-belt (0.5,0) entire_belt_hold; other entities on them: 1 constant-combinator")
+  eq(#readers,2)
+  C.read=kept
 end
 print('d15_batch4 F4 belt segment: ok')
 

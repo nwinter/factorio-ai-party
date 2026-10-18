@@ -18,7 +18,10 @@
     {logistic_network_contents: true}`.
   - `settings: {filters, filter_mode}` sets inserter and loader filters as `configure` does. A belt's
     `read_contents_mode`: pulse, hold (this tile), entire_belt_hold (the whole belt); inspect's `belt_segment` names
-    the physical segment and the whole belt apart, beside what the wires read.
+    the physical segment and the whole belt apart (the whole belt as the harness follows it), beside what the wires
+    read now (the game's own signal; a read switched on this tick shows from the next), and the belts on those
+    networks that read their contents with each one's mode (this one marked; `belt_readers`) and the other entities
+    on them.
   - An unknown argument's refusal names the closest valid name and what that entity takes (on `configure` too).
   Example: `./fh call circuit_set --args '{"platform":"Starling","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
 - `wire {from, to, color?, from_side?, to_side?, disconnect?, platform? | surface?}`: connects and removes red, green
