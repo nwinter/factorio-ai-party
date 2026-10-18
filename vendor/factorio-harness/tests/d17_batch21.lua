@@ -111,3 +111,35 @@ do
   has(r.line,'the pipe network through (2.5,0.5): 6 entities in 3 segments; 1 empty')
 end
 print('d17_batch21 B1 pipe network: ok')
+
+-- B2 (Sonnet): placements {resource}: wells and drill spots on a resource, each blocked one with why.
+do
+  defines={build_check_type={manual=1}}
+  prototypes={entity={['crude-oil']={type='resource'},['iron-ore']={type='resource'}}}
+  local function res(name,x,y,amount,fluid) return {valid=true,name=name,position={x=x,y=y},amount=amount,
+    prototype={resource_category='basic-'..(fluid and 'fluid' or 'solid'),infinite_resource=fluid or nil,mineable_properties={products={{type=fluid and 'fluid' or 'item'}}}}} end
+  local wells={res('crude-oil',10.5,10.5,300000,true),res('crude-oil',20.5,10.5,150000,true),res('crude-oil',30.5,10.5,90000,true)}
+  local jack={valid=true,name='pumpjack',position={x=20.5,y=10.5}}
+  local surface={find_entities_filtered=function(f)
+      if f.type=='resource' then return f.name=='crude-oil' and wells or {} end
+      if f.type=='mining-drill' then return (f.position.x==20.5) and {jack} or {} end
+      return {} end,
+    can_place_entity=function(a) return not (a.position.x==30.5) and (a.direction==0 or a.direction==4) end}
+  local p={surface=surface,force={},position={x=20,y=10}}
+  local D=dofile('mod/agent-harness_0.1.0/drillspots.lua'){position=function(v) return v end,integer=function(v,d) return v or d end,read_sight=function() end,
+    seen=function() return true end,why=function(_,_,q) return 'placement blocked by tiles: oil-ocean-shallow (needs foundation (not researched))' end}
+  local r=D.read(p,{resource='crude-oil',radius=16},{name='pumpjack',type='mining-drill',resource_categories={['basic-fluid']=true}})
+  eq(r.free_count,1); eq(r.free[1].line,'crude-oil (10.5,10.5) yield 300000: fits facing north, east')
+  eq(r.blocked_count,2); has(r.blocked_by,'ours already 1 (one at (20.5,10.5))'); has(r.blocked_by,'tiles: oil-ocean-shallow 1 (one at (30.5,10.5))')
+  -- a drill on a 4x4 iron block: the spot with the most ore under it first, none overlapping
+  local ore={}
+  for x=0,3 do for y=0,3 do ore[#ore+1]=res('iron-ore',x+0.5,y+0.5,100) end end
+  surface.find_entities_filtered=function(f) if f.type=='resource' then return ore end return {} end
+  surface.can_place_entity=function() return true end
+  r=D.read({surface=surface,force={},position={x=2,y=2}},{resource='iron-ore',radius=6},{name='electric-mining-drill',type='mining-drill',
+    resource_categories={['basic-solid']=true},mining_drill_radius=2.49,tile_width=3,tile_height=3})
+  eq(r.free[1].tiles,16); eq(r.free[1].amount,1600)
+  for i=2,#r.free do assert(math.abs(r.free[i].position.x-r.free[1].position.x)>=3 or math.abs(r.free[i].position.y-r.free[1].position.y)>=3,'no overlap') end
+  defines,prototypes=nil,nil
+end
+print('d17_batch21 B2 drill and well spots: ok')

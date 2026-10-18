@@ -6806,3 +6806,12 @@ fh watch    # deploy on every change
     to 1024 entities. Per fluid segment (the engine's id): fluid and amount over capacity (get_fluid_segment_contents,
     get_capacity), entities and box, `empty`; flow where the game gives one (get_flow); the machines it touches (not
     followed into) with each box's fluid. tests/d17_batch21.lua.
+- B2 (Sonnet): pumpjack and drill spots were tried one placement at a time. `placements {name, resource, near?,
+  radius?, limit?}` (drillspots.lua) with a mining drill or pumpjack: the resource it mines (a name, or true) within
+  radius 1..32 (default 16) of near, in chunks our force sees now. A pumpjack: every well, `taken by our pumpjack ...`,
+  free with the directions it fits (`crude-oil (10.5,10.5) yield 300000: fits facing north, east`), or blocked. A
+  solid-ore drill: every tile centre (a corner for an even footprint) whose mining area holds the ore, the most ore
+  under it first, free ones taken so none overlaps another (`(1.5,1.5): 16 iron-ore tiles, 1600 under its mining
+  area`). A blocked spot carries the build refusal's text (placement_error: an entity, `tiles: oil-ocean-shallow (needs
+  foundation (not researched))`, a cliff ...) for up to 24 spots; `blocked_by` counts them by kind with one place each.
+  One find of the resource and one placement check a spot (four for a well). tests/d17_batch21.lua.

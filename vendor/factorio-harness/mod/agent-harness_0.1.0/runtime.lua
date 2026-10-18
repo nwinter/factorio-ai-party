@@ -11699,7 +11699,11 @@ function M.retreat_go(r)
   end
 end
 M.shore=require('shore'){placewhy=M.placewhy,one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
-  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end}
+  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
+  drillspots=function(p,a,proto) return M.drillspots.read(p,a,proto) end}
+M.drillspots=require('drillspots'){position=position,integer=integer,read_sight=M.read_sight,
+  seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
+  why=function(p,proto,pos,d) return placement_error(p,proto,pos,d,false) end}
 handlers.placements=M.shore.handlers.placements
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
 M.details=require('details'){}
