@@ -7350,3 +7350,12 @@ fh watch    # deploy on every change
   underground's type kept), with `all`; the target is `to`'s tier or each entity's `next_upgrade`. Replacement is
   build's (replace.lua: the old entity is mined, so its belt items go to the inventory; in the game's own
   fast-replace they stay on the belt). tests/beltupgrade.lua.
+
+## d17 batch26 Group A (the agents' 00:20 poll)
+- A1 (Muse, twice: a reactor's feed misconfigured): `circuit_set {enable: false}` set `circuit_enable_disable = false`,
+  which takes the condition away (the entity runs), while the schema said "false: off". Now `switch_off: true` sets a
+  condition that never holds (`signal-dot < -2147483648`; the entity stops while a red or green wire connects it,
+  as the game counts a circuit condition only then), `remove_condition: true` takes the condition away, and
+  `enable: false` is refused naming both. `now` says what the entity does: stopped, runs (no condition), or runs
+  because no wire connects it; a logistic condition holding it off is added. On a chest, remove_condition clears its
+  circuit condition and switch_off is refused. tests/circuits.lua.

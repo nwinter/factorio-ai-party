@@ -3,7 +3,10 @@
   reach or by remote view (our entities in visible chunks, all of a platform); `inspect` reads back the conditions,
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
   of the entity's conditions is not met; a circuit condition counts only with a red or green wire on the entity
-  (without one the game ignores it, and the line says `condition ignored`). A logistic condition reads the network
+  (without one the game ignores it, and the line says `condition ignored`). `switch_off: true` sets a condition that
+  never holds (`signal-dot < -2147483648`): the entity stops while a wire connects it; `remove_condition: true` takes
+  the condition away: it runs whatever its wires read; `enable: false` is refused naming both; `now` says what the
+  entity does after either. A logistic condition reads the network
   whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
   the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
   condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
