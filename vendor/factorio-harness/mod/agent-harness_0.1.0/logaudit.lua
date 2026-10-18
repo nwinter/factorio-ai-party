@@ -12,7 +12,7 @@
 -- Read only; bounded: LOOK requesters a call (from: the next ones), rows up to MAX_ROWS.
 return function(api)
   local M = {}
-  local LOOK, ROWS, MAX_ROWS, WAIT, NEAR_FULL = 256, 12, 48, 18000, 4
+  local LOOK, ROWS, MAX_ROWS, WAIT, NEAR_FULL, FAR_LOOK = 256, 12, 48, 18000, 4, 128
   local RANK = {full_unrequested=1, full=2, spoiled=3, waiting=4, not_sent=5, shortage=6}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
@@ -160,11 +160,12 @@ return function(api)
     local points = try(function() return ln.requester_points end) or {}
     local from = math.max(1, math.floor(tonumber(a.from) or 1))
     local last = math.min(#points, from + LOOK - 1)
-    local free, rows, counts, ok, looked, coming, rotten = {}, {}, {}, 0, 0, 0, {}
+    local free, rows, counts, ok, looked, coming, rotten, all = {}, {}, {}, 0, 0, 0, {}, {}
     for i = from, last do
       local r = look(ln, points[i], n, free, now)
       if r then
         looked = looked + 1
+        all[#all+1] = r
         if r.kind then counts[r.kind] = (counts[r.kind] or 0) + 1; rows[#rows+1] = r
         elseif #r.asks > 0 then coming = coming + 1
         else ok = ok + 1 end
@@ -221,11 +222,32 @@ return function(api)
       summary = summary .. string.format('; %d more hold spoilage they do not request, with room left: %s%s', #rotten,
         table.concat(rotten, ', ', 1, math.min(6, #rotten)), #rotten > 6 and ', ...' or '')
     end
-    return {network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
+    -- (d17 batch34 B3, Opus: 20 old requesters had pulled ore 500 tiles for 20 hours) requesters served from far: each
+    -- ask short or with a delivery on the way, whose pickup the network would pick now (select_pickup_point) lies more
+    -- than `far` tiles off (default 200); the first FAR_LOOK asks read
+    local far_tiles = math.max(1, math.floor(tonumber(a.far) or 200))
+    local far, asked = {}, 0
+    for _, r in ipairs(all) do
+      for _, x in ipairs(r.asks or {}) do
+        if ((x.short or 0) > 0 or (x.on_way or 0) > 0) and (x.free or 0) > 0 and asked < FAR_LOOK then
+          asked = asked + 1
+          local pos = r.e.position
+          local pick = try(function() return ln.select_pickup_point{name={name=x.item, quality=x.q}, position=pos} end)
+          local o = pick and try(function() return pick.owner end)
+          local d = o and o.valid and dist(o.position, pos)
+          if d and d > far_tiles and #far < 16 then
+            far[#far+1] = string.format('%s %s asks %s (%d on the way, %d short): robots would take it from %s %s, %d tiles away', r.e.name, at(pos), x.item,
+              x.on_way or 0, x.short or 0, o.name, at(o.position), d)
+          end
+        end
+      end
+    end
+    if #far > 0 then summary = summary .. string.format('; %d ask%s served from over %d tiles away (far)', #far, #far == 1 and '' or 's', far_tiles) end
+    return {far=#far > 0 and far or nil, network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
       shown=#out, lines=lines, summary=summary, next_from=more}
   end
   M.schema = {logistics_audit = {network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
-    surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',
-    returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary. Characters left out. Read only'}}
+    surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',far='optional tiles (default 200): far lists each ask short or with a delivery on the way whose pickup the network would pick now lies farther off (the first 128 asks read, 16 lines)',
+    returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary, far (requesters served from over far tiles away: the ask, on the way, short, the chest robots would take it from and how far). Characters left out. Read only'}}
   return M
 end

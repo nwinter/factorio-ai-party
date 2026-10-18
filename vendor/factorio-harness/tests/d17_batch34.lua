@@ -232,4 +232,178 @@ do
   assert(not pcall(h.queue_submit,p,{steps={{action='wait_until',args={['until']='item_count',on_timeout='retry'}}}}),'on_timeout retry refused')
 end
 
+-- B1 (Sonnet): the fluid segments a plan joins or cuts, and a join of two fluids. ------------------------------------
+do
+  local STEPS={north={0,-1},east={1,0},south={0,1},west={-1,0}}
+  local DIRN={[0]='north',[4]='east',[8]='south',[12]='west'}
+  local function c(x,y) return {x=math.floor(x)+0.5,y=math.floor(y)+0.5} end
+  local protos={pipe={name='pipe',type='pipe',fluidbox_prototypes={{}}},pumpjack={name='pumpjack',type='mining-drill',mining_drill_radius=1.5,fluidbox_prototypes={{}}},
+    pump={name='pump',type='pump',fluidbox_prototypes={{}}},['iron-chest']={name='iron-chest',type='container',fluidbox_prototypes={}}}
+  local function rows(e)
+    local p,d=e.prototype,e.position
+    local out={}
+    local function add(dir,flow)
+      local st=STEPS[dir]
+      out[#out+1]={at=c(d.x,d.y),joins=c(d.x+st[1],d.y+st[2]),direction=dir,flow=flow,box=1}
+    end
+    if p.type=='pipe' then for _,dir in ipairs({'north','east','south','west'}) do add(dir,'input-output') end
+    elseif p.type=='mining-drill' then add(DIRN[e.direction],'output')
+    elseif p.type=='pump' then add(DIRN[e.direction],'output'); add(DIRN[(e.direction+8)%16],'input') end
+    return out
+  end
+  local built={}
+  local function pipe(x,y,fluid,seg,amount)
+    local e={valid=true,name='pipe',type='pipe',position={x=x,y=y},prototype=protos.pipe,unit_number=#built+900}
+    e.fluidbox={[1]=fluid and {name=fluid,amount=10} or nil,get_fluid_segment_id=function() return seg end,get_fluid_segment_contents=function() return {[fluid]=amount} end}
+    built[#built+1]=e; return e
+  end
+  -- built pipes join each neighbour pipe and whatever planned tile they face (the mock: every side)
+  local function conns(o)
+    local out={}
+    for _,dir in ipairs({'north','east','south','west'}) do
+      local st=STEPS[dir]
+      local tx,ty=math.floor(o.position.x)+st[1],math.floor(o.position.y)+st[2]
+      local target
+      for _,b in ipairs(built) do if math.floor(b.position.x)==tx and math.floor(b.position.y)==ty then target=b end end
+      out[#out+1]={box=1,kind='normal',x=math.floor(o.position.x),y=math.floor(o.position.y),tx=tx,ty=ty,target=target}
+    end
+    return out
+  end
+  local acid={valid=true,type='resource',name='sulfuric-acid-geyser',prototype={mineable_properties={products={{type='fluid',name='sulfuric-acid'}}}}}
+  local surf={}
+  surf.find_entities_filtered=function(f)
+    if f.type=='resource' then return {acid} end
+    local out={}
+    for _,b in ipairs(built) do
+      if f.area and b.position.x>f.area[1][1] and b.position.x<f.area[2][1] and b.position.y>f.area[1][2] and b.position.y<f.area[2][2] then out[#out+1]=b end
+      if f.position and math.abs(b.position.x-f.position.x)<0.2 and math.abs(b.position.y-f.position.y)<0.2 then out[#out+1]=b end
+    end
+    return out
+  end
+  prototypes={entity=protos,item={pipe={place_result=protos.pipe},pumpjack={place_result=protos.pumpjack}}}
+  local FJ=dofile('mod/agent-harness_0.1.0/fluidjoin.lua'){fluid_rows=function(e) return rows(e) end,fluid_connections=conns,
+    direction=function(v) return ({north=0,east=4,south=8,west=12})[v] or 0 end,position=function(v) return {x=v.x or v[1],y=v.y or v[2]} end,
+    snap=function(proto,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end}
+  pipe(2.5,90.5,'water',696,14351)
+  -- a pumpjack whose output faces the water pipe: a mix (Sonnet's acid jack)
+  local lines,mix=FJ.plan(surf,'player',{{index=1,name='pumpjack',proto=protos.pumpjack,pos={x=2.5,y=89.5},dir=8}})
+  eq(lines[1],'#1 pumpjack (2.5,89.5) joins segment 696 (water 14351) at pipe (2.5,90.5)')
+  eq(mix[1],'#1 pumpjack (2.5,89.5) would join sulfuric-acid (#1 pumpjack\'s output: the resource under it) and water (segment 696 at pipe (2.5,90.5))')
+  -- two planned pipes between two water segments: one segment, no mix
+  pipe(6.5,90.5,'water',700,500)
+  lines,mix=FJ.plan(surf,'player',{{index=1,name='pipe',proto=protos.pipe,pos={x=3.5,y=90.5}},{index=2,name='pipe',proto=protos.pipe,pos={x=4.5,y=90.5}},
+    {index=3,name='pipe',proto=protos.pipe,pos={x=5.5,y=90.5}}})
+  eq(#lines,1); has(lines[1],'#1 pipe (3.5,90.5), #2 pipe (4.5,90.5), #3 pipe (5.5,90.5) join segment 696 (water 14351) at pipe (2.5,90.5); segment 700 (water 500) at pipe (6.5,90.5): 2 segments into one')
+  eq(mix,nil)
+  -- steam on the far side: a mix
+  built[2].fluidbox[1]={name='steam',amount=10}
+  built[2].fluidbox.get_fluid_segment_contents=function() return {steam=300} end
+  lines,mix=FJ.plan(surf,'player',{{index=1,name='pipe',proto=protos.pipe,pos={x=3.5,y=90.5}},{index=2,name='pipe',proto=protos.pipe,pos={x=4.5,y=90.5}},
+    {index=3,name='pipe',proto=protos.pipe,pos={x=5.5,y=90.5}}})
+  has(mix[1],'would join steam (segment 700 at pipe (6.5,90.5)) and water (segment 696 at pipe (2.5,90.5))')
+  -- a pump's two sides stay apart: water behind, steam ahead is no mix
+  lines,mix=FJ.plan(surf,'player',{{index=1,name='pipe',proto=protos.pipe,pos={x=3.5,y=90.5}},{index=2,name='pump',proto=protos.pump,pos={x=4.5,y=90.5},dir=4},
+    {index=3,name='pipe',proto=protos.pipe,pos={x=5.5,y=90.5}}})
+  eq(mix,nil); eq(#lines,2)
+  -- a pump on a built pipe's centre cuts its joins
+  pipe(10.5,90.5,'water',800,100); pipe(11.5,90.5,'water',800,100); pipe(10.5,91.5,'water',800,100)
+  local _,_,cuts=FJ.plan(surf,'player',{{index=1,name='pump',proto=protos.pump,pos={x=11.5,y=90.5},dir=4}})
+  eq(cuts[1],'#1 pump replaces pipe (11.5,90.5) of segment 800 (water 100): a pump keeps its input and output sides as two segments')
+  _,_,cuts=FJ.plan(surf,'player',{{index=1,name='pump',proto=protos.pump,pos={x=10.5,y=90.5},dir=4}})
+  eq(cuts[1],'#1 pump replaces pipe (10.5,90.5) of segment 800 (water 100): no longer joined to pipe (10.5,91.5); a pump keeps its input and output sides as two segments')
+  -- the entries of a call: only those with fluid boxes, snapped
+  local en=FJ.entries({entities={{name='iron-chest',position={x=1,y=1}},{name='pipe',position={x=3.2,y=90.7}}}},'place_ghosts')
+  eq(#en,1); eq(en[1].index,2); eq(en[1].pos.x,3.5)
+  en=FJ.entries({item='pumpjack',position={x=2.5,y=89.5},direction='south'},'build')
+  eq(#en,1); eq(en[1].dir,8)
+  prototypes=nil
+end
+
+-- B2 (Sol): the other takers of a starved machine's ingredient at its feeder's source: upstream on the lane it picks
+-- from, with what each recipe uses a minute. ---------------------------------------------------------------------
+do
+  defines={inventory={chest=1,assembling_machine_input=2,assembling_machine_output=3,robot_cargo=9},wire_connector_id={}}
+  prototypes={recipe={['ice-melting']={name='ice-melting',energy=1,ingredients={{type='item',name='ice',amount=1}}},
+    ['iron-gear-wheel']={name='iron-gear-wheel',energy=0.5,ingredients={{type='item',name='iron-plate',amount=2}}}}}
+  game={tick=1000}
+  local belts={}
+  local function line(b,k)
+    local l={owner=b,k=k}
+    l.get_contents=function() return b.lanes[k] end
+    l.line_equals=function(o) return o.k==k end
+    l.input_lines={}
+    return l
+  end
+  for x=0,5 do
+    local b={valid=true,type='transport-belt',name='transport-belt',position={x=x+0.5,y=0.5},unit_number=500+x,direction=4,lanes={{},{}}}
+    b.get_max_transport_line_index=function() return 2 end
+    b.lines={line(b,1),line(b,2)}
+    b.get_transport_line=function(k) return b.lines[k] end
+    belts[#belts+1]=b
+  end
+  for i,b in ipairs(belts) do b.belt_neighbours={inputs={belts[i-1]},outputs={belts[i+1]}} end
+  local function machine(x,recipe,status,speed) return {valid=true,type='assembling-machine',name='chemical-plant',position={x=x,y=3},unit_number=900+x,status=status,crafting_speed=speed,
+    get_recipe=function() return prototypes.recipe[recipe] end} end
+  local starved,thief,other=machine(5.5,'ice-melting','no_ingredients',1),machine(2.5,'ice-melting','working',1.25),machine(1.5,'iron-gear-wheel','working',1)
+  local chest={valid=true,type='container',name='iron-chest',position={x=0.5,y=-1.5},unit_number=960}
+  local function ins(x,pick,drop,dy,left) return {valid=true,type='inserter',name='fast-inserter',position={x=x,y=dy},pickup_target=pick,drop_target=drop,
+    held_stack={valid_for_read=false},pickup_from_left_lane=left} end
+  local feeder=ins(5.5,belts[6],starved,1.5)
+  local inserters={feeder,ins(2.5,belts[3],thief,1.5),ins(1.5,belts[2],other,1.5),ins(0.5,belts[1],chest,-0.5),ins(4.5,belts[5],thief,1.5,false)}
+  inserters[5].pickup_from_right_lane=false
+  local surface={find_entities_filtered=function() return inserters end}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){}
+  local T=dofile('mod/agent-harness_0.1.0/trace.lua'){supply=S,status_name=function(e) return e.status or 'working' end}
+  local c=T.competitors(surface,{},starved,{e=feeder,pick=belts[6],drop=starved},'ice')
+  eq(#c.rows,2,'the thief and the chest; the gear assembler takes no ice; the inserter at 4.5 picks no lane')
+  eq(c.lines[1],'3 tiles upstream on the left lane: fast-inserter (2.5,1.5) into chemical-plant (2.5,3) (ice-melting, working, its recipe uses 75 ice a minute at its speed)')
+  eq(c.lines[2],'5 tiles upstream on the left lane: fast-inserter (0.5,-0.5) into iron-chest (0.5,-1.5)')
+  has(c.line,'2 other takers of ice at the source of fast-inserter (5.5,1.5): ')
+  has(c.line,'(their recipes use 75 a minute in all)')
+  -- from a chest: the other inserters taking from it
+  local box={valid=true,type='container',name='steel-chest',position={x=10.5,y=0.5},unit_number=970}
+  local f2=ins(10.5,box,starved,1.5)
+  inserters={f2,ins(11.5,box,thief,1.5)}
+  c=T.competitors(surface,{},starved,{e=f2,pick=box,drop=starved},'ice')
+  eq(c.lines[1],'from the same chest: fast-inserter (11.5,1.5) into chemical-plant (2.5,3) (ice-melting, working, its recipe uses 75 ice a minute at its speed)')
+  inserters={f2}
+  eq(T.competitors(surface,{},starved,{e=f2,pick=box,drop=starved},'ice'),nil)
+  defines,prototypes,game=nil,nil,nil
+end
+
+-- B3 (Opus): the robot trips a dry run's jobs would take: from which roboports, how far, past which enemies. ---------
+do
+  prototypes={entity={['construction-robot']={max_payload_size=1},['logistic-robot']={max_payload_size=1}}}
+  local function ent(name,x,y,u) return {valid=true,name=name,position={x=x,y=y},unit_number=u} end
+  local port_near,port_far=ent('roboport',0,0,1),ent('roboport',400,0,2)
+  local store=ent('storage-chest',5,0,3)
+  local cells={{owner=port_near,stationed_construction_robot_count=50,stationed_logistic_robot_count=20},{owner=port_far,stationed_construction_robot_count=0,stationed_logistic_robot_count=0}}
+  local net={network_id=7,cells=cells,available_construction_robots=50,available_logistic_robots=20,
+    select_pickup_point=function(f) return {owner=store} end,select_drop_point=function() return {owner=store} end}
+  local force={worker_robots_storage_bonus=3,find_logistic_network_by_position=function() return net end}
+  local surf={find_logistic_networks_by_construction_area=function() return {net} end}
+  local worm={name='big-worm-turret',x=200,y=10}
+  local av={chunks_near=function() return {{6,0,'6,0'}} end,structures=function() return {list={worm},unread=0} end,
+    reach=function() return 38 end,seg_dist=function(a,b,e) return (a.y==0 and b.y==0 and math.min(a.x,b.x)<=e.x and math.max(a.x,b.x)>=e.x) and 10 or 999 end}
+  local DP=dofile('mod/agent-harness_0.1.0/robottrips.lua'){avoid=function() return av end}
+  -- two chests 450 tiles off holding 4800 ore: 1 trip each and 1200 for the ore (4 a robot)
+  local lines,c=DP.preview(surf,force,{{kind='deconstruct',pos={x=450,y=0},item='steel-chest',count=1,contents=2400},{kind='deconstruct',pos={x=451,y=0},item='steel-chest',count=1,contents=2400}})
+  eq(c.trips,1202)
+  eq(lines[1],'1202 robot trips: about 50 robots would go at once (the network\'s idle ones of that kind: 50), from roboport (0,0) (1202 trips); the longest trip 896 tiles, the mean 896')
+  has(lines[2],'1202 trips over 200 tiles; the longest, 896 tiles, for steel-chest near (450.5,0): (0,0) to (450.5,0), then (450.5,0) to (5,0)')
+  has(lines[3],'passes 10 tiles from big-worm-turret (200,10) (reach 38)')
+  -- a requester asking 20: 5 logistic loads from the storage chest
+  lines,c=DP.preview(surf,force,{{kind='deliver',pos={x=60,y=0},item='iron-ore',count=20}})
+  eq(c.trips,5); has(lines[1],'5 robot trips: about 5 robots would go at once (the network\'s idle ones of that kind: 20), from roboport (0,0) (5 trips); the longest trip 60 tiles')
+  eq(c.long,0)
+  -- nothing covers it
+  local bare={find_logistic_networks_by_construction_area=function() return {} end}
+  lines=DP.preview(bare,force,{{kind='construct',pos={x=9,y=9},item='pipe',count=1}})
+  eq(lines[1],'1 job no logistic network covers')
+  -- a deconstruction job: the entity's item and what it holds
+  local j=DP.deconstruct_job({position={x=1,y=2},prototype={mineable_properties={products={{type='item',name='steel-chest'}}}},get_item_count=function() return 48 end})
+  eq(j.item,'steel-chest'); eq(j.contents,48)
+  prototypes=nil
+end
+
 print('d17 batch34 ok')

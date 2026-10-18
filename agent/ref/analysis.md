@@ -65,7 +65,10 @@
   is there, and a container within 10 tiles holding it that nothing reads. A belt lane it picks from that is full of
   another item and holds none of the ingredient is followed upstream (256 tiles): the jam, the blocking item, the
   inserter putting it on (what it takes from, its circuit or logistic condition and whether it holds now; else the
-  belts feeding the line's start), and the first consumer of the ingredient past it (`blocked`). `forward: true` follows its output inserters
+  belts feeding the line's start), and the first consumer of the ingredient past it (`blocked`). `competitors`: the
+  other takers of it at the feeder's source (inserters on that lane, followed 64 tiles upstream, into another machine
+  whose recipe takes it or into a chest; at a chest or machine output the other inserters taking from there), each with
+  its machine, recipe, state and what the recipe uses of it a minute at its speed. `forward: true` follows its output inserters
   and belts lane by lane to where they end and what blocks them (on a belt tile, a drill or a chest: from there,
   forward), naming where other items join a lane (`joins transport-belt (12,5) carrying iron-plate on the left lane:
   your iron-ore mixes in`); with `audit: true` it adds `audit`: where the walked lanes lose capacity (a belt
@@ -269,7 +272,8 @@
   item with what it holds, what is on the way and for how long, the network's free count and the provider robots would
   take it from (position, distance, count). The summary counts each kind and names the chests holding spoilage with
   room left. `limit`: rows (default 12, up to 48); 256 requesters a call, `next_from` gives `from` for the rest.
-  Characters' requests are left out.
+  `far` (default 200): each ask short or with a delivery on the way whose pickup the network would pick now lies
+  farther off, with that chest and its distance. Characters' requests are left out.
 - `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
   target out of the area, waiting to charge, no charge, its target ghost standing over a live entity of ours not marked
