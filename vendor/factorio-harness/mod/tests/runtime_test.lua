@@ -2323,6 +2323,35 @@ do
   p.begin_crafting,p.cancel_crafting,p.get_main_inventory,p.crafting_queue=saved.begin,saved.cancel,saved.inv,saved.queue
   p.force.recipes['electronic-circuit'],p.force.recipes['laser-turret']=nil,nil
 end
+-- batch28 C1 (Grok: 40 yumako-processing crafts, and the mash spoiled before the bacteria batch used it): a spoilable
+-- ingredient's first held stack against when each craft finishes; only those that finish first are queued unless
+-- spoiling: true; how long a product lasts fresh once it lands.
+do
+  local saved={begin=p.begin_crafting,inv=p.get_main_inventory,queue=p.crafting_queue,protos=prototypes.item}
+  prototypes.item=prototypes.item or {}
+  prototypes.item['yumako']={get_spoil_ticks=function() return 3600*60 end}
+  prototypes.item['yumako-mash']={get_spoil_ticks=function() return 3600*3 end}
+  prototypes.item['yumako-seed']={get_spoil_ticks=function() return 0 end}
+  p.force.recipes['yumako-processing']={enabled=true,category='crafting',energy=1,
+    products={{type='item',name='yumako-mash',amount=2},{type='item',name='yumako-seed',amount=1}},ingredients={{type='item',name='yumako',amount=1}}}
+  local stacks={{valid_for_read=true,name='yumako',count=40,spoil_tick=game.tick+60*15}}
+  p.get_main_inventory=function() local t={get_item_count=function() return 40 end}; for i,st in ipairs(stacks) do t[i]=st end; return setmetatable(t,{__len=function() return #stacks end}) end
+  p.crafting_queue={{recipe='iron-gear-wheel',count=5}}  -- 5 x 0.5 s ahead
+  p.force.recipes['iron-gear-wheel'].energy=0.5
+  local asked
+  p.begin_crafting=function(r) asked=r.count; return r.count end
+  local made=call('craft',{recipe='yumako-processing',count=40})
+  eq(asked,12,'only the crafts that finish before the yumako spoils: (15 s - 2.5 s ahead) / 1 s')
+  eq(made.spoil,'the first yumako you hold spoils in 15s; with 3s of hand crafting ahead and 1s a craft, 12 of the 40 crafts finish before it; 12 queued (spoiling: true queues all 40)')
+  eq(made.products_spoil[1],'yumako-mash lasts 180s fresh once it lands (a fresh one; made from part-spoiled ingredients, less)')
+  made=call('craft',{recipe='yumako-processing',count=40,spoiling=true})
+  eq(asked,40,'spoiling: true queues all')
+  stacks[1].spoil_tick=game.tick+60
+  made=call('craft',{recipe='yumako-processing',count=40})
+  eq(made.started,0); assert(made.nothing_queued:find('0 of the 40 crafts finish before it; spoiling: true queues them anyway',1,true),made.nothing_queued)
+  p.begin_crafting,p.get_main_inventory,p.crafting_queue,prototypes.item=saved.begin,saved.inv,saved.queue,saved.protos
+  p.force.recipes['yumako-processing']=nil
+end
 -- A machine-only recipe says so (shake3: Grok's engine-unit read "not hand-craftable now").
 p.force.recipes['engine-unit']={enabled=true,category='advanced-crafting'}
 eq(call('craft',{recipes={{recipe='engine-unit',count=1}}}).errors['engine-unit'],

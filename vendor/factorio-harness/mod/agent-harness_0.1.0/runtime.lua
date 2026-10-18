@@ -1842,7 +1842,7 @@ function handlers.describe(_,a)
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
       stock={items='optional 1..32 item names instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
-      craft={force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
+      craft={spoiling='optional true: a recipe with a spoilable ingredient queues every craft asked; without it only the crafts that finish before the first held stack of it spoils (the hand queue ahead, then each craft at your crafting speed), and spoil says how many; products_spoil: how long each spoilable product lasts fresh once it lands',force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
@@ -5020,17 +5020,67 @@ local function craft_facts(p,out,started)
   end
   return out
 end
+-- A spoilable hand craft (batch28 C1, Grok: 40 yumako-processing crafts, and the mash spoiled before the bacteria
+-- batch used it, 3 times): when the first held stack of a spoilable ingredient spoils, against when each craft would
+-- finish (the hand queue ahead, then each craft's time at the character's crafting speed): how many finish before
+-- it; and how long each spoilable product lasts fresh once it lands (its prototype's spoil time). nil when neither.
+function M.craft_spoil(p,name,count)
+  local recipe=type(name)=='string' and p.force.recipes[name]
+  if not recipe then return nil end
+  local function spoil_ticks(n) local ok,t=pcall(function() return prototypes.item[n].get_spoil_ticks() end); return ok and type(t)=='number' and t>0 and t or nil end
+  local inv=p.get_main_inventory()
+  local first,item
+  for _,ing in ipairs(recipe.ingredients or {}) do
+    if ing.type~='fluid' and spoil_ticks(ing.name) then
+      for i=1,inv and #inv or 0 do
+        local st=inv[i]
+        if st.valid_for_read and st.name==ing.name then
+          local ok,t=pcall(function() return st.spoil_tick end)
+          if ok and type(t)=='number' and t>0 and (not first or t<first) then first,item=t,ing.name end
+        end
+      end
+    end
+  end
+  local products={}
+  for _,pr in ipairs(recipe.products or {}) do
+    local t=pr.type~='fluid' and spoil_ticks(pr.name)
+    if t then products[#products+1]=string.format('%s lasts %ds fresh once it lands (a fresh one; made from part-spoiled ingredients, less)',pr.name,math.floor(t/60)) end
+  end
+  if not first and #products==0 then return nil end
+  local per=(recipe.energy or 0.5)/hand_speed(p)
+  local ahead=crafting_left(p)
+  local fits=count
+  if first then fits=math.max(0,math.min(count,math.floor(((first-game.tick)/60-ahead)/per))) end
+  return {fits=fits,item=item,spoils_in=first and math.floor((first-game.tick)/60) or nil,per=per,ahead=ahead,products=products}
+end
 function handlers.craft(p,a)
   local notes,shorts={},{}
   if not a.recipes then
     local fromq={}
     assert(a.check_stock==nil or type(a.check_stock)=='boolean','check_stock must be true or false')
+    assert(a.spoiling==nil or type(a.spoiling)=='boolean','spoiling must be true or false')
+    -- (C1) a spoilable ingredient: only the crafts that finish before it spoils, unless spoiling: true
+    local want=type(a.count)=='number' and a.count or 1
+    local sp=M.craft_spoil(p,a.recipe,want)
+    local spoil_line
+    if sp and sp.item then
+      spoil_line=string.format('the first %s you hold spoils in %ds; with %ds of hand crafting ahead and %gs a craft, %d of the %d crafts finish before it',
+        sp.item,sp.spoils_in,math.floor(sp.ahead+0.5),sp.per,sp.fits,want)
+      if sp.fits<want and a.spoiling~=true then
+        if sp.fits==0 then
+          return {started=0,nothing_queued=string.format('nothing was queued for %s: %s; spoiling: true queues them anyway',a.recipe,spoil_line),spoil=spoil_line,
+            products_spoil=#sp.products>0 and sp.products or nil}
+        end
+        spoil_line=spoil_line..string.format('; %d queued (spoiling: true queues all %d)',sp.fits,want)
+        a=setmetatable({count=sp.fits},{__index=a})
+      end
+    end
     local started=begin_craft(p,a.recipe,a.count,a.force==true or (a.check_stock==true and 'check') or nil,notes,shorts,fromq)
     local hand_s,queue_s,assemblers=craft_cost(p,{[a.recipe]=started})
     -- Nothing queued, said plainly (Sonnet 07:50: "started: cargo-bay=0" read as a partial start).
     local none=started==0 and string.format('nothing was queued for %s: %s',tostring(a.recipe),shorts[a.recipe] or 'not hand-craftable now') or nil
     return craft_facts(p,{started=started,nothing_queued=none,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
-      hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},{[a.recipe]=started})
+      hand_s=hand_s,queue_s=queue_s,assemblers=assemblers,spoil=spoil_line,products_spoil=sp and #sp.products>0 and sp.products or nil},{[a.recipe]=started})
   end
   assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=32,'recipes requires 1..32 {recipe,count} entries')
   -- Every entry is attempted: a shortfall in one should not hide what the

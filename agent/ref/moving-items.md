@@ -129,8 +129,11 @@
   Example: `./fh call repair --args '{"positions":[{"x":12.5,"y":4.5},{"x":15.5,"y":4.5}]}' --wait`
 - `inventory`: main, ammo, armor and equipment, trash and cursor in one small reply, guns and ammo per slot (gun slot
   N fires only from ammo slot N); `status {"inventory": true}` adds it as one line.
-- `craft {recipe, count, check_stock?}` (or `recipes: [...]`): queues hand crafts from your inventory, whatever stock
-  the factory holds; `stock` names that stock (holders, nearest, largest, how much within 25 tiles of you).
+- `craft {recipe, count, check_stock?, spoiling?}` (or `recipes: [...]`): queues hand crafts from your inventory, whatever
+  stock the factory holds; `stock` names that stock (holders, nearest, largest, how much within 25 tiles of you). A
+  spoilable ingredient: only the crafts that finish before the first stack of it you hold spoils are queued (the hand
+  queue ahead, then each craft at your crafting speed; `spoil` says how many), `spoiling: true` queues them all;
+  `products_spoil`: how long each spoilable product lasts fresh once it lands.
   `check_stock: true` refuses a craft of 3 s or more that stock within 64 tiles covers, naming the chests. One that queued
   nothing for a recipe says `nothing_queued` with what is short (left out of `started`) and what you carry. Each short
   ingredient names where the team keeps it: up to 3 nearest places within 128 tiles that can spare the shortfall (a
