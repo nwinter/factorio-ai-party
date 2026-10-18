@@ -82,6 +82,13 @@ return function(api)
   -- not need): a hub section of its own (logistic group "platform_bom: NAME") asking, for each item, what the
   -- platform's ghosts (those in area, when given) still need, imported from import_from; kept so every 10 s (M.tick):
   -- lowered as the ghosts are built, removed with the last of them. request: false removes it.
+  -- A full rocket of an item by weight (the default minimum payload of a hub request), nil when not known.
+  local function full_rocket(item)
+    local w = try(function() return prototypes.item[item].weight end)
+    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    if not (w and w > 0) then return nil end
+    return math.max(1, math.floor(lift / w))
+  end
   local function ghost_need(pl, force, areas)
     local s = pl.surface
     local need, known = {}, {}
@@ -156,10 +163,16 @@ return function(api)
       if mp == false or mp == 0 then mp = nil end
       -- tail (d17 batch21 A2): the payload no more than what is still to come (the request less what the hub holds),
       -- so the last few do not wait for a full batch
-      if mp and rec.tail then
+      -- (d17 batch33 A3, Sol: Wayfarer's arithmetic combinator asked 2 against the default, a full rocket of 50, and
+      -- waited) a slot with no custom minimum payload has the game's default, a full rocket by weight: tail lowers that
+      -- too
+      local full = full_rocket(it.item)
+      if rec.tail then
         local left = it.n - (inv0 and try(function() return inv0.get_item_count(it.item) end) or 0)
-        if left > 0 and left < mp then it.tail_of = mp; mp = left end
+        local base = mp or full
+        if base and left > 0 and left < base then it.tail_of = base; it.tail_default = not mp or nil; mp = left end
       end
+      it.full = full
       it.mp = mp
       rec.written[it.item] = mp or false
       if not (w and w.slot == i and w.min == it.n and w.mp == mp and w.from == rec.import_from) then
@@ -180,8 +193,9 @@ return function(api)
     for _, it in ipairs(items) do
       local held = rec.held[it.item]
       lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d%s; the hub holds %d)%s', it.item, it.n, rec.import_from, it.need,
-        it.carry and string.format(', construction robots carry %d', it.carry) or '', held, it.mp and string.format('; custom minimum payload %d', it.mp) or '')
-        .. (it.tail_of and string.format(' (tail: %d of the %d set, what is still to come)', it.mp, it.tail_of) or '')
+        it.carry and string.format(', construction robots carry %d', it.carry) or '', held,
+        it.mp and string.format('; custom minimum payload %d', it.mp) or (it.full and string.format('; minimum payload: a full rocket, %d by weight (the game\'s default)', it.full) or '; minimum payload: the game\'s default'))
+        .. (it.tail_of and string.format(' (tail: %d of the %d %s, what is still to come)', it.mp, it.tail_of, it.tail_default and 'a full rocket takes' or 'set') or '')
         .. (rec.adopted and rec.adopted[it.item] and string.format(' (adopted from the slot, changed by requests or min_payload: %s)', rec.adopted[it.item].mp and tostring(rec.adopted[it.item].mp) or 'none') or '')
         .. (spent and spent[it.item] and string.format(' (lowered at once by %d since the last rewrite as the hub spent it)', spent[it.item]) or '')
     end
@@ -455,7 +469,7 @@ return function(api)
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, asks, holds, short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
-    tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; kept until false',
+    tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; a slot with no custom minimum payload (the game\'s default, a full rocket by weight) is lowered the same way; kept until false. Each line says the minimum payload the slot has now',
     min_payload='with request: {item: N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
     returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}

@@ -60,6 +60,16 @@ return function(api)
     return r.id
   end
 
+  -- (d17 batch33 A4) a drop by id, and a platform's latest drop (its id), for pod_landed {drop_id | last_drop}
+  function M.find(id)
+    for _, r in ipairs(store().list) do if r.id == id then return r end end
+    return nil
+  end
+  function M.last_of(platform)
+    local best
+    for _, r in ipairs(store().list) do if r.platform == platform and (not best or r.id > best.id) then best = r end end
+    return best and best.id or nil
+  end
   -- Where it came down: the landing pad, else the nearest cargo pod container
   -- to the pod's last sighting on the destination surface (not one another
   -- drop already took).

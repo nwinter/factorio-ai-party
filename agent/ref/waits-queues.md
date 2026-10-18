@@ -9,7 +9,8 @@
   furnace or biochamber; `seconds` 1..3600; `item` optional: met when its input's first stack, of item or any,
   spoils or hatches within seconds; saw names it and the seconds left); `pod_landed` (`platform`, `item`?,
   `at_least`?: pods sent down from it that landed since the wait began, by freight's receipts: received by a pad or
-  landed as a container; with `item`, how many of it; default 1). A rocket's cargo loaded to N is `item_count` with
+  landed as a container; with `item`, how many of it; default 1; `drop_id: N` or `last_drop: true` (its latest drop
+  when the wait begins): that one drop, met once it has landed; in the remote and platform lanes too). A rocket's cargo loaded to N is `item_count` with
   the silo's position; what a hub or a landing pad holds is `item_count` with `platform` or the pad's position;
   `rocket_ready` (`position`: the silo); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts`
   is the same name); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'

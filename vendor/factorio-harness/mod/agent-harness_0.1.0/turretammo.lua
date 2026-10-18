@@ -111,6 +111,33 @@ return function(api)
     return c
   end
 
+  -- (d17 batch33 A5, Sol 09:59: 7 railgun ghosts each asked 10 ammo by place_ghosts' default, 70 in the BOM, while an
+  -- assembler aboard makes it) a turret ghost's ammo request changed or cleared in place, as a player edits a ghost's
+  -- requests: its plans into the ammo slots go, the rest of its requests (modules) stay, and what (as for request:
+  -- a name, {name?, count?}) takes their place; false clears them. Returns {before, after} as item*count text.
+  function M.set(ghost, what)
+    assert(ghost and ghost.valid and try(function() return ghost.type end) == 'entity-ghost', 'ammo here is a turret ghost\'s request (a built turret takes ammo by rearm or transfer)')
+    local t = M.takes(try(function() return ghost.ghost_prototype end))
+    assert(t, ghost.ghost_name .. ' is no turret that takes ammo items')
+    local keep, before = {}, {}
+    for _, pl in ipairs(try(function() return ghost.insert_plan end) or {}) do
+      local ins, other, n = {}, {}, 0
+      for _, at in ipairs(pl.items and pl.items.in_inventory or {}) do
+        if at.inventory == t.inventory then n = n + (at.count or 1) else other[#other+1] = at end
+      end
+      local id = pl.id
+      local name = type(id) == 'table' and (type(id.name) == 'string' and id.name or id.name and id.name.name) or id
+      if n > 0 then before[#before+1] = tostring(name) .. '*' .. n end
+      if #other > 0 or (pl.items and pl.items.grid) then
+        keep[#keep+1] = {id=pl.id, items={in_inventory=#other > 0 and other or nil, grid=pl.items.grid}}
+      end
+    end
+    local c = what ~= false and M.choose(t, ghost.surface, ghost.force, ghost.position, what) or nil
+    if c then keep[#keep+1] = plan(t, c.name, c.count) end
+    local ok, err = pcall(function() ghost.insert_plan = keep end)
+    assert(ok, 'the game refused the ammo request: ' .. tostring(err))
+    return {before=#before > 0 and table.concat(before, ' ') or 'none', after=c and (c.name .. '*' .. c.count) or 'none', network_holds=c and c.network_holds or nil}
+  end
   -- What a call's ammo argument may be: nil, false, an ammo item name, or {name?, count?}.
   function M.check(what)
     if what == nil or what == false then return end
@@ -128,9 +155,18 @@ return function(api)
   -- at the first of them holds (none covering it: nil). rows: the list being built; c: what M.request returned.
   function M.add(rows, c)
     for _, r in ipairs(rows) do
-      if r.item == c.name and r.count == c.count then r.ghosts = r.ghosts + 1; return end
+      if r.item == c.name and r.count == c.count and r.default == c.default then r.ghosts = r.ghosts + 1; return end
     end
-    rows[#rows+1] = {item=c.name, count=c.count, ghosts=1, network_holds=c.network_holds}
+    rows[#rows+1] = {item=c.name, count=c.count, ghosts=1, network_holds=c.network_holds, default=c.default}
+  end
+  -- (A5) what place_ghosts added by default, and how to change it
+  function M.default_note(rows)
+    local parts = {}
+    for _, r in ipairs(rows) do
+      if r.default then parts[#parts+1] = string.format('%d turret ghost%s each request %d %s', r.ghosts, r.ghosts == 1 and '' or 's', r.count, r.item) end
+    end
+    if #parts == 0 then return nil end
+    return 'by default ' .. table.concat(parts, ', ') .. ' (the entry\'s ammo: false for none, or {name, count}; configure {position, ammo} changes it on a ghost)'
   end
 
   -- One of our turrets died: its ghost (the game places one where the force rebuilds the dead) gets the request on

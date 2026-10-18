@@ -22,10 +22,10 @@ return function(api)
           return true
         end
         return WAITS[c['until']] or (c['until']=='item_count' and (type(c.platform)=='string' and c.platform~='' or type(c.surface)=='string' and c.surface~=''))
-          or ((c['until']=='produced' or c['until']=='fluid_count' or c['until']=='circuit_signal') and type(c.platform)=='string' and c.platform~='')
+          or ((c['until']=='produced' or c['until']=='fluid_count' or c['until']=='circuit_signal' or c['until']=='pod_landed') and type(c.platform)=='string' and c.platform~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, or produced, fluid_count or circuit_signal with platform, and all of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, or produced, fluid_count, circuit_signal or pod_landed with platform, and all of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).
