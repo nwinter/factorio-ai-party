@@ -17,7 +17,9 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function dist(a, b) return math.floor(math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) + 0.5) end
-  local function name_of(v) if type(v) == 'table' then return v.name end return v end
+  -- a filter's name and quality read as prototypes (userdata) on the live game, as tables in tests (Gemini 15:35: storage on
+  -- network 410 failed concatenating a LuaItemPrototype)
+  local function name_of(v) if type(v) == 'table' or type(v) == 'userdata' then return v.name end return v end
   local function span(t)
     local s = math.floor(t / 60)
     return s >= 60 and string.format('%dm%02ds', math.floor(s / 60), s % 60) or s .. 's'
