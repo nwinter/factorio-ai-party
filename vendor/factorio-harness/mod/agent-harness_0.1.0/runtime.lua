@@ -13929,6 +13929,20 @@ function M.dry_verdict(out,a)
   local parts={}
   if blocked>0 then parts[#parts+1]=blocked..' entr'..(blocked==1 and 'y' or 'ies')..' blocked' end
   if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused' end
+  -- (batch28 A1, Astra ~4 times: ok while an unavailable recipe, floor the hub never builds or inserters with no
+  -- target were listed) what the real call refuses or leaves undone fails the verdict too, each named
+  local recipes=#(out.recipes_refused or {})
+  if recipes>0 then parts[#parts+1]=string.format('%d refused for the recipe (%s)',recipes,out.recipes_refused[1]) end
+  local tiles=type(out.tiles)=='table' and out.tiles.unbuilt_count or 0
+  if tiles>0 then parts[#parts+1]=string.format('%d foundation tile%s the hub never builds (%s)',tiles,tiles==1 and '' or 's',out.tiles.unbuilt and out.tiles.unbuilt[1] or '') end
+  local loose=type(out.inserters_without_target)=='number' and out.inserters_without_target or #(type(out.inserters_without_target)=='table' and out.inserters_without_target or {})
+  if loose>0 then
+    local first
+    for _,i in ipairs(type(out.inserters)=='table' and out.inserters or {}) do
+      if i.missing then first=string.format('#%s %s (%g,%g): %s',tostring(i.index),tostring(i.name),i.position and i.position.x or 0,i.position and i.position.y or 0,tostring(i.missing)); break end
+    end
+    parts[#parts+1]=string.format('%d inserter%s with no target%s',loose,loose==1 and '' or 's',first and ' ('..first..')' or '')
+  end
   out.dry_run_ok=#parts==0
   out.verdict=#parts==0 and 'ok: every entry places and every setting is taken' or 'fails: '..table.concat(parts,', ')..(out.settings_line and '; '..out.settings_line or '')
   return out

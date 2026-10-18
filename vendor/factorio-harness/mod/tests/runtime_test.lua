@@ -321,6 +321,17 @@ do
   end
   call('queue_cancel',{})
 end
+-- batch28 A1 (Astra ~4 times: a dry run said ok while listing an unavailable recipe, floor the hub never builds and
+-- inserters with no target): each fails the verdict, named.
+do
+  local ok=runtime.dry_verdict({dry_run=true},{dry_run=true})
+  eq(ok.dry_run_ok,true); eq(ok.verdict,'ok: every entry places and every setting is taken')
+  local v=runtime.dry_verdict({dry_run=true,recipes_refused={'entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available'},
+    tiles={unbuilt_count=2,unbuilt={'(3.5,4.5): no foundation among the 8 tiles round it'}},inserters_without_target=1,
+    inserters={{index=2,name='inserter',position={x=1.5,y=2.5}},{index=3,name='inserter',position={x=4.5,y=2.5},missing='no drop target'}}},{dry_run=true})
+  eq(v.dry_run_ok,false)
+  eq(v.verdict,'fails: 1 refused for the recipe (entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available), 2 foundation tiles the hub never builds ((3.5,4.5): no foundation among the 8 tiles round it), 1 inserter with no target (#3 inserter (4.5,2.5): no drop target)')
+end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
 advance(1)
