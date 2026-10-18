@@ -7412,3 +7412,25 @@ fh watch    # deploy on every change
   `wagon_slots`: a cargo wagon's slots used per item (with the count), free slots (under the red-X limit), slot
   filters and the limit, and `full: nothing else loads into it`. The train read gives `wagons` (each cargo wagon, 8 at
   most); inspect of a cargo wagon gives `wagon_slots`. tests/wagonslots.lua.
+
+## d17 batch26 Group A (the agents' 00:20 poll)
+- A1 (Muse, twice: a reactor's feed misconfigured): `circuit_set {enable: false}` set `circuit_enable_disable = false`,
+  which takes the condition away (the entity runs), while the schema said "false: off". Now `switch_off: true` sets a
+  condition that never holds (`signal-dot < -2147483648`; the entity stops while a red or green wire connects it,
+  as the game counts a circuit condition only then), `remove_condition: true` takes the condition away, and
+  `enable: false` is refused naming both. `now` says what the entity does: stopped, runs (no condition), or runs
+  because no wire connects it; a logistic condition holding it off is added. On a chest, remove_condition clears its
+  circuit condition and switch_off is refused. tests/circuits.lua.
+- A2 (Astra request967: the Kestrel II refill loop paused every flight, "bot astra is aboard platform Kestrel II with
+  no body"): bots.lua's aboard check lets `platform_rearm` with `platform` through, as requests and the other platform
+  writes by remote view; the aboard note names it. tests/travel.lua.
+- A3 (Sol: a queued configure from the railgun recipe left cold fluoroketone in a box and the hardware queue stopped):
+  a recipe change on a built machine reads its fluidboxes against the new recipe's fluid ingredients and products. A
+  fluid it takes none of refuses the change by default, naming it, its box and amount; `fluid: "drain"` flushes those
+  boxes first (LuaFluidBox.flush, the GUI's flush: the whole connected segment) and says what went; `fluid: "keep"`
+  changes it anyway and says what stays. The old guard (any fluid held: refused unless force=true, "a recipe change
+  destroys it") is replaced; force=true reads as keep. runtime_test.
+- A4 (Opus: view with position and radius drew an empty map round the character): observe read round the position
+  asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
+  character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
+  becomes its centre and the radius that covers it. tests/cli.test.ts.

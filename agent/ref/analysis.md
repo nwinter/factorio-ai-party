@@ -70,7 +70,8 @@
 - Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
   add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
-  remembered ones dim, ghosts blue, losses as red outlines.
+  remembered ones dim, ghosts blue, losses as red outlines. `./fh view --args '{"position":{"x":5,"y":563},"radius":26}' --out
+  v.png` draws round that position (radius up to 32); `area` (up to 64x64) is drawn round its centre.
 - `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
   when, the cause (`lightning` for a strike on Fulgora), whether its ghost stands now and whether robots can build it (the covering network, its idle
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).

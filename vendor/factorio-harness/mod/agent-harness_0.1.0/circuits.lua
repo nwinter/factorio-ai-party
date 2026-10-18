@@ -67,7 +67,9 @@ return function(api)
     circuit_set = {position='{x,y}: in reach, or ours in a visible chunk (remote view)',
       platform='platform name: on that platform (all of it in remote view)',
       surface='planet or surface name (remote view, visible chunks)',
-      enable='"ice < 300" or {signal, comparator, value|signal2}; false: off; on a logistic chest: its circuit condition (circuit_condition_enabled, circuit_condition: the GUI\'s Enable/disable)',
+      enable='"ice < 300" or {signal, comparator, value|signal2}; on a logistic chest: its circuit condition (circuit_condition_enabled, circuit_condition: the GUI\'s Enable/disable). false is refused (two things): switch_off or remove_condition',
+      switch_off='true: a circuit condition that never holds (signal-dot < -2147483648): the entity stops while a red or green wire connects it (the game counts a circuit condition only then); the reply\'s now says what it does',
+      remove_condition='true: no circuit condition (the GUI\'s Enable/disable off): the entity runs whatever its wires read; the reply\'s now says what it does',
       set_requests='requester or buffer chest: true sets its requests from the wires (circuit_exclusive_mode_of_operation set_requests); false: none. Chests in 2.0.77: read: {contents: true} is send_contents on a requester or buffer; provider and storage chests send their contents whenever wired, with no switch; no chest has a logistic network condition. A roboport: read: {logistic_network_contents: true} is read_items_mode logistics (missing_requests: true the missing requests)',
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
@@ -1053,10 +1055,16 @@ return function(api)
     local mode = try(function() return proto.logistic_mode end) or '?'
     local requests = mode == 'requester' or mode == 'buffer'
     if a.logistic ~= nil then error('logistic: ' .. e.name .. ' has ' .. CHEST_NO_LOGISTIC, 0) end
+    if a.enable == false then error(M.ENABLE_FALSE, 0) end
+    if a.switch_off ~= nil then error('switch_off: ' .. e.name .. ' is a chest: it has no running to stop (remove_condition: true clears its circuit condition)', 0) end
+    if a.remove_condition ~= nil then
+      if a.remove_condition ~= true then error('remove_condition must be true', 0) end
+      b.remove_condition = nil; st.circuit_condition_enabled = false
+      notes[#notes+1] = 'remove_condition: the chest\'s circuit condition is off (circuit_condition_enabled false)'
+    end
     if a.enable ~= nil then
       b.enable = nil
-      if a.enable == false then st.circuit_condition_enabled = false
-      else st.circuit_condition_enabled = true; st.circuit_condition = a.enable end
+      st.circuit_condition_enabled = true; st.circuit_condition = a.enable
       notes[#notes+1] = 'enable is the chest\'s circuit condition (circuit_condition_enabled, circuit_condition: the GUI\'s Enable/disable)'
     end
     if type(a.read) == 'table' then
@@ -1081,6 +1089,8 @@ return function(api)
   end
   -- circuit_set's checks, and the steps that write what passed them (run by circuit_set; a place_ghosts dry run runs
   -- the checks alone on a stand-in of the entity: M.dry_set).
+  M.NEVER = {first_signal={type='virtual', name='signal-dot'}, comparator='<', constant=-2147483648}
+  M.ENABLE_FALSE = 'enable: false is two things: switch_off: true (a condition that never holds: the entity stops while a red or green wire connects it) or remove_condition: true (no condition: it runs whatever its wires read)'
   local function plan_set(e, cb, a, by)
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
@@ -1091,13 +1101,24 @@ return function(api)
     local steps, out = {}, {entity=ghost and try(function() return e.ghost_name end) or e.name, ghost=ghost or nil, position=e.position, by=by}
     local function step(what, fn) steps[#steps+1] = {what=what, fn=fn} end
     local function refuse(arg, text) error(string.format('%s: %s %s (its circuit settings: %s)', arg, e.name, text, settings_list(kind, props)), 0) end
+    -- (batch25->26 A1, Muse twice, a reactor's feed misconfigured: enable false removed the condition, and the entity ran)
+    if a.enable == false then error(M.ENABLE_FALSE, 0) end
+    local n_on = (a.enable ~= nil and 1 or 0) + (a.switch_off ~= nil and 1 or 0) + (a.remove_condition ~= nil and 1 or 0)
+    if n_on > 1 then error('enable, switch_off and remove_condition each set the enable condition: one at a time', 0) end
+    if a.switch_off ~= nil then
+      if a.switch_off ~= true then error('switch_off must be true (remove_condition: true clears the condition)', 0) end
+      if not props.on_off then refuse('switch_off', 'has no enable condition') end
+      step('switch_off', function() cb.circuit_enable_disable = true; cb.circuit_condition = M.NEVER end)
+    end
+    if a.remove_condition ~= nil then
+      if a.remove_condition ~= true then error('remove_condition must be true', 0) end
+      if not props.on_off then refuse('remove_condition', 'has no enable condition') end
+      step('remove_condition', function() cb.circuit_enable_disable = false end)
+    end
     if a.enable ~= nil then
       if not props.on_off then refuse('enable', 'has no enable condition') end
-      if a.enable == false then step('enable', function() cb.circuit_enable_disable = false end)
-      else
-        local c = condition(a.enable, 'enable')
-        step('enable', function() cb.circuit_enable_disable = true; cb.circuit_condition = c end)
-      end
+      local c = condition(a.enable, 'enable')
+      step('enable', function() cb.circuit_enable_disable = true; cb.circuit_condition = c end)
     end
     if a.logistic ~= nil then
       if not props.on_off then refuse('logistic', 'has no logistic condition') end
@@ -1217,7 +1238,20 @@ return function(api)
     out.circuit = M.read(e, cb)
     out.notes = chest_notes
     M.held_off(e, cb, out, a)
+    out.now = M.now_text(out, a)
     return out
+  end
+  -- What the entity does now after switch_off or remove_condition (A1): plainly.
+  function M.now_text(out, a)
+    if not (a.switch_off or a.remove_condition) then return nil end
+    local c = out.circuit or {}
+    local soon = out.ghost and 'once built: ' or ''
+    local logi = c.logistic and c.logistic_met == false and ('; its logistic condition ' .. c.logistic .. ' holds it off') or ''
+    if a.remove_condition then return soon .. 'runs: no circuit condition' .. logi end
+    if c.enable_ignored then
+      return soon .. 'runs: no red or green wire connects it, so the game ignores the condition; it stops once a red or green wire connects it'
+    end
+    return soon .. 'stopped: its circuit condition signal-dot < -2147483648 never holds' .. logi
   end
   -- After a write: an entity with an enable or logistic condition that is off because one is not met (friction2:
   -- Opus set "production-science-pack < 1000" on an inserter whose logistic condition "< 100" read 101, and told Astra
