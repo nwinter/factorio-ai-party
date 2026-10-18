@@ -8039,3 +8039,11 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+- `configure {position, hand_size}` on an inserter, built or ghost (C1, Astra: a one-egg surplus export took a
+  constant combinator and a stack size signal only to set hand size 1). The 2.0 inserter GUI has the setting: a
+  forum thread asks to rename its "Stack size override", and Bilka renamed it "Override hand size" for 2.1.22
+  (forums.factorio.com/viewtopic.php?p=646961). hand_size sets LuaEntity.inserter_stack_size_override: 1 up to the
+  inserter's hand size now (1, its prototype's bonus and the force's inserter or bulk capacity bonus), 0 or false
+  for none. Returns hand_size, hand_size_before, hand_max, and circuit_note when the inserter's circuit set stack
+  size is on (that signal sets the hand while it is on the wires). It goes with filters and spoil_priority in the
+  same call. No combinator is placed.

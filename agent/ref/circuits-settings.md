@@ -58,7 +58,7 @@
   downstream, undergrounds crossed (`short_reads`); and each asteroid collector whose filter the circuit sets: the
   filter it holds and the chunk signals there.
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
-  use_filters?, spoil_priority?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
+  use_filters?, spoil_priority?, hand_size?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?}`: a machine's or building's
   settings, as its GUI sets them; `inspect` reads each back.
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
@@ -75,7 +75,8 @@
     request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back (`by_slot`).
     `transfer {position, item: <module>}` also puts a module in a machine's or beacon's module slots.
   - Inserters and loaders: `filters`, `filter_mode` (or `mode`), `use_filters` (shown in `scan` rows: `filters:
-    whitelist: iron-plate`, `off`, `set by circuit`); `spoil_priority: fresh_first | spoiled_first | none` sets an
+    whitelist: iron-plate`, `off`, `set by circuit`); `hand_size: N` sets an inserter's stack size override, as
+    its GUI does (1 up to its hand size now; 0 or false for none); `spoil_priority: fresh_first | spoiled_first | none` sets an
     inserter's Spoil priority (built or ghost).
   - `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no other item in it);
     `input_priority`, `output_priority`, `filter` set a splitter's (left and right facing the way items move).
