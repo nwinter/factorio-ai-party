@@ -378,9 +378,11 @@ return function(api)
   -- An inserter in one line (Luna, d15: arms misrouting items): its circuit condition with each signal's value on its
   -- wires now and whether it holds, whether the inserter is off by it, where its wires go and what their networks carry,
   -- its filters and hand, and where it picks up and drops. c: M.read(e) (read here when nil).
-  function M.inserter_line(e, c)
-    c = c or M.read(e) or {}
-    local cb = try(function() return e.get_control_behavior() end)
+  -- Its circuit and logistic conditions with the values now: each circuit signal's value on its wires and whether the
+  -- condition holds; the logistic condition's item in the logistic network there; whether it is off by them. c: M.read(e).
+  function M.condition_parts(e, c, cb)
+    c = c or {}
+    cb = cb or try(function() return e.get_control_behavior() end)
     local parts = {}
     local function value(sig)
       if not (type(sig) == 'table' and sig.name) then return nil end
@@ -403,11 +405,25 @@ return function(api)
         c.enable_ignored and 'ignored (no red or green wire)' or c.enable_met == true and 'true' or c.enable_met == false and 'false' or 'unknown')
     elseif c.enable == false then parts[#parts+1] = 'no circuit condition' end
     if type(c.logistic) == 'string' then
-      parts[#parts+1] = string.format('logistic condition %s: %s now', c.logistic, c.logistic_met == true and 'true' or c.logistic_met == false and 'false' or 'unknown')
+      -- (d17 batch20 B1, Luna) the item's count in the logistic network there, as the condition reads it
+      local cond = cb and try(function() return cb.logistic_condition end)
+      local sig = cond and cond.first_signal
+      local held
+      if type(sig) == 'table' and sig.name and (sig.type == nil or sig.type == 'item') then
+        local net = try(function() return e.surface.find_logistic_network_by_position(e.position, e.force) end)
+        held = net and try(function() return net.get_item_count(sig.name) end)
+      end
+      parts[#parts+1] = string.format('logistic condition %s%s: %s now', c.logistic, held and string.format(' (network holds %s %d)', sig.name, held) or '',
+        c.logistic_met == true and 'true' or c.logistic_met == false and 'false' or 'unknown')
     end
     local st = try(function() return e.status end)
     if st and st == defines.entity_status.disabled_by_control_behavior then parts[#parts+1] = 'it is off by its condition'
     elseif type(c.enable) == 'string' or type(c.logistic) == 'string' then parts[#parts+1] = 'it is on' end
+    return parts
+  end
+  function M.inserter_line(e, c)
+    c = c or M.read(e) or {}
+    local parts = M.condition_parts(e, c)
     -- Its wires and what each network carries now.
     for key, rows in pairs(c.wires or {}) do
       if key:sub(1, 6) ~= 'copper' then
