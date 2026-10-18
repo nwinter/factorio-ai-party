@@ -16,7 +16,10 @@
   `platform_endurance` counts); `incoming` rockets; `freight` (per stop: what was expected down and up, what left the
   hub, what came aboard, with what construction robots placed from a rocket's cargo at once as "built at once N" and
   the platform's count before and after, and what spoiled; the rockets sent to it; the cargo pods sent down with what
-  each landing pad received and the pods still in flight; per leg what spoiled on the way); `spoiling` (when its
+  each landing pad received and the pods still in flight; per leg what spoiled on the way; a stop where the platform
+  arrived and left between two looks a second apart reads `0s`); `landed` (each cargo pod's receipt, the last 8,
+  kept after its stop leaves the freight list: what, received by which pad or landed where, when, the pod's number,
+  from which stop); `spoiling` (when its
   spoilable items spoil, against the arrival); `engine` (the last 60 and 180 s: mean, lowest and highest speed,
   thruster fuel and oxidizer used and made, the thrusters' tanks at start and end, the pumps' share of time working).
 - `platform_arrived {platform, location?}` and `platform_left {platform, location?}`: wait conditions, in `./fh wait
@@ -95,8 +98,17 @@
   runs. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
-  those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
-  ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
+  those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed
+  bridges) and counts only inserters not switched off; belts running back into the hub count as reaching when the
+  hub feeds a turret (`belts back into the hub`); a belt that ends just past a pickup on a turret's way is listed
+  apart (`at belt ends`), not as stranded. Switched-off loaders are named only when nothing else puts items on.
+  `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
+  ammunition aboard is stranded. Cover is per asteroid size (small, medium, big, huge): a turret engages what its
+  priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range and past its
+  minimum range (rocket turret 15 tiles); a size is covered where every kind of it (metallic, carbonic, oxide;
+  promethium when a turret lists one) is engaged by a turret reaching it. Each collector line gives `by size`, each
+  side its uncovered edge tiles per size, and a line names the turrets engaging only part of the asteroids.
+  `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
 - `platform_digest {platform}`: one read of a platform from `platforms`, `platform_supply`, `platform_endurance` and
   `platform_defense`: first what is stopped or blocked (the supply chain's stops: collectors, crushers, fuel and

@@ -1045,6 +1045,8 @@ return function(api)
           -- against the arrival (Luna, shift12 12:47).
           local fr=try(function() return freight.read(pl) end)
           if fr then row.freight={}; for i,s in ipairs(fr) do row.freight[i]=s.line end end
+          -- (d17 batch23 A3) each cargo pod's landed receipt, kept apart from the stops
+          row.landed=freight.receipts and try(function() return freight.receipts(pl) end) or nil
           row.spoiling=try(function() return freight.freshness(pl) end)
           -- Per ammo type over the last leg, and rockets on their way up to it (freight.lua; Astra, 22:50).
           row.ammo_rates=try(function() return freight.ammo(pl) end)

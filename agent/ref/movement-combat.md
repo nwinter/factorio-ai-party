@@ -1,6 +1,10 @@
 - `move_to {position | target | stand_off, reach?, via?, tolerance?, ticks?, avoid_enemies?, ...}`: walks your character
   there on the engine's path, over shallow water, wetland and Fulgora's oil ocean, deep too. Without `ticks` the time
-  limit scales with the route's length (`limit`).
+  limit scales with the route's length (`limit`), set again from each path found (its length and the rest of the way).
+  With nothing in the way the route is the straight line; `straight_line` in the reply names what the straight line
+  crosses (ground the character cannot cross, cliffs, buildings, trees or rocks, with where), and `last.route` gives
+  the tiles walked against the straight line, the point farthest off it and what the walk went round (that, enemies'
+  reach in `avoided_enemies`, a path off belts).
   - `{"stand_off":{"target":{"x":425,"y":-410},"reach":36}}` walks to the spot within `reach` tiles of the target outside
     every worm's range, spawner's reach and area under attack the map shows plus the `avoid_enemies` margin, the one
     nearest you; with none clear of the margin, at their bare reach (said); with none at all, refused naming them.

@@ -13,6 +13,7 @@ return function(api)
   local SCAN_TICKS, KEEP_MINUTES, WORKERS, WORKER_TICKS = 600, 10, 3, 2 * 216000
   local LOW_AMMO = 10            -- rounds in a turret's ammo slots
   local REPEAT = 5 * 3600        -- a condition that lasts is told again after 5 min
+  local FEED_TICKS = 3600        -- the ammunition trace (ammofeed.lua) read again after 1 min
   local DAMAGE_GAP = 3600        -- hit lines at most once a minute per reader and platform
   local HUB_HISTORY = 30         -- hub health samples kept (one per scan)
   local SLOW_KMS = 5             -- flying under this many km/s on two scans: the thrust alert
@@ -133,6 +134,7 @@ return function(api)
       sc.turrets = sc.turrets + 1; sc.rounds = sc.rounds + n
       if n == 0 then sc.empty = sc.empty + 1; sc.empty_list = sc.empty_list or {}; if #sc.empty_list < 8 then sc.empty_list[#sc.empty_list+1] = t end
       elseif n < LOW_AMMO then sc.low = sc.low + 1 end
+      if n < 2 * LOW_AMMO then sc.under = (sc.under or 0) + 1 end
       if sc.turret_name and sc.turret_name ~= t.name then sc.turret_name = 'turret' else sc.turret_name = t.name end
     end
     local hub = pl.hub
@@ -370,9 +372,11 @@ return function(api)
         -- while hundreds of magazines sat on a rear loop): turrets with nothing more coming (no ammo on the way to them
         -- and nothing that loads it) and under 20 rounds, while 20 or more aboard are stranded or in the hub. Read with
         -- the scan (ammofeed.lua), told again after REPEAT or when more turrets starve.
-        if api.ammofeed and sc.turrets > 0 then
+        -- (d17 batch23 A2: the trace cost 180 ms on Kestrel II and ran every scan) traced only while a turret holds
+        -- under 2 * LOW_AMMO (none can starve otherwise), at most once a minute
+        if api.ammofeed and sc.turrets > 0 and (sc.under or 0) > 0 then
           local fr = r.feed
-          if not (fr and game.tick - fr.tick < SCAN_TICKS) then
+          if not (fr and game.tick - fr.tick < FEED_TICKS) then
             local okt, tr = pcall(api.ammofeed.trace, pl)
             fr = {tick=game.tick, tr=okt and tr or nil}
             r.feed = fr

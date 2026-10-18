@@ -14,7 +14,7 @@ do
     n=n+1
     local b={valid=true,unit_number=n,type='transport-belt',name='transport-belt',position={x=x,y=y},belt_neighbours={inputs={}}}
     b.get_max_transport_line_index=function() return 2 end
-    b.get_transport_line=function(i) return {get_contents=function() return i==1 and contents(items or {}) or {} end} end
+    b.get_transport_line=function(i) local c=i==1 and contents(items or {}) or {} return setmetatable({get_contents=function() return c end},{__len=function() local t=0 for _,r in ipairs(c) do t=t+r.count end return t end}) end
     return b
   end
   local turret={valid=true,unit_number=100,type='ammo-turret',name='gun-turret',position={x=0,y=-10},prototype={attack_parameters={ammo_categories={'bullet'}}}}
@@ -99,7 +99,7 @@ do
     n=n+1
     local b={valid=true,unit_number=n,type='transport-belt',name='transport-belt',position={x=x,y=y},belt_neighbours={inputs={}}}
     b.get_max_transport_line_index=function() return 2 end
-    b.get_transport_line=function(i) return {get_contents=function() return i==1 and contents(items or {}) or {} end} end
+    b.get_transport_line=function(i) local c=i==1 and contents(items or {}) or {} return setmetatable({get_contents=function() return c end},{__len=function() local t=0 for _,r in ipairs(c) do t=t+r.count end return t end}) end
     return b
   end
   local function ins(x,y,from,to) n=n+1; return {valid=true,unit_number=n,type='inserter',name='fast-inserter',position={x=x,y=y},pickup_target=from,drop_target=to} end
