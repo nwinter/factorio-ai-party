@@ -286,4 +286,19 @@ local told
 for _,a in ipairs(grok('clock',{}).team.alerts) do if a:find('power cut #1',1,true) then told=true end end
 eq(told,true,'every agent is told')
 
+-- (d17 batch22 C2, Haiku) rearm before it walks: the magazines the stops need against what you carry; a tour that
+-- cannot finish refused unless partial: true, saying how many stops it completes
+do
+  haiku('stop')
+  storage.agent_harness.damage={}
+  body('haiku').main.items['firearm-magazine']=12
+  fails(function() assert(runtime.dispatch{action='rearm',args={surface=true,below=10,avoid_enemies=false},bot='haiku'}) end,
+    'not walked: the 4 stops need firearm-magazine 40 (you carry 12) to reach 10 each; what you carry completes 1 of them in the tour\'s order')
+  local part=haiku('rearm',{surface=true,below=10,avoid_enemies=false,partial=true})
+  eq(part.partial,'partial: 1 of 4 stops get their full count with what you carry')
+  haiku('stop')
+  local plan=haiku('rearm',{surface=true,below=10,avoid_enemies=false,dry_run=true})
+  eq(plan.completes,1)
+  body('haiku').main.items['firearm-magazine']=500
+end
 print('round2120a: ok')

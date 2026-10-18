@@ -7038,3 +7038,11 @@ fh watch    # deploy on every change
   magazines, ending `rearm {alert: "ammo_low|nauvis|..."} tours exactly these`. The group is read again before it is
   shown (a turret topped up to 10 or more drops out), and rearm {alert} takes those still under 10.
   tests/pushalerts.lua.
+- C2 (Haiku): a rearm tour that ran out of magazines part way was found only at the end. rearm with radius, area,
+  surface or alert now counts, before it walks and in its dry run, per ammo type the magazines the stops need to reach
+  count against what the character holds and has in the hand-craft queue, walks the stops in the tour's order with
+  that stock, and names the turrets left short (first 8): `magazines: the 4 stops need firearm-magazine 40 (you carry
+  12) to reach 10 each; what you carry completes 1 of them in the tour's order; left short: ...`. A tour that cannot
+  finish is refused (`not walked: ...`) unless `partial: true`; a walked one gives `magazines`, and `partial: 1 of 4
+  stops get their full count with what you carry` when short. The dry run gives `magazines` and `completes`.
+  tests/round2120a.lua.
