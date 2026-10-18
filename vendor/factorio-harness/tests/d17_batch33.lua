@@ -199,7 +199,7 @@ do
   eq(#r.surfaces,1); eq(r.surfaces[1].surface,'nauvis')
   local rows=r.surfaces[1].systems
   eq(rows[1].kind,'power'); eq(rows[1].claims,1)
-  eq(rows[1].line,'electric network #57: 2 machines (2 steel-furnace): claim #5 astra (active there 26s ago, inspected 10s ago by sol): 1 of 2 sampled')
+  eq(rows[1].line,'electric network #57: 2 machines (2 steel-furnace): claim #5 astra (active there 26s ago, inspected 10s ago by sol): 1 of 2 machines in its area')
   eq(rows[2].line,'logistic network #3: 1 roboport cell: no area covers it; planet-wide claim #6 sol (active there 2m56s ago, no inspection there recorded)')
   eq(r.blocked[1],'astra: #9 steel row is blocked (latest note 43s ago by astra: no coal on the west belt)')
   game=nil
