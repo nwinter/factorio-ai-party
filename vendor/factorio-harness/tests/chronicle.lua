@@ -138,6 +138,16 @@ runtime.chronicle.created_by(star,'luna')
 advance(60)
 local made=st.chronicle.events[#st.chronicle.events]
 eq(made.kind,'platform_created'); eq(made.platform,'Starling'); eq(made.at,'nauvis'); eq(made.by,'luna')
+-- a rename is an event with both names (the stream follows the ship's history to its new name)
+star.name='Starling II'
+advance(60)
+local ren=st.chronicle.events[#st.chronicle.events]
+eq(ren.kind,'platform_renamed'); eq(ren.platform,'Starling II'); eq(ren.from,'Starling')
+eq(runtime.chronicle.line(ren),'platform Starling renamed Starling II')
+advance(60)
+eq(st.chronicle.events[#st.chronicle.events],ren,'renamed once')
+star.name='Starling'  -- (back, for the loss below)
+advance(60)
 st.platform_alerts={by={[2]={total={by={['medium-metallic-asteroid']=40,['small-metallic-asteroid']=12,['big-carbonic-asteroid']=3,['x']=1}}}}}
 star.space_location=nil  -- flying to Vulcanus, 40% of the leg flown
 star.space_connection={from={name='nauvis'},to={name='vulcanus'},length=15000}; star.distance=0.4

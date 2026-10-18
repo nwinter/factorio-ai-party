@@ -1,0 +1,2 @@
+# Append-only change log: every engineer adds a section at its end; keep both sides when merging (d17 17:50)
+vendor/factorio-harness/docs/usage.md merge=union

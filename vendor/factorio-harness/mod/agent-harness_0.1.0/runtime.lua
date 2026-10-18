@@ -856,6 +856,7 @@ local function stop_combat(index,outcome)
   end
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
     gun_used=combat and combat.gun_used,why_none=why_none,held_blast=combat and combat.held_blast,held_blast_ticks=combat and combat.held_blast_n,
+    switched_gun=combat and combat.switched_gun,held_melee=combat and combat.held_melee,held_melee_ticks=combat and combat.held_melee_n,
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
@@ -1736,7 +1737,8 @@ function handlers.describe(_,a)
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={unequip='true, with slot ammo or gun (index? item?): that slot\'s stacks back to your main inventory (what does not fit stays, in left); returns unequipped, left',slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
       danger={position='{x,y}: the destination (default where your character stands)',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now: sight and radar) by name and the nearest, and those more than 24 tiles from every spawner read in packs (units within 16 tiles of a pack\'s first: count, names, where, how far; packs: the first 6) apart from those by their nests; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
-      pipe_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
+      pipe_gaps={line='{x,y} of one pipe, pipe-to-ground, tank or pump of ours, instead of from and to: the pipe network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities; returns segments [{segment, entities, box, fluid, amount, capacity, flow, empty, line}] by the engine\'s segment id, empty (the empty ones), machines (what it joins, each box\'s fluid), not_in_sight, line',
+        from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={line='{x,y} of one belt of a line, instead of from and to: the whole line both ways (belt neighbours, underground pairs; a splitter: its first output or input, the others in branches) in chunks our force sees now, up to 4096 tiles each way; at each end the 16 tiles on in its direction: a belt of ours facing the same way there (built or ghost) is the line going on, the tiles between a gap; returns tiles, head and end (where and why it stops), gaps [{from, to, tiles, between, line: each missing tile and what stands on it}], branches, line',
         from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; a straight leg is read tile by tile; a leg that is not straight follows the remembered belt round its corners (each belt\'s direction, undergrounds to their exits; across a gap on the way the belt went while that nears the end, else toward it; from either end), refused when it does not lead there; at most 512 tiles',surface='optional surface name (default yours)',returns='followed (legs followed round corners); missing and ghosts with observed_tick (a missing tile in sight: blocked_by {name, position, force} and line, what stands on it); unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
@@ -1931,6 +1933,8 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -6251,6 +6255,10 @@ do
       r.recipe=ok and recipe and recipe.name or nil
     end
     if not CHESTS[e.type] then r.status_name=entity_status_names[e.status] end
+    -- (d17 batch21 B1, Sonnet: pipes read empty in every area read) an entity with fluid boxes: each box's fluid and
+    -- amount over its capacity, its segment's capacity and extent (pipes.fluids, as scan fields=fluids reads them)
+    local okf,ft=pcall(function() local fb=e.fluidbox; return fb and #fb>0 and pipes.fluids(e,true) end)
+    if okf and ft then r.fluid=ft; if r.holds=='empty' then r.holds=nil end end
     return r
   end
   -- compact (Muse, shift13: ~10 inspects over positions read as tables or JSON): one line per entity: name,
@@ -6283,6 +6291,7 @@ do
       parts[#parts+1]=h
     end
     if r.requests and r.requests~='none' then parts[#parts+1]='requests '..r.requests end
+    if r.fluid then parts[#parts+1]='fluid '..r.fluid end
     if r.direction then table.insert(parts,1,'facing '..r.direction) end
     if r.pickup then parts[#parts+1]='picks at '..r.pickup..', drops at '..tostring(r.drop) end
     if e.type~='entity-ghost' then
@@ -10688,6 +10697,37 @@ function M.blast_radius(ammo)
   M.BLAST[ammo]=best>0 and best or false
   return best>0 and best or nil
 end
+-- The character's own blast (d17 batch21 C1, Opus: killed by his own rocket's splash with biters touching him): with
+-- area ammunition in the gun, enemy units within MELEE tiles of the character, or the aim point inside the blast's
+-- radius of it: the gun slot switches to one holding ammunition without an area (said in last_combat.switched_gun), or,
+-- with none, fire holds (held_melee). Checked every 5 ticks; returns the target to fire at (nil: hold).
+M.MELEE=6
+function M.melee_guard(p,action,target,tick)
+  if not (action.blast and target) then return target end
+  local c=p.character
+  if not (c and c.valid) then return target end
+  local here=c.position or p.position
+  if tick%5==0 or action.melee_near==nil then
+    local okn,near=pcall(function() return p.surface.find_entities_filtered{position=here,radius=M.MELEE,force='enemy',type={'unit','spider-unit'},limit=1}[1] end)
+    action.melee_near=okn and near and near.valid and {name=near.name,d=distance(here,near.position)} or false
+  end
+  local self=distance(here,target)<=action.blast.radius
+  if not (action.melee_near or self) then return target end
+  local why=action.melee_near and string.format('%s %.1f tiles from you',action.melee_near.name,action.melee_near.d)
+    or string.format('the aim point is %.1f tiles from you, inside the %g-tile blast',distance(here,target),action.blast.radius)
+  local okg,guns=pcall(M.gun_rows,p)
+  for _,g in ipairs(okg and guns or {}) do
+    if g.count>0 and g.ammo and not M.blast_radius(g.ammo) then
+      c.selected_gun_index=g.index
+      action.switched_gun=string.format('%s: switched to gun slot %d %s with %s (%s would burst on you)',why,g.index,g.gun,g.ammo,action.blast.ammo)
+      action.blast=nil
+      return target
+    end
+  end
+  action.held_melee=string.format('held fire: %s, and no gun slot holds ammunition without an area (%s bursts %g tiles round where it hits)',why,action.blast.ammo,action.blast.radius)
+  action.held_melee_n=(action.held_melee_n or 0)+1
+  return nil
+end
 -- Our entities a blast of radius r at pos would reach (characters left out): {n, line} or nil.
 function M.blast_hits(p,pos,r)
   local by,order,n={},{},0
@@ -11693,8 +11733,19 @@ function M.retreat_go(r)
   end
 end
 M.shore=require('shore'){placewhy=M.placewhy,one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
-  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end}
+  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
+  drillspots=function(p,a,proto) return M.drillspots.read(p,a,proto) end}
+M.drillspots=require('drillspots'){position=position,integer=integer,read_sight=M.read_sight,
+  seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
+  why=function(p,proto,pos,d) return placement_error(p,proto,pos,d,false) end}
 handlers.placements=M.shore.handlers.placements
+-- ingredient_gap: per crafting machine, the next craft's ingredients held, usable and short, and who can spare them
+-- (gap.lua; d17 batch21 B3, Luna).
+M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
+  seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or distance(p.position,pos)<=32 end,
+  scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
+  status=function(e) return M.machine_status(e) end}
+function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
 M.details=require('details'){}
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
@@ -13927,6 +13978,7 @@ reads.pods=true
 reads.logistics_audit=true
 reads.platform_gate=true
 reads.fleet=true
+reads.ingredient_gap=true
 reads.demolishers=true
 reads.dependency=true
 reads.shipment=true
@@ -15017,8 +15069,23 @@ function handlers.belt_gaps(p,a)
 end
 -- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
 M.pipegaps=require('pipegaps'){position=position,connections=function(e) return pipes.connections(e) end,
-  segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end}
-function handlers.pipe_gaps(p,a) return M.pipegaps.read(p,a) end
+  segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end,
+  fluids=function(e) return pipes.fluids(e,true) end}
+function handlers.pipe_gaps(p,a)
+  -- line: the pipe network through one of its pipes (pipegaps.lua M.network; d17 batch21 B1, Sonnet)
+  if a.line~=nil then
+    assert(a.from==nil and a.to==nil and a.via==nil,'give line (one pipe of it), or from and to')
+    local q=position(a.line)
+    M.read_sight(p,q,'line')
+    local e
+    for _,o in pairs(p.surface.find_entities_filtered{position=q,radius=0.6,force=p.force,type={'pipe','pipe-to-ground','storage-tank','pump','infinity-pipe'}}) do
+      if o.valid then e=o; break end
+    end
+    assert(e,string.format('no pipe, pipe-to-ground, tank or pump of ours at (%g,%g)',q.x,q.y))
+    return M.pipegaps.network(p,e)
+  end
+  return M.pipegaps.read(p,a)
+end
 -- danger: a destination's nests, enemies seen, recent attacks and deaths, and the character's health and armor
 -- (danger.lua; Opus, shift17 10:51), facts only.
 M.danger=require('danger'){state=state,position=position,avoid=M.avoid,
@@ -15112,10 +15179,15 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 M.lightning=require('lightning'){}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
 M.linecut=require('linecut'){state=state}
+M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
+function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
+passive.robot_losses=true
 M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
     for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
+    local okr,lost=pcall(M.robotloss.alert_groups,f)
+    for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
     return out
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
@@ -15173,7 +15245,8 @@ function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
-  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end}
+  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end,
+  requests_off=function(pl) return M.rocketload.requests_off(pl) end}
 function handlers.fleet(p,a) return M.fleet.read(p,a) end
 -- Progress on owned board items from the game, stalls, blocked items ranked (progress.lua; d17 batch15 Group C).
 M.progress=require('progress'){state=state,items=function() return M.board.items() end,agents=function() return M.board.agents() end,
@@ -15243,7 +15316,7 @@ M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.bo
 M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
-space=space_module{circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{requests_off=function(pl) return M.rocketload.requests_off(pl) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -16199,8 +16272,12 @@ function M.tick_body(event)
             action.held_blast=string.format('held fire at %s: %s',action.blast.ammo,hit.line); action.held_blast_n=(action.held_blast_n or 0)+1
           end
         end
-        if e then action.fired_tick=event.tick end
-      elseif target then action.fired_tick=event.tick end
+        target=M.melee_guard(p,action,target,event.tick)
+        if e and target then action.fired_tick=event.tick end
+      elseif target then
+        target=M.melee_guard(p,action,target,event.tick)
+        if target then action.fired_tick=event.tick end
+      end
       p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
     end
   end
@@ -16390,6 +16467,8 @@ function M.on_event(event)
       and e.force and e.force.name~='enemy' and e.force.name~='neutral' and M.linecut then
       pcall(M.linecut.note,event)
     end
+    -- a robot of ours an enemy killed, with the job that sent it (robotloss.lua, d17 batch21 C2)
+    if e and e.valid and (e.type=='construction-robot' or e.type=='logistic-robot') and M.robotloss then pcall(M.robotloss.note,event) end
     if e and e.valid and e.force and e.force.name=='enemy' and (e.type=='unit-spawner' or e.type=='turret') and event.force and event.force.name~='enemy' then
       s.kills=s.kills or {}
       table.insert(s.kills,{tick=event.tick,name=e.name,position=e.position})

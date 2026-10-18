@@ -214,7 +214,7 @@ def planet_facts(s):
     return f
 
 
-# Headlines (eng/hostguide): a platform destroyed (model.py kind "headline"), a space moment (platform launched or
+# Headlines (eng/hostguide): a platform destroyed (model.py kind "headline"), a space moment (platform launched, on its maiden flight or
 # arrived, a planet first landed on, the shift's first rocket) and an agent's death. Above every battle beat, said on
 # their own (never folded into another beat or a battle tally), as a clear call with the name and the consequence.
 HEADLINE_KINDS = ("headline", "space", "death")
@@ -226,6 +226,8 @@ HEADLINE_EXTRA = {
                           "aboard are lost. Say its name.",
     "agent_death": " The engineer respawns at the base; say what they were doing or where, if the facts say.",
     "shift_rocket": " The first rocket of this shift.",
+    "maiden_flight": " The platform's first trip since it was built: say its name, where it is going and who built "
+                     "it, if the facts say.",
     "platform_arrival": " The platform has finished its trip and is in orbit now; say where it came from and who is "
                         "aboard, if the facts say.",
 }

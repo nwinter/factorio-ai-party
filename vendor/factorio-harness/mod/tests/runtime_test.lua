@@ -5497,6 +5497,31 @@ do
   ok,err=pcall(call,'guards',{})
   eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
 end
+-- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
+do
+  local rows,surf,ch=runtime.gun_rows,p.surface,p.character
+  runtime.BLAST['explosive-rocket']=6.5; runtime.BLAST['piercing-rounds-magazine']=false
+  local guns={{index=2,gun='rocket-launcher',ammo='explosive-rocket',count=10},{index=1,gun='submachine-gun',ammo='piercing-rounds-magazine',count=50}}
+  runtime.gun_rows=function() return guns end
+  local near={valid=true,name='big-biter',position={x=3,y=0}}
+  p.surface={find_entities_filtered=function() return {near} end}
+  p.character={valid=true,position={x=0,y=0},selected_gun_index=2}
+  local action={blast={radius=6.5,ammo='explosive-rocket'}}
+  local t=runtime.melee_guard(p,action,{x=20,y=0},0)
+  eq(t.x,20); eq(p.character.selected_gun_index,1); eq(action.blast,nil)
+  eq(action.switched_gun,'big-biter 3.0 tiles from you: switched to gun slot 1 submachine-gun with piercing-rounds-magazine (explosive-rocket would burst on you)')
+  guns[2].count=0
+  action={blast={radius=6.5,ammo='explosive-rocket'}}
+  eq(runtime.melee_guard(p,action,{x=20,y=0},0),nil)
+  assert(action.held_melee:find('held fire: big-biter 3.0 tiles from you, and no gun slot holds ammunition without an area',1,true),action.held_melee)
+  -- none near, the aim point far: fires
+  near.position={x=30,y=0}; p.surface={find_entities_filtered=function() return {} end}
+  action={blast={radius=6.5,ammo='explosive-rocket'}}
+  eq(runtime.melee_guard(p,action,{x=20,y=0},0).x,20)
+  -- the aim point inside the blast round you: holds
+  eq(runtime.melee_guard(p,action,{x=4,y=0},5),nil)
+  runtime.gun_rows,p.surface,p.character=rows,surf,ch
+end
 -- shoot aims within 32 tiles or the selected gun's range, the larger, in a chunk our force sees (d17 batch20 C3).
 do
   local rows,where,vis=runtime.gun_rows,p.position,p.force.is_chunk_visible

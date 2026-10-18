@@ -110,7 +110,9 @@
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
   their cargo, thruster fuel and its 10-minute trend, and `waits on`: the first waiting request at the stop it is at
-  with the gate holding it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
+  with the gate holding it; a hub section that is off with requests in it (`hub section 2 is off: its 1 request
+  (rocket-fuel 100 from nauvis) is not made`), as `preflight`'s platform lines and `platforms` (compact too:
+  `requests_off_line`) say it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
