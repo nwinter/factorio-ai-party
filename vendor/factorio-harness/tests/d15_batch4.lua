@@ -727,14 +727,12 @@ do
   local c1,c2,c3,c4=conn(b1,2),conn(b2,2),conn(cc,1),conn(poleo,2)
   c2.connections={{target=c1},{target=c4}}; c1.connections={{target=c2}}; c4.connections={{target=c2},{target=c3}}; c3.connections={{target=c4}}
   b2.get_wire_connector=function(w) return w==2 and c2 or nil end
-  local kept=C.read
-  C.read=function(o) return o.fake end
-  b1.fake={settings={read_contents=true,read_contents_mode='entire_belt_hold'}}
-  b2.fake={settings={read_contents=true,read_contents_mode='entire_belt_hold'}}
+  -- (d18 freeze) the readers are read from each belt's own settings, without M.read
+  b1.get_control_behavior=function() return {read_contents=true,read_contents_mode='entire_belt_hold'} end
+  b2.get_control_behavior=function() return {read_contents=true,read_contents_mode='entire_belt_hold'} end
   local text,readers=C.belt_segment(b2)
   has(text,"the wires read 15 iron-ore (the game's own signal, anything else on those networks included; a read switched on this tick shows from the next); belts reading their contents on those networks: transport-belt (1.5,0) (this belt) entire_belt_hold, transport-belt (0.5,0) entire_belt_hold; other entities on them: 1 constant-combinator")
   eq(#readers,2)
-  C.read=kept
 end
 print('d15_batch4 F4 belt segment: ok')
 
