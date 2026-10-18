@@ -235,4 +235,24 @@ do
   eq(C2.check(q,{['until']='pod_landed',platform='K2'},nil,rec),true,'one pod at least')
   assert(not pcall(C2.validate,{['until']='pod_landed'}),'platform required')
 end
+-- (d17 batch33 A2, Astra 09:33: Petrel's wait with quality rare / uncommon read 0 while the hub held 5 rare and 10
+-- uncommon quality-module-3) item_count reads quality; "any" sums them; no other condition takes it.
+do
+  prototypes.item['quality-module-3']={}
+  prototypes.quality={normal={},uncommon={},rare={},epic={},legendary={},['quality-unknown']={}}
+  defines.inventory.hub_main=1
+  local held={['quality-module-3@rare']=5,['quality-module-3@uncommon']=10,['quality-module-3@normal']=2}
+  local inv={get_item_count=function(id) if type(id)=='string' then return held[id..'@normal'] or 0 end return held[id.name..'@'..(id.quality or 'normal')] or 0 end}
+  local pl={valid=true,name='Petrel',hub={valid=true,get_inventory=function() return inv end}}
+  local q={position={x=0,y=0},surface=surface,force={name='player',platforms={pl}},get_main_inventory=function() return main end}
+  local function qc(c) C.validate(c); return C.check(q,c) end
+  local met,saw=qc({['until']='item_count',platform='Petrel',item='quality-module-3',quality='rare',at_least=5})
+  eq(met,true); eq(saw,'quality-module-3 (rare quality) 5 in Petrel hub (landed stock; excludes incoming cargo and hub trash)')
+  eq(qc({['until']='item_count',platform='Petrel',item='quality-module-3',quality='uncommon',at_least=10}),true)
+  eq(select(2,qc({['until']='item_count',platform='Petrel',item='quality-module-3',at_least=1})):match('^quality%-module%-3 (%d+)'),'2','the name alone: normal quality')
+  eq(select(2,qc({['until']='item_count',platform='Petrel',item='quality-module-3',quality='any',at_least=1})):match('(%d+) in Petrel'),'17')
+  assert(not pcall(C.validate,{['until']='item_count',platform='Petrel',item='quality-module-3',quality='shiny',at_least=1}),'unknown quality refused')
+  local ok,err=pcall(C.validate,{['until']='ammo_below',count=5,quality='rare'})
+  assert(not ok and tostring(err):find('quality applies to item_count only',1,true),tostring(err))
+end
 print('conditions: ok')

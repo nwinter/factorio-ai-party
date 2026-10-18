@@ -496,6 +496,8 @@ return function(api)
   end
   local function dist(a, b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
   M.MAX_ENTITIES, M.MAX_TILES = 1024, 8192
+  -- rule checks of the hub's foundation rules in one tick (about 25-35 us each on world n: 400 is 10-14 ms)
+  M.INLINE_CHECKS = 400
 
   -- Walls, gates and pipes stretch their collision box toward what they
   -- join (2.0.77: a lone wall or pipe is 0.289 from its centre on each side,
@@ -1309,9 +1311,25 @@ return function(api)
           local ghosts = {}
           for _, c0 in pairs(new) do ghosts[#ghosts+1] = {c0[1], c0[2], 'space-platform-foundation'} end
           local tc = {}
-          local play = TC.play(s, ghosts, hubf, thr, tc)
+          -- (d17 batch33 A1, Sol: Wayfarer's 3318 tiles; the old play stopped at 4096 steps and read the rest as 107
+          -- unbuildable) INLINE_CHECKS rule checks in this tick; a set they do not finish is handed to a check across
+          -- ticks (floorcheck.lua), and nothing undecided is called unbuilt
+          local play = TC.play(s, ghosts, hubf, thr, tc, M.INLINE_CHECKS)
+          if play.left > 0 then
+            local fc = api.floorcheck and api.floorcheck()
+            local id = fc and try(function()
+              local cells = {}
+              for i, g in ipairs(ghosts) do cells[i] = {g[1], g[2]} end
+              return fc.start(s, cells, hubf, thr, string.format('place_ghosts dry run, %d tiles', #ghosts))
+            end)
+            t.unchecked_count = #ghosts
+            t.check = id and string.format('the hub\'s foundation rules over these %d tiles take more than one tick (%d rule checks did not finish them; none is counted unbuilt): a check across ticks runs now (%d checks a tick): platform_plan {platform, floor_check: %d} reads it; it counts what is built in turn and what is never built, with why',
+              #ghosts, M.INLINE_CHECKS, fc and fc.CHECKS or 0, id)
+              or string.format('the hub\'s foundation rules over these %d tiles were not finished in one tick (%d rule checks); none is counted unbuilt', #ghosts, M.INLINE_CHECKS)
+            t.check_id = id
+          end
           local rows, far, nun = {}, {}, 0
-          for _, g in ipairs(ghosts) do
+          for _, g in ipairs(play.left > 0 and {} or ghosts) do
             if not play.built[TC.key(g[1], g[2])] and TC.is_empty(s, g[1], g[2], tc) then
               nun = nun + 1
               local r = play.rule(g)
@@ -1328,7 +1346,7 @@ return function(api)
               for _, g in ipairs(ghosts) do ghosts2[#ghosts2+1] = g end
               for _, c in ipairs(chain) do ghosts2[#ghosts2+1] = {c[1], c[2], 'space-platform-foundation'} end
               local tc2 = {}
-              local play2 = TC.play(s, ghosts2, hubf, thr, tc2)
+              local play2 = TC.play(s, ghosts2, hubf, thr, tc2, M.INLINE_CHECKS)
               local still = 0
               for _, g in ipairs(ghosts2) do if not play2.built[TC.key(g[1], g[2])] and TC.is_empty(s, g[1], g[2], tc2) then still = still + 1 end end
               local shown = {}

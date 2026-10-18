@@ -287,10 +287,16 @@ do
   blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
   local line
   for _,l in ipairs(blocked) do if l:find('ghost count capped',1,true) then line=l end end
-  eq(line,'ghost count capped (the first 3 of 13 tile-ghosts counted): the counted ghosts need inserter at least 1, hub has 1, space-platform-foundation at least 3, hub has 20')
+  eq(line,'ghost count capped (the first 3 of 13 tile-ghosts counted; every ghost is being counted across ticks (1000 a tick): read again in a few seconds): the counted ghosts need inserter at least 1, hub has 1, space-platform-foundation at least 3, hub has 20')
+  -- (d17 batch33 A1, Sol: Wayfarer's ghosts read as the first 1000 and 3000) the tally across ticks gives every ghost
+  for _=1,4 do runtime.ghosttally.tick() end
   hub_inv[2]=stack('space-platform-foundation',1)
-  for _,l in ipairs(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked) do if l:find('ghosts wait for items',1,true) then line=l end end
-  assert(line:find('space-platform-foundation (ghosts need at least 3, hub has 1)',1,true) and line:find('(the first 3 of 13 tile-ghosts counted)',1,true),line)
+  line=nil
+  for _,l in ipairs(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked) do
+    assert(not l:find('ghost count capped',1,true),l)
+    if l:find('ghosts wait for items',1,true) then line=l end
+  end
+  assert(line:find('space-platform-foundation (ghosts need 12, hub has 1), space-platform-foundation@uncommon (ghosts need 1, hub has 0)',1,true) and line:find('every ghost counted (',1,true) and line:find(' entity ghosts, 13 tile ghosts) across ticks 0s ago',1,true),line)
   hub_inv[2]=stack('space-platform-foundation',20)
   runtime.space.GHOST_CAP=caps
   blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked

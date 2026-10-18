@@ -96,8 +96,11 @@
   hold, the inserters dropping onto them, a start nothing feeds, an underground exit with no entrance or a span over
   empty space), the hub (with none: the machines that unload it there), crushers, ice melters, collectors.
   `first_missing`: the first consumer short of a craft whose way is broken, else the first missing link below it.
-- `platform_plan {platform, floor?, page?, ready?, salvage?, support?}`: the platform as planned, built entities and ghosts
-  together: foundation islands, belt loops, head-on belts and side-loads. `floor: true`: the foundation the entity
+- `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
+  together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
+  foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
+  take seconds) and gives its number; `floor_check: N` reads it: running, or done with `built`, `unbuilt_count`,
+  `by_reason` and the first 12 `unbuilt` with why. `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
   ghosts counted as floor that the hub's foundation rules never build. `ready: {positions, area, tiles}`: one subset's
@@ -348,7 +351,9 @@
   deconstruct with `spans_cut` marks nothing and is refused unless `"cut_spans":true`. The hub builds a foundation ghost only with foundation among the 8 tiles round it (a
   corner is enough) and its empty side neighbours in one run (it never splits empty space, even when both sides stay
   open). A dry run on a platform (place_ghosts, build, paste with `dry_run: true`) plays those rules over the new tiles
-  and the ghosts ordered: `tiles.unbuilt` names each tile that stays unbuilt and why; for one with no foundation near,
+  and the ghosts ordered: `tiles.unbuilt` names each tile that stays unbuilt and why (a plan its 400 rule checks in
+  one tick do not finish counts none unbuilt: `tiles.check` names the check across ticks it started, read with
+  `platform_plan {platform, floor_check: N}`); for one with no foundation near,
   `tiles.connect` lists the fewest tiles that join it to the built floor (a chain touching by sides or corners,
   `connect_line`); `holes` lists the enclosed tiles that need foundation (beside a new tile with only enclosed regions
   round it, the largest may stay empty: `holes_other`).

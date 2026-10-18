@@ -1,7 +1,8 @@
 - `wait_until {until, ..., timeout?}`: waits inside the game until a condition holds, with no call per check: a direct
   timed action (`--wait`), a queue step, a queue guard's `when` or a standing order's `when`. Conditions: `researched`
   (`technology`; without it the research running now); `crafting_done`; `item_count` (`item`, `at_least` or `below`;
-  `positions`: chests or machines of ours, summed, a silo's rocket cargo too (the item `rocket` is ammunition);
+  `quality`: that quality only, `"any"` every quality summed, none the name alone, which counts normal quality only;
+  no other condition takes `quality`; `positions`: chests or machines of ours, summed, a silo's rocket cargo too (the item `rocket` is ammunition);
   default your inventory; `"surface":"nauvis"`: with positions, those chests there, alone, our logistic networks
   there (all of them summed), in the remote lane too; `network: {x,y}`: the one logistic network covering that spot;
   `platform`: the landed items in that hub, not incoming cargo or hub trash); `spoil_within` (`position`: an assembler,

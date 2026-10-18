@@ -296,6 +296,21 @@ eq(pl.items['space-platform-foundation'], 28); eq(pl.missing['space-platform-fou
 has(table.concat(pl.tiles.unbuilt, ' | '), '(20.5,20.5): no foundation among the 8 tiles round it')
 has(pl.tiles.connect_line, '14 foundation tiles join them to the built floor: (19.5,19.5)')
 has(pl.tiles.connect_line, 'with them every tile here is built by the hub\'s rules')
+-- (d17 batch33 A1, Sol: 107 tiles read unbuildable where the one-tick check had stopped) a plan its rule checks in one
+-- tick do not finish: none is counted unbuilt; a check across ticks starts and the reply names it.
+do
+  local started
+  api.floorcheck = function() return {CHECKS=150, start=function(s, cells, h, thr, label) started = {n=#cells, label=label}; return 5 end} end
+  local keep = dryrun.INLINE_CHECKS
+  dryrun.INLINE_CHECKS = 2
+  local pq = dryrun.check(pp, {kind='ghosts', entities={{index=1, name='gun-turret', position={x=0, y=-5}}}, tiles=ring})
+  dryrun.INLINE_CHECKS = keep
+  eq(pq.tiles.unbuilt, nil); eq(pq.tiles.unbuilt_count, nil); eq(pq.tiles.check_id, 5); eq(pq.tiles.unchecked_count, started.n)
+  has(pq.tiles.check, 'take more than one tick (2 rule checks did not finish them; none is counted unbuilt)')
+  has(pq.tiles.check, 'platform_plan {platform, floor_check: 5} reads it')
+  has(started.label, 'place_ghosts dry run, ')
+  api.floorcheck = nil
+end
 -- A column across an enclosed hole splits it in two: filling one side is enough, the other may stay empty.
 local function deck2(x, y)
   if x >= 0 and x <= 12 and y >= 0 and y <= 6 and not (x >= 2 and x <= 10 and y >= 2 and y <= 4) then return 'space-platform-foundation' end
