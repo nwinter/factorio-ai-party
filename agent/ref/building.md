@@ -49,6 +49,10 @@
   inside an enemy's reach is left out (`left_out`; `unsafe_goal: true` builds it). It reports `materials` before
   acting (need, held, missing, queued, hand_craftable); `dry_run: true` checks them without acting.
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
+- `rebuild {area | position+radius, all?, from?, dry_run?}`: one queued plan for the ghosts there robots will not build:
+  takes the items you do not carry (from `from`, else chests of ours within 96 tiles of you), hand-crafts what none
+  holds, then `construct {area, outside_robots: true}` per box of up to 256x256. `all: true`: every ghost.
+  Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
