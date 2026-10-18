@@ -92,3 +92,99 @@ do
   has(r.line,'none of ours')
 end
 print('d17_batch31 B3 line of fire: ok')
+
+-- B2 (Luna): platform_schedule {platform, next: true}: the game's go to station on the stop after the current one. ------
+do
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,paused=7},inventory={hub_main=1,hub_trash=2}}
+  prototypes={space_location={nauvis={},gleba={}}}
+  local recs={{station='nauvis'},{station='gleba'}}
+  local cur=1
+  local sch={get_record_count=function() return #recs end}
+  setmetatable(sch,{__index=function(_,k) if k=='current' then return cur end end})
+  local pl={valid=true,name='Spindle',state=4,space_location={name='nauvis'},get_schedule=function() return sch end}
+  sch.go_to_station=function(i) cur=i; pl.state=3; pl.space_location=nil; pl.space_connection={} end
+  setmetatable(pl,{__index=function(_,k) if k=='schedule' then return {current=cur,records=recs} end end})
+  local p={force={platforms={pl}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end,
+    integer=function(v,d) return v==nil and d or v end,freight={where=function() return {} end,leg=function() return nil end}}
+  local r=space.platform_schedule(p,{platform='Spindle',next=true})
+  eq(r.sent_to,'from stop 1 (nauvis) to stop 2 (gleba): go to station called (it was waiting at nauvis)')
+  eq(cur,2)
+  eq(r.schedule,'nauvis | >gleba')
+  local ok,err=pcall(space.platform_schedule,p,{platform='Spindle',next=true,current=1})
+  assert(not ok and tostring(err):find('next goes alone',1,true),tostring(err))
+  -- flying to stop 2: next is stop 1 again
+  r=space.platform_schedule(p,{platform='Spindle',next=true})
+  has(r.sent_to,'from stop 2 (gleba) to stop 1 (nauvis)')
+  has(r.sent_to,'it was flying to stop 2 (gleba)')
+end
+print('d17_batch31 B2 platform_schedule next: ok')
+
+-- B9 (Astra 07:33, Luna 07:50): a count wait needs its condition and takes no other fields; the game's fluid_count on a
+-- platform is noted with what world n showed; harness: true keeps it in the harness, which reads the tanks and sends
+-- the platform on. ----------------------------------------------------------------------------------------------------
+do
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,paused=7},inventory={hub_main=1,hub_trash=2},
+    wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},gleba={}},fluid={['thruster-fuel']={}},item={['firearm-magazine']={}}}
+  local tank=0
+  local hubinv={get_item_count=function() return 700 end}
+  local pl={valid=true,name='Spindle',index=3,state=4,space_location={name='nauvis'},force={},paused=false,
+    hub={valid=true,get_circuit_network=function() return nil end,get_inventory=function() return hubinv end},
+    surface={find_entities_filtered=function() return {{get_fluid_count=function() return tank end}} end}}
+  local sch={}
+  setmetatable(sch,{__index=function(_,k) if k=='current' then return pl.schedule and pl.schedule.current end end})
+  sch.get_record_count=function() return #pl.schedule.records end
+  sch.go_to_station=function(i) pl.schedule.current=i end
+  pl.get_schedule=function() return sch end
+  local p={force={platforms={pl}}}
+  local st={}
+  local W=dofile('mod/agent-harness_0.1.0/platwait.lua'){state=function() return st end}
+  game={tick=600,forces={player={platforms={pl}}}}
+  local function cond(c)
+    local name,cmp,v=c:match('^(%S+) (%S+) (%d+)$')
+    return {first_signal={type=prototypes.fluid[name] and 'fluid' or 'item',name=name},comparator=cmp=='>=' and '≥' or cmp,constant=tonumber(v)}
+  end
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,platwait=function() return W end,
+    circuit_condition=function(c) return type(c)=='string' and cond(c) or c end,
+    integer=function(v,d) return v==nil and d or v end,freight={where=function() return {} end,leg=function() return nil end}}
+  local function fails(a,text) local ok,err=pcall(space.platform_schedule,p,a); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+  -- Luna's forms: read as the condition and the ticks, said in read_as; other fields refused
+  local r0=space.platform_schedule(p,{platform='Spindle',stops={{station='nauvis',wait={{type='fluid_count',fluid='thruster-fuel',count=24000},{type='time',seconds=100}}},{station='gleba'}},current=2})
+  eq(r0.read_as[1],'stop 1 wait 1: fluid_count thruster-fuel count 24000 read as condition "thruster-fuel >= 24000"')
+  eq(r0.read_as[2],'stop 1 wait 2: seconds 100 read as ticks 6000')
+  eq(pl.schedule.records[1].wait_conditions[1].condition.constant,24000)
+  eq(pl.schedule.records[1].wait_conditions[2].ticks,6000)
+  fails({platform='Spindle',stops={{station='nauvis',wait={{type='item_count',item='firearm-magazine',count=400,op='or',surface='gleba'}}}}},
+    'stop 1 wait 1: op, surface are not wait fields (a wait takes type, ticks, condition, compare, harness)')
+  fails({platform='Spindle',stops={{station='nauvis',wait={{type='item_count'}}}}},'item_count needs a condition')
+  fails({platform='Spindle',stops={{station='nauvis',wait={{type='time',ticks=60,harness=true}}}}},'harness: true goes with a fluid_count wait')
+  -- the game's fluid_count: the note
+  local r=space.platform_schedule(p,{platform='Spindle',stops={{station='nauvis',wait={{type='fluid_count',condition='thruster-fuel >= 24000'}}},{station='gleba'}},current=2})
+  has(r.fluid_count_note,'did not hold while its storage tanks held more')
+  eq(r.waits_run[1],"stop 1 (nauvis) fluid_count thruster-fuel >= 24000: the game's condition")
+  eq(W.get('Spindle'),nil)
+  -- harness: the record holds time 10 s, the hub's item_count and the never condition; the harness holds the tanks
+  r=space.platform_schedule(p,{platform='Spindle',current=1,stops={{station='nauvis',wait={{type='time',ticks=600},
+    {type='fluid_count',condition='thruster-fuel >= 24000',harness=true},{type='item_count',condition='firearm-magazine >= 700'}}},{station='gleba'}}})
+  eq(r.fluid_count_note,nil)
+  local rec=pl.schedule.records[1].wait_conditions
+  eq(#rec,3); eq(rec[1].type,'time'); eq(rec[2].type,'item_count'); eq(rec[3].type,'circuit'); eq(rec[3].condition.constant,-2147483648)
+  has(r.waits_run[1],'stop 1 (nauvis) fluid_count thruster-fuel >= 24000: the harness (the sum in its storage tanks')
+  has(r.waits_run[2],'never holds, so the game does not send it on')
+  eq(r.schedule,'>nauvis (time 10s, item_count firearm-magazine >= 700, the harness sends it on) | gleba')
+  pl.schedule.current=1
+  W.tick(600)
+  has(W.line('Spindle'),'now waits at stop 1 (nauvis): time 10s: 10s left (not yet); thruster-fuel >= 24000: tanks hold 0 (0 tanks) (not yet); firearm-magazine >= 700: the hub holds 700')
+  tank=25000
+  W.tick(1200)
+  eq(pl.schedule.current,2,'sent on once the tanks and the time hold')
+  has(W.line('Spindle'),'last: tick 1200: sent from stop 1 (nauvis) for stop 2 (gleba): time 10s: passed; thruster-fuel >= 24000: tanks hold 25000 (1 tank)')
+  -- a stop with an inactivity wait cannot be mirrored
+  fails({platform='Spindle',stops={{station='nauvis',wait={{type='inactivity',ticks=600},{type='fluid_count',condition='thruster-fuel >= 24000',harness=true}}}}},
+    'harness waits go with time and item_count waits joined by and')
+  -- a schedule without harness waits clears the watch
+  space.platform_schedule(p,{platform='Spindle',stops={{station='gleba'}}})
+  eq(W.get('Spindle'),nil)
+end
+print('d17_batch31 B9 platform fluid_count: ok')
