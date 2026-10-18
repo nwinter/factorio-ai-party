@@ -689,8 +689,58 @@ function inventoryChange(before: unknown, after: unknown): string | undefined {
   }
   return parts.length ? parts.join(' ') : 'unchanged';
 }
-async function main() {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: {
+// The flags each command reads (batch35 A1, Astra twice: fh call ... --file X sent {} and the reply was "to missing").
+// A flag the command does not read is refused before anything is sent, naming the flags it takes.
+const FLAGS_ALL = ['format','help','journal','bot','deadline-file','operator-repeat','full'];
+const FLAGS_GAME = ['player','host','port','timeout','session','bridge-socket','socket','id'];
+const FLAGS_WAIT = ['wait','no-wait','wait-timeout','wait-through-tells','wake-on-tells','wake-from','wake-local','no-operator-wake','wake-on-viewers','no-urgent','urgent-radius','wake-on-orders'];
+const FLAGS_CALL = [...FLAGS_GAME, ...FLAGS_WAIT, 'args', 'args-file', 'since', 'limit', 'peek'];
+const MESSAGE_FLAGS = ['text-file','aloud','look','fyi','wake','title'];
+function commandFlags(positionals: string[]): {label: string, own: string[], flags: Set<string>} {
+  let command = positionals[0] ?? '', sub = positionals[1];
+  if (command === 'call' && sub && ['say','confess','tell','operator','chronicle'].includes(sub)) { command = sub; sub = undefined; }
+  const own: Record<string, string[]> = {
+    help:FLAGS_GAME, more:FLAGS_GAME, start:['name','factorio','save','headless','niri','space-age','bridge'],
+    connect:['name','server','factorio','space-age','password-file','player-data','mods','niri'], 'stop-session':['session','name'], install:['mods'],
+    deploy:[...FLAGS_GAME,'file'], watch:[...FLAGS_GAME,'file'], stream:FLAGS_GAME, run:[...FLAGS_GAME,...FLAGS_WAIT,'file'],
+    view:[...FLAGS_GAME,'args','args-file','out'], doctor:FLAGS_GAME,
+    sleep:[...FLAGS_GAME,...FLAGS_WAIT,'args','args-file','until','then','require-met'],
+    wait:[...FLAGS_GAME,...FLAGS_WAIT,'args','args-file','until','then','max','require-met'],
+  };
+  for (const m of ['say','confess','tell','operator','chronicle']) own[m] = [...FLAGS_CALL, ...MESSAGE_FLAGS];
+  let label = `fh ${command}`, extra: string[] = [];
+  if (command === 'blueprint') {
+    label = `fh blueprint ${sub ?? 'list'}`;
+    if (sub === 'import') extra = ['file']; else if (sub === 'export') extra = ['out'];
+  } else if (command === 'queue') {
+    label = `fh queue ${sub ?? 'status'}`;
+    if (sub === 'submit' || sub === 'repeat' || sub === 'edit') extra = ['file'];
+  } else if (command === 'plan') {
+    label = `fh plan ${sub ?? 'list'}`;
+    if (sub === 'save') extra = ['file'];
+  } else if (command === 'call') {
+    label = sub ? `fh call ${sub}` : 'fh call';
+    if (sub === 'blueprint_export') extra = ['out'];
+  } else if (command === 'blueprint_export') extra = ['out'];
+  // fh ACTION, fh board, research, chat and the rest go as fh call
+  const takes = [...(own[command] ?? FLAGS_CALL), ...extra];
+  return {label, own:takes.filter(f => !FLAGS_GAME.includes(f) && !FLAGS_WAIT.includes(f)), flags:new Set([...FLAGS_ALL, ...takes])};
+}
+// Where a flag is read, for the refusal.
+const FLAG_HOMES: Record<string, string> = {
+  file:'fh queue submit|repeat|edit, fh plan save, fh blueprint import, fh run, fh deploy', out:'fh view, fh blueprint export, fh call blueprint_export',
+  until:'fh sleep, fh wait', then:'fh sleep, fh wait', max:'fh wait', 'require-met':'fh sleep, fh wait', 'text-file':'fh say, confess, tell, operator, chronicle',
+  aloud:'fh say', look:'fh say', fyi:'fh tell', wake:'fh tell', title:'fh chronicle', mods:'fh install, fh connect',
+};
+function flagRefusal(flag: string, positionals: string[], known: boolean): string {
+  const {label, own, flags} = commandFlags(positionals);
+  const game = [...flags].some(f => FLAGS_GAME.includes(f)), waits = [...flags].some(f => FLAGS_WAIT.includes(f));
+  const home = known && FLAG_HOMES[flag] ? ` (--${flag} is for ${FLAG_HOMES[flag]})` : known ? '' : ' (no fh command has it)';
+  return `${label} does not take --${flag}${home}; nothing was sent. ${label} takes ${own.map(f => '--' + f).join(', ') || 'no flags of its own'}`
+    + `${game ? ', the connection flags (--player, --session, --socket, --timeout, --id ...)' : ''}${waits ? ', the wait flags (--wait, --no-wait, --wait-timeout, --wake-* ...)' : ''}`
+    + `, and everywhere --format, --journal, --bot, --full, --help`;
+}
+const CLI_OPTIONS = {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
@@ -701,7 +751,23 @@ async function main() {
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'}, wake:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'}, then:{type:'string'},
     max:{type:'string'}, title:{type:'string'},
-  }});
+} as const;
+// The arguments, with a flag the command does not read refused before anything is sent.
+function parseCli() {
+  // An unknown flag: the same refusal, naming the command's flags (node's own error names neither).
+  try { parseArgs({ allowPositionals: true, options: CLI_OPTIONS }); }
+  catch (error: any) {
+    if (error?.code !== 'ERR_PARSE_ARGS_UNKNOWN_OPTION') throw error;
+    const flag = String(error.message).match(/'-{1,2}([^']+)'/)?.[1] ?? '?';
+    throw new Error(flagRefusal(flag, parseArgs({ allowPositionals: true, strict: false, options: CLI_OPTIONS }).positionals, false));
+  }
+  const parsed = parseArgs({ allowPositionals: true, options: CLI_OPTIONS });
+  const {flags} = commandFlags(parsed.positionals);
+  for (const flag of Object.keys(parsed.values)) if (!flags.has(flag)) throw new Error(flagRefusal(flag, parsed.positionals, true));
+  return parsed;
+}
+async function main() {
+  const { values, positionals } = parseCli();
   let command = positionals[0];
   // fh help ACTION (or fh call ACTION --help): that action's arguments, about 1 KB.
   if (values.help && command === 'call' && positionals[1]) { command = 'help'; positionals.splice(0, 2, 'help', positionals[1]); }
@@ -861,7 +927,7 @@ async function main() {
     command = 'call';
   }
   // `fh call say words...` used to drop the words and send {} ("text is required").
-  if (command === 'call' && ['say','confess','tell','operator','chronicle'].includes(positionals[1] ?? '') && (positionals.length > 2 || !values.args)) {
+  if (command === 'call' && ['say','confess','tell','operator','chronicle'].includes(positionals[1] ?? '') && (positionals.length > 2 || !values.args || MESSAGE_FLAGS.some(f => (values as Record<string, unknown>)[f] !== undefined))) {
     command = positionals[1]!;
     positionals.splice(0, 2, command);
   }
@@ -986,6 +1052,12 @@ async function main() {
     command = 'call';
   }
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
+  // Words after the action were dropped and the action sent without them (batch35 A1): refused, as a flag it does not read.
+  const extraWords = command === 'call' && positionals[0] === 'call' ? positionals.slice(2) : command === 'describe' || command === 'observe' ? positionals.slice(1) : [];
+  if (extraWords.length) {
+    const action = command === 'call' ? positionals[1] : command;
+    throw new Error(`fh call ${action} takes its arguments as --args JSON or --args-file FILE; the words ${extraWords.map(w => JSON.stringify(w)).join(' ')} after it are not read, so nothing was sent`);
+  }
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
   if (values.bot && values.player) throw new Error('Use --player or --bot, not both');

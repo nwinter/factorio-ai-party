@@ -483,8 +483,50 @@ return function(api)
   -- ticks, wait N ticks) would repeat what already happened, so they are not
   -- requeued.
   local RESTARTABLE={move_to=true,construct=true,build_path=true,mine=true,repair=true,kite=true,wait_until=true,rearm=true,refuel=true,collect=true,recover=true}
+  -- (d17 batch35 A5, Muse 14:16: rocket launches stalled 5+ minutes after a failed direct call paused the queue, until a
+  -- queue_status read showed it) The job and step a failed direct call would pause now, or nil when nothing runs.
+  local function job_text(q)
+    local step=q.current or q.pending[1]
+    if not step then return nil end
+    local job
+    if q.order then job='standing order '..tostring(q.order.name)
+    elseif q.loop then job=string.format('repeating plan%s, round %d',q.name and ' '..q.name or '',q.cycle or 1)
+    elseif q.plan then job=string.format('plan #%s%s',tostring(q.plan.id),q.plan.name and ' '..q.plan.name or '')
+    else job='your queue' end
+    local at=''
+    if q.plan and q.plan.steps and not q.loop then
+      local done=0
+      for _,e in ipairs(q.history) do if not e.order and e.plan==q.plan.id and e.id then done=done+1 end end
+      at=string.format(' %d of %d',math.min(q.plan.steps,done+1),q.plan.steps)
+    end
+    return string.format('%s, step%s %s%s%s',job,at,step.id and '#'..tostring(step.id)..' ' or '',tostring(step.action),step.label and ' ('..tostring(step.label)..')' or ''),
+      q.order~=nil
+  end
+  function M.pause_note(index,action)
+    local q=(api.state()[QUEUES] or {})[index]
+    if not q or q.paused then return nil end
+    local job,order=job_text(q)
+    if not job then return nil end
+    return string.format('this failed %s paused your queue (%s): %s',tostring(action),job,
+      order and 'the standing order keeps its steps for later' or 'queue_resume resumes it'),job
+  end
+  -- While a failed direct call keeps it paused: one line for the team block, else nil.
+  function M.failed_pause_line(index)
+    local q=(api.state()[QUEUES] or {})[index]
+    local w=q and q.paused and q.paused_why
+    if not (w and w.failed_call) then return nil end
+    return string.format('your queue is paused since your %s failed %ds ago (%s): queue_resume resumes it',w.failed_call,
+      math.floor((game.tick-w.tick)/60),w.job or '?')
+  end
   -- why: what paused it (a direct call that drives the character, stop, a retreat, a death, a deploy ...).
-  function M.pause(index,why)
+  -- failed: the action of a failed direct call that paused it (job: the job and step it paused, read before the pause)
+  function M.pause(index,why,failed,job)
+    local q=queue(index)
+    job=job or (failed and not q.paused and job_text(q)) or nil
+    M.pause_inner(index,why)
+    if failed and job then q.paused_why={tick=game.tick,line=string.format('your %s call failed while your queue ran (%s)',failed,job),failed_call=failed,job=job} end
+  end
+  function M.pause_inner(index,why)
     local q=queue(index)
     if not q.paused or why then q.paused_why={tick=game.tick,line=why or 'paused (a direct call that drives your character, stop, or a harness update)'} end
     if q.current then

@@ -18,7 +18,8 @@
     would read `arrived` more than the tolerance + 3 tiles from the goal is `stopped_short`, `last.why` saying where,
     how far and after how many legs round enemies.
   - No route: it ends at once `unreachable`, with `last.why` (closed in: the area and what closes it in; boxed in
-    among our drills or belts with the area open: it names them and `"squeeze":true` or `"pathfind":false`),
+    among our drills or belts with the area open: it names them, `"squeeze":true` or `"pathfind":false`, and the nearest
+    open spot reached straight over the belts; `"unbox":true` walks there in the same call, then on to the goal),
     `last.nearest_reachable` and `last.build_spot`, a spot you reach within build reach of the target
     (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to
     (inside a machine, a silo, a landing pad) is walked near: it ends `arrived_near` at that spot (`last.near_walk`;
@@ -39,7 +40,8 @@
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
     mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
-    first (`left_reach_first`). A goal inside one is refused (`unsafe_goal: true` goes anyway). No way round:
+    first (`left_reach_first`). A goal inside one is refused, naming each threat (`unsafe_goal: true` goes anyway;
+    `unsafe_goal: "moving"` only when every threat moves: units, a group, an attack on ours; also on rearm). No way round:
     `no_safe_route`, with `last.smaller_margins` (the largest smaller margin with a complete engine route, its closest
     nest pass, or why the check failed), `last.via_round`, and for a walk back `last.walked_back` (the way you walked
     out, as via points). When only enemies that move (units, a group, an attack) are in the way, it stands and plans
@@ -140,7 +142,8 @@
 - `shoot {position | auto, gun?, ammo?, ticks?, fire_anyway?}`: fires at the position (`auto: true`: the nearest enemy); the
   position is within 32 tiles of you or the selected gun's range, the larger, in a chunk our force sees now; replies
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
-  `last_combat.why_none` when nothing fired. Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
+  `last_combat.why_none` when nothing fired. The selected gun's empty ammo slot is loaded from your main inventory first
+  (`loaded`), and again when it runs dry mid-fight (`last_combat.equipped`; `dry` when nothing carried fits it). Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
   position whose blast reaches our own entities is refused, naming them; `auto` holds fire at such a target
   (`last_combat.held_blast`); `fire_anyway: true` fires anyway. With area ammunition, enemy units within 6 tiles of
   you or an aim point inside the blast round you switch the gun to a slot holding ammunition without an area

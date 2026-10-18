@@ -72,12 +72,28 @@ return function(api)
     action.equipped=note
     return true
   end
+  -- (d17 batch35 A2) The selected gun's ammo slot empty while ammo it fires is carried: loaded from the main inventory
+  -- (a player's click), counted into ammo_start and said in equipped.
+  function M.load_selected(p,action)
+    local slots=api.ammoslots
+    local sel=slots and p.character and p.character.selected_gun_index
+    if not sel then return end
+    local line=slots.load(p,sel)
+    if not line then return end
+    local ok,n=pcall(function() return p.get_inventory(defines.inventory.character_ammo)[sel].count end)
+    action.ammo_start=action.ammo_start+(ok and n or 0)
+    action.reloads=(action.reloads or 0)+1
+    action.equipped=action.equipped and action.equipped..'; '..line or line
+  end
   function M.plan(p,a)
     local band_min,band_max=a.min_distance or 7,a.max_distance or 12
     assert(type(band_min)=='number' and type(band_max)=='number' and band_min>=2 and band_max>band_min and band_max<=30,'need 2 <= min_distance < max_distance <= 30')
     local health=a.min_health or 0.4
     assert(type(health)=='number' and health>=0 and health<1,'min_health is a fraction 0..1')
     local equipped=ammo_count(p)==0 and M.auto_equip(p) or nil
+    local sel=api.ammoslots and p.character and p.character.selected_gun_index
+    local loaded=sel and api.ammoslots.load(p,sel) or nil
+    if loaded then equipped=equipped and equipped..'; '..loaded or loaded end
     local ammo=ammo_count(p)
     assert(ammo>0,'no ammunition equipped, and none carried that fits a gun (craft firearm-magazine)')
     return {kind='kite',equipped=equipped,band_min=band_min,band_max=band_max,min_health=health,
@@ -125,6 +141,7 @@ return function(api)
   end
   function M.tick(p,action,tick)
     local c=p.character
+    if tick%10==0 then pcall(M.load_selected,p,action) end
     if action.retreating then return retreat_step(p,action,tick) end
     local stop
     if c.health<action.min_health*c.max_health then

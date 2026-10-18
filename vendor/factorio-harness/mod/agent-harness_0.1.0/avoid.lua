@@ -104,7 +104,7 @@ return function(api)
         local r = M.ATTACK_R + mode.pad
         if not box or (x + r >= box[1] and x - r <= box[3] and y + r >= box[2] and y - r <= box[4]) then
           out[#out+1] = {x=x, y=y, r=r, range=M.ATTACK_R, name='attack #' .. a.id, attack=true, id=a.id,
-            ago=math.floor((game.tick - a.last) / 60), size=a.size}
+            ago=math.floor((game.tick - a.last) / 60), size=a.size, hit=a.entities, kinds=a.kinds}
         end
       end
     end
@@ -132,7 +132,7 @@ return function(api)
           for k, q in ipairs(spots) do
             if not box or (q.x + r >= box[1] and q.x - r <= box[3] and q.y + r >= box[2] and q.y - r <= box[4]) then
               out[#out+1] = {x=q.x, y=q.y, r=r, range=M.ATTACK_R, name=label .. (k == 2 and ' (ahead of it)' or k == 3 and ' (where it heads)' or ''), attack=true, group=true,
-                id=key .. '#' .. k, ago=0, size=n}
+                id=key .. '#' .. k, ago=0, size=n, grp=grp, at_now=pos, target=g.target}
             end
           end
         end
@@ -154,8 +154,9 @@ return function(api)
           if seen[ck] then
             local k = math.floor(q.x / 16) .. ',' .. math.floor(q.y / 16)
             local c = cells[k]
-            if not c then c = {n=0, sx=0, sy=0, kinds={}, k=k}; cells[k] = c; order[#order+1] = c end
+            if not c then c = {n=0, sx=0, sy=0, kinds={}, k=k, first={}}; cells[k] = c; order[#order+1] = c end
             c.n = c.n + 1; c.sx = c.sx + q.x; c.sy = c.sy + q.y
+            if #c.first < 3 then c.first[#c.first+1] = u end
             c.kinds[u.name] = (c.kinds[u.name] or 0) + 1
           end
         end
@@ -166,7 +167,7 @@ return function(api)
         table.sort(parts)
         out[#out+1] = {x=c.sx / c.n, y=c.sy / c.n, r=M.ATTACK_R + mode.pad, range=M.ATTACK_R,
           name=string.format('%d enemy unit%s (%s)', c.n, c.n == 1 and '' or 's', table.concat(parts, ', ')),
-          attack=true, units=true, id='u' .. c.k, ago=0, size=c.n}
+          attack=true, units=true, id='u' .. c.k, ago=0, size=c.n, first=c.first}
       end
       -- Demolishers near the way, head and whole body (d17 batch18 C5, viewer Foobator: the walk checks found the head
       -- only): their segment entities in a chunk our force sees now, per demolisher in DEMO_CELL-tile cells, each cell a
@@ -1102,7 +1103,104 @@ return function(api)
     local discs = {}
     read_discs(p, mode, goal, discs, {})
     local c = deepest(discs, goal)
-    return c and {m=c.m, d=c.d, nest=M.name(c.m.blob)} or nil
+    if not c then return nil end
+    local all, moving = M.holding(discs, goal)
+    return {m=c.m, d=c.d, nest=M.name(c.m.blob), all=all, moving_only=moving}
+  end
+  -- (d17 batch35 A3, Haiku about 6 times a shift: move_to and rearm refused a goal near one passing enemy, and rearm
+  -- retried the whole tour) Every threat whose own reach holds goal, the deepest first, and whether each one moves:
+  -- units, groups, demolishers and the areas under attack now (an attack on ours goes on or ends), no worm, spawner
+  -- or turret.
+  function M.holding(discs, goal)
+    local all, moving = {}, true
+    for _, m in ipairs(discs) do
+      local d = dist(m, goal)
+      if d < m.range then all[#all+1] = {m=m, d=d}; if not m.attack then moving = false end end
+    end
+    table.sort(all, function(x, y) return x.d - x.m.range < y.d - y.m.range end)
+    return all, #all > 0 and moving
+  end
+  local COMMANDS
+  local function command_name(t)
+    if not COMMANDS then COMMANDS = {}; for k, v in pairs(try(function() local out = {}; for name, n in pairs(defines.command) do out[name] = n end; return out end) or {}) do COMMANDS[v] = k end end
+    return COMMANDS[t] or tostring(t)
+  end
+  local function target_text(t)
+    if type(t) ~= 'table' and type(t) ~= 'userdata' then return nil end
+    local name = try(function() return t.valid and t.name end)
+    local pos = try(function() return t.position end)
+    return name and pos and (name .. ' ' .. at(pos)) or nil
+  end
+  -- What a unit or group does now, from its commands: 'attacking gun-turret (-319,-313) (distracted)', 'going to
+  -- (-302,-325)', 'wandering', 'standing'.
+  local function doing(cmd_owner)
+    local dc = try(function() return cmd_owner.distraction_command end)
+    if dc and dc.type then
+      local t = target_text(dc.target)
+      return (command_name(dc.type) == 'attack' and 'attacking ' .. (t or '?') or command_name(dc.type)) .. ' (distracted)'
+    end
+    local cmd = try(function() return cmd_owner.command end)
+    if not (cmd and cmd.type) then return 'standing (no command)' end
+    local kind = command_name(cmd.type)
+    if kind == 'attack' then return 'attacking ' .. (target_text(cmd.target) or '?') end
+    if kind == 'go_to_location' or kind == 'attack_area' then
+      local dest = cmd.destination or cmd.area and cmd.area.left_top
+      return (kind == 'attack_area' and 'heading to attack round ' or 'going to ') .. (dest and at(dest) or '?')
+    end
+    if kind == 'wander' then return 'wandering' end
+    if kind == 'stop' then return 'standing' end
+    if kind == 'group' then return 'in a group' end
+    return kind
+  end
+  local function heading8(o)
+    if type(o) ~= 'number' then return nil end
+    return ({'north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'})[math.floor(o * 8 + 0.5) % 8 + 1]
+  end
+  -- One threat as counted: kind, where, how far from the goal, moving or standing and its heading, what it attacks.
+  function M.threat_row(t)
+    local m, d = t.m, t.d
+    if m.group then
+      local grp = m.grp
+      local state = try(function() local st = grp.state; for k, v in pairs(defines.group_state) do if v == st then return k end end end)
+      return string.format('%s at %s, %.1f tiles from it: moving%s, %s%s', m.name, at(m), d,
+        m.at_now and m.target and ' ' .. compass(m.target.x - m.at_now.x, m.target.y - m.at_now.y) or '',
+        doing(grp), state and ' (group ' .. state .. ')' or '')
+    elseif m.demolisher then
+      return string.format('%s at %s, %.1f tiles from it: moving', m.name, at(m), d)
+    elseif m.units then
+      local parts = {}
+      for _, u in ipairs(m.first or {}) do
+        if try(function() return u.valid end) then
+          local h = heading8(try(function() return u.orientation end))
+          parts[#parts+1] = string.format('%s %s %s%s', u.name, at(u.position), doing(try(function() return u.commandable end) or u),
+            h and ', facing ' .. h or '')
+        end
+      end
+      return string.format('%s at %s, %.1f tiles from it: moving units%s', m.name, at(m), d, #parts > 0 and ' (' .. table.concat(parts, '; ') .. ')' or '')
+    elseif m.attack then
+      local hit, by = {}, {}
+      for name, n in pairs(m.hit or {}) do hit[#hit+1] = n .. ' ' .. name end
+      for name, n in pairs(m.kinds or {}) do by[#by+1] = n .. ' ' .. name end
+      table.sort(hit); table.sort(by)
+      return string.format('%s at %s, %.1f tiles from it: our %s under attack now (last hit %ds ago%s)', m.name, at(m), d,
+        #hit > 0 and table.concat(hit, ', ') .. ' hit' or 'entities', m.ago or 0, #by > 0 and ' by ' .. table.concat(by, ', ') or '')
+    elseif m.spawner then
+      return string.format('%s at %s, %.1f tiles from it: standing (its units\' reach %g)', m.name, at(m), d, m.range)
+    end
+    return string.format('%s at %s, %.1f tiles from it: standing (range %g)', m.name, at(m), d, m.range)
+  end
+  -- '2 threats hold it: ...; all of them move (unsafe_goal: "moving" goes on)' (nil for none).
+  function M.threats_text(c, limit)
+    if not (c and c.all and #c.all > 0) then return nil end
+    -- one worm, spawner or turret: the first line said it all
+    if #c.all == 1 and not c.all[1].m.attack then return nil end
+    local rows = {}
+    for i, t in ipairs(c.all) do
+      if i > (limit or 6) then rows[#rows+1] = string.format('+%d more', #c.all - (limit or 6)); break end
+      rows[#rows+1] = M.threat_row(t)
+    end
+    return string.format('%d threat%s hold%s it: %s%s', #c.all, #c.all == 1 and '' or 's', #c.all == 1 and 's' or '', table.concat(rows, '; '),
+      c.moving_only and '; every one moves (unsafe_goal: "moving" goes on)' or '')
   end
   -- Every worm, spawner and area under attack now (as mode counts them) whose own reach comes within R tiles of
   -- point, on the chunks the map draws, read now (recover dry_run, round2120a: the danger round a corpse):
@@ -1136,10 +1234,15 @@ return function(api)
       for i = n + 1, #discs do if dist(spot, discs[i]) < discs[i].r then clear = false end end
       if clear then break end
     end
-    return {m=inside.m, d=inside.d, spot=spot, nest=M.name(inside.m.blob)}
+    local all, moving = M.holding(discs, goal)
+    return {m=inside.m, d=inside.d, spot=spot, nest=M.name(inside.m.blob), all=all, moving_only=moving}
   end
   -- 'goal (-10,350) is inside big-worm-turret (-21,343) range 38 (13.0 tiles from it)'.
   function M.goal_text(label, goal, c)
+    local threats = M.threats_text(c)
+    return M.deepest_text(label, goal, c) .. (threats and ' [' .. threats .. ']' or '')
+  end
+  function M.deepest_text(label, goal, c)
     local m = c.m
     if m.group or m.units then
       return string.format('%s %s is within %g tiles of %s%s at %s, seen now (%.1f tiles from it)', label, at(goal), m.range, m.group and 'an ' or '', m.name, at(m), c.d)

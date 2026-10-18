@@ -86,5 +86,42 @@ return function()
     if not ammo[to].swap_stack(ammo[from]) then return nil, string.format('the game refused swapping ammo slots %d and %d', from, to) end
     return {from=from, to=to, swapped=held and name_q(held) .. '*' .. held.count or nil}
   end
+  -- (d17 batch35 A2, Grok died at the north raft: rockets in the main inventory, the launcher's ammo slot empty, the
+  -- shoot silent) The main inventory's ammo that fits the gun in gun slot i, stronger first then the larger stack:
+  -- {{index, name, quality, count}...} (empty when none).
+  local RANK = {['uranium-rounds-magazine']=3, ['piercing-rounds-magazine']=2, ['firearm-magazine']=1, rocket=2, ['explosive-rocket']=1}
+  function M.carried_for(p, gun)
+    local main = try(function() return p.get_main_inventory() end)
+    local out = {}
+    for j = 1, main and #main or 0 do
+      local s = main[j]
+      if s.valid_for_read and try(function() return s.prototype.type end) == 'ammo' and M.fits(gun, s.name) then
+        out[#out+1] = {index=j, name=s.name, quality=quality(s), count=s.count}
+      end
+    end
+    table.sort(out, function(a, b)
+      local ra, rb = RANK[a.name] or 0, RANK[b.name] or 0
+      if ra ~= rb then return ra > rb end
+      if a.count ~= b.count then return a.count > b.count end
+      return a.index < b.index
+    end)
+    return out
+  end
+  -- Gun slot i holds a gun and its ammo slot is empty: the fitting stack from the main inventory goes into it (a
+  -- player's one click). Returns the line said ("loaded rocket*20 from your main inventory into ammo slot 2 for
+  -- rocket-launcher"), or nil and why nothing was moved.
+  function M.load(p, i)
+    local r, _, ammo = M.read(p)
+    local gun = r.guns[i]
+    if not (gun and ammo) then return nil, string.format('gun slot %d holds no gun', i) end
+    if r.ammo[i] then return nil, string.format('ammo slot %d holds %s*%d', i, name_q(r.ammo[i]), r.ammo[i].count) end
+    local main = p.get_main_inventory()
+    for _, c in ipairs(M.carried_for(p, gun.name)) do
+      if try(function() return ammo[i].swap_stack(main[c.index]) end) then
+        return string.format('loaded %s*%d from your main inventory into ammo slot %d for %s', name_q(c), c.count, i, name_q(gun))
+      end
+    end
+    return nil, string.format('gun slot %d %s: ammo slot %d is empty and your main inventory holds no ammunition it fires', i, name_q(gun), i)
+  end
   return M
 end

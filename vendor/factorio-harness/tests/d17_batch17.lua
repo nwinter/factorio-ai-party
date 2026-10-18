@@ -115,10 +115,11 @@ do
   local stopped,navs=0,0
   local S=dofile('mod/agent-harness_0.1.0/stock.lua'){distance=distance,integer=integer,
     goal_inside=function() return nil end,
-    goal_check=function() return attack end,goal_text=function(_,to) return 'place' end,
+    goal_check=function(_,_,to) if attack and (attack.only==nil or attack.only==to.x) then return attack end end,goal_text=function(_,to) return 'place' end,
     visit=function() return {transferred=10} end,
     request_path=function(_,nav) nav.requested=true end,navigate=function() navs=navs+1 end,stop_walking=function() stopped=stopped+1 end}
-  local action=S.start_tour(p,'rearm',{turret},3600,{avoid_mode={}})
+  -- (batch35 A3: a rearm skips such a stop and goes on; a feed holds short, as below)
+  local action=S.start_tour(p,'feed',{turret},3600,{avoid_mode={}})
   local function step() game.tick=game.tick+1; return S.tick(p,action) end
   step(); assert(action.nav and action.nav.requested,'walking')
   -- the attack starts at the guns while the walk is under way
@@ -138,6 +139,27 @@ do
   local r
   for _=1,5 do r=step(); if r then break end end
   eq(r,'topped_up')
+  -- (batch35 A3, Haiku) a rearm skips the stop under attack, names it, and goes on to the next
+  local turret2={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=300,y=0}}  -- (the tour goes nearest first)
+  p.position={x=0,y=0}; attack=nil; stopped=0
+  action=S.start_tour(p,'rearm',{turret,turret2},3600,{avoid_mode={}})
+  step()
+  attack={m={attack=true,name='attack #5203',x=70,y=-185},only=76}
+  for _=1,61 do step() end
+  eq(action.holding,nil); eq(action.index,2); eq(action.unreached,1); eq(stopped,1)
+  has(action.skipped_attack[1],'place')
+  has(action.first_unreached,'(76,-191): place (skipped; unsafe_goal: "moving" walks there)')
+  -- unsafe_goal "moving": a stop whose only threats move is walked to
+  attack=nil
+  action=S.start_tour(p,'rearm',{turret},3600,{avoid_mode={},unsafe_goal='moving'})
+  step()
+  attack={m={attack=true,name='attack #5203',x=70,y=-185},moving_only=true}
+  for _=1,61 do step() end
+  eq(action.index,1); eq(action.skipped_attack,nil); eq(action.holding,nil)
+  -- one a worm holds is left out on arrival at the leg, "moving" or not
+  attack={m={name='big-worm-turret',x=80,y=-190},moving_only=false}
+  action=S.start_tour(p,'rearm',{turret},3600,{avoid_mode={},unsafe_goal='moving'})
+  step(); eq(action.unreached,1); has(action.first_unreached,'unsafe_goal: true walks there')
 end
 print('d17_batch17 B1 a tour holds short of a live attack at its stop: ok')
 

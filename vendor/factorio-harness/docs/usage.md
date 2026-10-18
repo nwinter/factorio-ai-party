@@ -53,7 +53,9 @@ fh call walk --args '{"direction":"east","ticks":60}' --wait
 fh call status
 ```
 
-- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
+- Arguments go in `--args JSON` or `--args-file F`. A flag the command does not read (`fh call ACTION --file X`), or words
+  after `fh call ACTION`, are refused before anything is sent, naming the flags the command takes and where the flag
+  belongs (`--file is for fh queue submit|repeat|edit, fh plan save, ...`). `fh describe` lists every action's arguments; `fh help ACTION`
   (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
   describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json
@@ -1012,6 +1014,15 @@ fh call status
       goal, within 128 tiles. The chunks round the goal and the spot are read at the call.
     - Via points are checked the same way (`via point 1 (55,10) is inside ...`).
     - `unsafe_goal: true` goes anyway; the reply says `unsafe_goal: goal (60,0) is inside ...`.
+    - (batch35 A3, Haiku: refused near one passing biter, about 6 times a shift) With more than one threat, or one
+      that moves, the refusal lists every threat holding the goal: `[2 threats hold it: 1 enemy unit (1 small-biter) at
+      (61,2), 2.2 tiles from it: moving units (small-biter (61,2) attacking gun-turret (62,0) (distracted), facing
+      east); medium-worm-turret at (70,0), 10.0 tiles from it: standing (range 30)]`. Groups say where they head and
+      their state, an area under attack what of ours was hit and by what. `unsafe_goal: "moving"` goes only when every
+      threat moves (enemy units, a group, a demolisher, an area under attack now), never past a worm, spawner or
+      turret. rearm takes it too: those turrets stay in the tour (`through`), the rest are left out as before; and a
+      rearm stop that comes under attack on the way is skipped and named (`last.skipped_attack`), the tour going on
+      (other tours hold short of it).
     - `avoid_enemies: false` checks nothing.
   - With the default or `true` margin, a nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
     nest's margin only (outside the weapon's own range) keeps that worm's disc just short of it, so the way there still
@@ -1109,7 +1120,11 @@ fh call status
   (strongest magazine kind first; a carried gun goes into an empty gun slot before it) and say so in `equipped`
   (`equipped from your inventory: 20 firearm-magazine to ammo slot 1`; for move_to under `combat`); when the slots run
   dry mid-fight they are refilled the same way and the fight goes on (`last_combat.reloads`, kite `last.reloads`); with
-  nothing carried that fits a gun they fail as before. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  nothing carried that fits a gun they fail as before. The selected gun's own empty ammo slot is loaded from the main
+  inventory first even while another slot holds ammo, as a player's click does (shoot `loaded`: `loaded rocket*20 from
+  your main inventory into ammo slot 2 for rocket-launcher`), and the shoot's gun (move_to combat: the selected one) is
+  loaded again and selected again when it runs dry mid-fight (`last_combat.equipped`); with nothing carried that it
+  fires, `last_combat.dry` says when it ran dry (batch35 A2, Grok: one rocket in the slot, more in the main inventory). `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
@@ -5784,6 +5799,12 @@ fh watch    # deploy on every change
   closed in, and our drills or belts stand within 2.5 tiles, `last.why` adds `boxed in at (x,y) by 7
   burner-mining-drill within 2.5 tiles ...` and names `squeeze=true` and `pathfind=false`. Reproduced on the copy at
   Opus's spot; squeeze=true then arrived.
+  (batch35 A4, Haiku at (-19.8,545.6) under behemoth fire until a guessed pathfind=false) It also names the nearest
+  open spot: room to turn, no belt, splitter, loader or drill within a tile, within 8 tiles on the half-tile grid, and
+  reached from where you stand in a straight line your box sweeps (belts walked over, as a player walks across them):
+  `the nearest open spot: (-25.5,545.5), 5.7 tiles away, reached straight over the belts ... (move_to {position: {x:
+  -25.5, y: 545.5}, pathfind: false})`. `move_to {unbox: true}` takes that walk in the same call when the walk ends
+  boxed in, then asks the path to the goal again from there (`last.unboxed`); once a walk.
 - transfer farther (C5, Luna 18:20: a 39-tile transfer refused twice, split by hand into a walk and two calls):
   transfer, collect, feed, rearm and refuel walk into reach by default within 64 tiles (mine, build, rotate and
   configure keep 32; `walk: true` any distance, as before, which the refusal now says). `transfer {via: [{x,y}, ...]}`
@@ -7864,6 +7885,16 @@ fh watch    # deploy on every change
     give-up tick). It gives no `progress` and no `stuck_s`, so no stuck warning.
   - Test: tests/rocketload.lua, two sources: both taken (60 and 40), then the hold at the silo, nothing loaded, and
     the hold line.
+
+## d17 batch35 (the agents' 13:50 poll)
+
+- A failed direct call that pauses the queue says so first (A5, Muse 14:16: rocket launches stalled 5+ minutes until a
+  queue_status read showed `paused_by`). A direct call that drives the character pauses a running queue at its start;
+  when it then fails, the error opens with `this failed move_to paused your queue (plan #1, step 1 of 2 #job-1
+  move_to): queue_resume resumes it; the call: ...` (a standing order: `the standing order keeps its steps for
+  later`). `paused_by` reads `your move_to call failed while your queue ran (...)`, and while the queue stays paused
+  that way every reply's team block carries `queue_paused: your queue is paused since your move_to failed 40s ago
+  (...): queue_resume resumes it`. A failed read, a hand craft or a queue call pauses nothing and says nothing.
 - C1 (Muse: three long walking tours; "no bot-fetch to player inventory"): already there. `requests` with no position
   sets the character's own logistic requests, and the network's logistic robots bring them while the character stands
   in its logistic area. Opus used it on shift35 at 131h: copper-plate 28 to 500 in about 80 s, advanced-circuit 38 to
