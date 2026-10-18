@@ -7907,6 +7907,7 @@ local function transfer_one(p,a,pos,e)
     -- Takes and puts by hand, for the agent's repeated hauls (selfview.lua).
     pcall(M.selfview.moved,p,a.direction,e,stacks)
     pcall(M.hauling.moved,p.index,a.direction,e.position,e.surface and e.surface.name,stacks,e.name)
+    pcall(M.filled_mark,p,a.direction,e,stacks)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred or (named~=a.inventory and named or nil),none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
@@ -10079,6 +10080,31 @@ function M.reserved_text(r) return r and r>0 and string.format(', %d of it reser
 -- do (friction3: Opus's tour of 5 turret feeders walked into worm range and was killed). A count the nearest lacks
 -- comes from the next ones, nearest first; one chest that holds it all, no farther than those, is taken alone
 -- (Sonnet: a 600 take went 57 tiles west, then 107 east, past a chest holding 1000).
+-- Chests an agent just filled (batch27 A7, Grok: from: nearest took a spoilable seed, or a count being lowered, back out
+-- of the chest he had just put it in): each give by hand into a chest, by agent, chest and item, kept FILLED_TICKS;
+-- from: nearest leaves such a chest out for the same agent and item (named by position, it is taken from as asked).
+M.FILLED_TICKS=36000
+function M.filled_mark(p,direction,e,stacks)
+  if direction~='to_entity' or not (e.type=='container' or e.type=='logistic-container') or not e.unit_number then return end
+  local st=state()
+  st.filled=st.filled or {}
+  local mine=st.filled[p.index] or {}
+  st.filled[p.index]=mine
+  for u,rec in pairs(mine) do
+    local live=false
+    for item,t in pairs(rec) do if game.tick-t>M.FILLED_TICKS then rec[item]=nil else live=true end end
+    if not live then mine[u]=nil end
+  end
+  local rec=mine[e.unit_number] or {}
+  mine[e.unit_number]=rec
+  for _,s in ipairs(stacks or {}) do if s.name then rec[s.name]=game.tick end end
+end
+-- The tick p last put item into chest e by hand within FILLED_TICKS, or nil.
+function M.filled_recently(p,e,item)
+  local mine=(state().filled or {})[p.index]
+  local t=mine and e.unit_number and mine[e.unit_number] and mine[e.unit_number][item]
+  return t and game.tick-t<=M.FILLED_TICKS and t or nil
+end
 function M.from_nearest(p,a)
   assert(a.from=='nearest','from is "nearest" (the nearest chest holding the item)')
   assert(type(a.item)=='string' and prototypes.item[a.item],'from: "nearest" needs item')
@@ -10103,7 +10129,7 @@ function M.from_nearest(p,a)
     local okt,t=pcall(entity,p,{position=position(a.to.position or a.to)},true)
     target=okt and t or nil
   end
-  local pool,fed,unsafe={},{},{}
+  local pool,fed,unsafe,filled={},{},{},{}
   if target then
     for _,f in ipairs(found) do
       if f.fed and M.feeds_into(p,f.entity,target) then f.fed=nil; f.feeds=nil; f.feeds_target=string.format('it feeds %s (%g,%g), the target',target.name,target.position.x,target.position.y) end
@@ -10115,7 +10141,9 @@ function M.from_nearest(p,a)
     end)
   end
   for _,f in ipairs(found) do
-    if f.fed and not a.feeding then fed[#fed+1]=f
+    local ft=M.filled_recently(p,f.entity,a.item)
+    if ft then f.filled_ago=math.floor((game.tick-ft)/60); filled[#filled+1]=f
+    elseif f.fed and not a.feeding then fed[#fed+1]=f
     else
       local c=mode and not a.unsafe_goal and #pool<24 and not p.can_reach_entity(f.entity) and M.avoid.goal_check(p,p.position,f.entity.position,mode)
       if c then f.unsafe=M.avoid.goal_text(f.entity.name,f.entity.position,c); unsafe[#unsafe+1]=f
@@ -10131,6 +10159,11 @@ function M.from_nearest(p,a)
         table.concat(list,'; '),#fed>3 and '; ...' or '')
     end
     if #unsafe>0 then parts[#parts+1]=string.format('%d in enemy reach left out: %s',#unsafe,unsafe[1].unsafe) end
+    if #filled>0 then
+      local f=filled[1]
+      parts[#parts+1]=string.format('%d chest%s you put %s into in the last %d min left out (%s (%g,%g), %ds ago; name it by position to take from it)',
+        #filled,#filled==1 and '' or 's',a.item,M.FILLED_TICKS/3600,f.entity.name,f.entity.position.x,f.entity.position.y,f.filled_ago)
+    end
     return #parts>0 and table.concat(parts,'; ') or nil
   end
   -- A spoilable item (Luna 00:20: from nearest drew 75%-spoiled mash from a requester while fresher stock sat at a
@@ -10190,7 +10223,7 @@ function M.from_nearest(p,a)
     local far=M.nearest_holding(p,a.item,a.quality,32,nil)
     local where=far and string.format('; the nearest within 32 tiles: %s at (%g,%g), %.1f tiles away, holds %d%s (radius=%d walks there)',
       far.entity.name,far.entity.position.x,far.entity.position.y,far.distance,far.count,M.reserved_text(far.reserved),math.min(256,math.ceil(far.distance)+1)) or '; none within 32 tiles holds any'
-    if far and (#fed>0 or #unsafe>0) then where='' end
+    if far and (#fed>0 or #unsafe>0 or #filled>0) then where='' end
     local why=left_out()
     local text=string.format('no chest %s holds %s (%d checked)%s%s',radius and ('within '..radius..' tiles') or 'in reach',a.item,checked,where,
       why and '; '..why or '')
@@ -16148,7 +16181,7 @@ stock=stock_module{give=function(p,e,item,quality,count,inv) return transfer_one
   -- The call's check of every stop (round2120a), and the reply's avoid_enemies line.
   goal_inside=function(p,goal,mode) return M.avoid.inside(p,goal,mode) end,
   describe_avoid=function(mode) return M.avoid.describe(mode) end}
-M.fuelround=require('fuelround'){
+M.fuelround=require('fuelround'){filled=function(p,e,item) return M.filled_recently(p,e,item) end,
   distance=distance,position=position,integer=integer,find_kinds=M.find_kinds,fuel_inventory=fuel_inventory,
   legs=function(p,targets) return M.legs(p,targets) end,nearest_outside=function(...) return M.nearest_outside(...) end,
   accepts=function(e,item) return M.farm.accepts_fuel(e,item) end,entity=remote_entity,held=held,
