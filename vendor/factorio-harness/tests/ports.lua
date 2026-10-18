@@ -26,7 +26,10 @@ prototypes = {entity={
   ['cryogenic-plant']={name='cryogenic-plant', type='assembling-machine', crafting_categories={['chemistry-or-cryogenics']=true}, fluidbox_prototypes={
     {production_type='input', pipe_connections={conn('input', 8, {{-2,2},{-2,-2},{2,-2},{2,2}})}},
     {production_type='input', pipe_connections={conn('input', 8, {{0,2},{-2,0},{0,-2},{2,0}})}},
-    {production_type='input', pipe_connections={conn('input', 8, {{2,2},{-2,2},{-2,-2},{2,-2}})}}}},
+    {production_type='input', pipe_connections={conn('input', 8, {{2,2},{-2,2},{-2,-2},{2,-2}})}},
+    {production_type='output', pipe_connections={conn('output', 0, {{-2,-2},{2,-2},{2,2},{-2,2}})}},
+    {production_type='output', pipe_connections={conn('output', 0, {{0,-2},{2,0},{0,2},{-2,0}})}},
+    {production_type='output', pipe_connections={conn('output', 0, {{2,-2},{2,2},{-2,2},{-2,-2}})}}}},
   ['electromagnetic-plant']={name='electromagnetic-plant', type='assembling-machine', crafting_categories={electromagnetics=true}, fluidbox_prototypes={
     {production_type='input', pipe_connections={conn('input-output', 12, {{-1.5,0.5},{-0.5,-1.5},{1.5,-0.5},{0.5,1.5}})}},
     {production_type='input', pipe_connections={conn('input-output', 4, {{1.5,-0.5},{0.5,1.5},{-1.5,0.5},{-0.5,-1.5}})}},
@@ -45,7 +48,8 @@ prototypes.recipe = {
   ['basic-oil-processing']={name='basic-oil-processing', category='oil-processing', ingredients={fluid('crude-oil', {fluidbox_index=2})},
     products={fluid('petroleum-gas', {fluidbox_index=3})}},
   ['simple-coal-liquefaction']={name='simple-coal-liquefaction', category='oil-processing', ingredients={fluid('sulfuric-acid')}, products={fluid('heavy-oil')}},
-  ['fluoroketone']={name='fluoroketone', category='chemistry-or-cryogenics', ingredients={fluid('fluorine'), fluid('ammonia')}, products={}},
+  ['fluoroketone']={name='fluoroketone', category='chemistry-or-cryogenics', ingredients={fluid('fluorine'), fluid('ammonia')}, products={fluid('fluoroketone-hot')}},
+  lithium={name='lithium', category='chemistry-or-cryogenics', ingredients={{type='item', name='holmium-plate'}, fluid('lithium-brine'), fluid('ammonia')}, products={{type='item', name='lithium'}}},
   supercapacitor={name='supercapacitor', category='electromagnetics', ingredients={fluid('electrolyte')}, products={{type='item', name='supercapacitor'}}},
   electrolyte={name='electrolyte', category='electromagnetics', ingredients={fluid('heavy-oil'), fluid('holmium-solution')}, products={fluid('electrolyte')}},
 }
@@ -85,10 +89,25 @@ eq(#closed, 2)
 -- ...and on electrolyte: heavy oil and holmium solution apart, electrolyte out at both outputs.
 text = view('electromagnetic-plant', {x=0, y=0}, 0, 'electrolyte')
 eq(text, '-0.5,-1.5>-0.5,-2.5 north output electrolyte | -1.5,0.5>-2.5,0.5 west input heavy-oil | 0.5,1.5>0.5,2.5 south output electrolyte | 1.5,-0.5>2.5,-0.5 east input holmium-solution')
--- A cryogenic plant: two fluids, three input boxes: the third was not seen built.
-text = view('cryogenic-plant', {x=0, y=0}, 0, 'fluoroketone')
-assert(text:find('-1.5,2.5>-1.5,3.5 south input fluorine', 1, true) and text:find('0.5,2.5>0.5,3.5 south input ammonia', 1, true), text)
-assert(text:find('2.5,2.5>2.5,3.5 south input one of fluorine, ammonia (not seen built', 1, true), text)
+-- A cryogenic plant: two fluids, three input boxes: the first fluid takes the left and middle boxes as one engine
+-- fluidbox (d17 batch30 A1, world n: the plant at (-85.5,-19.5) on Aquilo, north, on lithium: fluidbox 1 lithium-brine
+-- at -87.5,-17.5 and -85.5,-17.5, fluidbox 2 ammonia at -83.5,-17.5; no fluid product, so no output boxes).
+local rows, shut = ports.rows({prototype=prototypes.entity['cryogenic-plant'], position={x=-85.5, y=-19.5}, direction=0},
+  ports.recipe(prototypes.entity['cryogenic-plant'], 'lithium'))
+eq(#rows, 3); eq(#shut, 3)
+table.sort(rows, function(a, b) return a.at.x < b.at.x end)
+eq(rows[1].at.x, -87.5); eq(rows[1].at.y, -17.5); eq(rows[1].joins.y, -16.5); eq(rows[1].fluid, 'lithium-brine'); eq(rows[1].box, 1)
+eq(rows[2].at.x, -85.5); eq(rows[2].fluid, 'lithium-brine'); eq(rows[2].box, 1)
+eq(rows[3].at.x, -83.5); eq(rows[3].fluid, 'ammonia'); eq(rows[3].box, 2)
+for _, r in ipairs(rows) do eq(r.direction, 'south'); eq(r.flow, 'input') end
+-- fluoroketone: fluorine on the left and middle, ammonia on the right, the hot fluoroketone out of all three outputs
+text = view('cryogenic-plant', {x=0.5, y=0.5}, 0, 'fluoroketone')
+eq(text, '-1.5,-1.5>-1.5,-2.5 north output fluoroketone-hot | -1.5,2.5>-1.5,3.5 south input fluorine | 0.5,-1.5>0.5,-2.5 north output fluoroketone-hot'
+  ..' | 0.5,2.5>0.5,3.5 south input fluorine | 2.5,-1.5>2.5,-2.5 north output fluoroketone-hot | 2.5,2.5>2.5,3.5 south input ammonia')
+rows = ports.rows({prototype=prototypes.entity['cryogenic-plant'], position={x=0.5, y=0.5}, direction=0}, ports.recipe(prototypes.entity['cryogenic-plant'], 'fluoroketone'))
+local boxes = {}
+for _, r in ipairs(rows) do boxes[r.fluid] = boxes[r.fluid] or {}; boxes[r.fluid][r.box] = true end
+assert(boxes['fluorine'][1] and boxes['ammonia'][2] and boxes['fluoroketone-hot'][3] and not boxes['fluoroketone-hot'][4], 'engine box numbers')
 -- Mirrored: the H flip of a north-facing chemical plant swaps its two input ports.
 text = view('chemical-plant', {x=0.5, y=0.5}, 0, 'sulfur', true)
 eq(text, '-0.5,-0.5>-0.5,-1.5 north input petroleum-gas | 1.5,-0.5>1.5,-1.5 north input water')

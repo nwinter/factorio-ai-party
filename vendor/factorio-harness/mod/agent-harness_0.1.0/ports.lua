@@ -12,8 +12,12 @@
 -- with a fluidbox_index takes that box of its side only; the others take the
 -- side's free boxes in order; when a side has one fluid without an index, its
 -- leftover boxes join that fluid; a side with no fluid has no connections.
--- Two or more fluids without an index and boxes left over (a cryogenic plant,
--- 3 a side, on a 2-fluid recipe) was not seen built: those ports say so.
+-- More boxes than fluids without an index: the first fluid takes the extra
+-- boxes, in order, then one box each (d17 batch30 A1, read on world n: the
+-- cryogenic plant at (-85.5,-19.5) on Aquilo, north, on lithium, joins its left
+-- and middle input boxes as one fluidbox of lithium-brine and gives the right one
+-- to ammonia; its outputs, with no fluid product, are not there). Joined boxes are
+-- one engine fluidbox: `box` numbers them as the built machine's inspect does.
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
@@ -25,9 +29,9 @@ return function(api)
     end
     return out
   end
-  -- Per prototype fluid box index: {fluid}, {fluid, joined}, {off} or
-  -- {unsure = names}; nil without a recipe or for boxes that are not a
-  -- crafting machine's input or output.
+  -- Per prototype fluid box index: {fluid, joined?, box} or {off}, box the
+  -- engine's fluidbox number ({box} alone for a box that is not a crafting
+  -- machine's input or output); nil without a recipe.
   function M.assign(proto, recipe)
     if not recipe then return nil end
     local sides = {input={}, output={}}
@@ -45,25 +49,34 @@ return function(api)
           out[slots[k]] = {fluid=f.name}; free[k] = nil
         else loose[#loose+1] = f end
       end
-      local j = 1
-      for _, f in ipairs(loose) do
-        while slots[j] and not free[j] do j = j + 1 end
-        if slots[j] then out[slots[j]] = {fluid=f.name}; free[j] = nil end
-      end
-      for k in ipairs(slots) do
-        if free[k] then
-          if #loose == 0 then out[slots[k]] = {off=true}
-          elseif #loose == 1 then out[slots[k]] = {fluid=loose[1].name, joined=true}
-          else
-            local names = {}
-            for i, f in ipairs(loose) do names[i] = f.name end
-            out[slots[k]] = {unsure=names}
+      local open = {}
+      for k in ipairs(slots) do if free[k] then open[#open+1] = k end end
+      if #loose == 0 then
+        for _, k in ipairs(open) do out[slots[k]] = {off=true} end
+      else
+        -- the first loose fluid takes the boxes left over, then one each
+        local extra, j = math.max(0, #open - #loose), 1
+        for n, f in ipairs(loose) do
+          for m = 1, n == 1 and extra + 1 or 1 do
+            local k = open[j]
+            if k then out[slots[k]] = {fluid=f.name, joined=m > 1 or nil}; j = j + 1 end
           end
         end
       end
     end
     side('input', fluids_of(recipe.ingredients))
     side('output', fluids_of(recipe.products))
+    -- the engine's fluidbox numbers: prototype order, a closed box left out, a side's boxes of one fluid as one
+    local key_of, n = {}, 0
+    for i, b in ipairs(api.boxes(proto)) do
+      local a = out[i]
+      if not (a and a.off) then
+        local key = a and a.fluid and (b.production_type .. '|' .. a.fluid) or ('#' .. i)
+        if not key_of[key] then n = n + 1; key_of[key] = n end
+        out[i] = out[i] or {}
+        out[i].box = key_of[key]
+      end
+    end
     return out
   end
   -- The recipe as the machine takes it: a name (or prototype) it can make.
@@ -101,10 +114,9 @@ return function(api)
         closed[#closed+1] = string.format('%s %g,%g', flow or '?', c.tx+0.5, c.ty+0.5)
       else
         local fluid = c.fluid
-        if a and a.fluid then fluid = a.fluid
-        elseif a and a.unsure then fluid = 'one of '..table.concat(a.unsure, ', ')..' (not seen built: inspect once built)' end
+        if a and a.fluid then fluid = a.fluid end
         rows[#rows+1] = {at=centre(c.x, c.y), joins=centre(c.tx, c.ty), direction=NAME[c.dir], flow=flow,
-          fluid=fluid or (assigned and 'none' or nil), box=c.box, kind=c.kind ~= 'normal' and c.kind or nil,
+          fluid=fluid or (assigned and 'none' or nil), box=a and a.box or c.box, kind=c.kind ~= 'normal' and c.kind or nil,
           underground_reach=c.kind == 'underground' and c.reach or nil}
       end
     end
