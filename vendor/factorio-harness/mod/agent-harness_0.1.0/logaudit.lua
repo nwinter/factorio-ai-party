@@ -155,7 +155,8 @@ return function(api)
   -- (free slots, filters), its robots holding cargo with no order to put it anywhere (what the alert names), the items
   -- they hold, and for each whether a storage chest of the network can take it now (a free slot, and no filter or a
   -- filter of that item). Read only; at most ROBOTS robots read.
-  local ROBOTS = 4096
+  -- (world n, 11:15: building a network's robot list costs about 3 ms, then about 3 us a robot here: 2048 read 8.9 ms)
+  local ROBOTS = 2048
   function M.storage(p, a, surface, ln)
     local chests, free, filtered, full = 0, 0, {}, 0
     local takers = {any=0, by={}}
@@ -280,7 +281,7 @@ return function(api)
     return {network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
       shown=#out, lines=lines, summary=summary, next_from=more}
   end
-  M.schema = {logistics_audit = {storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 4096 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
+  M.schema = {logistics_audit = {storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 2048 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
     surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',
     returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary. Characters left out. Read only'}}
   return M

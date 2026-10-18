@@ -71,6 +71,7 @@ return function(api)
   -- (d17 batch33 B1, Grok 09:22: the last pentapod eggs were in an inserter's hand, then a robot's cargo, while where_is
   -- read 0) what our logistic and construction robots on a surface carry of an item: each logistic network's robots'
   -- cargo, at most MAX_ROBOTS robots read a call. Returns count, robots carrying it, robots read, capped.
+  -- (world n, 11:15: about 1 us a robot after the ~3 ms list build: 2048 read 4.7 ms)
   M.MAX_ROBOTS = 4096
   function M.robot_cargo(force, surface, item)
     local n, carrying, read, capped = 0, 0, 0, false
