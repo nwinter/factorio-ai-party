@@ -591,6 +591,20 @@ return function(api)
       idle_window_s=(w.idle_ticks or w.stall or 3600)/60, gives_up_tick=w.give_up,
       parts_short=w.silo and w.silo.valid and (function() local r = M.parts_short(w.silo); return r and r.line end)() or nil}
   end
+  -- (d17 batch34 A5) a walking load holding at its silo stop, in one line: where, what for, the parts and their rate
+  -- now, the time to the last part at that rate, what is held for it.
+  function M.hold_line(action)
+    local hold = action.silo_hold
+    if not hold then return nil end
+    local w = M.wait_report({await_silo=hold}) or {}
+    local silo = hold.silo
+    local need = silo and try(function() return silo.prototype.rocket_parts_required end) or nil
+    local parts = w.parts or (silo and try(function() return silo.rocket_parts end))
+    local eta = need and parts and w.parts_per_min and w.parts_per_min > 0 and need > parts and math.floor((need - parts) / w.parts_per_min * 60 + 0.5) or nil
+    return string.format('at the silo stop (%g,%g), in reach: %s%s%s; held for it: %d; holding %ds (gives up at tick %s)', hold.position.x, hold.position.y,
+      ((action.why or 'waiting for the rocket'):gsub('^waiting at the silo for', 'waiting for')), parts and need and string.format(' (rocket parts %d of %d', parts, need) .. (w.parts_per_min and string.format(', %.1f a minute', w.parts_per_min) or '') .. ')' or '',
+      eta and string.format(', the last part in about %ds at that rate', eta) or '', action.got or action.taken or 0, math.floor((game.tick - (hold.since or game.tick)) / 60), tostring(hold.give_up or w.gives_up_tick or '?'))
+  end
   function M.ready(p, action)
     local w = action.await_silo
     local silo = w and try(function() return api.reach_entity(p, w.position) end)
