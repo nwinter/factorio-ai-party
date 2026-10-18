@@ -7362,3 +7362,9 @@ fh watch    # deploy on every change
 - A2 (Astra request967: the Kestrel II refill loop paused every flight, "bot astra is aboard platform Kestrel II with
   no body"): bots.lua's aboard check lets `platform_rearm` with `platform` through, as requests and the other platform
   writes by remote view; the aboard note names it. tests/travel.lua.
+- A3 (Sol: a queued configure from the railgun recipe left cold fluoroketone in a box and the hardware queue stopped):
+  a recipe change on a built machine reads its fluidboxes against the new recipe's fluid ingredients and products. A
+  fluid it takes none of refuses the change by default, naming it, its box and amount; `fluid: "drain"` flushes those
+  boxes first (LuaFluidBox.flush, the GUI's flush: the whole connected segment) and says what went; `fluid: "keep"`
+  changes it anyway and says what stays. The old guard (any fluid held: refused unless force=true, "a recipe change
+  destroys it") is replaced; force=true reads as keep. runtime_test.

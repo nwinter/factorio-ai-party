@@ -1249,8 +1249,19 @@ eq(changed.recipe,'copper-cable'); eq(changed.returned['iron-plate'],8); eq(chan
 eq(changed.spilled['iron-gear-wheel'],2); eq(table.concat(spills,','),'iron-gear-wheel:2')
 eq(plate_stack.valid_for_read,false); eq(gear_stack.valid_for_read,false)
 am.fluidbox={{name='water',amount=10}}
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'force=true')
-eq(call('configure',{position=am.position,recipe='iron-gear-wheel',force=true}).recipe,'iron-gear-wheel')
+-- batch26 A3 (Sol): a fluid the new recipe takes none of: refused, naming it; drain flushes the box; keep (or force) changes it.
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'assembling-machine-1 holds water 10 (fluidbox 1), which recipe iron-gear-wheel takes none of')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'fluid: "drain" flushes those boxes first')
+do
+local kept=call('configure',{position=am.position,recipe='iron-gear-wheel',force=true})
+eq(kept.recipe,'iron-gear-wheel'); assert(kept.fluid:find('^kept: '),kept.fluid)
+local flushed_box
+am.fluidbox.flush=function(i,name) flushed_box=i..':'..name; return 10 end
+am.set_recipe('copper-cable')
+local drained=call('configure',{position=am.position,recipe='iron-gear-wheel',fluid='drain'})
+eq(flushed_box,'1:water'); assert(drained.fluid:find('water 10 from fluidbox 1',1,true),drained.fluid)
+am.fluidbox.flush=nil
+end
 -- Out of reach, remote view changes an empty machine's recipe but not a stocked one's.
 am.fluidbox={}
 p.can_reach_entity=function() return false end

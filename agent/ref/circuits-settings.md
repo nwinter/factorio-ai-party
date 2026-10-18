@@ -59,7 +59,10 @@
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
     where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
     what it held comes to your inventory (the reply says `moved` and ends with `inv`). A remote refusal never walks the body. Aboard,
-    `configure {position, recipe}` uses the platform you are on.
+    `configure {position, recipe}` uses the platform you are on. A fluid the machine holds that the new recipe takes
+    none of stays in its box and keeps out the new recipe's fluid: the change is refused naming it; `fluid: "drain"`
+    flushes those boxes first (the GUI's flush: the whole pipe segment joined to the box), `fluid: "keep"` (or
+    `force: true`) changes it anyway; the reply's `fluid` says which.
   - `modules: ["speed-module-2","speed-module-2"]` sets a machine's module slots: the modules it already holds that
     the list names stay in their slots, the rest go into the other slots (past the list: empty);
     `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes only slot 2. In
