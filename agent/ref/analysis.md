@@ -177,6 +177,10 @@
   attacks, losses, groups and deaths there; the nests the straight line from you passes; your health, armor and
   shield; `eggs`: each egg site within the radius that hatches (count, holder, the first hatch time), with the turrets
   of ours in range of it (ready: ammunition, power or fluid; in range without). The egg alerts name the same turrets.
+  `quiet_s: 60`: whether the straight way from you to it (24 tiles either side) has had an attack on our structures in
+  the last 60 s, and the enemy units seen there now (`quiet: true` when neither). `build`, `rearm` and `transfer` take
+  `retry_when_clear: true`: refused for passing enemies (an area under attack), they wait until no unit is within 48
+  tiles there, then run again.
   Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
 - `drill_sites {position | area, resource?, drill?, direction?, radius?, limit?, surface?}`: for one depleted drill of
   ours, the nearest visible placements on the same resource, with mining-area amounts and placement checks; `resource`

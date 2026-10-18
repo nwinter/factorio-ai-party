@@ -1782,7 +1782,7 @@ function handlers.describe(_,a)
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={unequip='true, with slot ammo or gun (index? item?): that slot\'s stacks back to your main inventory (what does not fit stays, in left); returns unequipped, left',slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
-      danger={position='{x,y}: the destination (default where your character stands)',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now: sight and radar) by name and the nearest, and those more than 24 tiles from every spawner read in packs (units within 16 tiles of a pack\'s first: count, names, where, how far; packs: the first 6) apart from those by their nests; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
+      danger={quiet_s='optional 10..3600: whether the straight way from you to it (24 tiles either side) has had an attack on our structures in the last quiet_s seconds, and the enemy units seen there now (quiet: true when neither)',position='{x,y}: the destination (default where your character stands)',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now: sight and radar) by name and the nearest, and those more than 24 tiles from every spawner read in packs (units within 16 tiles of a pack\'s first: count, names, where, how far; packs: the first 6) apart from those by their nests; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
       pipe_gaps={line='{x,y} of one pipe, pipe-to-ground, tank or pump of ours, instead of from and to: the pipe network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities; returns segments [{segment, entities, box, fluid, amount, capacity, flow, empty, line}] by the engine\'s segment id, empty (the empty ones), machines (what it joins, each box\'s fluid), not_in_sight, line',
         from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={line='{x,y} of one belt of a line, instead of from and to: the whole line both ways (belt neighbours, underground pairs; a splitter: its first output or input, the others in branches) in chunks our force sees now, up to 4096 tiles each way; at each end the 16 tiles on in its direction: a belt of ours facing the same way there (built or ghost) is the line going on, the tiles between a gap; returns tiles, head and end (where and why it stops), gaps [{from, to, tiles, between, line: each missing tile and what stands on it}], branches, line',
@@ -2012,6 +2012,9 @@ function handlers.describe(_,a)
       b.requests='a single build: requests arguments for it (set, clear, ...)'
       b.circuit='a single build: circuit_set arguments for it (enable, read, settings, decider, ...)'
       b.wires='a single build: [{to {x,y}, color red|green, from_side?, to_side?}] from it'
+      b.retry_when_clear='optional true: a build refused because its walk ends in an area under attack now (passing enemies; none for a worm or spawner) waits until no enemy unit is within 48 tiles there (retry_ticks, default 5 min), then builds again, at most 6 times'
+      b.retry_ticks='with retry_when_clear: 600..54000 (default 18000)'
+      b.retries='(set by the retry: how many so far)'
     end
   end
   description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
@@ -6075,6 +6078,38 @@ function handlers.build(p,a)
   if not ok then error(reason(out)..'; materials before build: '..M.materials.line(materials),0) end
   out.materials=materials
   return out
+end
+-- build {retry_when_clear: true} (batch26 C1, Haiku: 23 poles held while the walks to (-187.5,-29.5) and (-187.5,-41.5) lay in
+-- an area under attack): as rearm's and transfer's: refused for an area under attack at the entry the walk goes to (the
+-- walk's own goal check: passing enemies; a worm or spawner stays and is refused as before), it waits until no enemy
+-- unit is within 48 tiles there (wait_until units_clear, retry_ticks, default 5 min), then builds again, at most 6 times.
+M.build_now=handlers.build
+function handlers.build(p,a)
+  if a.retry_when_clear==nil then return M.build_now(p,a) end
+  assert(type(a.retry_when_clear)=='boolean','retry_when_clear must be true or false')
+  local rest={}
+  for k,v in pairs(a) do if k~='retry_when_clear' and k~='retry_ticks' and k~='retries' then rest[k]=v end end
+  if not a.retry_when_clear then return M.build_now(p,rest) end
+  local tries=integer(a.retries,0,0,6,'retries')
+  local ticks=integer(a.retry_ticks,18000,600,54000,'retry_ticks')
+  local ok,out=pcall(M.build_now,p,rest)
+  if ok then return out end
+  local first=rest.position or (type(rest.builds)=='table' and type(rest.builds[1])=='table' and rest.builds[1].position)
+  local at=first and position(first)
+  local okc,chk=pcall(function() return at and M.avoid.goal_check(p,p.position,at,M.avoid.mode(rest.avoid_enemies)) end)
+  if not (okc and chk and chk.m and chk.m.attack) or tries>=6 then error(out,0) end
+  local w=handlers.wait_until(p,{['until']='units_clear',position=at,radius=48,timeout=ticks})
+  local now=state().active[p.index]
+  if not now then w=handlers.wait_ticks(p,{ticks=1800}); now=state().active[p.index]; w.cleared='no enemy unit within 48 tiles now; the area under attack counts 30 s past its last hit' end
+  if now then
+    local again={}
+    for k,v in pairs(rest) do again[k]=v end
+    again.retry_when_clear=true; again.retry_ticks=ticks; again.retries=tries+1
+    now.then_call={action='build',args=again}
+  end
+  w.retry=string.format('refused for an area under attack: %s; waits until no enemy unit is within 48 tiles of (%g,%g) (at most %d s), then builds again (try %d of 6)',
+    reason(out),at.x,at.y,math.floor(ticks/60),tries+1)
+  return w
 end
 function handlers.build_path(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action.start_walking),'permission denied: start_walking')

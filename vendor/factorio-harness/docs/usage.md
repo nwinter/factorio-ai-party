@@ -7458,3 +7458,12 @@ fh watch    # deploy on every change
   `wagon_slots`: a cargo wagon's slots used per item (with the count), free slots (under the red-X limit), slot
   filters and the limit, and `full: nothing else loads into it`. The train read gives `wagons` (each cargo wagon, 8 at
   most); inspect of a cargo wagon gives `wagon_slots`. tests/wagonslots.lua.
+
+## d17 batch26 Group C
+- C1 (Haiku: 23 poles held; the walks to (-187.5,-29.5) and (-187.5,-41.5) lay in an area under attack): rearm and
+  transfer had retry_when_clear already; `build {retry_when_clear: true}` now does the same when the walk's own goal
+  check at the entry's spot finds an area under attack (passing enemies; a worm or spawner is refused as before):
+  wait_until units_clear within 48 tiles there (retry_ticks, default 5 min), then builds again, at most 6 times.
+  `danger {position, quiet_s}`: attacks on our structures within 24 tiles of the straight way from the character in
+  the last quiet_s seconds (the latest named), and enemy units seen now there; `quiet: true` when neither.
+  tests/danger.lua, runtime_test.

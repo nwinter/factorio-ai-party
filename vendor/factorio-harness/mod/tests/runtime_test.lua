@@ -5627,6 +5627,20 @@ do
   fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear='yes'}) end,'retry_when_clear must be true or false')
   runtime.transfer_now=now
 end
+-- build {retry_when_clear} (batch26 C1, Haiku): refused with the entry's spot in an area under attack (the walk's goal
+-- check): waits for units_clear there, then builds again; a worm there: refused as it was.
+do
+  local now,chk=runtime.build_now,runtime.avoid.goal_check
+  runtime.build_now=function() error('goal (-187.5,-29.5) is within 24 tiles of attack #12, an area under attack now',0) end
+  runtime.avoid.goal_check=function() return {m={attack=true,name='attack #12'},d=5} end
+  local w=call('build',{item='small-electric-pole',position={x=-187.5,y=-29.5},retry_when_clear=true})
+  assert(w.retry:find('refused for an area under attack: goal (-187.5,-29.5) is within 24 tiles of attack #12, an area under attack now; waits until no enemy unit is within 48 tiles of (-187.5,-29.5)',1,true),w.retry)
+  eq(storage.agent_harness.active[1].then_call.action,'build'); eq(storage.agent_harness.active[1].then_call.args.retries,1)
+  call('stop',{})
+  runtime.avoid.goal_check=function() return {m={name='big-worm-turret',range=48},d=5} end
+  fails(function() call('build',{item='small-electric-pole',position={x=-187.5,y=-29.5},retry_when_clear=true}) end,'an area under attack now')
+  runtime.build_now,runtime.avoid.goal_check=now,chk
+end
 -- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
 do
   local rows,surf,ch=runtime.gun_rows,p.surface,p.character
