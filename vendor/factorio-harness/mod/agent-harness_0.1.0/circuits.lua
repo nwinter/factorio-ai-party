@@ -342,6 +342,13 @@ return function(api)
   -- while the inserter at (30.5,-48.5), inside roboport (44,-24)'s area, read
   -- network 8). With its count of the condition's item; with none, the nearest
   -- roboport's logistic area.
+  -- A logistic network's count under 0 (d17 batch21 A4, Grok: "bioflux >= 0" held both Gleba makers off at -2): what
+  -- the game's count is, and the way to compare what a chest holds instead.
+  function M.negative_note(item, n)
+    if type(n) ~= 'number' or n >= 0 then return '' end
+    return string.format(' (network count %d: reserved beyond stock: deliveries have reserved %d more %s than the network holds, and a logistic condition reads %d; a wire from a provider or storage chest reads what that chest holds: circuit_gate {source: the chest} compares that)',
+      n, -n, item, n)
+  end
   local function logistic_reads(e, c)
     local pos = e.position
     local net = try(function() return e.force.find_logistic_network_by_position(pos, e.surface) end)
@@ -351,7 +358,7 @@ return function(api)
       if type(first) == 'table' and first.name and (first.type == nil or first.type == 'item') then
         local n = try(function() return net.get_item_count({name=first.name, quality=first.quality or 'normal'}) end)
         if type(n) == 'number' then
-          text = text .. string.format(': %s %d', first.name, n) .. (n < 0 and ' (the count less what deliveries have reserved)' or '')
+          text = text .. string.format(': %s %d', first.name, n) .. M.negative_note(first.name, n)
         end
       end
       return text
@@ -413,7 +420,7 @@ return function(api)
         local net = try(function() return e.surface.find_logistic_network_by_position(e.position, e.force) end)
         held = net and try(function() return net.get_item_count(sig.name) end)
       end
-      parts[#parts+1] = string.format('logistic condition %s%s: %s now', c.logistic, held and string.format(' (network holds %s %d)', sig.name, held) or '',
+      parts[#parts+1] = string.format('logistic condition %s%s: %s now', c.logistic, held and (held >= 0 and string.format(' (network holds %s %d)', sig.name, held) or M.negative_note(sig.name, held)) or '',
         c.logistic_met == true and 'true' or c.logistic_met == false and 'false' or 'unknown')
     end
     local st = try(function() return e.status end)

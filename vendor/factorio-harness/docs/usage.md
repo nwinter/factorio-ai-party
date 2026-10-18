@@ -6781,3 +6781,10 @@ fh watch    # deploy on every change
   latest first (the rest of its trips dropped). `last.returned`: `agricultural-science-pack 16 to passive-provider-chest
   (20.5,28.5)`; `kept`: what did not go back, by the chest it came from; `in_next_rocket`: the list's items in the
   silo's rocket now (loaded under the launch, or by its automatic requests). tests/d17_batch21.lua.
+- A4 (Grok): `bioflux >= 0` held both Gleba makers off whenever the network read -2. That is the game's count: a
+  logistic network's item count is what it holds less what deliveries have reserved, and it goes under 0. Where a
+  logistic condition is shown with its count (circuits.lua logistic_reads: inspect's circuit block and supply's gate
+  line through thrust.state_text; condition_parts: inspect compact; the off_by_condition alert, pushalerts.lua) a count
+  under 0 now reads `network count -2: reserved beyond stock: deliveries have reserved 2 more bioflux than the network
+  holds, and a logistic condition reads -2; a wire from a provider or storage chest reads what that chest holds:
+  circuit_gate {source: the chest} compares that` (circuits.negative_note). tests/circuits.lua, tests/pushalerts.lua.

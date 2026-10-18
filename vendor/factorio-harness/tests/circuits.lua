@@ -208,7 +208,7 @@ do
   local net8={network_id=8,get_item_count=function(it) eq(it.name,'iron-plate'); eq(it.quality,'normal'); return -3 end}
   force.find_logistic_network_by_position=function(pos,surf) eq(surf,surface); if pos.y>=-8 then return net8 end end
   local rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 3000'})
-  eq(rr.circuit.logistic_reads,'network 8 (its logistic area holds the centre): iron-plate -3 (the count less what deliveries have reserved)')
+  eq(rr.circuit.logistic_reads,'network 8 (its logistic area holds the centre): iron-plate -3 (network count -3: reserved beyond stock: deliveries have reserved 3 more iron-plate than the network holds, and a logistic condition reads -3; a wire from a provider or storage chest reads what that chest holds: circuit_gate {source: the chest} compares that)')
   local foundry_cb=cb_of('assembling_machine',{circuit_enable_disable=false,connect_to_logistic_network=false})
   local foundry=thing('foundry','assembling-machine',12,foundry_cb,-9.5)
   roboports[1]={position={x=20,y=16},logistic_cell={logistic_radius=25,logistic_network={network_id=8}}}
