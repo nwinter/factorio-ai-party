@@ -686,7 +686,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'no-wait':{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -970,6 +970,7 @@ async function main() {
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
   if (values.bot && values.player) throw new Error('Use --player or --bot, not both');
+  if (values.wait && values['no-wait']) throw new Error('Use --wait or --no-wait, not both');
   if (bot !== undefined && !/^[a-z][a-z0-9_-]{0,15}$/.test(bot)) throw new Error('--bot must be a bot name ([a-z][a-z0-9_-]{0,15})');
   // An RCON broker (pog tools/fh_broker.py) holds the password and forwards only this bot's harness requests.
   const brokerSocket = values.socket ?? (process.env.FH_SOCKET || undefined);
@@ -1801,7 +1802,12 @@ async function main() {
     // A call out of reach that walks first by default (autowalk.lua; the reply's walking line): waited for as --wait does,
     // since the same call in reach would have been done at once.
     const walked = reply.ok && reply.result?.walking !== undefined && reply.result?.until_tick !== undefined;
-    if ((wait || walked) && reply.ok && (waits || walked)) {
+    // A timed collect (wait_ticks, keep_taking) or a load_silo tour is waited for without --wait too, its outcome the
+    // exit status (batch24 A1, Grok: every fuel catch and both agricultural launches returned exit 0 at acceptance
+    // while the character worked on); --no-wait returns at acceptance.
+    const timed = reply.ok && values['no-wait'] !== true && reply.result?.until_tick !== undefined
+      && (action === 'load_silo' || (action === 'collect' && (args.wait_ticks !== undefined || args.keep_taking !== undefined)));
+    if ((wait || walked || timed) && reply.ok && (waits || walked)) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);
       if (completion.error?.code === 'wait_timeout') return {...reply, ok:false, result:{accepted:reply.result, ...completion.result}, error:completion.error};

@@ -170,7 +170,7 @@
   and the window); `wait_min: 15` waits through 15 minutes with no new part; `parts_short` and `last.why` name each
   rocket-part ingredient the silo lacks. `walk: true` with `from` (chests anywhere on the silo's surface, a landing
   pad too) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
-  `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
+  `launched`, `short`; `last.trips`, `last.stops`): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
   needs; without `from` (or with `chests: false`) it walks to the silo with what you hold. `all_or_nothing: true`
   (with `launch`): the launch goes only with every listed item aboard in full (the rocket read again); a short load
@@ -195,7 +195,8 @@
   on; nothing loads. The reply gives `freshness` at the top, `loaded` (per item `aboard_before`, `loaded`, `from`,
   `freshness`), `cargo` (everything in the rocket) and `switches` (the silo's automatic requests and send to orbit
   automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
-  and goes on.
+  and goes on. A load_silo that runs over time returns when it ends, with or without `--wait`, its outcome the exit
+  status; `--no-wait` returns at the start (`until_tick`).
   Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
 - `silo_stage {position, items, from, launch?, platform?, to_total?, auto_requests?, dry_run?}`: one queue plan for a
   mixed load: reads the silo and the chests now, then takes what the rocket still needs (after what you carry) at each
