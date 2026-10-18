@@ -598,6 +598,28 @@ outcome,act=tour(w)
 eq(outcome,'launched'); eq(act.loaded,100); eq(launched.platform,'Sunward')
 eq(act.why,'up_to: the rocket still lacks agricultural-science-pack 400 (you hold 0): none of it fits under the rocket\'s lift (it holds 1000/1000 kg)')
 provinv.counts={}; provinv.order={}
+-- batch24 A2 (Grok: a tour timed out with 560 packs aboard and the rocket ready, not launched): last says so plainly,
+-- with why; the same load with to_total and launch loads none of it again and launches it.
+cargo.counts={}; cargo.order={}; main=Inv(4,{}); takes={}; launched=nil
+provinv.add('agricultural-science-pack',900)
+w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=900},to_total=true,from={x=129.5,y=14.5},walk=true,launch=true,platform='Sunward'})
+act=w.fields; act.targets={}
+act.until_tick=act.started_tick+18000
+eq(R.walk_visit(p,act,provider).transferred,800); eq(R.walk_visit(p,act,silo).transferred,800)
+eq(launched,nil); eq(cargo.counts['agricultural-science-pack@normal'],800)
+last={outcome='timed_out'}; R.walk_last(act,last)
+eq(last.loaded_not_launched,'agricultural-science-pack 800 in the rocket at (65.5,14.5) (ready), not launched: the call\'s ticks ran out (300 s) on trip 2; load_silo with to_total: true and launch loads none of it again and launches it; launch it as it is: launch {"position":{"x":65.5,"y":14.5},"platform":"Sunward"}')
+-- launched: nothing said
+last={outcome='launched'}; act.launch={launched=true}; R.walk_last(act,last); eq(last.loaded_not_launched,nil)
+-- the repeat: the rocket holds the list (to_total 800): launched, nothing walked
+w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=800},to_total=true,from={x=129.5,y=14.5},walk=true,launch=true,platform='Sunward'})
+assert(w.done,'a done reply'); eq(w.done.loaded,'none: the rocket held the list already (agricultural-science-pack*800)'); eq(launched.platform,'Sunward')
+-- not ready: refused, saying why
+silo.rocket_silo_status=0; launched=nil
+fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=800},to_total=true,from={x=129.5,y=14.5},walk=true,launch=true,platform='Sunward'}) end,
+  'nothing to load: the rocket holds the list already (agricultural-science-pack*800); not launched: building the rocket: parts 20/50; nothing walked')
+eq(launched,nil); silo.rocket_silo_status=7
+provinv.counts={}; provinv.order={}
 -- All in reach: nil (the load as without walk). The arguments.
 p.can_reach_entity=kept_can
 eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true}),nil)

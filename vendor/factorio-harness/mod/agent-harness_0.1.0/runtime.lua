@@ -11683,6 +11683,7 @@ function handlers.load_silo_run(p,a)
   -- the silo and every chest in reach: the load at once, as without walk.
   if a.walk==true and not a.awaited then
     local w=M.rocketload.walk_start(p,a)
+    if w and w.done then return w.done end
     if w then
       local action,out=stock.start_tour(p,'load_silo',w.entities,integer(a.ticks,18000,1,36000,'ticks'),w.fields)
       if state().active[p.index] then finish(p.index,'replaced') else stop(p) end

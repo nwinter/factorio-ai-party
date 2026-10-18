@@ -195,7 +195,10 @@
   on; nothing loads. The reply gives `freshness` at the top, `loaded` (per item `aboard_before`, `loaded`, `from`,
   `freshness`), `cargo` (everything in the rocket) and `switches` (the silo's automatic requests and send to orbit
   automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
-  and goes on. A load_silo that runs over time returns when it ends, with or without `--wait`, its outcome the exit
+  and goes on. A walking load with `launch` that ends with none made and the list's items aboard (time ran out, a
+  paused queue, a refused launch) says so in `last.loaded_not_launched` (what, the rocket, why). The same load again with
+  `to_total: true` and `launch` loads none of what is aboard again: the list aboard already, it walks nowhere and
+  launches as it is when the rocket is ready and the platform here. A load_silo that runs over time returns when it ends, with or without `--wait`, its outcome the exit
   status; `--no-wait` returns at the start (`until_tick`).
   Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
 - `silo_stage {position, items, from, launch?, platform?, to_total?, auto_requests?, dry_run?}`: one queue plan for a
