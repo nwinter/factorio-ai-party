@@ -12024,7 +12024,7 @@ M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,tr
 function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
 -- gates: every circuit and logistic condition there, what it reads now, and the ones the network can never meet
 -- (gates.lua; d17 batch22 B3, Muse).
-M.gates=require('gates'){position=position,integer=integer,circuit_read=function(e,cb) return M.circuits.read(e,cb) end,
+M.gates=require('gates'){position=position,integer=integer,circuit_read=function(e,cb) return M.circuits.conditions(e,cb) end,
   negative_note=function(item,n) return M.circuits.negative_note(item,n) end,gated=function(f,s) return M.census.gated(f,s) end,
   wire_value=function(e,sig)
     local n,wired=0,false

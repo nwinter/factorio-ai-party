@@ -443,6 +443,8 @@ fast.signals_now={[1]={{signal={name='ice'},count=250},{signal={name='carbon'},c
 ins=astra('inspect',{platform='Sunward',position={x=-2.5,y=-4.5}})
 eq(ins.circuit.enable,'ice < 300'); eq(ins.circuit.enable_met,true); eq(ins.circuit.wires.red[1].entity,'space-platform-hub')
 eq(ins.circuit.wires.red[1].position.x,0); eq(ins.circuit.networks.red.signals[1].name,'ice'); eq(ins.circuit.networks.red.signals[2].count,40)
+-- (d17 batch22 B3) circuits.conditions, the gates read's: the same conditions, no wires or networks.
+do local c=runtime.circuits.conditions(fast); eq(c.enable,'ice < 300'); eq(c.enable_met,true); eq(c.logistic,false); eq(c.wires,nil); eq(c.networks,nil) end
 -- The same platform by surface name; a planet by name (remote view, visible chunks); an unknown name.
 eq(astra('inspect',{surface='platform-1',position={x=-2.5,y=-4.5}}).circuit.enable,'ice < 300')
 eq(astra('inspect',{surface='Sunward',position={x=-2.5,y=-4.5}}).name,'fast-inserter')

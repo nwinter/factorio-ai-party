@@ -7,28 +7,39 @@
 -- MAX_CHESTS chests a network looked at.
 return function(api)
   local M = {}
-  local MAX_LINES, MAX_CHESTS, PAGE = 64, 256, 256
+  -- PAGE and CHEST_BUDGET as timed on world n: about 50 us an entity read, 3 us a chest looked at, 2 ms to sort 1024
+  local MAX_LINES, MAX_CHESTS, PAGE, CHEST_BUDGET = 64, 256, 128, 512
+  local budget = CHEST_BUDGET
   local TYPES = {'inserter', 'pump', 'offshore-pump', 'assembling-machine', 'furnace', 'mining-drill', 'lamp', 'power-switch',
     'transport-belt', 'train-stop', 'rail-signal', 'rail-chain-signal', 'agricultural-tower', 'asteroid-collector', 'loader', 'loader-1x1'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
-  -- The most a network could hold of an item: its count and what its storage and provider chests could take more.
+  -- The most a network could hold of an item, up to need: its count and what its storage and provider chests could
+  -- take more, looked at only when the count is under need and only until need is reached.
   local reach_cache = {}
-  local function most(net, item)
+  local function most(net, item, need)
     local k = tostring(try(function() return net.network_id end)) .. '|' .. item
-    if reach_cache[k] then return reach_cache[k] end
-    local n = try(function() return net.get_item_count(item) end) or 0
-    local room, looked = 0, 0
-    for _, list in ipairs({try(function() return net.storages end) or {}, try(function() return net.passive_provider_points end) or {}}) do
-      for _, x in ipairs(list) do
-        if looked >= MAX_CHESTS then break end
-        local e = x.owner or x
-        local inv = try(function() return e.get_inventory(defines.inventory.chest) end)
-        if inv then looked = looked + 1; room = room + (try(function() return inv.get_insertable_count(item) end) or 0) end
+    local v = reach_cache[k]
+    if not v then
+      v = {count=try(function() return net.get_item_count(item) end) or 0, room=0, looked=0, i=1, j=0, done=false}
+      reach_cache[k] = v
+    end
+    v.most = v.count + v.room
+    if not need or v.done or v.most >= need then return v end
+    v.lists = v.lists or {try(function() return net.storages end) or {}, try(function() return net.passive_provider_points end) or {}}
+    while v.i <= 2 and v.most < need and v.looked < MAX_CHESTS and budget > 0 do
+      v.j = v.j + 1
+      local x = v.lists[v.i][v.j]
+      if not x then v.i, v.j = v.i + 1, 0
+      else
+        -- storages are entities (an unknown key on one is an error); provider points carry their owner
+        local e = v.i == 1 and x or try(function() return x.owner end)
+        local inv = e and try(function() return e.get_inventory(defines.inventory.chest) end)
+        if inv then budget = budget - 1; v.looked = v.looked + 1; v.room = v.room + (try(function() return inv.get_insertable_count(item) end) or 0); v.most = v.count + v.room end
       end
     end
-    local v = {count=n, room=room, most=n + room, looked=looked}
-    reach_cache[k] = v
+    v.all = v.i > 2
+    v.done = v.all or v.looked >= MAX_CHESTS
     return v
   end
   local GT = {['>']=true, ['>=']=true, ['≥']=true, ['=']=true}
@@ -49,16 +60,19 @@ return function(api)
       local net = try(function() return e.surface.find_logistic_network_by_position(e.position, e.force) end)
       local text = string.format('logistic condition %s', c.logistic)
       if sig and sig.name and net and (sig.type == nil or sig.type == 'item') then
-        local m = most(net, sig.name)
+        local constant = cond.constant
+        local need = GT[cond.comparator or ''] and type(constant) == 'number' and not cond.second_signal and ((cond.comparator == '>' and constant + 1) or constant) or nil
+        local m = most(net, sig.name, need)
         text = text .. string.format(' (network %s: %s %d%s)', tostring(try(function() return net.network_id end)), sig.name, m.count,
           api.negative_note and api.negative_note(sig.name, m.count) or '')
-        local constant = cond.constant
-        if GT[cond.comparator or ''] and type(constant) == 'number' and not cond.second_signal then
-          local need = (cond.comparator == '>' and constant + 1) or constant
-          if need > m.most then
+        if need then
+          if need > m.most and m.all then
             flag = 'cannot be met'
             text = text .. string.format('; it can never hold: the network holds %d and its storage and provider chests take %d more (%d looked at): at most %d',
               m.count, m.room, m.looked, m.most)
+          elseif need > m.most then
+            text = text .. string.format('; the network holds %d and the %d storage and provider chests looked at take %d more (the rest not looked at: %s)',
+              m.count, m.looked, m.room, m.looked >= MAX_CHESTS and MAX_CHESTS .. ' a network and item' or CHEST_BUDGET .. ' a call')
           end
         end
       elseif not net then text = text .. ' (no logistic network holds its centre: never met)'; flag = 'cannot be met' end
@@ -72,18 +86,23 @@ return function(api)
       line=string.format('%s %s: %s%s', e.name, at(e.position), table.concat(parts, '; '), off and '; it is off by it' or '')}
   end
   function M.read(p, a)
-    reach_cache = {}
+    reach_cache, budget = {}, CHEST_BUDGET
     local list, as_of, s = {}, nil, p.surface
     if a.area ~= nil then
       local lt, rb = api.position(a.area.left_top), api.position(a.area.right_bottom)
       assert(rb.x > lt.x and rb.y > lt.y and rb.x - lt.x <= 128 and rb.y - lt.y <= 128, 'area is {left_top, right_bottom}, at most 128x128')
-      list = s.find_entities_filtered{area={lt, rb}, force=p.force, type=TYPES, limit=4096}
+      local found = s.find_entities_filtered{area={lt, rb}, force=p.force, type=TYPES, limit=4096}
+      for _, e in ipairs(found) do if try(function() return e.get_control_behavior() end) then list[#list+1] = e end end
     else
       if a.surface ~= nil then s = game.get_surface(a.surface); assert(s, 'no surface ' .. tostring(a.surface)) end
       list, as_of = api.gated(p.force, s)
     end
     -- PAGE entities a call (page: N for the next), in reading order
-    table.sort(list, function(x, y) return x.position.y < y.position.y or x.position.y == y.position.y and x.position.x < y.position.x end)
+    -- (each position read once: a comparator reading it is an engine call each compare)
+    local keyed = {}
+    for i, e in ipairs(list) do local q = e.position; keyed[i] = {e=e, x=q.x, y=q.y} end
+    table.sort(keyed, function(a, b) return a.y < b.y or a.y == b.y and a.x < b.x end)
+    for i, k in ipairs(keyed) do list[i] = k.e end
     local pages = math.max(1, math.ceil(#list / PAGE))
     local page = api.integer and api.integer(a.page, 1, 1, pages, 'page') or 1
     local rows = {}
@@ -110,7 +129,7 @@ return function(api)
       line=string.format('%d gates on %s: %d cannot be met, %d not met now, %d met', #rows, s.name, never, unmet, #rows - never - unmet)}
   end
   M.schema = {gates={surface='optional surface name (default yours): every gate the census\'s last pass found there (entities with a control behavior, up to 1024), each read now',
-    area='optional {left_top, right_bottom} up to 128x128: the gates there, read now', page='optional: 256 entities a call in reading order (pages, next)',
-    returns='gates, cannot_be_met, not_met, met (counts); lines: one an entity with a circuit or logistic condition: the condition as its GUI shows it, what it reads now (a circuit signal on its wires; the logistic network\'s count), true or false now, it is off by it; "CANNOT BE MET:" first for a logistic condition item > N, >= N or = N above what the network can hold (its count and what its storage and provider chests could still take of the item), or one with no logistic network over it; then the ones not met now; more; as_of, source; line. Read only'}}
+    area='optional {left_top, right_bottom} up to 128x128: the gates there, read now', page='optional: 128 entities a call in reading order (pages, next)',
+    returns='gates, cannot_be_met, not_met, met (counts); lines: one an entity with a circuit or logistic condition: the condition as its GUI shows it, what it reads now (a circuit signal on its wires; the logistic network\'s count), true or false now, it is off by it; "CANNOT BE MET:" first for a logistic condition item > N, >= N or = N above what the network can hold (its count and what its storage and provider chests could still take of the item; up to 256 chests a network and item, 512 a call: a look cut short says what it saw, unflagged), or one with no logistic network over it; then the ones not met now; more; as_of, source; line. Read only'}}
   return M
 end

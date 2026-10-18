@@ -33,10 +33,11 @@
   decider held or no tile that fits: refused before anything, with the calls.
   Example: `./fh call circuit_gate --args '{"position":{"x":-17.5,"y":30.5},"all":["bioflux > 200","agricultural-science-pack < 500"]}'`
 - `gates {surface? | area?, page?}`: every circuit and logistic condition on our entities there (a surface: those the
-  census's last pass found with a control behavior; an area up to 128x128: read now), 256 entities a call: the
+  census's last pass found with a control behavior; an area up to 128x128: read now), 128 entities a call: the
   condition, what it reads now (the signal on its wires, the logistic network's count), true or false now, off by it.
   A logistic condition `item > N` (or `>=`, `=`) above what the network can hold (its count and what its storage and
-  provider chests could still take of the item) comes first as `CANNOT BE MET:`, then those not met now.
+  provider chests could still take of the item) comes first as `CANNOT BE MET:`, then those not met now. A look at
+  the chests stops at 256 a network and item and 512 a call; one cut short gives what it saw and is not flagged.
   Example: `./fh call gates --args '{"surface":"nauvis"}'`
 - `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
