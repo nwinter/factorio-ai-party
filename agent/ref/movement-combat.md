@@ -101,6 +101,9 @@
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
+  On every form (positions walked to as well), a turret whose ammo slots hold another type with no room, or a ghost,
+  is skipped and the rest are served: `turrets_skipped` ("2 of 3 turrets skipped: ...", each with what it holds) is on
+  the reply's warning line and in `last` after a tour.
   A line per turret: `turret_lines` in reach, `last.turret_lines` after a tour (what each got and holds now; those
   the tour did not reach, named).
   Before it walks (and in `dry_run`), `magazines` gives per ammo type what the stops need to reach `count` against

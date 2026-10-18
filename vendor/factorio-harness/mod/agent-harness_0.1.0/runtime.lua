@@ -665,6 +665,7 @@ local function finish(index, outcome)
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
     last.danger=action.danger; last.dangers=action.dangers
     last.left_out=action.left_out; last.left_out_count=action.left_out_count
+    last.turrets_skipped=action.turrets_skipped  -- (batch32 A2) turrets a rearm walk skipped: other ammo with no room, ghosts
     if action.fuel_round then local r=action.fuel_round;last.fuel_taken=r.taken+(r.source and r.source.got or 0);last.sources=r.sources;last.source_read_capped=r.source_read_capped;last.why=action.why or last.why end
     -- An end that moved nothing says why on its error line (round1650d: Luna's courier ended "nothing_collected" with the
     -- reason only in status; Sol's walking give ended "nothing_to_do" at a full chest): the first place's error, else
@@ -8923,6 +8924,8 @@ function M.rearm_now(p,a)
     out.clusters_more=#lines>8 and #lines-8 or nil
     out.other_ammo=other>0 and string.format('%d turret%s there take%s other ammo than %s',other,other==1 and '' or 's',other==1 and 's' or '',ammo) or nil
     out.no_room=M.no_room_line(taken,ammo,below)
+    out.turrets_skipped=out.no_room  -- (batch32 A2) on the warning line too
+    do local act=state().active[p.index]; if act and out.no_room then act.turrets_skipped=out.no_room end end
     if #order==0 then
       out.nothing=own and (#none_held>0 and string.format('every turret there under %d round%s wants ammo you do not carry (none_held)',below,below==1 and '' or 's')
           or string.format('no turret there holds under %d round%s',below,below==1 and '' or 's'))
@@ -8944,10 +8947,27 @@ function M.rearm_now(p,a)
   if far then
     -- (the ones holding below or more stay as they are: walked to only for those that want ammo)
     local rows,enough,wanted={},{},{}
+    -- (batch32 A2, Haiku: a gun on piercing rounds took +0 firearm magazines and the walk read topped_up) a turret
+    -- whose ammo slots hold other ammo with no room for this one, or a ghost, is skipped and named; the rest are served
+    local skipped={}
     for _,e in ipairs(ents) do
-      local okn,have=pcall(function() return e.get_inventory(defines.inventory[ammo_inventory[e.type]]).get_item_count() end)
-      if below and okn and have>=below then enough[#enough+1]=string.format('%s (%g,%g) %d',e.name,e.position.x,e.position.y,have)
+      local inv=ammo_inventory[e.type] and select(2,pcall(function() return e.get_inventory(defines.inventory[ammo_inventory[e.type]]) end))
+      local it=own and M.rearm_pick(p,e) or ammo
+      local okr,fits=pcall(function() return inv.can_insert{name=it,count=1,quality=a.quality or 'normal'} end)
+      local okn,have=pcall(function() return inv.get_item_count() end)
+      if type(inv)~='table' and type(inv)~='userdata' then
+        skipped[#skipped+1]=string.format('%s (%g,%g): %s',e.name,e.position.x,e.position.y,e.type=='entity-ghost' and 'a ghost (not built: nothing to load)' or 'no ammo slots')
+      elseif okr and fits==false then
+        local parts={}
+        for _,c in ipairs(select(2,pcall(function() return inv.get_contents() end)) or {}) do if type(c)=='table' and c.name then parts[#parts+1]=c.name..'*'..c.count end end
+        skipped[#skipped+1]=string.format('%s (%g,%g): holds %s, no room for %s',e.name,e.position.x,e.position.y,#parts>0 and table.concat(parts,' ') or 'other ammo',it)
+      elseif below and okn and have>=below then enough[#enough+1]=string.format('%s (%g,%g) %d',e.name,e.position.x,e.position.y,have)
       else rows[#rows+1]={entity=e,position=e.position}; wanted[e]=true end
+    end
+    local skipped_line=#skipped>0 and string.format('%d of %d turret%s skipped: %s%s',#skipped,#ents,#ents==1 and '' or 's',
+      table.concat(skipped,'; ',1,math.min(6,#skipped)),#skipped>6 and string.format('; +%d more',#skipped-6) or '') or nil
+    if #rows==0 and skipped_line then
+      return {transferred=0,moved=0,turrets_skipped=skipped_line,nothing='no turret there to serve: '..skipped_line,held_enough=#enough>0 and table.concat(enough,', ') or nil}
     end
     local needed={}
     for _,f in ipairs(far) do if wanted[f.entity] then needed[#needed+1]=f end end
@@ -8965,6 +8985,9 @@ function M.rearm_now(p,a)
       for i,r in ipairs(kept) do order[i]=r.entity end
       local out=start_tour(p,a,'rearm',ammo,below and math.max(count,below) or count,order,false,nil,unsafe)
       out.walking=M.autowalk.line(needed,#rows,worst); out.below=below; out.held_enough=held_enough
+      out.turrets_skipped=skipped_line
+      local act=state().active[p.index]
+      if act and skipped_line then act.turrets_skipped=skipped_line end
       return out
     end
   end
@@ -9015,7 +9038,7 @@ function M.rearm_now(p,a)
   end
   local other_line=#other>0 and string.format('%d turret%s left out, %s ammo slots hold other ammo with no room for %s: %s',#other,#other==1 and '' or 's',
     #other==1 and 'its' or 'their',own and 'the one carried' or ammo,table.concat(other,'; ',1,math.min(6,#other))) or nil
-  if #order_items==0 then return {transferred=0,moved=0,below=below,held_enough=enough,other_ammo=other_line,nothing=other_line or 'no turret to rearm'} end
+  if #order_items==0 then return {transferred=0,moved=0,below=below,held_enough=enough,other_ammo=other_line,turrets_skipped=other_line,nothing=other_line or 'no turret to rearm'} end
   local out
   for _,it in ipairs(order_items) do
     local ga={}
@@ -9032,6 +9055,7 @@ function M.rearm_now(p,a)
   end
   if type(out)=='table' then
     out.other_ammo=other_line
+    out.turrets_skipped=other_line  -- (batch32 A2) on the warning line too
     if #order_items>1 then out.ammo_each='each turret its own ammo: '..table.concat(order_items,', ') end
     -- (batch28 C3, Haiku) a line per turret: what it got and what it holds now
     local lines={}
