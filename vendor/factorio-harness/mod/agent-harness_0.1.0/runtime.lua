@@ -16000,7 +16000,8 @@ M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) 
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
 -- Opus, d15 06:20 and 07:50).
 M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}
-M.fuelbudget=require('fuelbudget'){fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end}
+M.fuelbudget=require('fuelbudget'){fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
+  belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
 M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
