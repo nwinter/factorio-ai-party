@@ -16180,7 +16180,7 @@ M.floorcheck=require('floorcheck'){state=state}
 M.tc_once=require('tilecheck')()  -- (required at load: the game refuses require later)
 M.ghosttally=require('ghosttally'){state=state,quality_of=function(g) return M.tc_once.quality_of(g) end}
 -- Seed loops running out (seeds.lua; batch32 A3, Grok): a seed alert to the loop's builders when low or gone.
-M.seeds=require('seeds'){state=state,crafters=function(f,s) return M.census.crafters(f,s) end,deliver=function(i,t) return M.board.deliver(i,t) end,
+M.seeds=require('seeds'){state=state,crafters=function(f,s) return M.census.crafters(f,s) end,robot_cargo=function(f,s,item) return (M.stores.robot_cargo(f,s,item)) end,deliver=function(i,t) return M.board.deliver(i,t) end,
   index_of=function(name) for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index end end end}
 M.chain=require('chain'){makers=function(s) return M.census.makers(s) end,status_name=function(e) return M.machine_status(e) end}
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;

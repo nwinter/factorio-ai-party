@@ -144,3 +144,33 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch33 A5 a ghost\'s ammo request in place: ok')
+
+-- B1 (Grok 09:22: the last pentapod eggs were in an inserter hand, then robot cargo; where_is said 0): what our robots
+-- carry, in where_is and the seed alert.
+do
+  defines={inventory={robot_cargo=1}}
+  local S=dofile('mod/agent-harness_0.1.0/stores.lua'){agents=function() return {} end}
+  local function robot(name,n) return {get_inventory=function() return {get_item_count=function(i) return i==name and n or 0 end} end} end
+  local net={logistic_robots={robot('pentapod-egg',1),robot('iron-plate',4)},construction_robots={robot('pentapod-egg',2)}}
+  local force={logistic_networks={gleba={net}}}
+  local n,carrying,read,capped=S.robot_cargo(force,{name='gleba'},'pentapod-egg')
+  eq(n,3); eq(carrying,2); eq(read,3); eq(capped,false)
+  S.MAX_ROBOTS=2
+  n,carrying,read,capped=S.robot_cargo(force,{name='gleba'},'pentapod-egg')
+  eq(read,2); eq(capped,true)
+  S.MAX_ROBOTS=4096
+  -- the seed alert counts it: one egg in a robot is not zero
+  game={tick=600,surfaces={}}
+  prototypes={recipe={['pentapod-egg']={name='pentapod-egg',ingredients={{type='item',name='pentapod-egg',amount=1}}}}}
+  defines.inventory.assembling_machine_input=2; defines.inventory.assembling_machine_output=3
+  local empty={get_item_count=function() return 0 end}
+  local chamber={valid=true,name='biochamber',type='assembling-machine',position={x=0,y=0},bounding_box={left_top={x=-1.5,y=-1.5},right_bottom={x=1.5,y=1.5}},
+    last_user={name='grok'},get_recipe=function() return {name='pentapod-egg'} end,get_inventory=function() return setmetatable(empty,{__len=function() return 0 end}) end}
+  local surface={name='gleba',find_entities_filtered=function() return {} end}
+  local Sd=dofile('mod/agent-harness_0.1.0/seeds.lua'){state=function() return {} end,crafters=function() return {chamber} end,
+    robot_cargo=function(f,s,item) return (S.robot_cargo(f,s,item)) end}
+  local rows=Sd.read({name='player',logistic_networks={gleba={net}}},surface)
+  eq(rows['pentapod-egg'].count,3); eq(rows['pentapod-egg'].in_robots,3)
+  defines,game,prototypes=nil,nil,nil
+end
+print('d17_batch33 B1 robot cargo counted: ok')

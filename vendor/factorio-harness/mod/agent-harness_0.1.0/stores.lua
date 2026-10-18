@@ -68,6 +68,26 @@ return function(api)
     table.sort(order, function(x, y) return x.count > y.count end)
     return {count=count, stacks=stacks, cells=order, capped=#list >= M.MAX_GROUND or nil}
   end
+  -- (d17 batch33 B1, Grok 09:22: the last pentapod eggs were in an inserter's hand, then a robot's cargo, while where_is
+  -- read 0) what our logistic and construction robots on a surface carry of an item: each logistic network's robots'
+  -- cargo, at most MAX_ROBOTS robots read a call. Returns count, robots carrying it, robots read, capped.
+  M.MAX_ROBOTS = 4096
+  function M.robot_cargo(force, surface, item)
+    local n, carrying, read, capped = 0, 0, 0, false
+    local cargo = defines.inventory.robot_cargo
+    for _, ln in ipairs((force.logistic_networks or {})[surface.name] or {}) do
+      for _, list in ipairs({'logistic_robots', 'construction_robots'}) do
+        local ok, robots = pcall(function() return ln[list] end)
+        for _, r in ipairs(ok and robots or {}) do
+          if read >= M.MAX_ROBOTS then capped = true; break end
+          read = read + 1
+          local okc, k = pcall(function() return r.get_inventory(cargo).get_item_count(item) end)
+          if okc and type(k) == 'number' and k > 0 then n = n + k; carrying = carrying + 1 end
+        end
+      end
+    end
+    return n, carrying, read, capped
+  end
   function M.where_is(p, a)
     local item = a.item
     assert(type(item) == 'string' and item ~= '', 'item is required (an item name, e.g. automation-science-pack)')
@@ -128,6 +148,9 @@ return function(api)
       if ok and type(n) == 'number' then held = held + n end
     end
     if held > 0 then add('inserter_hands', held) end
+    local okr, flying, carriers, robots_read, capped = pcall(M.robot_cargo, p.force, surface, item)
+    if okr and flying > 0 then add('robot_cargo', flying) end
+    local robot_note = okr and capped and string.format('robot cargo: the first %d robots read', robots_read) or nil
     -- The team's characters on this surface, by agent name.
     for _, ag in ipairs(api.agents()) do
       local c = api.character(ag.index)
@@ -190,7 +213,8 @@ return function(api)
       end
     end
     local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0, in_flight=#flying > 0 and flying or nil,
-      spoils_within_2_min=soon, spoil_note=soon and string.format('%d of the %d spoil within 2 minutes (chests, machines and the like; belts and hands not read)', soon, total) or nil}
+      spoils_within_2_min=soon, spoil_note=soon and string.format('%d of the %d spoil within 2 minutes (chests, machines and the like; belts, hands and robot cargo not read)', soon, total) or nil,
+      robot_cargo=okr and flying > 0 and string.format('%d carried by %d robot%s now', flying, carriers, carriers == 1 and '' or 's') or nil, robot_note=robot_note}
     for i, e in ipairs(places) do
       if i <= limit then out.places[i] = e else out.more = out.more + 1 end
     end
@@ -200,7 +224,7 @@ return function(api)
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places (default 15)', surface='optional surface name (default yours)',
-      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 4096 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end
