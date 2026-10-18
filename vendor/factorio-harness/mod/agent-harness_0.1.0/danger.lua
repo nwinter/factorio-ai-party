@@ -210,6 +210,29 @@ return function(api)
         lines[#lines+1] = 'the straight line from you is too long to read in one call'
       end
     end
+    -- (batch26 C1, Haiku: walks to pole gaps in a hot zone) quiet_s: whether the straight way from you to it (24 tiles
+    -- either side, the end round it too) has had an attack on our structures in the last quiet_s seconds, and the enemy
+    -- units seen there now.
+    if a.quiet_s ~= nil then
+      local q = a.quiet_s
+      assert(type(q) == 'number' and q >= 10 and q <= 3600 and q == math.floor(q), 'quiet_s: 10..3600 seconds')
+      local from = here or pos
+      local latest, n = nil, 0
+      for _, v in pairs(st.damage or {}) do
+        if v.at and (v.surface or 'nauvis') == s.name and game.tick - (v.last or 0) <= q * 60 and api.avoid.seg_dist(from, pos, v.at) <= 24 then
+          n = n + 1
+          if not latest or v.last > latest.last then latest = v end
+        end
+      end
+      local units = 0
+      for _, e in ipairs(try(function() return s.find_entities_filtered{area={{math.min(from.x, pos.x) - 24, math.min(from.y, pos.y) - 24}, {math.max(from.x, pos.x) + 24, math.max(from.y, pos.y) + 24}}, type='unit', force={'enemy'}, limit=200} end) or {}) do
+        if e.valid ~= false and f.is_chunk_visible(s, {x=math.floor(e.position.x / 32), y=math.floor(e.position.y / 32)}) and api.avoid.seg_dist(from, pos, e.position) <= 24 then units = units + 1 end
+      end
+      out.quiet = n == 0 and units == 0
+      lines[#lines+1] = (n == 0 and string.format('no attack on our structures within 24 tiles of the way from you to it in the last %d s', q)
+        or string.format('%d attack%s within 24 tiles of the way in the last %d s; latest at %s, %s ago', n, n == 1 and '' or 's', q, at(latest.at), ago(game.tick - latest.last)))
+        .. (units > 0 and string.format('; %d enemy unit%s seen now within 24 tiles of it', units, units == 1 and '' or 's') or '; no enemy unit seen now within 24 tiles of it')
+    end
     -- You.
     if c and c.valid then
       local max = try(function() return c.max_health end) or try(function() return c.prototype.get_max_health() end) or try(function() return c.prototype.max_health end)

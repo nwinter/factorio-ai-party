@@ -50,4 +50,13 @@ force.is_chunk_visible=function() return false end
 r=D.read(p,{position={x=340,y=0},radius=32})
 has(r.line,'no enemy unit seen now within 32 tiles'); has(r.line,'not in sight of our force now')
 fails(function() D.read(p,{position={x=0,y=0},radius=500}) end,'radius is 8..128')
+-- batch26 C1 (Haiku: pole gaps in a hot zone): quiet_s: attacks within 24 tiles of the straight way in the last N s, and
+-- the enemy units seen there now.
+force.is_chunk_visible=function(_,c) return c.x>=10 end
+r=D.read(p,{position={x=340,y=0},quiet_s=60})
+eq(r.quiet,false); has(r.line,'1 attack within 24 tiles of the way in the last 60 s; latest at (330,10), 30s ago; 2 enemy units seen now within 24 tiles of it')
+units={}
+r=D.read(p,{position={x=340,y=0},quiet_s=20})
+eq(r.quiet,true); has(r.line,'no attack on our structures within 24 tiles of the way from you to it in the last 20 s; no enemy unit seen now within 24 tiles of it')
+fails(function() D.read(p,{position={x=340,y=0},quiet_s=5}) end,'quiet_s: 10..3600')
 print('danger: ok')

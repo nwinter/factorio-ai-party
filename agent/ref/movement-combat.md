@@ -83,7 +83,11 @@
   checks it), and a requester chest there asking `count` (default 50) of its ammunition with the inserter, built from
   your inventory by `build` (its walk into reach). Each turret: the chest and inserter spots, `skipped` (fed already,
   no free side, no ammunition named for an empty one), `short` (the chests or inserters you hold ran out) or
-  `not_built` (build refused an entry). `dry_run: true` plans only. Example:
+  `not_built` (build refused an entry). A feed already there whose inserter has no power says `inserter unpowered`
+  (`unpowered` counts them). `ghosts: true` places the chest (its request set on the ghost), the inserter and, when no
+  pole of ours covers the inserter, a pole (`pole`, default small-electric-pole, beside it within wire reach of our
+  nearest pole) as ghosts for construction robots, by remote view as `place_ghosts`, nothing from your inventory.
+  `dry_run: true` plans only. Example:
   `./fh call turret_feeds --args '{"area":{"left_top":{"x":-20,"y":540},"right_bottom":{"x":20,"y":580}},"dry_run":true}'`
 - `turrets {surface? | area?, hand_fed_low?, below?}`: every turret by front: its ammo (a flamer's oil with its
   buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing: hand-fed);
@@ -101,7 +105,8 @@
   what it gets, and each one left out with the ammunition it wants. The dry run checks the route in straight lines
   for pockets; it does not ask the game's path. A tour's walk that stalls and ends `blocked` names in
   `first_unreached` where it stopped and what stands within 2.5 tiles that the character collides with (and enemy
-  units within 6 tiles). When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
+  units within 6 tiles). A walk (move_to or a tour) that stalls asks for its route again with 0.15 tiles more room
+  either side each time, to 0.45 (`stall_pad`), so it keeps out of the narrow gaps of a dense block of our buildings. When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
   then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold
