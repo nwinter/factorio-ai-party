@@ -7747,3 +7747,54 @@ fh watch    # deploy on every change
     written as [where it is, that stop] with current 2. `one_stop` says so, including that after that stop's waits
     the platform goes back to where it was (at once when the stop has no wait). `one_stop: "as given"` writes the
     one stop alone (and fails as above if the game reads no_schedule).
+
+## d17 batch34 (the agents' 12:20 poll)
+
+- A1 (Astra: about 65 medium-pole ghosts stood over live small poles while `ghosts` read "robots can build it"; robots
+  held poles until the small poles were marked for upgrade):
+  - robots.lua `M.under(g)`: a live entity of ours on an entity ghost's spot (its box shrunk by 0.1, or a quarter of a
+    side), whose collision layers meet the ghost's, marked neither for upgrade nor for deconstruction. Characters,
+    vehicles, robots, ghosts and proxies are left out. It is of the ghost's kind when it is another name of the same
+    fast-replace group and size.
+  - `ghosts`: such a ghost's verdict reads `blocked: our live X (x,y) stands on its spot, not marked for upgrade (robots
+    do not build it until it is)` (or deconstruction), counted in the summary as `blocked: a live entity of ours on its
+    spot, ...`. `blocked` gives a line per ghost and entity name with the count and the call that marks them:
+    `upgrade {area, from, to}` for one of its kind (the area round them when it fits 128 tiles, else the first 16
+    positions), else `deconstruct {area, entity_names}`. Only the nearest 512 entity ghosts are checked
+    (`blocked_checked` says so past that).
+  - `construction_robots`: a robot whose order targets such a ghost is held up by it (its line says so), and
+    `ghosts_blocked` counts the ghosts in the orders of robots in the air (512 at most) as `ghosts` does.
+  - Cost on world n (read-only probe, the module loaded into a throwaway env): 14 ghosts 0.17 ms, 69 ghosts 0.81 ms,
+    about 12 us a ghost, so 512 is about 6 ms. Nauvis had no blocked ghost by then, so the hit path ran in tests only.
+- A2 (Astra, Luna: Petrel's drop 1376 of 3 underground belts and a chest landed in Gleba's pad and construction robots
+  spent them on unrelated ghosts within seconds; four reads found nothing):
+  - drops.lua: a drop sent to a landing pad records the pad's count of each sent item before (at the send) and when it
+    lands. Then for 20 s (sampled every 15 ticks, with drops.tick) each fall in the pad's count reads the construction
+    and logistic robots of ours within 8 tiles of the pad holding that item (each robot counted once) and the ghost or
+    entity its first order is on. What fell with no robot seen is said as such (an inserter, a player, or a robot
+    already gone). No on_robot_* event is used.
+  - The drop's landing line in the team block waits for those 20 s and carries the pad line. `drops` gives `pad`,
+    `pad_verdict` (`landed, then taken by construction robots`, `landed, then N of M taken by construction robots`,
+    `landed, then N of M left the pad`) and `pad_now`.
+  - `where_is {item}` adds `drops` (the last 4 drops of it into a pad on that surface) and `shipment` adds the
+    platform's last 2 drops into a pad at each stop's planet, each with the verdict. The game reserves nothing for the
+    sender; the docs say so.
+- A3 (Muse: Wayfarer's floor request read absent with 72 ghosts open; Muse nearly called the hull closed):
+  - Found in the journals: the platform_bom keeper (Sol's `request: true, tail: true` since 17:52) asked 72 foundation in
+    Sol's reads at ticks 28354138 and 28356049, and Muse's observe at 28355157 listed no foundation slot. An earlier
+    read (28234653) lacked it the same way between 972 and 891. Both times items sorted before it in the section had
+    just dropped out (solar-panel the first time; chemical-plant, efficiency-module-2 and pump the second). The old
+    rewrite put each item at its sorted place, so every later item was written into the slot another held. The vanish
+    was not reproduced (n is read-only and the dev world's RCON closes the connection).
+  - The keeper now keeps each item in the slot it has. An item no longer needed is cleared where it stands, and a new
+    one takes a free slot (or the next past the end). A slot as wanted is not written again. Duplicate slots of one
+    item are cleared.
+  - `platform_bom` (a read) gives `requests_check` with ghosts open (every item they still need has an active hub
+    request, or how many have none) and `unrequested`: each item the ghosts need, beyond the hub, pods in flight and
+    robots, that no active hub request asks for.
+- A4 (Sol: Swiftlet's LDS gate timed out twice; the failed step was removed, so a plain resume would have flown short):
+  - A queued `wait_until` takes `on_timeout: "hold"` (or `"fail"`, the default). On timing out, the step is recorded
+    `timed_out` with `held: true`, a copy goes back first in pending (same id, label and args), and the queue pauses.
+    `paused_why` names the condition still unmet with what it saw. `queue_resume` waits for it again with a fresh
+    timeout. Remote lanes run the same code.
+  - In a standing order's run it fails as before. A direct `wait_until` with `on_timeout` is refused.

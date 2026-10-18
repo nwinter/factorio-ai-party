@@ -79,6 +79,12 @@ return function(api)
     if pct and pct < 1 then return 'no charge (energy 0%)' end
     for _, o in ipairs(orders) do
       local t = o.target and try(function() return o.target.valid and o.target end)
+      -- (d17 batch34 A1) a ghost over a live entity of ours not marked for upgrade or deconstruction
+      local under, kind
+      if t and t.type == 'entity-ghost' then under, kind = M.under(t) end
+      if under then
+        return string.format('its target %s ghost %s stands over our live %s, not marked for %s', t.ghost_name, at(t.position), under.name, kind and 'upgrade' or 'deconstruction')
+      end
       if t then
         local c = cell_of(net, t.position)
         if c and try(function() return c.is_in_construction_range(t.position) end) == false then
@@ -107,6 +113,69 @@ return function(api)
     local why = blocker(r, net, cargo, queue, cache, pct)
     if why then parts[#parts+1] = why end
     return string.format('%s %s: %s', r.name, at(r.position), table.concat(parts, '; ')), why ~= nil, why, queue
+  end
+  -- (d17 batch34 A1, Astra: ~65 medium-pole ghosts stood over live small poles while ghosts read "robots can build it";
+  -- robots held poles until the small poles were marked for upgrade) A live entity of ours on an entity ghost's spot
+  -- whose collision layers meet the ghost's, marked neither for upgrade nor for deconstruction: robots do not build
+  -- the ghost until it is. Returns that entity and whether it is of the ghost's kind (another name of the same
+  -- fast-replace group and size: the upgrade planner marks it), or nil.
+  local MOVERS = {character=true, car=true, ['spider-vehicle']=true, locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true,
+    ['artillery-wagon']=true, ['entity-ghost']=true, ['tile-ghost']=true, ['item-request-proxy']=true}
+  local function layers(proto) return try(function() return proto.collision_mask.layers end) or {} end
+  local function box_size(b) return b and string.format('%.2fx%.2f', b.right_bottom.x - b.left_top.x, b.right_bottom.y - b.left_top.y) end
+  function M.under(g)
+    if not (g.valid and g.type == 'entity-ghost') then return nil end
+    local gp, b = try(function() return g.ghost_prototype end), try(function() return g.bounding_box end)
+    if not (gp and b) then return nil end
+    -- shrunk so that what only touches its edge is left out (a pole's box is 0.3 a side)
+    local dx = math.min(0.1, (b.right_bottom.x - b.left_top.x) / 4, (b.right_bottom.y - b.left_top.y) / 4)
+    local box = {{b.left_top.x + dx, b.left_top.y + dx}, {b.right_bottom.x - dx, b.right_bottom.y - dx}}
+    if box[2][1] <= box[1][1] or box[2][2] <= box[1][2] then return nil end
+    local gl = layers(gp)
+    for _, e in ipairs(try(function() return g.surface.find_entities_filtered{area=box, force=g.force, limit=8} end) or {}) do
+      if e.valid and e ~= g and not MOVERS[e.type] and not e.to_be_deconstructed() and not e.to_be_upgraded() then
+        local el = layers(e.prototype)
+        for k in pairs(gl) do
+          if el[k] then
+            local g1, g2 = gp.fast_replaceable_group, e.prototype.fast_replaceable_group
+            return e, g1 ~= nil and g1 == g2 and e.name ~= gp.name and box_size(gp.collision_box) == box_size(e.prototype.collision_box)
+          end
+        end
+      end
+    end
+  end
+  -- The ghosts M.under finds, as lines: per pair of names, how many and the call that marks what stands under them
+  -- (upgrade for one of its kind, else deconstruct), over the pairs' area when it fits the call's area, else positions.
+  -- list: {{ghost=, under=, kind=}}; where: ', surface: "x"' or ''.
+  function M.under_lines(list, where)
+    local groups, order = {}, {}
+    for _, x in ipairs(list) do
+      local key = x.ghost.ghost_name .. '|' .. x.under.name
+      local gr = groups[key]
+      if not gr then gr = {ghost=x.ghost.ghost_name, under=x.under.name, kind=x.kind, pos={}}; groups[key] = gr; order[#order+1] = gr end
+      gr.pos[#gr.pos+1] = x.under.position
+    end
+    table.sort(order, function(x, y) if #x.pos ~= #y.pos then return #x.pos > #y.pos end return x.ghost < y.ghost end)
+    local lines = {}
+    for _, gr in ipairs(order) do
+      local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+      for _, q in ipairs(gr.pos) do x0, y0, x1, y1 = math.min(x0, q.x), math.min(y0, q.y), math.max(x1, q.x), math.max(y1, q.y) end
+      x0, y0, x1, y1 = math.floor(x0 - 1), math.floor(y0 - 1), math.ceil(x1 + 1), math.ceil(y1 + 1)
+      local fits = x1 - x0 <= (gr.kind and 128 or 256) and y1 - y0 <= (gr.kind and 128 or 256)
+      local target
+      if fits then target = string.format('area: [[%d,%d],[%d,%d]]', x0, y0, x1, y1)
+      else
+        local ps = {}
+        for i = 1, math.min(16, #gr.pos) do ps[i] = string.format('[%g,%g]', gr.pos[i].x, gr.pos[i].y) end
+        target = 'positions: [' .. table.concat(ps, ',') .. ']'
+      end
+      local call = gr.kind and string.format('upgrade {%s, from: "%s", to: "%s"%s}', target, gr.under, gr.ghost, where)
+        or string.format('deconstruct {%s, entity_names: ["%s"]%s}', fits and target or string.format('area: [[%g,%g],[%g,%g]]', gr.pos[1].x - 1, gr.pos[1].y - 1, gr.pos[1].x + 1, gr.pos[1].y + 1), gr.under, where)
+      lines[#lines+1] = string.format('%d %s ghost%s over our live %s, not marked for %s: robots do not build %s until it is; %s marks %s%s', #gr.pos, gr.ghost,
+        #gr.pos == 1 and '' or 's', gr.under, gr.kind and 'upgrade' or 'deconstruction', #gr.pos == 1 and 'it' or 'them', call,
+        #gr.pos == 1 and 'it' or 'them', (not fits and #gr.pos > (gr.kind and 16 or 1)) and string.format(' (the first %d; the ghosts read lists the rest)', gr.kind and 16 or 1) or '')
+    end
+    return lines
   end
   local function network_for(p, a)
     local surface = p.surface
@@ -228,9 +297,19 @@ return function(api)
     local net = network_for(p, a)
     local flying = try(function() return net.construction_robots end) or {}
     local rows, held_up, cache, waits = {}, 0, {}, {}
+    local blocked, blocked_seen = {}, {}
     for i, r in ipairs(flying) do
       if r.valid then
         local line, stuck, why, queue = M.row(r, net, cache)
+        for _, o in ipairs(queue) do
+          local t = o.target and try(function() return o.target.valid and o.target end)
+          local u = t and t.type == 'entity-ghost' and try(function() return t.unit_number end)
+          if u and blocked_seen[u] == nil and #blocked < 512 then
+            local under, kind = M.under(t)
+            blocked_seen[u] = under ~= nil
+            if under then blocked[#blocked+1] = {ghost=t, under=under, kind=kind} end
+          end
+        end
         if stuck then
           held_up = held_up + 1
           -- (d17 batch18 B3, Astra) the ghosts in a held-up robot's queue wait on it
@@ -262,6 +341,7 @@ return function(api)
         #cells, #cells == 1 and '' or 's', storages, storages == 1 and '' or 's'),
       robots=#rows > 0 and rows or nil, robots_more=#flying > #rows and #flying - #rows or nil,
       charging_queues=#queues > 0 and queues or nil, ghosts_waiting=#waits > 0 and waits or nil,
+      ghosts_blocked=#blocked > 0 and M.under_lines(blocked, a._where or '') or nil,
       sources=a.sources and M.sources(p, net) or nil}
   end
   M.schema = {
@@ -269,7 +349,7 @@ return function(api)
       network='optional network id (the networks read lists them) instead of position',
       surface='optional planet name: read there by remote view',
       sources='true: sources: per group of ghosts and item requests waiting in the construction area (by item, 32-tile cells; the largest 16), the network\'s chests holding that item, nearest first (3): what each holds, how far, and whether the straight line from it to the group passes within reach of a worm or spawner the map shows (which, how near, its reach)',
-      returns='network, summary (construction robots: in roboports, in the air, held up; roboports; storage chests), robots: one line each for those in the air (the first 32; robots_more): position, energy %, what it holds, its orders (construct, deconstruct, upgrade, repair, deliver, pickup, explode_cliff: target and item, the first 3) and what holds it up: no charge (energy under 1%, in no roboport\'s queue), nowhere to put what it holds (no storage chest in the network has room for it), its target outside the network\'s construction area, waiting to charge at a roboport (its place in the queue), charging, outside every network\'s area; charging_queues: roboports with robots waiting to charge; ghosts_waiting: each ghost in a held-up robot\'s queue (the first 32): the robot, the order\'s place in its queue, what holds it up. Read only'},
+      returns='network, summary (construction robots: in roboports, in the air, held up; roboports; storage chests), robots: one line each for those in the air (the first 32; robots_more): position, energy %, what it holds, its orders (construct, deconstruct, upgrade, repair, deliver, pickup, explode_cliff: target and item, the first 3) and what holds it up: no charge (energy under 1%, in no roboport\'s queue), nowhere to put what it holds (no storage chest in the network has room for it), its target outside the network\'s construction area, waiting to charge at a roboport (its place in the queue), charging, outside every network\'s area; charging_queues: roboports with robots waiting to charge; ghosts_waiting: each ghost in a held-up robot\'s queue (the first 32): the robot, the order\'s place in its queue, what holds it up; ghosts_blocked: the ghosts in the orders of robots in the air that stand over a live entity of ours whose collision meets theirs, not marked for upgrade or deconstruction (robots do not build them until it is; a robot\'s line says it of its target), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call. Read only'},
   }
   return M
 end
