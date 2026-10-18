@@ -323,6 +323,15 @@ return function(api)
             local name, n = hand(f.e)
             parts[#parts+1] = string.format('%s %s %s takes from %s%s', f.e.name, at(f.e.position), status(f.e), text,
               name and string.format(', holding %d %s', n, name) or '')
+            -- (B1) a belt lane it picks from that is full of another item
+            if f.pick and f.pick.valid and BELT[f.pick.type] then
+              for lane = 1, 2 do
+                if picks_lane(f.e, lane) then
+                  local okb, blk = pcall(M.lane_block, p.surface, p.force, f.pick, lane, w.item)
+                  if okb and blk then parts[#parts+1] = blk.line; row.blocked = row.blocked or {}; row.blocked[#row.blocked+1] = blk end
+                end
+              end
+            end
           end
         end
         if not any then parts[#parts+1] = #feeders == 0 and 'no inserter feeds it' or 'no inserter feeding it lets it through its filter' end
@@ -464,6 +473,102 @@ return function(api)
       e = nxt
     end
     return m
+  end
+  -- (d17 batch32 B1, Sol: Swiftlet's carbon backed up and filled the shared ice lane; fuel went to zero with 351 ice in
+  -- the hub) a lane a starved machine's inserter picks from, followed upstream (the same line through belt neighbours
+  -- and undergrounds, up to BLOCK_TILES): when it is full at the pickup and holds none of the item, the jam (how far the
+  -- lane stays full of other items), the blocking item (most of it), where that item comes onto the lane (an inserter
+  -- dropping it there, with what it takes from and its own circuit or logistic condition; else the belts feeding the
+  -- start of the line), and the first consumer of the item past that source (an inserter taking from the lane into a
+  -- machine whose recipe takes the item). nil when the lane holds some of the item or is not full there.
+  M.BLOCK_TILES = 256
+  local function prev_lane(e, k)
+    local line = try(function() return e.get_transport_line(k) end)
+    if not line then return nil end
+    local cands = {}
+    local bn = try(function() return e.belt_neighbours end)
+    for _, n in ipairs(bn and bn.inputs or {}) do cands[#cands+1] = n end
+    if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' then
+      local nb = try(function() return e.neighbours end)
+      if nb and nb.valid then cands[#cands+1] = nb end
+    end
+    for _, n in ipairs(cands) do
+      for j = 1, try(function() return n.get_max_transport_line_index() end) or 0 do
+        if try(function() return n.get_transport_line(j).line_equals(line) end) then return n, j end
+      end
+    end
+    return nil, nil, line
+  end
+  local function takes_item(m, item)
+    local r = m and m.valid and recipe_of(m)
+    for _, ing in ipairs(r and r.ingredients or {}) do if ing.name == item then return true end end
+    return false
+  end
+  function M.lane_block(surface, force, belt, k, item)
+    local here = items_on(belt, k)
+    if (here[item] or 0) > 0 or not lane_full(belt, k) then return nil end
+    local tiles, e, j, start_line = {}, belt, k, nil
+    for _ = 1, M.BLOCK_TILES do
+      tiles[#tiles+1] = {e=e, k=j}
+      local nx, nk, line = prev_lane(e, j)
+      if not nx then start_line = line; break end
+      e, j = nx, nk
+    end
+    -- the jam: full of other items from the pickup back
+    local jam, by = 0, {}
+    for _, t in ipairs(tiles) do
+      local m = items_on(t.e, t.k)
+      if (m[item] or 0) > 0 or not lane_full(t.e, t.k) then break end
+      jam = jam + 1
+      for n, c in pairs(m) do by[n] = (by[n] or 0) + c end
+    end
+    local block, bc
+    for n, c in pairs(by) do if not bc or c > bc or (c == bc and n < block) then block, bc = n, c end end
+    if not block then return nil end
+    local last = tiles[jam].e
+    -- where the blocking item comes on, and the consumers of the item along the walk
+    local cell_of = cells(surface, force)
+    local sources, first_consumer, source_at = {}, nil, nil
+    for idx, t in ipairs(tiles) do
+      local c = cell_of(t.e)
+      for _, row in ipairs(c.by_drop[t.e.unit_number] or {}) do
+        if row.e.valid and drop_lane(t.e, row.e) == t.k then
+          local hname = hand(row.e)
+          local pick = row.pick
+          local brings = hname == block or (pick and pick.valid and holds(pick, block) > 0)
+          if brings and #sources < 3 then
+            local cond = ''
+            local C = api.circuits and api.circuits()
+            local cs = C and try(function() return C.conditions(row.e) end)
+            if cs and cs.enable and cs.enable ~= false then cond = cond .. string.format(', enable %s%s', cs.enable, cs.enable_met == true and ' (holds now)' or cs.enable_met == false and ' (does not hold now)' or '') end
+            if cs and cs.logistic and cs.logistic ~= false then cond = cond .. string.format(', logistic %s%s', cs.logistic, cs.logistic_met == true and ' (holds now)' or cs.logistic_met == false and ' (does not hold now)' or '') end
+            sources[#sources+1] = string.format('%s %s puts %s on it at %s, taking from %s%s', row.e.name, at(row.e.position), block, at(t.e.position),
+              pick and pick.valid and (place(pick) .. (CRAFTER[pick.type] and ' (' .. status(pick) .. ')' or '')) or 'nothing', cond)
+            source_at = source_at or idx
+          end
+        end
+      end
+      if not source_at then
+        for _, row in ipairs(c.by_pick[t.e.unit_number] or {}) do
+          if row.e.valid and picks_lane(row.e, t.k) and takes_item(row.drop, item) then
+            first_consumer = string.format('%s %s into %s (%s, %s)', row.e.name, at(row.e.position), place(row.drop), recipe_of(row.drop).name, status(row.drop))
+          end
+        end
+      end
+    end
+    if #sources == 0 and start_line then
+      for _, o in ipairs(try(function() return start_line.input_lines end) or {}) do
+        local owner = o.owner
+        if owner and owner.valid and #sources < 3 then
+          local m = items_on(owner)
+          sources[#sources+1] = string.format('%s %s feeds the start of the line (carrying %s)', owner.name, at(owner.position), lane_text(m))
+        end
+      end
+      if #sources == 0 then sources[1] = string.format('none seen in %d tile%s (the line starts at %s)', #tiles, #tiles == 1 and '' or 's', at(tiles[#tiles].e.position)) end
+    end
+    return {item=item, blocking=block, jam_tiles=jam, sources=sources, first_consumer=first_consumer,
+      line=string.format('the %s lane at %s is full of %s (%d tile%s back to %s) and holds no %s; %s comes onto it from: %s%s', side(k), place(belt), block, jam, jam == 1 and '' or 's',
+        at(last.position), item, block, table.concat(sources, '; '), first_consumer and '; the first consumer of ' .. item .. ' past it: ' .. first_consumer or '')}
   end
   local function names(m, without)
     local list = {}

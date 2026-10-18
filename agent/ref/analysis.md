@@ -62,7 +62,10 @@
   makers' states. Up to 16 links and 24 makers a link read; machines from the census pass (`as_of`).
 - `trace {position | item, platform? | surface?, forward?, audit?, upstream?, throughput?, circuit?, all?, near?,
   radius?}`: on a machine or lab, per ingredient it lacks each feeding inserter, what that inserter reads and how much
-  is there, and a container within 10 tiles holding it that nothing reads. `forward: true` follows its output inserters
+  is there, and a container within 10 tiles holding it that nothing reads. A belt lane it picks from that is full of
+  another item and holds none of the ingredient is followed upstream (256 tiles): the jam, the blocking item, the
+  inserter putting it on (what it takes from, its circuit or logistic condition and whether it holds now; else the
+  belts feeding the line's start), and the first consumer of the ingredient past it (`blocked`). `forward: true` follows its output inserters
   and belts lane by lane to where they end and what blocks them (on a belt tile, a drill or a chest: from there,
   forward), naming where other items join a lane (`joins transport-belt (12,5) carrying iron-plate on the left lane:
   your iron-ore mixes in`); with `audit: true` it adds `audit`: where the walked lanes lose capacity (a belt

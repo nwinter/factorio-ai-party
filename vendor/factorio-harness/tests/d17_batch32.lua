@@ -196,3 +196,53 @@ do
   eq(#P.alert_groups({name='player'}),0)
 end
 print('d17_batch32 B3 cuts that stop a line: ok')
+
+-- B1 (Sol: Swiftlet's carbon backup filled the shared ice lane; fuel went to zero with 351 ice in the hub): a starved
+-- machine's pickup lane full of another item: the jam, the blocking item, where it comes on (with its condition), the
+-- first consumer past it.
+do
+  defines={inventory={chest=1,assembling_machine_input=2,assembling_machine_output=3},wire_connector_id={}}
+  prototypes={recipe={['ice-melting']={name='ice-melting',ingredients={{type='item',name='ice',amount=1}}}}}
+  game={tick=1000}
+  local belts={}
+  local function line(b,k)
+    local l={owner=b,k=k,line_length=1}
+    l.get_contents=function() return b.lanes[k] end
+    l.get_detailed_contents=function() local out={}; for _,c in ipairs(b.lanes[k]) do for i=1,c.count do out[#out+1]={stack={valid_for_read=true,name=c.name},position=i*0.25} end end return out end
+    l.line_equals=function(o) return o.k==k end
+    l.get_line_item_position=function() return {x=b.position.x,y=b.position.y+(k==1 and -0.25 or 0.25)} end
+    l.input_lines={}
+    return l
+  end
+  for x=0,5 do
+    local b={valid=true,type='transport-belt',name='transport-belt',position={x=x+0.5,y=0.5},unit_number=500+x,direction=4,
+      lanes={{},{{name='carbon',count=4}}}}
+    b.get_max_transport_line_index=function() return 2 end
+    b.lines={line(b,1),line(b,2)}
+    b.get_transport_line=function(k) return b.lines[k] end
+    b.get_item_count=function(n) local t=0; for _,l in ipairs(b.lanes) do for _,c in ipairs(l) do if c.name==n then t=t+c.count end end end return t end
+    belts[#belts+1]=b
+  end
+  for i,b in ipairs(belts) do b.belt_neighbours={inputs={belts[i-1]},outputs={belts[i+1]}} end
+  local function machine(x,recipe,status) return {valid=true,type='assembling-machine',name='chemical-plant',position={x=x,y=3},unit_number=900+x,status=status,
+    get_recipe=function() return prototypes.recipe[recipe] end} end
+  local plant5,plant3=machine(5.5,'ice-melting','no_ingredients'),machine(3.5,'ice-melting','no_ingredients')
+  local chest={valid=true,type='container',name='steel-chest',position={x=1.5,y=-1.5},unit_number=950,get_inventory=function() return {get_item_count=function(n) return n=='carbon' and 800 or 0 end} end}
+  local function ins(x,pick,drop,dy) return {valid=true,type='inserter',name='fast-inserter',position={x=x,y=dy},pickup_target=pick,drop_target=drop,
+    drop_position={x=x,y=0.8},held_stack={valid_for_read=false}} end
+  local inserters={ins(5.5,belts[6],plant5,1.5),ins(3.5,belts[4],plant3,1.5),ins(1.5,chest,belts[2],-0.5)}
+  local surface={find_entities_filtered=function() return inserters end}
+  local C={conditions=function(e) if e==inserters[3] then return {enable='carbon < 400',enable_met=false} end return {} end}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){}
+  local T=dofile('mod/agent-harness_0.1.0/trace.lua'){supply=S,circuits=function() return C end,status_name=function(e) return e.status or 'working' end}
+  local r=T.lane_block(surface,{},belts[6],2,'ice')
+  eq(r.blocking,'carbon'); eq(r.jam_tiles,6)
+  eq(r.line,'the right lane at transport-belt (5.5,0.5) is full of carbon (6 tiles back to (0.5,0.5)) and holds no ice; carbon comes onto it from: fast-inserter (1.5,-0.5) puts carbon on it at (1.5,0.5), taking from steel-chest (1.5,-1.5), enable carbon < 400 (does not hold now); the first consumer of ice past it: fast-inserter (3.5,1.5) into chemical-plant (3.5,3) (ice-melting, no_ingredients)')
+  -- some ice on the lane, or a lane not full: nothing to say
+  belts[6].lanes[2]={{name='carbon',count=3},{name='ice',count=1}}
+  eq(T.lane_block(surface,{},belts[6],2,'ice'),nil)
+  belts[6].lanes[2]={{name='carbon',count=2}}
+  eq(T.lane_block(surface,{},belts[6],2,'ice'),nil)
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch32 B1 a lane blocked by another item: ok')
