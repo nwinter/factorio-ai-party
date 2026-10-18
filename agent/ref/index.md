@@ -8,7 +8,8 @@
   `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
   `belt_route`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `blueprint_save`,
   `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`.
-- `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_audit`, `configure`, `requests`.
+- `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_gate`, `circuit_audit`, `configure`,
+  `assembler_batch`, `requests`.
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
   `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.
 - `analysis`, factory reads, the factory digest: `progress`, `research`, `research done`, `science`, `supply`,
@@ -27,5 +28,5 @@
 - `space-age`, rockets, platforms, planets, the remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
   waits `platform_arrived` and `platform_left`, `platform_create`, `platform_schedule`, `platform_rename`,
   `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
-  `circuit_audit`, `platform_gate`, `demolishers`, `shipment`, `min_payload`, `launch`, `silo`, `cargo`, `load_silo`,
-  `preflight`, `land`, `drop`, `freight_audit`, `where_is`, `agriculture`.
+  `circuit_audit`, `platform_gate`, `demolishers`, `shipment`, `fleet`, `min_payload`, `launch`, `silo`, `cargo`,
+  `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`, `freight_audit`, `where_is`, `agriculture`.

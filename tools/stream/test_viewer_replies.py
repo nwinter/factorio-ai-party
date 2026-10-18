@@ -117,9 +117,10 @@ def operator_inbox_tests_in(d):
     inbox_rows = [dict(r, t=t1831 + (r["t"] - 1792200666.8)) for r in INBOX]
     lines = V.inbox_lines(inbox_rows)
     assert [V.viewer_name(x) for x in lines] == ["LimeLight", "LimeLight555"] and all(x["inbox"] for x in lines), lines
-    # before: by word overlap, the 18:24 line ("vote", "blueprints") -- the reported bug
+    # without the inbox line: no line to the Operator and under two shared words, so it stands alone (d17 16:05;
+    # before that it threaded under the 18:24 line, the reported bug)
     r = V.classify(REPLY_1831, [CHAT_1824])
-    assert r["answers"] is CHAT_1824, r
+    assert r["answers"] is None and r["to"] == ["LimeLight555"], r
     # now: the inbox line addressed to the Operator
     r = V.classify(REPLY_1831, [CHAT_1824], lines)
     assert r["kind"] == "reply" and r["to"] == ["LimeLight555"] and r["answers"]["text"].startswith("Operator, can you instruct"), r
@@ -133,9 +134,9 @@ def operator_inbox_tests_in(d):
     for text, to_me in (("@Operator can you ...", True), ("OPERATOR: why ...", True), ("operator , hi", True),
                         ("the operator is slow", False), ("Operators unite", False)):
         assert bool(V.TO_OPERATOR.match(text)) == to_me, text
-    # older than the window: left out
+    # older than the window: left out (and the chat line shares under two words, so the reply stands alone, d17 16:05)
     old = V.inbox_lines([dict(inbox_rows[1], t=inbox_rows[1]["t"] - 20 * 60)])
-    assert V.classify(REPLY_1831, [CHAT_1824], old)["answers"] is CHAT_1824
+    assert V.classify(REPLY_1831, [CHAT_1824], old)["answers"] is None
     # the archive's whole-log path (site/longrun.py): replies(chat, inbox=...) on chat.jsonl rows
     got = V.replies([CHAT_1824, CHAT_1827, REPLY_1831], inbox=lines)
     # (Luna's 18:27 "I can hear you, LimeLight." answers the 18:24 line; the Operator's 18:31 line the inbox one)
@@ -209,8 +210,26 @@ def host_tag():
     assert r and r["kind"] == "reply" and r["to"] == ["NickWinter"] and r["answers"] is nick, r
 
 
+def operator_elsewhere():
+    """d17 16:05: the Operator answered a question asked on YouTube (never relayed); it must not thread under the
+    viewer's unrelated game-chat line, but still under a line to the Operator or one sharing two words."""
+    foo = {"seq": 11421, "from": "viewer Foobator", "viewer": True, "text": "@sol isnt spindle your space sci source?",
+           "logged_at": "2026-10-17T16:00:29"}
+    op = {"seq": 11430, "from": "server", "text": "@Foobator Operator: yes. Every shift's end save is kept, shift01 "
+          "through shift30, with each shift's logs.", "logged_at": "2026-10-17T16:05:10"}
+    r = V.classify(op, [foo])
+    assert r and r["kind"] == "reply" and r["to"] == ["Foobator"] and r["answers"] is None, r
+    ask = dict(foo, seq=11425, text="operator: do you keep every shift's end save?")
+    r = V.classify(op, [foo, ask])
+    assert r["answers"] is ask, r
+    near = dict(foo, seq=11426, text="@sol do you keep each shift save and logs?")
+    r = V.classify(op, [foo, near])
+    assert r["answers"] is near, r
+
+
 def main():
     host_tag()
+    operator_elsewhere()
     rule_tests()
     classify_tests()
     try:

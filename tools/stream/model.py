@@ -633,6 +633,7 @@ class Model:
         self.used_flows = {}  # pack -> 30 two-minute counts the labs used, oldest first (harness.USED_FLOW_LUA)
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
+        self.connected_players = None  # the game's connected player names, as last read (hostview.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
@@ -725,6 +726,8 @@ class Model:
             self.flows = obs["flows"]
         if obs.get("darkness") is not None:
             self.darkness = obs["darkness"]
+        if obs.get("connected_players") is not None:
+            self.connected_players = list(obs["connected_players"])
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
@@ -1026,6 +1029,11 @@ class Model:
                 ag.last_activity_t = now
             ag.last_said = dict(said, t=now)
         ag.seen = True
+
+    def notice(self, text, now=None):
+        """A notice line of the stream's own in the chat feed (lane 'notice', as the harness's: hostview.py)."""
+        now = now or time.time()
+        self._ingest_chat({"seq": f"stream-notice-{int(now * 1000)}", "tick": None, "from": "stream", "text": text, "t": now, "notice": True}, now)
 
     def _ingest_chat(self, m, now):
         key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
@@ -2077,6 +2085,7 @@ class Model:
             "unused_unlocks": self.unused_unlocks(now),
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
+            "connected_players": self.connected_players,
             "basemap": self.basemap,
             "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)

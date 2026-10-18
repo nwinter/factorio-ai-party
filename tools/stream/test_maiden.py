@@ -11,7 +11,8 @@ stream"): python3 tools/stream/test_maiden.py
    flew has its maiden flight under the new name; a ship built again under the same name has its own.
 3. The camera (onecam.py): the departure is held maiden_hold, captioned "Swiftlet · maiden flight · Nauvis to Aquilo
    · built by Luna", a departure already on air included; with one camera too (POG_CAMS=1), where a plain departure is not shown; once per platform; a big
-   loss and a segment come first, and it comes back after for what is left of it.
+   loss and a segment come first, and it comes back after for what is left of it; it waits for host view (Nick's own
+   view on air) and goes on air after it while within maiden_late.
 4. The card and the hosts: segments.py's space_moment card (route, built by, the ship framed for flight), the
    overlay's rows, the hosts' headline call.
 """
@@ -208,6 +209,37 @@ def ranks(m):
     assert (main_row(d, t + 69).get("platform") or {}).get("maiden"), main_row(d, t + 69)
 
 
+def host_view(m):
+    # Nick's own view on air (hostview.py): the maiden flight waits, then goes on air while still within maiden_late
+    d, _ = world(map_every=0, platform_every=0)
+    a, t = team(), 1000
+    for k in range(0, 40):
+        d.step(snap(a, [plat()]), t + k)
+    d.set_host({"until": t + 70, "caption": "the new smelting column", "label": "NickWinter (host)", "by": "nick"}, t + 40)
+    mo = maiden(m, t + 40)
+    for k in range(40, 70):
+        s = snap(a, [plat(at=f"nauvis->vulcanus {k - 39}%")])
+        s["space"]["moments"] = [mo]
+        d.step(s, t + k)
+        assert not (main_row(d, t + k).get("platform") or {}).get("maiden"), (k, main_row(d, t + k))
+    assert mo["id"] not in d.maiden_done
+    for k in range(70, 80):
+        s = snap(a, [plat(at=f"nauvis->vulcanus {k - 39}%")])
+        s["space"]["moments"] = [mo]
+        d.step(s, t + k)
+    assert (main_row(d, t + 79).get("platform") or {}).get("maiden"), main_row(d, t + 79)
+    # a host view longer than maiden_late: the moment has passed
+    d, _ = world(map_every=0, platform_every=0)
+    for k in range(0, 40):
+        d.step(snap(a, [plat()]), t + k)
+    d.set_host({"until": t + 40 + d.cfg["maiden_late"] + 10, "caption": "", "label": "NickWinter (host)", "by": "nick"}, t + 40)
+    for k in range(40, int(40 + d.cfg["maiden_late"] + 20)):
+        s = snap(a, [plat(at="nauvis->vulcanus 5%")])
+        s["space"]["moments"] = [mo]
+        d.step(s, t + k)
+    assert not (main_row(d, t + k).get("platform") or {}).get("maiden") and mo["id"] in d.maiden_done, main_row(d, t + k)
+
+
 def card_and_hosts(m):
     from segments import Segments
     seg = Segments(spacing=0)
@@ -230,6 +262,7 @@ def main():
     three_cameras(m)
     one_camera(m)
     ranks(m)
+    host_view(m)
     card_and_hosts(m)
     print("maiden: ok (history along the run chain, a name used again starts over, a renamed ship keeps it; the first departure since a ship "
           "was built is a moment, later ones and late reads are not; held maiden_hold with its caption, also with one "

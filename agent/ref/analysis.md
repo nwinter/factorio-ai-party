@@ -26,7 +26,9 @@
   inserter hands, robots, characters), each logistic network's stock of it (free and reserved, and which requesters the
   reserved stock is for), its robots, every unmet requester with the reason (`inventory full: all 48 slots taken
   (spoilage 494 in 10 slots, ...)` first when its slots are all taken), machines that make and use it by status (the
-  worst 3 with positions) and the inserters feeding them. `surplus_chest` names the largest unreserved plain, storage
+  worst 3 with positions) and the inserters feeding them. A short machine whose input inserter is off by its circuit
+  or logistic condition, or whose requester asks for less than one craft, is named as that first (the condition and
+  what the source holds), ahead of plain shortages. `surplus_chest` names the largest unreserved plain, storage
   or provider stock (requester and buffer chests left out); `throughput` names a machine whose inserters carry less than
   its recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same); `full_chests` names chests with every slot used that the makers' output
@@ -88,13 +90,15 @@
   - an agricultural tower: its `empty_cells` and why; any entity its `damage_history`;
   - a burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` (in scan, supply,
     bottleneck and the status warning too), with what fills it, whatever the game's status reads.
-  `area` (or `position` with `radius`: the square round it) lists every chest's and machine's contents there (where
-  inspect reads) as one table: `holds`, `requests`, `recipe`, `status_name`. It always returns `entities` (64 a page:
-  `page`, `pages`, `next`) and `by_name` beside them, and counts what it does not list (`also`: inserters, poles, belts
-  by type); `name` filters by name. With `types` naming belts (`transport-belt`, `underground-belt`, `splitter`,
-  loaders), each belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
-  underground`), or `empty`. `all: true` lists every entity there (belts, poles, inserters too) with its direction and
-  an inserter's pickup and drop; `compact: true` gives a line each. Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
+  `area` (or `position` with `radius`: the square round it) lists every entity of ours there (where inspect reads):
+  belts, inserters, poles, chests, machines, ghosts, each with its position and direction, an inserter's pickup and
+  drop, and `holds`, `requests`, `recipe`, `status_name` where it has them. It always returns `entities` (64 a page:
+  `page`, `pages`, `next`) and `by_name` beside them; robots flying through are only counted (`also`). `types` or
+  `name` narrows it. A belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
+  underground`), or `empty`. `compact: true` gives a line each (with `positions`, up to 32 in one reply): status,
+  health, recipe, what it holds, and `spoil:` (each spoilable item's count and spoiled share, the first to spoil or hatch
+  and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
+  condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
 - `ports {name, position, direction?, recipe?, mirror?, platform?}`: where each fluid port of an unbuilt machine is and
   the fluid the recipe puts there. Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
 - `power {position?, radius?, area?, fragile?, by_cause?, platform?, surface?}`: per network `supply_line`: generators'
@@ -115,10 +119,16 @@
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more).
-- `belt_gaps {from, to, via?, surface?}`: remembered belt gaps and ghosts along the line, with observation ticks;
-  unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners (`followed`).
-  A missing tile in sight names what stands on it (`blocked_by`, `line`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
+  placement on the same resource (`drill_sites` lists more). `kind: "off_by_condition"`: machines off by their own
+  circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
+  now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
+  team alert line to its builders and claim owners.
+- `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
+  ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
+  (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a
+  line) follows the whole line both ways, in chunks our force sees now, up to 4096 tiles each way: at each end a belt of
+  ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
+  what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
 - `pipe_gaps {from, to, via?}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts where
   neighbours do not join or the line stops. Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
 - `danger {position?, radius?, surface?}`: a destination before a trip (no position: where you stand): worms and
@@ -130,15 +140,19 @@
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
-- `ores {resource?, surface?, min_amount?, limit?, position?}`: the patches on the charted map (one resource, or every
-  one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners and
-  worms within 50 tiles, and how many of our drills are on it.
+- `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
+  every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
+  and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
+  8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
+  mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
+  Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
 - `stock {item?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: where an item is. With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
   `next`). `holders: ["provider", "storage"]`: only those kinds of place; each place says its `kind` and what robots
-  have `reserved` there. With `surface`, `by_network`: each logistic network's hold in providers, storage and other
+  have `reserved` there, and `reserved_for` where those robots deliver it (`5 to requester-chest (97.5,41.5)`, the 3
+  largest). With `surface`, `by_network`: each logistic network's hold in providers, storage and other
   holders, and `on_ground`: stacks lying on the ground in chunks our force sees now. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. `network: 96` (the number `networks` and an `inspect` of a
   roboport give): what a logistic network holds, its robots, and `roboports`: the robots each roboport holds, most
@@ -158,7 +172,8 @@
   Characters' requests are left out.
 - `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
-  target out of the area, waiting to charge). `sources: true`: per group of waiting ghosts and item requests, the
+  target out of the area, waiting to charge, no charge); `ghosts_waiting`: each ghost in a held-up robot's queue.
+  `sources: true`: per group of waiting ghosts and item requests, the
   network's chests holding the item (nearest 3) and whether the straight line from each passes within a worm's or
   spawner's reach the map shows.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,

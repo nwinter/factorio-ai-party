@@ -14,6 +14,7 @@ return function(api)
   local CRAFTER={['assembling-machine']=true,furnace=true,['agricultural-tower']=true}
   local CHEST={container=true,['logistic-container']=true,['temporary-container']=true}
   local MAX_PLACES=32
+  function M.try(fn) local ok,v=pcall(fn); if ok then return v end end
   local function output_of(e)
     if CRAFTER[e.type] then
       local ok,inv=pcall(e.get_output_inventory); return ok and inv or nil
@@ -176,6 +177,46 @@ return function(api)
         reserved=reserved>0 and reserved or nil,
         first_spoils_in=x.spoil_tick and api.spoil.secs(x.spoil_tick-game.tick) or nil,spoiled_percent=x.spoil_tick and math.floor(x.spoil_percent*100+0.5) or nil,
         within_5_min=x.soon and x.soon>0 and x.soon or nil,within_2_min=x.soon2}
+    end
+    -- reserved_for (d17 batch18 B5, Haiku): where the robots taking a place's reserved stock deliver it: in each such
+    -- place's logistic network, every logistic robot's queue read once for a pickup there of this item followed by a
+    -- deliver (the requester, buffer chest or character it goes to, and how many), the 3 largest a place.
+    local nets,by={},nil
+    for i,x in ipairs(places) do
+      local e=s.places[skip+i].entity
+      local net=x.reserved and e and e.valid and M.try(function() return e.logistic_network end)
+      if net and net.valid then
+        if not nets[net.network_id] then
+          nets[net.network_id]=true
+          by=by or {}
+          local PICK,DELIVER=defines.robot_order_type.pickup,defines.robot_order_type.deliver
+          for _,r in ipairs(M.try(function() return net.logistic_robots end) or {}) do
+            local q=r.valid and M.try(function() return r.robot_order_queue end) or {}
+            for k=1,#q-1 do
+              local o,d=q[k],q[k+1]
+              local it=o.target_item and (type(o.target_item.name)=='string' and o.target_item.name or M.try(function() return o.target_item.name.name end))
+              if o.type==PICK and d.type==DELIVER and it==a.item and o.target and o.target.valid and d.target and d.target.valid then
+                local from,to=o.target.unit_number,d.target
+                local key=to.unit_number or to
+                by[from]=by[from] or {}
+                local row=by[from][key]
+                if not row then row={e=to,n=0}; by[from][key]=row end
+                row.n=row.n+(o.target_count or 0)
+              end
+            end
+          end
+        end
+        local list={}
+        for _,row in pairs(by and by[e.unit_number] or {}) do list[#list+1]=row end
+        table.sort(list,function(u,v) return u.n>v.n end)
+        local parts={}
+        for k=1,math.min(3,#list) do
+          local t=list[k].e
+          local who=t.type=='character' and M.try(function() return 'the character of '..t.player.name end) or t.name
+          parts[k]=string.format('%d to %s (%g,%g)',list[k].n,who,t.position.x,t.position.y)
+        end
+        if #parts>0 then x.reserved_for=table.concat(parts,', ')..(#list>3 and string.format(', +%d more',#list-3) or '') end
+      end
     end
     -- (C7) the places read: how much spoils within 2 minutes
     local soon2
@@ -804,6 +845,13 @@ return function(api)
       -- transfer {walk} filling a count over several chests (from: "nearest"): done once it is taken.
       if action.fill and action.got>=action.fill then return 'transferred' end
       local t=action.targets[action.index]
+      -- collect {pods, to} (d17 pods): what the tour took and still carries goes to the chest before it ends
+      if not t and action.pods and action.pods.to and not action.pods.final and api.pods_owed and api.pods_owed(p,action)>0 then
+        action.pods.final=true
+        local c=action.pods.to
+        action.targets[#action.targets+1]={entity=c,position=c.position,deposit=true}
+        t=action.targets[action.index]
+      end
       if not t then return done(action) end
       if t.find and not t.entity and api.near(p,t.position) then
         local ok,e=pcall(api.find,p,t.position)
@@ -823,7 +871,8 @@ return function(api)
         action.index=action.index+1; action.nav=nil
       elseif (t.pickup_reach and api.distance(p.position,t.position)<=t.pickup_reach) or (not t.pickup_reach and p.can_reach_entity(t.entity)) then
         local ok,out
-        if action.op then ok,out=pcall(api.visit,p,action,t.entity)
+        if t.deposit then ok,out=pcall(api.pods_deposit,p,action,t.entity)
+        elseif action.op then ok,out=pcall(api.visit,p,action,t.entity)
         else
           -- tally: what each take puts over the personal request max (trash.lua)
           action.trash_tally=action.trash_tally or {}
@@ -838,7 +887,13 @@ return function(api)
             local key=st.name..(st.quality and '@'..st.quality or '')
             action.items[key]=(action.items[key] or 0)+st.count
           end
-          if out.inventory_full then return 'inventory_full' end
+          if out.inventory_full and action.pods and action.pods.to and not t.deposit then
+            -- full: to the chest, then back to this container for the rest
+            local c=action.pods.to
+            table.insert(action.targets,action.index,{entity=t.entity,position=t.position})
+            table.insert(action.targets,action.index,{entity=c,position=c.position,deposit=true})
+            action.pods.trips=(action.pods.trips or 1)+1
+          elseif out.inventory_full then return 'inventory_full' end
           if out.stop then return out.stop end
           if out.wait then api.stop_walking(p);return nil end
         else

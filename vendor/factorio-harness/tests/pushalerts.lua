@@ -610,4 +610,31 @@ do
   eq(#P.claims_over(g,g.chest_at),1); eq(#P.claims_over(g,g.center),0)
   g.chest_at={x=0,y=0}; eq(P.text(g,'nauvis'),g.line)
 end
+-- A machine off by its own condition (d17 batch18 B2, Grok: the agricultural science biochamber stopped when network
+-- bioflux fell under 200): a group with the condition and what its signal reads; a stock cap on its own product is not.
+do
+  defines.entity_status.disabled_by_control_behavior=55
+  defines.wire_connector_id={circuit_red=1,circuit_green=2}
+  prototypes={recipe={['agricultural-science-pack']={products={{name='agricultural-science-pack'}}}}}
+  local st={board={items={}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=2,name='grok'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=14,y=31}} end,
+    condition_text=function(c) return c.first_signal.name..' '..c.comparator..' '..c.constant end}
+  ents.nauvis={}; ents.vulcanus={}
+  local net={get_item_count=function(n) return n=='bioflux' and 150 or 900 end}
+  local function chamber(x,cond)
+    return ent('nauvis','biochamber','assembling-machine',x,31.5,{status=55,last_user=user('grok'),
+      get_recipe=function() return {name='agricultural-science-pack'} end,
+      get_control_behavior=function() return {connect_to_logistic_network=true,logistic_condition=cond} end,
+      surface={find_logistic_network_by_position=function() return net end}})
+  end
+  chamber(14.5,{first_signal={type='item',name='bioflux'},comparator='>',constant=200,fulfilled=false})
+  chamber(20.5,{first_signal={type='item',name='agricultural-science-pack'},comparator='<',constant=500,fulfilled=false})
+  local g=R.read(sol,{kind='off_by_condition'}).groups
+  eq(#g,1); eq(g[1].count,1)
+  eq(g[1].line,'1 biochamber stopped by its own circuit or logistic condition near (14.5,31.5): biochamber (14.5,31.5) (agricultural-science-pack): off by its logistic condition bioflux > 200 (bioflux 150 now)')
+  eq(g[1].to[1],'grok (built)')
+  ents.nauvis={}
+end
 print('pushalerts: ok')

@@ -21,11 +21,21 @@
 - `wire {from, to, color?, from_side?, to_side?, disconnect?, platform? | surface?}`: connects and removes red, green
   and copper wires (no `color`: copper), in reach or by remote view as `circuit_set`; `inspect` reads each wire's far
   end. Example: `./fh call wire --args '{"from":{"x":10.5,"y":4.5},"to":{"x":12.5,"y":4.5},"color":"red"}'`
+- `circuit_gate {position, all, at?, source?}`: two or more tests on one entity, the game's way: a decider combinator
+  from your inventory, placed in your build reach within wire reach of the entity and the source (`at` names the
+  tile), its conditions every test of `all` joined by and, output signal-check 1; the source (default: the roboport of
+  the entity's logistic network nearest it, set to read its network's items) on a red wire into it; its output on a
+  green wire to the entity, enabled when signal-check > 0 (a logistic condition on it is turned off). The steps are
+  build, circuit_set and wire calls, in order; one that fails stops it, naming what was done and the calls left. No
+  decider held or no tile that fits: refused before anything, with the calls.
+  Example: `./fh call circuit_gate --args '{"position":{"x":-17.5,"y":30.5},"all":["bioflux > 200","agricultural-science-pack < 500"]}'`
 - `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
-  (`entire_belt_hold`) on one network whose belts overlap (counted twice), and each asteroid collector whose filter the
-  circuit sets: the filter it holds and the chunk signals there.
+  (`entire_belt_hold`) on one network whose belts overlap (counted twice); each whole-belt reader whose read is shorter
+  than the belt in line through it (the game reads the reader's belt segment), with the belts left out upstream and
+  downstream, undergrounds crossed (`short_reads`); and each asteroid collector whose filter the circuit sets: the
+  filter it holds and the chunk signals there.
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?}`: a machine's or building's
@@ -52,7 +62,16 @@
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
     there by remote view where our force sees the chunk.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
-- `requests {position | platform?, set?, clear?, section?, active?, construction_requests?, force?, surface?}`: a
+- `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
+  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < 0`) and the
+  input inserter held; the requester feeding it cleared, then asked for exactly what the batch still needs of each
+  ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
+  input on; waits for the products in the machine; the input off again; the output released. The requester and both
+  inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
+  (the machine would make more with it). The inserters need a logistic network for their logistic condition.
+  Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
+- `requests {position | platform?, set?, clear?, clear_all?, section?, active?, trash_unrequested?, construction_requests?,
+  force?, surface?}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":
   "inf"` sets none). An edit echoes what is stored per item (`stored`) and keeps the import planet when `from` is not
@@ -60,9 +79,16 @@
   names a shared group or a second section). `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what
   you hold; a personal `max` under what you hold is refused without `force: true` (the game trashes the rest). With
   `surface` (a planet) and `position` it acts there by remote view where our force sees the chunk.
+  `trash_unrequested: true` sets the trash-unrequested switch of a requester or buffer chest, a hub or your own
+  logistics: robots take to storage what it holds that no request names (spoilage among it); the reply's
+  `trash_unrequested` names what the chest holds that goes. A passive provider, active provider or storage chest has no
+  such switch: robots take spoilage from it only to a requester or buffer that requests spoilage, and an inserter
+  filtered to spoilage moves it into the chest it drops into.
   - A hub: each section, `off: true` when it requests nothing (`"section":N,"active":true` switches it on), and each
     request's import planet; `construction_requests: true` switches the hub's Request missing construction materials
-    on.
+    on. A set entry's `min_payload` is the custom minimum payload; an edit that does not name it keeps it, and one
+    removed by `clear` or `clear_all` comes back when the item is set again without it (`min payload N kept from the
+    request cleared before`); `min_payload: false` clears it.
   - Your own: `unfilled` lists the personal requests not filled, each with why (no network where you stand, no
     logistic robots, none free, none of the item in the network).
   Example: `./fh call requests --args '{"platform":"Starling","construction_requests":true}'`

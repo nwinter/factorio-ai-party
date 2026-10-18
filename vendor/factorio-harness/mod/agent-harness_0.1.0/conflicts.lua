@@ -378,8 +378,37 @@ return function(api)
       local pole = covering(surface, force, box, removed)
       out.supplied_by = pole and label(pole) or (#poles > 0 and 'no pole\'s supply area reaches it once these are gone' or 'no pole\'s supply area reaches it')
     end
+    -- The tiles it cannot stand on (d17 batch20 A5, Gemini: "nothing stands in its way" over Fulgora's shallow oil ocean,
+    -- then the build failed for foundation): per tile kind, how many of its footprint, and the tile item laid on them
+    -- that makes them buildable, said when it is not researched (dryrun.tile_fixes, as the build refusal reads it); a
+    -- tile ghost of that item already there counts as laid. An entity with tile rules (an asteroid collector): the
+    -- broken rule.
+    local rule = api.tile_rules and try(function() return api.tile_rules(surface, proto, pos, dir) end)
+    local fixes = not rule and api.tile_fixes and try(function() return api.tile_fixes(surface, force, proto, pos, dir) end)
+    local tiles
+    if rule then tiles = {{rule=rule}}; out.tiles_line = 'its tiles do not take it: ' .. rule
+    elseif fixes and #fixes > 0 then
+      local by, order = {}, {}
+      for _, f in ipairs(fixes) do
+        local r = by[f.tile]
+        if not r then r = {tile=f.tile, count=0}; by[f.tile] = r; order[#order+1] = r end
+        r.count = r.count + 1
+        if f.item then r.needs = f.item
+        elseif f.locked then r.needs = f.locked:gsub(' %(not researched%)', ''); r.researched = false end
+      end
+      local parts = {}
+      for _, r in ipairs(order) do
+        if r.needs and r.researched == nil then r.researched = true end
+        parts[#parts+1] = string.format('%s %d (%s)', r.tile, r.count, r.needs and (r.needs .. ' laid on it makes it buildable' .. (r.researched and '' or '; ' .. r.needs .. ' is not researched'))
+          or 'no tile item makes it buildable')
+      end
+      tiles = order
+      out.tiles_line = string.format('%s cannot stand on %d tile%s of its footprint: %s', proto.name, #fixes, #fixes == 1 and '' or 's', table.concat(parts, ', '))
+    end
+    out.tiles = tiles
     local n = #remove
-    out.line = n == 0 and 'nothing stands in its way' or string.format('%d in the way: %s', n, counted(kinds))
+    out.line = (n == 0 and 'nothing stands in its way' or string.format('%d in the way: %s', n, counted(kinds)))
+      .. (out.tiles_line and '; ' .. out.tiles_line or '')
     return out
   end
   return M

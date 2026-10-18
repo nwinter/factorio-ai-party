@@ -243,7 +243,7 @@ class AudioHub:
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None):
+                 platform=None, look=None, show=None, host=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -351,6 +351,11 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     return self.send(409, b'{"error": "look needs the onecam director"}', "application/json")
                 code, reply = look.request(body)
                 return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/hostview":  # Nick's own client on air over the cameras (hostview.py)
+                if not host:
+                    return self.send(409, b'{"error": "hostview needs the onecam director"}', "application/json")
+                code, reply = host.request(body)
+                return self.send(code, json.dumps(reply, ensure_ascii=False).encode(), "application/json")
             if path == "/show":  # the operator puts a PNG from runs/ over the main camera (show.py)
                 if not show:
                     return self.send(409, b'{"error": "show needs OBS (not in --mock)"}', "application/json")
@@ -361,6 +366,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
         def do_DELETE(self):
             if self.path.split("?", 1)[0] == "/show" and show:
                 code, reply = show.clear()
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if self.path.split("?", 1)[0] == "/hostview" and host:
+                code, reply = host.request({"on": False})
                 return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/look" and look:
                 code, reply = look.clear()
@@ -586,7 +594,7 @@ def main():
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
     audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
-    follow = platform = look = None
+    follow = platform = look = host = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
         from platformcam import PlatformControl
@@ -599,6 +607,15 @@ def main():
         chart = lookcam.harness_chart(h) if h else (lookcam.mock_chart if a.mock else None)
         look = lookcam.LookControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-look.json")
                                    if a.run and not a.mock else None, chart)
+        import hostview  # Nick's own client on air (POST /hostview, or his "!view" in chat)
+
+        def notice(text):
+            with lock:
+                model.notice(text)
+        host = hostview.HostControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-host.json")
+                                    if a.run and not a.mock else None, notice, player=run.get("host_player") or hostview.HOST_PLAYER)
+        if feed:
+            feed.commands = lambda m, now: host.command(m, now)
     lock = threading.Lock()
     source_info = {"source": getattr(source, "name", "mock"), "poll_ok": None, "poll_error": None}
 
@@ -667,6 +684,8 @@ def main():
                     platform.sync(now)
                 if look:
                     look.sync(now)
+                if host:
+                    host.sync(now, snap.get("connected_players"))
                 with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
                     snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
@@ -677,6 +696,8 @@ def main():
                     snap["platform_hold"] = director.platform_info(now)
                 if look:
                     snap["look"] = director.look_info(now)
+                if host:
+                    snap["hostview"] = director.host_info(now)  # the page's on-air card, the hosts
                 if show:
                     snap["show"] = show.public()  # an image over the main camera: the page's caption, the hosts
                 if hasattr(director, "battle_info"):
@@ -689,7 +710,7 @@ def main():
                         replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
                     replays.hold = bool(getattr(director, "fol", None) or getattr(director, "plat", None)
-                                        or getattr(director, "look", None))
+                                        or getattr(director, "look", None) or (host and host.on))
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()
                 if night:
@@ -698,6 +719,8 @@ def main():
                 snap["cameras"] = cams
                 if mode == "onecam":
                     snap["onair"] = onair_info(snap, cams)  # who viewers watch: the label, the hosts' beats
+                    if snap.get("hostview"):  # Nick's own view on air, not a camera (hostview.py): no agent is on air
+                        snap["onair"].update(host=snap["hostview"], agent=None, display_name=None, doing=snap["hostview"]["label"])
                     snap["onair"]["layout"] = director.layout_info()  # one camera or three tiles (the hosts, the page)
                     for row in cams.values():  # each tile's label: "Luna · fixing the north wall"
                         if len(row.get("agents") or []) == 1:
@@ -708,6 +731,8 @@ def main():
                         snap["cuts"] = cuts.public()
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
+                    if snap.get("hostview") and ag["camera"] == "main":  # (behind Nick's view: not on air)
+                        ag["camera"] = None
                 snap.update(source_info)
                 snap["static_version"] = page_version
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
@@ -744,7 +769,7 @@ def main():
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
-                                                                    show=show))
+                                                                    show=show, host=host))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

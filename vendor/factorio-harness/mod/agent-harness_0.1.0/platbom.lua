@@ -4,7 +4,9 @@
 -- there, what the hub holds, what is in flight to it (cargo pods headed for this platform, from any planet), what the
 -- hub's requests ask, and the rest still to send. pack: true splits the rest into rockets within a rocket's lift and
 -- cargo slots, heaviest items first (cargo.lua weigh: each item into the first rocket with room for some of it).
--- Module and other item requests on ghosts are not counted. Read only.
+-- Item requests (modules and the like) count too: on entity ghosts and on item-request proxies of built machines (d17
+-- batch19 A3, Astra: Swiftlet's 34 efficiency and 2 speed modules were in no BOM line). Items construction robots
+-- there carry (taken from the hub for a ghost not built yet) are said, and taken off what is still to send. Read only.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -14,6 +16,32 @@ return function(api)
     if not first then return nil end
     local name = type(first.name) == 'string' and first.name or try(function() return first.name.name end)
     return name, first.count or 1
+  end
+  -- What a ghost or an item-request proxy asks to have put in it (modules and the like), added into `into` by item.
+  local function requests_of(e, into)
+    local list = try(function() return e.item_requests end)
+    if type(list) == 'table' and #list > 0 then
+      for _, q in ipairs(list) do
+        local n = type(q.name) == 'table' and q.name.name or q.name
+        if n and (q.count or 0) > 0 then into[n] = (into[n] or 0) + q.count end
+      end
+      return
+    end
+    for _, plan in ipairs(try(function() return e.insert_plan end) or {}) do
+      local n = plan.id and (type(plan.id.name) == 'table' and plan.id.name.name or plan.id.name)
+      local c = plan.items and plan.items.grid_count or 0
+      for _, r in ipairs(plan.items and plan.items.in_inventory or {}) do c = c + (r.count or 1) end
+      if n and c > 0 then into[n] = (into[n] or 0) + c end
+    end
+  end
+  -- The items the platform's construction robots carry now, by item.
+  local function in_robots(pl, force)
+    local by = {}
+    for _, r in ipairs(try(function() return pl.surface.find_entities_filtered{type='construction-robot', force=force} end) or {}) do
+      local inv = try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
+      for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do by[c.name] = (by[c.name] or 0) + c.count end
+    end
+    return by
   end
   -- Cargo pods headed for the platform, from any surface: their cargo by item, and how many pods.
   local function in_flight(pl)
@@ -58,14 +86,19 @@ return function(api)
     local s = pl.surface
     local need, known = {}, {}
     local lists = {}
-    if areas then for _, ar in ipairs(areas) do lists[#lists+1] = s.find_entities_filtered{area=ar, type={'entity-ghost', 'tile-ghost'}, force=force} end
-    else lists[1] = s.find_entities_filtered{type={'entity-ghost', 'tile-ghost'}, force=force} end
+    local kinds = {'entity-ghost', 'tile-ghost', 'item-request-proxy'}
+    if areas then for _, ar in ipairs(areas) do lists[#lists+1] = s.find_entities_filtered{area=ar, type=kinds, force=force} end
+    else lists[1] = s.find_entities_filtered{type=kinds, force=force} end
     for _, list in ipairs(lists) do
       for _, g in ipairs(list) do
-        local key = g.type .. ':' .. g.ghost_name
-        local k = known[key]
-        if not k then local item, n = item_of(try(function() return g.ghost_prototype end)); k = {item=item, n=n}; known[key] = k end
-        if k.item then need[k.item] = (need[k.item] or 0) + k.n end
+        if g.type == 'item-request-proxy' then requests_of(g, need)
+        else
+          local key = g.type .. ':' .. g.ghost_name
+          local k = known[key]
+          if not k then local item, n = item_of(try(function() return g.ghost_prototype end)); k = {item=item, n=n}; known[key] = k end
+          if k.item then need[k.item] = (need[k.item] or 0) + k.n end
+          if g.type == 'entity-ghost' then requests_of(g, need) end
+        end
       end
     end
     return need
@@ -80,11 +113,14 @@ return function(api)
     end
     if create then return secs.add_section(group), secs end
   end
-  -- Sets the section to need; returns lines (item, the request now, what the ghosts need, the hub holds).
+  -- Sets the section to need less what the platform's construction robots carry (taken from the hub for ghosts not built
+  -- yet: counted as the hub's, so the hub's dip while they fly sends no rocket; Astra, Swiftlet: duplicate hardware);
+  -- returns lines (item, the request now, what the ghosts need, the robots carry, the hub holds).
   local function apply(pl, rec, need)
     local hub = pl.hub
     local items = {}
-    for item, n in pairs(need) do items[#items+1] = {item=item, n=n} end
+    local carry = next(need) and in_robots(pl, pl.force) or {}
+    for item, n in pairs(need) do items[#items+1] = {item=item, n=math.max(0, n - (carry[item] or 0)), need=n, carry=carry[item]} end
     table.sort(items, function(x, y) return x.item < y.item end)
     if #items == 0 then
       local _, secs, i = section_of(hub, rec.group, false)
@@ -119,8 +155,8 @@ return function(api)
     local lines = {}
     for _, it in ipairs(items) do
       local held = inv and try(function() return inv.get_item_count(it.item) end) or 0
-      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d; the hub holds %d)%s', it.item, it.n, rec.import_from, it.n, held,
-        it.mp and string.format('; custom minimum payload %d', it.mp) or '')
+      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d%s; the hub holds %d)%s', it.item, it.n, rec.import_from, it.need,
+        it.carry and string.format(', construction robots carry %d', it.carry) or '', held, it.mp and string.format('; custom minimum payload %d', it.mp) or '')
     end
     return lines, false
   end
@@ -231,7 +267,10 @@ return function(api)
     local entity_ghosts, tile_ghosts = 0, 0
     -- (the item per ghost name, read once: 4094 ghosts on Meridian)
     local known = {}
+    local asked = {}
+    for _, g in ipairs(s.find_entities_filtered{type='item-request-proxy', force=p.force}) do requests_of(g, asked) end
     for _, g in ipairs(s.find_entities_filtered{type={'entity-ghost', 'tile-ghost'}, force=p.force}) do
+      if g.type == 'entity-ghost' then requests_of(g, asked) end
       local key = g.type .. ':' .. g.ghost_name
       local k = known[key]
       if not k then
@@ -246,8 +285,11 @@ return function(api)
         else entity_ghosts = entity_ghosts + 1; ghost_names[item] = proto.name end
       end
     end
+    local requests = {}
+    for item, n in pairs(asked) do need[item] = (need[item] or 0) + n; requests[item] = n end
     local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     local flight, pods = in_flight(pl)
+    local carry = in_robots(pl, p.force)
     local ask = asks(hub)
     local rows, rest, lines = {}, {}, {}
     for item, n in pairs(need) do
@@ -256,14 +298,18 @@ return function(api)
       if tile_names[item] then built = try(function() return s.count_tiles_filtered{name=tile_names[item]} end) end
       local held = inv and try(function() return inv.get_item_count(item) end) or 0
       local coming = flight[item] or 0
-      local left = math.max(0, n - held - coming)
-      rows[#rows+1] = {item=item, ghosts_need=n, built=built, hub=held, in_flight=coming > 0 and coming or nil, remaining=left, asks=ask[item]}
+      local robots = carry[item] or 0
+      local left = math.max(0, n - held - coming - robots)
+      rows[#rows+1] = {item=item, ghosts_need=n, requests=requests[item], built=built, hub=held, in_flight=coming > 0 and coming or nil,
+        in_robots=robots > 0 and robots or nil, remaining=left, asks=ask[item]}
       if left > 0 then rest[#rest+1] = {name=item, count=left} end
     end
     table.sort(rows, function(x, y) if x.remaining ~= y.remaining then return x.remaining > y.remaining end return x.item < y.item end)
     for _, r in ipairs(rows) do
-      lines[#lines+1] = string.format('%s: ghosts need %d%s; hub holds %d%s; %s%s', r.item, r.ghosts_need, r.built and string.format(' (%d built)', r.built) or '',
-        r.hub, r.in_flight and string.format(', %d in flight', r.in_flight) or '', r.remaining > 0 and string.format('%d to send', r.remaining) or 'covered',
+      lines[#lines+1] = string.format('%s: ghosts need %d%s%s; hub holds %d%s%s; %s%s', r.item, r.ghosts_need,
+        r.requests and string.format(' (%d of them asked into ghosts and machines)', r.requests) or '', r.built and string.format(' (%d built)', r.built) or '',
+        r.hub, r.in_robots and string.format(', construction robots carry %d', r.in_robots) or '', r.in_flight and string.format(', %d in flight', r.in_flight) or '',
+        r.remaining > 0 and string.format('%d to send', r.remaining) or 'covered',
         r.asks and string.format(' (the hub asks %d)', r.asks) or ' (the hub asks none)')
     end
     local out = {platform=pl.name, entity_ghosts=entity_ghosts, tile_ghosts=tile_ghosts, pods_in_flight=pods, items=rows,
@@ -322,10 +368,10 @@ return function(api)
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, asks, holds, short, where}], lines (a line a platform with what it lacks)',
-    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
+    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
     min_payload='with request: {item: N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
-    returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), remaining (need less hub and in flight), asks (the hub\'s active requests)}], entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets; module requests on ghosts are not counted. Read only'}}
+    returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}
   return M
 end

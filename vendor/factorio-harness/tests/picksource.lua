@@ -503,6 +503,145 @@ do
   yfarm.inv.remove{name=A,count=50}
 end
 
+-- A courier's spoil filter (d17 batch19 A2, Grok twice: min_spoil with spoiled_first on a courier took the younger
+-- agricultural packs and left the rotten stack): the take moves only stacks at least that spoiled, the most spoiled
+-- first, and last says what it left.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]=prototypes.item[A] or {name=A,type='tool',stack_size=200}
+  local packs=chest({x=50.5,y=29.5},{})
+  local function put(i,count,pct)
+    local s=packs.inv[i]
+    s.valid_for_read=true; s.name=A; s.quality={name='normal'}; s.count=count; s.spoil_percent=pct; s.spoil_tick=game.tick+3600
+  end
+  put(1,200,0.2); put(2,100,0.55); put(3,200,0.7)
+  -- Grok 18:56:13, word for word but the places
+  luna('transfer',{count=200,item=A,pick='first_with_stock',positions={packs.position},to=yfarm.position,spoiled_first=true,min_spoil=50,walk=true})
+  advance(3)
+  local last=luna('status').last
+  eq(last.delivered,200)
+  eq(last.freshness[1]:match('^[^;]*'),'agricultural-science-pack*200: spoiled 70%, 70% by count')
+  eq(packs.inv[3].valid_for_read,false,'the rotten stack went'); eq(packs.inv[1].count,200,'the younger stays')
+  assert(last.left_less_fresh and last.left_less_fresh:find('200 left where they were: less than 50% spoiled (the least spoiled 20%)',1,true),tostring(last.left_less_fresh))
+  -- min_spoil alone: the 55% and 70% stacks, the 20% one left
+  put(3,200,0.7)
+  yfarm.inv.remove{name=A,count=200}
+  luna('transfer',{count=500,item=A,pick='first_with_stock',positions={packs.position},to=yfarm.position,min_spoil=50,up_to=true})
+  advance(3)
+  last=luna('status').last
+  eq(last.delivered,300)
+  eq(packs.inv[1].count,200)
+  for i=1,3 do packs.inv[i].clear() end
+  yfarm.inv.remove{name=A,count=300}
+end
+
+-- A courier's dry run as a preview (d17 batch19 B3, Luna ~4x a shift): free stock after robot reservations, the
+-- source's own request kept (spare), the destination's request and what robots bring it, the first stack's spoil or
+-- hatch.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]=prototypes.item[A] or {name=A,type='tool',stack_size=200}
+  local function requester(pos,asks,coming,reserved)
+    local e=chest(pos)
+    e.type='logistic-container'; e.name='requester-chest'
+    local pt={filters={{name=A,count=asks}},targeted_items_deliver={{name=A,quality='normal',count=coming}},targeted_items_pickup={{name=A,count=reserved or 0}}}
+    e.get_logistic_point=function() return pt end
+    return e
+  end
+  defines.logistic_member_index=defines.logistic_member_index or {logistic_container=0}
+  local src=requester({x=50.5,y=34.5},50,10,20)
+  local s1=src.inv[1]
+  s1.valid_for_read=true; s1.name=A; s1.quality={name='normal'}; s1.count=120; s1.spoil_percent=0.6; s1.spoil_tick=game.tick+3000
+  local p=runtime.bots.lookup(runtime.bots.index_of('luna'))
+  local r=runtime.courier_dry(p,{item=A,count=200},{src.position},yfarm.position)
+  eq(r.moves,100,'120 held, 20 reserved for robots'); eq(r.spare,50,'its own request of 50 kept')
+  assert(r.line:find('the source asks 50 itself (robots bring 10 now): 50 can leave it with its request still filled',1,true),r.line)
+  assert(r.line:find('its first stack spoils in 50s (60% spoiled)',1,true),r.line)
+  -- to a requester: what it asks, what robots bring it, how short it is
+  local dst=requester({x=52.5,y=34.5},30,5)
+  r=runtime.courier_dry(p,{item=A,count=10},{src.position},dst.position)
+  assert(r.line:find('the destination asks 30, robots bring 5 now; 25 short of it',1,true),r.line)
+  -- an item that hatches says so
+  local hatch=runtime.spoil.hatch
+  runtime.spoil.hatch=function(n) return n==A and {entity='small-wriggler-pentapod'} or false end
+  r=runtime.courier_dry(p,{item=A,count=10},{src.position},yfarm.position)
+  assert(r.line:find('its first stack hatches into small-wriggler-pentapod in 50s',1,true),r.line)
+  runtime.spoil.hatch=hatch
+  s1.clear(); dst.inv[1].clear()
+end
+
+-- Where a craft's missing ingredient is kept (d17 batch19 B4, Haiku: "nearest 1 at (28.5,67.5)" while 33 iron plates
+-- were short, most of the stock in requester chests): places that can spare the shortfall, a requester only what it
+-- holds over its request; else some; else the logistic networks on the surface.
+do
+  local I='iron-plate'
+  local p=runtime.bots.lookup(runtime.bots.index_of('luna'))
+  local function chestx(pos,n,mode,asks)
+    local e=chest(pos,{[I]=n})
+    if mode then
+      e.type='logistic-container'; e.name=mode..'-chest'; e.prototype={name=e.name,type='logistic-container',logistic_mode=mode}
+      local pt={filters={{name=I,count=asks}},targeted_items_pickup={}}
+      e.get_logistic_point=function() return pt end
+    end
+    return e
+  end
+  local req=chestx({x=51.5,y=33.5},40,'requester',40)      -- 40 held for its own request of 40
+  local buf=chestx({x=53.5,y=33.5},30,'buffer',20)          -- 10 over its request
+  local prov=chestx({x=60.5,y=33.5},200,'passive-provider',0)
+  local function scan(list) local out={} for _,e in ipairs(list) do out[#out+1]={entity=e,name=e.name,position=e.position,count=e.inv.get_item_count(I),distance=dist(body.position,e.position)} end return {places=out} end
+  eq(runtime.where_kept(p,I,33,scan({req,buf,prov})),'enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free')
+  eq(runtime.where_kept(p,I,33,scan({req,buf})),'some at buffer-chest (53.5,33.5) 4 tiles, 10 free over its request')
+  -- none within 128 tiles: the logistic networks
+  local ln={network_id=12,get_item_count=function() return 1200 end,select_pickup_point=function() return {owner=prov} end}
+  local saved=force.logistic_networks
+  force.logistic_networks={[surface.name]={ln}}
+  eq(runtime.where_kept(p,I,33,scan({req})),'none to spare within 128 tiles; logistic network #12 holds 1200 (robots would take it from passive-provider-chest (60.5,33.5), 11 tiles)')
+  force.logistic_networks={}
+  assert(runtime.where_kept(p,I,33,{places={}}):find('none of ours to spare within 128 tiles or in a logistic network on',1,true))
+  force.logistic_networks=saved
+  for _,e in ipairs({req,buf,prov}) do e.inv.remove{name=I,count=e.inv.get_item_count(I)} end
+end
+
+-- collect {pods: true, to} (d17 pods, Nick 15:45: landed cargo pods nobody empties): a tour over the landed pods
+-- nearest first, taking all they hold; each time the inventory is full what it took goes to the chest, then back to the
+-- pod for the rest; at the end the rest goes too. last: taken, given, pods_left.
+do
+  prototypes.item['copper-plate']=prototypes.item['copper-plate'] or {name='copper-plate',type='item',stack_size=50}
+  for i=1,#main do main[i].clear() end
+  local function pod(x,y,stacks)
+    local e=chest({x=x,y=y},{})
+    e.name='cargo-pod-container'; e.type='temporary-container'; e.prototype={name='cargo-pod-container',type='temporary-container'}
+    for i,st in ipairs(stacks) do local sl=e.inv[i]; sl.valid_for_read=true; sl.name=st[1]; sl.quality={name='normal'}; sl.count=st[2] end
+    return e
+  end
+  local function full(name,n) local t={} for i=1,n do t[i]={name,50} end return t end
+  local a=pod(51.5,30.5,full('iron-plate',12))
+  local b=pod(48.5,30.5,full('iron-plate',10))
+  local list=full('copper-plate',2)
+  local c=pod(52.5,33.5,list)
+  local big=chest({x=53.5,y=31.5},{})
+  local inv48=inventory(48); big.inv=inv48; big.get_inventory=function(i) return i==defines.inventory.chest and inv48 or nil end; big.get_output_inventory=function() return inv48 end
+  local r=luna('collect',{pods=true,to={x=53.5,y=31.5}})
+  eq(r.pods,3); assert(r.to:find('(53.5,31.5)',1,true),tostring(r.to))
+  for _=1,8 do advance(3) end
+  local last=luna('status').last
+  eq(inv48.get_item_count('iron-plate'),1100); eq(inv48.get_item_count('copper-plate'),100)
+  eq(main.get_item_count('iron-plate'),0,'nothing kept back')
+  eq(last.given['iron-plate'],1100); eq(last.pods_left,0)
+  assert(last.pods_line:find('3 of the 3 landed pods visited and emptied, what was taken put in the chest; 0 still hold 0 items (2 trips)',1,true),tostring(last.pods_line))
+  -- without to: up to your free slots, and what is left is said
+  inv48.remove{name='iron-plate',count=1100}; inv48.remove{name='copper-plate',count=100}
+  a=pod(51.5,29.5,full('iron-plate',15)); b=pod(48.5,29.5,full('iron-plate',10))
+  luna('collect',{pods=true})
+  for _=1,6 do advance(3) end
+  last=luna('status').last
+  eq(last.outcome,'inventory_full'); eq(main.get_item_count('iron-plate'),1000)
+  assert(last.pods_line:find('still hold 250 items',1,true),tostring(last.pods_line))
+  fails(function() luna('collect',{pods=true,item='iron-plate'}) end,'takes everything the containers hold')
+  for i=1,#main do main[i].clear() end
+  for _,e in ipairs({a,b,c}) do for i=1,#e.inv do e.inv[i].clear() end end
+end
+
 -- A take from one machine's output given straight into another (Muse, shift18 12:46: productivity modules collected
 -- from one machine piled up in the character, 78 and growing, because the next took no more). What the target's input
 -- takes is read before the take (one stack and 64 by hand, measured on 2.0.77): none, nothing taken or walked; else

@@ -23,14 +23,21 @@ return function(api)
   -- Camera clients are named pog-cam1.. or pog-director (tools/win/start-client.ps1
   -- -PlayerName); they count as directors before their first camera call too.
   local DIRECTOR_NAMES = {'^pog%-cam%d*$', '^pog%-director%d*$'}
-  function M.director(index)
-    if store()[index] ~= nil or directors()[index] then return true end
-    local p = game.get_player(index)
-    if not (p and p.valid) then return false end
-    if p.controller_type == defines.controllers.spectator then return true end
+  -- Only camera clients are directors: a person the operator makes a spectator or a god to look around (d17 16:40:
+  -- Nick, spectating, was taken for a camera: forced back to spectator every 5 s, his map and tooltips hidden) is not,
+  -- and one recorded as a director that way is forgotten.
+  local function camera_name(p)
     for _, pattern in ipairs(DIRECTOR_NAMES) do
       if (p.name or ''):match(pattern) then return true end
     end
+    return false
+  end
+  function M.director(index)
+    if store()[index] ~= nil then return true end
+    local p = game.get_player(index)
+    if not (p and p.valid) then return directors()[index] == true end
+    if camera_name(p) then return true end
+    if directors()[index] then directors()[index] = nil end
     return false
   end
   -- A clean picture: no GUI but entity info (alt-mode), as OBS captures it.
@@ -256,6 +263,21 @@ return function(api)
         if M.director(p.index) and not (cam and cam.map) then make_director(p) end
       end
     end
+  end
+  -- Whose alert list the agents' game_alerts read: the game's alerts are the force's, so any connected player of it reads
+  -- the same list. A person first; else a camera client (d17 16:58: with no person connected nothing was read, so the
+  -- agents never got the game's no-storage or no-materials alerts; pog-cam1's list matched Nick's exactly; a camera's
+  -- clean view hides the alert panel, not the list).
+  function M.alert_reader(force, is_director)
+    is_director = is_director or M.director
+    local cam
+    for _, pl in pairs(force.players or {}) do
+      if pl.valid and pl.connected then
+        if not is_director(pl.index) then return pl end
+        cam = cam or pl
+      end
+    end
+    return cam
   end
   -- Players who see the game chat: everyone connected but directors.
   function M.audience()

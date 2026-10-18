@@ -1439,8 +1439,8 @@ fh queue cancel --args '{"lane":"remote"}'
 
 The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
 `platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
-`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`;
-and read actions that need no body. `observe` requires `platform` or a scope other
+`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`; `min_payload` (it names its
+platforms); and read actions that need no body. `observe` requires `platform` or a scope other
 than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,
 `dry_run`, `screenshot`, body conditions and body actions are refused. Validation
 names the step or guard path and checks the entire submitted plan before changing
@@ -1481,12 +1481,12 @@ fh queue repeat --file plan.json
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
-  A stock refusal from `craft` names up to four nearest stocking chests (name, position, count), from its existing
-  64-tile stock check, and states the options: `abort` (default) pauses, `skip` continues, `goto:<label>` continues at
-  that pending label. Skipping acquires no items. `craft {force: true}` permits hand crafting despite factory stock;
-  `transfer {direction: "from_entity", position, item, count}` or `collect` explicitly takes stock. `craft` does not
-  withdraw it from a chest. The existing refusal applies when stock covers the requested product and its hand craft
-  takes at least 3 seconds.
+  `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With
+  `check_stock: true` a craft of at least 3 seconds of hand time that stock within 64 tiles covers is refused: the
+  refusal names up to four nearest stocking chests (name, position, count) and states the options: `abort` (default)
+  pauses, `skip` continues, `goto:<label>` continues at that pending label. Skipping acquires no items.
+  `transfer {direction: "from_entity", position, item, count}` or `collect` takes stock; `craft` does not withdraw it
+  from a chest.
 - A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
   inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
@@ -6583,3 +6583,178 @@ fh watch    # deploy on every change
   so. An unknown argument that ends or starts with a valid name (chest_position) names it as the closest name. The
   refusal's example takes its position from it. Copy: Sonnet's call ran as `transfer {position, direction:
   "to_player", ...}`.
+- B1 (Sol): artillery-shell makers read tungsten-starved while their input inserter was off at a stock cap of 20 with
+  40 tungsten in its requester. supply's makers and users: a short machine (an ingredient or pack shortage) with an
+  inserter into it off by its circuit or logistic condition, or taking from a requester chest whose active sections ask
+  for less of a missing item than one craft takes, ranks after no power and before the shortages. Its worst row reads
+  `input fast-inserter (x,y) off by its circuit condition signal-A < 5 (signal-A 10 on its wires); its source
+  wooden-chest (x,y) holds 40 iron-plate; so item_ingredient_shortage (missing iron-plate)` (thrust.lua's state text;
+  an off inserter keeps its old pickup target, so the entity at its pickup position then), or `its requester ... asks
+  for 1 iron-plate, one craft takes 2; it holds 0; so ...`. The status line counts them (`N of the short held back by
+  ...`). The check (status, requester sections) runs for every short machine; the condition text only for the worst
+  3. Copy: supply engine-unit and iron-gear-wheel name the copy's engine lines held at `engine-unit < 500`; supply
+  over iron-plate, electronic-circuit and engine-unit took 110 ms on the copy against 115 ms without the check (9
+  reads each). tests/d17_batch18.lua.
+- B2 (Grok): the agricultural science biochamber stopped when the network's bioflux fell under 200, and nothing told
+  its builder. pushalerts.lua's scan now groups assemblers, furnaces, labs, drills and silos whose status is
+  disabled_by_control_behavior as `off_by_condition`. Each detail reads `biochamber (14.5,31.5)
+  (agricultural-science-pack): off by its logistic condition bioflux > 200 (bioflux 0 now)`: each unmet condition (an
+  ignored one, with no wire, is not unmet) with its first signal's value on the machine's red and green wires or in the
+  logistic network over it. A machine whose unmet conditions are all on what its recipe makes (a stock cap) is left
+  out. As every push alert, a new or grown group is one team line to its builders and claim owners (the nearest agent
+  when neither). Copy: 8 groups on 5 surfaces, Grok's chamber among them (bioflux 0); the stock-capped gear assembler
+  (iron-gear-wheel < 5) is not listed. The read over the copy's 1282 machines (128 off) took 3.7-4.3 ms, spread over
+  the background read's slices. tests/pushalerts.lua, game_alerts_groups.lua.
+- B3 (Astra): three critical builds waited 10 min with 100+ idle robots; robots held spare poles with nowhere to put
+  them. ghosts: each ghost's `robot` is the construction robot in the air with an order on it anywhere in its queue
+  (unit numbers, read once a network): robots.lua's row for it (charge, cargo, orders, what holds it up) and the
+  order's place; else `no robot has an order on it`. The summary counts ghosts whose robot is held up and, for each
+  network with a ghost there, how many of its robots in the air are held up and by the two most common reasons
+  (counts dropped: wood*4 and wood*3 as one; the first 256 robots). robots.lua: a robot under 1% energy in no
+  roboport's queue is held up, `no charge (energy 0%)` (after the nowhere-to-put check); construction_robots adds
+  `ghosts_waiting`: each ghost in a held-up robot's queue with the robot, the order's place and the reason. Copy
+  (network 243 on nauvis): `41 ghosts ... 9 whose robot is held up; 50 of the 50 construction robots of network 243
+  in the air are held up: 28 nowhere to put wood: no storage chest in network 243 has room for it (24 storage chests
+  in it); 22 no charge (energy 0%)`; a pole ghost's robot: `... holds wood*4; orders: pickup ...; then construct
+  medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)`. ghosts radius 64
+  took 24 ms on the copy, construction_robots 15 ms. tests/d17_batch18.lua.
+- B4 (Haiku): furnaces at (96,-14..-38), (56,-33) and (95,-171) ran dry all shift; Haiku held no coal, and `refuel
+  {alert}` tops up from carried fuel only. An out-of-fuel line (no_fuel, and heat_no_fuel's) now names the nearest
+  fuel the group's most common burner takes (its burner prototype's fuel categories): our chests within 64 tiles of
+  the group, else our belts within 32, nearest first, with item, count and distance (`nearest fuel: coal 100 in
+  requester-chest (-22.5,-49.5), 40 tiles from (11,-71)`), or that none holds it. When the burners' box (from the
+  group's up to 128 status entities) fits in 256 tiles, the no_fuel line ends with `refuel {area: [[x0,y0],[x1,y1]],
+  from: "nearest", fuel: "coal"}` (fuelround.lua: carried fuel first, then walks for more) in place of `refuel
+  {alert}`. Read when the line is made (not in the plain review form), kept 10 s a group; one contents read per chest
+  inventory and belt line (four uncached groups, 2556 chests and belts: 10 ms on the copy; a count call per fuel item
+  took 37 ms). Copy: the nauvis, gleba (biochambers: nutrients, not the steel furnace's yumako-mash) and vulcanus
+  groups name coal, nutrients and carbon. tests/d17_batch18.lua.
+- B5 (Haiku): stock {item} gave each place's `reserved` (robots' pickup reservations) but not for whom; reservations
+  {network} lists pickups and requesters apart, and the robots' orders grouped by target. stock's places with
+  reserved stock now add `reserved_for`: in each such place's logistic network every logistic robot's queue is read
+  once for a pickup there of the item followed by a deliver, summed by where it goes (requester, buffer chest, or
+  `the character of NAME`), the 3 largest. Copy: `stock {item: iron-plate, places: all, holders: [provider,
+  storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
+  Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
+  nothing reserved. tests/d17_batch18.lua.
+
+## d17 batch20 (operator 15:25: the agents' 15:20 poll)
+- A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun
+  with no ammo went without. The rule (runtime.lua craft_stock, d16 batch10 D9) refused a craft of 3 s or more of hand
+  time that stock within 25 tiles covered, unless `force: true`. Now `craft` always hand-crafts from your inventory and
+  says where the stock is (`stock`: the factory's holders, nearest and largest, how much within 25 tiles of you).
+  `check_stock: true` refuses as before over stock within 64 tiles. runtime_test.lua.
+- A2 (Sonnet): a re-run of a 491-tile belt_route after parts of the line were destroyed was refused twice: `via point 1
+  (258.5,-197.5) is taken by our transport-belt`. Two changes:
+  - belt_route remembers each agent's last 4 lines it placed (the planned belts and undergrounds). A call with the
+    same from, via, to, belt and return keeps what stands (a belt or ghost of ours on the tile) and places only the
+    missing tiles as ghosts: `repair` (when it was laid, how many stand, how many are missing), `kept`, `differs` (up
+    to 8 standing belts that face otherwise than the line). A dry run says the same and places nothing.
+    `replan: true` plans a new line.
+  - The planner (route.lua) takes via points on standing belts of ours. One on the from chain is passed already
+    (`via_passed`). One on another standing line: the route feeds that line's head (back along it to the tile nothing
+    feeds: the belt behind, a lone side feed into a curve, an underground exit's entrance) and the next leg starts at
+    its open end; the line stands as it is (`joined`). Later via points on it are passed; `to` on it ends the route at
+    its head. `return` with such a via point is refused (lay the return line in its own call).
+  tests/route.lua, runtime_test.lua.
+- A3 (Opus): fast-replacing underground-belt ends with fast-underground-belt one at a time left pairs of two tiers (a
+  fast-underground-belt does not pair with an underground-belt), and the belt stopped with no word. build replaced one
+  end (replace.lua) and left its partner. Now, as a player's fast replace does, the other end goes too when it is
+  ours, in build reach, and you hold a second item: `consumed: 2`, `replaced.pair` (the other end and its new belt
+  line); an entry for that end later in the same batch says `already`. Otherwise the build is refused before anything
+  changes, naming the other end, why (`you hold 1 ..., the pair takes 2`, or its distance and your build reach), and a
+  tile within reach of both. runtime_test.lua.
+- A4 (Sol): `requests {clear_all}` on a hub, then `set`, dropped every custom minimum payload (small freight then
+  waited for full rockets: plastic 1500, concrete 80, foundry 3, carbon fiber 400), and `min_payload` in a remote lane
+  queue was refused (`action min_payload is not supported in the remote lane`).
+  - A hub keeps the minimum payload of each slot that `clear_all` or `clear` removes, per item and quality. A later
+    `set` of that item without `min_payload` (in the same call or after) takes it again: `stored` says `(min payload N
+    kept from the request cleared before)`. `min_payload: false` in a set entry clears it and forgets it.
+  - The remote lane takes `min_payload` steps (they name their platforms; no body).
+  tests/d17_batch20.lua.
+- A5 (Gemini): `conflicts` said `nothing stands in its way` for steam turbines over Fulgora's shallow oil ocean; build
+  then failed: `placement blocked by tiles: oil-ocean-shallow (needs foundation (not researched) ...)`. conflicts read
+  only entities. It now reads the footprint's tiles with the build refusal's own code (dryrun.tile_fixes: the
+  entity's collision mask against each tile; a tile ghost there that makes it buildable counts as laid): `tiles`
+  [{tile, count, needs, researched}] and `tiles_line`, also at the end of `line`: `nothing stands in its way;
+  steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 15 (foundation laid on it makes it
+  buildable; foundation is not researched)`. An entity with tile rules (an asteroid collector) gives the broken rule.
+  tests/d17_batch20.lua.
+
+### Group B
+- B1 (Luna): watching three Gleba breeders and egg belts took paged full inspects, cut off when long. `inspect
+  {positions: [...], compact: true}` (1..32 positions, one line each, as before) now adds to each line:
+  - `spoil:` each spoilable item in it (its inventories, a belt's lanes, an inserter's hand): count and count-weighted
+    spoiled share (up to 4 items), then `first:` where, and the first stack's time to spoil or hatch;
+  - `hatch:` the hatch warning (how many hatch into what, the first in, how many within 5 min);
+  - `circuit:` its circuit condition with each signal's value on its red and green wires now and whether it holds; its
+    logistic condition with the item's count in the logistic network there; `it is off by its condition` or `it is on`
+    (circuits.condition_parts, which inserter_line now uses too).
+  e.g. `biochamber (6.5,4.5): recipe pentapod-egg; in: bioflux*40; spoil: bioflux*40 35% spoiled; first: in
+  bioflux*40: the first spoils in 2m00s (...); circuit: enabled when bioflux > 200 (on its wires: item:bioflux 150):
+  false now, it is off by its condition`. runtime_test.lua.
+- B2 (Haiku): finding a depleted drill among the 45 on the south copper patch took a guessed position; scan's radius
+  stops at 64. `ores {patch: {x,y}}` (with `resource` to choose among overlapping kinds) keeps only the patch with ore at
+  or within 8 tiles of that position and adds `drill_list`: every mining drill of ours whose mining area meets the
+  patch and that mines its ore or nothing, one line each: `(59,3) electric-mining-drill no_minable_resources: 4,000
+  iron-ore under it (4 tiles)`. Stopped drills first, then the least ore under them, then reading order; up to 200
+  lines (`drill_list_note` gives the count past that). One find over the patch's box and one small resource find per
+  drill. A position with no patch within 8 tiles is refused with the nearest patch. tests/ores.lua.
+- B3 (Sonnet): finding a cut on a 500-tile belt line meant walking it. `belt_gaps {line: {x,y}}` (a belt,
+  underground or splitter of ours there, built or ghost) follows the line both ways (linecut.lua M.line, beside
+  batch17's line_cut code): belt neighbours, an underground to its pair, a splitter's first output or input (the
+  others in `branches`), in chunks our force sees now or within 32 tiles of you, up to 4096 tiles each way. At an end
+  it looks up to 16 tiles on in the belt's direction (upstream: behind it): a belt of ours facing the same way there
+  is the line going on; the tiles between are a gap, each `empty` or naming what stands on it (`medium-electric-pole
+  (20.5,0.5) stands on (20.5,0.5)`), and the walk goes on from that belt. Else the line stops there: `head` and `end`
+  say where and why (nothing within 16 tiles, what stands on the next tile, a chunk not seen now, a loop). `line`:
+  `the line through (30.5,0.5): 38 belt tiles from (0.5,0.5) to (40.5,0.5); 2 gaps: ...`. A gap that turns a corner
+  is not bridged (the probe is straight on). tests/d17_batch20.lua.
+- B4 (Sol): every port visit took silo, platform and queue reads, and a queue step done was once read as cargo aboard.
+  `fleet {platform?}` (fleet.lua; a read, also in the remote lane and `--then`) gives one line a platform from the
+  reads that exist, nothing new scanned:
+  - where it is and the current stop with each departure condition against what the hub holds (platform_gate);
+  - `hub holds`: the hub's 6 largest stacks now (what is aboard, read from the hub);
+  - `requests:` shipment.lua's rows by state (delivered, in flight, launched, loading, waiting), the ones on their way
+    named; `aboard for PLANET's pads`: what that stop's landing pads ask of the hub now;
+  - the rockets on the way to it now and their cargo (freight.incoming), thruster fuel and its 10-minute trend
+    (space.fuel_text, split out of platforms compact);
+  - `waits on`: the first waiting request at the stop it is at (else the first), with the gate holding it.
+  Its cost is shipment's for the same platforms plus the gate line (shipment measured 61-77 ms for all platforms on
+  the copy of world n). tests/d17_batch20.lua.
+
+### Group C
+- C1 (Grok): a gate on bioflux over 200 and agricultural science under 500 was flipped by hand about six times; an
+  inserter's logistic condition holds one test. The game's way is a decider combinator reading the logistic network
+  (a roboport set to read its items) with both tests joined by and, wired to the inserter's circuit condition. A
+  helper, `circuit_gate {position, all: [cond, ...], at?, source?}` (circgate.lua), does what a player does by hand
+  with the calls an agent has, in this order: `build` a decider-combinator from the character's inventory (a free tile
+  in build reach and within wire reach of the entity and the source, nearest the entity; or `at`); `circuit_set` the
+  roboport to read its network's items (when the source is a roboport); a red `wire` source -> decider input;
+  `circuit_set` the decider (every test, `and`, output signal-check 1); a green `wire` decider output -> entity;
+  `circuit_set` the entity enabled when signal-check > 0, its logistic condition off. It is survival-fair: the decider
+  comes from the agent's inventory and each step is an action the agent could call itself. A failed step stops it and
+  says what was done and the calls left; no decider held or no tile within reach of both: refused first, with the
+  calls. tests/d17_batch20.lua (the calls and their arguments, a failed step, the refusal).
+- C2 (Grok): spoilage filled yumako and nutrient chests and each clear was a walk (about 8 a shift). requests could
+  read the trash-unrequested switch (reqchest.lua, trash.lua) and not set it. `requests {position, trash_unrequested:
+  true|false}` sets it on a requester or buffer chest, a hub or your own logistics (`target: character`), read back from
+  the game; the reply's `trash_unrequested`: `on: robots take to storage what no request names: spoilage*34` (a chest:
+  what it holds now that no active section names), or `off`. Grok's spoilage clears in shift30 were 18 from passive
+  provider chests and 2 from requester chests. A passive provider, active provider or storage chest has no such
+  switch; the refusal says so with what the game does: robots take spoilage from it only to a requester or buffer
+  that requests spoilage, and an inserter filtered to spoilage moves it into the chest it drops into (an active
+  provider's contents go to storage). tests/d17_batch20.lua.
+- C3 (Opus): died at 111h33 when the walk to a firing spot clipped a big worm's range; shoot refused five times in
+  shift30 with `firing position must be locally visible`.
+  - "Locally visible" was: within 32 tiles of the character and in a chunk our force sees now. A player aims at what
+    the screen and map show; a rocket launcher reaches 36 tiles. shoot now takes a position in a chunk our force sees
+    now within 32 tiles or the selected gun's range, the larger (M.shoot_sight); the refusal says the distance, the
+    limit and whether the chunk is seen now.
+  - `move_to {stand_off: {target: {x,y}, reach: N}}` (standoff.lua): the spot within N tiles of the target outside
+    every worm's range, spawner's reach and area under attack the map shows plus the avoid_enemies margin (as move_to's
+    own goal check counts them: avoid.margin_discs), the one nearest the character (rings round the target every tile
+    from N - 0.5 in, every 5 degrees, on charted chunks). With none clear of the margin it takes their bare reach and
+    says so; with none (a 36-tile weapon against a 38-tile worm) it is refused naming them. Then a plain move_to there,
+    with its avoidance on the way. The reply's `stand_off` names the spot, its distance from the target and the
+    nearest reach edge. tests/d17_batch20.lua, runtime_test.lua.

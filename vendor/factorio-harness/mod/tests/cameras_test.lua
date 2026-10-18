@@ -106,4 +106,22 @@ cams2.set{player=2,map=true,position={x=60,y=10},zoom=0.1}
 eq(c2.alerts_on[2],false)
 cams2.set{player=2,release=true} -- a release turns them back on too
 eq(c2.alerts_on[2],true); eq(c2.alerts_on[4],false)
+-- d17 16:40: a person put in spectator (or god) mode by the operator is not a director, and one recorded as a director
+-- before this is forgotten: the recheck leaves them alone.
+log={}
+people[4]=player(4,'nick',defines.controllers.spectator)
+st.directors=st.directors or {}; st.directors[4]=true
+eq(cams.director(4),false); eq(st.directors[4],nil)
+cams.tick()
+for _,l in ipairs(log) do assert(l~='set_controller' or people[4].controller_type==defines.controllers.spectator) end
+eq(people[4].show_on_map~=false,true)
+-- d17 16:58: the alert reader is a person when one is connected, else a camera client, else none.
+do
+  local cam={index=1,valid=true,connected=true,name='pog-cam1'}
+  local nick={index=4,valid=true,connected=true,name='nick'}
+  local isdir=function(i) return i==1 end
+  eq(cams.alert_reader({players={cam}},isdir),cam)
+  eq(cams.alert_reader({players={cam,nick}},isdir),nick)
+  eq(cams.alert_reader({players={{index=9,valid=true,connected=false}}},isdir),nil)
+end
 print('cameras ok ('..assertions..' assertions)')

@@ -22,8 +22,10 @@
     first, and takes from a chest feeding `to` itself.
   - `pick: "first_with_stock" | "most_stock"` with `positions` and `item` or `items` (collect too) takes at one listed
     place holding it now (empty ones `skipped`, not short; none: nothing walked); `to` (`{x,y}` or `{item: {x,y}}`)
-    carries it on to that destination in the same call. `dry_run: true` on such a courier gives `courier`: the source
-    and what it holds (robots' reservations), the destination and its room, how many would move. Tour stops end once
+    carries it on to that destination in the same call. `dry_run: true` on such a courier gives `courier`, a preview:
+    the source and what it holds (robots' reservations), the destination and its room, how many would move; a
+    requester or buffer source's own request (`spare`: how many can leave it with its request still filled), the
+    destination's request and what robots bring each side now, and when the first stack spoils or hatches. Tour stops end once
     within transfer reach of the entity (a silo, a pad), as `move_to {target}` does.
   - `via: [{"x":30,"y":5}]` walks those points first; a walking transfer's `last.route` gives where it started, each
     via point and stop as reached, and the tiles walked.
@@ -32,8 +34,10 @@
     would arrive (`personal_logistics`, the dry run's `arrives`); `personal_logistics: "pause"` switches your requests
     off for the move.
   - Spoilage: `fresh_first: true` (`fresh: true` on a courier) takes the least spoiled stacks first on any take or
-    give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail. The
-    reply gives `freshness` (the moved stacks' spread).
+    give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail, on a
+    courier (`positions` and `to`) too. The reply gives `freshness` (the moved stacks' spread) and `left_less_fresh`
+    (what the filter left where it was, e.g. "200 left where they were: less than 50% spoiled (the least spoiled
+    20%)"); a timed one in `last`.
   - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
     direction; `amount`, `quantity` are `count` (the reply's corrected line shows the call as it ran).
   Example: `./fh call transfer --args '{"position":{"x":15.5,"y":59.5},"direction":"to_entity","item":"rocket-fuel","count":50}'`
@@ -42,6 +46,11 @@
   takes every assembler and furnace output in it (output slots only); with `item` it walks to the outputs and chests
   holding it until `count`. `outputs_only: true` never takes fuel, inputs or burnt results. `min_fresh: 70` takes only
   stacks at least 70% fresh (`left_less_fresh` says what stayed).
+  - `pods: true` walks the landed cargo pods on your surface (those `pods` lists, else those within 64 tiles; `area`:
+    those there), nearest first, taking what each holds up to your free slots; `to: {x,y}` (a chest) gets what it took
+    each time your inventory is full, then it goes back for the rest, and at the end. `last.items` (taken),
+    `last.given`, `last.pods_left`, `last.items_left` and `last.pods_line`; the walk and enemy checks are the tours'.
+    Example: `./fh call collect --args '{"pods":true,"to":{"x":10.5,"y":170.5}}'`
   - `wait_ticks` at a machine's position stands there and takes each product the tick it appears (`count` stops
     early): `last.took`, `last.made` and `last.inserters_took` (counted) say who got what, `last.why` why it took
     none, and `taken_by_inserters` which inserters take the output and the chest they fill. `follow: true` takes from
@@ -71,7 +80,10 @@
     pickup point; `last.sources` and `fuel_taken` report the takes. `feed_chests: true` fills the chests inserters
     feed boilers from instead.
   - `alert: "KEY"`: an out-of-fuel alert lists each burner's position and ends with `refuel {alert: "KEY"}`, a tour
-    over exactly those (an alert's centre can lie far from them: it joins touching areas).
+    over exactly those with the fuel you carry (an alert's centre can lie far from them: it joins touching areas).
+    The alert names the nearest fuel its most common burner takes (`nearest fuel: coal 120 in iron-chest (100,-20),
+    7 tiles from (96,-26)`: our chests within 64 tiles, else belts within 32) and then ends with `refuel {area:
+    [[93,-40],[98,-12]], from: "nearest", fuel: "coal"}` over the burners' box instead.
   - Nothing to do: `nothing` says why, `nearest_outside` names the nearest dry burner outside the area.
   Example: `./fh call refuel --args '{"radius":40,"from":"nearest","count":20}' --wait`
 - `pickup {area | position, radius?, items?} | {belt: true, item, count, to?}`: picks up items by hand (timed),
@@ -103,9 +115,13 @@
   Example: `./fh call repair --args '{"positions":[{"x":12.5,"y":4.5},{"x":15.5,"y":4.5}]}' --wait`
 - `inventory`: main, ammo, armor and equipment, trash and cursor in one small reply, guns and ammo per slot (gun slot
   N fires only from ammo slot N); `status {"inventory": true}` adds it as one line.
-- `craft {recipe, count}` (or `recipes: [...]`): queues hand crafts. A craft of 3 s or more that stock within 25 tiles
-  covers is refused unless `force: true` (`check_stock: true`: within 64), naming the stocking chests. One that queued
-  nothing for a recipe says `nothing_queued` with what is short (left out of `started`) and what you carry.
+- `craft {recipe, count, check_stock?}` (or `recipes: [...]`): queues hand crafts from your inventory, whatever stock
+  the factory holds; `stock` names that stock (holders, nearest, largest, how much within 25 tiles of you).
+  `check_stock: true` refuses a craft of 3 s or more that stock within 64 tiles covers, naming the chests. One that queued
+  nothing for a recipe says `nothing_queued` with what is short (left out of `started`) and what you carry. Each short
+  ingredient names where the team keeps it: up to 3 nearest places within 128 tiles that can spare the shortfall (a
+  requester or buffer chest only what it holds over its request, robots' reservations off), else some of it, else
+  the logistic networks on your surface holding it and where robots would take it from.
   Example: `./fh call craft --args '{"recipe":"iron-gear-wheel","count":10}'`
 - `cancel_craft {recipe | index, count?}`: cancels queued hand crafts, the latest first (`all: true`: every one); the
   ingredients come back.

@@ -1,5 +1,6 @@
 - `build {item, position, direction?, recipe?, builds?, all?, check_inserters?, entity?, dry_run?}`: places from your
-  inventory; `builds` is a batch of entries. A direction is a compass name or the number `inspect` prints (0, 4, 8,
+  inventory; `builds` is a batch of entries (up to 256; more than 64 are worked in batches of 64 in the same call, one
+  reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8,
   12); `recipe` sets an assembler's recipe. `"all": true` builds every entry it can and lists the rest in `failed`
   with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. Errors name the
   blocker (tree, rock, the character, water); trees and rocks go with `place_ghosts` + `construct`, or `mine`.
@@ -26,7 +27,10 @@
   the refusal) names both sides: `picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`. Fast replace
   over a chest of the same group keeps its contents in the new chest; what it cannot hold comes to you
   (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires, circuit
-  settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Rails: `{item: "rail", entity: "straight-rail"
+  settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one end of an underground pair
+  with another tier replaces its other end too when that is ours, in build reach and you hold the item for it
+  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`); else it is refused naming the other end
+  and a spot within reach of both. Rails: `{item: "rail", entity: "straight-rail"
   | "curved-rail-a" | "curved-rail-b" | "half-diagonal-rail"}`; stops, locomotives and wagons build as any entity.
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.
@@ -46,6 +50,9 @@
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
+  `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
+  it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
+  and by what.
 - `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut
@@ -72,8 +79,10 @@
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`
 - `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with
   offshore-pump spots there.
-- `conflicts {name, position}` (a read): what building there takes away: everything in the way, the fluid segments that
-  split and the poles cut off.
+- `conflicts {name, position, direction?}` (a read): what building there takes away: everything in the way, the fluid
+  segments that split and the poles cut off; and the footprint tiles it cannot stand on (`tiles`, `tiles_line`: water,
+  oil ocean, lava, space, per tile kind with the tile item that makes them buildable, and when that item is not
+  researched).
   Example: `./fh call conflicts --args '{"name":"pumpjack","position":{"x":-4.5,"y":101.5}}'`
 - `build_path {points}`: lays belts along the points and mines the trees and rocks in its way by hand as it goes
   (`last.cleared`, `cleared_names`).
@@ -84,12 +93,15 @@
   `short`. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
   Example: `./fh call pole_route --args '{"from":{"x":10.5,"y":10.5},"to":{"x":80.5,"y":10.5}}'`
-- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?}`: lays a belt line as ghosts
+- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?}`: lays a belt line as ghosts
   (legs up to 1000 tiles), over trees and wild plants it marks, water only with `"landfill": true`; `return` adds the
   line back beside it, crossing under it where its side is blocked. It goes round cliffs (an underground passes under
   one; `cliffs: true` passes over and marks them) and names what its ghosts mark for mining (`to_mine`: trees, rocks,
   cliffs with positions). A `from` on an existing chain follows it to its open end, up to 4096 tiles
-  (`existing_count`), and names blocked connection tiles. A line through a worm's range or a spawner's 40 tiles is
+  (`existing_count`), and names blocked connection tiles. A re-run of one of your last 4 lines (same from, via, to,
+  belt, return) keeps what stands and places the missing tiles as ghosts (`repair`, `kept`, `differs`: standing belts
+  facing otherwise); `replan: true` plans a new line. A via point on the from chain is passed (`via_passed`); one on
+  another standing line of ours makes the route feed that line's head and go on from its open end (`joined`). A line through a worm's range or a spawner's 40 tiles is
   refused (dry run: `nests_on_route`); `avoid_nests: true` routes round them, `false` lays it anyway. `avoid_enemies:
   N` keeps belts, underground spans and returns outside charted enemy reach plus N tiles (0..32; true=8;
   omitted/false disables); endpoints inside are refused. Belts, undergrounds and splitters say where items go in

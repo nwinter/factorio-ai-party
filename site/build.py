@@ -512,6 +512,10 @@ def agent_chip(key):
     return f'<span class="chip">{avatar(key, "sm")}{esc(a["name"])}</span>'
 
 
+# The public copy of the code (Nick d17 14:15: MIT, scrubbed history; tools/public_sync.py)
+GITHUB_URL = "https://github.com/nwinter/factorio-ai-party"
+
+
 def nav_items():
     """The homepage is the live show; /live/ stays as an alias for links shared before. Without the archive: Live,
     the run's page (when there is one) and About."""
@@ -520,7 +524,8 @@ def nav_items():
                 ("/about/", "About")]
     return [("/", "Live"), ("/polls/", "Polls")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
-                              if LONG else []) + [("/about/", "About")]
+                              if LONG else []) + [("/how/", "How it was made"), ("/about/", "About"),
+                                                  (GITHUB_URL, "GitHub")]
 
 
 def social_meta(full, site_title, description, path, og=None):
@@ -550,7 +555,8 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
     full = site_title if title == site_title else f"{title} · {site_title}"
     description = description or CONFIG.get("description", "")
     nav = "".join(
-        f'<a href="{href}"{" aria-current=page" if href == active else ""}>{label}</a>' for href, label in nav_items())
+        f'<a href="{href}"{" aria-current=page" if href == active else ""}{" rel=noopener" if href.startswith("http") else ""}>{label}</a>'
+        for href, label in nav_items())
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -584,7 +590,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <footer class="site-footer">
   <div class="wrap">
     <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
-    Built from the project's run logs. <a href="/how/">How it was made</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
+    Built from the project's run logs. <a href="/how/">How it was made</a>. <a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -1454,6 +1460,8 @@ def build_about_compact():
   <dl class="facts">{dl}</dl>
   <p><a href="/how/">How it was made →</a> The machines, the harness, the agents, how the project is run, what we
   learned and how it compares with other Factorio harnesses, in depth.</p>
+  <p><a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub →</a> The harness, the stream, this site and the
+  operator's scripts, MIT licensed, with account details and run logs left out.</p>
 </section>
 <section class="fair">
   <h2>Fair-play rules</h2>
@@ -1536,7 +1544,7 @@ def build_about(runs, all_worlds):
   teleport or see the unexplored map. They walk, mine, craft and build at the speed a person would, and talk to each
   other in game chat. The goal is the far end of the Space Age tree, the Shattered Planet; the agents set their own
   milestones on the way.</p>
-  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn}</p>"""
+  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn} <a class="fx-btn ghost" href="/how/">How it was made</a> <a class="fx-btn ghost" href="{GITHUB_URL}">Source on GitHub</a></p>"""
         step1 = """with the same instructions apart from name and
       model. Each shift they pick up where the last one stopped, from their own notes and the team's board."""
         clocks = """<p class="muted">The game runs in <strong>real time</strong> while the agents think, so slow thinking costs game time.

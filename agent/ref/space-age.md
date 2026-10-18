@@ -72,9 +72,12 @@
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?}`: per item, what the ghosts
-  still need less hub stock and cargo in flight, what is built and what the hub asks. `pack: true` splits the rest
-  into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the ghosts
-  still need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`,
+  still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
+  asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
+  rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
+  ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
+  built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
+  removes it; `import_from`,
   `area`; `min_payload: {item: N}`; a min_payload set on its slots is kept). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
@@ -99,9 +102,14 @@
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
+- `fleet {platform?}`: one line a platform: where it is and its current stop with each departure condition against the
+  hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
+  waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
+  their cargo, thruster fuel and its 10-minute trend, and `waits on`: the first waiting request at the stop it is at
+  with the gate holding it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
-  platforms (0 or false clears it), nothing else changed.
+  platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
   surface?}`: launches the silo's rocket to `platform` in orbit of this planet. `wait_ready: true` waits for the
@@ -169,6 +177,13 @@
   automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
   and goes on.
   Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
+- `silo_stage {position, items, from, launch?, platform?, to_total?, auto_requests?, dry_run?}`: one queue plan for a
+  mixed load: reads the silo and the chests now, then takes what the rocket still needs (after what you carry) at each
+  chest in `from` (1..16, in that order; also the ingredients its crafts need), hand-crafts each item still missing
+  that you can craft (`craft` with `force`, then `wait_until crafting_done`), and runs `load_silo` with `walk`.
+  `missing` (in no chest given, not hand-craftable) and `raw_short` (ingredients for the crafts nowhere given) are said;
+  `dry_run: true` gives the plan and its steps, nothing queued. Example: `./fh call silo_stage --args
+  '{"position":{"x":65.5,"y":14.5},"items":{"pipe":40,"arithmetic-combinator":2},"from":[{"x":10.5,"y":10.5},{"x":12.5,"y":10.5}],"launch":true,"platform":"Swiftlet"}'`
 - `preflight {position?, items?, from?, platform?, surface?}`: a silo's cargo (without `position`: all visible indexed
   silos, nearest first), arrival and ETA, and the requests less hub and rocket; with `platform`, incoming rockets,
   `ammo_rates`, `hub_chunks` and cargo conflict lines (as `shipment`); without, the platforms stopped at or headed for
@@ -206,7 +221,14 @@
   time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
   `"dry_run":true` marks nothing.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
-  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
+  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
+  a planet with no pad lands the same way, near its `near` spot.
+- `pods {surface?, position?}`: the landed cargo pods (cargo-pod-containers) on a planet: how many, what they hold by
+  item, the nearest (to `position`, default you), each one's position and holding (`at`), the landing pads and their
+  free slots; `coverage` says how far the sweep that finds them looks (1024 tiles round (0,0)) and when it last went
+  over that planet. The status (`landed_pods`) and, once an hour, your team block say them too, e.g. "Vulcanus: 104
+  landed cargo pods hold 10,059 items (iron-plate 3283, ...); nearest (3.5,5.5), 7 tiles; landing pad (12,176) 80 of
+  80 slots free". `collect {pods: true}` empties them. Example: `./fh call pods --args '{"surface":"vulcanus"}'`
 - Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.

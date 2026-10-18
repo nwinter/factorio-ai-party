@@ -96,7 +96,7 @@ def main():
                 assert not href.startswith("/runs/") or href.startswith("/runs/long/"), (p, href)
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "About"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "How it was made", "About", "GitHub"], nav
         page = (out / "runs" / "long" / "index.html").read_text()
         assert "0h01m to 1h01m" in page and "Rocket silo" in page and "Dawn" in page and "Oldship" not in page
         about = (out / "about" / "index.html").read_text()
