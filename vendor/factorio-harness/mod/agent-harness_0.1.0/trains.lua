@@ -23,17 +23,19 @@ return function(api)
   }
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   -- A schedule entry's wait conditions as the GUI lists them.
+  -- (d18 batch36 A3) as the game evaluates them: and binds before or, (a and b) or c; a branch leaving with no fuel or
+  -- ammunition condition another branch has is named
+  M.waitgroups = require('waitgroups')()
   local function wait_text(r)
-    local waits = {}
-    for _, w in ipairs(r and r.wait_conditions or {}) do
+    local text, notes = M.waitgroups.text(r and r.wait_conditions, function(w)
       local t = w.type .. (w.ticks and ' ' .. math.floor(w.ticks / 60) .. 's' or '')
       if w.condition and w.condition.first_signal then
         local c = w.condition
         t = t .. ' ' .. c.first_signal.name .. ' ' .. (c.comparator or '<') .. ' ' .. tostring(c.constant or 0)
       end
-      waits[#waits+1] = (#waits > 0 and (w.compare_type or 'and') .. ' ' or '') .. t
-    end
-    return #waits > 0 and table.concat(waits, ' ') or 'no wait condition'
+      return t
+    end)
+    return text and text .. (notes and ' [' .. table.concat(notes, '; ') .. ']' or '') or 'no wait condition'
   end
   local function records_text(sch)
     local lines = {}
@@ -380,7 +382,9 @@ return function(api)
       for i, s in ipairs(a.schedule) do
         assert(type(s) == 'table' and type(s.station) == 'string' and #s.station > 0, 'schedule ' .. i .. ': station (a train stop name) is required')
         local waits = {}
-        for j, w in ipairs(s.wait or {}) do
+        local list, grouped = M.waitgroups.flatten(s.wait, 'schedule ' .. i)
+        if not grouped then M.waitgroups.mixed(list, 'schedule ' .. i) end
+        for j, w in ipairs(list or {}) do
           assert(type(w) == 'table' and WAITS[w.type], 'schedule ' .. i .. ' wait ' .. j .. ': type is time, inactivity, full, empty, item_count, fluid_count, circuit, passenger_present, ...')
           waits[j] = {type=w.type, ticks=w.ticks and api.integer(w.ticks, nil, 1, 216000, 'wait ticks') or nil,
             compare_type=j > 1 and (w.compare or 'and') or nil, condition=condition(w.condition, 'schedule ' .. i .. ' wait ' .. j)}

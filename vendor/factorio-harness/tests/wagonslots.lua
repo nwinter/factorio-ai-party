@@ -1,5 +1,6 @@
 -- A cargo wagon's slots (batch25 C2, Muse: a wagon full of one item blocked all other loading on the uranium route, an
 -- hour to find): slots used per item with the count, free slots, slot filters, the red-X limit; full said plainly.
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 defines={inventory={cargo_wagon=1}}
 game={tick=0}

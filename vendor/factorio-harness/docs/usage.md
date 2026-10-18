@@ -8069,3 +8069,18 @@ fh watch    # deploy on every change
   on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)`. The silos come from the census pass (no
   search; a whole-surface find took 10.5 ms on Nauvis); 0.01-0.25 ms a platform on world n. Only rocket parts are
   read: a payload is the platform's own requests, which its hub already holds and asks more of.
+- Stop waits as the game evaluates them (A3, Luna 15:58: an item-count OR time departure written without compare: "or"
+  ran as and, so the gate held past the time fallback; viewer Aurora 16:09: Spindle needed repeated fixes).
+  waitgroups.lua, for platform_schedule (stops and stop/wait) and train schedules:
+  - Waits of more than one kind with no compare past the first are refused, naming the default and the way to say
+    or: `stop 1: its waits mix item_count and time with no compare on wait 2; the game joins a wait with no compare by
+    and (the default), so every one must hold. Say each: compare: "and" or compare: "or" ...`. Waits of one kind keep
+    the default and. In shifts 33-36, 69 of 506 platform wait lists mixed kinds with no compare.
+  - `wait: {any_of: [...]}` or `{all_of: [...]}` is written as the game's chain (any_of may hold all_of groups; the
+    chain is ors of ands, so (a or b) and c is written as two all_of groups); read_as says so.
+  - The readback groups the waits as the game evaluates them (and binds before or): `nauvis (fluid_count
+    thruster-fuel >= 24000 or time 300s) [branch 2, time 300s, departs with no fuel condition]`. A branch is named when
+    another branch has a fuel (thruster-fuel, or an item with a fuel value), oxidizer or ammunition condition and it
+    has none.
+  - A platform stop's `save_as: NAME` keeps its wait list (as written) in the harness's storage, and `wait_from: NAME`
+    takes it on another stop or platform; read_as says which and who saved it.

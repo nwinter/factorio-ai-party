@@ -87,3 +87,67 @@ do
   defines,game=nil,nil
 end
 print('d18_batch36 A2 a silo its own cargo would feed: ok')
+
+-- A3 (Luna 15:58: an item-count OR time wait written without compare: "or" ran as and; viewer Aurora 16:09: Spindle's
+-- waits needed repeated fixes): mixed kinds with no compare refused; any_of / all_of as the game's chain; the readback
+-- grouped as the game evaluates it, naming a branch that leaves with no fuel condition another branch has.
+do
+  local WG=dofile('mod/agent-harness_0.1.0/waitgroups.lua')()
+  fails(function() WG.mixed({{type='item_count'},{type='time',ticks=60}},'stop 1') end,
+    'stop 1: its waits mix item_count and time with no compare on wait 2; the game joins a wait with no compare by and (the default), so every one must hold')
+  WG.mixed({{type='item_count'},{type='item_count'}},'stop 1')  -- one kind: the default and, as before
+  WG.mixed({{type='item_count'},{type='time',compare='or'}},'stop 1')
+  local list,grouped=WG.flatten({any_of={{all_of={{type='item_count',condition='thruster-fuel >= 1000'},{type='item_count',condition='thruster-oxidizer >= 1000'}}},{type='time',ticks=18000}}},'stop 1')
+  eq(grouped,true); eq(#list,3); eq(list[1].compare,nil); eq(list[2].compare,'and'); eq(list[3].compare,'or')
+  fails(function() WG.flatten({all_of={{any_of={{type='time'}}}}},'stop 1') end,'all_of holds plain waits; the game\'s chain is ors of ands')
+  -- the readback: (a and b) or c, and the branch with no fuel or oxidizer condition
+  prototypes={item={}}
+  local function c(n) return {first_signal={name=n},comparator='≥',constant=1000} end
+  local text,notes=WG.text({{type='item_count',condition=c('thruster-fuel')},{type='item_count',condition=c('thruster-oxidizer'),compare_type='and'},{type='time',ticks=18000,compare_type='or'}},
+    function(w) return w.type..(w.condition and ' '..w.condition.first_signal.name or '')..(w.ticks and ' '..math.floor(w.ticks/60)..'s' or '') end)
+  eq(text,'(item_count thruster-fuel and item_count thruster-oxidizer) or time 300s')
+  eq(notes[1],'branch 2, time 300s, departs with no fuel condition'); eq(notes[2],'branch 2, time 300s, departs with no oxidizer condition')
+  prototypes=nil
+end
+do
+  -- through platform_schedule (the batch31 B9 fixture)
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,paused=7},inventory={hub_main=1,hub_trash=2},
+    wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},gleba={}},fluid={['thruster-fuel']={}},item={['firearm-magazine']={}}}
+  local hubinv={get_item_count=function() return 700 end}
+  local pl={valid=true,name='Spindle',index=3,state=4,space_location={name='nauvis'},force={},paused=false,
+    hub={valid=true,get_circuit_network=function() return nil end,get_inventory=function() return hubinv end},
+    surface={find_entities_filtered=function() return {} end}}
+  local sch={}
+  setmetatable(sch,{__index=function(_,k) if k=='current' then return pl.schedule and pl.schedule.current end end})
+  sch.get_record_count=function() return #pl.schedule.records end
+  sch.go_to_station=function(i) pl.schedule.current=i end
+  pl.get_schedule=function() return sch end
+  local p={name='luna',force={platforms={pl}}}
+  local st={}
+  local W=dofile('mod/agent-harness_0.1.0/platwait.lua'){state=function() return st end}
+  game={tick=600,forces={player={platforms={pl}}}}
+  local function cond(s2)
+    local name,cmp,v=s2:match('^(%S+) (%S+) (%d+)$')
+    return {first_signal={type=prototypes.fluid[name] and 'fluid' or 'item',name=name},comparator=cmp=='>=' and '≥' or cmp,constant=tonumber(v)}
+  end
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,platwait=function() return W end,
+    circuit_condition=function(x) return type(x)=='string' and cond(x) or x end,
+    integer=function(v,d) return v==nil and d or v end,freight={where=function() return {} end,leg=function() return nil end}}
+  local ok,err=pcall(space.platform_schedule,p,{platform='Spindle',current=2,stops={{station='nauvis',wait={{type='item_count',condition='firearm-magazine >= 700'},{type='time',ticks=18000}}},{station='gleba'}}})
+  assert(not ok); has(err,'stop 1: its waits mix item_count and time with no compare on wait 2')
+  local r=space.platform_schedule(p,{platform='Spindle',current=2,stops={{station='nauvis',save_as='nauvis fuel or 5 min',
+    wait={any_of={{type='fluid_count',condition='thruster-fuel >= 24000'},{type='time',ticks=18000}}}},{station='gleba'}}})
+  local rec=pl.schedule.records[1].wait_conditions
+  eq(#rec,2); eq(rec[2].compare_type,'or')
+  has(r.schedule,'nauvis (fluid_count thruster-fuel >= 24000 or time 300s) [branch 2, time 300s, departs with no fuel condition]')
+  has(table.concat(r.read_as,' | '),'stop 1: any_of written as the game\'s chain of 2 waits')
+  has(table.concat(r.read_as,' | '),'stop 1: its waits saved as nauvis fuel or 5 min')
+  -- reused by name on another stop
+  r=space.platform_schedule(p,{platform='Spindle',current=2,stops={{station='nauvis'},{station='gleba',wait_from='nauvis fuel or 5 min'}}})
+  eq(pl.schedule.records[2].wait_conditions[2].compare_type,'or'); has(table.concat(r.read_as,' | '),'stop 2: waits from nauvis fuel or 5 min (saved by luna)')
+  ok,err=pcall(space.platform_schedule,p,{platform='Spindle',stops={{station='gleba',wait_from='nope'}}})
+  assert(not ok); has(err,'stop 1: no wait list saved as nope (saved: nauvis fuel or 5 min)')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d18_batch36 A3 mixed waits, any_of/all_of, grouped readback: ok')
