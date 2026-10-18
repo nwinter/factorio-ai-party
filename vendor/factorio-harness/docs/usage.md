@@ -7798,3 +7798,53 @@ fh watch    # deploy on every change
     `paused_why` names the condition still unmet with what it saw. `queue_resume` waits for it again with a fresh
     timeout. Remote lanes run the same code.
   - In a standing order's run it fails as before. A direct `wait_until` with `on_timeout` is refused.
+- B1 (Sonnet: steam piped into water, and a steam path cut; pipe_gaps saw both after the damage):
+  - fluidjoin.lua: for a plan's entries with fluid boxes, each box is a node (a pump's input side and output side are
+    two, as its one box joins two segments). Nodes joined to each other (a connection meeting one back, a
+    pipe-to-ground pair, the first on its line deciding) form a group. Each group's joins to our built fluid boxes give
+    the segment (get_fluid_segment_id and its contents, else a machine's box), the fluid it holds, is locked to or
+    filtered to, and the entity there.
+  - The fluids a group would hold: built segments', a planned machine's recipe fluid (ports.lua), the resource under a
+    planned pumpjack (its mining area) and the tile's fluid under a planned offshore pump. Two or more is a mix.
+  - An entry on the centre of a built fluid entity of ours of another name replaces it. `fluid_cuts` names the joins
+    that entity has now (engine connections with a target) that the entry's normal connections would not make; a pump
+    adds that its sides stay two segments.
+  - Dry runs of place_ghosts, build, paste and blueprint_place give `fluid_segments`, `fluid_mix` (with
+    `fluid_mix_note`) and `fluid_cuts`. Live place_ghosts and build refuse a mix ("nothing placed: ... would join
+    sulfuric-acid (...) and water (segment 696 at pipe (1.5,90.5)); ...; mix_fluids: true places it anyway").
+  - What the game does with such a placement was not tested (no writable world); the note states Sonnet's case: a
+    pumpjack whose output joined a water pipe put its acid into the water segment.
+  - On world n (read-only, the modules in a throwaway env): a pumpjack planned at Sonnet's old spot (2.5,88.5) on
+    Vulcanus facing south reads `would join sulfuric-acid (#3 pumpjack's output: the resource under it) and water
+    (segment 696 at pipe (1.5,90.5))`, 0.55 ms for 4 entries. A pipe-to-ground planned on the pipe at (1.5,90.5) reads
+    `no longer joined to pipe-to-ground (1.5,91.5), pipe (0.5,90.5)`.
+- B2 (Sol, twice on Wayfarer: a crusher took the calcite feed, the iron melter the oxidizer ore):
+  - trace.lua `M.competitors`: for each feeder of an ingredient a machine lacks, the other takers at its source. On a
+    belt it walks the lanes the feeder picks from upstream (prev_lane, 64 tiles) and lists the inserters picking from
+    those lanes into another machine whose recipe takes the item, or into a chest (the filter allowing it). At a chest
+    or a machine output it lists the other inserters taking from there.
+  - Each comes with its machine, recipe, state and what the recipe uses of the item a minute at its crafting speed now
+    (amount x crafting_speed x 60 / energy), 6 at most. trace gives the line among the ingredient's parts and
+    `competitors` on the row.
+  - On Wayfarer (world n, 50 inserters read, 18 calls): calcite for the long-handed inserter at (-6.5,50.5) passes two
+    foundries first (28 and 35 tiles upstream, 9.7 a minute each); 8.8 ms for the 18 calls (about 0.5 ms each).
+- B3 (Opus, 3 times: a deconstruct of two chests 450 tiles away sent about 300 robots, some lost; 20 old requesters
+  pulled ore 500 tiles for 20 hours):
+  - robottrips.lua `preview(surface, force, jobs)`: jobs grouped by kind, item and 32-tile cell (32 groups). Trips:
+    construct (the roboport of the network nearest the ghost with construction robots in it, to the chest
+    select_pickup_point picks, to the ghost); deconstruct (that roboport to the entity, then to select_drop_point's
+    chest; one trip for the entity and one per robot load of its contents, payload with the force's storage bonus);
+    deliver (the roboport nearest the pickup with logistic robots, to the pickup, to the requester; one trip a load).
+  - The lines: trips, robots at once (at most the network's idle ones of that kind), the roboports (3, by trips), the
+    longest and mean trip, trips over 200 tiles with the longest's legs, and each leg (16) passing within reach of a
+    worm or spawner the map shows. The map's structures are read once over the chunks near all legs (64 chunks a call;
+    the rest said unread).
+  - In the deconstruct dry run, the place_ghosts, paste and blueprint_place dry runs, and the requests dry run on a
+    requester, buffer chest or the character: `robot_dispatch`. The build action builds by hand and gives none.
+  - `logistics_audit {far?}` (default 200): `far` lists each ask, short or with a delivery on the way, whose pickup the
+    network would pick now (select_pickup_point) lies farther off (the first 128 asks, 16 lines), and the summary
+    counts them.
+  - Cost on world n: 4 provider chests near (-33,146) holding 4800 items: 1203 trips, about 289 robots, 3.2 ms. 36
+    construct jobs on the far east network: 5.4 ms with the enemy read, 0.9 ms for 24 without. A first version that
+    read enemies leg by leg and every roboport per group ran 88 ms for 36 jobs; the structures read once and the
+    roboports read once a network brought it down.
