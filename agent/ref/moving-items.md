@@ -110,8 +110,8 @@
   Example: `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait`
 - `rotate {position, direction?, reverse?}`: one 90-degree turn clockwise (`reverse: true` counter-clockwise;
   `direction` a facing to turn to); replies `before` and `after`. `platform: NAME` (or `surface: NAME`) turns a ghost
-  or built belt or inserter there by remote view. On your surface, out of reach and not walked to (past the 32 tiles a
-  call walks, or `walk: false`), it turns it by remote view in a chunk our force sees now (`by: "remote view"`).
+  or built belt or inserter there by remote view. On your surface past the 32 tiles a call walks (without `walk: true`), it
+  turns it by remote view in a chunk our force sees now (`by: "remote view"`).
   Example: `./fh call rotate --args '{"position":{"x":22.5,"y":86.5},"direction":"east"}'`
 - `repair {position | positions | area}`: repairs with repair packs, walking to each damaged one, nearest first;
   reports `repaired` and `already_full`. An undamaged entity is ok with `unchanged: "not damaged"`.

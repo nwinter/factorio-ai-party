@@ -3845,10 +3845,15 @@ advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'dur
 -- inspect is a read: anything in sight, no reach needed; in_reach says so.
 p.can_reach_entity=function() return false end
 local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
--- out of reach with walk: false: by remote view in a chunk our force sees (d17 batch21 D3, Muse)
-ins.direction=0; ins.rotate=function() ins.direction=(ins.direction+4)%16; return true end
-local remote_turn=call('rotate',{position=ins.position,walk=false}); eq(remote_turn.by,'remote view'); eq(remote_turn.after,'east')
-ins.rotate=nil; ins.direction=nil
+fails(function() call('rotate',{position=ins.position,walk=false}) end,'out of reach')
+-- past the 32 tiles a call walks: by remote view in a chunk our force sees (d17 batch21 D3, Muse)
+do
+  local here=p.position
+  p.position={x=ins.position.x-700,y=ins.position.y}
+  ins.direction=0; ins.rotate=function() ins.direction=(ins.direction+4)%16; return true end
+  local remote_turn=call('rotate',{position=ins.position}); eq(remote_turn.by,'remote view'); eq(remote_turn.after,'east')
+  ins.rotate=nil; ins.direction=nil; p.position=here
+end
 -- By default it walks into reach first (autowalk.lua).
 ins.bounding_box={left_top={x=2.15,y=-0.35},right_bottom={x=2.85,y=0.35}}
 local turn=call('rotate',{position=ins.position}); eq(turn.walking_for,'rotate'); call('stop',{})

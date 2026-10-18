@@ -6864,10 +6864,10 @@ fh watch    # deploy on every change
   there already (an area under attack counts 30 s past its last hit) it waits 30 s (wait_ticks) first, rearm too
   (`cleared` in the reply). runtime_test.lua.
 - D3 (Muse): a backwards inserter 700 tiles off took a deconstruct and a new build; rotate turned an entity on your own
-  surface only in reach (walking within 32 tiles first). Now, out of sight or reach and not walked to (past the 32
-  tiles a call walks, or `walk: false`), rotate turns it by remote view in a chunk our force sees now, as a player
-  rotates in the map (`by: "remote view"`); `walk: true` still walks to it first. runtime_test.lua (its `walk: false`
-  case, refused before, now turns it by remote view).
+  surface only in reach (walking within 32 tiles first). Now a target past the 32 tiles a call walks (without `walk:
+  true`) is turned by remote view in a chunk our force sees now, as a player rotates in the map (`by: "remote view"`).
+  Within 32 tiles it walks into reach as before, and with `walk: false` the reach refusal still names a spot in reach
+  (tests/minerotate.lua). runtime_test.lua.
 
 ## d17 territory (operator 17:10; Nick 17:08)
 - On n (read only), Vulcanus territory 1 (87 chunks, x -320..96, y -192..416, the main base included) has no

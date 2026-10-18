@@ -6524,17 +6524,15 @@ function handlers.rotate(p,a)
   if remote then
     e=remote_entity(p,a); friendly(p,e)
   else
-    local walking=M.walk_first(p,'rotate',a)
-    if walking then return walking end
-    -- (d17 batch21 D3, Muse: a backwards inserter 700 tiles off took a deconstruct and a new build) out of sight or
-    -- reach and not walked to (past the walk's 32 tiles, or walk: false): by remote view in a chunk our force sees now,
-    -- as a player rotates in the map
-    local okn,near=pcall(entity,p,a)
-    if okn then e=near
+    -- (d17 batch21 D3, Muse: a backwards inserter 700 tiles off took a deconstruct and a new build) past the 32 tiles a
+    -- call walks, without walk: true: by remote view in a chunk our force sees now, as a player rotates in the map;
+    -- within them it walks into reach (or the reach refusal names a spot), as before
+    if a.walk~=true and a.position~=nil and distance(p.position,position(a.position))>32 then
+      e=remote_entity(p,a); remote=true
     else
-      local okf,far=pcall(remote_entity,p,a)
-      if not okf then error(near,0) end
-      e=far; remote=true
+      local walking=M.walk_first(p,'rotate',a)
+      if walking then return walking end
+      e=entity(p,a)
     end
     friendly(p,e)
   end
