@@ -975,6 +975,8 @@ return function(api)
           for need,have in b:gmatch('ghosts need [^%d]*(%d+), hub has (%d+)') do missing=missing+math.max(0,tonumber(need)-tonumber(have)) end
         end
         parts[#parts+1]=missing>0 and string.format('ghosts lack %d items in all',missing) or 'ghosts lack nothing'
+        local off=api.requests_off and try(function() return api.requests_off(pl) end)
+        if off then parts[#parts+1]=off end
         local dep=api.departure and try(function() return api.departure(pl.name) end)
         if dep then parts[#parts+1]='also sent on by '..table.concat(dep,' | ') end
         local was=mine[pl.name] or {}
@@ -1020,6 +1022,7 @@ return function(api)
             row.requests=#req>0 and req or nil
             -- In a section switched off: not requested.
             row.requests_off=#off>0 and off or nil
+            row.requests_off_line=api.requests_off and try(function() return api.requests_off(pl) end) or nil
           end
           row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
           -- Hub health, turrets, turret ammo against the hub's, repair packs.

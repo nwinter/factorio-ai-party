@@ -586,7 +586,8 @@ return function(api)
   end
 
   M.schema = {
-    placements={surface='optional planet name: spots there by remote view (a chunk our force sees), as the map lets a player plan them',platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
+    placements={resource='optional, with a mining drill or pumpjack: a resource name (or true: any it mines): its spots on that resource within radius 1..32 (default 16): a pumpjack every well, free with the directions it fits, or taken by our drill, or blocked; a drill every tile centre whose mining area holds the ore, the most ore first, free ones none overlapping; returns free [{position, amount, tiles or directions, line}], free_count, blocked (each with the build refusal\'s why), blocked_count, blocked_by (by kind, how many, one where), line',
+      surface='optional planet name: spots there by remote view (a chunk our force sees), as the map lets a player plan them',platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
       radius='optional 1..24 (default 12 for an offshore-pump, else 10; past 24 searched at 24, said in note)',limit='optional 1..50 positions (default 10; past 50: 50)',
       direction='optional compass name or 0, 4, 8, 12: only this direction (default north, east, south, west; a building that does not turn has none)',
@@ -606,6 +607,11 @@ return function(api)
     end
     assert(proto, 'no entity or item named ' .. a.name .. ' that places an entity')
     if a.near ~= nil and a.position ~= nil then error('near and position both name the centre: give one', 0) end
+    -- resource (d17 batch21 B2): a drill's or pumpjack's spots on that resource, each blocked one with why (drillspots.lua)
+    if a.resource ~= nil and a.resource ~= false then
+      assert(proto.type == 'mining-drill', 'resource goes with a mining drill or pumpjack')
+      return api.drillspots(p, a, proto)
+    end
     local at = a.near
     if at == nil then at = a.position end
     local pos = at ~= nil and api.position(at) or p.position
