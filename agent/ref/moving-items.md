@@ -146,7 +146,9 @@
   into reach first, the reply's `walking` line saying so; past that the refusal says the distance, your reach and a
   spot in reach, and names the call with `"walk": true` (any distance); `"walk": false` refuses. Reach is to an
   entity's edge (`build`: to the position). Mining uses resource reach (2.7 tiles) for ore, trees, plants and rocks,
-  entity reach (10) for buildings and laid tiles; queue steps too.
+  entity reach (10) for buildings and laid tiles; queue steps too. When no path leads next to a target (a chest among
+  machines), the walk tries up to 6 other spots anywhere within reach of it, nearest you first, leaving out spots in a
+  closed pocket (`last.reach_walk`).
 - `position` and `positions` are interchangeable in these calls (`corrected` says how it ran). A position on a tile
   corner (whole numbers) picks the one entity of a tile touching it; two touching it are refused by name, and `"name":
   "requester-chest"` (or `unit_number`) picks one. Alert lines give a single entity's own position (`near

@@ -3887,31 +3887,44 @@ end
 -- build spot, else the nearest reachable point), and whether it takes squeeze.
 -- Other spots within reach of a target (D8): 16 round its box, just inside the reach, moved to the nearest spot the
 -- character's box fits within 1.5 tiles, still within reach, not within 2 tiles of one tried; the nearest to you.
-M.REACH_TRIES=4
+-- (d17 batch21 A5, Gemini: transfer and collect walks to a chest among machines stalled, closed_in_goal) the spots
+-- within reach on rings at several distances, nearest you first; each checked against a closed pocket (pathing.region,
+-- 16 tiles out, at most REACH_CHECKS of them): the first with a way out, else the nearest.
+M.REACH_TRIES,M.REACH_CHECKS=6,8
 function M.reach_ring(p,rt,tried)
   local e=rt.entity
   if rt.point or not (e and e.valid) then return nil end
   local b=rt.box
   local cx,cy=(b[1]+b[3])/2,(b[2]+b[4])/2
   local half=math.max(b[3]-b[1],b[4]-b[2])/2
-  local best,bd
-  for k=0,15 do
-    local ang=2*math.pi*k/16
-    local q={x=cx+math.cos(ang)*(half+rt.r-1.5),y=cy+math.sin(ang)*(half+rt.r-1.5)}
-    for _=1,3 do
-      if M.reach_dist(q,rt)<=rt.r-0.5 then break end
-      q={x=cx+(q.x-cx)*0.8,y=cy+(q.y-cy)*0.8}
-    end
-    local ok,free=pcall(function() return p.surface.find_non_colliding_position('character',q,1.5,0.25) end)
-    q=ok and free or nil
-    if q and M.reach_dist(q,rt)<=rt.r-0.25 then
-      local near=false
-      for _,t in ipairs(tried) do if distance(t,q)<2 then near=true; break end end
-      local d=distance(p.position,q)
-      if not near and (not bd or d<bd) then best,bd=q,d end
+  local cands={}
+  for _,f in ipairs({1,0.75,0.5,0.3}) do
+    for k=0,15 do
+      local ang=2*math.pi*(k+(f<1 and 0.5 or 0))/16
+      local q={x=cx+math.cos(ang)*(half+(rt.r-1.5)*f),y=cy+math.sin(ang)*(half+(rt.r-1.5)*f)}
+      for _=1,3 do
+        if M.reach_dist(q,rt)<=rt.r-0.5 then break end
+        q={x=cx+(q.x-cx)*0.8,y=cy+(q.y-cy)*0.8}
+      end
+      local ok,free=pcall(function() return p.surface.find_non_colliding_position('character',q,1.5,0.25) end)
+      q=ok and free or nil
+      if q and M.reach_dist(q,rt)<=rt.r-0.25 then
+        local near=false
+        for _,t in ipairs(tried) do if distance(t,q)<2 then near=true; break end end
+        for _,c in ipairs(cands) do if distance(c,q)<1 then near=true; break end end
+        if not near then q.d=distance(p.position,q); cands[#cands+1]=q end
+      end
     end
   end
-  return best
+  table.sort(cands,function(x,y) return x.d<y.d end)
+  local c=p.character
+  local okh,hf=pcall(function() return c and c.valid and M.pathing.half(c) end)
+  for i=1,math.min(#cands,M.REACH_CHECKS) do
+    local q=cands[i]
+    local okr,r=pcall(M.pathing.region,p.surface,q,okh and hf or 0.2,{window=16})
+    if not okr or not (r and r.closed) then return {x=q.x,y=q.y} end
+  end
+  return cands[1] and {x=cands[1].x,y=cands[1].y} or nil
 end
 function M.reach_spot(p,nav,rt)
   local e=rt.entity
@@ -5352,11 +5365,24 @@ function M.recipe_for(p,proto,name)
   return recipe
 end
 -- Sets it on what was just built, or its ghost, and reads it back.
-function M.set_built_recipe(e,name)
+-- want: the direction the build asked for. A machine whose fluid ports come with its recipe is placed without them, and
+-- the game kept it facing north (d17 batch20->21 A1, Sol: an electromagnetic plant built east read north once its
+-- quantum-processor recipe was set, its hot and cold ports swapped); with the recipe set, it is turned the way asked
+-- (as a player's rotate does), said in the second return.
+function M.set_built_recipe(e,name,want)
   e.set_recipe(name)
   local now=e.get_recipe()
   if not (now and now.name==name) then error('recipe incompatible with machine',0) end
-  return now.name
+  local note
+  if want and e.direction~=want then
+    local was=e.direction
+    local ok=pcall(function() e.direction=want end)
+    note=ok and e.direction==want
+      and string.format('placed facing %s (the game keeps a machine without its recipe\'s fluid ports facing north); turned %s once the recipe was set',
+        M.direction_name(was) or tostring(was),M.direction_name(want) or tostring(want))
+      or string.format('faces %s, not %s as asked: the game did not turn it with recipe %s',M.direction_name(e.direction) or tostring(e.direction),M.direction_name(want) or tostring(want),name)
+  end
+  return now.name,note
 end
 local function build_tile(p,a,stack,pos)
   assert(not in_map_view(p),'tiles are placed by the character; leave map view')
@@ -5510,8 +5536,9 @@ local function build_one(p,a)
       end
     end
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    local recipe=a.recipe~=nil and M.set_built_recipe(e,a.recipe) or nil
-    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,snapped=snapped},{e}
+    local recipe,turned
+    if a.recipe~=nil then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,direction_note=turned,snapped=snapped},{e}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -5532,18 +5559,18 @@ local function build_one(p,a)
   assert(restored,'build finished but could not restore cursor; items remain in cursor')
   assert(ok,err)
   local after=held()
-  local placed,joined,ents,recipe={},nil,{},nil
+  local placed,joined,ents,recipe,turned={},nil,{},nil,nil
   if before>after then
     for _,e in pairs(p.surface.find_entities_filtered(filter)) do
       if e.valid and not existing[e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)] then
-        if a.recipe~=nil and e.type=='assembling-machine' then recipe=M.set_built_recipe(e,a.recipe) end
+        if a.recipe~=nil and e.type=='assembling-machine' then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
         placed[#placed+1]=built_summary(e); ents[#ents+1]=e
         if e.type=='electric-pole' then joined=(joined or 0)+bridge_pole(e) end
       end
     end
   end
   return {consumed=before-after,snapped=snapped,entity=#placed==1 and placed[1] or nil,entities=#placed>1 and placed or nil,
-    networks_joined=joined and joined>0 and joined or nil,recipe=recipe},ents
+    networks_joined=joined and joined>0 and joined or nil,recipe=recipe,direction_note=turned},ents
 end
 -- After a hand build: what it just built closed the character in where it
 -- stands (Gemini, shift09: a placement trapped the character in a closed
@@ -11098,6 +11125,9 @@ M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofee
   -- there (partial: up to the request max, as a walking take).
   sight_entity=function(p,pos) local e=entity(p,{position=pos},true); friendly(p,e); return e end,
   take=function(p,e,item,quality,count,fresh_first) return transfer_one(p,{direction='to_player',item=item,quality=quality,count=count,partial=true,fresh_first=fresh_first},nil,e) end,
+  -- (d17 batch21 A3) a give back to the chest a load took from, in reach: what fits; what you hold of an item
+  give=function(p,e,item,quality,count) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,up_to=true},nil,e) end,
+  held=function(p,item,quality) local inv=p.get_main_inventory and p.get_main_inventory(); return inv and inv.get_item_count{name=item,quality=quality or 'normal'} or 0 end,
   -- What a player sees moving items by hand, and the hauls and hand share they count, as transfer does.
   moved=function(p,silo,stacks)
     local parts={}
@@ -11876,7 +11906,7 @@ local function place_ghost_list(p,list,ammo)
   local tile_marked={}
   local ammo_rows={}
   local cliffs,ncliffs={},0
-  local recipes={}
+  local recipes,turned_notes={},{}
   for i,spec in ipairs(list) do
     local oks,same=pcall(M.same_standing,p,spec)
     if oks and same then already[#already+1]={index=i,name=spec.name,position=spec.position,already=same}
@@ -11888,8 +11918,9 @@ local function place_ghost_list(p,list,ammo)
       if proto then M.recipe_for(p,proto,spec.recipe) end
       local ghost,n,laid,on,tm,cl=place_ghost(p,spec)
       if proto and ghost.type=='entity-ghost' then
-        local r=M.set_built_recipe(ghost,spec.recipe)
+        local r,turned=M.set_built_recipe(ghost,spec.recipe,spec.direction~=nil and M.direction_of(spec.direction) or nil)
         recipes[r]=(recipes[r] or 0)+1
+        if turned then turned_notes[#turned_notes+1]=string.format('%s (%g,%g): %s',spec.name,ghost.position.x,ghost.position.y,turned) end
       end
       for _,c in ipairs(cl or {}) do
         local k=c.unit_number or (c.position.x..','..c.position.y)
@@ -11991,7 +12022,7 @@ local function place_ghost_list(p,list,ammo)
     cliffs_marked=ncliffs>0 and ncliffs or nil,cliffs_note=cliffs_note,
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
     tiles_laid=tiles_laid,tiles_note=tile_note,outside_logistic_coverage=cover,tile_obstacles_marked=M.tile_marks_line(tile_marked),
-    ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
+    ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,directions_turned=#turned_notes>0 and turned_notes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
 end
 -- Ghosts that, once built, close the character in where it stands, as the dry run's closes_in reads the plan
 -- (friction2: Gemini's dry runs named the last gap out; the real calls said nothing): their boxes flooded with the
@@ -15084,6 +15115,7 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
+  negative_note=function(item,n) return M.circuits.negative_note(item,n) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
   status_name=function(e) return entity_status_names[e.status] end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
