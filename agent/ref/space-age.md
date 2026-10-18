@@ -160,7 +160,10 @@
   `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
   needs; without `from` it walks to the silo with what you hold. A walking load gives `loaded_items` (what you put
-  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count).
+  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count). When the
+  rocket it fills launches by another hand (outcome `rocket_launched`), the tour walks on to the chests it took from,
+  latest first, and gives back what it took and did not load (`last.returned`: what, how many, where; `kept`: what did
+  not go back; `in_next_rocket`: the list's items in the silo's rocket now).
   `up_to_stock_at_start: true` loads at most what you and the chests held when it began (`stock_at_start`), then ends
   (launches with `launch`). `up_to: true` loads what fits and is held and launches with that (`up_to_short`). A list
   over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`

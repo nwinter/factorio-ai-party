@@ -6774,3 +6774,10 @@ fh watch    # deploy on every change
   requests' section note say a platform_bom section's keeper takes such a change. `tail: true` (kept until false): an
   item's minimum payload is no more than what is still to come (its request less what the hub holds), so the last 2
   crushers go without waiting for a batch of 9 (`tail: 2 of the 9 set`). tests/d17_batch21.lua.
+- A3 (Grok): a walking load_silo whose rocket launched by another hand ended `rocket_launched` with what it carried
+  kept (350 packs went up, 7 stayed with him, 9 were in the next rocket). The tour now records each take (chest, item,
+  count); at that end what it took and did not load (counted off the earliest takes, so the latest chests get theirs
+  back) is given back: at the stop it is at when that is a source, and the other sources become the tour's next stops,
+  latest first (the rest of its trips dropped). `last.returned`: `agricultural-science-pack 16 to passive-provider-chest
+  (20.5,28.5)`; `kept`: what did not go back, by the chest it came from; `in_next_rocket`: the list's items in the
+  silo's rocket now (loaded under the launch, or by its automatic requests). tests/d17_batch21.lua.

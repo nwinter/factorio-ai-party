@@ -11112,6 +11112,9 @@ M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofee
   -- there (partial: up to the request max, as a walking take).
   sight_entity=function(p,pos) local e=entity(p,{position=pos},true); friendly(p,e); return e end,
   take=function(p,e,item,quality,count,fresh_first) return transfer_one(p,{direction='to_player',item=item,quality=quality,count=count,partial=true,fresh_first=fresh_first},nil,e) end,
+  -- (d17 batch21 A3) a give back to the chest a load took from, in reach: what fits; what you hold of an item
+  give=function(p,e,item,quality,count) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,up_to=true},nil,e) end,
+  held=function(p,item,quality) local inv=p.get_main_inventory and p.get_main_inventory(); return inv and inv.get_item_count{name=item,quality=quality or 'normal'} or 0 end,
   -- What a player sees moving items by hand, and the hauls and hand share they count, as transfer does.
   moved=function(p,silo,stacks)
     local parts={}

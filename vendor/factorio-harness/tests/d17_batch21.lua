@@ -47,3 +47,36 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch21 A2 platform_bom keeps a changed min payload: ok')
+
+-- A3 (Grok): a walking load whose rocket launches by another hand gives what it took and did not load back to the
+-- chests it took from, the latest first, as the tour's next stops; the reply says what went back and where.
+do
+  game={tick=1000}
+  prototypes={item={['agricultural-science-pack']={weight=1000}}}
+  defines={inventory={rocket_silo_rocket=1},rocket_silo_status={rocket_ready=13}}
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=65.5,y=14.5},unit_number=9}
+  local c1={valid=true,name='passive-provider-chest',position={x=14.5,y=28.5}}
+  local c2={valid=true,name='passive-provider-chest',position={x=20.5,y=28.5}}
+  local held=16
+  local gave={}
+  local launched
+  local R=dofile('mod/agent-harness_0.1.0/rocketload.lua'){last_launch=function() return launched end,
+    held=function() return held end,
+    give=function(_,e,item,_,n) gave[#gave+1]=e.name..'@'..e.position.x..' '..item..' '..n; held=held-n; return {transferred=n} end,
+    rocket_weight=function() return '0/1000 kg' end}
+  local action={silo=silo,started_tick=500,goals={{name='agricultural-science-pack',quality='normal',target=500}},rows={},trips=1,items={['agricultural-science-pack']=366},load={},
+    loaded_items={['agricultural-science-pack']=350},targets={{entity=c1},{entity=silo},{entity=c1},{entity=silo}},index=2,
+    sources={{entity=c1,name='agricultural-science-pack',quality='normal',n=350},{entity=c2,name='agricultural-science-pack',quality='normal',n=16}}}
+  launched={tick=900,by='astra',cargo='agricultural-science-pack 350'}
+  local out=R.walk_visit({},action,silo)
+  eq(out.stop,nil); eq(#action.targets,3); eq(action.targets[3].entity,c2)
+  -- at the chest: the 16 taken from it and not loaded go back
+  R.walk_visit({},action,c2)
+  eq(gave[1],'passive-provider-chest@20.5 agricultural-science-pack 16'); eq(held,0)
+  local last={}
+  R.walk_last(action,last)
+  eq(last.returned,'agricultural-science-pack 16 to passive-provider-chest (20.5,28.5)'); eq(last.kept,nil)
+  has(action.why,'what it took and did not load goes back to the chests it came from')
+  defines,prototypes=nil,nil
+end
+print('d17_batch21 A3 a load cut by a launch gives back: ok')
