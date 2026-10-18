@@ -72,7 +72,7 @@
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
   remembered ones dim, ghosts blue, losses as red outlines.
 - `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
-  when, the cause, whether its ghost stands now and whether robots can build it (the covering network, its idle
+  when, the cause (`lightning` for a strike on Fulgora), whether its ghost stands now and whether robots can build it (the covering network, its idle
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).
   Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:
@@ -235,5 +235,9 @@
   drills, machines and turrets in chunks our force does not see now (no radar or character of ours sees them),
   by 64-tile area with the nearest radar and its state, and the radars not working. `alerts.outside_coverage`: per
   planet, what lies outside every roboport's construction area (buildings and ghosts, by 64-tile area and name) and the
-  requester and buffer chests outside every logistic area. The team block carries both once an hour.
+  requester and buffer chests outside every logistic area. On Fulgora also our buildings outside every lightning
+  attractor's protection, by 64-tile area: a point within 10 tiles of each lies outside every attractor's reach (10 +
+  range_elongation x (1 + 0.3 x quality level): rod 25, collector 35, ruin attractor 30 at normal), and a strike there
+  hits what stands within 10 tiles of it (walls and rails never). And our buildings lightning killed: in the last hour,
+  and the last one. The team block carries both once an hour.
 - `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.
