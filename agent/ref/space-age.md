@@ -74,7 +74,10 @@
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
   ghosts counted as floor that the hub's foundation rules never build. `ready: {positions, area, tiles}`: one subset's
-  missing items, foundation support and settings. Floor and ready leave out the tiles a collector's rule keeps empty
+  missing items, foundation support and settings, and `pockets`: the empty space under each ghost's footprint as the
+  hub's rules see it (the 4-neighbour region of empty tiles bounded by foundation, up to 1024 tiles): its tiles, area,
+  those without a tile ghost (the hub fills a pocket only when every tile of it holds one) and `pocket_entries` for
+  place_ghosts to stamp them; past 1024 tiles, open space. Floor and ready leave out the tiles a collector's rule keeps empty
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`

@@ -323,3 +323,41 @@ do
   defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch23 B3 silo parts rate and requests: ok')
+
+-- B4 (Astra: water's pipe needed one 374-tile pocket, not 41 tiles nor all 1935 ghosts): platform_plan ready names the
+-- pocket of empty space under a ghost's footprint (4-neighbour, bounded by foundation), its tiles, those without a tile
+-- ghost and the place_ghosts entries that stamp them.
+do
+  defines={inventory={hub_main=1}}
+  -- foundation everywhere within 30 tiles, but a 6x4 hole at x 0..5, y 0..3; open space past 30
+  local function empty(x,y) return math.abs(x)>30 or math.abs(y)>30 or (x>=0 and x<=5 and y>=0 and y<=3) end
+  local ghosts={} -- tile ghosts on 3 tiles of the hole
+  for _,c in ipairs({{0,0},{1,0},{2,1}}) do ghosts[#ghosts+1]={valid=true,type='tile-ghost',ghost_name='space-platform-foundation',position={x=c[1]+0.5,y=c[2]+0.5}} end
+  local pipe={valid=true,type='entity-ghost',ghost_name='pipe',ghost_type='pipe',unit_number=11,position={x=2.5,y=1.5},bounding_box={left_top={x=2.2,y=1.2},right_bottom={x=2.8,y=1.8}},ghost_prototype={}}
+  local far={valid=true,type='entity-ghost',ghost_name='pipe',ghost_type='pipe',unit_number=12,position={x=40.5,y=0.5},bounding_box={left_top={x=40.2,y=0.2},right_bottom={x=40.8,y=0.8}},ghost_prototype={}}
+  local s={get_tile=function(x,y) return {name=empty(x,y) and 'empty-space' or 'space-platform-foundation'} end}
+  s.find_entities_filtered=function(f)
+    local out={}
+    if f.type=='entity-ghost' then return {pipe,far} end
+    if f.type=='tile-ghost' then
+      for _,t in ipairs(ghosts) do
+        local ok=true
+        if f.area then ok=t.position.x>=f.area[1][1] and t.position.x<f.area[2][1] and t.position.y>=f.area[1][2] and t.position.y<f.area[2][2] end
+        if f.position then ok=math.abs(t.position.x-f.position[1])<0.2 and math.abs(t.position.y-f.position[2])<0.2 end
+        if ok then out[#out+1]=t end
+      end
+    end
+    return out
+  end
+  local pl={name='Kestrel II',surface=s,force='player',hub={valid=true,get_inventory=function() return {get_item_count=function() return 0 end} end}}
+  local PP=dofile('mod/agent-harness_0.1.0/platplan.lua'){platform=function() return pl end}
+  local r=PP.ready({},pl,{area={left_top={x=-50,y=-50},right_bottom={x=50,y=50}}})
+  eq(#r.pockets,2)
+  local hole=r.pockets[1]
+  eq(hole.tiles,24); eq(hole.without_ghost,21); eq(hole.open,nil); eq(hole.under[1],'pipe (2.5,1.5)')
+  has(hole.line,'pocket 1: 24 empty tiles enclosed by foundation in (0,0)-(6,4) under pipe (2.5,1.5); 21 of them hold no tile ghost')
+  eq(#r.pocket_entries,21); eq(r.pocket_entries[1].name,'space-platform-foundation')
+  eq(r.pockets[2].open,true); has(r.pockets[2].line,'runs past 1024 tiles (open space beside the hull, or a pocket larger than that)')
+  defines=nil
+end
+print('d17_batch23 B4 platform_plan ready pockets: ok')

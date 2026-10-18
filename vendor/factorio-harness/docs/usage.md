@@ -7322,3 +7322,11 @@ fh watch    # deploy on every change
   in it), `providers`, `storage`, and `next_launch`: `min_payload N` when the request sets one, else `full N` by
   weight; `next_auto_launch`: the request filled now, else the first whose payload the network can give.
   tests/d17_batch23.lua, tests/d15_batch4.lua.
+- B4 (Astra: tile_wait said no blocker while the game said a tile would split empty space; by hand, water's pipe
+  needed one 374-tile pocket, not 41 tiles nor all 1935 ghosts): platform_plan `ready` gives `pockets`, the empty space
+  under each ghost's footprint by tilecheck's rules: the 4-neighbour region of empty tiles round it bounded by
+  foundation, at most 1024 tiles (past that: open space beside the hull, or a larger pocket), with its tile count,
+  area, the ghosts over it, and the tiles of it holding no tile ghost. The hub builds no tile that splits empty space,
+  so a pocket fills only once every tile of it holds a ghost; `pocket_entries` (up to 512) are place_ghosts entries
+  for those tiles. A read looks at most 1536 tiles and 8 pockets (about 4.6 ms on n for a 1024-tile open read on
+  Kestrel III). tests/d17_batch23.lua.
