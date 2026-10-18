@@ -5352,11 +5352,24 @@ function M.recipe_for(p,proto,name)
   return recipe
 end
 -- Sets it on what was just built, or its ghost, and reads it back.
-function M.set_built_recipe(e,name)
+-- want: the direction the build asked for. A machine whose fluid ports come with its recipe is placed without them, and
+-- the game kept it facing north (d17 batch20->21 A1, Sol: an electromagnetic plant built east read north once its
+-- quantum-processor recipe was set, its hot and cold ports swapped); with the recipe set, it is turned the way asked
+-- (as a player's rotate does), said in the second return.
+function M.set_built_recipe(e,name,want)
   e.set_recipe(name)
   local now=e.get_recipe()
   if not (now and now.name==name) then error('recipe incompatible with machine',0) end
-  return now.name
+  local note
+  if want and e.direction~=want then
+    local was=e.direction
+    local ok=pcall(function() e.direction=want end)
+    note=ok and e.direction==want
+      and string.format('placed facing %s (the game keeps a machine without its recipe\'s fluid ports facing north); turned %s once the recipe was set',
+        M.direction_name(was) or tostring(was),M.direction_name(want) or tostring(want))
+      or string.format('faces %s, not %s as asked: the game did not turn it with recipe %s',M.direction_name(e.direction) or tostring(e.direction),M.direction_name(want) or tostring(want),name)
+  end
+  return now.name,note
 end
 local function build_tile(p,a,stack,pos)
   assert(not in_map_view(p),'tiles are placed by the character; leave map view')
@@ -5510,8 +5523,9 @@ local function build_one(p,a)
       end
     end
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    local recipe=a.recipe~=nil and M.set_built_recipe(e,a.recipe) or nil
-    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,snapped=snapped},{e}
+    local recipe,turned
+    if a.recipe~=nil then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,direction_note=turned,snapped=snapped},{e}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -5532,18 +5546,18 @@ local function build_one(p,a)
   assert(restored,'build finished but could not restore cursor; items remain in cursor')
   assert(ok,err)
   local after=held()
-  local placed,joined,ents,recipe={},nil,{},nil
+  local placed,joined,ents,recipe,turned={},nil,{},nil,nil
   if before>after then
     for _,e in pairs(p.surface.find_entities_filtered(filter)) do
       if e.valid and not existing[e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)] then
-        if a.recipe~=nil and e.type=='assembling-machine' then recipe=M.set_built_recipe(e,a.recipe) end
+        if a.recipe~=nil and e.type=='assembling-machine' then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
         placed[#placed+1]=built_summary(e); ents[#ents+1]=e
         if e.type=='electric-pole' then joined=(joined or 0)+bridge_pole(e) end
       end
     end
   end
   return {consumed=before-after,snapped=snapped,entity=#placed==1 and placed[1] or nil,entities=#placed>1 and placed or nil,
-    networks_joined=joined and joined>0 and joined or nil,recipe=recipe},ents
+    networks_joined=joined and joined>0 and joined or nil,recipe=recipe,direction_note=turned},ents
 end
 -- After a hand build: what it just built closed the character in where it
 -- stands (Gemini, shift09: a placement trapped the character in a closed
@@ -11876,7 +11890,7 @@ local function place_ghost_list(p,list,ammo)
   local tile_marked={}
   local ammo_rows={}
   local cliffs,ncliffs={},0
-  local recipes={}
+  local recipes,turned_notes={},{}
   for i,spec in ipairs(list) do
     local oks,same=pcall(M.same_standing,p,spec)
     if oks and same then already[#already+1]={index=i,name=spec.name,position=spec.position,already=same}
@@ -11888,8 +11902,9 @@ local function place_ghost_list(p,list,ammo)
       if proto then M.recipe_for(p,proto,spec.recipe) end
       local ghost,n,laid,on,tm,cl=place_ghost(p,spec)
       if proto and ghost.type=='entity-ghost' then
-        local r=M.set_built_recipe(ghost,spec.recipe)
+        local r,turned=M.set_built_recipe(ghost,spec.recipe,spec.direction~=nil and M.direction_of(spec.direction) or nil)
         recipes[r]=(recipes[r] or 0)+1
+        if turned then turned_notes[#turned_notes+1]=string.format('%s (%g,%g): %s',spec.name,ghost.position.x,ghost.position.y,turned) end
       end
       for _,c in ipairs(cl or {}) do
         local k=c.unit_number or (c.position.x..','..c.position.y)
@@ -11991,7 +12006,7 @@ local function place_ghost_list(p,list,ammo)
     cliffs_marked=ncliffs>0 and ncliffs or nil,cliffs_note=cliffs_note,
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
     tiles_laid=tiles_laid,tiles_note=tile_note,outside_logistic_coverage=cover,tile_obstacles_marked=M.tile_marks_line(tile_marked),
-    ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
+    ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,directions_turned=#turned_notes>0 and turned_notes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
 end
 -- Ghosts that, once built, close the character in where it stands, as the dry run's closes_in reads the plan
 -- (friction2: Gemini's dry runs named the last gap out; the real calls said nothing): their boxes flooded with the

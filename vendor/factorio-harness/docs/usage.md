@@ -6758,3 +6758,11 @@ fh watch    # deploy on every change
     says so; with none (a 36-tile weapon against a 38-tile worm) it is refused naming them. Then a plain move_to there,
     with its avoidance on the way. The reply's `stand_off` names the spot, its distance from the target and the
     nearest reach edge. tests/d17_batch20.lua, runtime_test.lua.
+
+## d17 batch21 (operator 17:00: the agents' 16:50 poll)
+- A1 (Sol): an electromagnetic plant built east with recipe quantum-processor at (28,-3) on Aquilo read north
+  afterwards, its hot and cold ports swapped; a rotate east fixed it. The game places a machine whose fluid ports come
+  with its recipe facing north while it has no recipe; build set the recipe after placing. Now, with the recipe set,
+  a machine that does not face the direction asked is turned to it (as a player's rotate does): `direction_note`
+  (`placed facing north (...); turned east once the recipe was set`, or that the game did not turn it). place_ghosts
+  entries with a recipe and a direction do the same (`directions_turned`). runtime_test.lua.
