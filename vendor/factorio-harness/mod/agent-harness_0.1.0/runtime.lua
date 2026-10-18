@@ -856,6 +856,7 @@ local function stop_combat(index,outcome)
   end
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
     gun_used=combat and combat.gun_used,why_none=why_none,held_blast=combat and combat.held_blast,held_blast_ticks=combat and combat.held_blast_n,
+    switched_gun=combat and combat.switched_gun,held_melee=combat and combat.held_melee,held_melee_ticks=combat and combat.held_melee_n,
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
@@ -10695,6 +10696,37 @@ function M.blast_radius(ammo)
   M.BLAST[ammo]=best>0 and best or false
   return best>0 and best or nil
 end
+-- The character's own blast (d17 batch21 C1, Opus: killed by his own rocket's splash with biters touching him): with
+-- area ammunition in the gun, enemy units within MELEE tiles of the character, or the aim point inside the blast's
+-- radius of it: the gun slot switches to one holding ammunition without an area (said in last_combat.switched_gun), or,
+-- with none, fire holds (held_melee). Checked every 5 ticks; returns the target to fire at (nil: hold).
+M.MELEE=6
+function M.melee_guard(p,action,target,tick)
+  if not (action.blast and target) then return target end
+  local c=p.character
+  if not (c and c.valid) then return target end
+  local here=c.position or p.position
+  if tick%5==0 or action.melee_near==nil then
+    local okn,near=pcall(function() return p.surface.find_entities_filtered{position=here,radius=M.MELEE,force='enemy',type={'unit','spider-unit'},limit=1}[1] end)
+    action.melee_near=okn and near and near.valid and {name=near.name,d=distance(here,near.position)} or false
+  end
+  local self=distance(here,target)<=action.blast.radius
+  if not (action.melee_near or self) then return target end
+  local why=action.melee_near and string.format('%s %.1f tiles from you',action.melee_near.name,action.melee_near.d)
+    or string.format('the aim point is %.1f tiles from you, inside the %g-tile blast',distance(here,target),action.blast.radius)
+  local okg,guns=pcall(M.gun_rows,p)
+  for _,g in ipairs(okg and guns or {}) do
+    if g.count>0 and g.ammo and not M.blast_radius(g.ammo) then
+      c.selected_gun_index=g.index
+      action.switched_gun=string.format('%s: switched to gun slot %d %s with %s (%s would burst on you)',why,g.index,g.gun,g.ammo,action.blast.ammo)
+      action.blast=nil
+      return target
+    end
+  end
+  action.held_melee=string.format('held fire: %s, and no gun slot holds ammunition without an area (%s bursts %g tiles round where it hits)',why,action.blast.ammo,action.blast.radius)
+  action.held_melee_n=(action.held_melee_n or 0)+1
+  return nil
+end
 -- Our entities a blast of radius r at pos would reach (characters left out): {n, line} or nil.
 function M.blast_hits(p,pos,r)
   local by,order,n={},{},0
@@ -16229,8 +16261,12 @@ function M.tick_body(event)
             action.held_blast=string.format('held fire at %s: %s',action.blast.ammo,hit.line); action.held_blast_n=(action.held_blast_n or 0)+1
           end
         end
-        if e then action.fired_tick=event.tick end
-      elseif target then action.fired_tick=event.tick end
+        target=M.melee_guard(p,action,target,event.tick)
+        if e and target then action.fired_tick=event.tick end
+      elseif target then
+        target=M.melee_guard(p,action,target,event.tick)
+        if target then action.fired_tick=event.tick end
+      end
       p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
     end
   end

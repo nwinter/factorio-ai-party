@@ -96,7 +96,9 @@
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
   `last_combat.why_none` when nothing fired. Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
   position whose blast reaches our own entities is refused, naming them; `auto` holds fire at such a target
-  (`last_combat.held_blast`); `fire_anyway: true` fires anyway. In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:
+  (`last_combat.held_blast`); `fire_anyway: true` fires anyway. With area ammunition, enemy units within 6 tiles of
+  you or an aim point inside the blast round you switch the gun to a slot holding ammunition without an area
+  (`last_combat.switched_gun`), or with none hold fire (`held_melee`). In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:
   "tank-cannon"`, or `ammo: "explosive-cannon-shell"`), loading the slot from your inventory, while `vehicle {drive}`
   goes on.
   Example: `./fh call shoot --args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`

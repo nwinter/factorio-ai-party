@@ -6829,3 +6829,11 @@ fh watch    # deploy on every change
   section 2 ("GROUP") is off: its 3 requests (rocket-fuel 100 from nauvis, ...) are not made`. It is in preflight's
   platform lines and rows (`requests_off`), platforms (`requests_off_line`; compact lines), and fleet's line.
   tests/rocketload.lua (its preflight line now ends with it, the fake hub having an off section).
+
+### Group C
+- C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
+  the blast; M.melee_guard guards the character. While shoot fires area ammunition on foot (fixed or auto), every 5
+  ticks: an enemy unit within 6 tiles of the character, or the aim point within the blast's radius of it, switches the
+  gun to a slot holding ammunition without an area (`last_combat.switched_gun`: `big-biter 3.0 tiles from you: switched
+  to gun slot 1 submachine-gun with piercing-rounds-magazine ...`); with none, fire holds (`held_melee`, with how many
+  ticks). runtime_test.lua.
