@@ -75,3 +75,65 @@ eq(st.demolisher_seeded['vulcanus-t1-sol'],true)
 st.demolisher_deaths['vulcanus|-10,-6']=nil
 eq(select(1,D.state(surface,force,t1)),'not seen','seeded once')
 print('d17_territory: ok')
+
+-- Part 2 (Nick 17:15, Vulcanus calcite): a drill waiting for space in a chest it drops into is output_full; one onto a
+-- backed-up belt is not.
+do
+  defines={entity_status={waiting_for_space_in_destination=31,working=1},inventory={chest=1}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {board={items={}}} end,agents=function() return {} end,who=function(p) return p.name end}
+  local list={{name='calcite',count=1600},{name='stone',count=4}}
+  local chest={valid=true,type='container',name='iron-chest',position={x=126.5,y=123.5},
+    get_inventory=function() local inv={count_empty_stacks=function() return 0 end,get_contents=function() return list end}; return setmetatable(inv,{__len=function() return 32 end}) end}
+  local drill={valid=true,name='electric-mining-drill',position={x=124.5,y=123.5},status=31,drop_target=chest,mining_target={name='calcite'}}
+  eq(PA.drill_full(drill),'electric-mining-drill (124.5,123.5) mining calcite into iron-chest (126.5,123.5): 32/32 slots used (calcite 1600, stone 4)')
+  drill.drop_target={valid=true,type='transport-belt',name='transport-belt',position={x=126.5,y=123.5}}
+  eq(PA.drill_full(drill),nil)
+  drill.drop_target=chest; drill.status=1
+  eq(PA.drill_full(drill),nil)
+  local g={kind='output_full',surface='vulcanus',n=2,names={['electric-mining-drill']=2},by={},center={x=130,y=118},at={{x=124.5,y=123.5},{x=135.5,y=110.5}},
+    lost={'electric-mining-drill (124.5,123.5) mining calcite into iron-chest (126.5,123.5): 32/32 slots used (calcite 1600)'}}
+  has(PA.text(g,'nauvis'),'2 electric-mining-drill stopped by a full chest near (130,118) on vulcanus: electric-mining-drill (124.5,123.5) mining calcite')
+end
+print('d17_territory part 2 output_full: ok')
+
+-- Part 3 (Nick 17:22): our buildings out of radar sight per planet, with the nearest radar and its state; radars not
+-- working; hourly in the team block.
+do
+  defines={entity_status={working=1,no_power=2,low_power=3}}
+  local st={push_alerts={player={tick=100,groups={},sight={unread=0,cells={
+    ['vulcanus|3,-4']={surface='vulcanus',drills=28,machines=0,turrets=2,n=30,sx=30*192,sy=30*-256},
+    ['vulcanus|-4,0']={surface='vulcanus',drills=4,machines=0,turrets=0,n=4,sx=4*-225,sy=4*37},
+    ['aquilo|0,0']={surface='aquilo',drills=0,machines=1,turrets=0,n=1,sx=10,sy=-5}},
+    radars={vulcanus={{x=210,y=-214,status=2},{x=-29.5,y=98.5,status=1}},gleba={{x=-171,y=-98,status=2}}}}}}}
+  game={tick=200}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function(p) return p.name end}
+  local lines=PA.sight_lines({name='player'})
+  eq(#lines,3)
+  eq(lines[1],'out of radar sight on aquilo: 0 drills, 1 machines, 0 turrets in 1 area (64 tiles): 1 machine near (10,-5), nearest radar none on aquilo')
+  has(lines[2],'on gleba every drill, machine and turret of ours is in sight; radars not working: radar (-171,-98) no power')
+  has(lines[3],'out of radar sight on vulcanus: 32 drills, 0 machines, 2 turrets in 2 areas (64 tiles): 28 drills, 2 turrets near (192,-256), nearest radar (210,-214) 46 tiles, no power; 4 drills near (-225,37), nearest radar (-29.5,98.5) 205 tiles, working; radars not working: radar (210,-214) no power')
+  local h={}
+  eq(#PA.sight_team({force={name='player'}},h),3); eq(#PA.sight_team({force={name='player'}},h),0)
+  game.tick=200+216000; eq(#PA.sight_team({force={name='player'}},h),3)
+end
+print('d17_territory part 3 out of radar sight: ok')
+
+-- Part 4 (Nick 17:33): what lies outside every construction area per planet, and requester/buffer chests outside
+-- every logistic area; in status and the hourly team line.
+do
+  local st={push_alerts={player={tick=100,groups={},sight={cells={},radars={},
+    cover={['vulcanus|-4,1']={surface='vulcanus',n=83,ghosts=19,sx=83*-228,sy=83*72,names={['gun-turret']=64,['ghost of gun-turret']=19}},
+      ['vulcanus|3,-4']={surface='vulcanus',n=208,ghosts=208,sx=208*222,sy=208*-208,names={['ghost of transport-belt']=208}}},
+    chests={nauvis={n=7,{name='requester-chest',x=-284.5,y=-313.5},{name='buffer-chest',x=280.5,y=-240.5}}}}}}}
+  game={tick=200}
+  defines={entity_status={working=1}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function(p) return p.name end}
+  local lines=PA.coverage_lines({name='player'})
+  eq(#lines,2)
+  eq(lines[1],'7 requester or buffer chests outside every logistic area on nauvis (their requests never fill): requester-chest (-284.5,-313.5), buffer-chest (280.5,-240.5), +5 more')
+  eq(lines[2],"outside every roboport's construction area on vulcanus (robots do not build, repair or rebuild there): 291 (227 of them ghosts) in 2 areas (64 tiles): 208 ghost of transport-belt near (222,-208); 64 gun-turret, 19 ghost of gun-turret near (-228,72)")
+  local h={}
+  local team=PA.sight_team({force={name='player'}},h)
+  eq(#team,2); eq(#PA.sight_team({force={name='player'}},h),0)
+end
+print('d17_territory part 4 coverage: ok')

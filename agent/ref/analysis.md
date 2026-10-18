@@ -131,7 +131,9 @@
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more). `kind: "off_by_condition"`: machines off by their own
+  placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
+  chest they drop into (each drill, what it mines, the chest's slots used and what fills it); a backed-up belt is not
+  said. `kind: "off_by_condition"`: machines off by their own
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
   team alert line to its builders and claim owners. `captive_starving`: captive spawners not producing, with the same
@@ -222,5 +224,9 @@
   show building tiers per planet from the dated census, and researched vehicles against force-wide built counts.
 - A full `status` gives `robots`: per planet or platform, all its logistic networks' robots by kind (idle, working,
   charging, waiting to charge) and the networks with the most waiting. Its fuel and power warnings name the surface and
-  the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`).
+  the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`). `alerts.out_of_sight`: per planet, our
+  drills, machines and turrets in chunks our force does not see now (no radar or character of ours sees them),
+  by 64-tile area with the nearest radar and its state, and the radars not working. `alerts.outside_coverage`: per
+  planet, what lies outside every roboport's construction area (buildings and ghosts, by 64-tile area and name) and the
+  requester and buffer chests outside every logistic area. The team block carries both once an hour.
 - `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.

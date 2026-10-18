@@ -7006,6 +7006,36 @@ fh watch    # deploy on every change
   by sol (the team's record: chat seq 2143); none seen since`; a place_ghosts dry run at (-219.5,29.5) says the same.
 - territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is left out
   only when it was killed. tests/d17_territory.lua.
+- Part 2 (Nick 17:15, Vulcanus calcite: 2 of the 3 drills still mining stood waiting for space in full iron chests; no
+  alert said so, nor does the game have one): pushalerts.lua's scan groups mining drills whose status is
+  waiting_for_space_in_destination and whose drop target is a chest (container, logistic, linked, infinity) as
+  `output_full`, per 64-tile area. Each detail: `electric-mining-drill (124.5,123.5) mining calcite into iron-chest
+  (126.5,123.5): 32/32 slots used (calcite 1600)`. A drill dropping onto a backed-up belt is not said (often by
+  design). Furnaces and assemblers drop through inserters; their full-output-into-a-full-chest case is
+  output_chest_full already. It goes to the builders and claim owners as every group. The check reads only drills
+  already in that status, within the background read's slices.
+  - Copy: 4 groups: Vulcanus calcite near (134,116) (4 drills, iron and passive provider chests 32/32 and 48/48),
+    Sol's tungsten drills at (-224.5,29.5..44.5) (iron chests 32/32, 1600 tungsten ore each), Fulgora scrap near
+    (-62,83) (5 big drills into full passive providers), and Nauvis uranium near (499,-429). tests/d17_territory.lua.
+- Part 3 (Nick 17:22): remote view, inspect, configure and scan by remote view need chunks our force sees now. On n,
+  40 of Vulcanus' 98 drills stood in unseen chunks, Gleba's radar had no power, and Aquilo has no radar; nothing told
+  the agents.
+  - pushalerts.lua's background read notes, while it walks our entities, the drills, machines (assemblers, furnaces,
+    labs, silos, agricultural towers) and turrets in a chunk no force with players sees now, per surface and 64-tile
+    cell, and every radar with its status.
+  - Cost: is_chunk_visible took about 0.18 ms a chunk on the copy (115 chunks for 1299 entities: 22-24 ms in one
+    pass). So the read checks at most 16 chunks a slice of 150 entities. Past that it uses the previous read's answer
+    (storage push_vis), else counts the entity unread (`(N buildings in chunks not yet read for sight; the next reads
+    take them)`).
+  - status `alerts.out_of_sight`, a line per planet: `out of radar sight on nauvis: 23 drills, 0 machines, 13 turrets
+    in 1 area (64 tiles): 23 drills, 13 turrets near (-295,-308), nearest radar (-264.5,-354.5) 56 tiles, no power;
+    radars not working: radar (-264.5,-354.5) no power`. A planet with no radar says `nearest radar none on NAME`; one
+    with everything in sight but a radar down says that.
+  - The team block carries the same lines at most once an hour (h.sight_tick).
+  - Since the fog view (main f9ef402d, fog_strict off by default) our own buildings in fog are read as they stand; the
+    lines say only what is out of sight and which radars are down.
+  - Copy: lines for gleba, nauvis and vulcanus (the copy is older than n: 4 vulcanus drills unseen at (-225,37)); two
+    agents got the team lines once, the next call none. tests/d17_territory.lua.
 
 ### Group C
 - C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
@@ -7100,3 +7130,19 @@ fh watch    # deploy on every change
   finish is refused (`not walked: ...`) unless `partial: true`; a walked one gives `magazines`, and `partial: 1 of 4
   stops get their full count with what you carry` when short. The dry run gives `magazines` and `completes`.
   tests/round2120a.lua.
+- Part 4, coverage (Nick 17:33): build and place replies said what lacked power or construction coverage (batch18 C2),
+  but nothing reported standing buildings outside it.
+  - The background read now also walks our logistic chests and ghosts (types logistic-container and entity-ghost),
+    noting only coverage for them.
+  - Per surface and 64-tile cell: each building or ghost no roboport's construction area covers
+    (find_logistic_networks_by_construction_area), by name with ghosts apart. Also each requester or buffer chest
+    with no logistic network (outside every logistic area).
+  - Cost on the copy: about 2 us an entity for the area query and 5 us a logistic chest, in the read's 150-entity
+    slices.
+  - status `alerts.outside_coverage`, per planet: `outside every roboport's construction area on vulcanus (robots do not
+    build, repair or rebuild there): 976 (902 of them ghosts) in 12 areas (64 tiles): 208 ghost of transport-belt, ...
+    near (222,-208); ...; 64 gun-turret, 19 ghost of gun-turret near (-228,72); ...`. A second line per planet lists
+    `7 requester or buffer chests outside every logistic area on nauvis (their requests never fill): requester-chest
+    (-284.5,-313.5), ...`.
+  - The hourly team line carries these after the radar lines. Copy: lines for fulgora, gleba, nauvis and vulcanus.
+    tests/d17_territory.lua.
