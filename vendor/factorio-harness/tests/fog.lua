@@ -150,6 +150,13 @@ local every=lost.rebuild(p,{area={{90,-260},{210,70}},all=true,dry_run=true})
 eq(every.ghosts,5); eq(#every.steps,3,'a take and two boxes: the wall is 300 tiles from the turrets')
 local none=lost.rebuild(p,{area={{90,50},{120,80}},dry_run=true})
 has(none.line,'all 1 ghosts there are for robots')
+-- more than 1000 ghosts in a 256 box: 64 boxes (construct takes at most 1024 a box)
+local saved=world; world={}
+for i=1,1100 do world[i]=ghost('stone-wall',300.5+(i%100),20.5+math.floor(i/100)) end
+local dense=lost.rebuild(p,{area={{290,10},{420,40}},all=true,dry_run=true})
+eq(dense.ghosts,1100); eq(#dense.steps,3,'one 256 box of 1100 split into three 64 boxes (no chest: no take)')
+for _,st in ipairs(dense.steps) do eq(st.action,'construct'); assert(tonumber(st.label:match('%d+'))<=1000,st.label) end
+world=saved
 local q=lost.rebuild(p,{area={{90,-260},{210,70}}})
 eq(q.queued,2); has(q.line,'queued 2 steps for 4 ghosts')
 print('fog: ok (the memory in sight, the fog view out of sight with ghosts and losses, forgetting, eviction; losses with ghosts, '

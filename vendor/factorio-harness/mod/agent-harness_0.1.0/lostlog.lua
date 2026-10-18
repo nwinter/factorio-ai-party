@@ -248,17 +248,23 @@ return function(api)
     end
     local g = api.gather(p, want, chests)
     -- construct over the ghosts' boxes, 256 tiles a side at most, the nearest box first
-    local cells = {}
-    for _, e in ipairs(list) do
-      local k = math.floor(e.position.x / 256) .. ',' .. math.floor(e.position.y / 256)
-      local c = cells[k]
-      if not c then c = {x0=e.position.x, y0=e.position.y, x1=e.position.x, y1=e.position.y, n=0}; cells[k] = c end
-      c.x0, c.y0 = math.min(c.x0, e.position.x), math.min(c.y0, e.position.y)
-      c.x1, c.y1 = math.max(c.x1, e.position.x), math.max(c.y1, e.position.y)
-      c.n = c.n + 1
+    -- (construct takes at most 1024 ghosts a box: a 256 box with more is split into 64 boxes)
+    local function group(ghosts, size)
+      local cells, order = {}, {}
+      for _, e in ipairs(ghosts) do
+        local k = math.floor(e.position.x / size) .. ',' .. math.floor(e.position.y / size)
+        local c = cells[k]
+        if not c then c = {x0=e.position.x, y0=e.position.y, x1=e.position.x, y1=e.position.y, n=0, list={}}; cells[k] = c; order[#order+1] = c end
+        c.x0, c.y0 = math.min(c.x0, e.position.x), math.min(c.y0, e.position.y)
+        c.x1, c.y1 = math.max(c.x1, e.position.x), math.max(c.y1, e.position.y)
+        c.n = c.n + 1; c.list[#c.list+1] = e
+      end
+      return order
     end
     local boxes = {}
-    for _, c in pairs(cells) do boxes[#boxes+1] = c end
+    for _, c in ipairs(group(list, 256)) do
+      if c.n > 1000 then for _, d in ipairs(group(c.list, 64)) do boxes[#boxes+1] = d end else boxes[#boxes+1] = c end
+    end
     table.sort(boxes, function(x, y)
       return api.distance(p.position, {x=(x.x0 + x.x1) / 2, y=(x.y0 + x.y1) / 2}) < api.distance(p.position, {x=(y.x0 + y.x1) / 2, y=(y.y0 + y.y1) / 2})
     end)
