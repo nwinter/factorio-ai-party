@@ -320,6 +320,21 @@ do
   eq(rows[1].item,'low-density-structure'); eq(rows[1].providers,80); eq(rows[1].storage,40); eq(rows[1].network_holds,120); eq(rows[1].next_launch,'min_payload 100'); eq(rows[1].flag,'matched')
   has(rows[1].line,'the silo\'s network can give 120 now (provider chests 80, storage chests 40, less what robots have reserved)')
   eq(rows[2].next_launch,'full 300'); eq(rows[2].flag,'below_min_payload')
+  -- (d17 batch29 C3) another network holds the rest: the chest robots would take it from there, and load_silo args
+  local far={network_id=9,cells={{owner={valid=true,position={x=200,y=40}}}},get_item_count=function(name) return name=='processing-unit' and 400 or 0 end}
+  local chest={valid=true,name='storage-chest',position={x=210.5,y=44.5},get_item_count=function() return 400 end}
+  far.select_pickup_point=function(a) eq(a.name,'processing-unit'); return {owner=chest} end
+  net.select_pickup_point=function() return {owner={valid=true,name='passive-provider-chest',position={x=3.5,y=-2.5},get_item_count=function() return 10 end}} end
+  force.logistic_networks.nauvis={net,far}
+  e.use_transitional_requests=true
+  rows=S.request_rows(e,force,net)
+  eq(rows[2].flag,'split_networks')
+  has(rows[2].line,'other networks on nauvis: network 9 (near 200,40) holds 400, most at hand in storage-chest (210.5,44.5) holding 400')
+  has(rows[2].line,'by hand: load_silo {items {processing-unit: 50}, from those chests, walk, launch, platform Swiftlet, auto_requests "pause"}')
+  local ls=rows[2].load_silo
+  eq(ls.items['processing-unit'],50); eq(#ls.from,2); eq(ls.from[1].x,3.5); eq(ls.from[2].x,210.5); eq(ls.walk,true); eq(ls.launch,true)
+  eq(ls.platform,'Swiftlet'); eq(ls.auto_requests,'pause'); eq(ls.position.x,0)
+  eq(rows[1].load_silo,nil)
   defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch23 B3 silo parts rate and requests: ok')

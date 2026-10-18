@@ -189,7 +189,10 @@
   launches. A rocket with no cargo is refused (a launch spends its parts) unless `allow_empty: true`, naming science
   in chests near the silo. A launch to another platform than the one the cargo was loaded for (`load_silo` `platform`)
   is refused unless `cargo_for: "any"`. With the silo's automatic requests on, `launch {position, platform}` launches
-  with what the game loaded so far (they stay on). A launch step started while the last rocket is still leaving waits
+  with what the game loaded so far (they stay on). An item only another network on the planet holds (`silo`'s
+  `platform_requests` flag `split_networks`, naming the chest robots would take it from in each) goes over by hand:
+  `load_silo` with `walk: true`, `from` those chests, `launch: true`, `platform` (and `auto_requests: "pause"` while
+  the silo's automatic requests are on); that row's `load_silo` holds those args. A launch step started while the last rocket is still leaving waits
   for the next rocket (it never reports that launch). A launch waiting while its platform leaves is told (`launch:`
   alerts); a rocket in flight holds the platform until its pod lands. The reply leads with `spoiled_percent` by item
   and `went_up`. `./fh queue submit --file plan.json --args '{"dry_run":true}'` shows the silo cargo before each
