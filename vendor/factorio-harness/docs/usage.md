@@ -7311,3 +7311,25 @@ fh watch    # deploy on every change
   checked with can_place_entity (manual) and against the spots planned before it; then one `build` batch with `all`
   of a requester chest (its request as an entry setting) and the inserter per turret, from the inventory. Rows: the
   spots, skipped (why), short (items ran out), not_built (build's refusal). tests/turretfeed.lua.
+
+## d17 batch25 Group A (the agents' 22:50 poll)
+- A1 (Haiku ~4 times: rearm's dry run said the route was clear, then the walk ended `(-76,161): blocked` after a
+  minute). The dry run checks pockets along straight lines (the game's path is asked for only as the character walks,
+  by request; no read can wait for one). A tour leg or via point that ends `blocked` after its stalls now says where
+  it stopped, how far from the stop, and what stands within 2.5 tiles that the character collides with (by the
+  character prototype's collision layers: trees, cliffs, buildings), with enemy units within 6 tiles (pathing.lua
+  `stall_why`). rearm's `turrets` rows (dry run and the real reply before the walk): each turret's ammunition held by
+  name and what it gets, or what it wants when you carry none. tests/pathing.lua.
+- A2 (Astra: the harness belt graph's totals did not match the game's whole-belt signal; e.g. (9.5,4.5): graph 148
+  tiles with 118 explosives, the wires nothing, read in the tick its read was switched on, while the wired reader at
+  (8.5,4.5) already counted 118): a belt's `belt_segment` (inspect, circuit_set with entire_belt_hold) adds the belts on
+  its red and green networks that read their contents, each with its mode, this belt marked (`belt_readers`), and the
+  other entities on those networks by name; and says the wires are the game's own signal, a read switched on this tick
+  showing from the next. tests/d15_batch4.lua.
+- A3 (Luna: rates with surface, circuit_audit with surface, logistics_audit with area, ports with positions, each
+  refused again): an unknown-argument refusal adds `accepted:` (each argument the action takes with the first words of
+  its description, 14 at most) and, where the call corrects plainly, `for this call: fh call ACTION --args '...'`
+  built from the attempt: a singular name where the plural is taken (its value as a list of one), the plural where
+  the singular is (a list of one: its entry), any other unknown argument dropped, each change named; offered only when
+  the corrected call passes the argument check (else the action's stock example, as before). A scoped observe is
+  corrected as observe. runtime_test.
