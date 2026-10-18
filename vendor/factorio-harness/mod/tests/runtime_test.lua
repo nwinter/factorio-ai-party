@@ -5512,6 +5512,22 @@ do
   ok,err=pcall(call,'guards',{})
   eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
 end
+-- transfer {retry_when_clear}: a refusal for passing enemies only waits for units_clear, then transfers again (d17 batch21 D2).
+do
+  local now=runtime.transfer_now
+  runtime.transfer_now=function(_,a)
+    runtime.tour_stock().last_refusal={tick=game.tick,passing=1,staying=0,at={x=34,y=202}}
+    error('every place of this tour lies in enemy reach the map shows: an area under attack now',0)
+  end
+  local w=call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',count=10,retry_when_clear=true})
+  assert(w.retry:find('refused for passing enemies only: every place of this tour lies in enemy reach the map shows: an area under attack now; waits until no enemy unit is within 48 tiles of (34,202)',1,true),w.retry)
+  eq(storage.agent_harness.active[1].then_call.action,'transfer'); eq(storage.agent_harness.active[1].then_call.args.retries,1)
+  call('stop',{})
+  runtime.transfer_now=function() runtime.tour_stock().last_refusal={tick=game.tick,passing=0,staying=1,at={x=1,y=1}}; error('a worm is there',0) end
+  fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear=true}) end,'a worm is there')
+  fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear='yes'}) end,'retry_when_clear must be true or false')
+  runtime.transfer_now=now
+end
 -- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
 do
   local rows,surf,ch=runtime.gun_rows,p.surface,p.character

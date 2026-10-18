@@ -6857,3 +6857,9 @@ fh watch    # deploy on every change
   `{lane: "platform:Swiftlet"}` reads it; every queue_status's `lanes.platforms` lists them (`{Swiftlet: {paused,
   pending, active, ...}}`). A harness update keeps them as it keeps the remote lane (carry.lua), and clock, departure
   and waiteta read them with the others. runtime_test.lua.
+- D2 (Muse): feeding guns in a hot zone was refused 3 times (`every place of this tour lies in enemy reach ...: an area
+  under attack now`, the refusal naming `retry_when_clear: true`), and transfer refused that argument. transfer now
+  takes `retry_when_clear` (and `retry_ticks`) as rearm does: a refusal for passing enemies only waits until no enemy
+  unit is within 48 tiles of the first place held, then runs again (last.then_call), at most 6 times. With no unit
+  there already (an area under attack counts 30 s past its last hit) it waits 30 s (wait_ticks) first, rearm too
+  (`cleared` in the reply). runtime_test.lua.
