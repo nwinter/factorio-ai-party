@@ -66,9 +66,9 @@
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
   and the research ETA; `surface` reads that surface.
 - Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
-  give `fog`: our buildings and belts as last seen (`remembered`, with `seen_s_ago` and status then), our ghosts there
-  now, and ours destroyed there (`lost`, from the destroyed alerts). Our own buildings there are not read as they stand
-  now. `./fh view` draws them dim, ghosts blue, losses as red outlines.
+  add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
+  then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
+  remembered ones dim, ghosts blue, losses as red outlines.
 - `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
   when, the cause, whether its ghost stands now and whether robots can build it (the covering network, its idle
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).

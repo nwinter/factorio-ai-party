@@ -2610,21 +2610,38 @@ p.surface.find_tiles_filtered=function() return {{position={x=46.5,y=1.5}}} end
 fails(function() call('observe',{position={x=100,y=0}}) end,'charted chunk')
 local remote=call('observe',{position={x=42,y=2},radius=8,resources='none'})
 local seen={}; for _,e in ipairs(remote.entities) do seen[e.name]=true end
--- Our own boiler there is out of sight too (fogmem.lua, Nick d17 17:28): not read as it stands now, but from what our
--- force last saw (nothing yet in this test), with the chunks out of sight said.
-eq(seen.boiler,nil); eq(seen['spitter-spawner'],true); eq(seen['small-biter'],nil)
-assert(remote.fog and remote.fog.chunks_out_of_sight>=1,'observe says what is out of sight')
+eq(seen.boiler,true); eq(seen['spitter-spawner'],true); eq(seen['small-biter'],nil)
+assert(remote.fog and remote.fog.chunks_out_of_sight>=1,'observe says what is out of sight beside it (fogmem.lua)')
 local scan=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'hp','fuel'},ore='runs'})
-eq(scan.total,1); eq(scan.entities[1].name,'spitter-spawner'); assert(scan.fog and scan.fog.remembered_count==0,'scan: fog')
+eq(scan.total,2); eq(scan.entities[1].name,'boiler'); eq(scan.entities[1].hp,'100/200'); eq(scan.entities[1].fuel,'coal*49')
 -- The spawner sits in a charted but fogged chunk: its live health stays hidden.
-eq(scan.entities[1].hp,nil); eq(scan.entities[1].fuel,nil)
--- Seen once (the census notes it in sight), the boiler is remembered there: scan's fog, observe's remembered row and
--- inspect's fog memory, with its status then (fogmem.lua).
+eq(scan.entities[2].hp,nil); eq(scan.entities[2].fuel,nil)
+-- fog_strict on (operator fog_strict {on: true}; default off): our own boiler out of sight is not read as it stands now
+-- but from what our force last saw (nothing yet here).
+do
+  eq(runtime.dispatch({operator=true,action='fog_strict',args={on=true}}).fog_strict,true)
+  local strict=call('observe',{position={x=42,y=2},radius=8,resources='none'})
+  local seen2={}; for _,e in ipairs(strict.entities) do seen2[e.name]=true end
+  eq(seen2.boiler,nil); eq(seen2['spitter-spawner'],true)
+  local sc=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'hp','fuel'}})
+  eq(sc.total,1); eq(sc.entities[1].name,'spitter-spawner'); eq(sc.fog.remembered_count,0)
+  eq(runtime.dispatch({operator=true,action='fog_strict',args={on=false}}).fog_strict,false)
+end
+-- Seen once (the census notes it in sight), the boiler is remembered there (fogmem.lua). fog_strict off: it stands
+-- there, read as before, so fog has no remembered row; gone, fog remembers it. On: scan's fog, observe's remembered row
+-- and inspect's fog memory, with its status then.
 do
   world[1].surface=p.surface; world[1].supports_direction=false
   p.force.is_chunk_visible=function(_,chunk) return chunk.x<=1 end
   runtime.fogmem.note(world[1],world[1].position,'working')
   p.force.is_chunk_visible=function(_,chunk) return chunk.x==0 end
+  local live=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'status'}})
+  eq(live.entities[1].name,'boiler'); eq(live.fog.remembered_count,0)
+  local boiler=table.remove(world,1)
+  local gone=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'status'}})
+  eq(gone.fog.remembered_count,1); eq(gone.fog.remembered[1].name,'boiler'); assert(gone.fog.line:find('no longer stand there',1,true),gone.fog.line)
+  table.insert(world,1,boiler)
+  storage.agent_harness.fog_strict=true
   local sc=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'status'}})
   eq(sc.fog.remembered_count,1); eq(sc.fog.remembered[1].name,'boiler'); eq(sc.fog.remembered[1].status,'working')
   local ob=call('observe',{position={x=42,y=2},radius=8,resources='none'})
@@ -2633,7 +2650,7 @@ do
   eq(rem.name,'boiler'); eq(rem.status_when_seen,'working')
   local ins=call('inspect',{position={x=40.5,y=2.5}})
   eq(ins.by,'fog memory'); eq(ins.name,'boiler'); eq(ins.current,false)
-  storage.agent_harness.fog_memory=nil; world[1].surface=nil
+  storage.agent_harness.fog_memory=nil; storage.agent_harness.fog_strict=nil; world[1].surface=nil
 end
 world[#world+1]=ent('medium-worm-turret','turret',10,3,{force=enemy_force,health=90,max_health=100,prototype={attack_parameters={range=30}}})
 local worm=call('observe',{scope='scan',area={left_top={x=8,y=0},right_bottom={x=12,y=8}},fields={'hp','range'}}).entities[1]
@@ -2664,7 +2681,7 @@ fails(function() call('observe',{scope='scan',fields={'bogus'}}) end,'unknown fi
 end)()
 -- positions picks just the entities on those tiles; views reject arguments they would ignore.
 local picked=call('observe',{scope='scan',positions={{x=40.5,y=2.5},{x=42.5,y=1.5},{x=40.5,y=2.5}},type='boiler'})
-eq(picked.total,0); assert(picked.fog,'our boiler there is out of sight: fog, not the boiler now')  -- (fogmem.lua)
+eq(picked.total,1); eq(picked.entities[1].name,'boiler')
 fails(function() call('observe',{scope='scan',positions={{x=40.5,y=2.5}},radius=4}) end,'positions replaces')
 fails(function() call('observe',{scope='grid',positions={{x=40.5,y=2.5}}}) end,'unknown argument positions for grid; valid: area, platform, position, radius')
 fails(function() call('observe',{fields={'hp'}}) end,'unknown argument fields for observe')
@@ -4388,9 +4405,12 @@ end)()
   eq(r.count,3); eq(r.entities[1].position.x,1.5); eq(r.entities[2].position.x,2.5); eq(r.entities[3].name,'assembling-machine-2')
   eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
   eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
-  -- the far chest's chunks are out of sight: what our force last saw there (nothing yet), not the chest now (fogmem.lua)
-  eq(r.not_in_sight,'2 of 3 chunks here out of sight: 0 buildings and belts remembered, 0 ghosts of ours, 0 of ours lost there')
-  eq(r.fog.chunks_out_of_sight,2)
+  eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
+  eq(r.fog.chunks_out_of_sight,2); eq(r.fog.remembered_count,0)  -- (fogmem.lua: beside it, fog_strict off)
+  storage.agent_harness.fog_strict=true
+  eq(call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}).not_in_sight,
+    '2 of 3 chunks here out of sight: 0 buildings and belts remembered, 0 ghosts of ours, 0 of ours lost there')
+  storage.agent_harness.fog_strict=nil
   -- compact (Muse, shift13: ~10 inspects over positions read as tables or JSON): one line per entity, the same
   -- reading order; health where the entity has it.
   c.health=320; c.max_health=350; a.health=200; a.max_health=200
@@ -4456,7 +4476,7 @@ end)()
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
   fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
   list={far}
-  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no entity of ours with its centre in (0,0)-(64,10) in a chunk our force sees now; 2 of its chunks are out of sight, and our force remembers nothing there')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no entity of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
   list={}
   for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
   -- over the 64 rows: one shape, a page of entities with by_name beside them (d17 batch13 A3)

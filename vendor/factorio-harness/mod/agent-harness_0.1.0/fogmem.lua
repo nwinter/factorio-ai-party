@@ -9,6 +9,10 @@
 -- alerts name each one wherever it was). The map in fog shows the last chart: buildings as shapes in map colours;
 -- the memory adds what they were (names, directions) and their state when seen.
 -- Bounded: MAX_CHUNKS chunks (a chunk in sight is dropped first when full: it is read live), MAX_ROWS rows a chunk.
+-- The switch fog_strict (storage agent_harness.fog_strict; operator call fog_strict {on}; default off): off, the reads
+-- keep reading our own buildings in fog as they stand now (runtime.lua known(): the map draws them) and fog lists beside
+-- them only the remembered buildings that no longer stand there, with our ghosts and losses; on, our own buildings out of
+-- sight are read from the memory alone.
 return function(api)
   local M = {}
   local MAX_CHUNKS, MAX_ROWS = api.max_chunks or 4096, 1024
@@ -79,6 +83,13 @@ return function(api)
     local rk = pos.x .. ',' .. pos.y
     if c and c.rows[rk] then c.rows[rk] = nil; c.n = c.n - 1 end
   end
+  function M.strict() return api.state().fog_strict == true end
+  M.operator = {fog_strict=function(a)
+    assert(a.on == nil or type(a.on) == 'boolean', 'on must be true or false')
+    if a.on ~= nil then api.state().fog_strict = a.on or nil end
+    return {fog_strict=M.strict(), line=M.strict() and 'fog_strict on: our own buildings out of sight are read from what our force last saw there'
+      or 'fog_strict off: our own buildings in fog are read as they stand now; fog lists the remembered ones no longer there, our ghosts and losses'}
+  end}
   function M.stats()
     local m, rows = store(), 0
     for _, c in pairs(m.chunks) do rows = rows + c.n end
@@ -87,8 +98,9 @@ return function(api)
   local function inside(q, box) return q.x >= box[1][1] and q.x <= box[2][1] and q.y >= box[1][2] and q.y <= box[2][2] end
   local function dir_name(d) return api.direction_name and api.direction_name(d) or d end
   -- The out-of-sight part of box ({{x1,y1},{x2,y2}}) on surface s for force f: remembered buildings and belts, the
-  -- ghosts there, the losses there. limit caps each list; *_count says how many there were.
-  function M.area(f, s, box, limit)
+  -- ghosts there, the losses there. limit caps each list; *_count says how many there were. present ({"name@x,y"=true}:
+  -- our buildings the read itself lists there, fog_strict off): remembered rows only for what no longer stands there.
+  function M.area(f, s, box, limit, present)
     limit = limit or 256
     local now = game.tick
     local remembered, ghosts, lost = {}, {}, {}
@@ -104,7 +116,8 @@ return function(api)
           for rk, v in pairs(c and c.rows or {}) do
             local x, y = rk:match('^(.-),(.*)$')
             local q = {x=tonumber(x), y=tonumber(y)}
-            if inside(q, box) then
+            local name0 = v:match('^(.-)|')
+            if inside(q, box) and not (present and present[name0 .. '@' .. q.x .. ',' .. q.y]) then
               counts.remembered = counts.remembered + 1
               if #remembered < limit then
                 local name, d, st = v:match('^(.-)|(.-)|(.*)$')
@@ -116,7 +129,8 @@ return function(api)
           local belts = api.belt_chunk and api.belt_chunk(f.name, s.name, cx, cy)
           local done = {}
           for _, r in pairs(belts and belts.tiles or {}) do
-            if not done[r] and not r.ghost and r.position and inside(r.position, box) then
+            if not done[r] and not r.ghost and r.position and inside(r.position, box)
+              and not (present and present[r.name .. '@' .. r.position.x .. ',' .. r.position.y]) then
               done[r] = true
               counts.remembered = counts.remembered + 1
               if #remembered < limit then
@@ -163,11 +177,12 @@ return function(api)
     order(remembered); order(ghosts); order(lost)
     if hidden_n == 0 then return nil end
     return {chunks_out_of_sight=hidden_n, chunks=chunks_in, remembered=remembered, remembered_count=counts.remembered,
-      ghosts=ghosts, ghost_count=counts.ghosts, lost=lost, lost_count=counts.lost,
-      line=string.format('%d of %d chunks here out of sight: %d buildings and belts remembered, %d ghosts of ours, %d of ours lost there',
-        hidden_n, chunks_in, counts.remembered, counts.ghosts, counts.lost),
-      note='out of sight: remembered rows are what our force last saw there (seen_s_ago; status then), not the state now; '
-        .. 'ghosts are ours there now (the map draws our ghosts in fog); lost are our buildings destroyed there (the game\'s '
+      ghosts=ghosts, ghost_count=counts.ghosts, lost=lost, lost_count=counts.lost, only_gone=present and true or nil,
+      line=string.format('%d of %d chunks here out of sight: %d buildings and belts remembered%s, %d ghosts of ours, %d of ours lost there',
+        hidden_n, chunks_in, counts.remembered, present and ' that no longer stand there' or '', counts.ghosts, counts.lost),
+      note=(present and 'our buildings in fog are read as they stand now (fog_strict off); remembered rows are ones our force saw there '
+        .. 'that no longer stand there (seen_s_ago; status then); ' or 'out of sight: remembered rows are what our force last saw there '
+        .. '(seen_s_ago; status then), not the state now; ') .. 'ghosts are ours there now (the map draws our ghosts in fog); lost are our buildings destroyed there (the game\'s '
         .. 'destroyed alerts). The map in fog shows the last chart, buildings as shapes in map colours: the memory adds '
         .. 'names, directions and status as seen. A chunk never seen since the memory began (d17) has no remembered rows.'}
   end

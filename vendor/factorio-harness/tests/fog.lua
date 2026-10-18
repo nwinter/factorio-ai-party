@@ -93,6 +93,13 @@ has(by['gun-turret'].lost_after_seen,'lost 0s ago (small-biter)')
 eq(by.radar.status,'no_power'); eq(by['transport-belt'].direction,'east'); eq(by['transport-belt'].seen_s_ago,61)
 eq(f.ghosts[1].name,'gun-turret'); eq(f.lost[1].cause,'small-biter')
 has(f.note,'the last chart'); has(f.line,'1 of 1 chunks here out of sight: 3 buildings and belts remembered, 1 ghosts of ours, 1 of ours lost there')
+-- fog_strict off (the default): a read that lists our buildings there as they stand passes them as present, and fog
+-- keeps only the remembered ones no longer there.
+local only=fog.area(force,surface,box,nil,{['radar@210.5,-230.5']=true})
+eq(only.remembered_count,2,'the turret (destroyed) and the belt, not the radar that stands'); eq(only.only_gone,true)
+has(only.line,'remembered that no longer stand there'); has(only.note,'fog_strict off')
+eq(fog.strict(),false); eq(fog.operator.fog_strict({on=true}).fog_strict,true); eq(fog.strict(),true)
+has(fog.operator.fog_strict({}).line,'fog_strict on'); eq(fog.operator.fog_strict({on=false}).fog_strict,false)
 -- 2. Removed in sight: forgotten. A chunk in sight is dropped first when the memory is full (3 chunks in this test).
 fog.forget(radar)
 eq(fog.stats().rows,1)

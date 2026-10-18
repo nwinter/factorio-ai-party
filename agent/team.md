@@ -28,7 +28,7 @@ already targets your character.
   you to it: anything on the board, in the alerts or in the factory is open to anyone. No permission is needed to fix,
   build or change anything, unless a rule the team keeps on the board says to ask; tell the owner after.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
-- Out of sight, reads give what our force last saw there (`fog`: buildings with their age, our ghosts now, ours lost).
+- Out of sight, reads add `fog`: what our force saw there that is gone, with its age, our ghosts now, ours lost.
   `./fh call losses` lists our lost buildings and what rebuilding them needs; `rebuild {area}` builds the ghosts robots will not.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.

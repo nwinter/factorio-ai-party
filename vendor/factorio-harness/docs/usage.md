@@ -1703,20 +1703,22 @@ fh sleep 900 --until researched                       # ...or until the research
 Nick (d17 17:28): "a low-visibility fog-of-war view that shows what we usually see, so they know, physically, what used
 to be there", and "Do they see destroyed building ghosts and have an easy way of reconstructing them?"
 
-- What our force sees now is read live. A chunk out of sight (no radar or character of ours sees it) reads as our
-  force last saw it. `inspect {area}`, `scan` and `observe` (and so `./fh view`) give for that part `fog`:
-  - `remembered`: our buildings and belts as last seen: `name`, `position`, `direction`, `status` then (scan: with
-    `fields` status), `seen_s_ago`, `remembered: true`; `lost_after_seen` (`lost 40s ago (small-biter)`) when one of
-    them was destroyed after it was seen.
+- What our force sees now is read live. For the part of an area out of sight (no radar or character of ours sees the
+  chunk), `inspect {area}`, `scan` and `observe` (and so `./fh view`) add `fog` beside what they read there:
+  - `remembered`: our buildings and belts our force saw there, as last seen: `name`, `position`, `direction`,
+    `status` then (scan: with `fields` status), `seen_s_ago`, `remembered: true`; `lost_after_seen` (`lost 40s ago
+    (small-biter)`) when one was destroyed after it was seen. With `fog_strict` off (the default), only those that no
+    longer stand there (`only_gone`), since the read lists our buildings in fog as they stand now (the map draws them).
   - `ghosts` (inspect): our ghosts there now. The game's map draws our ghosts in fog; scan and observe list them among
     their entities as before.
   - `lost`: our buildings destroyed there, from the game's destroyed alerts (they name each one wherever it was):
     `name`, `position`, `lost_s_ago`, `cause`.
   - `line`, `note`, `chunks_out_of_sight` and the counts (`remembered_count`, `ghost_count`, `lost_count`).
-- Our own buildings in a chunk out of sight are not read as they stand now. Until d17, scan and observe read them
-  live there, with hp, ammo, status and contents; inspect's area read counted them in `not_in_sight`, which is now
-  the fog's line. The map in fog shows the last chart, buildings as shapes in map colours; the memory adds what they
-  were (names, directions) and their status when seen.
+- The switch `fog_strict` (the harness's storage `agent_harness.fog_strict`; operator call `fog_strict {on: true|false}`,
+  which answers with the setting; default off). Off: scan and observe read our own buildings in fog as they stand now,
+  with their live fields, as before d17, and inspect's area read counts them in `not_in_sight`. On: they are read only
+  from the memory (all of `remembered`), and `not_in_sight` is the fog's line. The map in fog shows the last chart,
+  buildings as shapes in map colours; the memory adds what they were (names, directions) and their status when seen.
 - `observe` rows out of sight carry `remembered`, `seen_s_ago`, `status_when_seen`. `./fh view` draws them dim, our
   ghosts blue and ours lost there as red outlines; its reply's `fog` is the fog line.
 - The memory (fogmem.lua): the background census notes every building of ours it reads in a chunk in sight, with its
@@ -2354,9 +2356,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     that `inspect` can read (in sight, or by remote view in a chunk our force sees now), at most 64, one compact row each in
     reading order (top row first, left to right): `entities [{name, position, holds, requests, recipe, status_name}]`.
     `holds` is a chest's line as above (`iron-plate*150 coal*20; 2 of 32 slots`) or a machine's inventories by part
-    (`in: copper-cable*8; out: electronic-circuit*12; fuel: coal*5`, or `empty`). The area's part out of sight is `fog`
-    (what our force last saw there, our ghosts and losses there: see "Out of sight"), with `not_in_sight` its line;
-    more than 64 fails (a smaller area, or `types`).
+    (`in: copper-cable*8; out: electronic-circuit*12; fuel: coal*5`, or `empty`). `not_in_sight` counts what the area
+    holds in chunks our force does not see now, and `fog` beside it gives what our force remembers there, our ghosts
+    and losses there (see "Out of sight"); more than 64 fails (a smaller area, or `types`).
 - `queue_submit` into a repeating plan (Grok, shift15 00:18: low-density hauls behind a plate-haul wait):
   a nonempty submit without `mode` refuses without changing the queue, naming the loop and active job. `mode: "replace"`
   stops the active repeating step and replaces the loop; `mode: "ahead"` runs the new steps before its remaining
