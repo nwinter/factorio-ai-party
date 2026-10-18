@@ -122,3 +122,26 @@ do
   force.platforms=nil
 end
 print('d17_batch31_rt B7 load_silo first: ok')
+
+-- C1 (Sol: 10 rockets stranded among 214 belts on Kestrel III): scan with a belt type aggregates the belts' contents by
+-- item, all of them before limit; with item it lists the belts holding it.
+do
+  prototypes.item.rocket={name='rocket'}; prototypes.item['iron-ore']=prototypes.item['iron-ore'] or {name='iron-ore'}
+  local belts={}
+  for i=1,30 do
+    local held=i%10==0 and {{name='rocket',count=i//10}} or {{name='iron-ore',count=2}}
+    belts[i]={valid=true,name='transport-belt',type='transport-belt',force=force,surface=surface,position={x=i+0.5,y=3.5},
+      get_max_transport_line_index=function() return 2 end,
+      get_transport_line=function(li) return {get_contents=function() return li==1 and held or {} end} end}
+  end
+  local was=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f) return belts end
+  local r=grok('scan',{area={left_top={x=0,y=0},right_bottom={x=40,y=8}},type='transport-belt',item='rocket',limit=5})
+  surface.find_entities_filtered=was
+  eq(r.belt_items,'30 belts carry iron-ore*54 rocket*6')
+  eq(r.belt_item.count,6); eq(r.belt_item.belts,3); eq(r.belt_item.positions[1].x,10.5)
+  eq(r.belt_item.line,'6 rocket on 3 of 30 belts: (10.5,3.5) 1, (20.5,3.5) 2, (30.5,3.5) 3')
+  eq(#r.entities,5,'the rows keep their limit; the aggregate counts all')
+  fails(function() grok('scan',{area={left_top={x=0,y=0},right_bottom={x=40,y=8}},item='rockets'}) end,'item is an item name')
+end
+print('d17_batch31_rt C1 scan belts by item: ok')

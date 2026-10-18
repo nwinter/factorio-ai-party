@@ -7719,3 +7719,11 @@ fh watch    # deploy on every change
     (inactivity, fluid_count, the other request waits) are named in `may_leave` when they could decide it.
   - Not run against the game: n is read-only and the dev world's RCON closed the connection. The mock follows the
     method names read on n.
+- C1 (Sol 06:22: 10 rockets stranded among 214 belts on Kestrel III, recovered by paging): `scan` with `item` or a
+  type naming a belt type:
+  - `belt_items`: the belts of ours among all the entities found (before `limit` cuts the rows) read line by line
+    (get_contents per transport line), summed by item, up to 1024 belts.
+  - With `item`, `belt_item`: the count, how many belts hold it, each belt's position, name and count (64; `more`),
+    and a line naming the first 12.
+  - Cost on world n (Kestrel II, read-only probe bounded by count): 64 belts 0.23 ms, 512 belts 3.1 ms (about 6 us a
+    belt), so 1024 is about 6 ms.
