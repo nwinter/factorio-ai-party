@@ -119,9 +119,13 @@ r=astra('configure',{planet='vulcanus',position={x=14.5,y=140.5},auto_launch=tru
 eq(silo.send_to_orbit_automatically,true); eq(silo.use_transitional_requests,false)
 eq(r.settings.send_to_orbit_automatically,true); eq(r.settings.auto_requests,false)
 assert(r.corrected:find('auto_launch is send_to_orbit_automatically',1,true) and r.corrected:find('planet is surface',1,true),r.corrected)
--- Switched on with cargo loaded by hand: the game moves it to trash; the note says so (launch's own rule).
+-- Switched on with cargo loaded by hand: the game moves it to trash. (d17 batch32 A1, Grok: 241 packs lost) refused
+-- while no platform above asks for it, naming it; force: true switches them on and the note says where it goes.
 cargo[1]={'calcite',500}
-r=astra('configure',{surface='vulcanus',position={x=14.5,y=140.5},auto_requests=true})
+local okc,errc=pcall(astra,'configure',{surface='vulcanus',position={x=14.5,y=140.5},auto_requests=true})
+assert(not okc and tostring(errc):find('automatic requests stay off: the rocket holds calcite*500 that no platform stopped above asks this planet for',1,true),tostring(errc))
+eq(silo.use_transitional_requests,false)
+r=astra('configure',{surface='vulcanus',position={x=14.5,y=140.5},auto_requests=true,force=true})
 eq(r.cargo_to_trash,'calcite*500'); assert(r.note:find('trash slots',1,true),r.note)
 cargo[1]=nil; astra('configure',{surface='vulcanus',position={x=14.5,y=140.5},auto_requests=false})
 -- A silo takes only its switches.

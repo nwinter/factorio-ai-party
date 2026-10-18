@@ -146,8 +146,15 @@
   JSON document and the message is only in the reply's `result.operator`.
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.
+- A seed loop running out (pentapod-egg, copper-bacteria, iron-bacteria): every 10 s a planet in turn, the seed held by
+  the machines whose recipe takes it, their inserters' hands and feeders' chests or belts outside a network, and the
+  logistic networks; under one craft for each machine, or all of it spoiling within 3 min, and again at none left, the
+  builders of those machines and their feeding inserters get one waking line (`seed alert: ...`, the machines named).
 - A long belt or pipe line (8+ tiles) cut where ours died is a team alert (`line_cut`): the cut tiles, what destroyed
-  them, how far the line runs either side and what it carried, until a belt or pipe stands there again. Something else
+  them, how far the line runs either side and what it carried, what the belt past the cut feeds (the machines
+  inserters take into from it, with their state) and how to rebuild each tile (a ghost there, or what to place facing
+  which way), until a belt or pipe stands there again (at most 6 hours). A power cut not joined again stays an alert
+  too (`power_cut`): its line, and each machine it left alone as it stands now (a pump with the fluid it holds). Something else
   standing on a cut tile is named. A belt line blocked by what stands on its tile is the same alert: a build (yours or
   a player's; robots' builds are not seen) that leaves a belt facing into a tile with no belt but another entity, and
   a belt within 2 tiles past it facing the same way, e.g. "belt line blocked at (353.5,95.5): medium-electric-pole

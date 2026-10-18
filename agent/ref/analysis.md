@@ -62,7 +62,10 @@
   makers' states. Up to 16 links and 24 makers a link read; machines from the census pass (`as_of`).
 - `trace {position | item, platform? | surface?, forward?, audit?, upstream?, throughput?, circuit?, all?, near?,
   radius?}`: on a machine or lab, per ingredient it lacks each feeding inserter, what that inserter reads and how much
-  is there, and a container within 10 tiles holding it that nothing reads. `forward: true` follows its output inserters
+  is there, and a container within 10 tiles holding it that nothing reads. A belt lane it picks from that is full of
+  another item and holds none of the ingredient is followed upstream (256 tiles): the jam, the blocking item, the
+  inserter putting it on (what it takes from, its circuit or logistic condition and whether it holds now; else the
+  belts feeding the line's start), and the first consumer of the ingredient past it (`blocked`). `forward: true` follows its output inserters
   and belts lane by lane to where they end and what blocks them (on a belt tile, a drill or a chest: from there,
   forward), naming where other items join a lane (`joins transport-belt (12,5) carrying iron-plate on the left lane:
   your iron-ore mixes in`); with `audit: true` it adds `audit`: where the walked lanes lose capacity (a belt
@@ -158,7 +161,9 @@
   not connected; one taking from a belt: that belt line's length, its head and why it stops there, and its gaps, so a
   broken link reads apart from a shortage), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from}` call
   (`from: "nearest"` for a chest, the belt's position for a belt).
-- `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
+- `game_alerts {kind?, surface?, compact?}`: the game's alerts and warnings in groups, worst first, after `counts`
+  (groups per kind, the most first). `kind` takes several (`["no_storage","no_power"]` or `"no_storage,no_power"`);
+  `compact: true` gives `lines`, one a group (`KIND SURFACE: line`), in place of the groups. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
   placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
@@ -230,7 +235,10 @@
   8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
   mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
   Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
-- `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: `items: [...]`
+- `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?, unrequested?}`:
+  `unrequested: true`: requester and buffer chests in our logistic networks on the surface holding items they do not
+  request (`item` for one), the most first, each with what it asks and whether trash unrequested sends them to storage
+  (off: they stay there); `items` sums them per item. `items: [...]`
   (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is, landed
   cargo pods (of any force: kind `pod`) and stacks on the ground in sight (kind `ground`, `on_ground`, not in the total)
   among the places with their positions. With

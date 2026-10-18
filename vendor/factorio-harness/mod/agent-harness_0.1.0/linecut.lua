@@ -19,7 +19,10 @@
 -- stands there. A cut tile something else now stands on names it too (M.blocker).
 return function(api)
   local M = {}
-  local WALK, LONG, MERGE, KEEP, MAX = 24, 8, 3, 108000, 32
+  -- KEEP (d17 batch32 B3, Opus: one tile of a 555-tile stone belt killed, found only by tracing): a cut stays an alert
+  -- while any tile of it stands open, up to 6 game hours (it was 30 min).
+  local WALK, LONG, MERGE, KEEP, MAX = 24, 8, 3, 1296000, 32
+  local DOWN_EVERY = 18000
   local SPAN, AGE, MAX_BLOCKED = 2, 1800, 32
   local VEC = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
   -- What never takes a tile from a belt (the rest that stands there does).
@@ -55,7 +58,7 @@ return function(api)
 
   -- The belts one way from e (way: 'inputs' or 'outputs'), up to WALK: {n, last, items}
   local function belt_walk(e, way)
-    local seen, cur, n, last, items = {[key(e)]=true}, e, 0, nil, {}
+    local seen, cur, n, last, items, tiles = {[key(e)]=true}, e, 0, nil, {}, {}
     for _ = 1, WALK do
       local list = try(function() return cur.belt_neighbours[way] end) or {}
       local nxt = list[1]
@@ -66,11 +69,12 @@ return function(api)
       end
       if not (nxt and try(function() return nxt.valid end)) or seen[key(nxt)] then break end
       seen[key(nxt)] = true; n = n + 1; cur = nxt; last = nxt.position
+      tiles[#tiles+1] = {x=nxt.position.x, y=nxt.position.y}
       for i = 1, try(function() return nxt.get_max_transport_line_index() end) or 0 do
         for _, c in ipairs(try(function() return nxt.get_transport_line(i).get_contents() end) or {}) do items[c.name] = (items[c.name] or 0) + c.count end
       end
     end
-    return {n=n, last=last, items=items}
+    return {n=n, last=last, items=items, tiles=tiles}
   end
   -- The pipes on each side of p (its fluid neighbours as two starts), up to WALK each: {{n, last}, {n, last}}, fluid
   local function pipe_walk(p)
@@ -115,7 +119,7 @@ return function(api)
       if c.surface == s and c.kind == kind then
         for _, q in ipairs(c.tiles) do
           if math.abs(q.x - pos.x) <= MERGE and math.abs(q.y - pos.y) <= MERGE then
-            c.tiles[#c.tiles+1] = {x=pos.x, y=pos.y, name=e.name}; c.tick = event.tick
+            c.tiles[#c.tiles+1] = {x=pos.x, y=pos.y, name=e.name, dir=e.direction}; c.tick = event.tick
             if cause then c.causes[cause] = (c.causes[cause] or 0) + 1 end
             if placer then c.placers[placer] = true end
             return
@@ -123,10 +127,11 @@ return function(api)
         end
       end
     end
-    local a, b, carried
+    local a, b, carried, down_tiles
     if kind == 'belt' then
       local up, down = belt_walk(e, 'inputs'), belt_walk(e, 'outputs')
       a, b = {n=up.n, last=up.last}, {n=down.n, last=down.last}
+      down_tiles = down.tiles
       carried = {}
       for name, n in pairs(up.items) do carried[#carried+1] = name end
       table.sort(carried)
@@ -138,8 +143,53 @@ return function(api)
     if a.n + b.n < LONG or #st.cuts >= MAX then return end
     st.seq = st.seq + 1
     st.cuts[#st.cuts+1] = {id=st.seq, kind=kind, surface=s, force=e.force.name, tick=event.tick, first=event.tick,
-      tiles={{x=pos.x, y=pos.y, name=e.name}}, causes=cause and {[cause]=1} or {}, placers=placer and {[placer]=true} or {},
-      a=a, b=b, carried=carried}
+      tiles={{x=pos.x, y=pos.y, name=e.name, dir=e.direction}}, causes=cause and {[cause]=1} or {}, placers=placer and {[placer]=true} or {},
+      a=a, b=b, carried=carried, down=down_tiles}
+  end
+  local DIR = {[0]='north', [4]='east', [8]='south', [12]='west'}
+  -- (B3) each open tile: a ghost there to rebuild, or what to place facing which way
+  local function rebuild_text(surface, open)
+    local parts = {}
+    for i, q in ipairs(open) do
+      if i > 4 then parts[#parts+1] = string.format('+%d more', #open - 4); break end
+      local ghost
+      for _, g in ipairs(surface and try(function() return surface.find_entities_filtered{name='entity-ghost', position={q.x, q.y}, radius=0.5} end) or {}) do
+        if try(function() return g.ghost_name end) then ghost = g.ghost_name end
+      end
+      parts[#parts+1] = ghost and string.format('a ghost of %s at %s', ghost, at(q))
+        or string.format('no ghost at %s: %s%s', at(q), q.name, q.dir and DIR[q.dir] and ' facing ' .. DIR[q.dir] or '')
+    end
+    return 'rebuild: ' .. table.concat(parts, '; ')
+  end
+  -- (B3) what the belt past the cut fed: the machines inserters take into from its tiles (WALK tiles), with their state;
+  -- found once and again every DOWN_EVERY ticks
+  local STATUS
+  local function status_of(e)
+    if not STATUS then STATUS = {}; for k, v in pairs(defines.entity_status or {}) do STATUS[v] = k end end
+    return STATUS[try(function() return e.status end) or -1] or 'working'
+  end
+  local function downstream(surface, force, c)
+    if not (c.down and #c.down > 0 and surface) then return nil end
+    if c.down_text and game.tick - (c.down_tick or 0) < DOWN_EVERY then return c.down_text end
+    local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+    local on = {}
+    for _, q in ipairs(c.down) do
+      x0, y0, x1, y1 = math.min(x0, q.x), math.min(y0, q.y), math.max(x1, q.x), math.max(y1, q.y)
+      on[math.floor(q.x) .. ',' .. math.floor(q.y)] = true
+    end
+    local fed, seen = {}, {}
+    for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=force, area={{x0 - 3, y0 - 3}, {x1 + 3, y1 + 3}}} end) or {}) do
+      local src = try(function() return ins.pickup_target end)
+      local d = try(function() return ins.drop_target end)
+      if src and src.valid and on[math.floor(src.position.x) .. ',' .. math.floor(src.position.y)] and d and d.valid and d.unit_number and not seen[d.unit_number] then
+        seen[d.unit_number] = true
+        fed[#fed+1] = string.format('%s %s %s', d.name, at(d.position), status_of(d))
+      end
+    end
+    c.down_tick = game.tick
+    c.down_text = #fed > 0 and string.format('the %d tile%s past the cut feed %s', #c.down, #c.down == 1 and '' or 's',
+      table.concat(fed, ', ', 1, math.min(6, #fed)) .. (#fed > 6 and string.format(' +%d more', #fed - 6) or '')) or string.format('nothing takes from the %d tile%s past the cut', #c.down, #c.down == 1 and '' or 's')
+    return c.down_text
   end
 
   local BELT_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'linked-belt', 'loader', 'loader-1x1', 'lane-splitter'}
@@ -282,6 +332,10 @@ return function(api)
             #causes > 0 and ' (' .. table.concat(causes, ', ') .. ')' or '', math.floor((game.tick - c.tick) / 60),
             #standing > 0 and ' (' .. table.concat(standing, '; ') .. ')' or '',
             side(c.a), side(c.b), #c.carried > 0 and '; it carried ' .. table.concat(c.carried, ', ', 1, math.min(4, #c.carried)) or '')
+          local okd, down = pcall(downstream, surface, force, c)
+          if okd and down then g.line = g.line .. '; ' .. down end
+          local okr, rb = pcall(rebuild_text, surface, open)
+          if okr and rb then g.line = g.line .. '; ' .. rb end
           out[#out+1] = g
         end
       end

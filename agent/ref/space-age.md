@@ -262,7 +262,8 @@
   ends `launched_by_game` (what went, and what stayed in the silo). A silo with automatic requests on is refused,
   naming what is aboard; `auto_requests: "pause"` (with `launch`) turns them off for this manifest and back on after
   its last launch, and a load that ends short or failed leaves them off (`auto_requests_kept_off`; `configure
-  {auto_requests: true}` turns them on); with them on, load_silo and preflight name the platforms' open requests a
+  {auto_requests: true}` turns them on); they also stay off while the rocket still holds cargo no platform above asks
+  for, which would go to the trash slots (the reply says so); with them on, load_silo and preflight name the platforms' open requests a
   rocket may go to. `dry_run: true` (and `preflight`): each item's weight, slots and sources, the rocket's room, the
   split, the hub's free slots, cargo aboard that is not in the list (`foreign_cargo`) and automatic requests that are
   on; nothing loads. The reply gives `freshness` at the top, `loaded` (per item `aboard_before`, `loaded`, `from`,

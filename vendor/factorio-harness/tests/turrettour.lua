@@ -257,4 +257,21 @@ eq(active('opus').kind,'gather'); eq(active('opus').targets[1].entity.position.x
 opus('stop',{})
 ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6}},ticks=60,walk=false})
 assert(not ok2 and tostring(err2):find('ticks applies with radius, area, surface or walk',1,true),tostring(err2))
+-- (d17 batch32 A2, Haiku: a gun on piercing rounds took +0 firearm magazines and the walk read topped_up) the positions
+-- walk skips a turret whose slots hold other ammo with no room, and a ghost, names them first, and serves the rest.
+do
+  local pierce=turret(28,8,{['piercing-rounds-magazine']=8})
+  pierce.get_inventory(defines.inventory.turret_ammo).can_insert=function() return false end
+  local ghost={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='gun-turret',position={x=30,y=-6},force=force,unit_number=#ents+1000,surface=surface}
+  ents[#ents+1]=ghost
+  r=opus('rearm',{positions={{x=28,y=8},{x=20,y=0},{x=30,y=-6}},ammo='firearm-magazine',count=10,types={'ammo-turret','entity-ghost'}})
+  eq(r.places,1); eq(active('opus').targets[1].entity,a1)
+  eq(r.turrets_skipped,'2 of 3 turrets skipped: gun-turret (28,8): holds piercing-rounds-magazine*8, no room for firearm-magazine; entity-ghost (30,-6): a ghost (not built: nothing to load)')
+  eq(active('opus').turrets_skipped,r.turrets_skipped)
+  opus('stop',{})
+  -- every one skipped: nothing walks, and the reply says why
+  r=opus('rearm',{positions={{x=28,y=8}},ammo='firearm-magazine',count=10})
+  eq(r.moved,0); eq(r.turrets_skipped,'1 of 1 turret skipped: gun-turret (28,8): holds piercing-rounds-magazine*8, no room for firearm-magazine')
+  eq(active('opus'),nil)
+end
 print('turrettour: ok')
