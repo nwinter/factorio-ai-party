@@ -1698,6 +1698,59 @@ fh sleep 900 --until researched                       # ...or until the research
   construction still completes what it can; an immediate build failure includes its pre-build material summary.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
+### Out of sight: the fog view and lost buildings (d17)
+
+Nick (d17 17:28): "a low-visibility fog-of-war view that shows what we usually see, so they know, physically, what used
+to be there", and "Do they see destroyed building ghosts and have an easy way of reconstructing them?"
+
+- What our force sees now is read live. For the part of an area out of sight (no radar or character of ours sees the
+  chunk), `inspect {area}`, `scan` and `observe` (and so `./fh view`) add `fog` beside what they read there:
+  - `remembered`: our buildings and belts our force saw there, as last seen: `name`, `position`, `direction`,
+    `status` then (scan: with `fields` status), `seen_s_ago`, `remembered: true`; `lost_after_seen` (`lost 40s ago
+    (small-biter)`) when one was destroyed after it was seen. With `fog_strict` off (the default), only those that no
+    longer stand there (`only_gone`), since the read lists our buildings in fog as they stand now (the map draws them).
+  - `ghosts` (inspect): our ghosts there now. The game's map draws our ghosts in fog; scan and observe list them among
+    their entities as before.
+  - `lost`: our buildings destroyed there, from the game's destroyed alerts (they name each one wherever it was):
+    `name`, `position`, `lost_s_ago`, `cause`.
+  - `line`, `note`, `chunks_out_of_sight` and the counts (`remembered_count`, `ghost_count`, `lost_count`).
+- The switch `fog_strict` (the harness's storage `agent_harness.fog_strict`; operator call `fog_strict {on: true|false}`,
+  which answers with the setting; default off). Off: scan and observe read our own buildings in fog as they stand now,
+  with their live fields, as before d17, and inspect's area read counts them in `not_in_sight`. On: they are read only
+  from the memory (all of `remembered`), and `not_in_sight` is the fog's line. The map in fog shows the last chart,
+  buildings as shapes in map colours; the memory adds what they were (names, directions) and their status when seen.
+- `observe` rows out of sight carry `remembered`, `seen_s_ago`, `status_when_seen`. `./fh view` draws them dim, our
+  ghosts blue and ours lost there as red outlines; its reply's `fog` is the fog line.
+- The memory (fogmem.lua): the background census notes every building of ours it reads in a chunk in sight, with its
+  status. A building mined, deconstructed or destroyed in sight is forgotten; one destroyed out of sight stays
+  remembered (with `lost_after_seen`). Belts are belt memory's. At most 4096 chunks (a chunk in sight is dropped first)
+  and 1024 rows a chunk. It began with the d17 deploy: a chunk not seen since has no remembered rows.
+- `losses {surface?, area? | position+radius?, since?, name?, limit?, page?}`: each building of ours that died (one row
+  each, the newest 6000, since d17), newest first: `name`, `position`, `quality`, `lost_s_ago`, `cause`, and `ghost`
+  (whether a ghost of it stands there now). For a ghost, `robots`: whether robots can build it (`robots can build it
+  (network 7: 3 idle, 40 stone-wall)`, a network that covers it without an idle robot or the item, or `no roboport's
+  construction area covers it`). With no ghost: `now` says it was rebuilt or is gone (in sight) or that this is unknown
+  (out of sight). The reply also has `line`, `by_name` (lost, ghosts, robots, outside) and `items [{item, need,
+  robots_build, to_carry, you_hold, in_covering_networks}]`, plus `page` and `pages`. When some ghosts are out of
+  robots' reach, `rebuild` gives their count. Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
+- `rebuild {area | position+radius, all?, from?, avoid_enemies?, unsafe_goal?, dry_run?}` (on your surface, up to 512
+  a side): one plan in your queue for the ghosts there that robots will not build (no construction area covers them,
+  or its network has no idle robot or none of the item; `all: true`: every ghost):
+  - first the items you do not carry: taken at the chests in `from`, else at chests of ours within 96 tiles of you in
+    sight that hold any of it, nearest first (transfer walks, `on_short` skip);
+  - then hand crafts for what no chest holds (silo_stage's gathering);
+  - then `construct {area, outside_robots: true}` per box of up to 256x256, the nearest first, its walks with
+    `avoid_enemies` as construct's.
+  - Returns `ghosts`, `left_for_robots`, `items`, `plan`, `crafts`, `missing`, `raw_short`, `short`, `queued`; with
+    `dry_run`, `steps` and nothing queued.
+  Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
+- `construct {outside_robots: true}` leaves the ghosts robots can build (idle construction robots and the item in a
+  network whose construction area covers them) to the robots.
+- Cost on world n (d17, read only): finding the 791 ghosts of ours in a 512x512 box on Vulcanus took 3.4 ms, and the
+  construction-area check for all of them 1.2 ms. The memory adds about 7 us per building the census reads (about
+  0.6 ms a 100-entity step).
+
+### Dated remote reads and factory alerts
 ### Dated remote reads and factory alerts
 
 `inspect {position}` and `trace {position, forward?, all?}` save successful observations. With no current
@@ -2304,7 +2357,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     reading order (top row first, left to right): `entities [{name, position, holds, requests, recipe, status_name}]`.
     `holds` is a chest's line as above (`iron-plate*150 coal*20; 2 of 32 slots`) or a machine's inventories by part
     (`in: copper-cable*8; out: electronic-circuit*12; fuel: coal*5`, or `empty`). `not_in_sight` counts what the area
-    holds in chunks our force does not see now; more than 64 fails (a smaller area, or `types`).
+    holds in chunks our force does not see now, and `fog` beside it gives what our force remembers there, our ghosts
+    and losses there (see "Out of sight"); more than 64 fails (a smaller area, or `types`).
 - `queue_submit` into a repeating plan (Grok, shift15 00:18: low-density hauls behind a plate-haul wait):
   a nonempty submit without `mode` refuses without changing the queue, naming the loop and active job. `mode: "replace"`
   stops the active repeating step and replaces the loop; `mode: "ahead"` runs the new steps before its remaining

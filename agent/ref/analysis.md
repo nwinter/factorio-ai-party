@@ -65,6 +65,14 @@
   it returns dated last-seen memory. It flags a held-item refusal. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
   and the research ETA; `surface` reads that surface.
+- Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
+  add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
+  then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
+  remembered ones dim, ghosts blue, losses as red outlines.
+- `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
+  when, the cause, whether its ghost stands now and whether robots can build it (the covering network, its idle
+  robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).
+  Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
