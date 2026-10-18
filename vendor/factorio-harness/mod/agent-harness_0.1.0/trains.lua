@@ -10,7 +10,7 @@ return function(api)
   local ROLLING = {locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
   local TRAIN_NAMES
   M.schema = {
-    train = {stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
+    train = {all='true: every train of ours on the surface (surface= another) in one read, no stop read first: lines and trains [{id, state, stop (the schedule\'s current stop), current, stops, front, speed_kmh, cargo (items and fluids summed), manual}]; at most 100',stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
       surface='a surface name (default yours): with stops, its stops; with position, the train or stop there, by remote view (ours, in a chunk our force sees now)',
       position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
       train_id='a train of ours by its id instead of position, wherever it is and moving or not (train {stops: true} and every train read give id): as the game\'s trains list opens it',
@@ -276,8 +276,44 @@ return function(api)
     end
     return {surface=surface.name, count=#rows, stops=out, note=#rows > MAX_STOPS and string.format('the first %d by name', MAX_STOPS) or nil}
   end
+  -- all (batch29 B3, Gemini: every train read through its stops first): every train of ours on the surface in one read:
+  -- id, state, the schedule's current stop, where its front is, speed, and its cargo and fluids summed. Read only;
+  -- at most MAX_TRAINS.
+  local MAX_TRAINS = 100
+  function M.list(p, a)
+    for k in pairs(a) do assert(k == 'all' or k == 'surface' or k == 'helper' or k == 'peek', 'all takes surface only (not ' .. tostring(k) .. ')') end
+    local surface = p.surface
+    if a.surface ~= nil then
+      assert(type(a.surface) == 'string', 'surface must be a surface name')
+      surface = game.get_surface(a.surface)
+      assert(surface, 'no surface ' .. a.surface)
+    end
+    local trains = game.train_manager.get_trains{force=p.force, surface=surface}
+    table.sort(trains, function(x, y) return x.id < y.id end)
+    local rows, lines = {}, {}
+    for i, t in ipairs(trains) do
+      if i > MAX_TRAINS then break end
+      local sch = t.schedule
+      local cur = sch and sch.records and sch.records[sch.current]
+      local stop = cur and (cur.station or (cur.rail and 'a rail') or nil)
+      local cargo = {}
+      for _, c in ipairs(t.get_contents() or {}) do cargo[#cargo+1] = c.name .. '*' .. c.count end
+      for name, n in pairs(t.get_fluid_contents() or {}) do cargo[#cargo+1] = name .. ' ' .. math.floor(n + 0.5) end
+      table.sort(cargo)
+      local front = t.front_stock
+      local state = state_name(t.state)
+      local row = {id=t.id, state=state, stop=stop, current=sch and sch.current or nil, stops=sch and sch.records and #sch.records or 0,
+        front=front and front.valid and front.position or nil, speed_kmh=math.floor(math.abs(t.speed) * 216 + 0.5), cargo=#cargo > 0 and table.concat(cargo, ' ') or 'empty',
+        manual=t.manual_mode or nil}
+      rows[#rows+1] = row
+      lines[#lines+1] = string.format('train %d %s%s: %s%s, %d km/h; %s', t.id, row.front and at(row.front) or '', t.manual_mode and ' (manual)' or '', state,
+        stop and string.format(', stop %d of %d: %s', row.current, row.stops, stop) or ', no schedule', row.speed_kmh, row.cargo)
+    end
+    return {surface=surface.name, count=#trains, trains=rows, lines=lines, more=#trains > MAX_TRAINS and #trains - MAX_TRAINS or nil}
+  end
   function M.handlers.train(p, a)
     if a.stops ~= nil then return M.stops(p, a) end
+    if a.all ~= nil then assert(a.all == true, 'all is true'); return M.list(p, a) end
     -- surface with position (Sol 15:22: from Aquilo a train at (120,-131) was looked for on Aquilo): that surface's
     -- train or stop by remote view.
     if a.surface ~= nil and api.on_surface then p = api.on_surface(p, a.surface) end

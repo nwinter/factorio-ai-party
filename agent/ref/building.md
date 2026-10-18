@@ -138,7 +138,9 @@
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
-- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
+- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}` or
+  `{all: true, surface?}` (every train of ours there in one read: id, state, the schedule's current stop, front,
+  speed, cargo and fluids summed; at most 100): on a stop, its
   `station` and `limit`; on a locomotive, its `schedule` and `automatic`; `train {position}` reads a train's state and
   why it waits. A train in `no_path` reads `rail_break` (`path_to: "STOP"` for any stop): the rails followed from the
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
