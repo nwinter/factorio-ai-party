@@ -1264,6 +1264,13 @@ local drained=call('configure',{position=am.position,recipe='iron-gear-wheel',fl
 eq(flushed_box,'1:water'); assert(drained.fluid:find('water 10 from fluidbox 1',1,true),drained.fluid)
 am.fluidbox.flush=nil
 end
+-- batch26 C4 (Grok): collect wait_ticks with to hands each take on to another machine; refusals before any wait.
+do
+fails(function() call('collect',{position=am.position,wait_ticks=60,to={x=9,y=0}}) end,'to needs item')
+fails(function() call('collect',{position=am.position,wait_ticks=60,item='iron-gear-wheel',to={x=9,y=0}}) end,'to is the machine waited at')
+fails(function() call('collect',{position=am.position,wait_ticks=60,to_inventory='fuel'}) end,'to_inventory goes with to')
+fails(function() call('collect',{position=am.position,to={x=9,y=0}}) end,'items and to go with pick')
+end
 -- Out of reach, remote view changes an empty machine's recipe but not a stocked one's.
 am.fluidbox={}
 p.can_reach_entity=function() return false end
