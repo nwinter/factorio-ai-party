@@ -5,6 +5,8 @@
 2. A cut restacks the captures only: the one on air in front, background below and overlay above untouched.
 3. An inset moves to its corner (uncropped) on top, and back when it ends.
 4. The vertical scene (Aitum Vertical's canvas) is restacked the same way, in its own holes.
+5. Host view (hostview.py): "stream host" comes on in the on-air hole in front of every camera while the program says
+   host, and goes off and behind them after.
 """
 import os, sys
 
@@ -100,7 +102,50 @@ def main():
     c.set({"onair": "main", "inset": None})
     c.work()
     assert c.status["vertical"] == "no scene stream vertical" or c.status["vertical"] is None, c.status
-    print("cuts: ok (crop to the on-air hole, cuts restack only, inset on top and back, vertical scene too)")
+    host_view()
+    print("cuts: ok (crop to the on-air hole, cuts restack only, inset on top and back, vertical scene too, host view)")
+
+
+class HostOBS(FakeOBS):
+    """The stream scene with the host capture (obs.py stream_scene: off, just above the cameras)."""
+    def __init__(self):
+        super().__init__()
+        self.scenes["stream"].insert(4, "stream host")
+        self.ids["stream host"] = 99
+        self.enabled = {"stream host": False}
+
+    def call(self, req, d=None):
+        d = d or {}
+        if req == "GetSceneItemList":
+            out = super().call(req, d)
+            for it in out["sceneItems"]:
+                it["sceneItemEnabled"] = self.enabled.get(it["sourceName"], True)
+            return out
+        if req == "SetSceneItemEnabled":
+            self.calls.append(req)
+            name = next(n for n, i in self.ids.items() if i == d["sceneItemId"])
+            self.enabled[name] = d["sceneItemEnabled"]
+            return {}
+        return super().call(req, d)
+
+
+def host_view():
+    o = HostOBS()
+    c = cuts.Cuts(o, LAYOUT, log=lambda *a: None, start=False, vertical=None)
+    c.set({"onair": "cam2", "inset": None})
+    c.work()
+    st = o.scenes["stream"]
+    assert o.enabled["stream host"] is False and st[-2] == "stream cam2" and st.index("stream host") < st.index("stream cam2"), st
+    c.set({"onair": "cam2", "inset": None, "host": True})
+    c.work()
+    st = o.scenes["stream"]
+    assert o.enabled["stream host"] is True and st[-2] == "stream host" and st[-1] == "stream overlay", st
+    t = o.tf("stream host")
+    assert (t["positionX"], t["boundsWidth"], t["cropLeft"]) == (24, 1208, 328), t  # the on-air hole, cropped as the cams
+    c.set({"onair": "cam2", "inset": None})
+    c.work()
+    st = o.scenes["stream"]
+    assert o.enabled["stream host"] is False and st[-2] == "stream cam2", st
 
 
 if __name__ == "__main__":

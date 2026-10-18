@@ -617,6 +617,39 @@ a battle, a follow, an incoming group, a segment or an agent fighting on air, th
 replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
 `director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
 
+### Host view: Nick's own client on air (2026-10-17, eng/d17-hostview)
+
+Nick, 16:39, spectating world n from his client on pogwin (`tools/win/start-client.ps1 -PlayerName nick -Slot -nick
+-Human`): "it would be interesting for the stream viewers to also see my view, so I can show them things."
+
+- OBS: the game capture "stream host" of factorio-nick.exe, matched by executable (never his Steam game, factorio.exe),
+  slow hook rate, cursor shown. It sits in the on-air hole, cropped as the cameras, just above them and below the
+  overlay, off. `obs.py stream-scene` builds it in a fresh scene; `obs.py host-view-source` adds it to the live scene
+  and touches nothing else. A game capture with no window to hook draws nothing.
+- Control: `POST /hostview {on: true|false, seconds?, caption?, by?}` (`DELETE /hostview` too), as `/follow`. For example,
+  `curl -X POST http://127.0.0.1:8788/hostview -d '{"on": true, "caption": "the new smelting column"}'`. From his own chat
+  (the site's host link or his YouTube channel, viewers.py's `host` flag) only: `!view`, `!view CAPTION`, `!view off`.
+  Those lines are commands: not shown, not relayed. Anyone else's `!view` is chat.
+- While on (hostview.py, onecam.py `hosting`):
+  - cuts.py turns "stream host" on and in front of every camera (program `host`);
+  - the director holds: no cut, no inset (it would sit over his view), no trio; segments, cues and new replays wait,
+    and the cameras stay where they were;
+  - the on-air card reads "🎥 NickWinter (host) · CAPTION" (default "showing the stream around");
+  - the snapshot's `hostview` {label, caption, by, until, remaining_s}; `onair.host`, and `onair.agent` none (no agent
+    is on air behind his view).
+- It ends when turned off, when his client leaves the game, or after `seconds` (default 20 min, at most 60). The poll's
+  extras read lists the connected players (`connected_players`; his name `nick`, run config `host_player`). A start is
+  refused (409) while he is not in the game.
+- A notice line in the stream's chat feed when it starts ("Nick is showing his view on stream: CAPTION") and ends
+  ("... back to the cameras (its time ran out)").
+- Kept in `runs/RUN/director-host.json` ({until, caption, by}), so a restart keeps it; a hand edit works too.
+- One camera (POG_CAMS=1) and three alike: the host capture is not one of the director's cameras.
+- The vertical scene shows the cameras as before: it has no host capture.
+- Not now: his game audio (OBS takes game audio from factorio-cam1.exe only).
+- Deploy: `obs.py host-view-source` once, then restart the service.
+- Tests: tools/stream/test_hostview.py (commands, control, director with three clients and one, feed, HTTP),
+  tools/stream/test_cuts.py (5. host view), tools/test_obs_hostview.py (the source, the one-off).
+
 ### Artillery impacts (2026-10-17, eng/d17-artycam)
 
 Viewer Foobator, 12:48: "if there is only one arty shell in flight and nothing else interesting has happened, can you

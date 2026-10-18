@@ -422,6 +422,7 @@ class OneCam(Director):
         self.platform_follow = None  # POST /platform: {name, until, label, by}; kept by PlatformControl
         self.plat = None       # the operator's platform available to pin this step (takes priority over fol)
         self.look_hold = None  # POST /look: {surface, position, zoom, until, label, by}; kept by LookControl (lookcam.py)
+        self.host_hold = None  # POST /hostview or the host's !view: {until, caption, label, by}; HostControl (hostview.py)
         self.look = None       # that look while it lasts (takes priority over plat and fol)
         self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
         self.battles = []      # (t, key, why, label): key battles seen
@@ -465,6 +466,8 @@ class OneCam(Director):
         out = {"onair": self.onair, "inset": self.inset and self.inset["slot"], "layout": self.mode}
         if self.trio:
             out["tiles"] = dict(self.trio["tiles"], main=self.onair)
+        if self.hosting(getattr(self, "step_t", None) or time.time()):
+            out["host"] = True  # cuts.py: the host's capture over the cameras
         return out
 
     def onair_frac(self):
@@ -908,6 +911,7 @@ class OneCam(Director):
 
     def step(self, snapshot, now=None, segment=None):
         now = now or time.time()
+        self.step_t = now
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
         self.track(agents, now)
@@ -922,6 +926,13 @@ class OneCam(Director):
         if not self.slots:
             return {}
         self.watch_platforms(snapshot, now)
+        # Host view (hostview.py; Nick 16:39: "it would be interesting for the stream viewers to also see my view"):
+        # his own client's capture is on air over the cameras; nothing cuts, no inset (it would sit over his view), no
+        # trio, segments and cues wait. The cameras stay where they are and the story goes on after it.
+        if self.hosting(now):
+            self.inset, self.pending, self.trio_pending = None, None, None
+            self.leave_trio("host view", now)
+            return self.public(now)
         self.look = self.looking(now)
         self.plat = self.platform_following(now)
         self.fol = self.following(by_name, now)
@@ -1090,6 +1101,19 @@ class OneCam(Director):
             self.resume = None
 
     # -- operator look (lookcam.py) -------------------------------------------------------------------------
+    def set_host(self, host, now=None):
+        """Host view on until host["until"] (hostview.py), None: off."""
+        self.host_hold = dict(host, since=now or time.time()) if host else None
+
+    def hosting(self, now):
+        h = self.host_hold
+        return h if h and now < h["until"] else None
+
+    def host_info(self, now):
+        """snapshot["hostview"]: {label, caption, by, until, remaining_s, since}, or None."""
+        h = self.hosting(now)
+        return {k: h.get(k) for k in ("label", "caption", "by", "until", "since")} | {"remaining_s": int(h["until"] - now)} if h else None
+
     def set_look(self, look, now=None):
         """The operator points the camera on air at a charted spot until look["until"] (serve.py POST /look, or
         runs/RUN/director-look.json); None ends it. It takes the camera from a platform hold and a follow, which

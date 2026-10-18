@@ -15181,10 +15181,10 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
     if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
     return true,out
   end,
-  -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
-  alert_reader=function(force)
-    for _,pl in pairs(force.players) do if pl.valid and pl.connected and not M.is_director(pl.index) then return pl end end
-  end}
+  -- The game's alerts are the force's: any connected player of it reads the same list. A person first; else a camera
+  -- client (d17 16:58: with no person connected nothing was read, so the agents never got the game's no-storage or
+  -- no-materials alerts; a camera's list matched Nick's exactly). A camera's GUI hides the alert panel, not the list.
+  alert_reader=function(force) return M.cameras.alert_reader(force, M.is_director) end}
 function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}

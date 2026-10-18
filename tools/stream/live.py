@@ -255,6 +255,8 @@ class LiveSource:
                 obs["research"].update(progress=ex.get("progress"), top_done=ex.get("top_done") or [])
             obs["power"] = {"machines": ex.get("electric_machines"), "starved": ex.get("starved")}
             obs["darkness"] = ex.get("darkness")
+            # the game's connected players (hostview.py: the host view ends when his client leaves)
+            obs["connected_players"] = ex.get("connected") if isinstance(ex.get("connected"), list) else []
         except Exception as e:
             errors["extras"] = str(e)
         if time.time() >= self.next_flow:
