@@ -247,7 +247,7 @@
   (rockets, parts, the platform's arrival). `incoming: true` lists our platforms headed for your planet with their ETA
   and hub cargo. Example: `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'`
 - `load_silo {position, items, to_total?, from?, walk?, up_to?, up_to_stock_at_start?, launch?, platform?,
-  wait_platform?, rockets?, launch_split?, wait_min?, auto_requests?, fresh_first?, dry_run?}`: loads `items` into the
+  wait_platform?, rockets?, launch_split?, wait_min?, auto_requests?, fresh_first?, first?, dry_run?}`: loads `items` into the
   rocket of the silo at `position` (without it the reply lists the silos here) from your inventory, then our chests in
   reach, nearest first (any chest kind, logistic chests and a landing pad too), or from `from` (one chest `{x,y}` or
   up to 16, in order); `to_total: true`: each count is the rocket's total. A spoiling item goes least spoiled first
@@ -280,7 +280,11 @@
   its last launch, and a load that ends short or failed leaves them off (`auto_requests_kept_off`; `configure
   {auto_requests: true}` turns them on); they also stay off while the rocket still holds cargo no platform above asks
   for, which would go to the trash slots (the reply says so); with them on, load_silo and preflight name the platforms' open requests a
-  rocket may go to. `dry_run: true` (and `preflight`): each item's weight, slots and sources, the rocket's room, the
+  rocket may go to. The game has no priority among a silo's automatic requests. `first: ["space-platform-foundation",
+  "asteroid-collector"]` (with `platform`): those items alone, each at what the hub lacks of its requests (or
+  `{item: count}`), from what you hold and the chests of the silo's network robots would take from first (or `from`),
+  walked, launched to the platform with automatic requests paused (`"pause"`); `first` names the counts and chests,
+  `first_skipped` items the hub lacks none of. A dry run pauses nothing. `dry_run: true` (and `preflight`): each item's weight, slots and sources, the rocket's room, the
   split, the hub's free slots, cargo aboard that is not in the list (`foreign_cargo`) and automatic requests that are
   on; nothing loads. The reply gives `freshness` at the top, `loaded` (per item `aboard_before`, `loaded`, `from`,
   `freshness`), `cargo` (everything in the rocket) and `switches` (the silo's automatic requests and send to orbit

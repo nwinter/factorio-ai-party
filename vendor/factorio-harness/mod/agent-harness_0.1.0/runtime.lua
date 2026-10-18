@@ -12150,10 +12150,96 @@ function M.silo_pause(p,a,rockets)
   return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch; a load that ends short or failed leaves them off%s',
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
 end
+-- load_silo {position, platform, first: [items]} (d17 batch31 B7, Gemini about 4 times: a silo's automatic requests
+-- loaded iron ore before foundation, collectors or ammo; the game has no priority among them): the items named, each at
+-- what the platform's hub lacks of its requests (or the count given), from what you hold and the chests of the silo's
+-- logistic network that hold them (the one robots would take from first, select_pickup_point, up to 4 an item) or the
+-- chests in from, walked as load_silo walk does, launched to the platform with the silo's automatic requests paused
+-- (auto_requests "pause": off now, back on after the launch).
+function M.load_first(p,a)
+  local function try(fn) local ok,v=pcall(fn); if ok then return v end end
+  assert(type(a.platform)=='string','first goes with platform (the platform the rocket goes to)')
+  assert(a.items==nil and a.launch==nil and a.auto_requests==nil and a.walk==nil and a.rockets==nil,'first sets items, walk, launch and auto_requests itself (from and position are yours)')
+  local pl=space.platform(p,a.platform)
+  local hub=pl.hub
+  assert(hub and hub.valid,a.platform..' has no hub')
+  local want,order={},{}
+  if type(a.first)=='table' and a.first[1]==nil then
+    for item,n in pairs(a.first) do
+      assert(prototypes.item[item],'first: unknown item '..tostring(item))
+      assert(type(n)=='number' and n>=1 and n==math.floor(n),'first: '..item..' count is 1 or more')
+      want[item]=n; order[#order+1]=item
+    end
+    table.sort(order)
+  else
+    assert(type(a.first)=='table' and #a.first>=1 and #a.first<=8,'first is 1..8 item names (each at what the hub lacks of its requests) or {item: count}')
+    -- what the hub asks of each (its sections that are on) against what it holds
+    local asks={}
+    local secs=try(function() return hub.get_logistic_sections() end)
+    for i=1,secs and secs.sections_count or 0 do
+      local sec=secs.get_section(i)
+      if sec and sec.active~=false then
+        for _,f in pairs(try(function() return sec.filters end) or {}) do
+          local v=f.value
+          local n=v and (type(v.name)=='string' and v.name or try(function() return v.name.name end))
+          if n and (f.min or 0)>0 then asks[n]=(asks[n] or 0)+f.min end
+        end
+      end
+    end
+    local none={}
+    for _,item in ipairs(a.first) do
+      assert(type(item)=='string' and prototypes.item[item],'first: unknown item '..tostring(item))
+      local lack=(asks[item] or 0)-(try(function() return hub.get_item_count(item) end) or 0)
+      if lack>0 then want[item]=lack; order[#order+1]=item
+      else none[#none+1]=string.format('%s (the hub %s)',item,asks[item] and string.format('asks %d and holds them',asks[item]) or 'does not request it') end
+    end
+    assert(#order>0,'first: '..a.platform..'\'s hub lacks none of them: '..table.concat(none,', ')..'; give counts as {item: count}')
+    a.first_skipped=#none>0 and none or nil
+  end
+  local silo=remote_entity(p,{position=a.position})
+  assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
+  -- the chests: yours in from, else those the silo's network would give from first
+  local from=a.from
+  local chests
+  if from==nil then
+    local net=try(function() return silo.surface.find_logistic_network_by_position(silo.position,silo.force) end)
+    local seen={}
+    from={}
+    chests={}
+    for _,item in ipairs(order) do
+      for _=1,4 do
+        local pt=net and try(function() return net.select_pickup_point{name=item,position=silo.position} end)
+        local c=pt and try(function() return pt.owner end)
+        if not (c and c.valid) then break end
+        local k=c.unit_number or (c.position.x..','..c.position.y)
+        if seen[k] then break end
+        seen[k]=true
+        if #from<16 then from[#from+1]={x=c.position.x,y=c.position.y}; chests[#chests+1]=string.format('%s (%g,%g) holding %d %s',c.name,c.position.x,c.position.y,try(function() return c.get_item_count(item) end) or 0,item) end
+      end
+    end
+    if #from==0 then from=nil end
+  end
+  local items={}
+  for _,item in ipairs(order) do items[item]=want[item] end
+  local args={position=a.position,platform=a.platform,items=items,launch=true,auto_requests=try(function() return silo.use_transitional_requests end) and 'pause' or nil,
+    walk=true,from=from,launch_split=a.launch_split,dry_run=a.dry_run}
+  local out=handlers.load_silo(p,args)
+  if type(out)=='table' then
+    local parts={}
+    for _,item in ipairs(order) do parts[#parts+1]=item..' '..want[item] end
+    out.first=string.format('%s first: %s%s, launched to %s with the silo\'s automatic requests %s; from %s',
+      silo.name,table.concat(parts,', '),type(a.first[1])=='string' and ' (what the hub lacks of its requests)' or '',a.platform,
+      args.auto_requests and 'paused (back on after the launch)' or 'off already',
+      a.from~=nil and 'the chests in from' or (chests and #chests>0 and 'what you hold and the network\'s chests robots would take from first: '..table.concat(chests,'; ')) or 'what you hold (the silo\'s network holds none of them)')
+    out.first_skipped=a.first_skipped
+  end
+  return out
+end
 function handlers.load_silo(p,a)
   -- the silo (Grok d17 16:16: walk with from [chest] and no position failed "position requires x and y" and read as
   -- the from list being wrong): without position, the silos here and the call that works.
   if a.position==nil then error(M.launch_needs_silo(p,a,'load_silo'),0) end
+  if a.first~=nil then return M.load_first(p,a) end
   -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way): one
   -- timed call that ends when the rocket launches, or when the platform goes elsewhere. Nothing goes into the rocket
   -- until the platform is stopped in orbit here; then the load goes in and launches in that tick, as one rocket
@@ -12211,7 +12297,12 @@ function handlers.load_silo(p,a)
         multi=M.rocketload.split(list,okc and l or 1000000,okc and sl or 20)~=nil
       end
     end
-    local paused=not multi and M.silo_pause(p,a,a.pause_left or 1) or nil
+    -- (batch31 B7) a dry run pauses nothing: it would leave them off, with no launch to bring them back
+    local paused
+    if a.dry_run then
+      local oks,silo=pcall(remote_entity,p,{position=a.position})
+      paused=oks and silo.valid and silo.type=='rocket-silo' and silo.use_transitional_requests and 'a dry run: nothing switched; the load would switch the silo\'s automatic requests off, and back on after its launch' or nil
+    else paused=not multi and M.silo_pause(p,a,a.pause_left or 1) or nil end
     local ok,out=pcall(handlers.load_silo_run,p,a)
     if not ok then
       local back=M.silo_unpause(p.index,'the load was refused')
