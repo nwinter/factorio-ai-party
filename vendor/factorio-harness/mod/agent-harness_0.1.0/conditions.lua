@@ -140,6 +140,17 @@ return function(api)
     item_count=function(p,c,estimate)
       local n,where=0,''
       local scope={}
+      -- quality (d17 batch33 A2, Astra 09:33: Petrel's wait with quality rare and uncommon read 0 while the hub held 5
+      -- rare and 10 uncommon quality-module-3): a count by the item's name alone is normal quality only in 2.0, so each
+      -- count reads {name, quality}; "any" sums every quality
+      local qualities=c.quality and {c.quality} or nil
+      if c.quality=='any' then qualities={}; for q in pairs(prototypes.quality or {normal=true}) do if q~='quality-unknown' then qualities[#qualities+1]=q end end end
+      local function counted(fn)
+        if not qualities then local ok,k=pcall(fn,c.item); return ok and k or 0 end  -- (the name alone: normal quality)
+        local t=0
+        for _,q in ipairs(qualities) do local ok,k=pcall(fn,{name=c.item,quality=q}); if ok and k then t=t+k end end
+        return t
+      end
       -- One position counts as positions={position} (Haiku, 12:20: item_count coal below 20 at a chest; a lone position
       -- was ignored and the character's inventory counted).
       local positions=c.positions or (c.position and {c.position})
@@ -151,7 +162,7 @@ return function(api)
         assert(hub and hub.valid,'platform '..c.platform..' has no hub')
         local inv=hub.get_inventory(defines.inventory.hub_main)
         assert(inv,'platform '..c.platform..' has no hub inventory')
-        n=inv.get_item_count(c.item)
+        n=counted(inv.get_item_count)
         scope={'platform',c.platform}
         where=' in '..c.platform..' hub (landed stock; excludes incoming cargo and hub trash)'
       elseif c.network then
@@ -160,7 +171,7 @@ return function(api)
         local pos=api.position(c.network)
         local ln=surf.find_logistic_network_by_position(pos,p.force)
         assert(ln,string.format('no logistic network of ours covers (%g,%g)%s',pos.x,pos.y,surf~=p.surface and ' on '..surf.name or ''))
-        n=ln.get_item_count(c.item)
+        n=counted(ln.get_item_count)
         scope={'network',surf.name,pos.x..','..pos.y}
         where=string.format(' in the logistic network at (%g,%g)%s',pos.x,pos.y,surf~=p.surface and ' on '..surf.name or '')
       elseif c.surface and not positions then
@@ -169,7 +180,7 @@ return function(api)
         local s=game.get_surface(c.surface)
         assert(s,'no surface '..tostring(c.surface))
         local nets=p.force.logistic_networks and p.force.logistic_networks[s.name] or {}
-        for _,ln in ipairs(nets) do local ok,k=pcall(ln.get_item_count,c.item); if ok and k then n=n+k end end
+        for _,ln in ipairs(nets) do n=n+counted(ln.get_item_count) end
         scope={'surface',s.name}
         where=string.format(' in our %d logistic network%s on %s',#nets,#nets==1 and '' or 's',s.name)
       elseif positions then
@@ -189,8 +200,7 @@ return function(api)
             -- flying over a chest is not the chest (runtime.lua M.target_rank, Astra 07:05).
             if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow'
               and not (api.passing and api.passing(e)) then
-              local ok,k=pcall(e.get_item_count,c.item)
-              if ok and k then n=n+k end
+              n=n+counted(e.get_item_count)
               seen=seen+1
               if e.type=='rocket-silo' and #silos<4 then silos[#silos+1]=(silo_line(e)) end
             end
@@ -199,11 +209,12 @@ return function(api)
         where=' in '..seen..' entities'..(surf~=p.surface and ' on '..surf.name or '')..(dark>0 and string.format(' (%d position%s not in sight of our force now: not counted)',dark,dark==1 and '' or 's') or '')
           ..(#silos>0 and '; '..table.concat(silos,'; ') or '')
       else
-        n=p.get_main_inventory().get_item_count(c.item)
+        local inv=p.get_main_inventory()
+        n=counted(inv.get_item_count)
         scope={'character',tostring(p.index)}
       end
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,c.item..' '..n..where,estimate and {value=n,scope=table.concat(scope,':')} or nil
+      return met,c.item..(c.quality and c.quality~='normal' and ' ('..c.quality..' quality)' or '')..' '..n..where,estimate and {value=n,scope=table.concat(scope,':')} or nil
     end,
     -- fluid_count {platform, fluid, at_least | below} (d17 batch17 A5, Astra board #842: Swift's reserve tanks had no
     -- departure guard): the fluid in the platform's storage tanks, as each tank's window shows it.
@@ -536,6 +547,12 @@ return function(api)
     end
     if kind=='ammo_below' then number(c.count,1,1000,'count') end
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
+    -- (batch33 A2) quality: item_count reads it; no other condition does, and one given there is refused
+    if c.quality~=nil then
+      assert(kind=='item_count','quality applies to item_count only (no other condition counts by quality)')
+      assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
+        'item_count quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
+    end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')
       if c.platform~=nil then
