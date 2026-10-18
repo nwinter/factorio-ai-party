@@ -7576,3 +7576,10 @@ fh watch    # deploy on every change
   - On world n (07:30, Kestrel II, saved first): 1,894 entities of ours lay within 55 tiles of its two railguns. Both
     face north at (-10.5,-30.5) and (5.5,-30.5) and hit none of ours. Reading both took 1.1 ms; the first call read
     the prototypes in 0.7 ms. Before the narrower find it took 13 ms.
+- B2 (Luna: whole schedules rebuilt when a stop's wait stalled): `platform_schedule {platform, next: true}` calls the
+  game's go to station on the record after the current one (LuaSchedule.go_to_station), keeping the records and their
+  waits. `sent_to` names the stop it was on and the next one, and where the platform was (waiting at a planet, or
+  flying to a stop): `from stop 1 (nauvis) to stop 2 (gleba): go to station called (it was waiting at nauvis)`. In
+  flight the next stop is the one after its destination. A one-stop schedule says the next stop is the same one.
+  `next` goes alone: stops, current and keep_leg are refused with it. The state is read after, with `state_note` for
+  no_schedule and paused.

@@ -92,3 +92,30 @@ do
   has(r.line,'none of ours')
 end
 print('d17_batch31 B3 line of fire: ok')
+
+-- B2 (Luna): platform_schedule {platform, next: true}: the game's go to station on the stop after the current one. ------
+do
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,paused=7},inventory={hub_main=1,hub_trash=2}}
+  prototypes={space_location={nauvis={},gleba={}}}
+  local recs={{station='nauvis'},{station='gleba'}}
+  local cur=1
+  local sch={get_record_count=function() return #recs end}
+  setmetatable(sch,{__index=function(_,k) if k=='current' then return cur end end})
+  local pl={valid=true,name='Spindle',state=4,space_location={name='nauvis'},get_schedule=function() return sch end}
+  sch.go_to_station=function(i) cur=i; pl.state=3; pl.space_location=nil; pl.space_connection={} end
+  setmetatable(pl,{__index=function(_,k) if k=='schedule' then return {current=cur,records=recs} end end})
+  local p={force={platforms={pl}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end,
+    integer=function(v,d) return v==nil and d or v end,freight={where=function() return {} end,leg=function() return nil end}}
+  local r=space.platform_schedule(p,{platform='Spindle',next=true})
+  eq(r.sent_to,'from stop 1 (nauvis) to stop 2 (gleba): go to station called (it was waiting at nauvis)')
+  eq(cur,2)
+  eq(r.schedule,'nauvis | >gleba')
+  local ok,err=pcall(space.platform_schedule,p,{platform='Spindle',next=true,current=1})
+  assert(not ok and tostring(err):find('next goes alone',1,true),tostring(err))
+  -- flying to stop 2: next is stop 1 again
+  r=space.platform_schedule(p,{platform='Spindle',next=true})
+  has(r.sent_to,'from stop 2 (gleba) to stop 1 (nauvis)')
+  has(r.sent_to,'it was flying to stop 2 (gleba)')
+end
+print('d17_batch31 B2 platform_schedule next: ok')
