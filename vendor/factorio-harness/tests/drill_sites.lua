@@ -15,6 +15,7 @@ local reads,checks=0,0
 local hidden=false
 force.is_chunk_visible=function(_,chunk) return not hidden or chunk.x<=0 end
 local drills={}
+local blockers
 surface.find_entities_filtered=function(f)
   if type(f.type)=='table' then
     local out={}
@@ -24,12 +25,13 @@ surface.find_entities_filtered=function(f)
     end
     return out
   end
+  if f.invert then return blockers or {} end
   reads=reads+1
-  assert(f.type=='resource' and f.limit==1025)
+  assert(f.type=='resource' and (f.limit==1025 or f.limit==256))
   if hidden then assert(f.area[2][1]<=32,'hidden chunks must not affect the density limit') end
   local out={}
   for _,o in ipairs(tiles) do
-    if o.name==f.name and o.position.x>=f.area[1][1] and o.position.x<f.area[2][1] and o.position.y>=f.area[1][2] and o.position.y<f.area[2][2] then
+    if (f.name==nil or o.name==f.name) and o.position.x>=f.area[1][1] and o.position.x<f.area[2][1] and o.position.y>=f.area[1][2] and o.position.y<f.area[2][2] then
       out[#out+1]=o; if #out>=f.limit then break end
     end
   end
@@ -38,11 +40,11 @@ end
 local blocked=false
 surface.can_place_entity=function(a)
   checks=checks+1
-  eq(a.name,e.name); eq(a.direction,e.direction); eq(a.quality,e.quality); eq(a.build_check_type,1)
+  eq(a.name,e.name); eq(a.direction,e.direction); if a.quality~=nil then eq(a.quality,e.quality) end; eq(a.build_check_type,1)
   local dx,dy=math.abs(a.position.x-e.position.x),math.abs(a.position.y-e.position.y)
   return not blocked and (dx>=3 or dy>=3)
 end
-local D=require('drill_sites'){state=function() return s end,entity=function() return e end,
+local D=require('drill_sites'){state=function() return s end,entity=function() return e end,position=function(v) return v end,
   on_surface=function(pp,name) eq(name,'vulcanus'); return p end,
   integer=function(v,d,lo,hi,k) v=v or d; assert(type(v)=='number' and v==math.floor(v) and v>=lo and v<=hi,k); return v end}
 local function tile(x,y,name,n) tiles[#tiles+1]={valid=true,position={x=x+.5,y=y+.5},name=name or 'coal',amount=n or 100} end
@@ -118,4 +120,16 @@ assert(r.occupied>=2,tostring(r.occupied))
 assert(r.line:find('nearer spots left out: a drill stands there',1,true),r.line)
 assert(r.occupied_by[1]:find('electric-mining-drill (3.5,0.5)',1,true),r.occupied_by[1])
 drills={}
+-- batch25 B2 (Sonnet: free ore tiles to move drills, every shift): any spot or area, the drill named (default
+-- electric-mining-drill), the resource named or the one most found there; refused spots named with what stands there.
+prototypes.entity['electric-mining-drill']={type='mining-drill',name='electric-mining-drill',mining_drill_radius=2.49,tile_width=3,tile_height=3,resource_categories={['basic-solid']=true}}
+for _,o in ipairs(tiles) do o.prototype={resource_category='basic-solid'} end
+r=D.read(p,{area={left_top={x=4,y=-3},right_bottom={x=13,y=3}},limit=12})
+eq(r.any_spot,true); eq(r.resource,'coal'); eq(r.resource_source,'the most found there'); assert(#r.sites>=1)
+blocked=true; blockers={{valid=true,type='transport-belt',name='transport-belt',position={x=8.5,y=0.5}}}
+r=D.read(p,{position={x=8.5,y=0.5},drill='electric-mining-drill',direction='north',resource='coal',radius=4,limit=4})
+eq(#r.sites,0); assert(r.blocked>=1); eq(r.blocked_by[1]:match(': (.*)$'),'transport-belt (8.5,0.5)')
+assert(r.line:find('blocked: ',1,true),r.line)
+blocked=false; blockers=nil
+fails(function() D.read(p,{position={x=8.5,y=0.5},drill='iron-chest'}) end,'drill: a mining drill name')
 print('drill sites: ok')

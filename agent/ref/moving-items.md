@@ -59,6 +59,10 @@
     that chest instead of waiting, following the output into chests and walking to one out of reach.
   - `wait_ticks` or `keep_taking`: the call returns when the collect ends, with or without `--wait`, its outcome the
     exit status; `--no-wait` returns at the start (`until_tick`).
+  - A haul from several chests into one: a queue plan of a walking collect over the chests, then a walking transfer
+    into the chest (each step a timed tour with the tours' enemy checks; the plan stops at a step that fails), e.g.
+    `./fh call queue_submit --args '{"steps":[{"action":"collect","args":{"positions":[{"x":-40.5,"y":12.5},{"x":-44.5,"y":12.5}],"item":"tungsten-ore","walk":true}},{"action":"transfer","args":{"position":{"x":10.5,"y":3.5},"item":"tungsten-ore","direction":"to_entity","walk":true}}]}'`;
+    from one chest: `pick` with `to` (above) in one call.
   Example: `./fh call collect --args '{"positions":[{"x":10.5,"y":3.5}],"wait_ticks":1800,"count":20}'`
 - `feed {positions | area | radius, item | items?, recipe?, crafts?, fuel?, count?, keep?}`: tops up every machine in
   reach (or in `radius`, a walking tour; `position` its centre) from your inventory: an assembler or furnace its

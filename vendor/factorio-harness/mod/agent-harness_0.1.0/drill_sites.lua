@@ -4,18 +4,58 @@ return function(api)
   local M={}
   local MAX_ORE,MAX_CHECKS=1024,128
   local function pos(p) return {x=p.x,y=p.y} end
+  -- Any position or area (batch25 B2, Sonnet: free ore tiles every shift to move drills): the spots for a drill (drill,
+  -- default electric-mining-drill; direction, default north) on the resource named, else the one most found there,
+  -- round position (or the area's centre, its half-size the radius).
+  local DIRS={north=0,east=4,south=8,west=12}
+  local function any_spot(p,a)
+    local dname=a.drill or 'electric-mining-drill'
+    local proto=prototypes.entity[dname]
+    assert(proto and proto.type=='mining-drill','drill: a mining drill name (default electric-mining-drill)')
+    local dir=a.direction==nil and 0 or (type(a.direction)=='string' and DIRS[a.direction]) or a.direction
+    assert(dir==0 or dir==4 or dir==8 or dir==12,'direction: north, east, south or west')
+    local origin,radius
+    if a.area then
+      local lt,rb=api.position(a.area.left_top),api.position(a.area.right_bottom)
+      origin={x=(lt.x+rb.x)/2,y=(lt.y+rb.y)/2}
+      radius=math.max(2,math.min(24,math.ceil(math.max(rb.x-lt.x,rb.y-lt.y)/2)))
+    else
+      assert(a.position,'drill_sites requires position (a depleted drill of ours, or any spot) or area')
+      origin=api.position(a.position)
+    end
+    local resource=a.resource
+    if not resource then
+      local by={}
+      local r0=radius or api.integer(a.radius,16,2,24,'radius')
+      for _,o in ipairs(p.surface.find_entities_filtered{type='resource',area={{origin.x-r0,origin.y-r0},{origin.x+r0,origin.y+r0}},limit=256}) do
+        local cat=o.prototype.resource_category
+        if not proto.resource_categories or proto.resource_categories[cat] then by[o.name]=(by[o.name] or 0)+1 end
+      end
+      local best
+      for n,c in pairs(by) do if not best or c>by[best] or (c==by[best] and n<best) then best=n end end
+      resource=best
+    end
+    return {name=proto.name,direction=dir,prototype=proto,position=origin,unit_number=nil,valid=true},radius,resource
+  end
   function M.read(p,a)
     if a.surface then p=api.on_surface(p,a.surface) end
-    assert(a.position,'drill_sites requires position of a depleted drill')
-    local e=api.entity(p,a)
-    assert(e.type=='mining-drill' and e.force==p.force,'position must name a mining drill of ours')
-    assert(e.status==defines.entity_status.no_minable_resources and not (e.mining_target and e.mining_target.valid),
-      'drill does not report no_minable_resources with no mining target')
+    assert(a.position or a.area,'drill_sites requires position (a depleted drill of ours, or any spot) or area')
+    local e,any_radius,any_resource
+    if a.area==nil and a.drill==nil then
+      local ok,found=pcall(api.entity,p,a)
+      if ok and found.type=='mining-drill' and found.force==p.force then e=found end
+    end
+    if e then
+      assert(e.status==defines.entity_status.no_minable_resources and not (e.mining_target and e.mining_target.valid),
+        'drill does not report no_minable_resources with no mining target (any spot: drill or area names what to place)')
+    else
+      e,any_radius,any_resource=any_spot(p,a)
+    end
     local origin=e.position
-    local radius=api.integer(a.radius,16,2,24,'radius')
-    local limit=api.integer(a.limit,3,1,8,'limit')
+    local radius=any_radius or api.integer(a.radius,16,2,24,'radius')
+    local limit=api.integer(a.limit,3,1,16,'limit')
     local mem=(api.state().push_drills or {})[p.force.name] or {}
-    local remembered=e.unit_number and mem[e.unit_number]
+    local remembered=e.unit_number and mem[e.unit_number] or any_resource
     if remembered and a.resource then assert(a.resource==remembered,'resource differs from the drill\'s last observed mining target '..remembered) end
     local resource=remembered or a.resource
     local proto=e.prototype
@@ -25,7 +65,8 @@ return function(api)
     if e.direction==4 or e.direction==12 then w,h=h,w end
     local out={surface=p.surface.name,drill=e.name,position=pos(origin),direction=e.direction,
       footprint={width=w,height=h},mining_radius=r,resource=resource,
-      resource_source=remembered and 'last observed mining target' or resource and 'supplied in this call' or nil,
+      resource_source=(any_resource and not a.resource) and 'the most found there' or remembered and e.unit_number and 'last observed mining target' or resource and 'supplied in this call' or nil,
+      any_spot=e.unit_number==nil or nil,
       radius=radius,sites={},placement_check='manual, with existing entities still present',tick=game.tick}
     if not resource then out.line='prior resource not recorded; no sites evaluated'; return out end
     local ore=type(resource)=='string' and prototypes.entity[resource]
@@ -126,6 +167,7 @@ return function(api)
       return a.position.y<b.position.y
     end)
     local checks,examined=0,0
+    local blocked={}
     -- A drill (or a drill's ghost) already on the footprint (Astra, d15 15:11: on Fulgora the manual placement check
     -- passed three spots each covered by a working drill): the spot is skipped and named, before the engine check.
     local occupied={}
@@ -153,7 +195,16 @@ return function(api)
       elseif not overlaps then
         checks=checks+1
         if surface.can_place_entity{name=e.name,position=c.position,direction=e.direction,quality=e.quality,force=p.force,
-            build_check_type=defines.build_check_type.manual} then out.sites[#out.sites+1]=c end
+            build_check_type=defines.build_check_type.manual} then out.sites[#out.sites+1]=c
+        else
+          -- what stands there (batch25 B2): the first entity on the footprint that is not ore
+          local x,y=c.position.x,c.position.y
+          local what
+          for _,o in ipairs(surface.find_entities_filtered{area={{x-w/2+0.05,y-h/2+0.05},{x+w/2-0.05,y+h/2-0.05}},type='resource',invert=true,limit=8}) do
+            if o.valid and o.type~='resource' and o~=e then what=string.format('%s (%g,%g)',o.name,o.position.x,o.position.y); break end
+          end
+          blocked[#blocked+1]=string.format('(%g,%g): %s',x,y,what or 'the game refuses it there (tiles: water, cliffs, out of map)')
+        end
       end
     end
     out.checks=checks
@@ -162,10 +213,12 @@ return function(api)
       out.occupied_by={}
       for i=1,math.min(3,#occupied) do out.occupied_by[i]=occupied[i] end
     end
+    if #blocked>0 then out.blocked=#blocked; out.blocked_by={} for i=1,math.min(6,#blocked) do out.blocked_by[i]=blocked[i] end end
     out.truncated=examined<#candidates and #out.sites<limit or nil
     out.line=string.format('%s (%g,%g): %d %s sites within %d tiles; amounts in the %.1f-tile mining radius; nearest first%s',
       e.name,origin.x,origin.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
       ..(#occupied>0 and string.format('; %d nearer spot%s left out: a drill stands there (%s)',#occupied,#occupied==1 and '' or 's',table.concat(out.occupied_by,'; ')) or '')
+      ..(#blocked>0 and string.format('; %d nearer spot%s blocked: %s',#blocked,#blocked==1 and '' or 's',table.concat(out.blocked_by,'; ')) or '')
     return out
   end
   function M.group(force,g)
@@ -188,9 +241,11 @@ return function(api)
     end
     cache.entries[key]=out;return out
   end
-  M.schema={position='required: depleted mining drill of ours',surface='optional surface name (default yours)',
+  M.schema={position='a depleted mining drill of ours, or any spot (with drill or area: any spot)',area='or {left_top, right_bottom} up to 48x48: spots round its centre',
+    drill='optional mining drill name for any spot (default electric-mining-drill)',direction='optional north|east|south|west for any spot (default north)',
+    surface='optional surface name (default yours)',
     resource='optional resource entity name when the last mining target was not recorded; a recorded target must match',
-    radius='2..24 (default 16); reduced on dense patches to keep the resource read at 1024 tiles',limit='1..8 sites (default 3)',
-    returns='drill, position, direction, footprint, mining_radius, resource and resource_source, searched_radius, radius_reduced, sites [{position, distance, amount, tiles}], checks, truncated, occupied and occupied_by (spots left out because a drill or a drill ghost stands on them, the first 3 named), line; visible mining areas only, same resource, sorted by distance; amount and tiles cover the mining area; engine manual placement check uses this drill size/direction/quality with existing entities present; sites are alternatives, not a simultaneous layout'}
+    radius='2..24 (default 16); reduced on dense patches to keep the resource read at 1024 tiles',limit='1..16 sites (default 3)',
+    returns='drill, position, direction, footprint, mining_radius, resource and resource_source, searched_radius, radius_reduced, sites [{position, distance, amount, tiles}], checks, truncated, occupied and occupied_by (spots left out because a drill or a drill ghost stands on them, the first 3 named), blocked and blocked_by (spots the placement check refused, the first 6 with what stands there), any_spot (true: not a depleted drill), line; visible mining areas only, same resource, sorted by distance; amount and tiles cover the mining area; engine manual placement check uses this drill size/direction/quality with existing entities present; sites are alternatives, not a simultaneous layout'}
   return M
 end
