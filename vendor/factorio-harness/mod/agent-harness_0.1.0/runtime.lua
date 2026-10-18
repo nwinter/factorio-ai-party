@@ -4269,6 +4269,55 @@ function M.via_report(action)
   end
   return legs
 end
+-- A queue step checked against the game at submit (batch29 A1, Sol: Swiftlet's emergency freight asked for section 8
+-- on a hub with 7 sections; the queue paused on its first tick and nobody saw it for 3 minutes): only what a read
+-- shows now and no earlier step of the plan changes: the platform a step names (unless an earlier step creates it),
+-- and a requests section number against the sections its target has (unless an earlier requests step works on that
+-- target). Positions are not checked: a plan often builds what its later steps use.
+function M.step_read_check(p,action,args,prior)
+  if type(args)~='table' then return end
+  local name=args.platform
+  if type(name)=='string' and action~='platform_create' then
+    local made=false
+    for _,st in ipairs(prior or {}) do if st.action=='platform_create' and type(st.args)=='table' and st.args.name==name then made=true end end
+    local found
+    for _,pl in pairs(p.force.platforms or {}) do if pl.valid and pl.name==name then found=pl end end
+    assert(found or made,'no platform of ours named '..name..' (none of the plan\'s earlier steps creates it)')
+    if action=='requests' and found and type(args.section)=='number' then
+      local earlier=false
+      for _,st in ipairs(prior or {}) do if st.action=='requests' and type(st.args)=='table' and st.args.platform==name then earlier=true end end
+      local n=found.hub and found.hub.valid and (pcall(function() return found.hub.get_logistic_sections().sections_count end) and found.hub.get_logistic_sections().sections_count) or nil
+      assert(earlier or not n or args.section<=n,string.format('section %d: the hub of %s has %d section%s (an earlier requests step on it would count; requests without section adds one)',
+        args.section,name,n or 0,n==1 and '' or 's'))
+    end
+  end
+end
+-- A plan that paused on a step failing within its first FRESH ticks: a team line to its owner at once (A1), each
+-- such failure once.
+M.FRESH_FAIL=600
+function M.queue_fresh_lines(p,h)
+  local st=state()
+  local out={}
+  h.fresh_fail=h.fresh_fail or {}
+  local keys={{'queues','queue'},{'remote_queues','remote queue'}}
+  for name in pairs(st.platform_lanes or {}) do keys[#keys+1]={'lane_queues|'..name,'queue of platform lane '..name} end
+  for _,k in ipairs(keys) do
+    local q=(st[k[1]] or {})[p.index]
+    local f
+    for i=#(q and q.paused and q.history or {}),1,-1 do local e=q.history[i]; if e.ok==false and not e.order then f=e; break end end
+    local plan=q and q.plan
+    if f and plan and f.plan==plan.id and (f.finished_tick or 0)-(plan.tick or 0)<=M.FRESH_FAIL then
+      local key=k[1]..'|'..tostring(plan.id)..'|'..tostring(f.id)
+      if not h.fresh_fail[key] then
+        h.fresh_fail[key]=true
+        local why=type(f.result)=='table' and (f.result.reason or f.result.outcome) or '?'
+        out[#out+1]=string.format('your %s paused %ds after plan %s was submitted: step %s %s failed: %s; queue_resume runs the rest',
+          k[2],math.floor(((f.finished_tick or game.tick)-(plan.tick or game.tick))/60),tostring(plan.id),tostring(f.id),tostring(f.action),tostring(why))
+      end
+    end
+  end
+  return out
+end
 -- Route memory (batch28 C2, Opus: base to south copper failed unless given exact via points, 6 times): per agent, per
 -- pair of 64-tile areas (where the walk started, its goal), the via points of the last move_to through them that
 -- arrived (at most ROUTES a agent). A move_to with no via points that ends unreachable or no_safe_route between two
@@ -14215,6 +14264,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
+  step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
@@ -14399,7 +14449,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
+  queue_lines=function(p,h) return M.queue_fresh_lines(p,h) end,platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   death_lines=function(p,h) return M.death_lines(p,h) end,

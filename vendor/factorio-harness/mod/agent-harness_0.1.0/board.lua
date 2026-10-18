@@ -2214,6 +2214,11 @@ return function(api)
       local ok, list = pcall(api.personal_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A plan of this agent's that paused on a step failing in its first seconds (batch29 A1).
+    if api.queue_lines then
+      local ok, list = pcall(api.queue_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Our platforms (platalerts.lua), with their own cap of 6 lines.
     if api.platform_lines then
       local ok, list = pcall(api.platform_lines, p, h)

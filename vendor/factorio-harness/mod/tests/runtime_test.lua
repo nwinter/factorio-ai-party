@@ -359,6 +359,30 @@ do
   runtime.route_memory(8,failed,'unreachable',last); eq(last.route_memory,nil)
   st.routes=nil; st.then_calls=nil
 end
+-- batch29 A1 (Sol: Swiftlet's emergency freight asked for section 8 on a hub with 7; the queue paused on its first tick
+-- and nobody saw it for 3 minutes): a requests section past the hub's is refused at submit; a plan that pauses on a
+-- step failing in its first seconds is a team line to its owner, once.
+do
+  local kept=p.force.platforms
+  local hub={valid=true,get_logistic_sections=function() return {sections_count=7} end}
+  p.force.platforms={{valid=true,name='Swiftlet',hub=hub}}
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='requests',args={platform='Swiftlet',section=8,set={{item='rocket-fuel',min=100}}}}}}) end,
+    'section 8: the hub of Swiftlet has 7 sections')
+  -- an earlier requests step on it: counted, not refused
+  local ok=pcall(call,'queue_submit',{dry_run=true,steps={{action='requests',args={platform='Swiftlet',set={{item='rocket-fuel',min=100}}}},
+    {action='requests',args={platform='Swiftlet',section=8,set={{item='rocket-fuel',min=100}}}}}})
+  assert(ok,'an earlier requests step counts')
+  p.force.platforms=kept
+  local st=storage.agent_harness
+  local q=st.queues[1]
+  local saved={paused=q.paused,plan=q.plan,history=q.history}
+  q.paused=true; q.plan={id=91,tick=game.tick-150}; q.history={{id=301,action='requests',ok=false,result={reason='section 8 does not exist'},finished_tick=game.tick-60,plan=91}}
+  local h={}
+  local lines=runtime.queue_fresh_lines(p,h)
+  eq(lines[1],'your queue paused 1s after plan 91 was submitted: step 301 requests failed: section 8 does not exist; queue_resume runs the rest')
+  eq(#runtime.queue_fresh_lines(p,h),0,'told once')
+  q.paused,q.plan,q.history=saved.paused,saved.plan,saved.history
+end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
 advance(1)
@@ -5171,8 +5195,14 @@ end)()
   -- A queue dry run: the cargo before the launch step, queued nothing.
   cargo[1].count=60
   local before=call('queue_status',{}).revision
+  -- (batch29 A1: a step naming a platform is checked at submit) one that is not ours is refused there
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='launch',args={position=silo.position,platform='Nowhere'}}}}) end,
+    'no platform of ours named Nowhere (none of the plan\'s earlier steps creates it)')
+  local kept_platforms=p.force.platforms
+  p.force.platforms={{valid=true,name='Nowhere'}}
   local dr=call('queue_submit',{dry_run=true,steps={{action='wait_until',args={['until']='rocket_ready',position=silo.position}},
     {action='launch',args={position=silo.position,platform='Nowhere',min_cargo={['agricultural-science-pack']=100}}}}})
+  p.force.platforms=kept_platforms
   eq(dr.dry_run,true); eq(dr.queued,false); eq(dr.steps,2)
   eq(dr.launches[1].step,2); eq(dr.launches[1].cargo,'agricultural-science-pack*60')
   eq(dr.launches[1].would_refuse[1],'min_cargo not met: agricultural-science-pack 60 of 100 (40 short)')
