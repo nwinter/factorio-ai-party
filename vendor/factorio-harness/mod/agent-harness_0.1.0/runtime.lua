@@ -15887,7 +15887,7 @@ passive.robot_losses=true
 -- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
 function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
 passive.eggs=true
-M.pushalerts=require('pushalerts'){mine_forecast=function(surface,force,q) return M.ores.forecast(surface,force,q) end,
+M.pushalerts=require('pushalerts'){mine_forecast=function(surface,force,q,cap) return M.ores.forecast(surface,force,q,cap) end,
   territory=function(surface,force,pos) return M.territory_line(surface,force,pos) end,belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)

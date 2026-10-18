@@ -144,7 +144,16 @@ do
   -- 30/min (mining speed 0.5, mining time 1) of the 1,600 under it: stopped in about 53 min; the nearest other patch.
   local f = ores.handlers.ores(me, {patch={x=8, y=6}, forecast=true}).patches[1].forecast
   eq(f.drills, 1); eq(f.working, 1); eq(f.under, 1600); eq(f.take_per_min, 30); eq(f.half_min, 53); eq(f.all_min, 53)
-  eq(f.line, '1 drill (1 working) on iron-ore: 1,600 under them, taken 30/min now; half of them stopped in about 53m, all in about 53m (each drill\'s share of the ore under it at its rate now; tiles under several shared)')
+  eq(f.line, '1 drill (1 working) on iron-ore: 1,600 under them, taken 30/min now; half the working ones stopped in about 53m, all of them in about 53m (each drill\'s share of the ore under it at its rate now; tiles under several shared)')
+  -- a drill stopped for another reason (no power) is no forecast: counted apart
+  local hd
+  for _, e in ipairs(ents) do if e.type == 'mining-drill' and e.position.x == 1.5 and e.position.y == 1.5 then hd = e end end
+  local kept_status = hd.status
+  hd.status = 3
+  local f2 = ores.handlers.ores(me, {patch={x=8, y=6}, forecast=true}).patches[1].forecast
+  eq(f2.half_min, nil); eq(f2.working, 0)
+  eq(f2.line, '1 drill on iron-ore, none working now: no forecast (out_of_ore alerts tell drills mined out)')
+  hd.status = kept_status
   assert(f.alternatives and f.alternatives[1]:find('^iron%-ore at %(%d+,%d+%), %d+ tiles away: 4,000 in 4 tiles'), tostring(f.alternatives and f.alternatives[1]))
   assert(not pcall(ores.handlers.ores, me, {forecast=true}), 'forecast goes with patch')
   local ok, err = pcall(ores.handlers.ores, me, {patch={x=120, y=40}})

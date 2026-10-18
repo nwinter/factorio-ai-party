@@ -1061,13 +1061,13 @@ return function(api)
   -- Mines running out (batch27 B5, Sonnet: coal fell to 3 of 56 drills working with no warning): the patches the ores
   -- read's last survey has our drills on (a copy each, for the job), one forecast a background step (ores.forecast);
   -- half the drills stopping within MINE_HORIZON minutes is a mine_depleting group to their builders.
-  local MINE_HORIZON, MINE_MAX = 30, 64
+  local MINE_HORIZON, MINE_MAX, MINE_DRILLS = 30, 64, 32
   local function mine_patches(force)
     local out = {}
     for _, entry in pairs(api.state().ores or {}) do
       local s = entry.force == force.name and game.surfaces[entry.surface]
       for _, q in ipairs(s and entry.patches or {}) do
-        if (q.miners or 0) > 0 and not q.yield and q.l and #out < MINE_MAX then
+        if (q.miners or 0) > 0 and not q.yield and not q.fluid and q.l and #out < MINE_MAX then
           out[#out+1] = {surface=s.name, name=q.name, l=q.l, t=q.t, r=q.r, b=q.b, centre=q.centre}
         end
       end
@@ -1076,7 +1076,7 @@ return function(api)
   end
   local function mine_group(force, m)
     local s = game.surfaces[m.surface]
-    local f = s and api.mine_forecast and api.mine_forecast(s, force, m)
+    local f = s and api.mine_forecast and api.mine_forecast(s, force, m, MINE_DRILLS)
     if not (f and f.half_min and f.half_min <= MINE_HORIZON) then return nil end
     local by, names = {}, {}
     for _, e in ipairs(f.entities or {}) do

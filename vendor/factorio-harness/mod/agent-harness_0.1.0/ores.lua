@@ -649,16 +649,19 @@ return function(api)
   -- forecast (batch27 B5, Sonnet: coal fell to 3 of 56 drills working with no warning): for a patch's drills of ours, the
   -- ore under each one's mining area, a tile under several shared evenly among them, against what it takes a minute
   -- working (its mining speed with its speed bonus, the resource's mining time, the drill's resource drain; productivity
-  -- adds output, not drain): when each stops, so when half and all of them have, and what they take a minute now.
-  -- Stopped drills count as stopped. An estimate at today's rates.
+  -- adds output, not drain): when each working one stops, so when half and all of the working ones have, and what they
+  -- take a minute now; drills stopped now (out of ore, no power, a full output ...) are counted apart. max_drills: at
+  -- most that many drills read (the background alert's bound; measured on world n, about 0.13 ms a drill). An estimate
+  -- at today's rates.
   local function mins_text(m)
     if not m then return 'never at this rate' end
     if m >= 600 then return string.format('%dh', math.floor(m / 60 + 0.5)) end
     if m >= 60 then return string.format('%dh%02dm', math.floor(m / 60), math.floor(m % 60)) end
     return string.format('%dm', math.floor(m + 0.5))
   end
-  function M.forecast(surface, force, q)
-    local drills = {}
+  function M.forecast(surface, force, q, max_drills)
+    local drills, more = {}, 0
+    local cap = math.min(M.MAX_LIST, max_drills or M.MAX_LIST)
     for _, d in pairs(surface.find_entities_filtered{area={{q.l-5, q.t-5}, {q.r+5, q.b+5}}, type='mining-drill', force=force}) do
       if d.valid then
         local r = radius[d.name]
@@ -666,8 +669,8 @@ return function(api)
         local x, y = d.position.x, d.position.y
         local target = try(function() return d.mining_target end)
         local mines = target and target.valid and target.name
-        if x+r > q.l and x-r < q.r and y+r > q.t and y-r < q.b and (not mines or mines == q.name) and #drills < M.MAX_LIST then
-          drills[#drills+1] = {e=d, x=x, y=y, r=r, tiles={}}
+        if x+r > q.l and x-r < q.r and y+r > q.t and y-r < q.b and (not mines or mines == q.name) then
+          if #drills < cap then drills[#drills+1] = {e=d, x=x, y=y, r=r, tiles={}} else more = more + 1 end
         end
       end
     end
@@ -686,29 +689,30 @@ return function(api)
       local share = 0
       for _, key in ipairs(dr.tiles) do share = share + amount[key] / cover[key] end
       local st = status_name(dr.e.status)
-      local t = 0
       if st == 'working' and share > 0 then
         local speed = (try(function() return dr.e.prototype.mining_speed end) or 0.5) * (1 + (try(function() return dr.e.speed_bonus end) or 0))
         local drain = (try(function() return dr.e.prototype.resource_drain_rate_percent end) or 100) / 100
         local per_min = speed * 60 / mtime * drain
         take = take + per_min; working = working + 1
-        t = per_min > 0 and share / per_min or nil
+        times[#times+1] = per_min > 0 and share / per_min or math.huge
       end
-      times[#times+1] = t or math.huge
     end
     table.sort(times)
-    local n = #times
-    local half = n > 0 and times[math.ceil(n / 2)] or nil
-    local all = n > 0 and times[n] or nil
+    local n, w = #drills, #times
+    local half = w > 0 and times[math.ceil(w / 2)] or nil
+    local all = w > 0 and times[w] or nil
     if half == math.huge then half = nil end
     if all == math.huge then all = nil end
     local ents = {}
     for i, dr in ipairs(drills) do ents[i] = dr.e end
     return {entities=ents, drills=n, working=working, under=under, take_per_min=math.floor(take * 10 + 0.5) / 10,
       half_min=half and math.floor(half + 0.5), all_min=all and math.floor(all + 0.5),
-      line=string.format('%d drill%s (%d working) on %s: %s under them, taken %s/min now; half of them stopped %s, all %s (each drill\'s share of the ore under it at its rate now; tiles under several shared)',
-        n, n == 1 and '' or 's', working, q.name, fmt(under), fmt(take), half == 0 and 'now' or half and 'in about ' .. mins_text(half) or 'not at this rate',
-        all == 0 and 'now' or all and 'in about ' .. mins_text(all) or 'not at this rate')}
+      more=more > 0 and more or nil,
+      line=w == 0 and string.format('%d drill%s on %s%s, none working now: no forecast (out_of_ore alerts tell drills mined out)', n, n == 1 and '' or 's', q.name,
+          more > 0 and string.format(' (the first %d read)', n) or '')
+        or string.format('%d drill%s (%d working) on %s%s: %s under them, taken %s/min now; half the working ones stopped in about %s, all of them in about %s (each drill\'s share of the ore under it at its rate now; tiles under several shared)',
+        n, n == 1 and '' or 's', working, q.name, more > 0 and string.format(' (the first %d read, %d more)', n, more) or '', fmt(under), fmt(take),
+        half and mins_text(half) or 'never at this rate', all and mins_text(all) or 'never at this rate')}
   end
   M.mins_text = mins_text
 
