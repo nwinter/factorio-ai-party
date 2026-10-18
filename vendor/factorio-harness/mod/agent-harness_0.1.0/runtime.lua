@@ -5863,6 +5863,14 @@ function handlers.build(p,a)
   assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
   assert(a.all==nil or type(a.all)=='boolean','all must be true or false')
   local skip=a.skip_failed==true or a.all==true
+  -- A batch of mining drills tries every entry unless all: false (batch24 C1, Sonnet: a drill batch stopped at a spot a
+  -- ghost or a pole blocked, the rest untried): each spot left is named with what blocked it (left).
+  local drills=a.all==nil and a.skip_failed==nil
+  for _,b in ipairs(a.builds) do
+    local okp,kind=pcall(function() return prototypes.item[(type(b)=='table' and b.item) or a.item or ''].place_result.type end)
+    if not (okp and kind=='mining-drill') then drills=false end
+  end
+  if drills then skip=true end
   local placed,failed,inserters,built={},{},{},{}
   -- What each entry of this batch placed, for a later entry it blocks (M.own_blockers); carried over a rerun.
   local own={}
@@ -5970,8 +5978,17 @@ function handlers.build(p,a)
   -- all: how many of the batch's entries stand and how many were not built.
   local total=#a.builds+(a.index_before or 0)
   local summary=skip and #failed>0 and string.format('%d of %d built; %d not built (failed)',#placed+(a.built_before or 0),total,#failed) or nil
+  local left
+  if drills and #failed>0 then
+    left={}
+    for _,f in ipairs(failed) do
+      local q=f.position
+      left[#left+1]=string.format('#%d%s: %s',f.index,type(q)=='table' and q.x and string.format(' (%g,%g)',q.x,q.y) or '',tostring(f.error))
+    end
+  end
   local entries=#a.builds+(a.index_before or 0)
   return result({built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,summary=summary,inserters_without_target=loose,
+    left=left,left_note=left and 'a batch of mining drills tries every entry (all: false stops at the first not built)' or nil,
     batches=entries>64 and string.format('%d entries in %d batches of up to 64, one reply',entries,math.ceil(entries/64)) or nil,
     inserters_without_target_count=nloose and nloose>#loose and nloose or nil,
     closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,no_power_coverage=no_power,outside_construction_area=outside,underground_side_feed=side,last_belt=okb and last_belt or nil,

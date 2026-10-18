@@ -7205,3 +7205,9 @@ fh watch    # deploy on every change
   area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
   each with its tile, mark, tile ghost and what stands on it; foundation: `remove {now, why}`; empty space: `build
   {now, why}`. tests/tilecheck.lua.
+
+## d17 batch24 Group C
+- C1 (Sonnet: a drill batch left untried after one spot refused): a `build` batch whose entries all place mining drills
+  tries every entry unless `all: false` (as `all: true`), and `left` names each spot left: `#3 (233.5,-219.5):
+  placement blocked by ghost gun-turret (232,-220)`. In Sonnet's shift29 a 4-drill batch stopped at entry 2 (a pole
+  and a belt); its shift31 batch with `all: true` already went on past a ghost-blocked spot. runtime_test.
