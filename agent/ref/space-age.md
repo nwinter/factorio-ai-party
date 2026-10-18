@@ -35,7 +35,11 @@
   fluid), `circuit` (any signal on the hub's red and green wires: wire a tank or a combinator to the hub;
   `circuit_note` when the hub has no wire). A condition is `"thruster-fuel >= 10000"` or `{signal, comparator, value |
   signal2}`. `stops: []` clears the schedule; `current` is the 1-based stop to head for; `paused` pauses thrust and
-  the schedule. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
+  the schedule. With stops it then calls the GUI's go to station for `current` (`sent_to`). If the state still reads
+  `no_schedule`, it writes the schedule again record by record, as the GUI does, and sends it again (`rebuilt` says
+  what came of it). `state` is read after; `state_note` says when it is `no_schedule`, `no_path` or `paused` (the
+  platform goes nowhere). Swiftlet, waiting at Aquilo, read `no_schedule` after four schedules holding an Aquilo
+  record (20:05); one without it departed. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
   `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
   Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
 - `platform_rename {platform, name}`: renames one, listing the queues, orders, plans and board items still naming the
