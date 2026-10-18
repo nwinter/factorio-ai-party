@@ -324,6 +324,7 @@ return function(api)
   -- The tiles each underground belt or pipe-to-ground pair passes under (built or ghost), on(x, y) once a tile; the
   -- floor plan asks for them and salvage keeps them (d17 batch17 A4, Sol: salvage on Meridian took 26 tiles under
   -- underground pipe spans; it kept belt spans only, from the built pair). ghosts: the surface's entity ghosts.
+  -- on(x, y, entrance, exit): the pair as its last two (batch31 B4: the tile deconstruct names it).
   function M.tunnels(s, force, ghosts, on)
     local unders = {}
     for _, e in ipairs(try(function() return s.find_entities_filtered{type={'underground-belt', 'pipe-to-ground'}, force=force} end) or {}) do
@@ -360,7 +361,7 @@ return function(api)
           local oname = o and (o.type == 'entity-ghost' and o.ghost_name or o.name)
           if o and oname == name and o ~= e and (o.direction or 0) == want_dir then
             local oin = t == 'underground-belt' and try(function() return o.belt_to_ground_type end) == 'input'
-            if not oin then for j = 1, step - 1 do on(x0 + d[1] * j, y0 + d[2] * j) end end
+            if not oin then for j = 1, step - 1 do on(x0 + d[1] * j, y0 + d[2] * j, e, o) end end
             break
           end
         end

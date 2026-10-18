@@ -827,6 +827,56 @@ return function(api)
     out.tiles_go=lines.go; out.tiles_waiting=#plan.waiting>0 and #plan.waiting or nil
     out.waiting=lines.waiting; out.waiting_more=lines.more
   end
+  -- (d17 batch31 B4, Astra: a salvage kept the ends of pipe-to-ground and underground belts but took the floor under
+  -- their spans, and both thruster feeds stopped) on a platform, before anything is marked: each underground pair whose
+  -- span (the tiles between its ends, paired as platform_plan's floor pairs them) holds a tile this would mark or that
+  -- is marked already; a live mark is refused unless cut_spans: true.
+  local function spans_cut(p,a,box,dry,out)
+    local okp,plat=pcall(function() return p.surface.platform end)
+    if not (api.tunnels and okp and plat) then return end
+    assert(a.cut_spans==nil or a.cut_spans==true or a.cut_spans==false,'cut_spans is true or false')
+    local names,mine=tile_names(a.tiles)
+    if #names==0 then return end
+    local list=p.surface.find_tiles_filtered{area=box,name=names,limit=MAX_TILES+1}
+    local standing={}
+    for _,e in ipairs(candidates(p,box)) do
+      if e.valid and e.type~='entity-ghost' and e.type~='character' then standing[#standing+1]=e end
+    end
+    local function under(t) for _,e in ipairs(standing) do if covers(e,t) then return e end end end
+    local going={}
+    for _,t in ipairs(list) do
+      if mine[t.name] and (t.to_be_deconstructed(p.force) or not under(t)) then going[math.floor(t.position.x)..','..math.floor(t.position.y)]=true end
+    end
+    if not next(going) then return end
+    local ghosts=p.surface.find_entities_filtered{type='entity-ghost',ghost_type={'underground-belt','pipe-to-ground'},force=p.force,limit=1024}
+    local found,order={},{}
+    pcall(api.tunnels,p.surface,p.force,ghosts,function(x,y,e,o)
+      if e and going[x..','..y] then
+        -- a pipe-to-ground pair is walked from both ends: one key a pair, its ends in either order
+        local ka,kb=e.position.x..','..e.position.y,o.position.x..','..o.position.y
+        local key=ka<kb and ka..'|'..kb or kb..'|'..ka
+        local c=found[key]
+        if c and c.e~=e then return end
+        if not c then c={e=e,o=o,tiles={}}; found[key]=c; order[#order+1]=key end
+        c.tiles[#c.tiles+1]=string.format('(%d,%d)',x,y)
+      end
+    end)
+    if #order==0 then return end
+    local cut={}
+    local function nm(x) return x.type=='entity-ghost' and 'ghost of '..x.ghost_name or x.name end
+    for _,key in ipairs(order) do
+      local c=found[key]
+      cut[#cut+1]=string.format('%s (%g,%g) to %s (%g,%g): %d tile%s of its span would be empty space: %s',nm(c.e),c.e.position.x,c.e.position.y,
+        nm(c.o),c.o.position.x,c.o.position.y,#c.tiles,#c.tiles==1 and '' or 's',table.concat(c.tiles,' ',1,math.min(8,#c.tiles))..(#c.tiles>8 and ' ...' or ''))
+    end
+    table.sort(cut)
+    out.spans_cut=cut
+    out.spans_note='an underground belt or pipe-to-ground pair joins through the tiles between its ends; on a platform a span over empty space is cut (Astra, shift34: a salvage kept the ends and both thruster feeds stopped)'
+    if not dry and a.cut_spans~=true then
+      error(string.format('nothing marked: %d underground pair%s would lose floor under %s span%s: %s; cut_spans: true marks them anyway',#cut,#cut==1 and '' or 's',
+        #cut==1 and 'its' or 'their',#cut==1 and '' or 's',table.concat(cut,'; ',1,math.min(4,#cut))..(#cut>4 and '; ...' or '')),0)
+    end
+  end
   local function deconstruct_tiles(p,a,box,cancel,out,dry)
     local names,mine=tile_names(a.tiles)
     if #names==0 then return end
@@ -925,6 +975,7 @@ return function(api)
       assert(not out.tiles,'items_on_ground and tiles are separate calls')
     end
     assert(not (dry and a.items_on_ground),'dry_run goes with entities and tiles, not items_on_ground')
+    if out.tiles and not cancel then spans_cut(p,a,box,dry,out) end
     if a.items_on_ground then
       api.ground_mark(p,box,cancel,out)
       if not (filters.entity_types or filters.entity_names) then return out end

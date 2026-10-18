@@ -327,7 +327,9 @@
 - Platform foundation: the hub removes a marked foundation tile only beside empty space (a north, east, south or west
   neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
   time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
-  `"dry_run":true` marks nothing. The hub builds a foundation ghost only with foundation among the 8 tiles round it (a
+  `"dry_run":true` marks nothing. `spans_cut` names each underground belt or pipe-to-ground pair whose span (the
+  tiles between its ends) holds a tile it marks or one marked already: a span over empty space is cut. A live tile
+  deconstruct with `spans_cut` marks nothing and is refused unless `"cut_spans":true`. The hub builds a foundation ghost only with foundation among the 8 tiles round it (a
   corner is enough) and its empty side neighbours in one run (it never splits empty space, even when both sides stay
   open). A dry run on a platform (place_ghosts, build, paste with `dry_run: true`) plays those rules over the new tiles
   and the ghosts ordered: `tiles.unbuilt` names each tile that stays unbuilt and why; for one with no foundation near,

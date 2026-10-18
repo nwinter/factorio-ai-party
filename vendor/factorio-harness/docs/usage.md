@@ -7636,3 +7636,15 @@ fh watch    # deploy on every change
     search, Swift's Nauvis 16.1 ms with the search (Nauvis is the largest surface), about 1 ms after it.
   - Live on n, Cinder at Gleba: agricultural-science-pack 500 waits `below_min_payload`, the network holds 424 of the
     500 min payload, the silo's rocket is built and holds none of it.
+- B4 (Astra 06:20: a salvage kept the ends of pipe-to-ground and underground belts but took the floor under their
+  spans, and both thruster feeds stopped): a tile deconstruct on a platform (blueprints.lua spans_cut), before
+  anything is marked (tile ghosts removed, entities with filters):
+  - The tiles it would mark (minable, nothing standing on them) and those marked already, against every underground
+    belt and pipe-to-ground pair on the platform, built or ghost, paired as platform_plan's floor and salvage pair
+    them (platplan.lua M.tunnels, which now hands the pair to its callback).
+  - `spans_cut`: one line a pair whose span holds such a tile, with the tiles (up to 8 named). A pipe-to-ground pair,
+    walked from both ends, is named once. `spans_note` says a span over empty space is cut.
+  - In a dry run that is a read. A live call is refused with nothing marked, naming the pairs, unless
+    `cut_spans: true`.
+  - Cost on world n: the pairing over Kestrel II's 83 undergrounds (53 pairs) 2.5 ms, Swift's 28 and Cinder's 22
+    about 1.3 ms.
