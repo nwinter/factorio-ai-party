@@ -163,4 +163,112 @@ do
   eq(out.places[1].reserved,6)
   eq(out.places[1].reserved_for,'5 to requester-chest (97.5,41.5), 1 to the character of haiku (5,5)')
 end
+-- C1 (Astra, #862): belt_route and pole_route take surface= (remote ghost planning), as place_ghosts does; a belt_route
+-- dry run with surface= is checked there too.
+do
+  local B=dofile('mod/agent-harness_0.1.0/bots.lua')
+  local list=type(B)=='function' and B{} or B
+  local on={}
+  for _,n in ipairs(list.SURFACE_ACTIONS) do on[n]=true end
+  assert(on.belt_route and on.pole_route,'belt_route and pole_route with surface=')
+  local src=io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  has(src,"assert(action=='place_ghosts' or action=='belt_route','dry_run with surface checks place_ghosts or belt_route")
+end
+-- C3 (Opus): after a feed, rearm or refuel walk, the enemy groups our force sees now heading for the places served.
+do
+  local gstate={live_groups={}}
+  local function grp(x,y,n) local m={} for i=1,n do m[i]={} end return {valid=true,position={x=x,y=y},members=m} end
+  gstate.live_groups={{id=1,surface='nauvis',group=grp(177,44,11),target={x=98,y=17},first_kinds='8 small-biter, 3 small-spitter'},
+    {id=2,surface='nauvis',group=grp(-295,-92,3),target={x=-249,y=-82}},
+    {id=3,surface='nauvis',group=grp(130,20,4),target={x=200,y=20}},
+    {id=4,surface='nauvis',group=grp(400,400,2),target={x=110,y=20}}}
+  local sees={}
+  game.forces={player={name='player',players={{}},is_chunk_visible=function(_,c) return not (c.x>=12 and c.y>=12) end}}
+  local AV=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return gstate end,charted=function() return true end}
+  local lines=AV.groups_toward({name='nauvis'},{{name='gun-turret',position={x=100,y=20}},{name='gun-turret',position={x=104,y=20}}})
+  eq(#lines,1)
+  eq(lines[1],'enemy group of 11 (8 small-biter, 3 small-spitter) at (177,44), 77 tiles from gun-turret (104,20), heading west for (98,17), 7 tiles from it')
+  eq(AV.groups_toward({name='nauvis'},{{name='stone-furnace',position={x=-500,y=0}}}),nil)
+  game.forces=nil
+end
+-- C4 (Gemini: a moving train read by position failed as it moved): train {train_id} reads one of ours by its id.
+do
+  local force={name='player'}
+  local loco={valid=true,name='locomotive',type='locomotive',force=force,position={x=-30.45,y=191},surface={name='fulgora'}}
+  local train={valid=true,id=15,manual_mode=false,state=0,speed=0.2,front_stock=loco,carriages={loco},schedule=nil}
+  loco.train=train
+  local enemy={valid=true,id=16,front_stock={valid=true,force={name='enemy'}},carriages={}}
+  game={tick=0,train_manager={get_train_by_id=function(id) return ({[15]=train,[16]=enemy})[id] end}}
+  defines.train_state={on_the_path=0}
+  local T=dofile('mod/agent-harness_0.1.0/trains.lua'){integer=function(v) return v end,friendly=function() end}
+  local p={force=force,surface={name='nauvis'}}
+  local v=T.handlers.train(p,{train_id=15})
+  eq(v.id,15); eq(v.front.surface,'fulgora'); eq(v.front.position.x,-30.45)
+  local ok,err=pcall(T.handlers.train,p,{train_id=16}); assert(not ok); has(tostring(err),'no train of ours has id 16')
+  ok,err=pcall(T.handlers.train,p,{train_id=15,position={x=0,y=0}}); assert(not ok); has(tostring(err),'give train_id or position, not both')
+end
+-- C5 (viewer Foobator): a demolisher's whole body: the demolishers read, the walk discs and the threat check.
+do
+  local our={name='player',get_friend=function() return false end,get_cease_fire=function() return false end,players={{}},
+    is_chunk_visible=function() return true end,is_chunk_charted=function() return true end}
+  local enemy={name='enemy'}
+  game={tick=600,forces={player=our,enemy=enemy}}
+  -- a body along x from the head at (300,350) back to (250,350), segments 2 tiles apart, a bend at (270,350) going north
+  local segs,ents={},{}
+  local unit={unit_number=77,health=30000,max_health=30000,speed=0.02,prototype={name='small-demolisher'}}
+  for i=1,26 do
+    local x,y=300-(i-1)*2,350
+    if x<270 then y=350-(270-x); x=270 end
+    local e={valid=true,type=i==1 and 'segmented-unit' or 'segment',name=i==1 and 'small-demolisher' or 'small-demolisher-segment',position={x=x,y=y},force=enemy,segmented_unit=unit}
+    ents[i]=e
+    segs[i]={position={x=x,y=y},orientation=0.25,entity=e,prototype={collision_box={left_top={x=-1.6,y=-0.5},right_bottom={x=1.6,y=0.5}}}}
+  end
+  unit.segments=segs
+  local D=dofile('mod/agent-harness_0.1.0/demolishers.lua'){state=function() return {} end,position=function(v) return v end}
+  local b=D.body(unit,{name='vulcanus'},our)
+  eq(b.segments,26); eq(b.segments_seen,26); eq(b.length,50); eq(b.heading,'east'); eq(b.speed_kmh,4); eq(#b.line,3)
+  eq(b.line[1].x,300); eq(b.line[2].x,270); eq(b.line[2].y,350); eq(b.line[3].y,330)
+  has(D.body_text(b),'body 50 tiles long over')
+  -- the walk's discs: every segment within ATTACK_R + the margin of a disc's middle
+  local AV=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return {} end,charted=function() return true end}
+  local surf={name='vulcanus',find_entities_filtered=function(f) if type(f.type)=='table' and f.type[1]=='segmented-unit' then return ents end return {} end}
+  local discs=AV.attack_discs(surf,{attacks=true,pad=4},{240,320,310,360})
+  local heads,bodies=0,0
+  for _,d in ipairs(discs) do if d.demolisher then if d.name:find('head',1,true) then heads=heads+1 else bodies=bodies+1 end end end
+  eq(heads,1); assert(bodies>=4,'body cells '..bodies)
+  for _,e in ipairs(ents) do
+    local inside=false
+    for _,d in ipairs(discs) do if d.demolisher and ((d.x-e.position.x)^2+(d.y-e.position.y)^2)^0.5+AV.ATTACK_R+4<=d.r+0.001 then inside=true end end
+    assert(inside,'segment at '..e.position.x..','..e.position.y..' keeps the margin')
+  end
+  -- the threat check: one demolisher, at its nearest segment
+  local SF=dofile('mod/agent-harness_0.1.0/safety.lua'){known=function() return true end,visible=function() return true end,
+    distance=function(a,c) return ((a.x-c.x)^2+(a.y-c.y)^2)^0.5 end}
+  local p={force=our,surface={find_entities_filtered=function() return ents end}}
+  local t=SF.threats(p,{x=270,y=320},16)
+  eq(#t.units,1); eq(t.units[1].entity.name,'small-demolisher'); eq(math.floor(t.units[1].distance+0.5),10)
+  -- the territory state counts a body in sight with the head out of it (the head at x 300 in chunk 9, the body's end in 8)
+  local half={is_chunk_visible=function(_,c) return c.x<9 end}
+  local terr={get_segmented_units=function() return {unit} end,get_chunks=function() return {{x=7,y=10}} end}
+  eq(select(1,D.state({name='vulcanus'},half,terr)),'has a demolisher')
+end
+-- C6 (viewer Foobator): a starving captive spawner: where, health, minutes left at 1 HP a second, why; urgent under 2 min.
+do
+  defines.entity_status={working=1,no_fuel=53,full_output=20}
+  prototypes={item={bioflux={fuel_category='food'},coal={fuel_category='chemical'}}}
+  game={tick=0,forces={}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {} end,agents=function() return {} end,who=function(p) return p.name end}
+  local function spawner(hp,status,fuel,out)
+    return {valid=true,name='captive-biter-spawner',position={x=29.5,y=-56.5},health=hp,max_health=350,status=status,
+      prototype={burner_prototype={fuel_categories={food=true}}},burner={remaining_burning_fuel=0},
+      get_fuel_inventory=function() return {is_empty=function() return fuel==0 end} end,
+      get_output_inventory=function() return {get_contents=function() return out or {} end} end}
+  end
+  local kind,line=PA.captive(spawner(300,53,0))
+  eq(kind,'captive_starving')
+  eq(line,'captive-biter-spawner (29.5,-56.5): health 300/350, not producing (its fuel slot is empty (it burns bioflux)); it loses 1 HP a second while it makes nothing, so it dies in about 5.0 min, and a hostile biter-spawner takes its place')
+  kind,line=PA.captive(spawner(90,20,5,{{name='biter-egg',count=100}}))
+  eq(kind,'captive_urgent'); has(line,'its output is full (100 biter-egg)'); has(line,'about 1.5 min')
+  eq(PA.captive(spawner(350,1,5)),nil)
+end
 print('d17 batch18 ok')

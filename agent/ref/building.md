@@ -95,11 +95,12 @@
   Example: `./fh call build_path --args '{"points":[{"x":0.5,"y":0.5},{"x":20.5,"y":0.5}]}' --wait`
 - `grid {position?, radius?}`: one character per tile; `,` is `walkable water` (shallow water, wetland, Fulgora's oil
   ocean, deep too), `~` water a character cannot cross; `map` tells them apart the same way.
-- `pole_route {from, to}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
-  `short`. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
+- `pole_route {from, to, surface?}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
+  `short`. `surface` (pole_route and belt_route, dry runs too): on another planet by remote view, in charted chunks;
+  that planet's construction robots build them. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
   Example: `./fh call pole_route --args '{"from":{"x":10.5,"y":10.5},"to":{"x":80.5,"y":10.5}}'`
-- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?}`: lays a belt line as ghosts
+- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?, surface?}`: lays a belt line as ghosts
   (legs up to 1000 tiles), over trees and wild plants it marks, water only with `"landfill": true`; `return` adds the
   line back beside it, crossing under it where its side is blocked. It goes round cliffs (an underground passes under
   one; `cliffs: true` passes over and marks them) and names what its ghosts mark for mining (`to_mine`: trees, rocks,
@@ -122,12 +123,13 @@
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
-- `train {position, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
+- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
   `station` and `limit`; on a locomotive, its `schedule` and `automatic`; `train {position}` reads a train's state and
   why it waits. A train in `no_path` reads `rail_break` (`path_to: "STOP"` for any stop): the rails followed from the
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
   ghosts. `stops: true` lists every train stop of ours on a surface: name, position, rail, limit and the trains
-  heading there.
+  heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
+  read gives its `id` and `front` (name, position, surface).
   Example: `./fh call train --args '{"position":{"x":40,"y":-30},"path_to":"iron-pickup"}'`
 - `clear_cliffs {positions}`: throws cliff explosives you hold at those cliffs, walking into their 10-tile range
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the
@@ -166,7 +168,9 @@
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and
   inserters or belts feeding an underground entrance from the side, with the lane that gets nothing
-  (`underground_side_feed`). Each cliff the placement marks is listed (`cliffs_under`). A place_ghosts dry run over
+  (`underground_side_feed`). build and place_ghosts replies also name what they put down that no pole's supply area
+  covers (`no_power_coverage`; built: the nearest pole) and what lies outside every roboport's construction area
+  (`outside_construction_area`). Each cliff the placement marks is listed (`cliffs_under`). A place_ghosts dry run over
   another ghost says blocked, as the call does. On a platform a planned pump's enable condition with no circuit wire is
   named (`pump_circuits`), and a ghost refused over empty space says when foundation tile ghosts under it are not
   built yet.

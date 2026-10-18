@@ -28,8 +28,8 @@
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
-    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way and
-    groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
+    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
+    demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
     mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
     first (`left_reach_first`). A goal inside one is refused (`unsafe_goal: true` goes anyway). No way round:
@@ -80,6 +80,8 @@
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
+  When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
+  then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold
   it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles (30 s when none is there now) and rearms
