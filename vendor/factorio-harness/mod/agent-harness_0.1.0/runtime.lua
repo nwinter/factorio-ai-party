@@ -2885,8 +2885,8 @@ local function view_area(p,a)
   local c,r=center(p,a),integer(a.radius,16,1,64,'radius')
   return {left_top={x=c.x-r,y=c.y-r},right_bottom={x=c.x+r,y=c.y+r}}
 end
-local SCAN_BELT={['transport-belt']=true,['underground-belt']=true,splitter=true,['lane-splitter']=true,loader=true,['loader-1x1']=true,['linked-belt']=true}
-local SCAN_BELTS,SCAN_HOLDING=1024,64  -- about 6 us a belt read on world n (512 on Kestrel II: 3.1 ms)
+M.SCAN_BELT={['transport-belt']=true,['underground-belt']=true,splitter=true,['lane-splitter']=true,loader=true,['loader-1x1']=true,['linked-belt']=true}
+M.SCAN_BELTS,M.SCAN_HOLDING=1024,64  -- about 6 us a belt read on world n (512 on Kestrel II: 3.1 ms)
 function handlers.scan(p,a)
   local area=a.positions==nil and view_area(p,a) or nil
   for _,key in ipairs({'name','type','fields'}) do
@@ -2941,16 +2941,16 @@ function handlers.scan(p,a)
   end
   out.ground_items=M.ground.summary(ground)
   -- (d17 batch31 C1, Sol: 10 rockets stranded among 214 belts on Kestrel III, found by paging) the belts found, all of
-  -- them before the limit (up to SCAN_BELTS): what they carry by item, and with item each belt holding it.
+  -- them before the limit (up to M.SCAN_BELTS): what they carry by item, and with item each belt holding it.
   local item=a.item
   if item~=nil then assert(type(item)=='string' and prototypes.item[item],'item is an item name: the belts holding it') end
   local belt_types=false
-  for _,t in ipairs(type(a.type)=='table' and a.type or {a.type}) do if SCAN_BELT[t] then belt_types=true end end
+  for _,t in ipairs(type(a.type)=='table' and a.type or {a.type}) do if M.SCAN_BELT[t] then belt_types=true end end
   if item~=nil or belt_types then
     local by,belts,holding,cut={},0,{},false
     for _,e in ipairs(rows) do
-      if SCAN_BELT[e.type] and e.force==p.force then
-        if belts>=SCAN_BELTS then cut=true; break end
+      if M.SCAN_BELT[e.type] and e.force==p.force then
+        if belts>=M.SCAN_BELTS then cut=true; break end
         belts=belts+1
         local here=0
         for li=1,(select(2,pcall(function() return e.get_max_transport_line_index() end)) or 0) do
@@ -2967,14 +2967,14 @@ function handlers.scan(p,a)
     for n,c in pairs(by) do list[#list+1]={n,c} end
     table.sort(list,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
     for i,v in ipairs(list) do list[i]=v[1]..'*'..v[2] end
-    out.belt_items=string.format('%d belts%s carry %s',belts,cut and string.format(' (the first %d)',SCAN_BELTS) or '',#list>0 and table.concat(list,' ') or 'nothing')
+    out.belt_items=string.format('%d belts%s carry %s',belts,cut and string.format(' (the first %d)',M.SCAN_BELTS) or '',#list>0 and table.concat(list,' ') or 'nothing')
     if item~=nil then
       table.sort(holding,function(x,y) if x.y~=y.y then return x.y<y.y end return x.x<y.x end)
       local n=0
       for _,h in ipairs(holding) do n=n+h.count end
       local shown={}
-      for i=1,math.min(#holding,SCAN_HOLDING) do shown[i]=holding[i] end
-      out.belt_item={item=item,count=n,belts=#holding,positions=shown,more=#holding>SCAN_HOLDING and #holding-SCAN_HOLDING or nil,
+      for i=1,math.min(#holding,M.SCAN_HOLDING) do shown[i]=holding[i] end
+      out.belt_item={item=item,count=n,belts=#holding,positions=shown,more=#holding>M.SCAN_HOLDING and #holding-M.SCAN_HOLDING or nil,
         line=string.format('%d %s on %d of %d belts%s',n,item,#holding,belts,#holding>0 and ': '..table.concat((function()
           local t={} for i=1,math.min(#holding,12) do local h=holding[i]; t[i]=string.format('(%g,%g) %d',h.x,h.y,h.count) end return t end)(),', ')..(#holding>12 and ', ...' or '') or '')}
     end
