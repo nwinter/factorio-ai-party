@@ -270,8 +270,12 @@
   storage chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no
   room when every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are
   idle, orders to a chest with no room for the item). Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
-- `logistics_audit {network? | position?, surface?, limit?, from?, storage?}` (read only; default: the network where you stand):
-  `storage: true` reads its storage room instead (the `no_storage` alert): storage chests, free slots, full and
+- `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?}` (read only; default: the network where you stand):
+  `backlog: true`: why requests wait: the oldest unfilled first (chest, item, short, how long it has been short, the
+  provider the game picks with what robots reserve there) and `held_by`, the first that holds each now (on the way, no
+  room, none in the network, no provider, all reserved, no idle robot with what the busy ones do, robots queued with
+  every charging slot taken, or not sent yet); `robots`: idle, on orders, holding cargo with no order, charging,
+  queued to charge, charging slots. `storage: true` reads its storage room instead (the `no_storage` alert): storage chests, free slots, full and
   filtered ones, robots holding cargo with no order to put it anywhere and their items, each with whether a storage
   chest can take it now. Otherwise:
   every requester of that logistic network, worst first: `full_unrequested` (every slot taken while a short item has

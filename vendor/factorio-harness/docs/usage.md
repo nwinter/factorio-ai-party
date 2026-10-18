@@ -8039,3 +8039,24 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+
+## d18 batch36 (the agents' 15:20 poll)
+
+- `logistics_audit {network | position, backlog: true}` (A1, Luna and Grok, all of shift35: Gleba's science requester
+  at (15.5,28.5) lacked 10 nutrients for about 36 minutes with about 98 in a provider 9 tiles off; logistics_audit said
+  not_sent and "all 250 logistic bots occupied"). Per network: the oldest unfilled requests first (256 requester points
+  read, 12 rows, `limit` up to 48): chest, item, short, `short_s` (how long since the networks watch first saw it
+  short), the provider the game would take it from (select_pickup_point) with what it holds and what robots already
+  reserve there (its targeted_items_pickup), and `held_by`, the first of these that reads true now: the delivery on
+  the way covers it; no room in the chest; none in the network's providers or storage; no provider the game picks;
+  every unit there reserved; no idle logistic robot (with how many hold cargo with no order and what, the orders the
+  rest are on by type and what they carry, and the queue to charge); robots queued to charge with every charging slot
+  taken; else idle robots and an unreserved provider, not sent yet (the game's dispatch is not exposed). `robots`:
+  total, idle (available_logistic_robots), on orders by type (robot_order_queue), carrying (top 5), holding cargo
+  with no order, charging and queued to charge (each cell's charging_robot_count and to_charge_robot_count), charging
+  slots (each roboport's logistic_parameters.charging_station_count) and how many are free. Read from the game: those
+  fields. Not read: when the game will dispatch a robot, and any minimum the game sends for (a requester chest has
+  none the API shows). On world n (18 Oct, network #98 on Gleba, 122 requester points, 250 robots) it ran
+  3.1-3.4 ms; in three reads a few minutes apart the robots were 201 holding cargo with no order (firearm-magazine 396,
+  ice 348, agricultural-science-pack 36, cannon-shell 20) and 4 idle, then all 250 on orders (126 deliver, 124
+  pickup) with 25 queued to charge, and nutrients read none free in the network for 21 short requesters.
