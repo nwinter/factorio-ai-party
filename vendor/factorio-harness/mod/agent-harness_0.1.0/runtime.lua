@@ -639,6 +639,21 @@ local function finish(index, outcome)
     last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
     -- held short of a live attack at its stop when it ended (d17 batch17 B1)
     last.held_short=action.held_short
+    -- (d17 batch18 C3, Opus) after a feed, rearm or refuel walk: enemy groups seen moving toward the places served
+    if action.op=='feed' or action.op=='rearm' or action.op=='refuel' or action.fuel_round then
+      local served={}
+      for i,t in ipairs(action.targets or {}) do
+        if i>=action.index then break end
+        local e=t.entity
+        if e and e.valid then served[#served+1]={name=e.name,position=e.position} end
+      end
+      local okg,lines=pcall(function()
+        local pl=M.lookup(index)
+        local ch=pl and pl.character
+        return M.avoid.groups_toward(ch and ch.valid and ch.surface or (pl and pl.surface),served)
+      end)
+      last.enemy_groups_toward=okg and lines or nil
+    end
     last.mine_for_a_way=action.mine_for_a_way  -- an unreachable stop: the fewest to mine for a way (B2)
     -- The route walked (C5, Luna 18:20): from where, each via point and stop as reached, the tiles moved.
     last.route=stock.route_text(action)
@@ -1749,7 +1764,7 @@ function handlers.describe(_,a)
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (walked to with the pathfinder when out of reach; hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal), and blocked for one no path leads to'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival. Or {to: {x,y}, health_below, shield_below} (and the standing retreat_guard): the generic retreat, as move_to\'s (kite\'s own min_health stop then off unless given); false: none',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
-      belt_route={avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
+      belt_route={surface='optional planet or platform name: plan and place the ghosts there by remote view (charted chunks), as place_ghosts surface=; that surface\'s robots build them',avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing: each belt checked as a place_ghosts dry run checks it, belt_route holds the plan',details='list every entity',
         via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles); one on the from chain is passed (via_passed); one on another standing line of ours: the route feeds that line\'s head and goes on from its open end, the line kept (joined); to on it: the route ends at its head',
@@ -1759,7 +1774,7 @@ function handlers.describe(_,a)
         return_side='left|right (with return)',
         returns='route (runs like E12 N3, uE5 = underground pair east spanning 5); a re-run of one of your last 4 lines (same from, via, to, belt, return): repair (when laid, how many stand and are missing), kept, differs (standing belts facing otherwise than the line, up to 8), and only the missing tiles placed; via_passed, joined (via points on standing belts); tiles, items (belts, undergrounds, landfill), missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, legs (tiles per leg), over_trees_or_plants (tiles whose trees, rocks or wild plants placing marks), landfill {item: tiles}, return {route, tiles, side, from, to, crossings (times it passes under the line), apart (its belts with no belt of the line next to them), short_of (it ends at the nearest tile reached, when its end, within 24 tiles, was not reached within the budget), ...}, cost {placement_checks, expansions}, placed/failed/bounds (construct defaults to them), obstacles_marked, tiles_laid',
         note='a weighted search over charted ground within 24 tiles of each leg\'s ends, within 8000 placement checks and 8000 expansions (12000 and 13000 with the return line), at most 2048 belts and undergrounds a call; an end closed in is named after 1000 expansions; trees, rocks and wild plants are passed over (marked, construct mines them) at a small cost, and cliffs too (marked; one cliff-explosives each: cliffs_marked, cliffs_note); buildings and a force\'s own plants never; undergrounds hop anything but lava and empty space; never passes a tile an existing belt outputs into; turns and undergrounds cost extra'},
-      pole_route={from='{x,y}',to='{x,y}',waypoints='optional 1..16 {x,y} to pass through, in order (legs <=512 tiles, route <=1024)',item='pole item (default small-electric-pole)',spacing='tiles between poles (default: wire reach minus room for a 2-tile sideways shift: small 7, medium 8, big 29)',dry_run='boolean: plan only; returns positions',
+      pole_route={surface='optional planet or platform name: plan and place the ghosts there by remote view (charted chunks), as place_ghosts surface=; that surface\'s robots build them',from='{x,y}',to='{x,y}',waypoints='optional 1..16 {x,y} to pass through, in order (legs <=512 tiles, route <=1024)',item='pole item (default small-electric-pole)',spacing='tiles between poles (default: wire reach minus room for a 2-tile sideways shift: small 7, medium 8, big 29)',dry_run='boolean: plan only; returns positions',
         note='places pole ghosts along straight legs, shifting a blocked spot up to 2 tiles sideways within wire reach, reusing own poles/ghosts already on the line; returns poles, held, short (craft that many), failed (with reasons), bounds; then construct builds it (trees under ghosts are marked and cleared). Each placed pole joins every network in wire reach'},
       pipe_route={pumps='boolean: when the route (with the pipes it joins) would make a fluid segment past the engine extent limit (320 tiles), place pump ghosts on it (flow from -> to; pumps need power); without it the result warns and lists pump positions',waypoints='optional 1..16 free {x,y} tiles to pass through, in order (each leg <=200 tiles manhattan); without them a route over 150 tiles is split at free tiles along the straight line; each leg starts from what the leg before left on its waypoint (dry_run too: later legs keep off the earlier legs\' tiles)',from='{x,y} first pipe tile: free ground, or the free tile at a machine fluid connection (joins that machine only), or our pipe/pipe-to-ground/tank or single-connection machine (pumpjack, offshore pump; joined at a free tile by one of its connections)',
         to='{x,y} last pipe tile, same forms as from',pipe='pipe entity (default pipe); its -to-ground variant hops obstacles (reach from its fluid box)',undergrounds='default true',
@@ -5621,6 +5636,63 @@ function M.build_notes(p,ents)
   end
   return #cover>0 and cover or nil,#side>0 and side or nil
 end
+-- Power and robot coverage of what a build or place_ghosts call put down (d17 batch18 C2, Opus: a whole circuit block
+-- built unpowered outside the robot network): electric entities no pole's supply area covers (built: no electric
+-- network, with the nearest pole; a ghost: no pole or pole ghost's supply area reaches its box), and entities no
+-- roboport's construction area covers (robots neither build those ghosts nor repair or rebuild those entities). Each
+-- a line: how many, the first 8 by name and position. Not on a platform (the hub builds there).
+do
+  local OWN={['electric-pole']=true,['solar-panel']=true,accumulator=true,generator=true,['burner-generator']=true,
+    ['electric-energy-interface']=true,['power-switch']=true,['fusion-generator']=true,['lightning-attractor']=true}
+  local MAX_READ,REACH=256,12
+  local function supply(proto)
+    local ok,d=pcall(function() return proto.get_supply_area_distance() end)
+    if ok and d then return d end
+    ok,d=pcall(function() return proto.supply_area_distance end)
+    return ok and d or 0
+  end
+  local function ghost_covered(e,proto)
+    local box=proto.collision_box or {left_top={x=0,y=0},right_bottom={x=0,y=0}}
+    local x0,y0,x1,y1=e.position.x+box.left_top.x,e.position.y+box.left_top.y,e.position.x+box.right_bottom.x,e.position.y+box.right_bottom.y
+    for _,f in ipairs({{type='electric-pole'},{type='entity-ghost',ghost_type='electric-pole'}}) do
+      for _,pole in ipairs(e.surface.find_entities_filtered{position=e.position,radius=REACH,type=f.type,ghost_type=f.ghost_type,force=e.force,limit=64}) do
+        local d=supply(pole.type=='entity-ghost' and pole.ghost_prototype or pole.prototype)
+        local q=pole.position
+        if x1>q.x-d and x0<q.x+d and y1>q.y-d and y0<q.y+d then return true end
+      end
+    end
+    return false
+  end
+  function M.coverage_notes(p,ents)
+    if own_platform(p) then return nil,nil end
+    local off,offn,out,outn,read={},0,{},0,0
+    for _,e in ipairs(ents or {}) do
+      if read>=MAX_READ then break end
+      if e.valid and e.type~='tile-ghost' then
+        read=read+1
+        local ghost=e.type=='entity-ghost'
+        local proto=ghost and e.ghost_prototype or e.prototype
+        local name=ghost and e.ghost_name or e.name
+        local at=string.format('%s%s (%g,%g)',ghost and 'ghost of ' or '',name,e.position.x,e.position.y)
+        local okp,src=pcall(function() return proto.electric_energy_source_prototype end)
+        if okp and src and not OWN[proto.type] then
+          if ghost then
+            local okc,covered=pcall(ghost_covered,e,proto)
+            if okc and not covered then offn=offn+1; if #off<8 then off[#off+1]=at end end
+          else
+            local okw,why=pcall(M.unpowered,e)
+            if okw and why then offn=offn+1; if #off<8 then off[#off+1]=at..': '..why:gsub('^unpowered: ','') end end
+          end
+        end
+        local okn,nets=pcall(function() return e.surface.find_logistic_networks_by_construction_area(e.position,e.force) end)
+        if okn and nets and #nets==0 then outn=outn+1; if #out<8 then out[#out+1]=at end end
+      end
+    end
+    local power=offn>0 and string.format('%d not covered by any pole\'s supply area: %s%s',offn,table.concat(off,'; '),offn>#off and string.format('; +%d more',offn-#off) or '') or nil
+    local robots=outn>0 and string.format('%d outside every roboport\'s construction area (robots do not build, repair or rebuild them there): %s%s',outn,table.concat(out,', '),outn>#out and string.format(', +%d more',outn-#out) or '') or nil
+    return power,robots
+  end
+end
 -- A batch entry blocked by an entity this batch placed says which entry placed it (Muse, shift13: a pole at
 -- (20.5,64.5) inside the assembler's footprint stopped the batch at entry 2). own: {name, position, index}.
 function M.own_blockers(why,own)
@@ -5688,6 +5760,7 @@ function handlers.build(p,a)
       M.entryset.built(p,a,1,settings)
       r.closed_in=M.closed_in_note(p,ents or {})
       r.outside_logistic_coverage,r.underground_side_feed=M.build_notes(p,ents)
+      r.no_power_coverage,r.outside_construction_area=M.coverage_notes(p,ents)
       return result(r,true)
     end
     local rest={}
@@ -5799,6 +5872,7 @@ function handlers.build(p,a)
     end
   end
   local cover,side=M.build_notes(p,built)
+  local no_power,outside=M.coverage_notes(p,built)
   local okb,last_belt=pcall(M.beltflow.last,built)
   -- Two or more belts: each one's line, the tile its items move to (last_belt stays the last one's).
   local okl,belt_lines,belts_more=pcall(M.beltflow.lines,built)
@@ -5810,7 +5884,7 @@ function handlers.build(p,a)
   return result({built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,summary=summary,inserters_without_target=loose,
     batches=entries>64 and string.format('%d entries in %d batches of up to 64, one reply',entries,math.ceil(entries/64)) or nil,
     inserters_without_target_count=nloose and nloose>#loose and nloose or nil,
-    closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,underground_side_feed=side,last_belt=okb and last_belt or nil,
+    closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,no_power_coverage=no_power,outside_construction_area=outside,underground_side_feed=side,last_belt=okb and last_belt or nil,
     belts=belt_lines,belts_more=belts_more and belts_more>0 and belts_more or nil,
     tiles_removed=#tiles_removed>0 and tiles_removed or nil,removed_note=#tiles_removed>0 and M.bots.REMOVED_NOTE or nil,
     tiles_not_placed=#tiles_not_placed>0 and tiles_not_placed or nil},true)
@@ -5902,6 +5976,8 @@ function handlers.inspect(p,a)
   -- 27 to look up); an entity no pole reaches says so in power ("unpowered: ...") while the engine reads low_power.
   out.status=e.status
   out.status_name=entity_status_names[out.status]
+  -- a captive spawner not producing: its health, the minutes it has left and why (pushalerts.lua; d17 batch18 C6)
+  if e.name=='captive-biter-spawner' then local okc,_,line=pcall(M.pushalerts.captive,e); out.starving=okc and line or nil end
   out.energy=e.energy
   out.fluids=e.get_fluid_contents()
   out.electric_network_id=e.electric_network_id
@@ -12093,6 +12169,7 @@ local function place_ghost_list(p,list,ammo)
   end
   -- Logistic chest ghosts no roboport's logistic area covers (a roboport placed in this call counts: it is a ghost now).
   local cover=M.build_notes(p,chests)
+  local no_power,outside=M.coverage_notes(p,ghosts)
   -- The last belt ghost: where it moves items, read once all of this call's ghosts stand (beltflow.lua).
   local okb,last_belt=pcall(M.beltflow.last,belts)
   local okl,belt_lines,belts_more=pcall(M.beltflow.lines,belts)
@@ -12117,6 +12194,7 @@ local function place_ghost_list(p,list,ammo)
     cliffs_marked=ncliffs>0 and ncliffs or nil,cliffs_note=cliffs_note,
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
     tiles_laid=tiles_laid,tiles_note=tile_note,outside_logistic_coverage=cover,tile_obstacles_marked=M.tile_marks_line(tile_marked),
+    no_power_coverage=no_power,outside_construction_area=outside,
     ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,directions_turned=#turned_notes>0 and turned_notes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
 end
 -- Ghosts that, once built, close the character in where it stands, as the dry run's closes_in reads the plan
@@ -12575,7 +12653,8 @@ function handlers.pole_route(p,a)
     out.placed=placed.placed; out.bounds=placed.bounds; out.obstacles_marked=placed.obstacles_marked
     if placed.failed then for _,f in ipairs(placed.failed) do failed[#failed+1]={position=specs[f.index].position,error=f.error} end; out.failed=failed end
   end
-  out.note=#specs>0 and 'ghosts placed; run construct (default area: these bounds) to build them'..(out.short and string.format('; craft %d more %s first',out.short,item) or '') or 'nothing to place'
+  out.note=#specs>0 and (type(p)=='table' and rawget(p,'__remote') and string.format('ghosts placed on %s by remote view; its construction robots build them (no hand reach there)',p.surface.name)
+    or 'ghosts placed; run construct (default area: these bounds) to build them'..(out.short and string.format('; craft %d more %s first',out.short,item) or '')) or 'nothing to place'
   return out
 end
 function handlers.pipe_route(p,a)
@@ -13135,9 +13214,10 @@ function handlers.dry_run(p,a)
   M.turretammo.check(inner.ammo)
   local q=p
   if inner.platform~=nil and action~='build' then q=on_platform(p,inner.platform) end
-  -- place_ghosts on another planet by remote view (Astra 12:33): the plan is checked there.
+  -- place_ghosts on another planet by remote view (Astra 12:33): the plan is checked there; belt_route too (d17
+  -- batch18 C1, Astra #862).
   if inner.surface~=nil then
-    assert(action=='place_ghosts','dry_run with surface checks place_ghosts (another planet by remote view)')
+    assert(action=='place_ghosts' or action=='belt_route','dry_run with surface checks place_ghosts or belt_route (another planet by remote view)')
     assert(inner.platform==nil,'give platform or surface, not both')
     q=M.on_surface(p,inner.surface)
   end
@@ -13701,7 +13781,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
-  hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
+  hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
@@ -15353,7 +15433,7 @@ M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight
   owner=function(c) return M.character_owner(c) end}
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 -- Urgent alerts that end every sleep and direct wait (Nick, d15 06:17; urgent.lua), and until=alert's filter.
-M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.board.who(p) end,
+M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.board.who(p) end,captive=function(p) return M.pushalerts.urgent_captive(p) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end,
@@ -16530,6 +16610,8 @@ function M.on_event(event)
       if not ok then s.chronicle_errors={count=((s.chronicle_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
     if e.type=='agricultural-tower' then M.agriculture.died(e,event.cause and event.cause.valid and event.cause.name or nil) end
+    -- a captive spawner of ours: its group names what takes its place (pushalerts.lua; d17 batch18 C6)
+    if e.name=='captive-biter-spawner' then pcall(M.pushalerts.captive_died,e) end
     if LOSS.not_lost[e.type] then return end
     s.alerts=nil -- superseded by incidents
     -- A turret of ours that died: its ghost requests the ammo it held (turretammo.lua); a fault is counted.

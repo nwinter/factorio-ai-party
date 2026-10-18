@@ -97,9 +97,11 @@
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
-  sight now (name, head, health), else where a read last saw it. Each territory's `state`, from what the team saw:
-  `has a demolisher` (in sight or last seen), `killed` (`its small-demolisher was killed at tick T (game 22h37m) by
-  sol; none seen since`), or `not seen` (`no demolisher seen in it`).
+  sight now (name, head, health, and its whole `body`: the line through its segments, length, tiles under it, box,
+  which way the head moves and how fast), else where a read last saw it. Any segment in sight counts as in sight.
+  Each territory's `state`, from what the team saw: `has a demolisher` (in sight or last seen), `killed` (`its
+  small-demolisher was killed at tick T (game 22h37m) by sol; none seen since`), or `not seen` (`no demolisher seen in
+  it`).
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills; with `item`, that item over
