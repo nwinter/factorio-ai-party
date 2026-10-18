@@ -7167,3 +7167,13 @@ fh watch    # deploy on every change
     part way sets the records back as given;
   - `state_note` says plainly when the state is no_schedule, no_path or paused (on every platform_schedule reply).
   tests/space.lua.
+- A1 (Sol): platform_defense counted Swiftlet's small asteroids as covered by rocket turrets that engage only big
+  ones. On n every turret, asteroid and ammo prototype has the same target mask (common) and no ammo a target filter,
+  so a turret engages what its priority list allows: with ignore unprioritised targets on, only the asteroids listed.
+  platform_defense now gives cover per asteroid size (small, medium, big, huge): a size is covered where every kind of
+  it (metallic, carbonic, oxide; promethium when a turret lists one) is engaged by a turret within its range and past
+  its minimum range (rocket turret 15, railgun 3.5, flamethrower 6). Collector lines carry `by size: ...` (turrets
+  engaging each size, `none for` the kinds no turret engages); side lines give per size the uncovered edge tiles and
+  their runs; a `by their priority lists:` line names the turrets that engage part of the asteroids. Rows:
+  collectors[].by_size, sides[].by_size, turrets[].min_range and engages, kinds. Measured on n (Swiftlet): as fast as
+  before. tests/d17_batch23.lua.

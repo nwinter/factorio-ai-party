@@ -96,7 +96,12 @@
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
   those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
-  ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
+  ammunition aboard is stranded. Cover is per asteroid size (small, medium, big, huge): a turret engages what its
+  priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range and past its
+  minimum range (rocket turret 15 tiles); a size is covered where every kind of it (metallic, carbonic, oxide;
+  promethium when a turret lists one) is engaged by a turret reaching it. Each collector line gives `by size`, each
+  side its uncovered edge tiles per size, and a line names the turrets engaging only part of the asteroids.
+  `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
