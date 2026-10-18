@@ -20,7 +20,7 @@
 return function(api)
   local M = {}
   M.WARN_TICKS, M.LAST_TICKS = 5 * 3600, 3600
-  M.SWEEP_TICKS, M.ANCHOR_TICKS, M.SLICE, M.CELL, M.MAX_PLACES = 1800, 18000, 120, 64, 64
+  M.SWEEP_TICKS, M.ANCHOR_TICKS, M.SLICE, M.CELL, M.MAX_PLACES, M.MAX_FOUND = 1800, 18000, 120, 64, 64, 512
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function secs(ticks)
     local s = math.max(0, math.floor(ticks / 60 + 0.5))
@@ -494,6 +494,11 @@ return function(api)
       end
     end
     w.recent=recent
+    -- (d17 batch23 B1, Luna and Grok: the alerts named one holder at a time while several hatched at once) every holder
+    -- the sweep found, the first to hatch first (at most MAX_FOUND)
+    local found = {}
+    for i, f in ipairs(job.found) do if i <= M.MAX_FOUND then found[i] = f end end
+    w.found, w.found_tick = found, game.tick
     w.places, w.told, w.tick, w.job = places, told, job.start, nil
   end
   -- Whether a place's holder still holds its eggs now (d17 batch18 A2, Luna: a timer stayed on a provider after Grok
@@ -538,21 +543,101 @@ return function(api)
       place.soon > 0 and (place.soon < place.count and string.format(', %d of them within 5 min', place.soon) or ', all within 5 min') or '',
       (place.others or 0) > 0 and string.format('; %d more in other holders within 64 tiles hatch within 5 min', place.others) or '')
   end
-  -- Lines for the team block: news since this agent last heard (h.eggs_seq).
+  -- The holders of a surface due within 5 min (first stack's time), from the last sweep, and their areas (CELL tiles).
+  local function due_on(w, surface)
+    local list, areas, order, eggs = {}, {}, {}, 0
+    for _, f in ipairs(w.found or {}) do
+      if f.surface == surface and f.tick > game.tick and f.tick - game.tick <= M.WARN_TICKS then
+        list[#list+1] = f
+        eggs = eggs + (f.soon or 0)
+        local k = cell_key(f.surface, f.position)
+        local a = areas[k]
+        if not a then
+          local cx, cy = math.floor(f.position.x / M.CELL) * M.CELL, math.floor(f.position.y / M.CELL) * M.CELL
+          a = {x0=cx, y0=cy, eggs=0, holders=0, first=f.tick}; areas[k] = a; order[#order+1] = a
+        end
+        a.eggs, a.holders, a.first = a.eggs + (f.soon or 0), a.holders + 1, math.min(a.first, f.tick)
+      end
+    end
+    table.sort(order, function(x, y) return x.first < y.first end)
+    return list, order, eggs
+  end
+  -- Lines for the team block (d17 batch23 B1): one line a surface with eggs due within 5 min (this agent's surface,
+  -- or holders it built), told again only when the set of holders due there changes (h.egg_sets).
   function M.alert_lines(p, h, name)
     local w = watch()
     local here = try(function() return p.surface.name end)
     local out = {}
+    local surfaces, sorder = {}, {}
     for _, place in ipairs(w.places or {}) do
-      if place.news and place.news > (h.eggs_seq or 0) and place.tick > game.tick and mine(p, name, place) and #out < 3 and live(place) then
-        -- (d17 batch22 B1) the turrets covering the site
-        local cov = api.coverage and try(function() return api.coverage(place.surface, place.position) end)
-        out[#out+1] = 'eggs hatching: ' .. M.place_text(place, here) .. (cov and '; ' .. cov or '')
+      if place.tick > game.tick and place.tick - game.tick <= M.WARN_TICKS and mine(p, name, place) and not surfaces[place.surface] and live(place) then
+        surfaces[place.surface] = place; sorder[#sorder+1] = place.surface
+      end
+    end
+    h.egg_sets = h.egg_sets or {}
+    for sname in pairs(h.egg_sets) do if not surfaces[sname] then h.egg_sets[sname] = nil end end
+    for _, sname in ipairs(sorder) do
+      local first = surfaces[sname]
+      local list, areas, eggs = due_on(w, sname)
+      local keys = {}
+      for i, f in ipairs(list) do keys[i] = f.entity .. at(f.position) .. f.item end
+      table.sort(keys)
+      local sig = table.concat(keys, ';')
+      if sig ~= '' and h.egg_sets[sname] ~= sig and #out < 3 then
+        h.egg_sets[sname] = sig
+        local cov = api.coverage and try(function() return api.coverage(first.surface, first.position) end)
+        local parts = {}
+        for i, a in ipairs(areas) do
+          if i <= 4 then parts[i] = string.format('(%d,%d)-(%d,%d) %d in %d holder%s, the first in %s', a.x0, a.y0, a.x0 + M.CELL, a.y0 + M.CELL, a.eggs, a.holders,
+            a.holders == 1 and '' or 's', secs(a.first - game.tick)) end
+        end
+        out[#out+1] = string.format('eggs hatching on %s: %d within 5 min in %d holder%s; the first: %s%s; by area: %s%s; eggs {surface: "%s"} lists each holder',
+          sname, eggs, #list, #list == 1 and '' or 's', M.place_text(first, here), cov and ' (' .. cov .. ')' or '',
+          table.concat(parts, '; '), #areas > 4 and string.format('; +%d more areas', #areas - 4) or '', sname)
       end
     end
     h.eggs_seq = w.seq or 0
     return out
   end
+  -- (B1) eggs {surface?, limit?}: every holder of eggs the last sweep found on a surface, the first to hatch first.
+  function M.read_eggs(p, a)
+    local w = watch()
+    local sname = a.surface or try(function() return p.surface.name end)
+    assert(type(sname) == 'string', 'surface must be a surface name')
+    local limit = a.limit == nil and 64 or a.limit
+    assert(type(limit) == 'number' and limit >= 1 and limit <= 256, 'limit is 1..256 (holders given turret cover)')
+    local rows, lines, eggs, holders = {}, {}, 0, 0
+    for _, f in ipairs(w.found or {}) do
+      if f.surface == sname then
+        holders = holders + 1; eggs = eggs + f.count
+        if #rows < limit then
+          local cov = api.coverage and try(function() return api.coverage(f.surface, f.position) end)
+          local h = M.hatch(f.item:match('^[^@]+'))
+          local row = {holder=f.entity, position=f.position, item=f.item, count=f.count, spoiled_percent=f.mean or math.floor(f.percent * 100 + 0.5),
+            first_spoiled_percent=math.floor(f.percent * 100 + 0.5), first_hatch_in_s=math.floor((f.tick - game.tick) / 60), due_5min=f.soon, into=h and h.entity or nil, cover=cov, by=f.by}
+          rows[#rows+1] = row
+          lines[#lines+1] = string.format('%d %s in %s at %s (%s): %d%% spoiled (the first stack %d%%), the first hatch%s %s%s; %s', f.count, f.item, f.entity, at(f.position),
+            f.by or '?', row.spoiled_percent, row.first_spoiled_percent, h and ' into ' .. h.entity or '',
+            f.tick > game.tick and 'in ' .. secs(f.tick - game.tick) or 'due ' .. secs(game.tick - f.tick) .. ' ago (it may have hatched)',
+            (f.soon or 0) > 0 and string.format(', %d within 5 min', f.soon) or '', cov or 'turret cover not read')
+        end
+      end
+    end
+    local _, areas, due = due_on(w, sname)
+    local area_rows = {}
+    for i, x in ipairs(areas) do area_rows[i] = {area={left_top={x=x.x0, y=x.y0}, right_bottom={x=x.x0 + M.CELL, y=x.y0 + M.CELL}}, due_5min=x.eggs, holders=x.holders, first_in_s=math.floor((x.first - game.tick) / 60)} end
+    local age = w.found_tick and math.floor((game.tick - w.found_tick) / 60)
+    table.insert(lines, 1, string.format('%d eggs in %d holders on %s (the egg sweep %s); %d due within 5 min%s', eggs, holders, sname,
+      age and age .. 's ago' or 'has not run yet', due, #area_rows > 0 and ' by area: ' .. (function()
+        local t = {}
+        for i, x in ipairs(areas) do if i <= 8 then t[i] = string.format('(%d,%d)-(%d,%d) %d', x.x0, x.y0, x.x0 + M.CELL, x.y0 + M.CELL, x.eggs) end end
+        return table.concat(t, ', ') end)() or ''))
+    if holders > #rows then lines[#lines+1] = string.format('+%d more holders (limit %d)', holders - #rows, limit) end
+    return {surface=sname, eggs=eggs, holders=holders, due_5min=due, areas=area_rows, rows=rows, lines=lines, sweep_age_s=age,
+      note='from the egg sweep (every 30 s through the cells where eggs are made or were found, characters and hubs); turret cover: turrets of ours in range with ammunition, power or fluid'}
+  end
+  M.schema = {eggs={surface='optional surface name (default yours)', limit='optional 1..256 holders given turret cover (default 64)',
+    returns='lines: a head (eggs and holders on the surface, the sweep\'s age, the eggs due within 5 min by 64-tile area), then each holder, the first to hatch first: count, item, holder, position, who placed it, spoiled percent (mean, and the first stack), the first hatch (into what, when), how many within 5 min, the turrets of ours ready in range; rows [{holder, position, item, count, spoiled_percent, first_spoiled_percent, first_hatch_in_s, due_5min, into, cover, by}], areas [{area, due_5min, holders, first_in_s}], eggs, holders, due_5min, sweep_age_s. Read only'}}
   -- For a sleeper: news after seq that concerns this agent (waits.lua wakes it).
   -- carried_only: a sleep that takes no messages (a ship wait; E9, Grok 19:50: every egg alert woke one) hears only of
   -- eggs its own character carries; the rest reach it in the team block of its next reply.

@@ -134,7 +134,8 @@ eq(st.eggs.seq,1); eq(place.news,1)
 local hs,hl={},{}
 local lines=S.alert_lines(sol,hs,'sol')
 eq(#lines,1)
-eq(lines[1],'eggs hatching: 15 pentapod-egg in wooden-chest at (46.5,48.5): the first hatch into big-wriggler-pentapod-premature in 4m10s (70% spoiled), all within 5 min')
+-- (d17 batch23 B1) one line a surface: the holders due within 5 min, the first, the areas
+eq(lines[1],'eggs hatching on gleba: 15 within 5 min in 1 holder; the first: 15 pentapod-egg in wooden-chest at (46.5,48.5): the first hatch into big-wriggler-pentapod-premature in 4m10s (70% spoiled), all within 5 min; by area: (0,0)-(64,64) 15 in 1 holder, the first in 4m10s; eggs {surface: "gleba"} lists each holder')
 eq(#S.alert_lines(sol,hs,'sol'),0) -- told once
 eq(#S.alert_lines(luna,hl,'luna'),0) -- another surface, not built by luna
 -- Built by the reader: heard on any surface.
@@ -144,13 +145,26 @@ eq(#S.alert_lines({index=4,name='sol',surface={name='nauvis'}},hb,'sol'),1)
 eq(S.news(sol,0,'sol') ~= nil,true); eq(S.news(sol,1,'sol'),nil)
 -- A sleep that takes no messages (a ship wait) hears only of eggs its character carries (E9, Grok 19:50).
 eq(S.news(sol,0,'sol',true),nil)
--- Under 1 minute: news again, and told again.
+-- Under 1 minute: news again (a sleeper wakes). The alert line is told again because its set changed: the
+-- biochamber's eggs are due within 5 min now too (B1); asked again with the same set, nothing.
 game.tick=game.tick+3*3600+900 -- about 55 s left
 run(1+10)
 place=st.eggs.places[1]
 eq(st.eggs.seq,2); eq(place.news,2)
 lines=S.alert_lines(sol,hs,'sol')
-eq(#lines,1); has(lines[1],'the first hatch into big-wriggler-pentapod-premature in')
+eq(#lines,1); has(lines[1],'eggs hatching on gleba: 18 within 5 min in 2 holders; the first: 15 pentapod-egg in wooden-chest at (46.5,48.5)')
+has(lines[1],'by area: (0,0)-(64,64) 18 in 2 holders')
+eq(#S.alert_lines(sol,hs,'sol'),0)
+-- (B1) eggs: every holder on the surface in one read, with the areas' totals due within 5 min
+do
+  local r=S.read_eggs(sol,{})
+  eq(r.surface,'gleba'); eq(r.holders,2); eq(r.eggs,18); eq(r.due_5min,18); eq(#r.rows,2)
+  eq(r.rows[1].holder,'wooden-chest'); eq(r.rows[1].count,15); eq(r.rows[1].by,'sol'); eq(r.rows[2].holder,'biochamber')
+  has(r.lines[1],'18 eggs in 2 holders on gleba (the egg sweep 0s ago); 18 due within 5 min by area: (0,0)-(64,64) 18')
+  has(r.lines[2],'15 pentapod-egg in wooden-chest at (46.5,48.5) (sol): 70% spoiled (the first stack 70%), the first hatch into big-wriggler-pentapod-premature in')
+  eq(#S.read_eggs(sol,{surface='nauvis'}).rows,0)
+  local ok,err=pcall(S.read_eggs,sol,{limit=0}); assert(not ok and tostring(err):find('limit is 1..256',1,true),tostring(err))
+end
 has(S.news(sol,1,'sol'),'eggs hatching: 15 pentapod-egg')
 -- Hatched, while the biochamber's later eggs stay in the cell: a new batch, told again under 5 min.
 egg_chest_inv[1]={valid_for_read=false}

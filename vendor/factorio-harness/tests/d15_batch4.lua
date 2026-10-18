@@ -444,7 +444,7 @@ print('d15_batch4 7 platform arrival: ok')
 do
   defines={logistic_member_index={rocket_silo_requester=4}}
   prototypes={item={['low-density-structure']={weight=5000}},utility_constants={rocket_lift_weight=1000000}}
-  local net={get_item_count=function() return 30 end}
+  local net={get_item_count=function(_,member) return member=='storage' and 0 or 30 end}
   local pt={filters={{name='low-density-structure',count=200}}}
   local silo={position={x=15.5,y=59.5},surface={planet={name='nauvis'},find_logistic_network_by_position=function() return net end},
     transitional_request_target={valid=true,name='Starling'},get_logistic_point=function() return pt end}
@@ -454,7 +454,7 @@ do
   local S=dofile('mod/agent-harness_0.1.0/silo.lua'){}
   eq(S.auto_wait(silo,force,{{name='low-density-structure',count=14}}),'filling a rocket for Starling: low-density-structure 14 of 200 aboard (a full rocket by weight, 5 kg each); its network holds 30 more, under the 186 it still waits for; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload)')
   silo.transitional_request_target=nil
-  eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: below_min_payload: Starling asks low-density-structure 50 (holds 0, lacks 50), no min payload: a rocket waits for a full one, 200 by weight, the silo\'s network holds 30, under the 200 a rocket waits for')
+  eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: below_min_payload: Starling asks low-density-structure 50 (holds 0, lacks 50), no min payload: a rocket waits for a full one, 200 by weight, the silo\'s network can give 30 now (provider chests 30, storage chests 0, less what robots have reserved), under the 200 a rocket waits for')
 end
 print('d15_batch4 8 silo: ok')
 

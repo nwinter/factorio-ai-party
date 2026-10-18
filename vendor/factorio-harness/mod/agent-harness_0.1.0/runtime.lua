@@ -1984,6 +1984,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.spoil and M.spoil.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gates and M.gates.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
@@ -11528,7 +11529,7 @@ M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=f
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofeed.trace(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -14264,7 +14265,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
-M.platalerts=require('platalerts'){state=state,ammofeed={trace=function(pl) return M.ammofeed.trace(pl) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+M.platalerts=require('platalerts'){state=state,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
@@ -15632,7 +15633,7 @@ function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end
 -- A platform's turret cover of its collectors and hull (platdefense.lua; A4, Astra 01:50).
 -- A platform's ammunition by whether it can reach a turret (ammofeed.lua; d17 batch13 B1).
-M.ammofeed=require('ammofeed'){}
+M.ammofeed=require('ammofeed'){state=state}
 M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed}
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
@@ -15682,6 +15683,9 @@ M.linecut=require('linecut'){state=state}
 M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
 function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
 passive.robot_losses=true
+-- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
+function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
+passive.eggs=true
 M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
@@ -15689,7 +15693,7 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local okr,lost=pcall(M.robotloss.alert_groups,f)
     for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
     return out
-  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
+  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,silo_sample=function(e) return M.silo.sample_made(e) end,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
   negative_note=function(item,n) return M.circuits.negative_note(item,n) end,
@@ -16732,6 +16736,7 @@ function M.tick_body(event)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
+  if M.ammofeed then pcall(M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
   pcall(M.chronicle.tick,event.tick)  -- the chronicle's events: research, launches, platform stops and platforms made
   pcall(M.ground.watch_tick,event.tick)  -- items on the ground for status alerts and reply hints, a band or a pile a step
   pcall(M.scienceline.tick,event.tick)

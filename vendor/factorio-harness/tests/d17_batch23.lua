@@ -108,6 +108,38 @@ do
   local lines=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){}.lines(tr,false,'Kestrel II',false)
   has(lines[1],'belts back into the hub 4'); has(lines[1],'stranded: 0')
   eq(reads,6,'each belt read once')
+  -- (operator 23:47) a platform over SYNC_BELTS belts is read in the background, READ_PER_TICK belts a tick, the trace
+  -- computed in the tick after the last: the same result
+  do
+    local st={}
+    game={tick=100}
+    local F=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){state=function() return st end}
+    F.SYNC_BELTS,F.READ_PER_TICK=2,4
+    local surface={index=7,find_entities_filtered=function(f)
+      local t=type(f.type)=='table' and f.type[1] or f.type
+      if t=='inserter' then return {loader,old,back,fa,fb} end
+      if t=='ammo-turret' then return {B,A} end
+      if t=='transport-belt' then return belts end
+      return {}
+    end,count_entities_filtered=function() return #belts end}
+    local pl={index=3,name='Kestrel II',valid=true,surface=surface,force='player',hub=hub}
+    reads=0
+    local tr0,why=F.get(pl)
+    eq(tr0,nil); has(why,'the ammunition trace of Kestrel II (6 belts) is read in the background over about 3 ticks (4 belts a tick, the 20 ms rule)')
+    eq(reads,0,'nothing read in the call')
+    for i=1,3 do game.tick=game.tick+1; F.step() end
+    eq(reads,6,'each belt read once, over two ticks')
+    local tr2=F.get(pl)
+    eq(tr2.stranded,0); eq(tr2.via_hub,4)
+    local r2a
+    for _,row in ipairs(tr2.rows) do if row.entity==A then r2a=row end end
+    eq(r2a.reaches,104)
+    has(tr2.as_of,'read over 3 ticks in the background (6 belts, 4 a tick), 0s ago')
+    -- fresh for FRESH ticks; then a new read begins and the last is given meanwhile
+    game.tick=game.tick+F.FRESH
+    local tr3=F.get(pl); eq(tr3,tr2); assert(st.ammofeed.jobs[3],'a new read began')
+    game=nil
+  end
   -- the bulk loader switched off too: nothing more comes, and both loaders are named as switched off
   loader.get_control_behavior=function() return {disabled=true} end
   tr=run({A},belts,{loader,old,back,fa})
@@ -241,3 +273,91 @@ do
   defines,game=nil,nil
 end
 print('d17_batch23 A4 robot_losses cancel after a job ended: ok')
+
+-- B2 (Sonnet: 4000 copper cable read as ready twice; it sat in requester chests): stock splits a stock by what can be
+-- taken: provider and storage chests, requester and buffer chests, plain chests, machines.
+do
+  game={tick=0}
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){spoil={hatch=function() return nil end,secs=function(t) return t..'t' end}}
+  local function lc(mode,x,n) return {entity={valid=true,type='logistic-container',name=mode..'-chest',prototype={logistic_mode=mode}},name=mode..'-chest',position={x=x,y=0},count=n,distance=x} end
+  local places={lc('requester',3,4000),lc('passive-provider',5,100),lc('storage',6,50),lc('buffer',7,20),
+    {entity={valid=true,type='container',name='wooden-chest'},name='wooden-chest',position={x=8,y=0},count=7,distance=8}}
+  local t=S.split(places)
+  eq(t.free,150); eq(t.requested,4020); eq(t.chest,7); eq(t.machine,0)
+  eq(t.text,'provider and storage chests 150 (robots can take it), requester and buffer chests 4020 (held for their requests), plain chests 7')
+  local line=S.line({item='copper-cable',total=4177,places=places,groups={{name='requester-chest',count=4000,entities=1}}})
+  has(line,'4177 copper-cable held by our factory (4000 in 1 requester-chest; provider and storage chests 150 (robots can take it), requester and buffer chests 4020 (held for their requests), plain chests 7)')
+  game=nil
+end
+print('d17_batch23 B2 stock by holder: ok')
+
+-- B3 (Gemini; Sonnet): per silo, rocket parts made and the rate; per request what the network's provider and storage
+-- chests can give now and whether an automatic launch goes under min_payload or full; the next automatic launch.
+do
+  game={tick=36000}
+  defines={inventory={hub_main=1}}
+  prototypes={item={['low-density-structure']={weight=10000,stack_size=50},['processing-unit']={weight=3333,stack_size=100}},utility_constants={rocket_lift_weight=1000000}}
+  local st={}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return st end}
+  local silo={unit_number=77,products_finished=100}
+  local r=S.sample_made(silo)
+  eq(r.made,100); eq(r.per_min,nil)
+  game.tick=game.tick+300; silo.products_finished=105
+  eq(#st.silo_made[77],1,'not sampled again within 10 s'); eq(S.sample_made(silo).per_min,60)  -- 5 parts in 5 s
+  game.tick=game.tick+3300; silo.products_finished=130
+  r=S.sample_made(silo); eq(r.made,130); eq(r.per_min,30); eq(r.over_s,60); eq(#st.silo_made[77],2)
+  -- the requests a platform above makes of this planet
+  local net={network_id=5}
+  net.get_item_count=function(name,member) local t={['low-density-structure']={providers=80,storage=40},['processing-unit']={providers=10,storage=0}} local x=t[name] or {providers=0,storage=0}
+    if member then return x[member] end return x.providers+x.storage end
+  local main={count_empty_stacks=function() return 20 end}
+  local hub={valid=true,get_inventory=function() return main end,get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+    filters={{value={name='low-density-structure'},min=100,import_from='nauvis',minimum_delivery_count=100},{value={name='processing-unit'},min=50,import_from='nauvis'}}} end} end}
+  local force={platforms={{valid=true,name='Swiftlet',space_location={name='nauvis'},hub=hub}},logistic_networks={nauvis={net}}}
+  local e={surface={name='nauvis',planet={name='nauvis'}},position={x=0,y=0}}
+  local rows=S.request_rows(e,force,net)
+  eq(#rows,2)
+  eq(rows[1].item,'low-density-structure'); eq(rows[1].providers,80); eq(rows[1].storage,40); eq(rows[1].network_holds,120); eq(rows[1].next_launch,'min_payload 100'); eq(rows[1].flag,'matched')
+  has(rows[1].line,'the silo\'s network can give 120 now (provider chests 80, storage chests 40, less what robots have reserved)')
+  eq(rows[2].next_launch,'full 300'); eq(rows[2].flag,'below_min_payload')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch23 B3 silo parts rate and requests: ok')
+
+-- B4 (Astra: water's pipe needed one 374-tile pocket, not 41 tiles nor all 1935 ghosts): platform_plan ready names the
+-- pocket of empty space under a ghost's footprint (4-neighbour, bounded by foundation), its tiles, those without a tile
+-- ghost and the place_ghosts entries that stamp them.
+do
+  defines={inventory={hub_main=1}}
+  -- foundation everywhere within 30 tiles, but a 6x4 hole at x 0..5, y 0..3; open space past 30
+  local function empty(x,y) return math.abs(x)>30 or math.abs(y)>30 or (x>=0 and x<=5 and y>=0 and y<=3) end
+  local ghosts={} -- tile ghosts on 3 tiles of the hole
+  for _,c in ipairs({{0,0},{1,0},{2,1}}) do ghosts[#ghosts+1]={valid=true,type='tile-ghost',ghost_name='space-platform-foundation',position={x=c[1]+0.5,y=c[2]+0.5}} end
+  local pipe={valid=true,type='entity-ghost',ghost_name='pipe',ghost_type='pipe',unit_number=11,position={x=2.5,y=1.5},bounding_box={left_top={x=2.2,y=1.2},right_bottom={x=2.8,y=1.8}},ghost_prototype={}}
+  local far={valid=true,type='entity-ghost',ghost_name='pipe',ghost_type='pipe',unit_number=12,position={x=40.5,y=0.5},bounding_box={left_top={x=40.2,y=0.2},right_bottom={x=40.8,y=0.8}},ghost_prototype={}}
+  local s={get_tile=function(x,y) return {name=empty(x,y) and 'empty-space' or 'space-platform-foundation'} end}
+  s.find_entities_filtered=function(f)
+    local out={}
+    if f.type=='entity-ghost' then return {pipe,far} end
+    if f.type=='tile-ghost' then
+      for _,t in ipairs(ghosts) do
+        local ok=true
+        if f.area then ok=t.position.x>=f.area[1][1] and t.position.x<f.area[2][1] and t.position.y>=f.area[1][2] and t.position.y<f.area[2][2] end
+        if f.position then ok=math.abs(t.position.x-f.position[1])<0.2 and math.abs(t.position.y-f.position[2])<0.2 end
+        if ok then out[#out+1]=t end
+      end
+    end
+    return out
+  end
+  local pl={name='Kestrel II',surface=s,force='player',hub={valid=true,get_inventory=function() return {get_item_count=function() return 0 end} end}}
+  local PP=dofile('mod/agent-harness_0.1.0/platplan.lua'){platform=function() return pl end}
+  local r=PP.ready({},pl,{area={left_top={x=-50,y=-50},right_bottom={x=50,y=50}}})
+  eq(#r.pockets,2)
+  local hole=r.pockets[1]
+  eq(hole.tiles,24); eq(hole.without_ghost,21); eq(hole.open,nil); eq(hole.under[1],'pipe (2.5,1.5)')
+  has(hole.line,'pocket 1: 24 empty tiles enclosed by foundation in (0,0)-(6,4) under pipe (2.5,1.5); 21 of them hold no tile ghost')
+  eq(#r.pocket_entries,21); eq(r.pocket_entries[1].name,'space-platform-foundation')
+  eq(r.pockets[2].open,true); has(r.pockets[2].line,'runs past 1024 tiles (open space beside the hull, or a pocket larger than that)')
+  defines=nil
+end
+print('d17_batch23 B4 platform_plan ready pockets: ok')
