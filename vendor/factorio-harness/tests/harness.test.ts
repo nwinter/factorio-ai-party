@@ -70,6 +70,15 @@ test('headless PNG includes only provided local data and a valid RGB payload', (
   assert.deepEqual([...pixels.subarray(playerPixel,playerPixel+3)],[250,250,255]);
 });
 
+test('the fog view: remembered buildings drawn dim, ours lost out of sight outlined in red', () => {
+  const png = renderMap({player:{position:{x:0,y:0}},tiles:[],entities:[{name:'gun-turret',type:'ammo-turret',position:{x:1,y:0},remembered:true}],
+    fog:{lost:[{name:'gun-turret',position:{x:-1,y:0}}]}},2);
+  const pixels = inflateSync(png.subarray(41,41+png.readUInt32BE(33)));
+  const at = (tx:number, ty:number, dx:number, dy:number) => { const i=((ty+2)*8+dy)*(40*3+1)+1+((tx+2)*8+dx)*3; return [...pixels.subarray(i,i+3)]; };
+  assert.deepEqual(at(1,0,4,4),[120,110,80]);
+  assert.deepEqual(at(-1,0,0,4),[224,65,62]);
+  assert.deepEqual(at(-1,0,4,4),[19,25,31]);
+});
 test('renderer accepts Factorio empty Lua tables encoded as objects', () => {
   const image = renderMap({player:{position:{x:0,y:0}},tiles:{},entities:{}},1);
   assert.equal(image.readUInt32BE(16),24);

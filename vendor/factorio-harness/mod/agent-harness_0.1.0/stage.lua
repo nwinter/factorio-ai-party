@@ -35,34 +35,19 @@ return function(api)
     return out
   end
 
-  function M.run(p, a)
-    assert(a.dry_run == nil or type(a.dry_run) == 'boolean', 'dry_run must be true or false')
-    local silo = api.entity(p, api.position(a.position))
-    assert(silo and silo.type == 'rocket-silo', 'position: a rocket silo of ours (any tile of it)')
-    local want = items_of(a.items)
-    local froms = a.from
-    assert(type(froms) == 'table' and (froms.x or froms[1]), 'from: a chest {x,y} or 1..16 of them')
-    if froms.x then froms = {froms} end
-    assert(#froms >= 1 and #froms <= 16, 'from: 1..16 chests')
-    local chests = {}
-    for i, q in ipairs(froms) do
-      local pos = api.position(q)
-      local e = api.entity(p, pos)
-      assert(e, string.format('from[%d] %s: no chest of ours in sight or on the map there', i, at(pos)))
-      chests[i] = e
-    end
-    -- What the rocket still needs, less what you carry.
+  -- What you carry first, then takes at each chest in the order given, then hand crafts for what none holds (their
+  -- ingredients from what you carry, else the chests; intermediates the game's hand queue crafts along, 3 levels deep).
+  -- want: {item = count still to get}; returns {takes per chest, steps (transfer walks, craft, wait), plan, crafts,
+  -- missing, raw_short, short}. rebuild (lostlog.lua) gathers this way too.
+  function M.gather(p, want, chests)
     local inv = p.get_main_inventory()
-    local rocket = try(function() return silo.get_inventory(defines.inventory.rocket_silo_rocket) end)
     local held, still = {}, {}
     local function carry(name) if held[name] == nil then held[name] = inv and inv.get_item_count(name) or 0 end; return held[name] end
-    for name, n in pairs(want) do
-      local need = n - (a.to_total and rocket and (try(function() return rocket.get_item_count(name) end) or 0) or 0)
+    for name, need in pairs(want) do
       local use = math.min(carry(name), math.max(0, need))
       held[name] = held[name] - use
       if need - use > 0 then still[name] = need - use end
     end
-    -- Takes at each chest, in the order given.
     local stock, takes = {}, {}
     for i, e in ipairs(chests) do
       stock[i], takes[i] = {}, {}
@@ -85,8 +70,6 @@ return function(api)
       return n
     end
     for name, n in pairs(still) do still[name] = take(name, n); if still[name] <= 0 then still[name] = nil end end
-    -- Crafts for what is still missing, their ingredients from what you carry, else the chests (intermediates the game's
-    -- hand queue crafts along, 3 levels deep).
     local crafts, craft_list, missing, raw_short = {}, {}, {}, {}
     local function expand(recipe, times, depth)
       for _, ing in ipairs(recipe.ingredients or {}) do
@@ -115,7 +98,6 @@ return function(api)
     end
     for recipe, n in pairs(crafts) do craft_list[#craft_list+1] = {recipe=recipe, count=n} end
     table.sort(craft_list, function(x, y) return x.recipe < y.recipe end)
-    -- The plan.
     local steps, plan = {}, {}
     for i, e in ipairs(chests) do
       if next(takes[i]) then
@@ -131,16 +113,42 @@ return function(api)
       for _, c in ipairs(craft_list) do parts[#parts+1] = c.recipe .. ' x' .. c.count end
       plan[#plan+1] = 'craft by hand ' .. table.concat(parts, ', ') .. ', then wait until the hand queue is done'
     end
+    local short = {}
+    if next(missing) then short[#short+1] = 'not in those chests, not hand-craftable: ' .. list_text(missing) end
+    if next(raw_short) then short[#short+1] = 'ingredients for the crafts in neither your inventory nor those chests: ' .. list_text(raw_short) end
+    return {takes=takes, steps=steps, plan=plan, crafts=#craft_list > 0 and craft_list or nil, missing=next(missing) and missing or nil,
+      raw_short=next(raw_short) and raw_short or nil, short=#short > 0 and table.concat(short, '; ') or nil}
+  end
+
+  function M.run(p, a)
+    assert(a.dry_run == nil or type(a.dry_run) == 'boolean', 'dry_run must be true or false')
+    local silo = api.entity(p, api.position(a.position))
+    assert(silo and silo.type == 'rocket-silo', 'position: a rocket silo of ours (any tile of it)')
+    local want = items_of(a.items)
+    local froms = a.from
+    assert(type(froms) == 'table' and (froms.x or froms[1]), 'from: a chest {x,y} or 1..16 of them')
+    if froms.x then froms = {froms} end
+    assert(#froms >= 1 and #froms <= 16, 'from: 1..16 chests')
+    local chests = {}
+    for i, q in ipairs(froms) do
+      local pos = api.position(q)
+      local e = api.entity(p, pos)
+      assert(e, string.format('from[%d] %s: no chest of ours in sight or on the map there', i, at(pos)))
+      chests[i] = e
+    end
+    -- What the rocket still needs (to_total: less what its cargo holds); gather takes what you carry off that.
+    local rocket = try(function() return silo.get_inventory(defines.inventory.rocket_silo_rocket) end)
+    local need = {}
+    for name, n in pairs(want) do
+      need[name] = n - (a.to_total and rocket and (try(function() return rocket.get_item_count(name) end) or 0) or 0)
+    end
+    local g = M.gather(p, need, chests)
+    local steps, plan = g.steps, g.plan
     local load = {position={x=silo.position.x, y=silo.position.y}, items=a.items, walk=true, launch=a.launch, platform=a.platform,
       to_total=a.to_total, auto_requests=a.auto_requests}
     steps[#steps+1] = {action='load_silo', args=load, label='load'}
     plan[#plan+1] = string.format('load_silo at %s: %s%s', at(silo.position), list_text(want), a.launch and ', then launch' or '')
-    local out = {silo=at(silo.position), plan=plan, crafts=#craft_list > 0 and craft_list or nil,
-      missing=next(missing) and missing or nil, raw_short=next(raw_short) and raw_short or nil}
-    local short = {}
-    if out.missing then short[#short+1] = 'not in those chests, not hand-craftable: ' .. list_text(missing) end
-    if out.raw_short then short[#short+1] = 'ingredients for the crafts in neither your inventory nor those chests: ' .. list_text(raw_short) end
-    out.short = #short > 0 and table.concat(short, '; ') or nil
+    local out = {silo=at(silo.position), plan=plan, crafts=g.crafts, missing=g.missing, raw_short=g.raw_short, short=g.short}
     if a.dry_run then out.line = 'dry run: nothing queued'; out.steps = steps; return out end
     local q = api.submit(p, {steps=steps})
     out.queued = #steps

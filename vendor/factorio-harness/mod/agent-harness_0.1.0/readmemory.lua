@@ -51,6 +51,7 @@ return function(api)
     if t=='entity-ghost' then v.ghost_name=e.ghost_name end
     local box=e.bounding_box
     put(p,pos,'summary',v,box,true)
+    if api.fog_note then pcall(api.fog_note,e,pos,v.status_name) end  -- (a memory fault never fails a read)
     if api.belt_observe and box then api.belt_observe(e,p) end
   end
   local function kind(action,a) return action=='trace' and ('trace:'..tostring(a.forward==true)..':'..tostring(a.all==true)) or 'inspect' end
@@ -99,6 +100,9 @@ return function(api)
     end
     local out=recall(p,a,action)
     if action=='trace' and (not out or out.trace_unknown) and api.belt_trace then out=api.belt_trace(p,a) or out end
+    -- The fog memory (fogmem.lua) keeps every building our force saw, chunk by chunk, where this ring keeps the latest
+    -- sightings: a building out of sight that the ring no longer holds.
+    if not out and action=='inspect' and api.fog_at then out=api.fog_at(p,q,a.name) end
     if not out then
       -- what the map says of the chunk (B1): never charted, or charted and out of sight with our last sight of it
       local g=api.ground_state and api.ground_state(p,q)
