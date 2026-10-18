@@ -54,10 +54,34 @@ return function(api)
   -- walking never blocks this lane, and a remote step never claims a body action.
   remote_api.direct_action=function(p,action) return action=='drop' and api.base.busy(p,'drop') and 'drop' or nil end
   local remote=api.factory(remote_api)
+  -- A lane per platform (d17 batch21 D1, Sol: three couriers, and one platform's cargo wait held the other platforms'
+  -- steps): lane "platform:NAME" is a remote lane of its own, its queues under storage key lane_queues|NAME; the
+  -- names are kept in storage (platform_lanes) and each is ticked as the remote lane is.
+  local engines={}
+  local function M_key(name) return 'lane_queues|'..name end
+  local function platform_engine(name)
+    local e=engines[name]
+    if e then return e end
+    local papi={}
+    for k,v in pairs(remote_api) do papi[k]=v end
+    papi.queue_key=M_key(name)
+    e=api.factory(papi)
+    engines[name]=e
+    local s=api.base.state(); s.platform_lanes=s.platform_lanes or {}; s.platform_lanes[name]=true
+    return e
+  end
   local function lane(a)
     local name=a and a.lane or 'body'
-    assert(name=='body' or name=='remote','lane must be body or remote')
+    if type(name)=='string' then
+      local pl=name:match('^platform:(.+)$')
+      if pl then return name,platform_engine(pl) end
+    end
+    assert(name=='body' or name=='remote','lane must be body, remote or platform:NAME (a remote lane of its own for that platform)')
     return name,name=='remote' and remote or base
+  end
+  local function each_platform(fn)
+    local s=api.base.state()
+    for name in pairs(s.platform_lanes or {}) do fn(name,platform_engine(name)) end
   end
   local function brief(q)
     if not q then return {paused=true,pending=0,active=false} end
@@ -75,10 +99,23 @@ return function(api)
   for k,v in pairs(base) do if M[k]==nil then M[k]=v end end
   function M.lanes(index)
     local s=api.base.state()
-    return {body=brief((s.queues or {})[index]),remote=brief((s.remote_queues or {})[index])}
+    local out={body=brief((s.queues or {})[index]),remote=brief((s.remote_queues or {})[index])}
+    for name in pairs(s.platform_lanes or {}) do
+      local q=(s[M_key(name)] or {})[index]
+      if q then out.platforms=out.platforms or {}; out.platforms[name]=brief(q) end
+    end
+    return out
   end
+  -- The storage keys of every remote-like lane (remote, then each platform's): carry, clock, departure and waiteta read
+  -- them all.
+  function M.remote_keys(s)
+    local keys={'remote_queues'}
+    for name in pairs((s or api.base.state()).platform_lanes or {}) do keys[#keys+1]=M_key(name) end
+    return keys
+  end
+  M.lane_key=M_key
   for name in pairs(base.handlers) do
-    M.schema[name].lane='body (default, existing queue) | remote (independent of body work); revisions belong to the selected lane'
+    M.schema[name].lane='body (default, existing queue) | remote (independent of body work) | platform:NAME (a remote lane of its own for that platform: its waits and platform steps apart from the remote lane and the other platforms\' lanes); revisions belong to the selected lane'
     M.handlers[name]=function(p,a)
       local selected,engine=lane(a)
       if selected=='remote' and name=='queue_repeat' then
@@ -93,13 +130,14 @@ return function(api)
     end
   end
   M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform; drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts and deconstruct with explicit platform; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
-  M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote}: each lane\'s paused, pending, active, revision and repeating state'
+  M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
-  function M.tick() base.tick(); remote.tick() end
-  function M.pause_all() base.pause_all(); remote.pause_all() end
+  function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end
+  function M.pause_all() base.pause_all(); remote.pause_all(); each_platform(function(_,e) e.pause_all() end) end
   function M.round_news(index)
     local out=base.round_news(index) or {}
     for _,line in ipairs(remote.round_news(index) or {}) do out[#out+1]='remote '..line end
+    each_platform(function(name,e) for _,line in ipairs(e.round_news(index) or {}) do out[#out+1]='platform:'..name..' '..line end end)
     return #out>0 and out or nil
   end
   return M

@@ -15,7 +15,9 @@ return function(api)
     local s = api.state()
     for _ in pairs(s.active or {}) do return true end
     for _ in pairs(s.combat or {}) do return true end
-    for _,key in ipairs{'queues','remote_queues'} do
+    local keys={'queues','remote_queues'}
+    for name in pairs(s.platform_lanes or {}) do keys[#keys+1]='lane_queues|'..name end
+    for _,key in ipairs(keys) do
       for _,q in pairs(s[key] or {}) do
         if not q.paused and (q.current or #q.pending>0 or q.loop) then return true end
       end

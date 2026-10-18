@@ -1,4 +1,4 @@
 # One agent name per line: its subagents are off from its next launch (codex only so far). tools/full_tools.py.
 astra
-sol
 luna
+sol

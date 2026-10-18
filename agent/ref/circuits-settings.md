@@ -4,7 +4,10 @@
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
   of the entity's conditions is not met; a circuit condition counts only with a red or green wire on the entity
   (without one the game ignores it, and the line says `condition ignored`). A logistic condition reads the network
-  whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
+  whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
+  the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
+  condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
+  (`circuit_gate {source: the chest}`). inspect, supply's gate line and the off_by_condition alert say the same.
   - Decider rows keep AND and OR as given: `"conditions":["signal-A > 0","and iron-plate < 150"]` (a row after the
     first must say and or or), `{signal, comparator, value, compare, first_networks: "red"}`, or the game's own rows
     (`first_signal`, `constant`, `compare_type`); outputs `{signal, copy_input: true}` (the input count) or `{signal,
@@ -29,6 +32,12 @@
   build, circuit_set and wire calls, in order; one that fails stops it, naming what was done and the calls left. No
   decider held or no tile that fits: refused before anything, with the calls.
   Example: `./fh call circuit_gate --args '{"position":{"x":-17.5,"y":30.5},"all":["bioflux > 200","agricultural-science-pack < 500"]}'`
+- `gates {surface? | area?, page?}`: every circuit and logistic condition on our entities there (a surface: those the
+  census's last pass found with a control behavior; an area up to 128x128: read now), 256 entities a call: the
+  condition, what it reads now (the signal on its wires, the logistic network's count), true or false now, off by it.
+  A logistic condition `item > N` (or `>=`, `=`) above what the network can hold (its count and what its storage and
+  provider chests could still take of the item) comes first as `CANNOT BE MET:`, then those not met now.
+  Example: `./fh call gates --args '{"surface":"nauvis"}'`
 - `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers

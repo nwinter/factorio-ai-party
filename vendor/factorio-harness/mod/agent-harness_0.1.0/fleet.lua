@@ -49,6 +49,8 @@ return function(api)
     parts[#parts+1] = inc and string.format('%d rocket%s on the way: %s', inc.rockets, inc.rockets == 1 and '' or 's', inc.cargo) or 'no rocket on the way'
     local fuel = api.fuel_text and try(function() return api.fuel_text(pl) end)
     if fuel then parts[#parts+1] = fuel end
+    local off = api.requests_off and try(function() return api.requests_off(pl) end)
+    if off then parts[#parts+1] = off end
     -- the delay: the first waiting request at the stop it is at, else the first waiting one
     local w = api.where and try(function() return api.where(pl) end) or {}
     local first

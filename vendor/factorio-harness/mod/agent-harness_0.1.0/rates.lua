@@ -309,6 +309,11 @@ return function(api)
       g.count=g.count+1
       local status=api.status_name(e) or 'unknown'
       g.statuses[status]=(g.statuses[status] or 0)+1
+      -- (d17 batch22 B2, Muse: a stopped line read as a shortage, stock-gated by design) the gate of the first stopped
+      -- by its own condition: the condition and what it reads now (thrust.state_text, as supply's lines)
+      if status=='disabled_by_control_behavior' and not g.gate and api.state_text then
+        local ok,t=pcall(api.state_text,e); g.gate=ok and t and string.format('%s (%g,%g): %s',e.name,e.position.x,e.position.y,t) or nil
+      end
       if recipe then
         by_machine[e.unit_number]={entity=e,recipe=recipe,demand=0,supply=0,output=0,take=0,group=g}
         -- Missing ingredients read from the machine's input slots, as its GUI shows.
@@ -378,7 +383,7 @@ return function(api)
       end
       local idle=0
       for status,n in pairs(g.statuses) do if not STATUS_SKIP[status] then idle=idle+n end end
-      rows[#rows+1]={machines=g.machine..' x'..g.count,status=table.concat(parts,', '),short=short,idle=idle>0 and idle or nil}
+      rows[#rows+1]={machines=g.machine..' x'..g.count,status=table.concat(parts,', '),short=short,idle=idle>0 and idle or nil,gate=g.gate}
     end
     -- What the area needs from outside at full speed, against belt capacity.
     local belt_capacity

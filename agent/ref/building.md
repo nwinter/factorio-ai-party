@@ -1,7 +1,8 @@
 - `build {item, position, direction?, recipe?, builds?, all?, check_inserters?, entity?, dry_run?}`: places from your
   inventory; `builds` is a batch of entries (up to 256; more than 64 are worked in batches of 64 in the same call, one
   reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8,
-  12); `recipe` sets an assembler's recipe. `"all": true` builds every entry it can and lists the rest in `failed`
+  12); `recipe` sets an assembler's recipe; a machine the game placed facing north without its recipe's fluid ports
+  is turned the way asked once the recipe is set (`direction_note`; place_ghosts: `directions_turned`). `"all": true` builds every entry it can and lists the rest in `failed`
   with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. Errors name the
   blocker (tree, rock, the character, water); trees and rocks go with `place_ghosts` + `construct`, or `mine`.
   Standing on the footprint, the character steps aside first: the reply gives `not_yet`, `still_to_build` and
@@ -48,6 +49,10 @@
   inside an enemy's reach is left out (`left_out`; `unsafe_goal: true` builds it). It reports `materials` before
   acting (need, held, missing, queued, hand_craftable); `dry_run: true` checks them without acting.
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
+- `rebuild {area | position+radius, all?, from?, dry_run?}`: one queued plan for the ghosts there robots will not build:
+  takes the items you do not carry (from `from`, else chests of ours within 96 tiles of you), hand-crafts what none
+  holds, then `construct {area, outside_robots: true}` per box of up to 256x256. `all: true`: every ghost.
+  Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
@@ -67,7 +72,7 @@
   `preserve_existing_settings_and_wires: true` adds only what is missing. A paste leaves the requests of a hub or
   requester chest it lands on, a hub's construction requests too (`requests_kept`).
   Example: `./fh call paste --args '{"name":"smelter-row","position":{"x":40,"y":12},"dry_run":true}'`
-- `placements {name, near?, radius?, limit?, separate?, powered?, surface?}`: up to 10 (`limit` up to 50) positions
+- `placements {name, near?, radius?, limit?, separate?, powered?, surface?, resource?}`: up to 10 (`limit` up to 50) positions
   where it fits now, nearest first, by the game's build check, without building (`blocked`: positions something stands
   in). `"separate": true` lists spots that do not overlap each other, `"powered": true` only spots in one of our poles'
   supply areas; without them `overlapping` and `no_supply` count such spots, and count 0 names what is in the way
@@ -75,8 +80,13 @@
   and minable, or trees and rocks, with how many to mine first and which (`(47,187): mine 2 first (accumulator 2):
   ...`). `surface` reads another planet; each spot gives `network`. A cargo bay keeps to its 2-tile grid: the position
   offered is where it lands. A refused build of an offshore pump, or of anything onto water, lists the nearest valid
-  placements.
+  placements. `resource` (a name, or true) with a drill or pumpjack: its spots on that resource within `radius` (1..32,
+  default 16): a pumpjack every well, free with the directions it fits, taken by our drill, or blocked; a drill each
+  tile centre whose mining area holds the ore, the most ore first, the free ones none overlapping. Each blocked spot
+  says why (the build refusal's text: what stands there, a tile and the foundation it needs, a cliff), and
+  `blocked_by` counts them by kind.
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`
+  Example: `./fh call placements --args '{"name":"pumpjack","resource":"crude-oil","near":{"x":-7,"y":100}}'`
 - `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with
   offshore-pump spots there.
 - `conflicts {name, position, direction?}` (a read): what building there takes away: everything in the way, the fluid
@@ -89,11 +99,12 @@
   Example: `./fh call build_path --args '{"points":[{"x":0.5,"y":0.5},{"x":20.5,"y":0.5}]}' --wait`
 - `grid {position?, radius?}`: one character per tile; `,` is `walkable water` (shallow water, wetland, Fulgora's oil
   ocean, deep too), `~` water a character cannot cross; `map` tells them apart the same way.
-- `pole_route {from, to}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
-  `short`. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
+- `pole_route {from, to, surface?}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
+  `short`. `surface` (pole_route and belt_route, dry runs too): on another planet by remote view, in charted chunks;
+  that planet's construction robots build them. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
   Example: `./fh call pole_route --args '{"from":{"x":10.5,"y":10.5},"to":{"x":80.5,"y":10.5}}'`
-- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?}`: lays a belt line as ghosts
+- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?, surface?}`: lays a belt line as ghosts
   (legs up to 1000 tiles), over trees and wild plants it marks, water only with `"landfill": true`; `return` adds the
   line back beside it, crossing under it where its side is blocked. It goes round cliffs (an underground passes under
   one; `cliffs: true` passes over and marks them) and names what its ghosts mark for mining (`to_mine`: trees, rocks,
@@ -116,12 +127,13 @@
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
-- `train {position, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
+- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
   `station` and `limit`; on a locomotive, its `schedule` and `automatic`; `train {position}` reads a train's state and
   why it waits. A train in `no_path` reads `rail_break` (`path_to: "STOP"` for any stop): the rails followed from the
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
   ghosts. `stops: true` lists every train stop of ours on a surface: name, position, rail, limit and the trains
-  heading there.
+  heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
+  read gives its `id` and `front` (name, position, surface).
   Example: `./fh call train --args '{"position":{"x":40,"y":-30},"path_to":"iron-pickup"}'`
 - `clear_cliffs {positions}`: throws cliff explosives you hold at those cliffs, walking into their 10-tile range
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the
@@ -160,7 +172,9 @@
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and
   inserters or belts feeding an underground entrance from the side, with the lane that gets nothing
-  (`underground_side_feed`). Each cliff the placement marks is listed (`cliffs_under`). A place_ghosts dry run over
+  (`underground_side_feed`). build and place_ghosts replies also name what they put down that no pole's supply area
+  covers (`no_power_coverage`; built: the nearest pole) and what lies outside every roboport's construction area
+  (`outside_construction_area`). Each cliff the placement marks is listed (`cliffs_under`). A place_ghosts dry run over
   another ghost says blocked, as the call does. On a platform a planned pump's enable condition with no circuit wire is
   named (`pump_circuits`), and a ghost refused over empty space says when foundation tile ghosts under it are not
   built yet.
@@ -174,4 +188,5 @@
   asteroid collector, saying so: its collection area is kept empty space.
 - Nuclear: build the reactor and heat pipes; transfer or refuel with uranium-fuel-cell.
 - On Vulcanus a build, ghost placement, paste or route inside a demolisher territory (as the map draws it) carries
-  `demolisher_territory`, dry runs too.
+  `demolisher_territory`, dry runs too, with the territory's state as `demolishers` gives it (its demolisher seen,
+  killed at T by X, or none seen in it).

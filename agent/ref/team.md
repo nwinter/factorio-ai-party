@@ -104,7 +104,9 @@
   power (31 poles, ...): 20 electric-mining-drill, ...`; `scan` rows of poles give `network` and `wires`; `inspect`
   gives `electric_network_id` and `circuit.wires`), and the game's alerts and warnings for areas you claimed, built or
   are nearest: `8 assembling-machine-2 no power near (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets
-  rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost
+  rebuilt empty (built with no ammo, still empty 60 s later, named), hand-fed turrets (no inserter drops into them)
+  under 10 magazines (`ammo_low`: to who built them and every agent within 64 tiles, each turret with its magazines,
+  ending `rearm {alert: KEY} tours exactly these`), ghosts waiting for materials, inserters that lost
   their pickup or drop target (by what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their
   feeding inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel

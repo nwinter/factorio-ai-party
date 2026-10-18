@@ -45,7 +45,9 @@
   `per_min: 30`: each step's rate for that target, what it makes now, its makers' rate each and the machines the target
   takes; an ingredient is counted net of what its recipe gives back (asteroid crushing). A fluid adds `shares`: each
   recipe's machines and share of the fluid at full speed. `all_stopped: true`: every maker not working, grouped by
-  cluster with every position. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
+  cluster with every position. A maker stopped by its own circuit or logistic condition carries the gate inline (the
+  condition and what it reads now), in bottleneck's groups (`gate`, with area or positions) and in supply's and
+  bottleneck item's maker lines. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
 - `trace {position | item, platform? | surface?, forward?, audit?, upstream?, throughput?, circuit?, all?, near?,
   radius?}`: on a machine or lab, per ingredient it lacks each feeding inserter, what that inserter reads and how much
   is there, and a container within 10 tiles holding it that nothing reads. `forward: true` follows its output inserters
@@ -65,6 +67,14 @@
   it returns dated last-seen memory. It flags a held-item refusal. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
   and the research ETA; `surface` reads that surface.
+- Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
+  add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
+  then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
+  remembered ones dim, ghosts blue, losses as red outlines.
+- `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
+  when, the cause, whether its ghost stands now and whether robots can build it (the covering network, its idle
+  robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).
+  Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
@@ -80,6 +90,8 @@
   - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
     a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
     holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
+  - a captive biter spawner not producing: `starving`: its health, the minutes it has left (it loses 1 HP a second
+    while it makes nothing; at 0 a hostile biter-spawner takes its place) and why (fuel slot empty, output full);
   - fluid connection tiles (`fluid_connections[].joins` is where a pipe must go); a ghost shows its fluid ports as
     `ports` does; a heat entity its heat connections and temperature; `inspect.heating` reports freezing, demand,
     adjacent heat buffers and the heat connections there (what is frozen now across a planet: the `frozen` alert,
@@ -120,27 +132,49 @@
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more). `kind: "off_by_condition"`: machines off by their own
+  placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
+  chest they drop into (each drill, what it mines, the chest's slots used and what fills it); a backed-up belt is not
+  said. `kind: "off_by_condition"`: machines off by their own
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
-  team alert line to its builders and claim owners.
+  team alert line to its builders and claim owners. `captive_starving`: captive spawners not producing, with the same
+  facts as inspect's `starving`, to their builder and their feeders' builders; under 2 minutes left it is
+  `captive_urgent`, and `captive_died` names the hostile spawner standing in its place; both show in the team block's
+  urgent part and wake a sleep.
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
   ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
   (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a
   line) follows the whole line both ways, in chunks our force sees now, up to 4096 tiles each way: at each end a belt of
   ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
   what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
-- `pipe_gaps {from, to, via?}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts where
-  neighbours do not join or the line stops. Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
+- `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
+  where neighbours do not join or the line stops. `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
+  network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities:
+  each fluid segment by the engine's id with its fluid, amount over capacity and box, `empty` (with the fluid it is
+  locked to), and the machines it joins with each box's fluid. inspect's rows and compact lines give an entity's
+  fluid boxes (`fluid`). Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
 - `danger {position?, radius?, surface?}`: a destination before a trip (no position: where you stand): worms and
   spawners on the map round it with their reach, enemy units in sight or radar coverage by name, and those more than
   24 tiles from every spawner in packs (`packs`: count, names, where, how far), apart from those by their nests;
   attacks, losses, groups and deaths there; the nests the straight line from you passes; your health, armor and
-  shield. Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
+  shield; `eggs`: each egg site within the radius that hatches (count, holder, the first hatch time), with the turrets
+  of ours in range of it (ready: ammunition, power or fluid; in range without). The egg alerts name the same turrets.
+  Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
 - `drill_sites {position, resource?, radius?, limit?, surface?}`: for one depleted drill of ours, the nearest visible
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
+- `robot_losses {surface?, minutes?, cancel?, near?}`: our construction and logistic robots killed by enemies in the last
+  `minutes` (default 30), by killer: how many, the jobs that sent them (order and target, where), and how many of those
+  jobs stand; a killer with a death in the last 5 min is a team alert (`robots_lost`). `cancel: true, near: {x,y}` (a
+  killer's position) cancels those jobs as by hand: ghosts, tile ghosts and item request proxies removed,
+  deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled.
+  Example: `./fh call robot_losses --args '{"cancel":true,"near":{"x":200,"y":40}}'`
+- `ingredient_gap {position | positions | area, all?}`: per crafting machine (up to 32), each ingredient of its next
+  craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the places
+  within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer only
+  over its request), with how many. `area` (up to 128x128) lists the machines short of something (`all: true`: every
+  one). Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`
 - `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
   every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
   and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
@@ -191,5 +225,9 @@
   show building tiers per planet from the dated census, and researched vehicles against force-wide built counts.
 - A full `status` gives `robots`: per planet or platform, all its logistic networks' robots by kind (idle, working,
   charging, waiting to charge) and the networks with the most waiting. Its fuel and power warnings name the surface and
-  the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`).
+  the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`). `alerts.out_of_sight`: per planet, our
+  drills, machines and turrets in chunks our force does not see now (no radar or character of ours sees them),
+  by 64-tile area with the nearest radar and its state, and the radars not working. `alerts.outside_coverage`: per
+  planet, what lies outside every roboport's construction area (buildings and ghosts, by 64-tile area and name) and the
+  requester and buffer chests outside every logistic area. The team block carries both once an hour.
 - `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.

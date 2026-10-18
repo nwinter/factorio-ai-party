@@ -650,7 +650,7 @@ p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true
   p.surface.find_entities_filtered=function() return now and {now} or {} end
   p.build_from_cursor=function(args)
     p.cursor_stack.count=p.cursor_stack.count-1
-    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine,fluidbox={}}
+    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine,fluidbox={},direction=0}
     m.set_recipe=function(r) m.recipe=r; return {} end
     m.get_recipe=function() return m.recipe and {name=m.recipe} or nil end
     made[#made+1]=m; now=m
@@ -662,6 +662,12 @@ p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true
     'recipe sulfur (category chemistry) is not one assembling-machine-1 makes (its categories: advanced-crafting, crafting)')
   fails(function() call('build',{item='wooden-chest',position={x=6,y=0},recipe='locked'}) end,'recipe locked is unavailable')
   eq(#made,1,'nothing built for a refused recipe'); eq(wood.count,3)
+  -- (d17 batch21 A1, Sol) placed facing north by the game: turned the way asked once the recipe is set, said so
+  do
+    local turned=call('build',{item='wooden-chest',position={x=10,y=0},recipe='iron-gear-wheel',direction='east'})
+    eq(made[2].direction,4); eq(turned.direction_note,'placed facing north (the game keeps a machine without its recipe\'s fluid ports facing north); turned east once the recipe was set')
+    table.remove(made,2); wood.count=3
+  end
   local saved_prototypes=prototypes
   prototypes={item={['wooden-chest']={place_result=machine}},entity={}}
   r=call('build',{item='wooden-chest',recipe='iron-gear-wheel',builds={{position={x=6,y=0}},{position={x=8,y=0}}}})
@@ -2605,10 +2611,47 @@ fails(function() call('observe',{position={x=100,y=0}}) end,'charted chunk')
 local remote=call('observe',{position={x=42,y=2},radius=8,resources='none'})
 local seen={}; for _,e in ipairs(remote.entities) do seen[e.name]=true end
 eq(seen.boiler,true); eq(seen['spitter-spawner'],true); eq(seen['small-biter'],nil)
+assert(remote.fog and remote.fog.chunks_out_of_sight>=1,'observe says what is out of sight beside it (fogmem.lua)')
 local scan=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'hp','fuel'},ore='runs'})
 eq(scan.total,2); eq(scan.entities[1].name,'boiler'); eq(scan.entities[1].hp,'100/200'); eq(scan.entities[1].fuel,'coal*49')
 -- The spawner sits in a charted but fogged chunk: its live health stays hidden.
 eq(scan.entities[2].hp,nil); eq(scan.entities[2].fuel,nil)
+-- fog_strict on (operator fog_strict {on: true}; default off): our own boiler out of sight is not read as it stands now
+-- but from what our force last saw (nothing yet here).
+do
+  eq(runtime.dispatch({operator=true,action='fog_strict',args={on=true}}).fog_strict,true)
+  local strict=call('observe',{position={x=42,y=2},radius=8,resources='none'})
+  local seen2={}; for _,e in ipairs(strict.entities) do seen2[e.name]=true end
+  eq(seen2.boiler,nil); eq(seen2['spitter-spawner'],true)
+  local sc=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'hp','fuel'}})
+  eq(sc.total,1); eq(sc.entities[1].name,'spitter-spawner'); eq(sc.fog.remembered_count,0)
+  eq(runtime.dispatch({operator=true,action='fog_strict',args={on=false}}).fog_strict,false)
+end
+-- Seen once (the census notes it in sight), the boiler is remembered there (fogmem.lua). fog_strict off: it stands
+-- there, read as before, so fog has no remembered row; gone, fog remembers it. On: scan's fog, observe's remembered row
+-- and inspect's fog memory, with its status then.
+do
+  world[1].surface=p.surface; world[1].supports_direction=false
+  p.force.is_chunk_visible=function(_,chunk) return chunk.x<=1 end
+  runtime.fogmem.note(world[1],world[1].position,'working')
+  p.force.is_chunk_visible=function(_,chunk) return chunk.x==0 end
+  local live=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'status'}})
+  eq(live.entities[1].name,'boiler'); eq(live.fog.remembered_count,0)
+  local boiler=table.remove(world,1)
+  local gone=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'status'}})
+  eq(gone.fog.remembered_count,1); eq(gone.fog.remembered[1].name,'boiler'); assert(gone.fog.line:find('no longer stand there',1,true),gone.fog.line)
+  table.insert(world,1,boiler)
+  storage.agent_harness.fog_strict=true
+  local sc=call('observe',{scope='scan',area={left_top={x=40,y=0},right_bottom={x=48,y=8}},fields={'status'}})
+  eq(sc.fog.remembered_count,1); eq(sc.fog.remembered[1].name,'boiler'); eq(sc.fog.remembered[1].status,'working')
+  local ob=call('observe',{position={x=42,y=2},radius=8,resources='none'})
+  local rem
+  for _,e in ipairs(ob.entities) do if e.remembered then rem=e end end
+  eq(rem.name,'boiler'); eq(rem.status_when_seen,'working')
+  local ins=call('inspect',{position={x=40.5,y=2.5}})
+  eq(ins.by,'fog memory'); eq(ins.name,'boiler'); eq(ins.current,false)
+  storage.agent_harness.fog_memory=nil; storage.agent_harness.fog_strict=nil; world[1].surface=nil
+end
 world[#world+1]=ent('medium-worm-turret','turret',10,3,{force=enemy_force,health=90,max_health=100,prototype={attack_parameters={range=30}}})
 local worm=call('observe',{scope='scan',area={left_top={x=8,y=0},right_bottom={x=12,y=8}},fields={'hp','range'}}).entities[1]
 eq(worm.hp,'90/100'); eq(worm.range,30)
@@ -2666,6 +2709,23 @@ do local cb=call('status').active.bounds; eq(cb.left,39.5); eq(cb.top<=0.5,true)
 advance(1)
 local done=call('status').last
 eq(done.kind,'construct'); eq(done.outcome,'incomplete'); eq(done.missing.lab,1); eq(done.built,0)
+-- The lab is lost (its ghost above stands for it): the losses read (lostlog.lua) has it, with the robots' verdict;
+-- construct outside_robots (rebuild's) leaves a ghost robots can build to them.
+do
+local find_before=p.surface.find_entities_filtered
+p.surface.find_entities_filtered=function(f) if f.type=='entity-ghost' or (type(f.type)=='table' and f.type[1]=='entity-ghost') then return {g} end return {} end
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='lab',type='lab',position={x=40.5,y=0.5},force=p.force,surface=p.surface}}
+prototypes.entity.lab=prototypes.entity.lab or {name='lab',type='lab',items_to_place_this={{name='lab',count=1}}}
+p.surface.find_logistic_networks_by_construction_area=function() return {{network_id=3,available_construction_robots=2,get_item_count=function() return 5 end}} end
+local lostr=call('losses',{})
+eq(lostr.count,1); eq(lostr.losses[1].name,'lab'); eq(lostr.losses[1].ghost,true)
+assert(lostr.losses[1].robots:find('robots can build it (network 3',1,true),lostr.losses[1].robots)
+eq(call('construct',{outside_robots=true}).outcome,'nothing_to_do')
+p.surface.find_logistic_networks_by_construction_area=nil
+assert(call('describe',{}).actions.rebuild and call('describe',{}).actions.losses,'describe lists losses and rebuild')
+p.surface.find_entities_filtered=find_before
+storage.agent_harness.lost_log=nil  -- (the inspect area checks below count losses in fog)
+end
 -- An area with nothing to build or mine completes at once, so plans continue.
 p.surface.find_entities_filtered=function() return {} end
 local empty=call('construct',{}); eq(empty.total,0); eq(empty.outcome,'nothing_to_do')
@@ -3792,6 +3852,21 @@ end)()
   eq(storage.agent_harness.active[1],body_action)
   fails(function() call('queue_submit',{lane='remote',steps={{action='wait_until',args={['until']='item_count',item='coal',at_least=1}}}}) end,'steps[1]')
   call('stop',{});call('queue_cancel',{lane='remote'})
+  -- (d17 batch21 D1, Sol) a lane per platform: its wait runs apart from the remote lane's and the body's
+  landed=0
+  call('queue_submit',{lane='platform:Freight',steps={{action='wait_until',args=c}}})
+  call('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=5}}}})
+  advance(12)
+  eq(call('queue_status',{lane='platform:Freight'}).active.action,'wait_until')
+  eq(call('queue_status',{lane='remote'}).active,false,'the remote lane went on')
+  eq(call('queue_status',{}).lanes.platforms.Freight.active.action,'wait_until')
+  landed=50; advance(10)
+  local pq=call('queue_status',{lane='platform:Freight'})
+  eq(pq.active,false); eq(pq.history[#pq.history].result.outcome,'met'); eq(pq.lane,'platform:Freight')
+  fails(function() call('queue_submit',{lane='platform:Freight',steps={{action='walk',args={direction='east',ticks=5}}}}) end,'not supported in the remote lane')
+  fails(function() call('queue_submit',{lane='Freight',steps={}}) end,'lane must be body, remote or platform:NAME')
+  call('queue_cancel',{lane='platform:Freight'})
+  tick=tick-22; game.tick=tick -- (the later tests count ticks from here as before)
   p.force.platforms,defines.inventory.hub_main=platforms,hub_id
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
@@ -3825,6 +3900,14 @@ advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'dur
 p.can_reach_entity=function() return false end
 local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
 fails(function() call('rotate',{position=ins.position,walk=false}) end,'out of reach')
+-- past the 32 tiles a call walks: by remote view in a chunk our force sees (d17 batch21 D3, Muse)
+do
+  local here=p.position
+  p.position={x=ins.position.x-700,y=ins.position.y}
+  ins.direction=0; ins.rotate=function() ins.direction=(ins.direction+4)%16; return true end
+  local remote_turn=call('rotate',{position=ins.position}); eq(remote_turn.by,'remote view'); eq(remote_turn.after,'east')
+  ins.rotate=nil; ins.direction=nil; p.position=here
+end
 -- By default it walks into reach first (autowalk.lua).
 ins.bounding_box={left_top={x=2.15,y=-0.35},right_bottom={x=2.85,y=0.35}}
 local turn=call('rotate',{position=ins.position}); eq(turn.walking_for,'rotate'); call('stop',{})
@@ -4346,6 +4429,11 @@ end)()
   eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
   eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
   eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
+  eq(r.fog.chunks_out_of_sight,2); eq(r.fog.remembered_count,0)  -- (fogmem.lua: beside it, fog_strict off)
+  storage.agent_harness.fog_strict=true
+  eq(call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}).not_in_sight,
+    '2 of 3 chunks here out of sight: 0 buildings and belts remembered, 0 ghosts of ours, 0 of ours lost there')
+  storage.agent_harness.fog_strict=nil
   -- compact (Muse, shift13: ~10 inspects over positions read as tables or JSON): one line per entity, the same
   -- reading order; health where the entity has it.
   c.health=320; c.max_health=350; a.health=200; a.max_health=200
@@ -5436,6 +5524,14 @@ do
   assert(q and q.x>=30 and runtime.reach_dist(q,rt)<=9.75,'a free spot within reach')
   local q2=runtime.reach_ring(p,rt,{q})
   assert(q2 and ((q2.x-q.x)^2+(q2.y-q.y)^2)^0.5>=2,'another spot, not the tried one')
+  -- (d17 batch21 A5, Gemini) the nearest spots in a closed pocket among machines: the nearest with a way out
+  rt.region=runtime.pathing.region
+  runtime.pathing.region=function(_,x) return {closed=x.x<36} end
+  q=runtime.reach_ring(p,rt,{})
+  assert(q and q.x>=36 and runtime.reach_dist(q,rt)<=9.75,'a spot with a way out: '..tostring(q and q.x))
+  runtime.pathing.region=function() return {closed=true} end
+  assert(runtime.reach_ring(p,rt,{}),'all closed: the nearest still')
+  runtime.pathing.region=rt.region
   blocked=function() return true end
   eq(runtime.reach_ring(p,rt,{}),nil,'nowhere free: none')
   p.position,p.surface=saved,surf
@@ -5482,6 +5578,47 @@ do
   eq(ok,false); assert(tostring(err):find('unknown argument step_options',1,true),'step_options is docs, not an argument: '..tostring(err))
   ok,err=pcall(call,'guards',{})
   eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
+end
+-- transfer {retry_when_clear}: a refusal for passing enemies only waits for units_clear, then transfers again (d17 batch21 D2).
+do
+  local now=runtime.transfer_now
+  runtime.transfer_now=function(_,a)
+    runtime.tour_stock().last_refusal={tick=game.tick,passing=1,staying=0,at={x=34,y=202}}
+    error('every place of this tour lies in enemy reach the map shows: an area under attack now',0)
+  end
+  local w=call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',count=10,retry_when_clear=true})
+  assert(w.retry:find('refused for passing enemies only: every place of this tour lies in enemy reach the map shows: an area under attack now; waits until no enemy unit is within 48 tiles of (34,202)',1,true),w.retry)
+  eq(storage.agent_harness.active[1].then_call.action,'transfer'); eq(storage.agent_harness.active[1].then_call.args.retries,1)
+  call('stop',{})
+  runtime.transfer_now=function() runtime.tour_stock().last_refusal={tick=game.tick,passing=0,staying=1,at={x=1,y=1}}; error('a worm is there',0) end
+  fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear=true}) end,'a worm is there')
+  fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear='yes'}) end,'retry_when_clear must be true or false')
+  runtime.transfer_now=now
+end
+-- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
+do
+  local rows,surf,ch=runtime.gun_rows,p.surface,p.character
+  runtime.BLAST['explosive-rocket']=6.5; runtime.BLAST['piercing-rounds-magazine']=false
+  local guns={{index=2,gun='rocket-launcher',ammo='explosive-rocket',count=10},{index=1,gun='submachine-gun',ammo='piercing-rounds-magazine',count=50}}
+  runtime.gun_rows=function() return guns end
+  local near={valid=true,name='big-biter',position={x=3,y=0}}
+  p.surface={find_entities_filtered=function() return {near} end}
+  p.character={valid=true,position={x=0,y=0},selected_gun_index=2}
+  local action={blast={radius=6.5,ammo='explosive-rocket'}}
+  local t=runtime.melee_guard(p,action,{x=20,y=0},0)
+  eq(t.x,20); eq(p.character.selected_gun_index,1); eq(action.blast,nil)
+  eq(action.switched_gun,'big-biter 3.0 tiles from you: switched to gun slot 1 submachine-gun with piercing-rounds-magazine (explosive-rocket would burst on you)')
+  guns[2].count=0
+  action={blast={radius=6.5,ammo='explosive-rocket'}}
+  eq(runtime.melee_guard(p,action,{x=20,y=0},0),nil)
+  assert(action.held_melee:find('held fire: big-biter 3.0 tiles from you, and no gun slot holds ammunition without an area',1,true),action.held_melee)
+  -- none near, the aim point far: fires
+  near.position={x=30,y=0}; p.surface={find_entities_filtered=function() return {} end}
+  action={blast={radius=6.5,ammo='explosive-rocket'}}
+  eq(runtime.melee_guard(p,action,{x=20,y=0},0).x,20)
+  -- the aim point inside the blast round you: holds
+  eq(runtime.melee_guard(p,action,{x=4,y=0},5),nil)
+  runtime.gun_rows,p.surface,p.character=rows,surf,ch
 end
 -- shoot aims within 32 tiles or the selected gun's range, the larger, in a chunk our force sees (d17 batch20 C3).
 do

@@ -1698,6 +1698,59 @@ fh sleep 900 --until researched                       # ...or until the research
   construction still completes what it can; an immediate build failure includes its pre-build material summary.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
+### Out of sight: the fog view and lost buildings (d17)
+
+Nick (d17 17:28): "a low-visibility fog-of-war view that shows what we usually see, so they know, physically, what used
+to be there", and "Do they see destroyed building ghosts and have an easy way of reconstructing them?"
+
+- What our force sees now is read live. For the part of an area out of sight (no radar or character of ours sees the
+  chunk), `inspect {area}`, `scan` and `observe` (and so `./fh view`) add `fog` beside what they read there:
+  - `remembered`: our buildings and belts our force saw there, as last seen: `name`, `position`, `direction`,
+    `status` then (scan: with `fields` status), `seen_s_ago`, `remembered: true`; `lost_after_seen` (`lost 40s ago
+    (small-biter)`) when one was destroyed after it was seen. With `fog_strict` off (the default), only those that no
+    longer stand there (`only_gone`), since the read lists our buildings in fog as they stand now (the map draws them).
+  - `ghosts` (inspect): our ghosts there now. The game's map draws our ghosts in fog; scan and observe list them among
+    their entities as before.
+  - `lost`: our buildings destroyed there, from the game's destroyed alerts (they name each one wherever it was):
+    `name`, `position`, `lost_s_ago`, `cause`.
+  - `line`, `note`, `chunks_out_of_sight` and the counts (`remembered_count`, `ghost_count`, `lost_count`).
+- The switch `fog_strict` (the harness's storage `agent_harness.fog_strict`; operator call `fog_strict {on: true|false}`,
+  which answers with the setting; default off). Off: scan and observe read our own buildings in fog as they stand now,
+  with their live fields, as before d17, and inspect's area read counts them in `not_in_sight`. On: they are read only
+  from the memory (all of `remembered`), and `not_in_sight` is the fog's line. The map in fog shows the last chart,
+  buildings as shapes in map colours; the memory adds what they were (names, directions) and their status when seen.
+- `observe` rows out of sight carry `remembered`, `seen_s_ago`, `status_when_seen`. `./fh view` draws them dim, our
+  ghosts blue and ours lost there as red outlines; its reply's `fog` is the fog line.
+- The memory (fogmem.lua): the background census notes every building of ours it reads in a chunk in sight, with its
+  status. A building mined, deconstructed or destroyed in sight is forgotten; one destroyed out of sight stays
+  remembered (with `lost_after_seen`). Belts are belt memory's. At most 4096 chunks (a chunk in sight is dropped first)
+  and 1024 rows a chunk. It began with the d17 deploy: a chunk not seen since has no remembered rows.
+- `losses {surface?, area? | position+radius?, since?, name?, limit?, page?}`: each building of ours that died (one row
+  each, the newest 6000, since d17), newest first: `name`, `position`, `quality`, `lost_s_ago`, `cause`, and `ghost`
+  (whether a ghost of it stands there now). For a ghost, `robots`: whether robots can build it (`robots can build it
+  (network 7: 3 idle, 40 stone-wall)`, a network that covers it without an idle robot or the item, or `no roboport's
+  construction area covers it`). With no ghost: `now` says it was rebuilt or is gone (in sight) or that this is unknown
+  (out of sight). The reply also has `line`, `by_name` (lost, ghosts, robots, outside) and `items [{item, need,
+  robots_build, to_carry, you_hold, in_covering_networks}]`, plus `page` and `pages`. When some ghosts are out of
+  robots' reach, `rebuild` gives their count. Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
+- `rebuild {area | position+radius, all?, from?, avoid_enemies?, unsafe_goal?, dry_run?}` (on your surface, up to 512
+  a side): one plan in your queue for the ghosts there that robots will not build (no construction area covers them,
+  or its network has no idle robot or none of the item; `all: true`: every ghost):
+  - first the items you do not carry: taken at the chests in `from`, else at chests of ours within 96 tiles of you in
+    sight that hold any of it, nearest first (transfer walks, `on_short` skip);
+  - then hand crafts for what no chest holds (silo_stage's gathering);
+  - then `construct {area, outside_robots: true}` per box of up to 256x256, the nearest first, its walks with
+    `avoid_enemies` as construct's.
+  - Returns `ghosts`, `left_for_robots`, `items`, `plan`, `crafts`, `missing`, `raw_short`, `short`, `queued`; with
+    `dry_run`, `steps` and nothing queued.
+  Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
+- `construct {outside_robots: true}` leaves the ghosts robots can build (idle construction robots and the item in a
+  network whose construction area covers them) to the robots.
+- Cost on world n (d17, read only): finding the 791 ghosts of ours in a 512x512 box on Vulcanus took 3.4 ms, and the
+  construction-area check for all of them 1.2 ms. The memory adds about 7 us per building the census reads (about
+  0.6 ms a 100-entity step).
+
+### Dated remote reads and factory alerts
 ### Dated remote reads and factory alerts
 
 `inspect {position}` and `trace {position, forward?, all?}` save successful observations. With no current
@@ -2304,7 +2357,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     reading order (top row first, left to right): `entities [{name, position, holds, requests, recipe, status_name}]`.
     `holds` is a chest's line as above (`iron-plate*150 coal*20; 2 of 32 slots`) or a machine's inventories by part
     (`in: copper-cable*8; out: electronic-circuit*12; fuel: coal*5`, or `empty`). `not_in_sight` counts what the area
-    holds in chunks our force does not see now; more than 64 fails (a smaller area, or `types`).
+    holds in chunks our force does not see now, and `fog` beside it gives what our force remembers there, our ghosts
+    and losses there (see "Out of sight"); more than 64 fails (a smaller area, or `types`).
 - `queue_submit` into a repeating plan (Grok, shift15 00:18: low-density hauls behind a plate-haul wait):
   a nonempty submit without `mode` refuses without changing the queue, naming the loop and active job. `mode: "replace"`
   stops the active repeating step and replaces the loop; `mode: "ahead"` runs the new steps before its remaining
@@ -6637,6 +6691,69 @@ fh watch    # deploy on every change
   storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
   Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
   nothing reserved. tests/d17_batch18.lua.
+- C1 (Astra, #862): belt_route and pole_route take `surface` (bots.lua SURFACE_ACTIONS: the remote-view proxy that
+  place_ghosts surface= uses; both only lay ghosts). A belt_route dry run with surface is planned there too (the
+  dry_run action took surface for place_ghosts only). route.lua plans in charted chunks; place_ghosts refuses
+  uncharted ones. pole_route's note by remote view: `ghosts placed on vulcanus by remote view; its construction robots
+  build them (no hand reach there)`. Copy, Astra on nauvis: belt_route on vulcanus placed 29 ghosts (27 belts, 2
+  undergrounds), pole_route 6 medium pole ghosts; the dry run's standing says `you are on another surface: the ghosts
+  on vulcanus are built by its construction robots`. tests/d17_batch18.lua.
+- C2 (Opus): a whole circuit block was built unpowered outside the robot network. build (one entry or a batch) and
+  place_ghosts (and the routes and pastes that place through it) add `no_power_coverage`: electric entities (not
+  poles, generators, solar, accumulators) no pole's supply area covers. A built one has no electric network
+  (M.unpowered: the nearest pole within 64 tiles); a ghost has no pole or pole ghost within 12 tiles whose supply area
+  (get_supply_area_distance) meets its collision box. `outside_construction_area`: what no roboport's construction
+  area covers (find_logistic_networks_by_construction_area). Each: how many, the first 8. Read for up to 256 entities
+  a call; not on a platform. Copy: ghosts at (260.5,0.5) and (264.5,0.5) named both (the chest has no power source);
+  a lamp ghost by a pole in the base and a lamp and chest built there say neither. 64 lamp ghosts placed in 21-23 ms
+  on the copy with and without the notes. tests/d17_batch18_rt.lua.
+- C3 (Opus): after a walking feed, rearm or refuel tour (a fuel round too), last (and fh --wait) gives
+  `enemy_groups_toward`: the enemy groups the harness tracks (threat.lua live_groups: gathered, with a target) in a
+  chunk our force sees now (avoid.seen_now) whose target lies within 48 tiles of a place the tour served, or within
+  256 tiles of one and nearer to it than the group is. Each: `enemy group of 11 (8 small-biter, 3 small-spitter) at
+  (177,44), 77 tiles from gun-turret (104,20), heading west for (98,17), 7 tiles from it`; up to 4, nearest first.
+  Copy: a rearm tour by Opus over 6 turrets ended topped_up with none (no tracked group headed there). A group made by
+  script does not raise the gathering event, so the line was checked with fakes (tests/d17_batch18.lua).
+- C4 (Gemini): a moving train read by position failed as it moved. `train {train_id}` reads one of ours by its id
+  (game.train_manager.get_train_by_id; the game's trains list opens any of ours), with schedule, state, speed,
+  heading_to and the rest as a read by position, and takes the same settings. Every train read now gives `id` and
+  `front` {name, position, surface}; train {stops} already named ids (`train 15 heading there`). Not ours or no such
+  id: refused, naming train {stops}. Copy: train 15 on Fulgora read from Gemini twice, 2 s apart: front (-15.13,191)
+  at 4 km/h, then (-30.45,191) at 46 km/h, 147 tiles left to Fulgora Scrap North. tests/d17_batch18.lua.
+- C5 (viewer Foobator 13:38): demolishers.lua gave the head only, and the walk checks found the head only. Engine
+  (2.0.77, read on the copy): LuaSegmentedUnit.segments lists the head first (its entity is the segmented-unit),
+  then the body, each a LuaSegment with entity (type segment, force enemy), position and orientation; a small
+  demolisher had 42 segments about 1.2 tiles apart, 51 tiles of body; a segment entity's segmented_unit is its unit.
+  - demolishers: a demolisher with any segment in a chunk our force sees now is in sight; `body`: segments in sight of
+    all, the line through them simplified (points within 1.5 tiles, at most 16), length, tiles under the segments'
+    boxes, the box, the head's heading and speed. Copy (a radar placed near it): `small-demolisher: head at
+    (299,357), health 30000/30000, seen now; body 51 tiles long over 279 tiles (42 of its 42 segments in sight), box
+    (277,311)-(301,359), along (299,357) (290,342) (286,320) (279,312); head moving southeast at 4 km/h`. A body seen
+    without its head is remembered at its first body point.
+  - Walk planning, stand points and tours (avoid.lua attack_discs with a box: the area round the way only): the
+    segmented-unit and segment entities seen now, per demolisher in 8-tile cells, each a disc of 24 + the margin
+    round the cell's middle, widened by its farthest segment, so every segment keeps the margin; named `small-demolisher
+    body (7 segments)` or `head`. Copy: move_to dry run to (265,330) named three body discs and refused the goal
+    without unsafe_goal; 313-tile dry runs took median 106 ms with it, 99-101 ms without (the dry run's own cost).
+  - safety.threats (walking's stop-and-defend check, kite): a demolisher is one unit at its nearest segment in sight,
+    named by its head. tests/d17_batch18.lua.
+- C6 (viewer Foobator, operator 15:10): a starving captive spawner turns into a hostile biter spawner. Game data
+  (space-age entities.lua, as the brief quotes it): 350 health; production_health_effect not_producing -1/60 a tick, so
+  1 HP a second while it makes nothing; the API gives no production_health_effect, so the rate is that constant. Its
+  dying_trigger_effect, read on the copy: create-entity biter-spawner, as_enemy, protected.
+  - pushalerts.lua: a captive-biter-spawner of ours whose status is not working is `captive_starving` (under 120 s
+    left: `captive_urgent`): `captive-biter-spawner (29.5,-56.5): health 347/350, not producing (its fuel slot is empty
+    (it burns bioflux)); it loses 1 HP a second while it makes nothing, so it dies in about 5.8 min, and a hostile
+    biter-spawner takes its place` (output full: what fills it; else its status). It goes to its builder and the
+    builders of the inserters dropping into it (and claim owners; else the nearest agent).
+  - Its death (on_entity_died) is kept 10 min as `captive_died`, naming what stands in its place now: `captive-biter-
+    spawner (263.5,8.5) died 32s ago; a hostile biter-spawner (force enemy) stands in its place at (263.5,8.5)`.
+  - captive_urgent and captive_died are told in the team block's urgent part (always shown, once a group, again when
+    it grows) and wake sleeps (urgent.lua), not in the 2.5-minute push digest. inspect gives the same line as
+    `starving`.
+  - Copy: three unfed spawners on nauvis (one at 100 health) went captive_starving, then captive_urgent, then
+    captive_died with the biter-spawner at the same position; Opus's team block carried the died line.
+    tests/d17_batch18.lua, game_alerts_groups.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun
@@ -6758,3 +6875,274 @@ fh watch    # deploy on every change
     says so; with none (a 36-tile weapon against a 38-tile worm) it is refused naming them. Then a plain move_to there,
     with its avoidance on the way. The reply's `stand_off` names the spot, its distance from the target and the
     nearest reach edge. tests/d17_batch20.lua, runtime_test.lua.
+
+## d17 batch21 (operator 17:00: the agents' 16:50 poll)
+- A1 (Sol): an electromagnetic plant built east with recipe quantum-processor at (28,-3) on Aquilo read north
+  afterwards, its hot and cold ports swapped; a rotate east fixed it. The game places a machine whose fluid ports come
+  with its recipe facing north while it has no recipe; build set the recipe after placing. Now, with the recipe set,
+  a machine that does not face the direction asked is turned to it (as a player's rotate does): `direction_note`
+  (`placed facing north (...); turned east once the recipe was set`, or that the game did not turn it). place_ghosts
+  entries with a recipe and a direction do the same (`directions_turned`). runtime_test.lua.
+- A2 (Astra): crusher's minimum payload set 10 -> 9 by min_payload on Kestrel's platform_bom section went back to 10
+  every 10 s: the keeper (platbom.lua apply) wrote each slot from the request's own min_payload map, which won over the
+  slot. The keeper now remembers what it last wrote per item; a slot whose minimum payload differs from that was
+  changed by min_payload or requests, and the keeper takes it as its own (into its map; the line says `adopted from
+  the slot ...: 9`). A later platform_bom request with its own min_payload map still wins. min_payload's lines and
+  requests' section note say a platform_bom section's keeper takes such a change. `tail: true` (kept until false): an
+  item's minimum payload is no more than what is still to come (its request less what the hub holds), so the last 2
+  crushers go without waiting for a batch of 9 (`tail: 2 of the 9 set`). tests/d17_batch21.lua.
+- A3 (Grok): a walking load_silo whose rocket launched by another hand ended `rocket_launched` with what it carried
+  kept (350 packs went up, 7 stayed with him, 9 were in the next rocket). The tour now records each take (chest, item,
+  count); at that end what it took and did not load (counted off the earliest takes, so the latest chests get theirs
+  back) is given back: at the stop it is at when that is a source, and the other sources become the tour's next stops,
+  latest first (the rest of its trips dropped). `last.returned`: `agricultural-science-pack 16 to passive-provider-chest
+  (20.5,28.5)`; `kept`: what did not go back, by the chest it came from; `in_next_rocket`: the list's items in the
+  silo's rocket now (loaded under the launch, or by its automatic requests). tests/d17_batch21.lua.
+- A4 (Grok): `bioflux >= 0` held both Gleba makers off whenever the network read -2. That is the game's count: a
+  logistic network's item count is what it holds less what deliveries have reserved, and it goes under 0. Where a
+  logistic condition is shown with its count (circuits.lua logistic_reads: inspect's circuit block and supply's gate
+  line through thrust.state_text; condition_parts: inspect compact; the off_by_condition alert, pushalerts.lua) a count
+  under 0 now reads `network count -2: reserved beyond stock: deliveries have reserved 2 more bioflux than the network
+  holds, and a logistic condition reads -2; a wire from a provider or storage chest reads what that chest holds:
+  circuit_gate {source: the chest} compares that` (circuits.negative_note). tests/circuits.lua, tests/pushalerts.lua.
+- A5 (Gemini): transfer and collect walks to a chest among machines on Fulgora stalled (closed_in_goal in the dry
+  runs). When no path reaches a target, the walk tries other spots within reach (M.reach_ring, d16 batch10 D8): those
+  were 16 points on one ring near reach's edge, 4 tries. Now rings at four distances within reach (16 points each),
+  nearest the character first; up to 8 of them are checked for a closed pocket (pathing.region, 16 tiles out, as the
+  dry runs' closed_in check reads it) and the first with a way out is walked to (else the nearest); up to 6 tries.
+  runtime_test.lua.
+
+### Group B
+- B1 (Sonnet): inspect's area rows read every pipe and pumpjack `holds: empty` (they read item inventories only), about
+  10 times while he looked for the segment that starved an acid line.
+  - Area rows and compact lines of an entity with fluid boxes now carry `fluid`: each box's fluid and amount over its
+    capacity, its segment's capacity and extent, or `empty` with the fluid it is locked to (pipes.fluids, as scan
+    fields=fluids reads them, without the connections).
+  - `pipe_gaps {line: {x,y}}` (pipegaps.lua M.network): the pipe network through that pipe, pipe-to-ground, tank or
+    pump, followed through fluid neighbours (through pumps too; each starts a segment) in chunks our force sees now, up
+    to 1024 entities. Per fluid segment (the engine's id): fluid and amount over capacity (get_fluid_segment_contents,
+    get_capacity), entities and box, `empty`; flow where the game gives one (get_flow); the machines it touches (not
+    followed into) with each box's fluid. tests/d17_batch21.lua.
+- B2 (Sonnet): pumpjack and drill spots were tried one placement at a time. `placements {name, resource, near?,
+  radius?, limit?}` (drillspots.lua) with a mining drill or pumpjack: the resource it mines (a name, or true) within
+  radius 1..32 (default 16) of near, in chunks our force sees now. A pumpjack: every well, `taken by our pumpjack ...`,
+  free with the directions it fits (`crude-oil (10.5,10.5) yield 300000: fits facing north, east`), or blocked. A
+  solid-ore drill: every tile centre (a corner for an even footprint) whose mining area holds the ore, the most ore
+  under it first, free ones taken so none overlaps another (`(1.5,1.5): 16 iron-ore tiles, 1600 under its mining
+  area`). A blocked spot carries the build refusal's text (placement_error: an entity, `tiles: oil-ocean-shallow (needs
+  foundation (not researched))`, a cliff ...) for up to 24 spots; `blocked_by` counts them by kind with one place each.
+  One find of the resource and one placement check a spot (four for a well). tests/d17_batch21.lua.
+- B3 (Luna): breeders held 12/30 and 24/30 nutrients while status said only missing nutrients. `ingredient_gap {position
+  | positions | area, all?}` (gap.lua, a read): per crafting machine (assembler, furnace, biochamber, silo; up to 32),
+  each ingredient of its recipe's next craft: needed, held in its input, how many of those spoil within 5 min (spoil.lua
+  rows), usable (the rest) and short; a fluid ingredient, what its boxes hold. For a short item, the places within 64
+  tiles of the machine that can spare it (M.where_kept, as craft's shortfall reads them: a requester or buffer chest
+  only over its own request, robots' pickup reservations off; else the logistic networks holding it). `area` (up to
+  128x128) lists the machines short of something; `all: true` every one. e.g. `biochamber (10.5,4.5) pentapod-egg
+  (item_ingredient_shortage): nutrients 20/30 (24 held, 4 of them spoil within 5 min): 10 short; enough at
+  requester-chest (14.5,4.5) 4 tiles, 40 free over its request; ...`. tests/d17_batch21.lua.
+- B4 (Gemini): a platform's requests held because their hub section was off showed only as `off: true` on the section
+  in `platforms`. rocketload.requests_off gives one line for every hub section that is off and holds requests: `hub
+  section 2 ("GROUP") is off: its 3 requests (rocket-fuel 100 from nauvis, ...) are not made`. It is in preflight's
+  platform lines and rows (`requests_off`), platforms (`requests_off_line`; compact lines), and fleet's line.
+  tests/rocketload.lua (its preflight line now ends with it, the fake hub having an off section).
+
+### Group C
+- C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
+  the blast; M.melee_guard guards the character. While shoot fires area ammunition on foot (fixed or auto), every 5
+  ticks: an enemy unit within 6 tiles of the character, or the aim point within the blast's radius of it, switches the
+  gun to a slot holding ammunition without an area (`last_combat.switched_gun`: `big-biter 3.0 tiles from you: switched
+  to gun slot 1 submachine-gun with piercing-rounds-magazine ...`); with none, fire holds (`held_melee`, with how many
+  ticks). runtime_test.lua.
+- C2 (Opus): about 300 construction robots died to worms in one shift before the jobs sending them were found by hand.
+  robotloss.lua: on a robot of ours an enemy kills (on_entity_died, the robot still there), its first order (2.0
+  robot_order_queue: construct, deconstruct, repair, deliver, ...) and that order's target are kept with the killer
+  (up to 512, 15 min). `robot_losses {surface?, minutes?}` groups them by killer: `4 construction-robot robots lost to
+  big-worm-turret (200,40) on nauvis, the last 10s ago, sent to: 3 construct solar-panel ghost at (230.5,40.5); 1
+  deconstruct tree-01 at (231,44); 2 of those jobs stand (robot_losses {cancel: true, near: ...} cancels them)`; a
+  killer with a death in the last 5 min is a team alert group (`robots_lost`, in game_alerts and the team block).
+  `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
+  hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
+  deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+### Group D
+- D1 (Sol): three couriers, and one platform's cargo wait held the steps of the others (the remote lane runs its steps
+  in turn; about 12 times a shift Sol's body walks also interrupted the Swiftlet wait he had queued in the body lane).
+  `lane: "platform:NAME"` on every queue call (queue_lanes.lua): a remote lane of its own for that platform, built as
+  the remote lane is (the same steps: platform waits and writes, body-independent reads), its queues in storage under
+  `lane_queues|NAME` and the lane names under `platform_lanes`; each is ticked as the remote lane. queue_status
+  `{lane: "platform:Swiftlet"}` reads it; every queue_status's `lanes.platforms` lists them (`{Swiftlet: {paused,
+  pending, active, ...}}`). A harness update keeps them as it keeps the remote lane (carry.lua), and clock, departure
+  and waiteta read them with the others. runtime_test.lua.
+- D2 (Muse): feeding guns in a hot zone was refused 3 times (`every place of this tour lies in enemy reach ...: an area
+  under attack now`, the refusal naming `retry_when_clear: true`), and transfer refused that argument. transfer now
+  takes `retry_when_clear` (and `retry_ticks`) as rearm does: a refusal for passing enemies only waits until no enemy
+  unit is within 48 tiles of the first place held, then runs again (last.then_call), at most 6 times. With no unit
+  there already (an area under attack counts 30 s past its last hit) it waits 30 s (wait_ticks) first, rearm too
+  (`cleared` in the reply). runtime_test.lua.
+- D3 (Muse): a backwards inserter 700 tiles off took a deconstruct and a new build; rotate turned an entity on your own
+  surface only in reach (walking within 32 tiles first). Now a target past the 32 tiles a call walks (without `walk:
+  true`) is turned by remote view in a chunk our force sees now, as a player rotates in the map (`by: "remote view"`).
+  Within 32 tiles it walks into reach as before, and with `walk: false` the reach refusal still names a spot in reach
+  (tests/minerotate.lua). runtime_test.lua.
+
+## d17 territory (operator 17:10; Nick 17:08)
+- On n (read only), Vulcanus territory 1 (87 chunks, x -320..96, y -192..416, the main base included) has no
+  demolisher: Sol killed it at tick 4,888,121. The demolishers read said `no demolisher in sight now` for it, as for one
+  out of sight, and build replies inside it said `its demolisher not in sight now; a demolisher attacks what is built
+  in its territory`.
+- demolishers.lua records each demolisher's death (runtime on_entity_died, type segmented-unit): its territory (by
+  its smallest chunk, as a territory has no id; the unit's territory, else the one of its chunk), the tick, and what
+  killed it (an agent's character by name; a driven vehicle as `NAME in a car`; another entity with who built it;
+  none: the killing force). Its last-seen memory is dropped.
+- Each territory gets a `state`, from what the team saw only (operator 17:40: whether the game holds a demolisher in
+  a territory is not shown to a player):
+  - `has a demolisher`: in sight now, or last seen.
+  - `killed`: `its small-demolisher was killed at tick 4888121 (game 22h37m, 3h ago) by sol; none seen since`.
+  - `not seen`: `no demolisher seen in it`, both for a territory whose demolisher is out of sight and for one with none.
+- A one-time seed (storage demolisher_seeded) records the team's earlier kill: Vulcanus territory 1, Sol at tick
+  4888121 (chat seq 2143, the chronicle), applied to the territory under (-225,37) unless a death is already recorded
+  there. Copy: `territory with 87 charted chunks ...: its demolisher was killed at tick 4888121 (game 22h37m, 87h ago)
+  by sol (the team's record: chat seq 2143); none seen since`; a place_ghosts dry run at (-219.5,29.5) says the same.
+- territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is left out
+  only when it was killed. tests/d17_territory.lua.
+- Part 2 (Nick 17:15, Vulcanus calcite: 2 of the 3 drills still mining stood waiting for space in full iron chests; no
+  alert said so, nor does the game have one): pushalerts.lua's scan groups mining drills whose status is
+  waiting_for_space_in_destination and whose drop target is a chest (container, logistic, linked, infinity) as
+  `output_full`, per 64-tile area. Each detail: `electric-mining-drill (124.5,123.5) mining calcite into iron-chest
+  (126.5,123.5): 32/32 slots used (calcite 1600)`. A drill dropping onto a backed-up belt is not said (often by
+  design). Furnaces and assemblers drop through inserters; their full-output-into-a-full-chest case is
+  output_chest_full already. It goes to the builders and claim owners as every group. The check reads only drills
+  already in that status, within the background read's slices.
+  - Copy: 4 groups: Vulcanus calcite near (134,116) (4 drills, iron and passive provider chests 32/32 and 48/48),
+    Sol's tungsten drills at (-224.5,29.5..44.5) (iron chests 32/32, 1600 tungsten ore each), Fulgora scrap near
+    (-62,83) (5 big drills into full passive providers), and Nauvis uranium near (499,-429). tests/d17_territory.lua.
+- Part 3 (Nick 17:22): remote view, inspect, configure and scan by remote view need chunks our force sees now. On n,
+  40 of Vulcanus' 98 drills stood in unseen chunks, Gleba's radar had no power, and Aquilo has no radar; nothing told
+  the agents.
+  - pushalerts.lua's background read notes, while it walks our entities, the drills, machines (assemblers, furnaces,
+    labs, silos, agricultural towers) and turrets in a chunk no force with players sees now, per surface and 64-tile
+    cell, and every radar with its status.
+  - Cost: is_chunk_visible took about 0.18 ms a chunk on the copy (115 chunks for 1299 entities: 22-24 ms in one
+    pass). So the read checks at most 16 chunks a slice of 150 entities. Past that it uses the previous read's answer
+    (storage push_vis), else counts the entity unread (`(N buildings in chunks not yet read for sight; the next reads
+    take them)`).
+  - status `alerts.out_of_sight`, a line per planet: `out of radar sight on nauvis: 23 drills, 0 machines, 13 turrets
+    in 1 area (64 tiles): 23 drills, 13 turrets near (-295,-308), nearest radar (-264.5,-354.5) 56 tiles, no power;
+    radars not working: radar (-264.5,-354.5) no power`. A planet with no radar says `nearest radar none on NAME`; one
+    with everything in sight but a radar down says that.
+  - The team block carries the same lines at most once an hour (h.sight_tick).
+  - Since the fog view (main f9ef402d, fog_strict off by default) our own buildings in fog are read as they stand; the
+    lines say only what is out of sight and which radars are down.
+  - Copy: lines for gleba, nauvis and vulcanus (the copy is older than n: 4 vulcanus drills unseen at (-225,37)); two
+    agents got the team lines once, the next call none. tests/d17_territory.lua.
+
+### Group C
+- C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
+  the blast; M.melee_guard guards the character. While shoot fires area ammunition on foot (fixed or auto), every 5
+  ticks: an enemy unit within 6 tiles of the character, or the aim point within the blast's radius of it, switches the
+  gun to a slot holding ammunition without an area (`last_combat.switched_gun`: `big-biter 3.0 tiles from you: switched
+  to gun slot 1 submachine-gun with piercing-rounds-magazine ...`); with none, fire holds (`held_melee`, with how many
+  ticks). runtime_test.lua.
+- C2 (Opus): about 300 construction robots died to worms in one shift before the jobs sending them were found by hand.
+  robotloss.lua: on a robot of ours an enemy kills (on_entity_died, the robot still there), its first order (2.0
+  robot_order_queue: construct, deconstruct, repair, deliver, ...) and that order's target are kept with the killer
+  (up to 512, 15 min). `robot_losses {surface?, minutes?}` groups them by killer: `4 construction-robot robots lost to
+  big-worm-turret (200,40) on nauvis, the last 10s ago, sent to: 3 construct solar-panel ghost at (230.5,40.5); 1
+  deconstruct tree-01 at (231,44); 2 of those jobs stand (robot_losses {cancel: true, near: ...} cancels them)`; a
+  killer with a death in the last 5 min is a team alert group (`robots_lost`, in game_alerts and the team block).
+  `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
+  hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
+  deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+## d17 batch22 (operator 18:30: the agents' 18:20 poll)
+- A1 (Sol and Astra): a sparse Kestrel II floor refused about 100 placements while footprint audits said clear, and a
+  bridge's dry run listed both void regions (hundreds of tiles for one gap).
+  - The rules are tilecheck.lua's, as the game showed them on a copy of world n (platformtiles2): the hub builds a
+    foundation ghost only with foundation among its 8 neighbours (a corner is enough) and its empty side neighbours in
+    one run. No copy was reachable this time (the sandbox refused the docker socket and SSH, and the dev worlds refused
+    RCON); one read-only check on world n (3.1 ms) played them over 64 of Kestrel II's 301 tile ghosts: 52 buildable
+    (the hub holds no foundation), 10 held because building them would split empty space, 2 with no foundation near.
+  - A dry run on a platform now plays those rules (tilecheck M.play) over the new tiles and the ghosts ordered:
+    `tiles.unbuilt` names each tile that stays unbuilt and why (up to 12; `unbuilt_count`). For tiles with no
+    foundation near, `tiles.connect` (and `connect_line`) gives the fewest tiles that join them to the built floor:
+    the shortest chain touching by sides or corners (M.connect, within 48 tiles), played again with them to say
+    whether every tile then builds.
+  - Holes: beside each new tile, an enclosed region needs filling when open space is beside that tile too; with only
+    enclosed regions round it, all but the largest. A region no new tile needs filled is left out (`holes_other`).
+    A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
+  - A refused entity ghost over empty space on a platform says the dry run gives those fields.
+  tests/dryrun.lua.
+- A2 (Astra): a partial load went up with two underground belts and a rocket was spent. `load_silo {launch,
+  all_or_nothing: true}`: before the launch the rocket is read again; every listed item must be aboard at its count
+  (to_total: the count; else what was aboard before and the count), else `not launched (all_or_nothing): the rocket
+  holds X of Y` and the load stays in the silo. A short row was already refused without up_to; all_or_nothing refuses
+  up_to and launch_split beside it (one rocket, the whole list) and says `every listed item aboard in full: launched`.
+  tests/rocketload.lua.
+- A3 (Gemini): `load_silo {walk: true, chests: false}` was refused; a walk without from already loaded from your own
+  inventory. chests: false now goes with walk (the same walk); with from it is refused; chests: true with walk is
+  refused as before. tests/rocketload.lua.
+- A4 (Gemini): a launch to a hub whose slots were taken (asteroid chunks among them) jams its pods. rocketload.hub_room
+  counts the hub slots a cargo takes after topping up the hub's part stacks of the same items, against the hub's free
+  slots, and the slots asteroid chunks take: `the cargo takes 2 hub slots; the hub has 1 of 99 free (asteroid chunks
+  take 40): it does not fit`. launch (space.lua) refuses a cargo that does not fit unless `hub_full: true` (then said
+  in `hub_full`); load_silo launches through it; load_silo's dry run gives `platform_hub_room` (the list and what is
+  aboard); preflight's platform line and `hub_room` give it for the rocket's cargo. tests/d17_batch22.lua.
+
+### Group B
+- B1 (Luna): hatch timers ran out with the defense already gone. `danger {position, radius}` now has `eggs`: each egg
+  site the watch keeps within the radius that hatches (spoil.lua M.near: count, holder, the first hatch time, nearest
+  first, up to 8), with the turrets of ours whose range covers it (danger.lua M.coverage: gun and rocket turrets with
+  ammunition, laser turrets with power, flamethrowers with fluid as ready, the rest in range counted; one find within 40
+  tiles): `12 pentapod-egg in requester-chest at (0,0): the first hatches in 10s; in range of 1 turret ready (1
+  gun-turret), 1 more in range without ammunition, power or fluid`. The team block's egg alerts end with the same
+  coverage. tests/d17_batch22.lua.
+- B2 (Muse): three times a stopped line read as a shortage and was stock-gated by design. A maker whose status is
+  disabled_by_control_behavior now carries its gate inline, from thrust.state_text (the circuit condition with its
+  signal on its wires, the logistic condition with the network's count, as supply's input lines since batch18 B1):
+  bottleneck {area | positions} groups get `gate` (the first such maker: `assembling-machine-1 (0.5,0.5): off by its
+  logistic condition stone-wall < 200 (network 5 ...: stone-wall 200)`); supply's and bottleneck {item}'s maker lines
+  add it to the disabled_by_control_behavior count and to each such worst row. tests/rates.lua.
+- B3 (Muse): backup boilers gated on coal > 8000 in a network holding 3609 never started, and a viewer found it.
+  `gates {surface? | area?, page?}` (gates.lua, a read): every circuit and logistic condition on our entities there,
+  256 entities a call in reading order. A surface reads the entities the census's last pass found with a control
+  behavior (census.lua now keeps them: inserters, pumps, machines, drills, lamps, power switches, belts, train stops,
+  signals, agricultural towers, collectors, loaders; up to 1024 a surface); an area (up to 128x128) finds them now.
+  Each line: the condition as its GUI shows it, what it reads now (circuit: its signal on its wires; logistic: the
+  network's count, with the reserved-beyond-stock note under 0), true or false now, `it is off by it`. A logistic
+  `item > N`, `>= N` or `= N` above what the network can hold, its count and what its storage and provider chests could
+  still take of the item (up to 256 chests looked at), is flagged `CANNOT BE MET:` and listed first; so is one with no
+  logistic network over it. tests/d17_batch22.lua.
+
+### Group C (Haiku 18:58)
+- C1 (Haiku): hand-fed turrets ran low about every 20 minutes and were found only by polling. The background read's
+  turret pass (pushalerts.lua) now gives an ammo turret holding 1 to 9 magazines that no inserter drops into (one find
+  of inserters within 4 tiles, made only for such a low turret) the kind `ammo_low`: one line a group of 32-tile
+  cells, to who built them and every agent within 64 tiles of it (not the claim or nearest rule), each turret with its
+  magazines, ending `rearm {alert: "ammo_low|nauvis|..."} tours exactly these`. The group is read again before it is
+  shown (a turret topped up to 10 or more drops out), and rearm {alert} takes those still under 10.
+  tests/pushalerts.lua.
+- C2 (Haiku): a rearm tour that ran out of magazines part way was found only at the end. rearm with radius, area,
+  surface or alert now counts, before it walks and in its dry run, per ammo type the magazines the stops need to reach
+  count against what the character holds and has in the hand-craft queue, walks the stops in the tour's order with
+  that stock, and names the turrets left short (first 8): `magazines: the 4 stops need firearm-magazine 40 (you carry
+  12) to reach 10 each; what you carry completes 1 of them in the tour's order; left short: ...`. A tour that cannot
+  finish is refused (`not walked: ...`) unless `partial: true`; a walked one gives `magazines`, and `partial: 1 of 4
+  stops get their full count with what you carry` when short. The dry run gives `magazines` and `completes`.
+  tests/round2120a.lua.
+- Part 4, coverage (Nick 17:33): build and place replies said what lacked power or construction coverage (batch18 C2),
+  but nothing reported standing buildings outside it.
+  - The background read now also walks our logistic chests and ghosts (types logistic-container and entity-ghost),
+    noting only coverage for them.
+  - Per surface and 64-tile cell: each building or ghost no roboport's construction area covers
+    (find_logistic_networks_by_construction_area), by name with ghosts apart. Also each requester or buffer chest
+    with no logistic network (outside every logistic area).
+  - Cost on the copy: about 2 us an entity for the area query and 5 us a logistic chest, in the read's 150-entity
+    slices.
+  - status `alerts.outside_coverage`, per planet: `outside every roboport's construction area on vulcanus (robots do not
+    build, repair or rebuild there): 976 (902 of them ghosts) in 12 areas (64 tiles): 208 ghost of transport-belt, ...
+    near (222,-208); ...; 64 gun-turret, 19 ghost of gun-turret near (-228,72); ...`. A second line per planet lists
+    `7 requester or buffer chests outside every logistic area on nauvis (their requests never fill): requester-chest
+    (-284.5,-313.5), ...`.
+  - The hourly team line carries these after the radar lines. Copy: lines for fulgora, gleba, nauvis and vulcanus.
+    tests/d17_territory.lua.

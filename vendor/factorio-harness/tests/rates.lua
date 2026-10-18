@@ -71,4 +71,11 @@ eq(b.groups[1].machines,'assembling-machine-1 iron-gear-wheel x1'); eq(b.groups[
 eq(b.limits[1],'assembling-machine-1 iron-gear-wheel (0.5,0.5): input inserters 0.6/s < needs 2/s')
 eq(table.concat(b.needs,'; '),'coal 1.35/min; iron-ore 7.5/min; iron-plate 82.5/min'); eq(b.belt_capacity,'transport-belt 900/min')
 eq(b.inserters,'1 inserters: 1 waiting for source items, 0 waiting for space')
+-- (d17 batch22 B2, Muse) a maker stopped by its own condition: its gate inline (thrust.state_text)
+do
+  local R2=dofile('mod/agent-harness_0.1.0/rates.lua'){position=function(v) return v end,status_name=function(e) return e==assembler and 'disabled_by_control_behavior' or 'working' end,
+    state_text=function(e) return 'off by its logistic condition stone-wall < 200 (network 5 (its logistic area holds the centre): stone-wall 200)' end}
+  local b2=R2.bottleneck(p,{area=area})
+  eq(b2.groups[1].gate,'assembling-machine-1 (0.5,0.5): off by its logistic condition stone-wall < 200 (network 5 (its logistic area holds the centre): stone-wall 200)')
+end
 print('rates: ok')

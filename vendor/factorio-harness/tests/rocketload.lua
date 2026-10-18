@@ -158,6 +158,17 @@ main.add('agricultural-science-pack',300)
 fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},launch=true,platform='Sunward'}) end,
   'not launched: agricultural-science-pack 700 short (you held 300; iron-chest (61.5,10.5) held 0; iron-chest (60.5,10.5) held 0); what was loaded stays in the rocket (it holds agricultural-science-pack*300, 300/1000 kg)')
 eq(launched,nil); eq(cargo.counts['agricultural-science-pack@normal'],300)
+-- (d17 batch22 A2, Astra) all_or_nothing: a short load stays; with every listed item aboard in full it launches
+fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},to_total=true,launch=true,platform='Sunward',all_or_nothing=true}) end,
+  'not launched (all_or_nothing: every listed item aboard in full): agricultural-science-pack 700 short')
+eq(launched,nil)
+fails(function() R.check({items={['iron-plate']=1},launch=true,platform='Sunward',all_or_nothing=true,up_to=true}) end,'all_or_nothing launches only a full list')
+fails(function() R.check({items={['iron-plate']=1},all_or_nothing=true}) end,'all_or_nothing goes with launch: true')
+main.add('agricultural-science-pack',700)
+local full=R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},to_total=true,launch=true,platform='Sunward',all_or_nothing=true})
+eq(full.launch.launched,true); eq(full.all_or_nothing,'every listed item aboard in full: launched')
+cargo.counts={}; cargo.order={}; launched=nil; main.counts={}; main.order={}
+cargo.add('agricultural-science-pack',300)
 -- up_to (Sonnet 07:50): what is aboard goes; the short row is listed, not an error. None of the list aboard: refused.
 r=R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},to_total=true,up_to=true,launch=true,platform='Sunward'})
 eq(r.launch.launched,true); eq(r.short,nil); eq(r.complete,false)
@@ -257,7 +268,8 @@ eq(f.platform.requests[1].item,'agricultural-science-pack'); eq(f.platform.reque
 eq(f.platform.requests[2].item,'iron-plate'); eq(f.platform.requests[2].lacks_after,200)
 eq(f.platform.not_requested,'space-platform-foundation*10')
 eq(f.launch_now,'ok')
-eq(f.line,'rocket-silo at (65.5,14.5) on nauvis: rocket built and ready; cargo agricultural-science-pack*600 space-platform-foundation*10, 800/1000 kg, 4/20 slots; manifest 1010 kg, 6 slots; cargo after filling it 1210/1000 kg, 7/20 slots; the list lacks agricultural-science-pack 400 (200 fit), iron-plate 10 (10 fit); aboard and not in the list, goes up with it: space-platform-foundation 10; platform Sunward at nauvis; arrived; requests from nauvis: agricultural-science-pack lacks 850 (rocket 600, lacks_after 250), iron-plate lacks 200 (rocket 0, lacks_after 200); launch now: ok')
+eq(f.platform.requests_off,'hub section 2 is off: its 1 request (rocket-fuel 100 from nauvis) is not made') -- (d17 batch21 B4)
+eq(f.line,'rocket-silo at (65.5,14.5) on nauvis: rocket built and ready; cargo agricultural-science-pack*600 space-platform-foundation*10, 800/1000 kg, 4/20 slots; manifest 1010 kg, 6 slots; cargo after filling it 1210/1000 kg, 7/20 slots; the list lacks agricultural-science-pack 400 (200 fit), iron-plate 10 (10 fit); aboard and not in the list, goes up with it: space-platform-foundation 10; platform Sunward at nauvis; arrived; requests from nauvis: agricultural-science-pack lacks 850 (rocket 600, lacks_after 250), iron-plate lacks 200 (rocket 0, lacks_after 200); hub section 2 is off: its 1 request (rocket-fuel 100 from nauvis) is not made; launch now: ok')
 -- Not ready, over the lift, the platform on its path: what launch would refuse now.
 silo.rocket_silo_status=0; cargo.add('space-platform-foundation',20); pl.stopped=false
 f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
@@ -591,7 +603,10 @@ p.can_reach_entity=kept_can
 eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true}),nil)
 -- walk without from (d16 batch7 A4): all in reach, the load as without walk
 eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},walk=true}),nil)
-fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true,chests=false}) end,'chests does not go with it')
+fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true,chests=false}) end,'chests: false loads what you hold: no from beside it')
+-- (d17 batch22 A3, Gemini) walk with chests: false: a walk that loads what you hold
+eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},walk=true,chests=false}),nil)
+fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},walk=true,chests=true}) end,'chests: true does not go with it')
 fails(function() R.load(p,{position=S,items={['agricultural-science-pack']=1},avoid_enemies=false}) end,'avoid_enemies goes with walk=true')
 print('rocketload ok')
 

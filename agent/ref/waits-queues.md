@@ -54,7 +54,9 @@
   fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies. A transfer step
   that moves fewer than asked (a full target) succeeds short; `min_moved: N` fails it below N moved. `guards` (up to 8
   `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing.
-  `lane: "remote"`: the remote lane (`./fh help space-age`). A queue step or standing order step that ends with you 8
+  `lane: "remote"`: the remote lane (`./fh help space-age`); `lane: "platform:NAME"`: a remote lane of its own for that
+  platform (the same steps), apart from the remote lane and the other platforms' lanes; each queue call takes the same
+  `lane`, and `queue_status`'s `lanes.platforms` lists them. A queue step or standing order step that ends with you 8
   or more tiles from where it began is named in your next reply: `moved_by`
   (`standing order rearm-se (rearm, done) moved you from (10,4) to (53,112) (112 tiles)`). Example:
   `./fh call queue_submit --args '{"mode":"append","steps":[{"action":"move_to","args":{"position":{"x":12,"y":-40}}},{"action":"rearm","args":{"radius":20},"on_fail":"skip"}]}'`

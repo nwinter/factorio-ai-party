@@ -169,7 +169,9 @@ return function(api)
     if not idle then return end
     if sleep and not sleep.woke and game.tick<=sleep.until_tick then sleep.idle_ticks=(sleep.idle_ticks or 0)+1 end
     if act and waiting(act.kind) then act.idle_ticks=(act.idle_ticks or 0)+1 end
-    for _,queues in ipairs({s.queues or {},s.remote_queues or {}}) do
+    local all={s.queues or {},s.remote_queues or {}}
+    for name in pairs(s.platform_lanes or {}) do all[#all+1]=s['lane_queues|'..name] or {} end
+    for _,queues in ipairs(all) do
       local lane=queues[index]; local st=lane and not lane.paused and lane.current
       if st and waiting(st.action) then st.idle_ticks=(st.idle_ticks or 0)+1 end
     end

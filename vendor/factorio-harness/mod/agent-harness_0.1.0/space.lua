@@ -293,7 +293,8 @@ return function(api)
         local target=found or default_section()
         if #rest>0 then others[#others+1]=string.format('%s is requested in section%s %s too (the hub requests the sum; requests {section, clear} removes one)',
           name,#rest>1 and 's' or '',table.concat(rest,', ')) end
-        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI',name,target.index,target.group) end
+        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI%s',name,target.index,target.group,
+          target.group:find('^platform_bom: ') and '; platform_bom keeps this section to what the ghosts need: its keeper takes a min_payload changed here as its own, and sets min itself' or '') end
         return target
       end
       sec=(a.active~=nil or a.clear_all) and default_section() or nil
@@ -974,6 +975,8 @@ return function(api)
           for need,have in b:gmatch('ghosts need [^%d]*(%d+), hub has (%d+)') do missing=missing+math.max(0,tonumber(need)-tonumber(have)) end
         end
         parts[#parts+1]=missing>0 and string.format('ghosts lack %d items in all',missing) or 'ghosts lack nothing'
+        local off=api.requests_off and try(function() return api.requests_off(pl) end)
+        if off then parts[#parts+1]=off end
         local dep=api.departure and try(function() return api.departure(pl.name) end)
         if dep then parts[#parts+1]='also sent on by '..table.concat(dep,' | ') end
         local was=mine[pl.name] or {}
@@ -1019,6 +1022,7 @@ return function(api)
             row.requests=#req>0 and req or nil
             -- In a section switched off: not requested.
             row.requests_off=#off>0 and off or nil
+            row.requests_off_line=api.requests_off and try(function() return api.requests_off(pl) end) or nil
           end
           row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
           -- Hub health, turrets, turret ammo against the hub's, repair packs.
@@ -1257,7 +1261,7 @@ return function(api)
         end
       end
     end
-    local destination,to,pl
+    local destination,to,pl,hub_note
     if a.platform~=nil then
       pl=M.platform(p,a.platform)
       local here=p.surface.planet and p.surface.planet.name
@@ -1271,6 +1275,19 @@ return function(api)
         destination={type=defines.cargo_destination.station,station=pl.hub}
       end
       to='platform '..pl.name
+      -- (d17 batch22 A4, Gemini) the hub's room for this cargo; one that does not fit is refused unless hub_full: true
+      assert(a.hub_full==nil or type(a.hub_full)=='boolean','hub_full must be true or false')
+      if api.hub_room and destination.station then
+        local items={}
+        for _,c in ipairs(try(function() return silo.get_inventory(defines.inventory.rocket_silo_rocket).get_contents() end) or {}) do
+          items[#items+1]={name=c.name,quality=type(c.quality)=='table' and c.quality.name or c.quality or 'normal',count=c.count}
+        end
+        local room=#items>0 and try(function() return api.hub_room(pl.hub,items) end)
+        if room and not room.fits then
+          if a.hub_full~=true then error(string.format('launch refused: %s (%s); hub_full: true launches anyway',room.line,pl.name),0) end
+          hub_note=room.line
+        end
+      end
     else
       assert(a.orbit==true,'give platform=<name>, or orbit=true to launch into orbit with no platform (cargo is lost unless it has launch products)')
       destination={type=defines.cargo_destination.orbit}; to='orbit'
@@ -1307,7 +1324,7 @@ return function(api)
     local spoiled,went_up
     if api.fresh_percent then pcall(function() spoiled,went_up=api.fresh_percent(silo.get_inventory(defines.inventory.rocket_silo_rocket)) end) end
     if not silo.launch_rocket(destination,rider) then error(refused(silo,pl,destination),0) end
-    return {launched=true,to=to,cargo=cargo or 'empty',spoiled_percent=spoiled,went_up=went_up,freshness=fresh,riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
+    return {launched=true,to=to,cargo=cargo or 'empty',spoiled_percent=spoiled,went_up=went_up,freshness=fresh,hub_full=hub_note,riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
       auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}
   end
   -- The hub's drop slots: items from the hub inventory go down to the planet

@@ -71,14 +71,16 @@
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
-- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?}`: per item, what the ghosts
+- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item, what the ghosts
   still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
   rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
   built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
   removes it; `import_from`,
-  `area`; `min_payload: {item: N}`; a min_payload set on its slots is kept). `surface: "gleba"` with no platform:
+  `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
+  and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
+  request less what the hub holds). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
@@ -95,7 +97,11 @@
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
-  sight now (name, head, health), else where a read last saw it.
+  sight now (name, head, health, and its whole `body`: the line through its segments, length, tiles under it, box,
+  which way the head moves and how fast), else where a read last saw it. Any segment in sight counts as in sight.
+  Each territory's `state`, from what the team saw: `has a demolisher` (in sight or last seen), `killed` (`its
+  small-demolisher was killed at tick T (game 22h37m) by sol; none seen since`), or `not seen` (`no demolisher seen in
+  it`).
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills; with `item`, that item over
@@ -106,13 +112,18 @@
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
   their cargo, thruster fuel and its 10-minute trend, and `waits on`: the first waiting request at the stop it is at
-  with the gate holding it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
+  with the gate holding it; a hub section that is off with requests in it (`hub section 2 is off: its 1 request
+  (rocket-fuel 100 from nauvis) is not made`), as `preflight`'s platform lines and `platforms` (compact too:
+  `requests_off_line`) say it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
-  surface?}`: launches the silo's rocket to `platform` in orbit of this planet. `wait_ready: true` waits for the
+  hub_full?, surface?}`: launches the silo's rocket to `platform` in orbit of this planet. A cargo the platform's hub has
+  no room for (the slots it takes after topping up part stacks, against the hub's free slots, asteroid chunks named)
+  is refused unless `hub_full: true`; load_silo (it launches through this), its dry run (`platform_hub_room`) and
+  preflight's platform line say the same. `wait_ready: true` waits for the
   rocket and launches in the tick it is ready (a queue step too; a queued one whose rocket goes records `launched`);
   with `platform` it also waits until the platform is in orbit of the silo's planet (`wait_platform`, the default
   then); a plain tell does not end these waits (one with `wake: true` or an urgent alert does), and a wait that ends
@@ -157,8 +168,13 @@
   pad too) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
   `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
-  needs; without `from` it walks to the silo with what you hold. A walking load gives `loaded_items` (what you put
-  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count).
+  needs; without `from` (or with `chests: false`) it walks to the silo with what you hold. `all_or_nothing: true`
+  (with `launch`): the launch goes only with every listed item aboard in full (the rocket read again); a short load
+  stays in the silo and the refusal names what is missing (not with `up_to` or `launch_split`). A walking load gives `loaded_items` (what you put
+  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count). When the
+  rocket it fills launches by another hand (outcome `rocket_launched`), the tour walks on to the chests it took from,
+  latest first, and gives back what it took and did not load (`last.returned`: what, how many, where; `kept`: what did
+  not go back; `in_next_rocket`: the list's items in the silo's rocket now).
   `up_to_stock_at_start: true` loads at most what you and the chests held when it began (`stock_at_start`), then ends
   (launches with `launch`). `up_to: true` loads what fits and is held and launches with that (`up_to_short`). A list
   over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`
@@ -219,7 +235,13 @@
 - Platform foundation: the hub removes a marked foundation tile only beside empty space (a north, east, south or west
   neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
   time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
-  `"dry_run":true` marks nothing.
+  `"dry_run":true` marks nothing. The hub builds a foundation ghost only with foundation among the 8 tiles round it (a
+  corner is enough) and its empty side neighbours in one run (it never splits empty space, even when both sides stay
+  open). A dry run on a platform (place_ghosts, build, paste with `dry_run: true`) plays those rules over the new tiles
+  and the ghosts ordered: `tiles.unbuilt` names each tile that stays unbuilt and why; for one with no foundation near,
+  `tiles.connect` lists the fewest tiles that join it to the built floor (a chain touching by sides or corners,
+  `connect_line`); `holes` lists the enclosed tiles that need foundation (beside a new tile with only enclosed regions
+  round it, the largest may stay empty: `holes_other`).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
   to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
   a planet with no pad lands the same way, near its `near` spot.

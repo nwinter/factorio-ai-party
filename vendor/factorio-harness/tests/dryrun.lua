@@ -292,6 +292,22 @@ has(pl.tiles.not_connected, '1 new foundation tile touches no existing foundatio
 has(pl.tiles.not_connected, '(20.5,20.5)')
 eq(pl.standing, nil, 'the platform builds from its hub: no reach')
 eq(pl.items['space-platform-foundation'], 28); eq(pl.missing['space-platform-foundation'], 18); eq(pl.missing_from, 'the hub')
+-- (d17 batch22 A1) the hub's build rules over the plan: the far tile stays unbuilt, and the chain that joins it
+has(table.concat(pl.tiles.unbuilt, ' | '), '(20.5,20.5): no foundation among the 8 tiles round it')
+has(pl.tiles.connect_line, '14 foundation tiles join them to the built floor: (19.5,19.5)')
+has(pl.tiles.connect_line, 'with them every tile here is built by the hub\'s rules')
+-- A column across an enclosed hole splits it in two: filling one side is enough, the other may stay empty.
+local function deck2(x, y)
+  if x >= 0 and x <= 12 and y >= 0 and y <= 6 and not (x >= 2 and x <= 10 and y >= 2 and y <= 4) then return 'space-platform-foundation' end
+  return 'empty-space'
+end
+local ps2 = world(deck2, {}, {platform={hub=hub}})
+ps2.platform.hub.get_inventory = ps.platform.hub.get_inventory
+local col = {}
+for y = 2, 4 do col[#col+1] = {name='space-platform-foundation', position={x=6.5, y=y+0.5}} end
+local split = dryrun.check({surface=ps2, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=col})
+eq(split.tiles.holes, 12); eq(split.tiles.holes_other, 12)
+has(split.tiles.holes_note, '12 more enclosed empty tiles are left out')
 -- A platform powers every machine with no pole (d15 batch5 A1, Sol: check_inserters refused every platform inserter).
 ps.has_global_electric_network = true
 local pw = dryrun.check(pp, {kind='ghosts', entities={{index=1, name='assembling-machine-1', position={x=-2.5, y=-2.5}}}})

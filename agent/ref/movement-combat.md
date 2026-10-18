@@ -28,8 +28,8 @@
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
-    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way and
-    groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
+    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
+    demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
     mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
     first (`left_reach_first`). A goal inside one is refused (`unsafe_goal: true` goes anyway). No way round:
@@ -80,9 +80,15 @@
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
+  Before it walks (and in `dry_run`), `magazines` gives per ammo type what the stops need to reach `count` against
+  what you carry and craft, how many stops that completes in the tour's order, and the turrets left short; a tour
+  it cannot finish is refused unless `partial: true` (`partial` then says how many stops get their full count).
+  When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
+  then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold
-  it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles and rearms again (6 tries). `dry_run:
+  it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles (30 s when none is there now) and rearms
+  again (6 tries). `dry_run:
   true`: the stops, each turret's rounds and what it gets, those wanting ammo you do not carry, and the route.
   Example: `./fh call rearm --args '{"surface":true,"below":5}' --wait`
 - `artillery {surface?, position?, radius?}`: our artillery with shells, automatic targeting and the spawners and
@@ -96,7 +102,9 @@
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
   `last_combat.why_none` when nothing fired. Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
   position whose blast reaches our own entities is refused, naming them; `auto` holds fire at such a target
-  (`last_combat.held_blast`); `fire_anyway: true` fires anyway. In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:
+  (`last_combat.held_blast`); `fire_anyway: true` fires anyway. With area ammunition, enemy units within 6 tiles of
+  you or an aim point inside the blast round you switch the gun to a slot holding ammunition without an area
+  (`last_combat.switched_gun`), or with none hold fire (`held_melee`). In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:
   "tank-cannon"`, or `ammo: "explosive-cannon-shell"`), loading the slot from your inventory, while `vehicle {drive}`
   goes on.
   Example: `./fh call shoot --args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`

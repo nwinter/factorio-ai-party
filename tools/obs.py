@@ -11,6 +11,7 @@
   tools/.venv/bin/python tools/obs.py scene NAME                                   # switch the program scene
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
   tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients)
+  tools/.venv/bin/python tools/obs.py host-view-source    # add Nick's client capture ("stream host", off) to the live scene
   tools/.venv/bin/python tools/obs.py audio-test --url URL [--game-url URL]        # scratch scene, same mix
   tools/.venv/bin/python tools/obs.py meter --seconds 20 [--inputs a,b]           # peak dBFS per input per second
 """
@@ -83,6 +84,41 @@ def scene_input(c, scene, name, kind, settings):
     return c.get_scene_item_id(scene, name).scene_item_id
 
 
+# Host view (tools/stream/hostview.py; Nick 16:39): a capture of his own client, factorio-nick.exe (start-client.ps1 -Slot
+# -nick), matched by executable so it never hooks another Factorio (his Steam game on Sunday is factorio.exe); off
+# unless the host view is on (tools/stream/cuts.py turns it on, in the on-air hole over the cameras). A game capture
+# with no window to hook draws nothing; the slow hook rate keeps its look for the window cheap.
+HOST_SOURCE, HOST_EXE = "stream host", "factorio-nick.exe"
+HOST_SETTINGS = {"capture_mode": "window", "window": f"Factorio 2.0.77:Factorio:{HOST_EXE}", "priority": 2,
+                 "capture_cursor": True, "allow_transparency": False, "hook_rate": 0}
+
+
+def host_capture(c, scene, layout=LAYOUT):
+    """The host capture in this scene, off, in the on-air hole (cropped as the cameras); returns its item id."""
+    lay = json.load(open(layout)) if isinstance(layout, str) else layout
+    x, y, w, h = lay["cams"]["main"]
+    item = scene_input(c, scene, HOST_SOURCE, "game_capture", HOST_SETTINGS)
+    c.set_scene_item_enabled(scene, item, False)
+    place(c, scene, item, x, y, w, h)
+    sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
+    from cuts import crop_for
+    src = c.get_scene_item_transform(scene, item).scene_item_transform
+    c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
+    return item
+
+
+def host_view_source(c, scene="stream", layout=LAYOUT):
+    """One-off for the live scene: the host capture added (or set again) just below the overlay, off; nothing else in
+    the scene changes."""
+    item = host_capture(c, scene, layout)
+    items = c.get_scene_item_list(scene).scene_items
+    idx = {i["sourceName"]: i["sceneItemIndex"] for i in items}
+    ov, mine = idx.get("stream overlay"), idx.get(HOST_SOURCE)
+    if ov is not None and mine is not None and mine != ov - 1:
+        c.set_scene_item_index(scene, item, ov - 1 if mine < ov else ov)
+    return f"{HOST_SOURCE} ({HOST_EXE}) in {scene}, off until host view is on"
+
+
 def stream_scene(c, url, scene="stream", layout=LAYOUT):
     """Director layout under the browser-source overlay. One camera on air (layout.json mode "onecam"): the three
     captures of factorio-cam1..3.exe all sit in the left column, centre-cropped to its shape; the stream service
@@ -108,6 +144,7 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
         src = c.get_scene_item_transform(scene, item).scene_item_transform
         c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
         order.append(item)
+    order.append(host_capture(c, scene, lay))  # Nick's own client, off until host view (above the cameras)
     ov = scene_input(c, scene, "stream overlay", "browser_source", {
         "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "css": "",
         "shutdown": False, "restart_when_active": False, "reroute_audio": True})
@@ -236,7 +273,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
-                                    "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams"])
+                                    "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams",
+                                    "host-view-source"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
@@ -257,6 +295,8 @@ def main():
         print("audio inputs", stream_audio(c))
     elif a.cmd == "rehook-cams":
         print(rehook_cams(c))
+    elif a.cmd == "host-view-source":
+        print(host_view_source(c, layout=a.layout))
     elif a.cmd == "audio-test":
         print("scene", audio_test_scene(c, a.url, a.game_url))
     elif a.cmd == "meter":
