@@ -88,7 +88,10 @@ do
   local fuel,ox=8000,13000
   local tank=function(k) return {valid=true,type='storage-tank',get_fluid_count=function(f) if f=='thruster-fuel' then return k.fuel end if f=='thruster-oxidizer' then return k.ox end return 0 end} end
   local held={fuel=fuel,ox=ox}
-  local psurface={name='platform-3',find_entities_filtered=function(f) if f.type=='storage-tank' then return {tank(held)} end return {} end}
+  local psurface={name='platform-3',find_entities_filtered=function(f)
+    local t=type(f.type)=='table' and f.type or {f.type}
+    for _,x in ipairs(t) do if x=='storage-tank' then return {tank(held)} end end
+    return {} end}
   local red={get_signal=function(s) return s.name=='signal-F' and 3 or 0 end}
   local hub={valid=true,position={x=0,y=0},get_circuit_network=function(w) return w==1 and red or nil end}
   local swift={valid=true,name='Swift',index=3,hub=hub,state=6,space_location={name='nauvis'},surface=psurface,force=force}

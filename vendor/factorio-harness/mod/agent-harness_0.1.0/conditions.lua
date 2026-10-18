@@ -207,17 +207,27 @@ return function(api)
     end,
     -- fluid_count {platform, fluid, at_least | below} (d17 batch17 A5, Astra board #842: Swift's reserve tanks had no
     -- departure guard): the fluid in the platform's storage tanks, as each tank's window shows it.
+    -- (batch28 A4, Sol: Kestrel III held full propellant in pipes and thrusters, and a gate on the tanks would wait
+    -- forever) every fluidbox of ours on the platform that holds it: storage tanks, pipes (pipes, pipes-to-ground,
+    -- pumps), thrusters and machines, each kind said.
     fluid_count=function(p,c,estimate)
       local pl=M.platform_named(p,c.platform)
-      local n,tanks=0,0
-      for _,e in pairs(pl.surface.find_entities_filtered{type='storage-tank',force=p.force,limit=256}) do
-        tanks=tanks+1
+      local KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
+        ['assembling-machine']='machines',furnace='machines'}
+      local n,by,count={},{},{}
+      local total=0
+      for _,e in pairs(pl.surface.find_entities_filtered{type={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace'},force=p.force,limit=4096}) do
         local ok,k=pcall(function() return e.get_fluid_count(c.fluid) end)
-        if ok and k then n=n+k end
+        local kind=KIND[e.type] or 'other'
+        if ok and k and k>0 then by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
       end
-      local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,string.format('%s %d in %s\'s %d storage tank%s',c.fluid,math.floor(n),c.platform,tanks,tanks==1 and '' or 's'),
-        estimate and {value=n,scope='fluid:'..c.platform..':'..c.fluid} or nil
+      local parts={}
+      for _,kind in ipairs({'tanks','pipes','thrusters','machines'}) do
+        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',kind,math.floor(by[kind]+0.5),count[kind]) end
+      end
+      local met=(c.at_least==nil or total>=c.at_least) and (c.below==nil or total<c.below)
+      return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),c.platform,#parts>0 and table.concat(parts,', ') or 'none in its tanks, pipes, thrusters or machines'),
+        estimate and {value=total,scope='fluid:'..c.platform..':'..c.fluid} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
     -- together, as a circuit wait condition reads it.
