@@ -1988,6 +1988,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -13319,6 +13320,11 @@ function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
 -- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
 M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform}
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
+-- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
+M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
+  entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
+  build=function(p,a) return handlers.build(p,a) end}
+function handlers.turret_feeds(p,a) return M.turretfeed.handler(p,a) end
 -- (the list is bots.lua's, which lets a bot aboard a platform make these calls)
 for _,name in ipairs(M.bots.PLATFORM_ACTIONS) do
   local handler=handlers[name]
