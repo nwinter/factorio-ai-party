@@ -99,4 +99,34 @@ do
   defines,storage,game=nil,nil,nil
 end
 
+-- B6 (viewer Aurora): platform_defense's damage per asteroid on the route, apart from reach: after its resistances,
+-- against the turret's listed damage; a size only little damaged says so. ---------------------------------------------
+do
+  defines={inventory={turret_ammo=1}}
+  local function ammo_item(cat,amount,dtype,projectile)
+    local action=projectile and {{action_delivery={{type='projectile',projectile=projectile}}}} or {{action_delivery={{target_effects={{type='damage',damage={amount=amount,type=dtype}}}}}}}
+    return {ammo_category={name=cat},get_ammo_type=function() return {action=action} end}
+  end
+  prototypes={item={['firearm-magazine']=ammo_item('bullet',5,'physical'),rocket=ammo_item('rocket',nil,nil,'rocket')},
+    entity={['big-metallic-asteroid']={get_max_health=function() return 2000 end,resistances={physical={decrease=2000,percent=0.1},explosion={decrease=0,percent=0.1}}},
+      ['small-metallic-asteroid']={get_max_health=function() return 100 end,resistances={physical={decrease=0,percent=0.1}}}}}
+  local force={get_ammo_damage_modifier=function(c) return c=='bullet' and 1.6 or 0 end,get_gun_speed_modifier=function(c) return c=='bullet' and 1.5 or 0 end,
+    get_turret_attack_modifier=function(n) return n=='gun-turret' and 1.6 or 0 end}
+  local function turret(name,item,cooldown,only)
+    local inv={{valid_for_read=item~=nil,name=item}}
+    return {name=name,only=only,entity={valid=true,type='ammo-turret',prototype={attack_parameters={cooldown=cooldown}},get_inventory=function() return inv end}}
+  end
+  local D=dofile('mod/agent-harness_0.1.0/platdefense.lua'){}
+  local conn={asteroid_spawn_definitions={{type='entity',asteroid='small-metallic-asteroid'},{type='entity',asteroid='big-metallic-asteroid'},{type='asteroid-chunk',asteroid='metallic-asteroid-chunk'}}}
+  local lines,rows=D.damage(force,{turret('gun-turret','firearm-magazine',6),turret('gun-turret','firearm-magazine',6)},conn)
+  eq(#rows,2)
+  eq(lines[1],'small-metallic-asteroid (100 hp; resists physical 0/10%): 2 gun-turret with firearm-magazine: 761/s each (90.0% of its listed 845/s): 1521/s together, one in 0.0657 s')
+  eq(lines[2],'big-metallic-asteroid (2000 hp; resists physical 2000/10%, explosion 0/10%): 2 gun-turret with firearm-magazine: 0.0114/s each (0.00135% of its listed 845/s): reached, little damage: 0.0229/s together, one in 87476 s')
+  eq(rows[2].little,true)
+  -- a rocket turret: the projectile's damage from the base game's data; a turret listing only small asteroids does not engage the big
+  lines=D.damage(force,{turret('rocket-turret','rocket',120),turret('gun-turret','firearm-magazine',6,{['small-metallic-asteroid']=true})},conn)
+  eq(lines[2],"big-metallic-asteroid (2000 hp; resists physical 2000/10%, explosion 0/10%): 1 rocket-turret with rocket: 90.0/s each (90.0% of its listed 100/s) (the rocket's damage from the base game's data): 90.0/s together, one in 22.2 s")
+  prototypes,defines=nil,nil
+end
+
 print('d17 batch35b ok')

@@ -7939,3 +7939,37 @@ fh watch    # deploy on every change
   claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
   with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
   last one only). A cursor that is not the last one is said, and everything is listed.
+- B6 (viewer Aurora 14:48: guns can read as covering big asteroids): platform_defense's damage apart from reach
+  (platdefense.lua `M.damage`), for `route` or the schedule's next leg (the connection it flies):
+  - Each asteroid that spawns on the connection (asteroid_spawn_definitions of type entity; chunks left out), its
+    health and resistances.
+  - Per turret and the ammo it holds now: the damage a second. That is the ammo's damage effects times (1 + the
+    force's ammo damage modifier) times (1 + its turret attack modifier), each piece after the asteroid's resistance
+    (more than the flat decrease: less it; else 1 / (2 + decrease - damage); then less the percent), times 60 /
+    cooldown times (1 + gun speed). Against its listed damage, then together and the time to kill one.
+  - A projectile's damage (rockets) is not in the runtime's prototypes: rocket 200 and explosive-rocket 300 explosion,
+    from the base game's data, said so on the line.
+  - A size reached only under 10% of listed damage reads `reached, little damage`.
+  - On world n, Wayfarer against fulgora-aquilo: a gun turret with firearm rounds does 845/s listed and 0.0114/s to a
+    big metallic asteroid (physical 2000 flat and 10%); a railgun does 4384/s and a rocket turret 1703/s.
+    About 2 ms for 8 turrets.
+- D1 (viewer Aurora: site:2709, 2713, 2721 and 2726 received and never relayed; a Clef 401 in the stream service log):
+  - Found:
+    - 2721 and 2726 (Aurora) were Clef "injection" verdicts. Advice to agents read as an order: "Check the blocker
+      and run a useful stocked fallback". This was written only in the verdict log (tools/stream/logs/viewers-*.jsonl).
+    - 2709 and 2713 were Enginerd's lines on the viewers-only channel. The Worker's game read leaves them out, and
+      they never reach the relay, by design.
+    - The token did not expire: there was one 401 at 12:50:36, and all of the 62 lines after it were checked by Clef
+      except the one in the failed batch. Since then Clef has refused 5 lines (4 injection, 1 abuse).
+    - The 401 batch lost one line: site:2707 (Foobator) passed the filters, the relay waits for a Clef verdict, and
+      it was counted as relay:unchecked and never sent.
+  - viewers.py:
+    - `not_relayed()` logs `not relayed ID (NAME): why` in the service log for every line the relay does not post.
+      This covers a filter's or Clef's refusal, a deleted author, the backlog, muted, too soon, busy (stale), the
+      harness or the game refusing it, and chatter.
+    - A line that passes while Clef fails is held and classified again with the next lines while fresh (max_age),
+      then sent or refused. A relay dispatch error keeps the line.
+    - Feed.deliveries keeps each line's delivery (relayed to whom, held, operator, not_relayed and why, the last 300),
+      and lane() hands it out as viewers_status.delivery.
+  - The site: push_live.py `public_delivery` gives `viewer_delivery` {seq: {s, to?, why?}} for site lines (the last
+    150). live.js shows it after each site line: "to Sol", "held: ...", "to the operator", "not relayed: clef:injection".

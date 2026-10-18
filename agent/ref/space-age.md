@@ -145,9 +145,13 @@
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
-- `platform_defense {platform, feed?}`: each asteroid collector's front and each hull side against turret ranges: the
+- `platform_defense {platform, feed?, route?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
-  runs. A railgun's `line of fire` names the entities of ours its shots cross: it aims within 36 degrees of its facing
+  runs. Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
+  leg): each asteroid that spawns on it with its health and resistances, and per turret and the ammo it holds its
+  damage a second after them against its listed damage (the force's bonuses counted), together and the time to kill
+  one; under 10% of listed: `reached, little damage`. A big metallic asteroid resists physical 2000 flat, so a
+  firearm round does almost nothing to it. A railgun's `line of fire` names the entities of ours its shots cross: it aims within 36 degrees of its facing
   (72 in all), and its ammo's line (1 wide, to 53.6 tiles from its centre) damages ours too; with what it engages. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
