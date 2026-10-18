@@ -1994,6 +1994,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltupgrade and M.beltupgrade.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.alertdigest and M.alertdigest.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -2416,6 +2417,7 @@ function handlers.status(p,a)
     spoiling=alive and spoil_text(main_inventory(p)) or nil,on_belt=alive and M.belt.note(p) or nil,teammates=M.where.team(p),
     trash=alive and M.trash.status(p) or nil,
     landed_pods=alive and (function() local ok,l=pcall(M.landed.status_lines,p); return ok and l or nil end)() or nil,
+    alerts_new=M.alertdigest and (function() local ok,n=pcall(M.alertdigest.count,p); return ok and n>0 and string.format('%d place%s with enemy or structure news since your last alerts_digest read (alerts_digest {} lists them)',n,n==1 and '' or 's') or nil end)() or nil,
     surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=M.combat_row(p.index,p), hurt=alive and M.hurt_row(p) or nil, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
 end
 -- Connected visible resource tiles are summarized separately from structures so a
@@ -14433,6 +14435,7 @@ reads.platform_defense=true
 reads.platform_digest=true
 reads.belt_flow=true
 reads.platform_tiles=true
+reads.alerts_digest=true
 reads.circuit_audit=true
 reads.pods=true
 reads.logistics_audit=true
@@ -15609,6 +15612,9 @@ M.fogmem=require('fogmem'){state=state,direction_name=function(d) return M.direc
   belt_chunk=function(f,s,cx,cy) local m=state().belt_memory; return m and m.chunks[f..'|'..s..'|'..cx..','..cy] end,
   lost_in=function(f,s,box) return M.lostlog.rows_in(f,s,box) end}
 function handlers.losses(p,a) return M.lostlog.read(p,a) end
+-- alerts_digest (alertdigest.lua, batch26 B1): attacks, losses and groups by surface and place, each once, since a tick.
+M.alertdigest=require('alertdigest'){state=state}
+function handlers.alerts_digest(p,a) return M.alertdigest.read(p,a) end
 function handlers.rebuild(p,a) return M.lostlog.rebuild(p,a) end
 -- inspect {position} out of sight: the remembered building nearest the point (within 1.5 tiles), with our ghost there now
 -- and a loss there, when the read memory's ring holds no sighting.

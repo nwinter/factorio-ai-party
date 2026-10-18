@@ -72,6 +72,12 @@
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
   remembered ones dim, ghosts blue, losses as red outlines. `./fh view --args '{"position":{"x":5,"y":563},"radius":26}' --out
   v.png` draws round that position (radius up to 32); `area` (up to 64x64) is drawn round its centre.
+- `alerts_digest {surface?, since?, limit?}`: enemy and structure alerts in one read: one line per surface and 64-tile
+  place, newest first, each incident once: the attacks there (ids, hits, attackers, what was hit), what was lost,
+  enemy groups seen gathering heading there. Without `since` it gives what came after your last digest read (the
+  first: the last 10 minutes) and moves your mark; `next_since` is the tick to pass as `since`. status's `alerts_new`
+  counts the places with news since your mark. What wakes a wait stays its own filters (`--no-urgent`,
+  `--urgent-radius N`, `--until "alert near=X,Y radius=R min_size=N"`).
 - `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
   when, the cause (`lightning` for a strike on Fulgora), whether its ghost stands now and whether robots can build it (the covering network, its idle
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).

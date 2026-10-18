@@ -7411,3 +7411,11 @@ fh watch    # deploy on every change
   asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
   character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
   becomes its centre and the radius that covers it. tests/cli.test.ts.
+
+## d17 batch26 Group B
+- B1 (Luna: repeated Nauvis attack and group alerts flooded status; every wait woke on each new attack):
+  `alerts_digest {surface?, since?, limit?}` (alertdigest.lua) reads threat.lua's attack incidents, the loss incidents
+  and the enemy groups seen gathering with a target, one line per surface and 64-tile place, newest first, each
+  incident once; `since` a tick, else since the agent's last digest read (kept per agent; the first: 10 minutes), with
+  `next_since`. status adds `alerts_new` (places with news since the mark). The wake filters already exist and are
+  unchanged: `--no-urgent`, `--urgent-radius N`, `--until "alert near=X,Y radius=R min_size=N"`. tests/alertdigest.lua.
