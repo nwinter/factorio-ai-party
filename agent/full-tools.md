@@ -19,7 +19,7 @@ Teammates' workspaces apart from their `notes.md` are theirs.
 <!-- harness -->
 claude: The Agent tool starts subagents (they get the same tools as you); WebSearch and WebFetch search and read the web (the Factorio wiki, calculators); Bash commands can run in the background, and Read shows images such as your `./shot` screenshots.
 codex: Subagents (the multi-agent tools such as spawn_agent), live web search (the Factorio wiki, calculators), and view_image for images such as your `./shot` screenshots.
-codex-nosub: Live web search (the Factorio wiki, calculators), and view_image for images such as your `./shot` screenshots.
+codex-nosub: Live web search (the Factorio wiki, calculators), and view_image for images such as your `./shot` screenshots. Subagents are off for you in this run: Codex still lists its multi-agent tools (spawn_agent, followup_task, send_message, wait_agent), but they are not to be called, and work a helper held in an earlier shift is yours.
 grok: Subagents (spawn_subagent) and workflows, web search and web_fetch (the Factorio wiki, calculators), commands that run in the background, and read_file shows images such as your `./shot` screenshots.
 agy: Subagents (invoke_subagent, define_subagent) and web search and page reading (search_web, read_url_content: the Factorio wiki, calculators).
 muse: Subagents (subagent_spawn and the other subagent tools), web_search and web_fetch (the Factorio wiki, calculators), background work (bash_input, monitor), and read_file shows images such as your `./shot` screenshots. Your `team-tools/` is a folder of your own that is kept in step with the shared one every few seconds (newer copy wins; nothing is deleted).
