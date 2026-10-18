@@ -166,10 +166,13 @@
   shield; `eggs`: each egg site within the radius that hatches (count, holder, the first hatch time), with the turrets
   of ours in range of it (ready: ammunition, power or fluid; in range without). The egg alerts name the same turrets.
   Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
-- `drill_sites {position, resource?, radius?, limit?, surface?}`: for one depleted drill of ours, the nearest visible
-  placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
-  earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
-  (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
+- `drill_sites {position | area, resource?, drill?, direction?, radius?, limit?, surface?}`: for one depleted drill of
+  ours, the nearest visible placements on the same resource, with mining-area amounts and placement checks; `resource`
+  gives the name when no earlier mining target was recorded. Any other position, an `area` (up to 48x48: round its
+  centre) or `drill` given: the spots for that drill (default electric-mining-drill, `direction` default north) on
+  `resource`, else the resource most found there (`any_spot`; `limit` up to 16). Spots where a drill or drill ghost
+  already stands are left out and named (`occupied_by`); spots the placement check refuses name what stands there
+  (`blocked_by`). Sites are alternatives, not one layout. Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
 - `robot_losses {surface?, minutes?, cancel?, near?}`: our construction and logistic robots killed by enemies in the last
   `minutes` (default 30), by killer: how many, the jobs that sent them (order and target, where), and how many of those
   jobs stand; a killer with a death in the last 5 min is a team alert (`robots_lost`). `cancel: true, near: {x,y}` (a

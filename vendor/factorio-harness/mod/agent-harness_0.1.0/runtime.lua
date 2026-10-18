@@ -12120,7 +12120,7 @@ M.dependency=require('dependency'){total=function(force,surface,item) local ok,r
 function handlers.dependency(p,a) return M.dependency.read(p,a) end
 -- Gleba farming reads and burner fuel (farm.lua).
 M.farm=require('farm'){}
-M.drill_sites=require('drill_sites'){state=state,integer=integer,entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
+M.drill_sites=require('drill_sites'){state=state,integer=integer,entity=remote_entity,position=position,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.drill_sites(p,a) return M.drill_sites.read(p,a) end
 M.platformview=require('platformview'){platform=function(p,name) return space.platform(p,name) end}
 M.agriculture=require('agriculture'){state=state,towers=function(force,surface) return M.census.towers(force,surface) end}

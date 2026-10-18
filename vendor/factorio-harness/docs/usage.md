@@ -7252,3 +7252,14 @@ fh watch    # deploy on every change
   the singular is (a list of one: its entry), any other unknown argument dropped, each change named; offered only when
   the corrected call passes the argument check (else the action's stock example, as before). A scoped observe is
   corrected as observe. runtime_test.
+
+## d17 batch25 Group B
+- B2 (Sonnet: free ore tiles to move drills, every shift): `drill_sites` takes any position, an `area` (up to 48x48)
+  or `drill` (default electric-mining-drill) with `direction` (default north): the spots for that drill on `resource`,
+  else the resource most found there (`any_spot`, `resource_source: the most found there`; `limit` up to 16); a spot the
+  placement check refuses is named with what stands there (`blocked_by`, the first 6). A depleted drill of ours at
+  position reads as before. tests/drill_sites.lua.
+- B3 (Sonnet: move, collect, transfer by hand about 10 times a shift on Vulcanus): a haul from several chests into one
+  is a queue plan already, `collect {positions, item, walk: true}` then `transfer {position, item, direction:
+  to_entity, walk: true}` (each a timed tour with the tours' enemy checks); from one chest, `collect {pick, positions,
+  item, to}` in one call. Written into collect's entry (moving-items.md) with the plan; no new action.
