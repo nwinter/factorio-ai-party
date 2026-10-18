@@ -15699,7 +15699,13 @@ M.alertdigest=require('alertdigest'){state=state}
 function handlers.alerts_digest(p,a) return M.alertdigest.read(p,a) end
 -- requester_rate (reqrate.lua, batch26 B2): a requester's request against its machines' use and the robots' round trip.
 M.reqrate=require('reqrate'){position=position,entity=function(p,a) return entity(p,a,true) end}
-function handlers.requester_rate(p,a) return M.reqrate.read(p,a) end
+-- surface (batch27 A1, Sol: from Aquilo a Nauvis chest read "entity not found"): the chest on that planet, as inspect.
+function handlers.requester_rate(p,a)
+  if a.surface==nil then return M.reqrate.read(p,a) end
+  local args={}
+  for k,v in pairs(a) do if k~='surface' then args[k]=v end end
+  return M.reqrate.read(M.on_surface(p,a.surface),args)
+end
 function handlers.rebuild(p,a) return M.lostlog.rebuild(p,a) end
 -- inspect {position} out of sight: the remembered building nearest the point (within 1.5 tiles), with our ghost there now
 -- and a loss there, when the read memory's ring holds no sighting.

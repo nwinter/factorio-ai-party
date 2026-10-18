@@ -3298,6 +3298,18 @@ end)()
   standing[1]={valid=true,name='transport-belt',type='transport-belt',position={x=5.5,y=5.5},direction=4,force=p.force,surface=vulcanus}
   local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
   eq(sc.entities[1].name,'transport-belt')
+  -- requester_rate there (batch27 A1, Sol: from Aquilo a Nauvis chest read "entity not found"): the chest on that planet.
+  do
+    defines.logistic_member_index=defines.logistic_member_index or {logistic_container=1}
+    local req={valid=true,unit_number=901,name='requester-chest',type='logistic-container',position={x=8.5,y=8.5},force=p.force,surface=vulcanus,
+      bounding_box={left_top={x=8,y=8},right_bottom={x=9,y=9}},prototype={logistic_mode='requester'},get_item_count=function() return 2 end,
+      get_logistic_point=function() return {filters={{name='tungsten-ore',count=50}}} end}
+    local kept_belt=standing[1]; standing[1]=req
+    local rr=call('requester_rate',{surface='vulcanus',position={x=8.5,y=8.5}})
+    eq(rr.rows[1].item,'tungsten-ore'); eq(rr.rows[1].asks,50)
+    assert(rr.lines[1]:find('no logistic network covers it',1,true),rr.lines[1])
+    standing[1]=kept_belt
+  end
   -- A cargo pod container: where it stands and what it holds, unasked (Sonnet, shift14 22:50).
   standing[2]={valid=true,name='cargo-pod-container',type='container',position={x=6.5,y=6.5},force=p.force,surface=vulcanus,
     get_inventory=function() return {get_contents=function() return {{name='advanced-circuit',count=1945,quality='normal'}} end} end}

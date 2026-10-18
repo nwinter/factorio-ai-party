@@ -112,7 +112,7 @@ return function(api)
     return {chests=math.min(#chests, CHESTS), more=more > 0 and more or nil, rows=rows, lines=lines,
       note='use: each fed machine\'s recipe at its crafting speed now, as if it ran all the time; a round trip is there and back in a straight line'}
   end
-  M.schema = {requester_rate = {position='a requester or buffer chest {x,y}', area='or {left_top, right_bottom} up to 128x128: its requester and buffer chests (24 at most)',
+  M.schema = {requester_rate = {position='a requester or buffer chest {x,y}', area='or {left_top, right_bottom} up to 128x128: its requester and buffer chests (24 at most)',surface='optional planet name: the chest or area on that planet, by remote view (as inspect)',
     returns='rows [{chest, position, item, asks, holds, use_per_min, users, from {name, position, distance, holds}, round_trip_s, most_per_min, covers_min}], lines (one a chest and item), more. Read only'}}
   return M
 end
