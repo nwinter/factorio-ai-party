@@ -452,3 +452,24 @@ do
   eq(action.why,'to: biochamber (6,0) is out of reach from where the wait stands at biochamber (2,0); stand in reach of both')
 end
 print('stock collect wait with to: ok')
+-- batch28 B3 (Muse: 15 minutes for 5 collectors and 350 ice): a landed cargo pod's container is a place of kind pod;
+-- stacks on the ground in sight are places of kind ground with positions, counted in on_ground and not in total.
+do
+  prototypes.item.ice={}
+  local podinv={get_item_count=function(f) return f.name=='ice' and 350 or 0 end}
+  local pod={valid=true,unit_number=777,name='cargo-pod-container',type='temporary-container',position={x=12.5,y=3.5},force={name='neutral'},
+    get_inventory=function() return podinv end}
+  local fs={find_entities_filtered=function(f) if f.name=='cargo-pod-container' or (f.type and #f.type>0) then return {pod} end return {} end}
+  local api6={}
+  for k,v in pairs(api) do api6[k]=v end
+  api6.on_ground=function() return {cells={{position={x=30,y=0},count=40,stacks=1}}} end
+  local W=dofile('mod/agent-harness_0.1.0/stock.lua')(api6)
+  local fp={position={x=0,y=0},force={name='player'},surface=fs,get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+  local v=W.view(fp,{item='ice'})
+  eq(v.total,350,'the pod counted once, the ground not')
+  eq(v.on_ground,40)
+  eq(v.places[1].kind,'pod'); eq(v.places[1].count,350)
+  eq(v.places[2].kind,'ground'); eq(v.places[2].name,'1 stack on the ground'); eq(v.places[2].position.x,30)
+  assert(v.by_holder.line:find('landed cargo pods 350',1,true),v.by_holder.line)
+end
+print('stock pods and ground: ok')

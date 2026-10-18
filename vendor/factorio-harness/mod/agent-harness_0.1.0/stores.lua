@@ -99,6 +99,16 @@ return function(api)
           distance=dist(e.position)}
       end
     end
+    -- Landed cargo pods of any force (batch28 B3, Muse: unclaimed cargo with no positions), each once.
+    local seen_pod = {}
+    for _, pl in ipairs(places) do seen_pod[pl.entity .. '@' .. pl.position.x .. ',' .. pl.position.y] = true end
+    for _, e in ipairs(surface.find_entities_filtered{name='cargo-pod-container'}) do
+      local n = count_in(e, item)
+      if n > 0 and not seen_pod[e.name .. '@' .. e.position.x .. ',' .. e.position.y] then
+        add('pod', n)
+        places[#places+1] = {kind='pod', entity=e.name, position={x=e.position.x, y=e.position.y}, count=n, distance=dist(e.position)}
+      end
+    end
     -- Belts and inserter hands: totals only (thousands of segments).
     local on_belts = 0
     for _, e in ipairs(surface.find_entities_filtered{force=p.force, type=BELTS}) do
@@ -190,7 +200,7 @@ return function(api)
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places (default 15)', surface='optional surface name (default yours)',
-      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

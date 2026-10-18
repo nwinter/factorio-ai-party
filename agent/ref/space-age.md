@@ -286,7 +286,8 @@
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
-- `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it,
+- `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
+  (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert. A spoilable item adds
   `spoils_within_2_min` beside the total and per place.

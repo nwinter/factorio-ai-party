@@ -16106,7 +16106,7 @@ function M.last_drop(index)
   local last=state().last_drop and state().last_drop[index]
   return last and game.tick-last.tick<=3600 and last or nil
 end
-stock=stock_module{give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
