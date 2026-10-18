@@ -13,9 +13,9 @@
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
   `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.
 - `analysis`, factory reads, the factory digest: `progress`, `research`, `research done`, `science`, `supply`,
-  `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
-  `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`, `shortages`, `damage_log`, `dependency`,
-  `ingredient_gap`, `robot_losses`, `losses`.
+  `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `belt_flow`,
+  `pipe_gaps`, `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`,
+  `shortages`, `damage_log`, `dependency`, `ingredient_gap`, `robot_losses`, `losses`.
 - `waits-queues`, waits, queues, standing orders, urgent wakes, slow game, harness updates: `wait_until`, `sleep
   --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
   `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,
@@ -29,5 +29,6 @@
 - `space-age`, rockets, platforms, planets, the remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
   waits `platform_arrived` and `platform_left`, `platform_create`, `platform_schedule`, `platform_rename`,
   `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
-  `platform_rearm`, `circuit_audit`, `platform_gate`, `demolishers`, `shipment`, `fleet`, `min_payload`, `launch`,
-  `silo`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`, `freight_audit`, `where_is`, `agriculture`.
+  `platform_rearm`, `platform_digest`, `platform_tiles`, `circuit_audit`, `platform_gate`, `demolishers`, `shipment`,
+  `fleet`, `min_payload`, `launch`, `silo`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`,
+  `freight_audit`, `where_is`, `agriculture`.

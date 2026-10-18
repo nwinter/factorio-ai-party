@@ -1921,6 +1921,8 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platplan and M.platplan.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platsupply and M.platsupply.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.platdigest and M.platdigest.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.tilecheck and M.tilecheck.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.reservations and M.reservations.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -1957,6 +1959,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -13254,6 +13257,9 @@ function handlers.upgrade(p,a) return M.upgrade.run(p,a) end
 M.platrearm=require('platrearm'){state=state,remote_entity=remote_entity,on_platform=on_platform,
   deliver_one=function(p,e,items) return M.deliver.deliver_one(p,e,items) end}
 function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
+-- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
+M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform}
+function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- (the list is bots.lua's, which lets a bot aboard a platform make these calls)
 for _,name in ipairs(M.bots.PLATFORM_ACTIONS) do
   local handler=handlers[name]
@@ -14277,6 +14283,9 @@ reads.heat_budget=true
 reads.platform_bom=true
 reads.platform_production=true
 reads.platform_defense=true
+reads.platform_digest=true
+reads.belt_flow=true
+reads.platform_tiles=true
 reads.circuit_audit=true
 reads.pods=true
 reads.logistics_audit=true
@@ -15636,6 +15645,29 @@ function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
+-- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
+M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,
+  reads={platforms=function(p,a) return handlers.platforms(p,a) end,platform_supply=function(p,a) return handlers.platform_supply(p,a) end,
+    platform_endurance=function(p,a) return handlers.platform_endurance(p,a) end,platform_defense=function(p,a) return handlers.platform_defense(p,a) end}}
+function handlers.platform_digest(p,a) return M.platdigest.read(p,a) end
+-- platform_tiles (tilecheck.lua, batch24 B3): tiles at exact coordinates, and whether the hub removes or builds them now.
+M.tilecheck=require('tilecheck')()
+function handlers.platform_tiles(p,a)
+  local pl=space.platform(p,a.platform)
+  assert(pl.surface,'platform '..pl.name..' has no surface yet')
+  local cells={}
+  if a.positions~=nil then
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions: 1..64 tiles {x,y}')
+    for _,q in ipairs(a.positions) do local v=position(q); cells[#cells+1]={v.x,v.y} end
+  else
+    assert(type(a.area)=='table' and a.area.left_top and a.area.right_bottom,'positions (1..64 tiles) or area {left_top, right_bottom}')
+    local lt,rb=position(a.area.left_top),position(a.area.right_bottom)
+    local x0,y0,x1,y1=math.floor(lt.x),math.floor(lt.y),math.ceil(rb.x)-1,math.ceil(rb.y)-1
+    assert((x1-x0+1)*(y1-y0+1)<=64,'area: at most 64 tiles (8x8)')
+    for y=y0,y1 do for x=x0,x1 do cells[#cells+1]={x,y} end end
+  end
+  return M.tilecheck.query(pl,cells)
+end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}
 -- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
@@ -16562,6 +16594,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
+  if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops

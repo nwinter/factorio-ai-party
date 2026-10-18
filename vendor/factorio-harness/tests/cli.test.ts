@@ -774,6 +774,22 @@ test('a timed collect or a load_silo tour blocks without --wait, its outcome the
   const both=await compact(1,['call','collect','--args','{}','--wait','--no-wait']);
   assert.notEqual(both.code,0); assert.match(both.stdout,/--wait or --no-wait, not both/);
 });
+test('belt_flow waits for its sampling: it reads belt_flow {} until the result is in; --no-wait returns the start',async()=>{
+  for (const flags of [[],['--no-wait']]) {
+    const seen:any[]=[];
+    await engine(request=>{
+      if(request.action!=='belt_flow')return {ok:true,result:{}};
+      seen.push(request.args);
+      if(request.args.position)return {ok:true,result:{sampling:true,until_tick:600,seconds:2,points:['section end (3.5,0.5)']}};
+      return {ok:true,result:seen.length<3?{sampling:true,seconds_left:1}:{done:true,lines:['section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5/min (iron-plate 4); right lane empty']}};
+    },async port=>{
+      const {code,stdout}=await compact(port,['call','belt_flow','--args','{"position":{"x":2.5,"y":0.5},"seconds":2}',...flags]);
+      assert.equal(code,0,stdout);
+      if (flags.length) { assert.equal(seen.length,1); assert.match(stdout,/sampling: true/); }
+      else { assert.equal(seen.length,3); assert.match(stdout,/left lane 112\.5\/min/); }
+    });
+  }
+});
 test('a build that waited for a hand craft and then failed keeps the blocker on the error line',async()=>{
   // Sol, shift09: the silo build hit trees after its craft and read "Control ended: failed".
   let polls=0;

@@ -7188,6 +7188,13 @@ fh watch    # deploy on every change
   - `state_note` says plainly when the state is no_schedule, no_path or paused (on every platform_schedule reply).
   tests/space.lua.
 
+## d17 study1 part 2
+- 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):
+  `fh sleep S --until COND --require-met` and `fh wait --until COND --require-met` print `condition met after N s` or
+  `condition not met: woke WHAT after N s` first on the wake reply (JSON: `result.require_met {met, line}`) and exit 0
+  when the condition held, 3 when not, 1 when the wait failed. A tell or urgent news still ends the wait at once; the
+  default (no flag) is unchanged. Refused without `--until` and a game condition, and on other commands.
+  tests/waits.test.ts.
 ## d17 batch24 Group A (the agents' 21:20 poll)
 - A1 (Grok): a timed collect or load_silo returned exit 0 at acceptance while the character worked on. In Grok's CLI log,
   calls with `--wait` blocked and gave their outcome (launched, collected, told); from tick 25.27M Grok called them
@@ -7206,3 +7213,22 @@ fh watch    # deploy on every change
 - A4 (Gemini): load_silo `dry_run` already gives each item's weight, the rocket's lift (the game's rocket_lift_weight,
   1000 kg) and room, whether the list fits and the split; a transfer into rocket cargo moves only what fits
   (`weight_limited`). The silo read's `cargo` now adds `room_kg` (the lift left) and its line `(N kg free)`. tests/silo.lua.
+
+## d17 batch24 Group B
+- B1 (Luna: about 15 reads to diagnose Kestrel II): `platform_digest {platform}` runs `platforms`, `platform_supply`,
+  `platform_endurance` and `platform_defense` (their own code) and gives one reply: stopped or blocked first, route and
+  arrival, hub slots and chunks, chunks collected and where they go, crushers, makers, thrusters, tanks, ammunition,
+  turrets, power; `errors` for a read that failed. `platform_supply` now also returns `stops` (every entry not
+  working, in the chain's order; `first_stop` is the first). tests/platdigest.lua.
+- B2 (Astra, ~10 times on Kestrel): `belt_flow {position, seconds?, platform?}` (beltsample.lua) walks the belt line
+  (64 tiles back and on, undergrounds followed), cuts it into sections at each merge, and samples each section's last
+  tile and each belt merging in for 2..30 s: each lane's items by `unique_id` (2.0.77's detailed transport line
+  contents), every half of the ticks an item takes to cross a tile. An item gone at a later sample has passed: items a
+  minute per lane; a lane whose items did not move is stopped (full at 4 or more on the tile). `merges`: the line
+  before and each belt in, against the line after. The sampler runs from on_tick (at most 16 tiles, 2 lanes each; 16
+  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {}` each second until the result is in
+  (`--no-wait`: the start). tests/beltsample.lua, tests/cli.test.ts.
+- B3 (Astra: tiles deconstruct only from exposed edges, learned by trial): `platform_tiles {platform, positions |
+  area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
+  each with its tile, mark, tile ghost and what stands on it; foundation: `remove {now, why}`; empty space: `build
+  {now, why}`. tests/tilecheck.lua.
