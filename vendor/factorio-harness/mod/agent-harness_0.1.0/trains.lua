@@ -183,7 +183,48 @@ return function(api)
       for name, amount in pairs(train.get_fluid_contents()) do fl[#fl+1] = name .. ' ' .. math.floor(amount + 0.5) end
       if #fl > 0 then out.fluids = table.concat(fl, ', ') end
     end)
+    -- Each cargo wagon's slots (C2): used per item, free, filters, limit.
+    pcall(function()
+      local lines = {}
+      for _, c in ipairs(train.cargo_wagons or {}) do
+        if #lines >= 8 then break end
+        local ws = M.wagon_slots(c)
+        if ws then lines[#lines+1] = ws.line end
+      end
+      out.wagons = #lines > 0 and lines or nil
+    end)
     return out
+  end
+  -- A cargo wagon's slots (batch25 C2, Muse: a wagon filled with one item blocked all other loading on the uranium
+  -- route, an hour to find): slots used per item (with the count), free slots, the slot filters set, the red-X limit.
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  function M.wagon_slots(w)
+    local inv = try(function() return w.get_inventory(defines.inventory.cargo_wagon) end)
+    if not inv then return nil end
+    local total, used, by, count, filters = #inv, 0, {}, {}, {}
+    local bar = try(function() return inv.get_bar() end)
+    for i = 1, total do
+      local st = inv[i]
+      if st.valid_for_read then
+        used = used + 1
+        by[st.name] = (by[st.name] or 0) + 1; count[st.name] = (count[st.name] or 0) + st.count
+      end
+      local f = try(function() return inv.get_filter(i) end)
+      local fname = f and (type(f) == 'string' and f or f.name)
+      if fname then filters[fname] = (filters[fname] or 0) + 1 end
+    end
+    local items, fl = {}, {}
+    for n, k in pairs(by) do items[#items+1] = {n, k} end
+    table.sort(items, function(x, y) return x[2] > y[2] or (x[2] == y[2] and x[1] < y[1]) end)
+    for i, v in ipairs(items) do items[i] = string.format('%s %d slot%s (%d)', v[1], v[2], v[2] == 1 and '' or 's', count[v[1]]) end
+    for n, k in pairs(filters) do fl[#fl+1] = n .. ' ' .. k end
+    table.sort(fl)
+    local limit = bar and bar <= total and bar - 1 or nil
+    local free = math.max(0, (limit or total) - used)
+    local line = string.format('%s (%g,%g): %d/%d slots used%s: %s; %d free%s%s', w.name, w.position.x, w.position.y, used, total,
+      limit and string.format(' (red-X limit: %d usable)', limit) or '', #items > 0 and table.concat(items, ', ') or 'empty', free,
+      #fl > 0 and '; slot filters: ' .. table.concat(fl, ', ') or '; no slot filters', free == 0 and used > 0 and '; full: nothing else loads into it' or '')
+    return {used=used, total=total, free=free, limit=limit, by_item=by, filters=next(filters) and filters or nil, line=line}
   end
   local function condition(c, what)
     if c == nil then return nil end

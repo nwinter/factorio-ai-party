@@ -7297,3 +7297,7 @@ fh watch    # deploy on every change
   that tick; it ends short when the platform goes elsewhere. The walking load with launch and platform did this
   already (M.ready holds for a headed platform); the refusal was the argument check. Without walk, from is refused
   as before. tests/rocketload.lua.
+- C2 (Muse: a wagon full of one item blocked all other loading on the uranium route; an hour to find): trains.lua
+  `wagon_slots`: a cargo wagon's slots used per item (with the count), free slots (under the red-X limit), slot
+  filters and the limit, and `full: nothing else loads into it`. The train read gives `wagons` (each cargo wagon, 8 at
+  most); inspect of a cargo wagon gives `wagon_slots`. tests/wagonslots.lua.
