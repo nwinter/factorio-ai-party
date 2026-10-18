@@ -16302,6 +16302,9 @@ M.pushalerts=require('pushalerts'){mine_forecast=function(surface,force,q,cap) r
     for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
     local okr,lost=pcall(M.robotloss.alert_groups,f)
     for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
+    -- power cuts not joined again (powercut.lua; batch32 B3)
+    local okp,pc=pcall(M.powercut.alert_groups,f)
+    for _,g in ipairs(okp and pc or {}) do out[#out+1]=g end
     return out
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,silo_sample=function(e) return M.silo.sample_made(e) end,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,

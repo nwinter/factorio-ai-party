@@ -141,3 +141,58 @@ do
   defines=nil
 end
 print('d17_batch32 B4 unrequested: ok')
+
+-- B3 (Opus, twice: a pump unpowered for hours after its pole died; one tile of a 555-tile stone belt killed): a cut
+-- names what stopped past it and how to rebuild, and stays an alert while it lasts.
+do
+  defines={entity_status={working=1,item_ingredient_shortage=12,no_power=5},direction={north=0,east=4,south=8,west=12}}
+  game={tick=100}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  local function belt(y) return {valid=true,type='transport-belt',name='transport-belt',direction=8,position={x=10.5,y=y},unit_number=3000+y,
+    get_max_transport_line_index=function() return 2 end,get_transport_line=function() return {get_contents=function() return {{name='stone',count=3}} end} end} end
+  local line={}
+  for y=0,19 do line[#line+1]=belt(y+0.5) end
+  for i,b in ipairs(line) do b.belt_neighbours={inputs={line[i-1]},outputs={line[i+1]}} end
+  local built,ghosts={},{}
+  for _,b in ipairs(line) do built[b.position.y]=true end
+  local furnace={valid=true,name='stone-furnace',position={x=13,y=16},unit_number=9001,status=12}
+  local ins={valid=true,type='inserter',position={x=11.5,y=15.5},pickup_target=line[16],drop_target=furnace}
+  local surface={name='nauvis',find_entities_filtered=function(f)
+    if f.type=='inserter' then return {ins} end
+    if f.name=='entity-ghost' then return ghosts[f.position[2]] and {{valid=true,ghost_name='transport-belt'}} or {} end
+    if f.position and built[f.position[2]] then return {{valid=true}} end
+    return {} end}
+  game.get_surface=function() return surface end
+  for _,b in ipairs(line) do b.surface=surface; b.force={name='player'}; b.last_user={name='opus'} end
+  L.note({entity=line[10],tick=100,cause={valid=true,name='big-biter'}}); built[line[10].position.y]=nil
+  game.tick=100+60*3600  -- an hour on: still an alert (it was 30 min)
+  local gs=L.alert_groups({name='player'})
+  eq(#gs,1)
+  has(gs[1].line,'belt line cut at (10.5,9.5): 1 tile gone (1 by big-biter)')
+  has(gs[1].line,'; the 10 tiles past the cut feed stone-furnace (13,16) item_ingredient_shortage')
+  has(gs[1].line,'; rebuild: no ghost at (10.5,9.5): transport-belt facing south')
+  -- a ghost there: said; built again: gone
+  ghosts[9.5]=true
+  has(L.alert_groups({name='player'})[1].line,'rebuild: a ghost of transport-belt at (10.5,9.5)')
+  built[9.5]=true
+  eq(#L.alert_groups({name='player'}),0)
+end
+do
+  defines={entity_status={working=1,no_power=5}}
+  game={tick=5000,get_surface=function() return {find_entities_filtered=function() return {} end} end}
+  local st={powercut={seq=1,jobs={},cuts={}}}
+  local P=dofile('mod/agent-harness_0.1.0/powercut.lua'){state=function() return st end}
+  local pump={valid=true,name='pump',type='pump',position={x=-200.5,y=-354},status=5,last_user={name='opus'},fluidbox={{name='crude-oil',amount=12.04}}}
+  st.powercut.cuts[1]={id=245,tick=1000,checked=1330,surface='nauvis',force='player',net=7,ghost=false,poles={{name='medium-electric-pole',position={x=-198.5,y=-352.5},by='big-biter'}},
+    parts={},orphans={pump=1},orphan_total=1,orphan_box={x0=-200.5,y0=-354,x1=-200.5,y1=-354},alone={pump}}
+  local gs=P.alert_groups({name='player'})
+  eq(#gs,1); eq(gs[1].kind,'power_cut'); eq(gs[1].by.opus,1); eq(gs[1].n,1)
+  has(gs[1].line,'power cut #245: medium-electric-pole (-198.5,-352.5) destroyed by big-biter')
+  has(gs[1].line,'1 machine no other pole reached had no power')
+  has(gs[1].line,'; stopped now: pump (-200.5,-354) on no network (no_power), holds crude-oil 12')
+  -- joined again: no group
+  pump.electric_network_id=9
+  eq(#P.alert_groups({name='player'}),0)
+end
+print('d17_batch32 B3 cuts that stop a line: ok')

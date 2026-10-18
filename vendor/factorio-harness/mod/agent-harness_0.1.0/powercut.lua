@@ -210,7 +210,7 @@ return function(api)
     for _, g in ipairs(surface and try(function() return surface.find_entities_filtered{name='entity-ghost', position=job.position, radius=0.5} end) or {}) do
       if try(function() return g.ghost_name end) == job.name then ghost = true end
     end
-    st.cuts[#st.cuts+1] = {id=st.seq, tick=job.tick, checked=game.tick, surface=job.surface, net=job.net, ghost=ghost,
+    st.cuts[#st.cuts+1] = {id=st.seq, tick=job.tick, checked=game.tick, surface=job.surface, force=job.force, net=job.net, ghost=ghost,
       poles=poles, parts=job.parts, orphans=job.orphans, orphan_total=job.orphan_total,
       orphan_box=job.orphan_box, ends=#job.parts >= 2 and job.ends or nil, alone=job.orphan_total > 0 and job.alone or nil}
     while #st.cuts > MAX_CUTS do table.remove(st.cuts, 1) end
@@ -351,6 +351,47 @@ return function(api)
     end
     h.powercut_told = kept
     return #out > 0 and out or nil
+  end
+  -- (d17 batch32 B3, Opus: the NW crude pump at (-200.5,-354) stood unpowered for hours after its pole died; power cut
+  -- #245 was told only in its first minutes) a cut not joined again stays an alert group (pushalerts: game_alerts kind
+  -- power_cut, and the digest to the claim's owner or the stopped machines' builders) while a machine it left alone is
+  -- still without a network or a part is still without power: its line, then each machine left alone as it stands now
+  -- (a pump with the fluid it holds).
+  local function machine_text(m)
+    local status
+    for k, v in pairs(defines.entity_status or {}) do if v == try(function() return m.status end) then status = k end end
+    local fluid = ''
+    if m.type == 'pump' or m.type == 'mining-drill' or m.type == 'offshore-pump' then
+      local f = try(function() return m.fluidbox[1] end)
+      fluid = f and string.format(', holds %s %g', f.name, math.floor(f.amount * 10 + 0.5) / 10) or ', holds no fluid'
+    end
+    return string.format('%s %s %s%s', m.name, at(m.position), net(m) and 'on #' .. net(m) or 'on no network', status and ' (' .. status .. ')' or '') .. fluid
+  end
+  function M.alert_groups(force)
+    local st = api.state().powercut
+    local out = {}
+    for _, c in ipairs(st and st.cuts or {}) do
+      if (c.force or 'player') == force.name and not joined(c) then
+        local names, by, n, stopped = {}, {}, 0, {}
+        for name, k in pairs(c.orphans or {}) do names[name] = (names[name] or 0) + k; n = n + k end
+        for _, part in ipairs(c.parts or {}) do
+          if part.cut then for name, k in pairs(part.machines or {}) do names[name] = (names[name] or 0) + k; n = n + k end end
+        end
+        for _, m in ipairs(c.alone or {}) do
+          if m.valid and not net(m) then
+            stopped[#stopped+1] = machine_text(m)
+            local u = try(function() return m.last_user and m.last_user.name end)
+            if u then by[u] = (by[u] or 0) + 1 end
+          end
+        end
+        local q = c.poles[1].position
+        local okl, line = pcall(M.line, c, nil)
+        out[#out+1] = {key='power_cut|' .. c.id, kind='power_cut', surface=c.surface, n=math.max(1, n), names=names, by=by, at={{x=q.x, y=q.y}},
+          center={x=math.floor(q.x + 0.5), y=math.floor(q.y + 0.5)}, rank=c.tick,
+          line=(okl and line or ('power cut #' .. c.id)) .. (#stopped > 0 and '; stopped now: ' .. table.concat(stopped, '; ', 1, math.min(6, #stopped)) or '')}
+      end
+    end
+    return out
   end
   -- status alerts: every cut after since.
   function M.since(since, reader)
