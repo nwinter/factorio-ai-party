@@ -430,7 +430,9 @@ return function()
     local cache = {}
     local thrusters = try(function() return s.find_entities_filtered{type='thruster', limit=64} end) or {}
     local function one(f, x, y)
-      return try(function() return s.find_entities_filtered{area={{x + 0.1, y + 0.1}, {x + 0.9, y + 0.9}}, type=f, limit=1}[1] end)
+      for _, e in ipairs(try(function() return s.find_entities_filtered{area={{x + 0.1, y + 0.1}, {x + 0.9, y + 0.9}}, type=f, limit=4} end) or {}) do
+        if math.floor(e.position.x) == x and math.floor(e.position.y) == y then return e end
+      end
     end
     local rows, lines = {}, {}
     for i, c in ipairs(cells) do

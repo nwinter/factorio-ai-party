@@ -104,6 +104,12 @@
   on no power), then the route and arrival, hub slots and the chunks in it, chunks collected and where each goes,
   crushers and makers (state, in and out), thrusters, tanks and ammunition (stock, made and used, run-out, stranded),
   turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
+- `platform_tiles {platform, positions | area}`: up to 64 tiles at exact coordinates: the tile, marked for removal, a
+  tile ghost, what stands on it; for foundation whether the hub takes it away now once marked (`remove {now, why}`: one
+  run of empty space beside it, nothing on it, room in the hub), for empty space whether the hub builds foundation
+  there now (`build {now, why}`: foundation among the 8 tiles round it, at most one run of empty space beside it, not
+  in a thruster's exhaust or over 200 tiles north of the hub). Example:
+  `./fh call platform_tiles --args '{"platform":"Kestrel II","area":{"left_top":{"x":-4,"y":8},"right_bottom":{"x":4,"y":16}}}'`
 - `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
   aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no

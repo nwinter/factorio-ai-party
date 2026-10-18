@@ -7201,3 +7201,7 @@ fh watch    # deploy on every change
   before and each belt in, against the line after. The sampler runs from on_tick (at most 16 tiles, 2 lanes each; 16
   tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {}` each second until the result is in
   (`--no-wait`: the start). tests/beltsample.lua, tests/cli.test.ts.
+- B3 (Astra: tiles deconstruct only from exposed edges, learned by trial): `platform_tiles {platform, positions |
+  area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
+  each with its tile, mark, tile ghost and what stands on it; foundation: `remove {now, why}`; empty space: `build
+  {now, why}`. tests/tilecheck.lua.
