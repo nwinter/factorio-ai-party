@@ -465,6 +465,8 @@ return function(api)
     return string.format('%s (%g,%g): %s', e.name, e.position.x, e.position.y, table.concat(parts, '; '))
   end
   local SEG = 400
+  -- set while belt_segment runs: M.read inside it starts no second one (d18 freeze)
+  local in_segment = false
   function M.belt_segment(e)
     local lines = {}
     for k = 1, 2 do lines[k] = try(function() return e.get_transport_line(k) end) end
@@ -582,10 +584,13 @@ return function(api)
         local o = c.owner
         if o.valid and o.type ~= 'electric-pole' and not owners[o.unit_number] then
           owners[o.unit_number] = true
-          local info = try(function() return M.read(o) end)
-          local st = info and info.settings or {}
-          if o.type == 'transport-belt' and st.read_contents then
-            readers[#readers+1] = string.format('%s (%g,%g)%s %s', o.name, o.position.x, o.position.y, o == e and ' (this belt)' or '', tostring(st.read_contents_mode or 'pulse'))
+          -- (d18 freeze, Kestrel II 03:39 and 03:46) the belt's own two settings, not M.read: M.read of a belt reading
+          -- entire_belt_hold runs belt_segment again, and two such belts on one network called each other without end.
+          local ob = o.type == 'transport-belt' and try(function() return o.get_control_behavior() end)
+          if ob and try(function() return ob.read_contents end) then
+            local mode = try(function() return ob.read_contents_mode end)
+            mode = mode ~= nil and define_name('control_behavior.transport_belt.content_read_mode', mode) or 'pulse'
+            readers[#readers+1] = string.format('%s (%g,%g)%s %s', o.name, o.position.x, o.position.y, o == e and ' (this belt)' or '', tostring(mode))
           elseif o ~= e and o.type ~= 'transport-belt' then
             local side = side_of(o, c.wire_connector_id)
             if not (COMBINATOR[etype(o)] and side == 'input') then
@@ -761,9 +766,13 @@ return function(api)
     -- A belt reading its entire belt (Astra, d15: the read missed a segment past an underground): the run of belts the
     -- engine joins into this tile's lines (each way, up to SEG tiles), what ends it each way, and what that run holds
     -- against what the wires read now.
-    if kind == 'transport_belt' and settings.read_contents and settings.read_contents_mode == 'entire_belt_hold' then
+    if kind == 'transport_belt' and settings.read_contents and settings.read_contents_mode == 'entire_belt_hold' and not in_segment then
       local readers
-      out.belt_segment, readers = M.belt_segment(e)
+      in_segment = true
+      local ok, text, list = pcall(M.belt_segment, e)
+      in_segment = false
+      if not ok then error(text, 0) end
+      out.belt_segment, readers = text, list
       out.belt_readers = readers and #readers > 0 and readers or nil
     end
     if kind == 'constant_combinator' then
