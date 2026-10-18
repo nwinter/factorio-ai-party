@@ -194,7 +194,7 @@
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills, and the platform's last 2 drops
-  into a pad there with what the pad showed after (as the `drops` pad line); with `item`, that item over
+  into a pad there with what the pad showed after (as the drops read's pad line); with `item`, that item over
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what its requests from that planet keep, what goes
   down there, what is left aboard). At a stop the hub keeps only what its requests from that planet ask (as
@@ -338,7 +338,7 @@
   beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`. A drop into a
   landing pad: the pad's count of the sent items before and when it landed, then for 20 s each fall in it with the
   construction and logistic robots of ours within 8 tiles holding that item (and the first ghost or entity each flies
-  to); its landing line comes 20 s after it lands with that line (`drops`: `pad`, `pad_verdict` such as `landed, then
+  to); its landing line comes 20 s after it lands with that line (the drops read: `pad`, `pad_verdict` such as `landed, then
   taken by construction robots`, `pad_now`). The game reserves nothing for the sender: robots may take what lands in a
   pad.
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
@@ -349,7 +349,7 @@
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert; inserter hands and
   what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
-  `spoils_within_2_min` beside the total and per place. `drops`: the last 4 drops of it into a landing pad on that
+  `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
