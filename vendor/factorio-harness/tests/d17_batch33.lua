@@ -144,3 +144,64 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch33 A5 a ghost\'s ammo request in place: ok')
+
+-- B1 (Grok 09:22: the last pentapod eggs were in an inserter hand, then robot cargo; where_is said 0): what our robots
+-- carry, in where_is and the seed alert.
+do
+  defines={inventory={robot_cargo=1}}
+  local S=dofile('mod/agent-harness_0.1.0/stores.lua'){agents=function() return {} end}
+  local function robot(name,n) return {get_inventory=function() return {get_item_count=function(i) return i==name and n or 0 end} end} end
+  local net={logistic_robots={robot('pentapod-egg',1),robot('iron-plate',4)},construction_robots={robot('pentapod-egg',2)}}
+  local force={logistic_networks={gleba={net}}}
+  local n,carrying,read,capped=S.robot_cargo(force,{name='gleba'},'pentapod-egg')
+  eq(n,3); eq(carrying,2); eq(read,3); eq(capped,false)
+  S.MAX_ROBOTS=2
+  n,carrying,read,capped=S.robot_cargo(force,{name='gleba'},'pentapod-egg')
+  eq(read,2); eq(capped,true)
+  S.MAX_ROBOTS=4096
+  -- the seed alert counts it: one egg in a robot is not zero
+  game={tick=600,surfaces={}}
+  prototypes={recipe={['pentapod-egg']={name='pentapod-egg',ingredients={{type='item',name='pentapod-egg',amount=1}}}}}
+  defines.inventory.assembling_machine_input=2; defines.inventory.assembling_machine_output=3
+  local empty={get_item_count=function() return 0 end}
+  local chamber={valid=true,name='biochamber',type='assembling-machine',position={x=0,y=0},bounding_box={left_top={x=-1.5,y=-1.5},right_bottom={x=1.5,y=1.5}},
+    last_user={name='grok'},get_recipe=function() return {name='pentapod-egg'} end,get_inventory=function() return setmetatable(empty,{__len=function() return 0 end}) end}
+  local surface={name='gleba',find_entities_filtered=function() return {} end}
+  local Sd=dofile('mod/agent-harness_0.1.0/seeds.lua'){state=function() return {} end,crafters=function() return {chamber} end,
+    robot_cargo=function(f,s,item) return (S.robot_cargo(f,s,item)) end}
+  local rows=Sd.read({name='player',logistic_networks={gleba={net}}},surface)
+  eq(rows['pentapod-egg'].count,3); eq(rows['pentapod-egg'].in_robots,3)
+  defines,game,prototypes=nil,nil,nil
+end
+print('d17_batch33 B1 robot cargo counted: ok')
+
+-- B2 (Sol, Astra and viewer Foobator 08:09: who looks after each system): board_review {ownership} per surface.
+do
+  game={tick=100000}
+  local nauvis={name='nauvis',index=1,planet={name='nauvis'}}
+  game.surfaces={nauvis}
+  game.get_surface=function(n) return n=='nauvis' and nauvis or nil end
+  local items={
+    [5]={id=5,kind='claim',status='claimed',owner='astra',title='Nauvis smelting',surface='nauvis',area={left_top={x=0,y=0},right_bottom={x=20,y=20}},active_tick=99000},
+    [6]={id=6,kind='claim',status='claimed',owner='sol',title='Nauvis (everything else)',surface='nauvis',active_tick=90000},
+    [9]={id=9,kind='task',status='blocked',owner='astra',title='steel row',notes={{tick=98000,by='astra',text='no coal on the west belt'}}}}
+  local st={board={items=items}}
+  local function machine(x,y,net) return {valid=true,name='steel-furnace',position={x=x,y=y},electric_network_id=net} end
+  local crafters={machine(5,5,57),machine(50,50,57)}
+  local roboport={valid=true,position={x=200,y=200}}
+  local force={platforms={},logistic_networks={nauvis={{network_id=3,cells={{owner=roboport}}}}}}
+  local C=dofile('mod/agent-harness_0.1.0/claims.lua'){state=function() return st end,crafters=function() return crafters end}
+  -- an inspection in astra's area by sol is recorded
+  C.worked({name='sol',surface=nauvis,character=nil},{position={x=4,y=4}},'inspect',true)
+  eq(items[5].inspected.by,'sol'); eq(items[5].inspected.tick,100000)
+  game.tick=100600
+  local r=C.ownership({force=force},{})
+  eq(#r.surfaces,1); eq(r.surfaces[1].surface,'nauvis')
+  local rows=r.surfaces[1].systems
+  eq(rows[1].kind,'power'); eq(rows[1].claims,1)
+  eq(rows[1].line,'electric network #57: 2 machines (2 steel-furnace): claim #5 astra (active there 26s ago, inspected 10s ago by sol): 1 of 2 sampled')
+  eq(rows[2].line,'logistic network #3: 1 roboport cell: no area covers it; planet-wide claim #6 sol (active there 2m56s ago, no inspection there recorded)')
+  eq(r.blocked[1],'astra: #9 steel row is blocked (latest note 43s ago by astra: no coal on the west belt)')
+  game=nil
+end
+print('d17_batch33 B2 ownership read: ok')

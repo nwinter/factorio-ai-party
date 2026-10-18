@@ -332,7 +332,8 @@
 - `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
   (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
-  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert. A spoilable item adds
+  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert; inserter hands and
+  what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
   `spoils_within_2_min` beside the total and per place.
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
