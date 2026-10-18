@@ -7703,3 +7703,19 @@ fh watch    # deploy on every change
       in the reply says the counts and the chests.
   - Found on the way: a dry run with `auto_requests: "pause"` switched the automatic requests off and never back on
     (no launch follows a dry run). A dry run now switches nothing and says what the load would do.
+- B8 (Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer >= 24000 she set current 2, as current =
+  the stop it waits at had read no_schedule, and it left at once with 4,660 fuel): `platform_schedule {platform, stop:
+  N, wait: [...], current?, go?}`:
+  - The record's waits are replaced through LuaSchedule's own calls (remove_wait_condition, add_wait_condition,
+    change_wait_condition, set_wait_condition_mode; all present on world n's Spindle, read without calling them). The
+    records, the current stop and the platform's state are kept. The waits are parsed as a stops entry's (shared
+    stop_waits: read_as, the B9 checks, `harness: true`), and the harness watch for the other stops is kept.
+  - Before anything changes, whether it makes the platform leave now:
+    - `current` set to another stop while it waits;
+    - the stop it waits at left with no wait;
+    - the new waits at that stop holding now (and binds before or): time from its arrival as the harness saw it,
+      item_count against the hub, circuit against the hub's wires, all_requests_satisfied against the hub's requests.
+  - Any of these is refused with nothing changed unless `go: true`; `leaves` says which. Waits it does not read
+    (inactivity, fluid_count, the other request waits) are named in `may_leave` when they could decide it.
+  - Not run against the game: n is read-only and the dev world's RCON closed the connection. The mock follows the
+    method names read on n.

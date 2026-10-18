@@ -32,7 +32,7 @@
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
 - `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
   waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
-- `platform_schedule {platform, stops, current?, keep_leg?, paused?}` or `{platform, next: true}`: each stop `{station, wait: [...]}`; a wait is `{type,
+- `platform_schedule {platform, stops, current?, keep_leg?, paused?}`, `{platform, next: true}` or `{platform, stop, wait, go?}`: each stop `{station, wait: [...]}`; a wait is `{type,
   ticks?, condition?, compare: "and"|"or"}`. Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
   `any_request_not_satisfied`, `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a
   fluid), `circuit` (any signal on the hub's red and green wires: wire a tank or a combinator to the hub;
@@ -48,6 +48,10 @@
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
+  `stop: 1, wait: [...]` replaces that stop's waits in place, the records, the current stop and the state kept
+  (`edited`). An edit that makes it leave now is refused, nothing changed, unless `go: true`: `current` set to another
+  stop while it waits, the stop it waits at left with no wait, or new waits there that hold now (time since arrival,
+  item_count against the hub, circuit against the hub's wires); `may_leave` names waits it could not read.
   A count wait needs its `condition`. `{item|fluid, count|at_least}` reads as `"NAME >= N"`, and `seconds` reads as
   ticks (`read_as` says so); any other wait field is refused. `schedule` shows each wait's condition. The game's
   `fluid_count` on a platform did not count the storage tanks on world n: Cinder waited over 5 min on `>= 22000` with

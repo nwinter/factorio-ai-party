@@ -1329,6 +1329,87 @@ return function(api)
   -- any_request_not_satisfied, time, inactivity, item_count, circuit.
   -- (B9) what world n showed of the game's fluid_count stop condition on a platform
   local FLUID_NOTE='on world n the game\'s fluid_count stop condition on a platform did not hold while its storage tanks held more: Cinder at Gleba (2026-10-18 14:23 UTC) waited over 5 min on thruster-fuel >= 22000 and thruster-oxidizer >= 22000 with 26000 of each in its tanks; the API does not say what it reads, and the hub holds no fluid. What reads the tanks: a circuit wait, with the tanks wired (red or green) to the hub, their contents on the wire (Cinder\'s hub read 25000 of each so), or harness: true on the wait (the harness reads the tanks and sends the platform on)'
+  -- One stop's waits as the game's records take them, and the harness's watch for it (B9), or nil; runs and read_as get
+  -- their lines. Shared by stops and by stop (B8).
+  local function stop_waits(i,stop,runs,read_as)
+    local entry
+    local waits={}
+    local harness_conds,mirror,other,ordered={},{},{},{}
+    for j,w in ipairs(stop.wait or {}) do
+      assert(type(w)=='table' and type(w.type)=='string','stop '..i..' wait '..j..' needs a type')
+      -- (d17 batch31 B9, Luna: {type: fluid_count, fluid, count} was taken with no condition, and the game's wait
+      -- then had nothing to compare) a field a wait does not take is refused, and a count wait needs its condition
+      -- (B9: Luna wrote {item|fluid|name, count|at_least} 67 times and {seconds} 3 times on shift33-34, each dropped by
+      -- the game) those read as the condition and the ticks they name, said in read_as
+      local count=w.at_least or w.count
+      local thing=w.fluid or w.item or w.name
+      if w.condition==nil and (w.type=='item_count' or w.type=='fluid_count') and type(thing)=='string' and type(count)=='number' and not (w.at_least and w.count) then
+        local copy={}
+        for k,v in pairs(w) do if k~='fluid' and k~='item' and k~='name' and k~='count' and k~='at_least' then copy[k]=v end end
+        copy.condition=string.format('%s >= %d',thing,count)
+        read_as[#read_as+1]=string.format('stop %d wait %d: %s %s %s %g read as condition "%s"',i,j,w.type,thing,w.at_least and 'at_least' or 'count',count,copy.condition)
+        w=copy
+      end
+      if w.seconds~=nil and w.ticks==nil and (w.type=='time' or w.type=='inactivity') and type(w.seconds)=='number' then
+        local copy={}
+        for k,v in pairs(w) do if k~='seconds' then copy[k]=v end end
+        copy.ticks=math.floor(w.seconds*60+0.5)
+        read_as[#read_as+1]=string.format('stop %d wait %d: seconds %g read as ticks %d',i,j,w.seconds,copy.ticks)
+        w=copy
+      end
+      local bad={}
+      for k in pairs(w) do
+        if k~='type' and k~='ticks' and k~='condition' and k~='compare' and k~='harness' then bad[#bad+1]=tostring(k) end
+      end
+      if #bad>0 then
+        table.sort(bad)
+        error(string.format('stop %d wait %d: %s %s not wait fields (a wait takes type, ticks, condition, compare, harness); a count is a condition: {"type":"%s","condition":"%s >= %s"}',
+          i,j,table.concat(bad,', '),#bad==1 and 'is' or 'are',w.type,tostring(w.fluid or w.item or w.signal or 'thruster-fuel'),tostring(w.count or w.value or w.at_least or 10000)),0)
+      end
+      if (w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit') and w.condition==nil then
+        error(string.format('stop %d wait %d: %s needs a condition ("%s >= 10000" or {signal, comparator, value}); without one the game\'s wait compares nothing',
+          i,j,w.type,w.type=='item_count' and 'iron-plate' or 'thruster-fuel'),0)
+      end
+      assert(w.harness==nil or (w.harness==true and w.type=='fluid_count'),'stop '..i..' wait '..j..': harness: true goes with a fluid_count wait (the harness reads the storage tanks)')
+      -- A condition (d17 batch17 A5, Astra board #842: a departure guard on fuel): "thruster-fuel >= 10000" or
+      -- {signal, comparator, value | signal2}, as circuit_set takes it, or the game's {first_signal, comparator,
+      -- constant}; item_count takes an item signal, fluid_count a fluid one; circuit reads the hub's wires.
+      local cond=w.condition
+      if cond~=nil then
+        local what='stop '..i..' wait '..j..' condition'
+        if type(cond)=='table' and cond.first_signal~=nil and cond.signal==nil then cond={signal=cond.first_signal,comparator=cond.comparator,value=cond.constant,signal2=cond.second_signal} end
+        cond=api.circuit_condition(cond,what)
+        local st=cond.first_signal.type
+        if w.type=='item_count' then assert(st=='item',what..': item_count takes an item signal ("iron-plate >= 100")') end
+        if w.type=='fluid_count' then assert(st=='fluid',what..': fluid_count takes a fluid signal ("thruster-fuel >= 10000")') end
+        assert(w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit',what..': a condition goes with type item_count, fluid_count or circuit')
+      end
+      local text=w.type..(cond and ' '..cond.first_signal.name..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[cond.comparator] or cond.comparator)..' '..tostring(cond.constant or (cond.second_signal and cond.second_signal.name)) or '')
+        ..(w.ticks and ' '..math.floor(w.ticks/60)..'s' or '')
+      if w.harness then
+        assert(cond.constant~=nil,'stop '..i..' wait '..j..': a harness fluid_count compares with a number ("thruster-fuel >= 24000")')
+        harness_conds[#harness_conds+1]={kind='tanks',name=cond.first_signal.name,comparator=cond.comparator,value=cond.constant,text=text}
+        ordered[#ordered+1]=harness_conds[#harness_conds]
+      else
+        waits[#waits+1]={type=w.type,ticks=w.ticks,compare_type=#waits>0 and (w.compare or 'and') or nil,condition=cond}
+        if w.type=='time' and w.ticks then mirror[#mirror+1]={kind='time',ticks=w.ticks}; ordered[#ordered+1]=mirror[#mirror]
+        elseif w.type=='item_count' and cond.constant~=nil then mirror[#mirror+1]={kind='hub',name=cond.first_signal.name,comparator=cond.comparator,value=cond.constant}; ordered[#ordered+1]=mirror[#mirror]
+        else other[#other+1]=w.type end
+        if (w.compare or 'and')~='and' and j>1 then other[#other+1]='compare '..tostring(w.compare) end
+        -- (B9) the game's fluid_count on a platform, as seen on world n
+        if w.type=='fluid_count' then runs[#runs+1]=string.format('stop %d (%s) %s: the game\'s condition',i,stop.station,text) end
+      end
+      if w.harness then runs[#runs+1]=string.format('stop %d (%s) %s: the harness (the sum in its storage tanks, read every second while it waits there)',i,stop.station,text) end
+    end
+    if #harness_conds>0 then
+      assert(#other==0,string.format('stop %d: harness waits go with time and item_count waits joined by and (the harness reads those too); this stop also has %s',i,table.concat(other,', ')))
+      waits[#waits+1]={type='circuit',compare_type=#waits>0 and 'and' or nil,condition=api.platwait and api.platwait().NEVER}
+      entry={station=stop.station,conds=ordered}
+      runs[#runs+1]=string.format('stop %d (%s): the game\'s record also holds circuit signal-dot < -2147483648, which never holds, so the game does not send it on; the harness does (go to station on the next stop) when every condition of the stop holds%s',
+        i,stop.station,#mirror>0 and ' (its time and item_count waits too, read by the harness from when it is first seen waiting there, and from the hub)' or '')
+    end
+    return waits,entry
+  end
   function M.platform_schedule(p,a)
     local pl=M.platform(p,a.platform)
     local runs,read_as
@@ -1354,6 +1435,117 @@ return function(api)
           n==1 and '; its schedule has one stop, so the next stop is the same one' or ''),
         state_note=state=='no_schedule' and 'state no_schedule after go to station: the platform goes nowhere' or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or nil}
     end
+    -- stop: N, wait: [...] (d17 batch31 B8, Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer
+    -- >= 24000 she set current 2, since current = the stop it waits at had read no_schedule, and it left at once with
+    -- 4,660 fuel): that record's wait conditions replaced in place through the schedule's own wait condition calls,
+    -- the records, the current stop and the state kept. Before anything changes, whether the edit makes it leave now:
+    -- current set to another stop while it waits, or the stop it waits at left with no wait, or its new waits holding
+    -- now (time from its arrival, item_count against the hub, circuit against the hub's wires, all requests satisfied);
+    -- refused unless go: true.
+    if a.stop~=nil then
+      assert(a.stops==nil and a.next==nil and a.keep_leg==nil,'stop edits one record\'s waits; stops, next and keep_leg go without it')
+      assert(type(a.wait)=='table','stop goes with wait: the stop\'s new wait conditions ([] for none)')
+      assert(a.go==nil or type(a.go)=='boolean','go must be true or false')
+      local sch=pl.get_schedule()
+      local n=sch and sch.get_record_count() or 0
+      assert(n>0,pl.name..' has no schedule: give stops')
+      local idx=api.integer(a.stop,nil,1,n,'stop')
+      local recs=pl.schedule.records
+      local station=recs[idx].station
+      runs,read_as={},{}
+      local waits,entry=stop_waits(idx,{station=station,wait=a.wait},runs,read_as)
+      local cur=sch.current or 1
+      local new_cur=a.current~=nil and api.integer(a.current,cur,1,n,'current') or cur
+      local before=platform_states[pl.state]
+      local here=try(function() return pl.space_location.name end)
+      local waiting=before=='waiting_at_station' and recs[cur] and recs[cur].station==here
+      -- the new waits at the stop it waits at: true, false or nil (not read) each, joined as the game joins them
+      -- (and binds before or)
+      local st=api.state and api.state()
+      local arrived=st and st.platform_stops and st.platform_stops[pl.index] or {}
+      if arrived.at~=here then arrived={} end
+      local function holds(w)
+        local c=w.condition
+        if w.type=='time' then
+          if not arrived.tick then return nil,'time: its arrival was not seen' end
+          local left=(w.ticks or 0)-(game.tick-arrived.tick)
+          return left<=0,string.format('time %s: %s',secs(w.ticks or 0),left<=0 and 'passed' or secs(left)..' left')
+        elseif w.type=='item_count' and c and c.first_signal and c.constant then
+          local held=try(function() return pl.hub.get_inventory(defines.inventory.hub_main).get_item_count(c.first_signal.name) end) or 0
+          local ok=compare(held,c.comparator or '<',c.constant)
+          return ok,string.format('item_count %s: the hub holds %d',cond_text(c),held)
+        elseif w.type=='circuit' and c and c.first_signal then
+          if c.first_signal.name=='signal-dot' and c.constant==-2147483648 then return false,'the harness sends it on' end
+          local function wires(sig)
+            local v,wired=0,false
+            for _,id in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+              local net=pl.hub and pl.hub.valid and try(function() return pl.hub.get_circuit_network(id) end)
+              if net then wired=true; v=v+(try(function() return net.get_signal(sig) end) or 0) end
+            end
+            return v,wired
+          end
+          local x=wires(c.first_signal)
+          local y=c.second_signal and wires(c.second_signal) or c.constant or 0
+          local ok=compare(x,c.comparator or '<',y)
+          return ok,string.format('circuit %s: the hub\'s wires read %d',cond_text(c),x)
+        elseif w.type=='all_requests_satisfied' then
+          local rows=unmet(pl)
+          return #rows==0,string.format('all_requests_satisfied: %d requests unmet',#rows)
+        end
+        return nil,w.type..': not read'
+      end
+      local leave,unknown
+      if waiting and new_cur~=cur then
+        leave=string.format('it waits at stop %d (%s) and current %d sends it to stop %d (%s) at once',cur,recs[cur].station,new_cur,new_cur,recs[new_cur].station)
+      elseif waiting and idx==cur then
+        if #waits==0 then leave=string.format('stop %d (%s), where it waits, would have no wait condition: it leaves at once',idx,station)
+        else
+          local groups,g={},{ok=true,words={}}
+          groups[1]=g
+          for k,w in ipairs(waits) do
+            if k>1 and w.compare_type=='or' then g={ok=true,words={}}; groups[#groups+1]=g end
+            local ok,words=holds(w)
+            g.words[#g.words+1]=words
+            if ok==false then g.ok=false elseif ok==nil and g.ok then g.ok=nil end
+          end
+          local any_true,all_false=false,true
+          for _,gg in ipairs(groups) do if gg.ok==true then any_true=true end; if gg.ok~=false then all_false=false end end
+          local words={}
+          for _,gg in ipairs(groups) do words[#words+1]=table.concat(gg.words,' and ') end
+          if any_true then leave=string.format('its new waits at stop %d (%s), where it waits, hold now: %s; it leaves at once',idx,station,table.concat(words,' or '))
+          elseif not all_false then unknown=string.format('its new waits at stop %d (%s) may hold now: %s',idx,station,table.concat(words,' or ')) end
+        end
+      end
+      if leave and a.go~=true then error('nothing changed: '..leave..'; go: true makes the edit anyway',0) end
+      local pos={schedule_index=idx}
+      local ok,err=pcall(function()
+        for k=sch.get_wait_condition_count(pos),1,-1 do sch.remove_wait_condition(pos,k) end
+        for k,w in ipairs(waits) do
+          sch.add_wait_condition(pos,k,w.type)
+          sch.change_wait_condition(pos,k,{type=w.type,ticks=w.ticks,condition=w.condition,compare_type=w.compare_type or 'and'})
+          if k>1 and w.compare_type=='or' then pcall(function() sch.set_wait_condition_mode(pos,k,'or') end) end
+        end
+      end)
+      if not ok then error('the game refused the edit of stop '..idx..'\'s waits: '..tostring(err),0) end
+      if new_cur~=cur then sch.go_to_station(new_cur) end
+      -- the harness's watch: this stop's replaced, the others kept
+      local W=api.platwait and api.platwait()
+      if W then
+        local had=W.get(pl.name)
+        local stops={}
+        for k,v in pairs(had and had.stops or {}) do if k~=idx then stops[k]=v end end
+        stops[idx]=entry
+        W.set(pl,next(stops) and stops or nil)
+      end
+      local state=platform_states[pl.state]
+      local fluid_note
+      for _,l in ipairs(runs) do if l:find(": the game's condition",1,true) then fluid_note=FLUID_NOTE end end
+      return {name=pl.name,state=state,at=location(pl),schedule=schedule_text(pl),
+        edited=string.format('stop %d (%s): %d wait condition%s set in place; the records and the current stop (%d) %s; state %s%s',idx,station,#waits,#waits==1 and '' or 's',
+          new_cur,new_cur~=cur and string.format('changed from %d (current)',cur) or 'kept',state,state~=before and ' (was '..tostring(before)..')' or ' (kept)'),
+        leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,
+        harness_waits=W and W.line(pl.name) or nil}
+    end
     local circuit_note,sent,go_error,rebuilt
     -- (d17 batch23 A0b) where it is before the edit: the station it waits at, or the leg it flies
     local before=platform_states[pl.state]
@@ -1367,81 +1559,8 @@ return function(api)
       runs,read_as={},{}
       for i,stop in ipairs(a.stops) do
         assert(type(stop)=='table' and type(stop.station)=='string' and prototypes.space_location[stop.station],'stop '..i..': station must be a planet or space location name')
-        local waits={}
-        local harness_conds,mirror,other,ordered={},{},{},{}
-        for j,w in ipairs(stop.wait or {}) do
-          assert(type(w)=='table' and type(w.type)=='string','stop '..i..' wait '..j..' needs a type')
-          -- (d17 batch31 B9, Luna: {type: fluid_count, fluid, count} was taken with no condition, and the game's wait
-          -- then had nothing to compare) a field a wait does not take is refused, and a count wait needs its condition
-          -- (B9: Luna wrote {item|fluid|name, count|at_least} 67 times and {seconds} 3 times on shift33-34, each dropped by
-          -- the game) those read as the condition and the ticks they name, said in read_as
-          local count=w.at_least or w.count
-          local thing=w.fluid or w.item or w.name
-          if w.condition==nil and (w.type=='item_count' or w.type=='fluid_count') and type(thing)=='string' and type(count)=='number' and not (w.at_least and w.count) then
-            local copy={}
-            for k,v in pairs(w) do if k~='fluid' and k~='item' and k~='name' and k~='count' and k~='at_least' then copy[k]=v end end
-            copy.condition=string.format('%s >= %d',thing,count)
-            read_as[#read_as+1]=string.format('stop %d wait %d: %s %s %s %g read as condition "%s"',i,j,w.type,thing,w.at_least and 'at_least' or 'count',count,copy.condition)
-            w=copy
-          end
-          if w.seconds~=nil and w.ticks==nil and (w.type=='time' or w.type=='inactivity') and type(w.seconds)=='number' then
-            local copy={}
-            for k,v in pairs(w) do if k~='seconds' then copy[k]=v end end
-            copy.ticks=math.floor(w.seconds*60+0.5)
-            read_as[#read_as+1]=string.format('stop %d wait %d: seconds %g read as ticks %d',i,j,w.seconds,copy.ticks)
-            w=copy
-          end
-          local bad={}
-          for k in pairs(w) do
-            if k~='type' and k~='ticks' and k~='condition' and k~='compare' and k~='harness' then bad[#bad+1]=tostring(k) end
-          end
-          if #bad>0 then
-            table.sort(bad)
-            error(string.format('stop %d wait %d: %s %s not wait fields (a wait takes type, ticks, condition, compare, harness); a count is a condition: {"type":"%s","condition":"%s >= %s"}',
-              i,j,table.concat(bad,', '),#bad==1 and 'is' or 'are',w.type,tostring(w.fluid or w.item or w.signal or 'thruster-fuel'),tostring(w.count or w.value or w.at_least or 10000)),0)
-          end
-          if (w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit') and w.condition==nil then
-            error(string.format('stop %d wait %d: %s needs a condition ("%s >= 10000" or {signal, comparator, value}); without one the game\'s wait compares nothing',
-              i,j,w.type,w.type=='item_count' and 'iron-plate' or 'thruster-fuel'),0)
-          end
-          assert(w.harness==nil or (w.harness==true and w.type=='fluid_count'),'stop '..i..' wait '..j..': harness: true goes with a fluid_count wait (the harness reads the storage tanks)')
-          -- A condition (d17 batch17 A5, Astra board #842: a departure guard on fuel): "thruster-fuel >= 10000" or
-          -- {signal, comparator, value | signal2}, as circuit_set takes it, or the game's {first_signal, comparator,
-          -- constant}; item_count takes an item signal, fluid_count a fluid one; circuit reads the hub's wires.
-          local cond=w.condition
-          if cond~=nil then
-            local what='stop '..i..' wait '..j..' condition'
-            if type(cond)=='table' and cond.first_signal~=nil and cond.signal==nil then cond={signal=cond.first_signal,comparator=cond.comparator,value=cond.constant,signal2=cond.second_signal} end
-            cond=api.circuit_condition(cond,what)
-            local st=cond.first_signal.type
-            if w.type=='item_count' then assert(st=='item',what..': item_count takes an item signal ("iron-plate >= 100")') end
-            if w.type=='fluid_count' then assert(st=='fluid',what..': fluid_count takes a fluid signal ("thruster-fuel >= 10000")') end
-            assert(w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit',what..': a condition goes with type item_count, fluid_count or circuit')
-          end
-          local text=w.type..(cond and ' '..cond.first_signal.name..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[cond.comparator] or cond.comparator)..' '..tostring(cond.constant or (cond.second_signal and cond.second_signal.name)) or '')
-            ..(w.ticks and ' '..math.floor(w.ticks/60)..'s' or '')
-          if w.harness then
-            assert(cond.constant~=nil,'stop '..i..' wait '..j..': a harness fluid_count compares with a number ("thruster-fuel >= 24000")')
-            harness_conds[#harness_conds+1]={kind='tanks',name=cond.first_signal.name,comparator=cond.comparator,value=cond.constant,text=text}
-            ordered[#ordered+1]=harness_conds[#harness_conds]
-          else
-            waits[#waits+1]={type=w.type,ticks=w.ticks,compare_type=#waits>0 and (w.compare or 'and') or nil,condition=cond}
-            if w.type=='time' and w.ticks then mirror[#mirror+1]={kind='time',ticks=w.ticks}; ordered[#ordered+1]=mirror[#mirror]
-            elseif w.type=='item_count' and cond.constant~=nil then mirror[#mirror+1]={kind='hub',name=cond.first_signal.name,comparator=cond.comparator,value=cond.constant}; ordered[#ordered+1]=mirror[#mirror]
-            else other[#other+1]=w.type end
-            if (w.compare or 'and')~='and' and j>1 then other[#other+1]='compare '..tostring(w.compare) end
-            -- (B9) the game's fluid_count on a platform, as seen on world n
-            if w.type=='fluid_count' then runs[#runs+1]=string.format('stop %d (%s) %s: the game\'s condition',i,stop.station,text) end
-          end
-          if w.harness then runs[#runs+1]=string.format('stop %d (%s) %s: the harness (the sum in its storage tanks, read every second while it waits there)',i,stop.station,text) end
-        end
-        if #harness_conds>0 then
-          assert(#other==0,string.format('stop %d: harness waits go with time and item_count waits joined by and (the harness reads those too); this stop also has %s',i,table.concat(other,', ')))
-          waits[#waits+1]={type='circuit',compare_type=#waits>0 and 'and' or nil,condition=api.platwait and api.platwait().NEVER}
-          watch[i]={station=stop.station,conds=ordered}
-          runs[#runs+1]=string.format('stop %d (%s): the game\'s record also holds circuit signal-dot < -2147483648, which never holds, so the game does not send it on; the harness does (go to station on the next stop) when every condition of the stop holds%s',
-            i,stop.station,#mirror>0 and ' (its time and item_count waits too, read by the harness from when it is first seen waiting there, and from the hub)' or '')
-        end
+        local waits,entry=stop_waits(i,stop,runs,read_as)
+        watch[i]=entry
         records[i]={station=stop.station,wait_conditions=#waits>0 and waits or nil}
       end
       if api.platwait then api.platwait().set(pl,next(watch) and watch or nil) end
@@ -2104,7 +2223,7 @@ return function(api)
     platform={platform='optional platform name (or name): the platforms read of that one (as platforms {platform}); none: every platform',name='the same as platform',compact='as platforms',returns='as platforms'},
     platforms={eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='true: a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received, those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), the hub\'s main inventory and the turrets now; in flight the reserve at the arrival at that rate, or when it runs out first; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
-    platform_schedule={next='true, alone: the game\'s go to station on the stop after the current one now (the records and their waits kept); sent_to says from which stop to which',platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_not_satisfied|any_request_zero|time|inactivity|item_count|fluid_count|circuit, ticks? (time, inactivity), condition? (item_count, fluid_count, circuit: "thruster-fuel >= 10000" or {signal, comparator, value | signal2}; item_count an item, fluid_count a fluid; circuit any signal on the hub\'s red and green wires; {item|fluid, count|at_least} reads as "NAME >= N", seconds as ticks, said in read_as; any other field is refused), compare=and|or, harness? (fluid_count: true: the harness reads the storage tanks and sends the platform on, the game\'s record holding a circuit wait that never holds; with time and item_count waits joined by and only)}]}; e.g. {"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}; [] clears; circuit_note when the hub has no wire',current='1-based stop to head for (default 1)',keep_leg='optional true, while flying: the current stop is the stop for the leg\'s destination (refused when the stops hold none; current goes without it)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)',returns='name, state (read after the change), state_note (no_schedule, no_path or paused: the platform goes nowhere), at, paused, schedule; with stops: sent_to (the GUI\'s go to station called for current), rebuilt (when the state read no_schedule after the records were set: written again record by record as the GUI does and sent again, with the state after), go_error; current_note (the current stop is the station it waits at now: on world n 8 of 8 such edits read no_schedule; with the current on the next stop it departed at once); leg (in flight: the leg before the edit and the current stop now: the same destination, back the way it came, or new); note, circuit_note'},
+    platform_schedule={stop='1-based record, with wait (B8): that stop\'s wait conditions replaced in place (the schedule\'s own wait condition calls), the records, the current stop and the state kept; current with it changes the current stop too. Refused, nothing changed, when the edit makes the platform leave now (current set to another stop while it waits; the stop it waits at left with no wait; its new waits holding now: time from its arrival, item_count against the hub, circuit against the hub\'s wires, all_requests_satisfied) unless go: true. Returns edited, leaves, may_leave (waits not read that may hold), read_as, waits_run, harness_waits',wait='with stop: that stop\'s waits, as a stops entry\'s wait ([] for none)',go='true, with stop: make an edit that sends the platform on now',next='true, alone: the game\'s go to station on the stop after the current one now (the records and their waits kept); sent_to says from which stop to which',platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_not_satisfied|any_request_zero|time|inactivity|item_count|fluid_count|circuit, ticks? (time, inactivity), condition? (item_count, fluid_count, circuit: "thruster-fuel >= 10000" or {signal, comparator, value | signal2}; item_count an item, fluid_count a fluid; circuit any signal on the hub\'s red and green wires; {item|fluid, count|at_least} reads as "NAME >= N", seconds as ticks, said in read_as; any other field is refused), compare=and|or, harness? (fluid_count: true: the harness reads the storage tanks and sends the platform on, the game\'s record holding a circuit wait that never holds; with time and item_count waits joined by and only)}]}; e.g. {"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}; [] clears; circuit_note when the hub has no wire',current='1-based stop to head for (default 1)',keep_leg='optional true, while flying: the current stop is the stop for the leg\'s destination (refused when the stops hold none; current goes without it)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)',returns='name, state (read after the change), state_note (no_schedule, no_path or paused: the platform goes nowhere), at, paused, schedule; with stops: sent_to (the GUI\'s go to station called for current), rebuilt (when the state read no_schedule after the records were set: written again record by record as the GUI does and sent again, with the state after), go_error; current_note (the current stop is the station it waits at now: on world n 8 of 8 such edits read no_schedule; with the current on the next stop it departed at once); leg (in flight: the leg before the edit and the current stop now: the same destination, back the way it came, or new); note, circuit_note'},
     drop={partial='optional true: a queue step that sends part of what was asked (without full, pod 1 of several) is done; without it such a step fails. Every reply that sent part says partial {sent, stayed (still in the hub), why}',up_to='optional true: drop what the hub holds now of each item, up to its count (up_to says what it held); holding none of any, the drop is done with nothing sent (nothing_to_drop), a queue step too',platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',
       full='true: send every pod the list takes (a pod holds 10 slots); pods beyond the free hatches go as each hatch frees up (one every 2 s) while your character and queue go on (status drop_pending, then last_drop: outcome dropped | short | failed | timed_out; --wait waits for them). Without it only the first pod goes and short says what stays in the hub',
       dry_run='true: send nothing; the pod split (each pod\'s items, in the list\'s order), freshness (the hub\'s stacks of those items: their spread, and how many a unit the running research takes and its units left), the hatches, what the hub holds less of, and the landing pad\'s room for what would go (pod 1, or every pod with full): pad_room (its free slots of its slots up to the red-X limit, what takes the others, the new slots the drop needs, and what would not fit and land on the ground around the pad), pad_free, spill (items); a real drop reports pad_room and spill too, read before it sends',

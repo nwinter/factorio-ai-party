@@ -398,3 +398,70 @@ do
   game,defines=nil,nil
 end
 print('d17_batch31 B6 cargo conflicts by import planet: ok')
+
+-- B8 (Luna 07:18: Spindle left Nauvis at once with 4,660 fuel when she set current 2 to change stop 1's waits):
+-- platform_schedule {platform, stop, wait}: that record's waits replaced in place, the records, current and state kept;
+-- an edit that makes it leave now is refused unless go: true. ---------------------------------------------------------
+do
+  game={tick=10000}
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,paused=7},inventory={hub_main=1,hub_trash=2},wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},gleba={}},fluid={['thruster-fuel']={},['thruster-oxidizer']={}},item={['firearm-magazine']={}}}
+  local recs={{station='nauvis',wait_conditions={{type='time',ticks=216000}}},{station='gleba',wait_conditions={{type='time',ticks=600}}}}
+  local cur,calls=1,{}
+  local sch={get_record_count=function() return #recs end}
+  setmetatable(sch,{__index=function(_,k) if k=='current' then return cur end end})
+  sch.get_wait_condition_count=function(pos) return #(recs[pos.schedule_index].wait_conditions or {}) end
+  sch.remove_wait_condition=function(pos,k) table.remove(recs[pos.schedule_index].wait_conditions,k); calls[#calls+1]='remove' end
+  sch.add_wait_condition=function(pos,k,t) local w=recs[pos.schedule_index].wait_conditions or {}; recs[pos.schedule_index].wait_conditions=w; table.insert(w,k,{type=t}) end
+  sch.change_wait_condition=function(pos,k,w) recs[pos.schedule_index].wait_conditions[k]=w end
+  sch.set_wait_condition_mode=function(pos,k,m) recs[pos.schedule_index].wait_conditions[k].compare_type=m end
+  local pl={valid=true,name='Spindle',index=3,state=4,space_location={name='nauvis'},force={},paused=false}
+  sch.go_to_station=function(i) cur=i; pl.state=3 end
+  pl.get_schedule=function() return sch end
+  setmetatable(pl,{__index=function(_,k) if k=='schedule' then return {current=cur,records=recs} end end})
+  local wires={['thruster-fuel']=4660,['thruster-oxidizer']=30000}
+  local net={get_signal=function(sg) return wires[sg.name] or 0 end}
+  local hubinv={get_item_count=function(n) return n=='firearm-magazine' and 800 or 0 end}
+  pl.hub={valid=true,get_circuit_network=function(id) return id==1 and net or nil end,get_inventory=function() return hubinv end}
+  local p={force={platforms={pl}}}
+  local st={platform_stops={[3]={at='nauvis',tick=4000}}}
+  local W=dofile('mod/agent-harness_0.1.0/platwait.lua'){state=function() return st end}
+  local function cond(c)
+    local name,cmp,v=c:match('^(%S+) (%S+) (%d+)$')
+    return {first_signal={type=prototypes.fluid[name] and 'fluid' or 'item',name=name},comparator=cmp=='>=' and '≥' or cmp,constant=tonumber(v)}
+  end
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,platwait=function() return W end,
+    circuit_condition=function(c) return type(c)=='string' and cond(c) or c end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    freight={where=function() return {} end,leg=function() return nil end}}
+  local function fails(a,text) local ok,err=pcall(space.platform_schedule,p,a); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+  -- Luna's edit: fuel and oxidizer >= 24000 at stop 1, where it waits; fuel reads 4660 on the wires: it stays
+  local r=space.platform_schedule(p,{platform='Spindle',stop=1,wait={{type='circuit',condition='thruster-fuel >= 24000'},{type='circuit',condition='thruster-oxidizer >= 24000'}}})
+  eq(cur,1); eq(pl.state,4)
+  eq(r.edited,'stop 1 (nauvis): 2 wait conditions set in place; the records and the current stop (1) kept; state waiting_at_station (kept)')
+  eq(#recs[1].wait_conditions,2); eq(recs[1].wait_conditions[1].condition.constant,24000); eq(recs[2].wait_conditions[1].ticks,600)
+  eq(r.leaves,nil)
+  -- its new waits hold now: refused, then made with go
+  fails({platform='Spindle',stop=1,wait={{type='item_count',condition='firearm-magazine >= 700'}}},
+    'nothing changed: its new waits at stop 1 (nauvis), where it waits, hold now: item_count firearm-magazine >= 700: the hub holds 800; it leaves at once; go: true makes the edit anyway')
+  eq(recs[1].wait_conditions[1].type,'circuit','refused: nothing changed')
+  fails({platform='Spindle',stop=1,wait={{type='time',ticks=3600}}},'time 60s: passed')
+  -- an or: one side holding is enough
+  fails({platform='Spindle',stop=1,wait={{type='circuit',condition='thruster-fuel >= 24000'},{type='circuit',condition='thruster-oxidizer >= 24000',compare='or'}}},'hold now')
+  fails({platform='Spindle',stop=1,wait={}},'stop 1 (nauvis), where it waits, would have no wait condition: it leaves at once')
+  -- Luna's current 2: refused
+  fails({platform='Spindle',stop=1,wait={{type='time',ticks=216000}},current=2},'it waits at stop 1 (nauvis) and current 2 sends it to stop 2 (gleba) at once')
+  -- another stop's waits: no leaving
+  r=space.platform_schedule(p,{platform='Spindle',stop=2,wait={{type='time',ticks=1200}}})
+  eq(recs[2].wait_conditions[1].ticks,1200); eq(cur,1)
+  -- a harness wait on stop 1: the watch holds it
+  r=space.platform_schedule(p,{platform='Spindle',stop=1,wait={{type='fluid_count',condition='thruster-fuel >= 24000',harness=true}}})
+  eq(recs[1].wait_conditions[1].condition.constant,-2147483648)
+  has(r.harness_waits,'stop 1 (nauvis): tanks thruster-fuel >= 24000')
+  -- go: true makes a leaving edit
+  r=space.platform_schedule(p,{platform='Spindle',stop=1,wait={{type='item_count',condition='firearm-magazine >= 700'}},go=true})
+  has(r.leaves,'hold now'); eq(recs[1].wait_conditions[1].type,'item_count')
+  eq(W.get('Spindle'),nil,'the harness wait replaced: no watch left')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch31 B8 platform_schedule stop edit: ok')
