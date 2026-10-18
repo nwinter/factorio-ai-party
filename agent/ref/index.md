@@ -1,6 +1,7 @@
 ## Reference topics
 
-`./fh help TOPIC` prints a topic; `./fh help ACTION` one command's arguments.
+`./fh help TOPIC` prints a topic; `./fh help ACTION` one command's arguments. An unknown argument's refusal lists the
+accepted arguments and, where it can, the call corrected (`for this call: ...`, each change named).
 
 - `moving-items`, items by hand: `transfer`, `collect`, `feed`, `refuel`, `pickup`, `mine`, `rotate`, `repair`,
   `inventory`, `craft`, `cancel_craft`, `deliver`.

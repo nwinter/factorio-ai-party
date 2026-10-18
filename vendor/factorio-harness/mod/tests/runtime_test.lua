@@ -4883,7 +4883,13 @@ end)()
     [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
   -- Another action's unknown argument: its example.
   fails(function() call('technologies',{pack='electromagnetic-science-pack'}) end,
-    [[unknown argument pack for technologies; valid: available, limit, prefix; e.g. fh call technologies --args '{"prefix":"automation"}']])
+    [[unknown argument pack for technologies; valid: available, limit, prefix; accepted: available (boolean), limit (1..256), prefix (optional); e.g. fh call technologies --args '{"prefix":"automation"}']])
+  -- batch25 A3 (Luna): the call itself corrected: an argument the action takes no form of dropped, a plural for a
+  -- singular renamed with its one entry; each change said.
+  fails(function() call('technologies',{prefix='automation',surface='gleba'}) end,
+    [[; for this call: fh call technologies --args '{"prefix":"automation"}' (surface dropped (technologies takes no surface))]])
+  fails(function() call('nearest',{name='iron-ore',positions={{x=1,y=2}}}) end,
+    [[for this call: fh call nearest --args '{"name":"iron-ore","position":{"x":1,"y":2}}' (positions as position)]])
   -- A range says the range and the value.
   fails(function() call('nearest',{name='iron-ore',radius=500}) end,[[radius out of range: a whole number 1..128, got 500; e.g. fh call nearest --args '{"name":"iron-ore","radius":64}']])
   -- launch without its silo (Luna 17:43): the silos there, a ready rocket first, and the call.

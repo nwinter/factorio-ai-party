@@ -14522,6 +14522,49 @@ function M.example_text(action,args)
   end)
   return ok and text or ''
 end
+-- An unknown-argument refusal (batch25 A3, Luna: inspect area/surface and rates recipe refused again and again): the
+-- accepted arguments with the first words of each one's description, and the call itself corrected where that is plain:
+-- a near name renamed when the value's shape fits it (a list for a plural name, else not a list), any other unknown
+-- argument dropped, saying which; offered only when the corrected call passes the argument check. nil otherwise.
+function M.refusal_example(action,args,call)
+  if type(args)~='table' then return nil end
+  local ok,text=pcall(function()
+    if not allowed_args then pcall(check_args,'describe',{}) end
+    local set=allowed_args and allowed_args[action]
+    if not set then return nil end
+    local schema=(handlers.describe().actions or {})[action] or {}
+    local fixed,changes={},{}
+    for k,v in pairs(args) do
+      if set[k] or k=='scope' or k=='peek' or k=='helper' then fixed[k]=v
+      else
+        local near
+        -- a singular name where the plural is taken (a table: one entry of the list), or the plural where the
+        -- singular is (a list of one: its entry)
+        if set[k..'s'] and type(v)=='table' and #v==0 then near=k..'s'; v={v}
+        elseif k:sub(-1)=='s' and set[k:sub(1,-2)] and type(v)=='table' and #v==1 then near=k:sub(1,-2); v=v[1] end
+        if near and fixed[near]==nil and args[near]==nil then fixed[near]=v; changes[#changes+1]=k..' as '..near
+        else changes[#changes+1]=k..' dropped ('..action..' takes no '..k..')' end
+      end
+    end
+    local keys={}
+    for k in pairs(set) do keys[#keys+1]=k end
+    table.sort(keys)
+    local shapes={}
+    for n,k in ipairs(keys) do
+      if n>14 then shapes[#shapes+1]=string.format('+%d more',#keys-14); break end
+      local d=type(schema[k])=='string' and schema[k] or ''
+      d=(d:gsub('%s+',' '):match('^[^;:(]*') or ''):gsub('%s+$','')
+      if #d>40 then d=d:sub(1,40)..'...' end
+      shapes[#shapes+1]=#d>0 and string.format('%s (%s)',k,d) or k
+    end
+    local out='; accepted: '..table.concat(shapes,', ')
+    if #changes>0 and next(fixed) and pcall(check_args,action,fixed) then
+      out=out.."; for this call: fh call "..(call or action).." --args '"..M.aliases.encode(fixed).."' ("..table.concat(changes,'; ')..')'
+    end
+    return out
+  end)
+  return ok and text or nil
+end
 -- An argument refusal from inside a handler (a required argument missing, a wrong shape) ends with the example too.
 local ARG_WORDS={'is required','requires ','must be ','go with ','out of range','needs ','give ','takes '}
 function M.with_example(action,args,msg)
@@ -15140,7 +15183,8 @@ dispatch_request=function(request)
     local ok,hint=pcall(M.entity_args,request)
     -- and a call that works (Muse, Luna, shift11: M.example_text)
     local view=request.action=='observe' and type(request.args)=='table' and type(request.args.scope)=='string' and request.args.scope or request.action
-    error(tostring(args_err)..(ok and hint or '')..M.example_text(view,request.args),0)
+    local built=tostring(args_err):find('unknown argument',1,true) and M.refusal_example(view,request.args,request.action)
+    error(tostring(args_err)..(ok and hint or '')..(built and built:find('for this call',1,true) and built or (built or '')..M.example_text(view,request.args)),0)
   end
   if request.action=='describe' then return handler(nil,request.args) end
   if request.action=='profiles' or request.action=='cameras' then return handler() end

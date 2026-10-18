@@ -7245,3 +7245,10 @@ fh watch    # deploy on every change
   its red and green networks that read their contents, each with its mode, this belt marked (`belt_readers`), and the
   other entities on those networks by name; and says the wires are the game's own signal, a read switched on this tick
   showing from the next. tests/d15_batch4.lua.
+- A3 (Luna: rates with surface, circuit_audit with surface, logistics_audit with area, ports with positions, each
+  refused again): an unknown-argument refusal adds `accepted:` (each argument the action takes with the first words of
+  its description, 14 at most) and, where the call corrects plainly, `for this call: fh call ACTION --args '...'`
+  built from the attempt: a singular name where the plural is taken (its value as a list of one), the plural where
+  the singular is (a list of one: its entry), any other unknown argument dropped, each change named; offered only when
+  the corrected call passes the argument check (else the action's stock example, as before). A scoped observe is
+  corrected as observe. runtime_test.
