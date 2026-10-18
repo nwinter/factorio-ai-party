@@ -1956,6 +1956,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -13249,6 +13250,10 @@ end
 -- The upgrade planner on ghosts and built entities (upgrade.lua; Astra 15:20).
 M.upgrade=require('upgrade'){position=position,read_sight=function(p,q,w) return M.read_sight(p,q,w) end,real=function(p) return real(p) end}
 function handlers.upgrade(p,a) return M.upgrade.run(p,a) end
+-- platform_rearm (platrearm.lua, batch24 A3): a platform's turrets topped up from the hub by item requests.
+M.platrearm=require('platrearm'){state=state,remote_entity=remote_entity,on_platform=on_platform,
+  deliver_one=function(p,e,items) return M.deliver.deliver_one(p,e,items) end}
+function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
 -- (the list is bots.lua's, which lets a bot aboard a platform make these calls)
 for _,name in ipairs(M.bots.PLATFORM_ACTIONS) do
   local handler=handlers[name]

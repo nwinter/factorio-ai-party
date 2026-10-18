@@ -7167,3 +7167,19 @@ fh watch    # deploy on every change
     part way sets the records back as given;
   - `state_note` says plainly when the state is no_schedule, no_path or paused (on every platform_schedule reply).
   tests/space.lua.
+
+## d17 batch24 Group A (the agents' 21:20 poll)
+- A1 (Grok): a timed collect or load_silo returned exit 0 at acceptance while the character worked on. In Grok's CLI log,
+  calls with `--wait` blocked and gave their outcome (launched, collected, told); from tick 25.27M Grok called them
+  without `--wait`, and those returned `until_tick` at once. A timed `collect` (`wait_ticks`, `keep_taking`) and a
+  `load_silo` that runs over time (a walking load, a wait for the rocket or the platform) now block without `--wait`
+  too, their outcome the exit status (0, 1, 3 as `--wait`); `--no-wait` returns at acceptance. tests/cli.test.ts.
+- A2 (Grok, Sol): a walking load with `launch` that ends with none made and the list's items aboard (Grok: `ticks`
+  18000 ran out on a tour that kept making trips while the chest refilled; Sol: a paused queue) says
+  `last.loaded_not_launched`: what is aboard, the rocket, why. The same load again with `to_total: true` and `launch`,
+  the list aboard already, walks nowhere and launches as it is when the rocket is ready and the platform here, else is
+  refused saying why. (An additive repeat, without `to_total`, is refused as before, naming `to_total`.) tests/rocketload.lua.
+- A3 (Sol request940): `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: turrets aboard under
+  `ammo_below`, counting an item request on the way, get an item request up to `target_count`, which the hub fills as
+  `deliver`'s; `refills` counts requests and rounds per platform. A platform write of the remote and platform lanes;
+  `queue_repeat` with `interval_ticks` keeps topping up. tests/platrearm.lua, tests/queue_lanes.lua.

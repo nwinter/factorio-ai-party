@@ -98,6 +98,12 @@
   those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
+- `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
+  aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
+  already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
+  body. Rows: `held`, `on_the_way`, `requested`; `hub` (what the hub holds of each item asked), `refills` (requests and
+  rounds asked on this platform since). A step of the platform's lane; `queue_repeat` keeps topping up. Example:
+  `./fh call queue_repeat --args '{"lane":"platform:Swiftlet","interval_ticks":600,"steps":[{"action":"platform_rearm","args":{"platform":"Swiftlet","ammo_below":20,"target_count":100}}]}'`
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
