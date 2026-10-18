@@ -180,4 +180,5 @@
   asteroid collector, saying so: its collection area is kept empty space.
 - Nuclear: build the reactor and heat pipes; transfer or refuel with uranium-fuel-cell.
 - On Vulcanus a build, ghost placement, paste or route inside a demolisher territory (as the map draws it) carries
-  `demolisher_territory`, dry runs too.
+  `demolisher_territory`, dry runs too, with the territory's state as `demolishers` gives it (its demolisher seen,
+  killed at T by X, or none seen in it).
