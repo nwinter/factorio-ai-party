@@ -885,6 +885,10 @@ return function(api)
     local need,order={},{}
     local items_of,short={},{}
     local lists={}
+    -- (d17 batch33 A1, Sol: Wayfarer's 1597 entity ghosts and 3318 tile ghosts read as the first 1000 and 3000) past a
+    -- cap the counts come from a tally across ticks (ghosttally.lua): exact once it is done (kept 30 s), and until then
+    -- the first ones counted, said as such, with the tally running
+    local tallied
     for _,kind in ipairs({'entity-ghost','tile-ghost'}) do
       local cap=M.GHOST_CAP[kind]
       local list=try(function() return s.find_entities_filtered{type=kind,limit=cap} end) or {}
@@ -893,6 +897,20 @@ return function(api)
         local total=try(function() return s.count_entities_filtered{type=kind} end) or #list
         if total>#list then short[#short+1]=string.format('the first %d of %d %ss counted',#list,total,kind) end
       end
+    end
+    if #short>0 and api.ghost_tally and api.ghost_tally() then
+      local T=api.ghost_tally()
+      local d=T.get(pl)
+      if d then
+        tallied=string.format('every ghost counted (%d entity ghosts, %d tile ghosts) across ticks %ds ago',d.counts['entity-ghost'] or 0,d.counts['tile-ghost'] or 0,math.floor((game.tick-d.tick)/60))
+        for _,k in ipairs(d.order) do local w=d.need[k]; need[k]={name=w.name,quality=w.quality,count=w.count}; order[#order+1]=k end
+        short={}
+      else
+        short[#short+1]='every ghost is being counted across ticks (1000 a tick): read again in a few seconds'
+      end
+    end
+    for _,kind in ipairs(tallied and {} or {'entity-ghost','tile-ghost'}) do
+      local list=lists[kind]
       for _,g in ipairs(list) do
         local gname=try(function() return g.ghost_name end) or '?'
         local key=kind..'|'..gname
@@ -920,7 +938,7 @@ return function(api)
       if have<w.count then missing[#missing+1]=string.format('%s (ghosts need %s%d, hub has %d)',label,#short>0 and 'at least ' or '',w.count,have) end
       counted[#counted+1]=string.format('%s at least %d, hub has %d',label,w.count,have)
     end
-    if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ')..(#short>0 and ' ('..table.concat(short,'; ')..')' or '') end
+    if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ')..(#short>0 and ' ('..table.concat(short,'; ')..')' or '')..(tallied and ' ('..tallied..')' or '') end
     -- Past a cap the hub may hold enough for the ghosts counted and not for the rest: what the counted ones need.
     if #short>0 then out[#out+1]='ghost count capped ('..table.concat(short,'; ')..'): the counted ghosts need '..(#counted>0 and table.concat(counted,', ') or 'nothing') end
     -- Defense ghosts waiting on foundation (Sol 00:21: 173 foundation missing; a spare rocket turret in the hub could not

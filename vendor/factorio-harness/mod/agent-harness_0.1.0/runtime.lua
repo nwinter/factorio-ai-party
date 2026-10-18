@@ -11865,7 +11865,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -16160,6 +16160,11 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   status_name=function(e) return entity_status_names[e.status] end,
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end}
 M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) return M.readmemory.observe(e) end}
+-- The hub's foundation rules over a large tile set, across ticks (floorcheck.lua; batch33 A1).
+M.floorcheck=require('floorcheck'){state=state}
+-- Every ghost of a large platform counted across ticks for the hub's blockers read (ghosttally.lua; batch33 A1).
+M.tc_once=require('tilecheck')()  -- (required at load: the game refuses require later)
+M.ghosttally=require('ghosttally'){state=state,quality_of=function(g) return M.tc_once.quality_of(g) end}
 -- Seed loops running out (seeds.lua; batch32 A3, Grok): a seed alert to the loop's builders when low or gone.
 M.seeds=require('seeds'){state=state,crafters=function(f,s) return M.census.crafters(f,s) end,deliver=function(i,t) return M.board.deliver(i,t) end,
   index_of=function(name) for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index end end end}
@@ -16414,7 +16419,7 @@ M.endurance=require('endurance'){platform=function(p,name) return space.platform
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
-M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position}
+M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
@@ -16461,7 +16466,7 @@ M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=fu
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
 M.platwait=require('platwait'){state=state}
-space=space_module{platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -17359,6 +17364,8 @@ function M.tick_body(event)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
   if M.seeds then pcall(M.timed,'seeds.tick',M.seeds.tick,event.tick) end  -- seed loops running out (seeds.lua)
+  if M.floorcheck then pcall(M.timed,'floorcheck.tick',M.floorcheck.tick) end  -- foundation checks across ticks (floorcheck.lua)
+  if M.ghosttally then pcall(M.timed,'ghosttally.tick',M.ghosttally.tick) end  -- platform ghost tallies across ticks (ghosttally.lua)
   pcall(M.platwait.tick,event.tick)  -- stop waits the harness keeps for platforms, every second (platwait.lua)
   if M.ammofeed then pcall(M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
   pcall(M.chronicle.tick,event.tick)  -- the chronicle's events: research, launches, platform stops and platforms made

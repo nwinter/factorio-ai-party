@@ -235,42 +235,78 @@ return function()
   -- ghosts on one side (an enclosed side all ghosted, some past the ones read) is not named: those go first.
   -- The ghosts played out by the build rules: {built = {key = true}, rule = function(g)} (rule: nil, a reason string,
   -- or the runs a split leaves). The cache holds the end state (a built ghost is not empty).
-  function M.play(s, ghosts, hub, thrusters, cache, steps_max)
-    cache = cache or {}
-    steps_max = steps_max or STEPS
-    local at_key, built = {}, {}
-    for _, g in ipairs(ghosts) do at_key[key(g[1], g[2])] = g end
-    local function rule(g)
+  -- (d17 batch33 A1, Sol: Wayfarer's floor dry run said 107 tiles unbuildable while the fill is one region) the play in
+  -- parts: play_start lays out the work (each ghost once on the work list; the hub's y and the thrusters' exhaust boxes
+  -- read once), play_run makes up to n rule checks (a ghost already built or not empty costs none) and can be resumed on a
+  -- later tick (floorcheck.lua keeps one in storage), and what is still on the work list when it stops is unchecked,
+  -- never unbuilt. On world n a rule check cost about 26 us before the reads were moved out (2000 checks of Wayfarer's
+  -- 2772 tile ghosts: 52 ms, 1810 built, 7892 entries still queued in the old play).
+  local function thruster_boxes(thrusters)
+    local out = {}
+    for _, t in ipairs(thrusters or {}) do
+      local b = try(function() return t.bounding_box end)
+      if b then out[#out+1] = {x0=b.left_top.x, x1=b.right_bottom.x, y1=b.right_bottom.y, px=t.position.x, py=t.position.y} end
+    end
+    return out
+  end
+  function M.play_start(ghosts, hub, thrusters)
+    local st = {at_key={}, built={}, work={}, inwork={}, steps=0, thr=thruster_boxes(thrusters),
+      hub_y=hub and try(function() return hub.valid and hub.position.y end) or nil}
+    for _, g in ipairs(ghosts) do st.at_key[key(g[1], g[2])] = g end
+    for i = #ghosts, 1, -1 do
+      local g = ghosts[i]
+      local k = key(g[1], g[2])
+      if not st.inwork[k] then st.inwork[k] = true; st.work[#st.work+1] = g end
+    end
+    return st
+  end
+  function M.play_rule(s, st, cache)
+    return function(g)
       local x, y = g[1], g[2]
-      if hub and hub.valid and y + 0.5 < hub.position.y - 200 then return 'more than 200 tiles north of the hub' end
-      for _, t in ipairs(thrusters or {}) do
-        local b = t.bounding_box
-        if x + 0.5 > b.left_top.x and x + 0.5 < b.right_bottom.x and y + 0.5 > b.right_bottom.y and y + 0.5 < b.right_bottom.y + 82 then
-          return string.format('in the 82 tiles south of the thruster at (%g,%g), where no foundation is built', t.position.x, t.position.y)
+      if st.hub_y and y + 0.5 < st.hub_y - 200 then return 'more than 200 tiles north of the hub' end
+      for _, b in ipairs(st.thr) do
+        if x + 0.5 > b.x0 and x + 0.5 < b.x1 and y + 0.5 > b.y1 and y + 0.5 < b.y1 + 82 then
+          return string.format('in the 82 tiles south of the thruster at (%g,%g), where no foundation is built', b.px, b.py)
         end
       end
       local near = false
-      for _, d in ipairs(RING) do if not is_empty(s, x + d[1], y + d[2], cache) then near = true end end
+      for _, d in ipairs(RING) do if not is_empty(s, x + d[1], y + d[2], cache) then near = true; break end end
       if not near then return 'no foundation among the 8 tiles round it' end
       local runs = M.runs(s, x, y, cache)
       if #runs >= 2 then return runs end
       return nil
     end
-    local work, steps = {}, 0
-    for i = #ghosts, 1, -1 do work[#work+1] = ghosts[i] end
-    while #work > 0 and steps < steps_max do
-      local g = table.remove(work)
+  end
+  -- Up to n rule checks; true when the work list is empty.
+  function M.play_run(s, st, cache, n)
+    local rule = M.play_rule(s, st, cache)
+    local done = 0
+    while #st.work > 0 and done < n do
+      local g = table.remove(st.work)
       local k = key(g[1], g[2])
-      steps = steps + 1
-      if not built[k] and is_empty(s, g[1], g[2], cache) and rule(g) == nil then
-        built[k] = true; cache[k] = false
-        for _, d in ipairs(RING) do
-          local n = at_key[key(g[1] + d[1], g[2] + d[2])]
-          if n and not built[key(n[1], n[2])] then work[#work+1] = n end
+      st.inwork[k] = nil
+      if not st.built[k] and is_empty(s, g[1], g[2], cache) then
+        done = done + 1; st.steps = st.steps + 1
+        if rule(g) == nil then
+          st.built[k] = true; cache[k] = false
+          for _, d in ipairs(RING) do
+            local nk = key(g[1] + d[1], g[2] + d[2])
+            local nb = st.at_key[nk]
+            if nb and not st.built[nk] and not st.inwork[nk] then st.inwork[nk] = true; st.work[#st.work+1] = nb end
+          end
         end
       end
     end
-    return {built=built, rule=rule, left=#work}
+    return #st.work == 0
+  end
+  -- In one go: built (key -> true), rule, left (still queued), unchecked (key -> true: never decided), steps.
+  function M.play(s, ghosts, hub, thrusters, cache, steps_max)
+    cache = cache or {}
+    local st = M.play_start(ghosts, hub, thrusters)
+    M.play_run(s, st, cache, steps_max or STEPS)
+    local unchecked = {}
+    for _, g in ipairs(st.work) do unchecked[key(g[1], g[2])] = true end
+    return {built=st.built, rule=M.play_rule(s, st, cache), left=#st.work, unchecked=unchecked, steps=st.steps}
   end
   -- The fewest empty tiles that join tiles (cells: {x, y} each) to built foundation (d17 batch21->22 A1, Sol and Astra:
   -- a placement on a sparse floor): the shortest chain of tiles each touching the next by a side or a corner (a
