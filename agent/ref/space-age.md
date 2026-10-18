@@ -236,7 +236,9 @@
   and `went_up`. `./fh queue submit --file plan.json --args '{"dry_run":true}'` shows the silo cargo before each
   queued launch step.
   Example: `./fh call launch --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","wait_ready":true}' --wait`
-- `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
+- `silo {position?, surface?, why?}`: `loading` near the head (when anything is): for whom (the platform its automatic
+  requests fill for, else the platform a hand load was for and by whom), the requests it fills now, what is aboard,
+  what robots bring and a paused manifest's rockets left; a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
   its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
   `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min).
