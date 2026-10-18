@@ -649,4 +649,23 @@ do
   assert(g[1].line:find('off by its logistic condition bioflux >= 0 (network count -2: reserved beyond stock)',1,true),g[1].line)
   ents.nauvis={}
 end
+-- (d17 batch22 C1, Haiku) a hand-fed turret under 10 magazines: ammo_low, to its builder and agents within 64 tiles,
+-- with the rearm line for exactly those; one an inserter feeds is not.
+do
+  ents.nauvis={}
+  local low=ent('nauvis','gun-turret','ammo-turret',300,300,{rounds=4,last_user=user('haiku'),surface=nauvis,force=force})
+  local fed=ent('nauvis','gun-turret','ammo-turret',306,300,{rounds=3,surface=nauvis,force=force})
+  local base=low.get_inventory
+  low.get_inventory=function(i) local inv=base(i); inv.get_contents=function() return {{name='firearm-magazine',count=4}} end; return inv end
+  ent('nauvis','inserter','inserter',308,300,{drop_target=fed,force=force})
+  local R3=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {board={items={}}} end,
+    agents=function() return {{index=1,name='haiku'},{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function(i) return i==2 and {key='nauvis',position={x=320,y=300}} or {key='nauvis',position={x=0,y=0}} end}
+  local g=R3.read(sol,{kind='ammo_low'}).groups
+  eq(#g,1); eq(g[1].count,1)
+  assert(has({g[1].line},'1 gun-turret hand-fed (no inserter drops into it) under 10 magazines near (300,300): gun-turret (300,300): firearm-magazine 4; rearm {alert: "ammo_low|nauvis|'),g[1].line)
+  local to=table.concat(g[1].to,', ')
+  assert(to:find('haiku (built)',1,true) and to:find('sol (near)',1,true),to)
+  ents.nauvis={}
+end
 print('pushalerts: ok')

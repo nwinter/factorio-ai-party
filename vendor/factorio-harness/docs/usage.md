@@ -7029,3 +7029,12 @@ fh watch    # deploy on every change
   `item > N`, `>= N` or `= N` above what the network can hold, its count and what its storage and provider chests could
   still take of the item (up to 256 chests looked at), is flagged `CANNOT BE MET:` and listed first; so is one with no
   logistic network over it. tests/d17_batch22.lua.
+
+### Group C (Haiku 18:58)
+- C1 (Haiku): hand-fed turrets ran low about every 20 minutes and were found only by polling. The background read's
+  turret pass (pushalerts.lua) now gives an ammo turret holding 1 to 9 magazines that no inserter drops into (one find
+  of inserters within 4 tiles, made only for such a low turret) the kind `ammo_low`: one line a group of 32-tile
+  cells, to who built them and every agent within 64 tiles of it (not the claim or nearest rule), each turret with its
+  magazines, ending `rearm {alert: "ammo_low|nauvis|..."} tours exactly these`. The group is read again before it is
+  shown (a turret topped up to 10 or more drops out), and rearm {alert} takes those still under 10.
+  tests/pushalerts.lua.
