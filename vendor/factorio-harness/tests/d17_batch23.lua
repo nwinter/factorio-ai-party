@@ -361,3 +361,23 @@ do
   defines=nil
 end
 print('d17_batch23 B4 platform_plan ready pockets: ok')
+
+-- C4 (Muse: item + position + forward tried in turn, each refused tersely): each argument refusal names what was wrong
+-- and the shapes trace takes; fh help trace gives a call a mode (M.EXAMPLES.trace, run through check_args by runtime_test).
+do
+  package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+  prototypes={item={['iron-plate']={}}}
+  local supply=require('supply'){status_name=function(e) return e.status end,position=function(v) return v end,integer=function(v,d) return v or d end}
+  local T=require('trace'){supply=supply,position=function(v) return v end,integer=function(v,d) return v or d end}
+  local p={surface={},force={}}
+  fails(function() T.trace(p,{item='iron-plate',position={x=1,y=2},forward=true}) end,
+    'item with position goes with upstream: true (that one ingredient back from the machine); item alone traces the item\'s routes; trace takes {position}')
+  fails(function() T.trace(p,{}) end,'position or item is missing; trace takes {position} (a machine or lab, back to what it lacks; all: true for every ingredient) | {position, forward: true}')
+  fails(function() T.trace(p,{item='iron-plate',forward=true}) end,'item traces the item\'s routes alone: forward and all go with position; trace takes')
+  fails(function() T.trace(p,{position={x=1,y=2},forward=true,all=true}) end,'all goes with a backward trace (no forward); trace takes')
+  fails(function() T.trace(p,{position={x=1,y=2},upstream=true,forward=true}) end,'upstream and forward go one way each: give one; trace takes')
+  fails(function() T.trace(p,{item='no-such'}) end,'item must be an item name (chemical-science-pack, iron-gear-wheel, ...); trace takes')
+  has(T.SHAPES,'{item} (every route of an item; near: {x,y}, radius, surface)')
+  prototypes=nil
+end
+print('d17_batch23 C4 trace refusals: ok')

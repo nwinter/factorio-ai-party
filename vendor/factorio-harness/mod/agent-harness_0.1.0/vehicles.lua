@@ -10,7 +10,7 @@ return function(api)
   local SEATED = {car=true, ['spider-vehicle']=true, locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
   local ENTER_REACH = 10
   M.schema = {
-    vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight)',
+    vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight); with no enter, go_to or targeting switch: refused, naming enter: true',
       enter='true: get in (driver seat if free, else a car or spidertron passenger seat); a train you ride runs its schedule as usual',
       exit='true: get out of the vehicle you are in',
       drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s turning room (a square as wide as its diagonal plus a tile): to the target, else to open ground within 8 then 13 tiles of it (last.stopped_short), else for its length or width only when none of our entities lies within its turning room of that path (else unreachable, naming them). It slows to stop before the path\'s end and before sharp turns, steers no more than 2 tiles past a turn, and brakes to stop 0.5 tiles before any of our entities in its way, turning on the spot only with none within its corners\' sweep (last.spared names them; units it pushes through, ours never). Neither moving nor turning for 1.5 s: it backs off 1 s (not into ours) and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front, or the entity of ours it stopped for)',
@@ -45,6 +45,10 @@ return function(api)
     assert(best, string.format('no vehicle at (%g,%g) (car, tank, spidertron, locomotive or wagon)', pos.x, pos.y))
     api.friendly(p, best)
     return best
+  end
+  local function try_vehicle(p, a)
+    local ok, e = pcall(find_vehicle, p, a)
+    return ok and e or nil
   end
   -- Who sits in a seat, as a unit number (a player's character, or a character).
   local function unit_of(x)
@@ -314,6 +318,18 @@ return function(api)
         M.request(p, nav)
       end
       return out
+    end
+    -- (d17 batch23 C3, Muse three times: vehicle {position} read vehicle: false and seated nobody) a position, or a
+    -- drive argument, with no enter, exit, drive or go_to is refused naming what it goes with; vehicle {} alone reads
+    -- the seat.
+    if a.position ~= nil then
+      local e, pos = try_vehicle(p, a), api.position(a.position)
+      error(string.format('position names the vehicle for enter: true (get in), go_to or the targeting switches; with none of them nothing is done%s: vehicle {position: {x: %g, y: %g}, enter: true} gets in%s',
+        e and ' (' .. e.name .. ' stands there)' or '', pos.x, pos.y,
+        c.vehicle and ' (you are in ' .. c.vehicle.name .. ' now: vehicle {exit: true} gets out first)' or ''), 0)
+    end
+    for _, k in ipairs({'dry_run', 'pathfind', 'reverse', 'avoid_enemies', 'combat', 'retreat', 'ticks'}) do
+      if a[k] ~= nil then error(k .. ' goes with drive: {x,y}; with no enter, exit, drive or go_to nothing is done', 0) end
     end
     return view(c)
   end

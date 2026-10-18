@@ -106,7 +106,9 @@
   are nearest: `8 assembling-machine-2 no power near (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets
   rebuilt empty (built with no ammo, still empty 60 s later, named), hand-fed turrets (no inserter drops into them)
   under 10 magazines (`ammo_low`: to who built them and every agent within 64 tiles, each turret with its magazines,
-  ending `rearm {alert: KEY} tours exactly these`), ghosts waiting for materials, inserters that lost
+  ending `rearm {alert: KEY} tours exactly these`), artillery turrets with no shell for 5 minutes (`artillery_empty`:
+  each with the inserter and requester chest feeding it, its shell request and the network's shells), ghosts waiting
+  for materials, inserters that lost
   their pickup or drop target (by what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their
   feeding inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel

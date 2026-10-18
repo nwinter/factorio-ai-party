@@ -1763,6 +1763,11 @@ M.EXAMPLES={
   craftable={{recipes={'electronic-circuit'}}},
   ores={{resource='coal',limit=5}},
   pickup={{position={x=-128,y=-22},radius=3}},
+  -- (d17 batch23 C4, Muse) one a mode, as trace.lua's SHAPES names them
+  trace={{position={x=23.5,y=73.5}},{position={x=23.5,y=73.5},all=true},{position={x=23.5,y=73.5},forward=true},
+    {position={x=40.5,y=12.5},forward=true,audit=true},{position={x=23.5,y=73.5},upstream=true,item='iron-plate'},
+    {position={x=23.5,y=73.5},circuit=true},{position={x=40.5,y=12.5},throughput=true},{item='electronic-circuit'},
+    {item='electronic-circuit',near={x=20,y=70},radius=64}},
 }
 function handlers.describe(_,a)
   -- The bundle this runtime came in (host/bundle.ts BUNDLE_ID; nil for the mod's folder runtime). fh help keeps this
