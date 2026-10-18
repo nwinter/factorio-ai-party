@@ -2,7 +2,9 @@
   and any container (chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs, machines,
   turrets, roboports). `direction` (`to_entity` gives, `to_player` takes) is inferred when omitted (a give when the
   target holds the item only where it feeds from, its fuel, ammunition or input, and you hold it too; `direction_note`
-  says so); `items: {"iron-plate":50,"coal":10}` moves several at one target, each with its row in `entries`. A fusion
+  says so); `items: {"iron-plate":50,"coal":10}` moves several at one target, each with its row in `entries`.
+  `retry_when_clear: true`: refused only for passing enemies (an attack, units or a group seen now), it waits until no
+  enemy unit is within 48 tiles (and 30 s when none is there now) and transfers again, at most 6 times (`retry`). A fusion
   reactor's fuel cells go in and out as any burner's; a roboport's robots come out with `{position, direction:
   "to_player", item: "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup
   {belt: true}`.
@@ -108,7 +110,8 @@
   Example: `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait`
 - `rotate {position, direction?, reverse?}`: one 90-degree turn clockwise (`reverse: true` counter-clockwise;
   `direction` a facing to turn to); replies `before` and `after`. `platform: NAME` (or `surface: NAME`) turns a ghost
-  or built belt or inserter there by remote view.
+  or built belt or inserter there by remote view. On your surface past the 32 tiles a call walks (without `walk: true`), it
+  turns it by remote view in a chunk our force sees now (`by: "remote view"`).
   Example: `./fh call rotate --args '{"position":{"x":22.5,"y":86.5},"direction":"east"}'`
 - `repair {position | positions | area}`: repairs with repair packs, walking to each damaged one, nearest first;
   reports `repaired` and `already_full`. An undamaged entity is ok with `unchanged: "not damaged"`.

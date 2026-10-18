@@ -82,7 +82,8 @@
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold
-  it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles and rearms again (6 tries). `dry_run:
+  it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles (30 s when none is there now) and rearms
+  again (6 tries). `dry_run:
   true`: the stops, each turret's rounds and what it gets, those wanting ammo you do not carry, and the route.
   Example: `./fh call rearm --args '{"surface":true,"below":5}' --wait`
 - `artillery {surface?, position?, radius?}`: our artillery with shells, automatic targeting and the spawners and

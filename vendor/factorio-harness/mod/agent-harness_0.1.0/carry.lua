@@ -61,7 +61,7 @@ return function(api)
   local function load_snapshot()
     local s=game and storage and storage.agent_harness
     if not s then return end
-    local snap={tick=game.tick,queues={},remote_queues={},active={},last={},combat={}}
+    local snap={tick=game.tick,queues={},remote_queues={},lanes={},active={},last={},combat={}}
     for index,q in pairs(s.queues or {}) do
       if not q.paused then
         snap.queues[index]={current=q.current,pending=copy(q.pending),order=q.order,order_result=q.order_result,
@@ -70,11 +70,18 @@ return function(api)
     end
     -- The remote lane (queue_lanes.lua; Astra, d15 15:37: an install paused a remote wait_until platform_arrived
     -- while the body queue's same wait ran on).
-    for index,q in pairs(s.remote_queues or {}) do
-      if not q.paused then
-        snap.remote_queues[index]={current=q.current,pending=copy(q.pending),history_first=q.history[1],history_last=q.history[#q.history]}
+    -- and each platform's own lane (d17 batch21 D1: lane_queues|NAME), as the remote lane
+    local keys={'remote_queues'}
+    for name in pairs(s.platform_lanes or {}) do keys[#keys+1]='lane_queues|'..name end
+    for _,key in ipairs(keys) do
+      snap.lanes[key]={}
+      for index,q in pairs(s[key] or {}) do
+        if not q.paused then
+          snap.lanes[key][index]={current=q.current,pending=copy(q.pending),history_first=q.history[1],history_last=q.history[#q.history]}
+        end
       end
     end
+    snap.remote_queues=snap.lanes.remote_queues
     for index,a in pairs(s.active or {}) do
       snap.active[index]=a
       snap.last[index]=(s.last or {})[index] or false
@@ -148,8 +155,9 @@ return function(api)
     end
     -- The remote lane holds no body action: a running wait (or a drop whose pods still wait) goes on as it was; any other
     -- step (a read or a platform write, done in a tick) starts again at the head; the lane goes on.
-    for index,was in pairs(snap.remote_queues or {}) do
-      local q=s.remote_queues and s.remote_queues[index]
+    for key,lane in pairs(snap.lanes or {remote_queues=snap.remote_queues}) do
+    for index,was in pairs(lane or {}) do
+      local q=s[key] and s[key][index]
       if q and q.paused then
         local step=was.current
         local last=q.history[#q.history]
@@ -166,8 +174,9 @@ return function(api)
           q.current=nil
         end
         q.paused=false; q.revision=q.revision+1
-        if step or #was.pending>0 then carry(index,'remote queue') end
+        if step or #was.pending>0 then carry(index,key=='remote_queues' and 'remote queue' or (key:gsub('^lane_queues|','platform lane ')..' queue')) end
       end
+    end
     end
     for index,action in pairs(snap.active) do
       local how=owned[index]

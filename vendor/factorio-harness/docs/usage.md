@@ -6829,6 +6829,46 @@ fh watch    # deploy on every change
   section 2 ("GROUP") is off: its 3 requests (rocket-fuel 100 from nauvis, ...) are not made`. It is in preflight's
   platform lines and rows (`requests_off`), platforms (`requests_off_line`; compact lines), and fleet's line.
   tests/rocketload.lua (its preflight line now ends with it, the fake hub having an off section).
+
+### Group C
+- C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
+  the blast; M.melee_guard guards the character. While shoot fires area ammunition on foot (fixed or auto), every 5
+  ticks: an enemy unit within 6 tiles of the character, or the aim point within the blast's radius of it, switches the
+  gun to a slot holding ammunition without an area (`last_combat.switched_gun`: `big-biter 3.0 tiles from you: switched
+  to gun slot 1 submachine-gun with piercing-rounds-magazine ...`); with none, fire holds (`held_melee`, with how many
+  ticks). runtime_test.lua.
+- C2 (Opus): about 300 construction robots died to worms in one shift before the jobs sending them were found by hand.
+  robotloss.lua: on a robot of ours an enemy kills (on_entity_died, the robot still there), its first order (2.0
+  robot_order_queue: construct, deconstruct, repair, deliver, ...) and that order's target are kept with the killer
+  (up to 512, 15 min). `robot_losses {surface?, minutes?}` groups them by killer: `4 construction-robot robots lost to
+  big-worm-turret (200,40) on nauvis, the last 10s ago, sent to: 3 construct solar-panel ghost at (230.5,40.5); 1
+  deconstruct tree-01 at (231,44); 2 of those jobs stand (robot_losses {cancel: true, near: ...} cancels them)`; a
+  killer with a death in the last 5 min is a team alert group (`robots_lost`, in game_alerts and the team block).
+  `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
+  hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
+  deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+### Group D
+- D1 (Sol): three couriers, and one platform's cargo wait held the steps of the others (the remote lane runs its steps
+  in turn; about 12 times a shift Sol's body walks also interrupted the Swiftlet wait he had queued in the body lane).
+  `lane: "platform:NAME"` on every queue call (queue_lanes.lua): a remote lane of its own for that platform, built as
+  the remote lane is (the same steps: platform waits and writes, body-independent reads), its queues in storage under
+  `lane_queues|NAME` and the lane names under `platform_lanes`; each is ticked as the remote lane. queue_status
+  `{lane: "platform:Swiftlet"}` reads it; every queue_status's `lanes.platforms` lists them (`{Swiftlet: {paused,
+  pending, active, ...}}`). A harness update keeps them as it keeps the remote lane (carry.lua), and clock, departure
+  and waiteta read them with the others. runtime_test.lua.
+- D2 (Muse): feeding guns in a hot zone was refused 3 times (`every place of this tour lies in enemy reach ...: an area
+  under attack now`, the refusal naming `retry_when_clear: true`), and transfer refused that argument. transfer now
+  takes `retry_when_clear` (and `retry_ticks`) as rearm does: a refusal for passing enemies only waits until no enemy
+  unit is within 48 tiles of the first place held, then runs again (last.then_call), at most 6 times. With no unit
+  there already (an area under attack counts 30 s past its last hit) it waits 30 s (wait_ticks) first, rearm too
+  (`cleared` in the reply). runtime_test.lua.
+- D3 (Muse): a backwards inserter 700 tiles off took a deconstruct and a new build; rotate turned an entity on your own
+  surface only in reach (walking within 32 tiles first). Now a target past the 32 tiles a call walks (without `walk:
+  true`) is turned by remote view in a chunk our force sees now, as a player rotates in the map (`by: "remote view"`).
+  Within 32 tiles it walks into reach as before, and with `walk: false` the reach refusal still names a spot in reach
+  (tests/minerotate.lua). runtime_test.lua.
+
 ## d17 territory (operator 17:10; Nick 17:08)
 - On n (read only), Vulcanus territory 1 (87 chunks, x -320..96, y -192..416, the main base included) has no
   demolisher: Sol killed it at tick 4,888,121. The demolishers read said `no demolisher in sight now` for it, as for one
