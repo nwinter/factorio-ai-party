@@ -295,6 +295,39 @@ do
   eq(space.platform_schedule(p,{platform='alpha'}).state_note,'state paused: the platform goes nowhere until unpaused (paused: false)')
   platform.paused=false
 end
+-- (d17 batch23 A0b: 8 of 8 edits with the current stop on the station the platform waits at read no_schedule; Astra
+-- 22:52: an edit in flight turned Spindle back unsaid) the rule seen, said when it applies; the leg before and after;
+-- keep_leg keeps the leg's destination as the current stop.
+do
+  local kept={state=platform.state,paused=platform.paused,loc=platform.space_location,schedule=platform.schedule}
+  local stops={{station='nauvis'},{station='vulcanus'}}
+  platform.state,platform.space_location,platform.space_connection,platform.paused=6,{name='nauvis'},nil,false
+  platform.get_schedule=nil
+  local r=space.platform_schedule(p,{platform='alpha',stops=stops,current=1})
+  eq(r.current_note,'the current stop (1, nauvis) is the station it waits at now: on world n 8 of 8 such edits (Sol at Aquilo, Luna at Fulgora) read no_schedule, the record by record rebuild too; with the current set to the next stop (current: 2) it departed at once')
+  platform.state=6
+  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
+  eq(r.current_note,nil)
+  -- in flight nauvis->vulcanus, 40%: an edit sending it to nauvis turns it back
+  platform.state,platform.space_location=3,nil
+  platform.space_connection={from={name='nauvis'},to={name='vulcanus'},length=10000}
+  platform.distance=0.4; platform.schedule={current=2,records={{station='nauvis'},{station='vulcanus'}}}
+  platform.last_visited_space_location={name='nauvis'}
+  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=1})
+  eq(r.leg,'it was flying nauvis->vulcanus (40%); the current stop is now nauvis: it turns back the way it came')
+  -- keep_leg: the stop for the leg's destination
+  platform.schedule={current=2,records={{station='nauvis'},{station='vulcanus'}}}
+  r=space.platform_schedule(p,{platform='alpha',stops={{station='vulcanus'},{station='nauvis'}},keep_leg=true})
+  eq(platform.schedule.current,1); eq(r.leg,'it was flying nauvis->vulcanus (40%); the current stop is now vulcanus: the same destination')
+  platform.schedule={current=2,records={{station='nauvis'},{station='vulcanus'}}}
+  fails(function() space.platform_schedule(p,{platform='alpha',stops={{station='nauvis'}},keep_leg=true}) end,'keep_leg: the stops hold no vulcanus, the destination of the leg it flies (nauvis->vulcanus)')
+  fails(function() space.platform_schedule(p,{platform='alpha',stops=stops,keep_leg=true,current=1}) end,'current goes without it')
+  platform.space_connection,platform.distance,platform.state=nil,nil,6
+  platform.space_location={name='nauvis'}
+  fails(function() space.platform_schedule(p,{platform='alpha',stops=stops,keep_leg=true}) end,'keep_leg: alpha flies no leg now (waiting_at_station)')
+  platform.state,platform.paused,platform.space_location,platform.schedule=kept.state,kept.paused,kept.loc,kept.schedule
+  platform.last_visited_space_location=nil
+end
 -- Launch: only a ready rocket, to a platform in orbit here or explicitly to orbit.
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'rocket is not ready: building_rocket')
 silo.rocket_silo_status=9
