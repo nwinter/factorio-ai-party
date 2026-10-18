@@ -303,6 +303,24 @@ call('queue_cancel',{})
 call('queue_submit',{steps={{action='walk',args={direction='east',ticks=30},wait=false},{action='wait_ticks',args={ticks=5}}}})
 advance(1); eq(call('queue_status').active.action,'wait_ticks'); eq(call('status').active.kind,'walk')
 call('queue_cancel',{})
+-- batch26 A5 (Sol: chat_ack closed 1 and the body queue paused as for a failed call, its load_silo requeued): no read
+-- or talk call, refused or not, stops a running queue.
+do
+  local names={}
+  for n in pairs(runtime.reads) do names[#names+1]=n end
+  for _,mod in ipairs({'board','players','votes','owed','chat','audience','profiles'}) do for n in pairs((runtime[mod] or {}).handlers or {}) do names[#names+1]=n end end
+  for _,n in ipairs({'say','tell','chat','operator','tells','chat_ack'}) do names[#names+1]=n end
+  table.sort(names)
+  call('queue_cancel',{}); call('queue_submit',{steps={{action='walk',args={direction='east',ticks=600}}}}); advance(1)
+  for _,n in ipairs(names) do
+    if not n:match('^queue_') and n~='sleep' then
+      pcall(call,n,n=='chat_ack' and {seq='all'} or {})
+      eq(call('queue_status').paused,false,n..' paused the queue')
+      eq(call('status').active.kind,'walk',n..' stopped the walk')
+    end
+  end
+  call('queue_cancel',{})
+end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
 advance(1)
