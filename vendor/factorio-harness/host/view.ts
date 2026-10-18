@@ -53,6 +53,8 @@ export function renderMap(observation: any, radius = 24): Buffer {
     for (let x=run.x; x<run.x+run.count; x++) square(x,run.y,[79,88,100]);
   }
   for (const entity of Object.values(observation.entities ?? {}) as any[]) {
+    // Out of sight (the harness's fog view): our buildings as last seen are drawn dim.
+    if (entity.remembered) { square(entity.position.x, entity.position.y, [120,110,80], 1); continue; }
     const color = (observation.platform && entity.ghost ? [97,168,211] : undefined) ??
       (observation.platform ? platformColors[entity.type] : undefined) ?? colors[entity.name] ?? (entity.ghost ? [97,168,211] :
       entity.type === 'tree' ? [37,119,55] : entity.type === 'unit' || entity.type === 'unit-spawner' ? [224,65,62] : [203,185,114]);
@@ -66,6 +68,15 @@ export function renderMap(observation: any, radius = 24): Buffer {
         for (let c=0;c<3;c++) rows[i+c]=border ? 24 : color[c]!;
       }
     } else square(entity.position.x, entity.position.y, color, 1);
+  }
+  // Ours lost out of sight: a red outline where each stood.
+  for (const lost of observation.fog?.lost ?? []) {
+    const sx = Math.floor((lost.position.x-left)*scale), sy = Math.floor((lost.position.y-top)*scale);
+    for (let d = 0; d < scale; d++) for (const [px, py] of [[sx+d,sy],[sx+d,sy+scale-1],[sx,sy+d],[sx+scale-1,sy+d]]) {
+      if (px! < 0 || py! < 0 || px! >= size || py! >= size) continue;
+      const i = py!*(size*3+1)+1+px!*3;
+      rows[i] = 224; rows[i+1] = 65; rows[i+2] = 62;
+    }
   }
   if (!observation.platform) square(Math.floor(position.x), Math.floor(position.y), [250,250,255]);
   const header = Buffer.alloc(13);

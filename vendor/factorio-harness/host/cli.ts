@@ -332,7 +332,7 @@ const TELL_WORDS = new Set(['tell','tells','mention','told']);
 // wake. Read actions only (runtime.lua's reads; tests/d16batch10.test.ts checks the list against it).
 const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
   'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
-  'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
+  'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','losses','map','nearest','nearest_water','networks','observe','ores',
   'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','demolishers','dependency','shipment','fleet','board_progress','board_critical','lesson_review','ground_rules','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
   'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
   'supply','technologies','trace','turrets','where_is']);
@@ -1878,7 +1878,7 @@ async function main() {
         const path = resolve(values.out);
         await mkdir(dirname(path),{recursive:true});
         await writeFile(path,renderMap(reply.result,Number(args.radius ?? 24)));
-        output({ok:true,tick:reply.tick,result:{path,kind:reply.result.platform ? 'platform-schematic' : 'local-schematic',platform:reply.result.platform,legend:reply.result.platform ? 'gray=foundation, dark=space/footprint edges, gold=belts/inserters, teal=machines, blue=solar/ghosts, purple=accumulators/thrusters, red=turrets, green=collectors, pale=hub, steel=pipes' : 'white=player, blue=iron/water, orange=copper, dark=coal, green=trees/uranium, red=enemies, tan=structures',position:reply.result.position ?? reply.result.player?.position,entities:Object.keys(reply.result.entities ?? {}).length,tiles:reply.result.tile_count ?? Object.keys(reply.result.tiles ?? {}).length,truncated:reply.result.truncated ?? false,tiles_truncated:reply.result.tiles_truncated ?? false}});
+        output({ok:true,tick:reply.tick,result:{path,kind:reply.result.platform ? 'platform-schematic' : 'local-schematic',platform:reply.result.platform,legend:reply.result.platform ? 'gray=foundation, dark=space/footprint edges, gold=belts/inserters, teal=machines, blue=solar/ghosts, purple=accumulators/thrusters, red=turrets, green=collectors, pale=hub, steel=pipes' : 'white=player, blue=iron/water, orange=copper, dark=coal, green=trees/uranium, red=enemies, tan=structures; out of sight (fog): dim tan=our buildings as last seen, blue=our ghosts there now, red outline=ours lost there',position:reply.result.position ?? reply.result.player?.position,entities:Object.keys(reply.result.entities ?? {}).length,fog:reply.result.fog?.line,tiles:reply.result.tile_count ?? Object.keys(reply.result.tiles ?? {}).length,truncated:reply.result.truncated ?? false,tiles_truncated:reply.result.tiles_truncated ?? false}});
       } else {output(reply);process.exitCode=1;}
     } else if (command === 'sleep') {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');

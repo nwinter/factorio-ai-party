@@ -48,12 +48,12 @@ return function(api)
     end
     return M.read(p,by)
   end
-  function M.ghosts(p,box)
+  function M.ghosts(p,box,keep)
     local by,list={},{}
     local found=p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force,limit=1025}
     assert(#found<=1024,'more than 1024 ghosts; construct a smaller area')
     for _,e in pairs(found) do
-      if e.valid and api.known(p,e) then
+      if e.valid and api.known(p,e) and (not keep or keep(e)) then
         list[#list+1]=e
         assert(#list<=1024,'more than 1024 ghosts; construct a smaller area')
         local choices=e.ghost_prototype.items_to_place_this or {}
