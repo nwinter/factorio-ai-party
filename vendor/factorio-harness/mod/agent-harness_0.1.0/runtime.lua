@@ -16149,6 +16149,9 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   status_name=function(e) return entity_status_names[e.status] end,
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end}
 M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) return M.readmemory.observe(e) end}
+-- Seed loops running out (seeds.lua; batch32 A3, Grok): a seed alert to the loop's builders when low or gone.
+M.seeds=require('seeds'){state=state,crafters=function(f,s) return M.census.crafters(f,s) end,deliver=function(i,t) return M.board.deliver(i,t) end,
+  index_of=function(name) for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index end end end}
 M.chain=require('chain'){makers=function(s) return M.census.makers(s) end,status_name=function(e) return M.machine_status(e) end}
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
 -- Opus, d15 06:20 and 07:50).
@@ -17340,6 +17343,7 @@ function M.tick_body(event)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
+  if M.seeds then pcall(M.timed,'seeds.tick',M.seeds.tick,event.tick) end  -- seed loops running out (seeds.lua)
   if M.ammofeed then pcall(M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
   pcall(M.chronicle.tick,event.tick)  -- the chronicle's events: research, launches, platform stops and platforms made
   pcall(M.ground.watch_tick,event.tick)  -- items on the ground for status alerts and reply hints, a band or a pile a step
