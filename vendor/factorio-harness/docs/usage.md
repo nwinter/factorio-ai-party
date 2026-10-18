@@ -6868,3 +6868,24 @@ fh watch    # deploy on every change
   tiles a call walks, or `walk: false`), rotate turns it by remote view in a chunk our force sees now, as a player
   rotates in the map (`by: "remote view"`); `walk: true` still walks to it first. runtime_test.lua (its `walk: false`
   case, refused before, now turns it by remote view).
+
+## d17 territory (operator 17:10; Nick 17:08)
+- On n (read only), Vulcanus territory 1 (87 chunks, x -320..96, y -192..416, the main base included) has no
+  demolisher: Sol killed it at tick 4,888,121. The demolishers read said `no demolisher in sight now` for it, as for one
+  out of sight, and build replies inside it said `its demolisher not in sight now; a demolisher attacks what is built
+  in its territory`.
+- demolishers.lua records each demolisher's death (runtime on_entity_died, type segmented-unit): its territory (by
+  its smallest chunk, as a territory has no id; the unit's territory, else the one of its chunk), the tick, and what
+  killed it (an agent's character by name; a driven vehicle as `NAME in a car`; another entity with who built it;
+  none: the killing force). Its last-seen memory is dropped.
+- Each territory gets a `state`, from what the team saw only (operator 17:40: whether the game holds a demolisher in
+  a territory is not shown to a player):
+  - `has a demolisher`: in sight now, or last seen.
+  - `killed`: `its small-demolisher was killed at tick 4888121 (game 22h37m, 3h ago) by sol; none seen since`.
+  - `not seen`: `no demolisher seen in it`, both for a territory whose demolisher is out of sight and for one with none.
+- A one-time seed (storage demolisher_seeded) records the team's earlier kill: Vulcanus territory 1, Sol at tick
+  4888121 (chat seq 2143, the chronicle), applied to the territory under (-225,37) unless a death is already recorded
+  there. Copy: `territory with 87 charted chunks ...: its demolisher was killed at tick 4888121 (game 22h37m, 87h ago)
+  by sol (the team's record: chat seq 2143); none seen since`; a place_ghosts dry run at (-219.5,29.5) says the same.
+- territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is left out
+  only when it was killed. tests/d17_territory.lua.

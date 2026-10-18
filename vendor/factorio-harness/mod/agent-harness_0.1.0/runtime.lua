@@ -15189,7 +15189,12 @@ function handlers.platform_gate(p,a) return space.gate(p,a) end
 -- A turret ghost's targeting kept through its build (turretwatch.lua; backlog #569, Astra).
 M.turretwatch=require('turretwatch'){state=state,targets=function(e) return M.turret_targets(e) end,configure=function(e,a) return M.configure_turret(e,a) end}
 -- Demolisher territories and the heads our force sees (demolishers.lua; backlog #283, Sol).
-M.demolishers=require('demolishers'){state=state,position=function(v) return position(v) end}
+-- A character's agent or player name (as spoil.lua's character_name).
+function M.character_name(e)
+  for _,b in ipairs(M.bots.list()) do if b.character==e then return b.name end end
+  for _,pl in pairs(game.connected_players) do if pl.character==e then return M.board.who(pl) end end
+end
+M.demolishers=require('demolishers'){state=state,position=function(v) return position(v) end,character_name=function(e) return M.character_name(e) end}
 function handlers.demolishers(p,a) return M.demolishers.read(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
 M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end,circuit_short=function(e) return M.circuits.short(e) end}
@@ -16500,6 +16505,8 @@ function M.on_event(event)
     local s=state()
     -- A character's death and what killed it (recover names it: d17 batch12 A4).
     if e and e.valid and e.type=='character' then pcall(M.note_char_death,event) end
+    -- A demolisher's death: its territory, when, what killed it (demolishers.lua; d17 territory, Nick 17:08).
+    if e and e.valid and e.type=='segmented-unit' then pcall(M.demolishers.died,event) end
     -- A belt of ours carrying items destroyed (d17 batch13 C1): its claim's owner is told (M.belt_cut_tell).
     if e and e.valid and (e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter') and e.force and e.force.name~='enemy' and e.force.name~='neutral' then
       pcall(M.note_belt_cut,event)
@@ -16548,7 +16555,7 @@ function M.on_event(event)
 end
 -- A placement inside a demolisher territory says so (territory.lua; d17 batch14 B5, Sonnet): each building call's
 -- reply, dry runs too, gets demolisher_territory when its box's chunks lie in one.
-M.territory=require('territory'){}
+M.territory=require('territory'){state=function(surface,force,t) return M.demolishers.state(surface,force,t) end}
 ;(function()
   local function points(a,out)
     local q={}
