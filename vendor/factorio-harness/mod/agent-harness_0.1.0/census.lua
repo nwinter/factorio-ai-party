@@ -158,6 +158,17 @@ return function(api)
     if v == nil then v = try(function() return s.planet ~= nil end) == true; planet_of[s.index] = v end
     return v
   end
+  -- Our crafters, drills and offshore pumps by recipe, resource or fluid (chain.lua; d17 batch31 A1): entity references,
+  -- at most CRAFT_MAX a surface.
+  local CRAFT_MAX = 8192
+  local function add_crafter(job, s, kind, key, e)
+    local c = job.crafters[s.index]
+    if not c then c = {n=0, craft={}, mine={}, pump={}}; job.crafters[s.index] = c end
+    if c.n >= CRAFT_MAX then return end
+    local list = c[kind][key]
+    if not list then list = {}; c[kind][key] = list end
+    list[#list+1] = e; c.n = c.n + 1
+  end
   local function read_entity(job, s, e)
     if not e.valid then return end
     local t, name = e.type, e.name
@@ -182,6 +193,10 @@ return function(api)
         if not list then list = {}; job.gated[s.index] = list end
         list[#list+1] = e
       end
+    end
+    if t == 'offshore-pump' and job.crafters then
+      local fl = try(function() local f = e.fluidbox[1]; return f and f.name end) or try(function() local f = e.fluidbox.get_filter(1); return f and f.name end)
+      if fl then add_crafter(job, s, 'pump', fl, e) end
     end
     if t == 'rocket-silo' and job.silos then
       job.silos[s.index] = job.silos[s.index] or {}
@@ -209,6 +224,8 @@ return function(api)
         local target = e.mining_target
         r = target and target.name or nil
       end
+      -- (d17 batch31 A1) entity references by recipe (a drill's by the resource it mines), for the chain read
+      if r and job.crafters and t ~= 'lab' and t ~= 'boiler' and t ~= 'generator' then add_crafter(job, s, t == 'mining-drill' and 'mine' or 'craft', r, e) end
       local key = name .. '|' .. (r or '-')
       local st = status_names()[e.status or -1] or 'unknown'
       local row = job.mach[key] or {}
@@ -325,7 +342,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, building_counts={}, fuel={}, planets={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, building_counts={}, fuel={}, planets={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -524,7 +541,7 @@ return function(api)
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
-        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated,
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -557,6 +574,11 @@ return function(api)
     local out = {}
     for _, e in ipairs(d and d.gated and d.gated[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
     return out, d and d.gated and d.start or nil
+  end
+  -- Our crafters, drills and pumps the last pass found on a surface ({n, craft, mine, pump}), and its tick.
+  function M.crafters(surface)
+    local d = (api.state().census or {}).done
+    return d and d.crafters and d.crafters[surface.index] or nil, d and d.crafters and d.start or nil
   end
   function M.towers(force, surface)
     local d = (api.state().census or {}).done

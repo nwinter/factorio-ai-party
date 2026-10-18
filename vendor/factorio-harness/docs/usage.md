@@ -7526,3 +7526,29 @@ fh watch    # deploy on every change
   asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
   character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
   becomes its centre and the radius that covers it. tests/cli.test.ts.
+
+## d17 batch31 (the agents' 06:20 poll)
+
+- A1 (Sonnet: coal -> petroleum -> plastic -> LDS -> silo; Opus: crude -> refinery -> petroleum -> chem plant -> plastic,
+  about 30 minutes by hand each time): `bottleneck {item, chain: true, surface?}` walks the item's recipe chain back
+  from the item, one link per item (chain.lua):
+  - Makers: the crafters on the recipe most of them run (the other recipes making it counted in), drills on its
+    resource, and offshore pumps of the fluid. They come from the census pass's entity lists (census.lua lists crafters
+    by recipe, drills by resource and pumps by fluid; no find in the read). Up to 24 a link are read now: state,
+    crafting or mining speed, productivity.
+  - Rates: made and used a minute now (the surface's production statistics, last 10 minutes), and full, what its makers
+    make at full speed (the read makers' average times all of them; a pumpjack at its yield).
+  - asked: what the link it feeds takes at that link's full speed, per recipe that takes it, net of what the recipe
+    gives back.
+  - stock: what the surface's logistic networks hold (items).
+  - `limit`: from the item down, while most of a link's read makers lack an input, the ingredient made the smallest
+    share of its ask while below it. The walk ends at the link where that stops, with its numbers and its makers' own
+    states: lack an input, output full, lack power or fuel, off by a condition, or working with full speed below the
+    ask.
+  - Bounds and as_of: at most 16 links and 8 levels. `as_of` gives the census pass's age; machines built since then
+    are not in it. Before the first pass after a runtime start, the reply says so.
+  - On world n (06:50, 243 machines listed from a bounded find): plastic-bar gave 5 links and read 38 makers in 0.8 to
+    2.6 ms. The worst case is 16 x 24 makers, about 7 ms at that rate.
+  - Example from that probe: `petroleum-gas: 10 oil-refinery on advanced-oil-processing and 2 other recipes (7 working,
+    3 fluid_ingredient_shortage); made 4026/min now (used 4020/min), 7518/min at full speed; asked 5100/min at full
+    speed by plastic-bar 5100/min`.

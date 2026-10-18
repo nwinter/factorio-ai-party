@@ -1762,6 +1762,7 @@ M.EXAMPLES={
     {pick='first_with_stock',positions={{x=10.5,y=4.5},{x=12.5,y=4.5}},item='coal',to={x=30.5,y=4.5}},
     {from='nearest',item='firearm-magazine',count=20}},
   launch={{position={x=65.5,y=14.5},platform='Sunward'}},
+  bottleneck={{item='processing-unit',per_min=30},{item='plastic-bar',chain=true},{item='low-density-structure',chain=true,surface='nauvis'}},
   collect={{positions={{x=12.5,y=4.5},{x=15.5,y=4.5}},item='iron-plate'}},
   feed={{positions={{x=12.5,y=4.5}},item='coal',count=10}},
   inspect={{position={x=23,y=73}}},
@@ -1864,7 +1865,7 @@ function handlers.describe(_,a)
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
-      bottleneck={all_stopped='with item: true: stopped, per step of the line, every maker not working grouped by cluster (count, box, by name and state, every position)',shares='returned for a fluid (lubricant, heavy-oil, ...): its users by recipe on the surface: machines, how many work now, what they take at full speed and their share of all users\' take, against what the surface used and made in the last 10 min and its makers at full speed',item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack, spoilage its recipe does not take in its input; a maker stopped by its output: the chest its output waits on when every slot of it is used, slots used/total and what fills them), full_chests (those chests, with the machines whose output waits on each), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
+      bottleneck={chain='with item: true: the recipe chain back from the item, a link per item: makers (the census pass\'s lists, up to 32 a link read now: states, speed), made and used a minute now, full (at full speed), asked (what the link it feeds takes at its full speed), stock (logistic networks); limit: the link the shortage comes down to, with its numbers and its makers\' states; at most 16 links',all_stopped='with item: true: stopped, per step of the line, every maker not working grouped by cluster (count, box, by name and state, every position)',shares='returned for a fluid (lubricant, heavy-oil, ...): its users by recipe on the surface: machines, how many work now, what they take at full speed and their share of all users\' take, against what the surface used and made in the last 10 min and its makers at full speed',item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack, spoilage its recipe does not take in its input; a maker stopped by its output: the chest its output waits on when every slot of it is used, slots used/total and what fills them), full_chests (those chests, with the machines whose output waits on each), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
         per_min='with item: a target rate (items a minute): target {per_min, line, steps [{item, depth, need_per_min (for the target; an item two steps need adds up), made_per_min (now, last 10 min), recipe (the one most of its makers run), makers, machine, crafts_per_min_each (at their speed, modules and beacons in it), productivity_pct (theirs plus the recipe research), per_min_each, machines_for_target, full_speed_per_min (the makers there at full speed), miners, line}]}: mining drills by their mining speed on their resource, offshore pumps by pumping speed, a pumpjack\'s yield not counted; a step no maker on the surface makes is followed by its recipe of that name',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',
         returns='groups (machine+recipe x count, status counts, short = missing ingredients), limits (input/output inserters slower than the machine at full speed), needs (items consumed beyond area production /min, flagged over one belt), inserters (waiting for source/space), belt_capacity',
         note='inserter rates are estimates (arm rotation x stack size)'},
@@ -3360,6 +3361,23 @@ function handlers.rates(p,a)
 end
 -- bottleneck {item}: the item's chain to its root (supply.lua; Sonnet, 15:20); else the area read (rates.lua).
 function handlers.bottleneck(p,a)
+  -- chain: true (d17 batch31 A1, Sonnet and Opus): each link's makers, rates now and at full speed, its ask and stock,
+  -- and the limiting link (chain.lua)
+  if a.chain~=nil then
+    assert(type(a.chain)=='boolean','chain must be true or false')
+    assert(a.item~=nil,'chain goes with item: bottleneck {item, chain: true}')
+    assert(a.per_min==nil and a.all_stopped==nil,'chain takes item and surface only')
+    if a.chain then
+      assert(type(a.item)=='string' and (prototypes.item[a.item] or (prototypes.fluid and prototypes.fluid[a.item])),'item must be an item or fluid name (processing-unit, plastic-bar, petroleum-gas, ...)')
+      local surface=p.surface
+      if a.surface~=nil then
+        assert(type(a.surface)=='string','surface must be a surface name')
+        surface=game.get_surface(a.surface)
+        assert(surface,'no surface '..a.surface)
+      end
+      return M.chain.read(p,a,surface)
+    end
+  end
   if a.item~=nil then return M.supply.bottleneck_item(p,a) end
   assert(a.surface==nil,'surface goes with item')
   assert(a.per_min==nil,'per_min goes with item: bottleneck {item, per_min}')
@@ -16095,6 +16113,7 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   status_name=function(e) return entity_status_names[e.status] end,
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end}
 M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) return M.readmemory.observe(e) end}
+M.chain=require('chain'){crafters=function(s) return M.census.crafters(s) end,status_name=function(e) return M.machine_status(e) end}
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
 -- Opus, d15 06:20 and 07:50).
 M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}
