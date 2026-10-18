@@ -7239,3 +7239,9 @@ fh watch    # deploy on every change
   character prototype's collision layers: trees, cliffs, buildings), with enemy units within 6 tiles (pathing.lua
   `stall_why`). rearm's `turrets` rows (dry run and the real reply before the walk): each turret's ammunition held by
   name and what it gets, or what it wants when you carry none. tests/pathing.lua.
+- A2 (Astra: the harness belt graph's totals did not match the game's whole-belt signal; e.g. (9.5,4.5): graph 148
+  tiles with 118 explosives, the wires nothing, read in the tick its read was switched on, while the wired reader at
+  (8.5,4.5) already counted 118): a belt's `belt_segment` (inspect, circuit_set with entire_belt_hold) adds the belts on
+  its red and green networks that read their contents, each with its mode, this belt marked (`belt_readers`), and the
+  other entities on those networks by name; and says the wires are the game's own signal, a read switched on this tick
+  showing from the next. tests/d15_batch4.lua.

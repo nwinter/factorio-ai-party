@@ -563,11 +563,50 @@ return function(api)
     local wire_parts = {}
     for n2, c in pairs(wired) do wire_parts[#wire_parts+1] = c .. ' ' .. n2 end
     table.sort(wire_parts)
+    -- Who puts those signals on the wires (batch25 A2, Astra: the graph's totals did not match the game's signal, and
+    -- which belt read it was not plain): the belts on this belt's networks that read their contents (this one marked),
+    -- and the other entities there that put signals on them, by kind.
+    local readers, others, owners, queue, qi = {}, {}, {}, {}, 1
+    for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
+      local c = try(function() return e.get_wire_connector(w, false) end)
+      if c then queue[#queue+1] = c end
+    end
+    local seenc = {}
+    while qi <= #queue and qi <= 96 do
+      local c = queue[qi]; qi = qi + 1
+      local key = tostring(c.owner.unit_number) .. ':' .. tostring(c.wire_connector_id)
+      if not seenc[key] then
+        seenc[key] = true
+        local o = c.owner
+        if o.valid and o.type ~= 'electric-pole' and not owners[o.unit_number] then
+          owners[o.unit_number] = true
+          local info = try(function() return M.read(o) end)
+          local st = info and info.settings or {}
+          if o.type == 'transport-belt' and st.read_contents then
+            readers[#readers+1] = string.format('%s (%g,%g)%s %s', o.name, o.position.x, o.position.y, o == e and ' (this belt)' or '', tostring(st.read_contents_mode or 'pulse'))
+          elseif o ~= e and o.type ~= 'transport-belt' then
+            local side = side_of(o, c.wire_connector_id)
+            if not (COMBINATOR[etype(o)] and side == 'input') then
+              local k = o.name .. (side and ' (' .. side .. ' side)' or '')
+              others[k] = (others[k] or 0) + 1
+            end
+          end
+        end
+        for _, w2 in pairs(try(function() return c.connections end) or {}) do
+          if w2.target and (w2.origin == nil or w2.origin == player_origin()) then queue[#queue+1] = w2.target end
+        end
+      end
+    end
+    local oparts = {}
+    for k, n in pairs(others) do oparts[#oparts+1] = n .. ' ' .. k end
+    table.sort(oparts)
+    local read_line = string.format('belts reading their contents on those networks: %s%s',
+      #readers > 0 and table.concat(readers, ', ') or 'none', #oparts > 0 and '; other entities on them: ' .. table.concat(oparts, ', ') or '')
     return string.format('the physical segment only (the engine\'s transport line through this tile, not what the wire reads): %s, %s; it holds %s. '
-      .. 'What read_contents_mode entire_belt_hold reads is the whole belt: %d tiles followed through its inputs and outputs (%s), holding %s; the wires read %s (anything else on those networks included)',
+      .. 'What read_contents_mode entire_belt_hold reads is the whole belt: %d tiles followed through its inputs and outputs (%s), holding %s; the wires read %s (the game\'s own signal, anything else on those networks included; a read switched on this tick shows from the next); %s',
       tiles == 1 and '1 tile' or tiles .. ' tiles', table.concat(ends, ', '), #parts > 0 and table.concat(parts, ', ') or 'nothing',
       wtiles, table.concat(wends, ', '), #wparts > 0 and table.concat(wparts, ', ') or 'nothing',
-      #wire_parts > 0 and table.concat(wire_parts, ', ') or 'nothing')
+      #wire_parts > 0 and table.concat(wire_parts, ', ') or 'nothing', read_line), readers, oparts
   end
   -- The circuit networks an entity's red and green wires join, followed back to what drives them (D5, Astra 00:20:
   -- mixed return-belt deadlocks took dozens of inspect calls): each network (its id and signals now) with the entities
@@ -721,7 +760,9 @@ return function(api)
     -- engine joins into this tile's lines (each way, up to SEG tiles), what ends it each way, and what that run holds
     -- against what the wires read now.
     if kind == 'transport_belt' and settings.read_contents and settings.read_contents_mode == 'entire_belt_hold' then
-      out.belt_segment = M.belt_segment(e)
+      local readers
+      out.belt_segment, readers = M.belt_segment(e)
+      out.belt_readers = readers and #readers > 0 and readers or nil
     end
     if kind == 'constant_combinator' then
       out.on = try(function() return cb.enabled end)
