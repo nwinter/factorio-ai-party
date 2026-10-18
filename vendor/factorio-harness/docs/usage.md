@@ -7320,6 +7320,14 @@ fh watch    # deploy on every change
   in` (and, seated, that exit comes first); a drive argument (dry_run, pathfind, reverse, avoid_enemies, combat,
   retreat, ticks) without drive is refused naming drive. A position alone is not taken as enter: on a spidertron it
   can mean go_to or the switches. `vehicle {}` still reads the seat. tests/vehicles.lua.
+- C4 (Muse: item with position and forward tried in turn, each refused tersely; "trace syntax is
+  {"forward":true,"position":{}}"): every argument refusal of trace (trace.lua `need`) says what was wrong, then the
+  shapes it takes (`M.SHAPES`): `{position}` (back to what it lacks; all: true), `{position, forward: true}` (audit),
+  `{position, upstream: true}` (item: one ingredient), `{position, circuit: true}`, `{position, throughput: true}`,
+  `{item}` (near, radius, surface). item with position now reads `item with position goes with upstream: true (that
+  one ingredient back from the machine); item alone traces the item's routes`. `./fh help trace` gives one call a mode
+  (runtime.lua M.EXAMPLES.trace: back, all, forward, forward with audit, upstream with item, circuit, throughput, item,
+  item near), each passing the argument check (runtime_test). tests/d17_batch23.lua.
 
 ## d17 study1 part 2
 - 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):

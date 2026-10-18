@@ -64,7 +64,8 @@
   they put on at full speed against the slowest belt's lane capacity, and what the last 10 tiles hold (a tile near the
   end counts every drill). `circuit: true`: a machine's inserters with their conditions, and the circuit networks on
   their wires followed back through combinators. `surface` reads another surface, `platform` a platform. Out of sight
-  it returns dated last-seen memory. It flags a held-item refusal. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
+  it returns dated last-seen memory. It flags a held-item refusal. A refused argument shape names every shape it
+  takes; `./fh help trace` gives a call for each mode. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
   and the research ETA; `surface` reads that surface.
 - Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)

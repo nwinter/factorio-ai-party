@@ -326,11 +326,11 @@ force.is_chunk_visible=function() return true end
 r=trace.trace(p,{item='chemical-science-pack',near={x=60,y=60},radius=5})
 eq(r.makers,'nothing on nauvis makes chemical-science-pack'); eq(r.area,'(60,60) radius 5'); eq(r.labs_short,'1 of 1 labs hold none of it')
 -- Arguments.
-fails(function() trace.trace(p,{item='chemical-science-pack',position={x=1,y=1}}) end,'give item, or position')
+fails(function() trace.trace(p,{item='chemical-science-pack',position={x=1,y=1}}) end,'item with position goes with upstream: true')
 fails(function() trace.trace(p,{position={x=0.5,y=0.5},near={x=1,y=1}}) end,'near and radius go with item')
 fails(function() trace.trace(p,{position={x=0.5,y=0.5},forward=true,all=true}) end,'all goes with a backward trace')
 fails(function() trace.trace(p,{item='unobtainium'}) end,'item must be an item name')
-fails(function() trace.trace(p,{}) end,'trace takes position')
+fails(function() trace.trace(p,{}) end,'position or item is missing; trace takes {position}')
 -- Ores come from mining drills (friction3, Grok 23:29: trace {item: copper-ore} read "nothing on nauvis makes
 -- copper-ore", and Grok followed the ore belts by hand): a drill on a resource that gives it is a maker, and where it
 -- drops is where its routes start.
