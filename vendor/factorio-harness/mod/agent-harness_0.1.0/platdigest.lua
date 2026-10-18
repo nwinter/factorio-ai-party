@@ -87,6 +87,8 @@ return function(api)
       if FLUIDS[r.name] then out.tanks[#out.tanks+1] = r.line
       elseif try(function() return prototypes.item[r.name].type end) == 'ammo' then out.ammo[#out.ammo+1] = r.line end
     end
+    -- the fuel outlook (batch27 B1): held, made and used a minute, and whether it lasts the leg
+    if endu and endu.fuel_outlook then out.fuel_outlook = endu.fuel_outlook; lines[#lines+1] = 'fuel outlook: ' .. endu.fuel_outlook end
     for _, l in ipairs(out.tanks) do lines[#lines+1] = 'tank: ' .. l end
     for _, l in ipairs(out.ammo) do lines[#lines+1] = 'ammo: ' .. l end
     if #out.tanks == 0 then out.tanks = nil end
@@ -107,6 +109,6 @@ return function(api)
     return out
   end
   M.schema = {platform_digest = {platform='platform name',
-    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks collected and where each goes, crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power); errors (a read that failed, by name). Read only'}}
+    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks collected and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power); errors (a read that failed, by name). Read only'}}
   return M
 end

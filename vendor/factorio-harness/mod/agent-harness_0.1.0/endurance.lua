@@ -70,6 +70,46 @@ return function(api)
     end
     return out
   end
+  -- The fuel outlook (batch27 B1, Luna, on each flight): thruster fuel and oxidizer held (thrusters and tanks), made and
+  -- used a minute now (the platform's fluid production statistics, the last minute), and, flying, whether each lasts the
+  -- rest of the leg at the speed now; stopped, the thrusters burn nothing. {line, short (fluids that run out before the
+  -- leg ends), rows}.
+  function M.fuel_outlook(pl)
+    local names = {['thruster-fuel']=true, ['thruster-oxidizer']=true}
+    local stock = fluid_stock(pl, names)
+    local stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
+    local P = defines.flow_precision_index or {}
+    local function per_min(name, cat)
+      return stats and P.one_minute and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=P.one_minute, count=true} end) or 0) or 0
+    end
+    local leg = api.leg and try(function() return api.leg(pl) end)
+    local v = leg and speed(pl)
+    local left_min = leg and v and v > 0 and leg.left_km / v or nil
+    local rows, parts, short = {}, {}, {}
+    for _, name in ipairs({'thruster-fuel', 'thruster-oxidizer'}) do
+      local held, made, used = stock[name] or 0, per_min(name, 'input'), per_min(name, 'output')
+      local row = {name=name, held=math.floor(held + 0.5), made_per_min=round(made, 0), used_per_min=round(used, 0)}
+      local net = used - made
+      local text = string.format('%s %d held, made %d/min, used %d/min', name, row.held, row.made_per_min, row.used_per_min)
+      if left_min then
+        if net <= 0 then text = text .. ': lasts the leg'
+        else
+          row.lasts_min = round(held / net, 1)
+          if row.lasts_min < left_min then
+            row.short_min = round(left_min - row.lasts_min, 1)
+            short[#short+1] = name
+            text = text .. string.format(': runs out in %s, %s before the leg ends', mins(row.lasts_min), mins(row.short_min))
+          else text = text .. string.format(': lasts %s, the leg %s', mins(row.lasts_min), mins(left_min)) end
+        end
+      end
+      rows[#rows+1] = row; parts[#parts+1] = text
+    end
+    local where = leg and string.format('leg %s->%s, %d km left%s', leg.from, leg.to, math.floor(leg.left_km + 0.5),
+      left_min and string.format(', about %s at %d km/min', mins(left_min), math.floor(v + 0.5)) or ', speed unknown')
+      or 'stopped' .. (try(function() return ' at ' .. pl.space_location.name end) or '') .. ': the thrusters burn only in flight'
+    return {line=string.format('%s: %s; %s', pl.name, where, table.concat(parts, '; ')), short=#short > 0 and short or nil, rows=rows,
+      leg_left_min=left_min and round(left_min, 1) or nil}
+  end
   local routeammo
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
@@ -501,6 +541,7 @@ return function(api)
         l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)'
           or l.via_for and ' (on the way ' .. l.via_for .. (l.also and ', ' .. l.also or '') .. ')' or '')
     end
+    local outlook = try(function() return M.fuel_outlook(pl).line end)
     return {platform=pl.name, route=route_by, route_note=route_note, ammo_feed=ammo_feed, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',
       resources=rows, hub_slots=string.format('%d of %d free', free, slots), power=power, solar_power=#solar > 0 and table.concat(solar, ', ') or nil,
@@ -508,8 +549,8 @@ return function(api)
         'hub: ' .. string.format('%d of %d slots free', free, slots) .. (power and '; power ' .. power or '') .. (#solar > 0 and '; solar power ' .. table.concat(solar, ', ') or ''),
         'asteroid chunks collected: ' .. (#chunks > 0 and table.concat(chunks, ', ') or 'none') .. ' (' .. (win_text or 'last 10 min') .. ')'
           .. (places and places.capped and string.format('; belts past the first %d not counted', places.capped) or ''),
-        'power: ' .. solar_line .. (power and ' (the network ' .. power .. ')' or ''), ammo_feed},
-      solar=solar_line, low_power=low, no_power=none,
+        'power: ' .. solar_line .. (power and ' (the network ' .. power .. ')' or ''), 'fuel outlook: ' .. (outlook or 'unread'), ammo_feed},
+      solar=solar_line, low_power=low, no_power=none, fuel_outlook=outlook,
       departure=#departure > 0 and departure or nil, forecast=forecast,
       chunks_collected=#chunks > 0 and chunks or nil,
       note='rates: flying, the platform\'s production statistics over the last 10 minutes (on a leg younger than that, the last 5 or 1 minute within the leg, and ammunition from the leg\'s own counts); stopped, the last finished leg\'s for ammunition (rate_from), else the flight rate is unknown and nothing is projected; a rate that changes on the way (fights near a planet, thrust) changes the projection'}
@@ -517,6 +558,6 @@ return function(api)
   M.schema = {platform_endurance = {forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; rockets\' damage is in their projectile, not read (counted 1 shot)',
     pessimistic='with forecast: {speed: 0.1..1 (a share of the speed read: slower, longer legs), dwell_s: 0..36000 (extra time at each stop at the stopped rate)}',
     platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
+    returns='fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks, made and used a minute over the last minute, and flying whether each lasts the rest of the leg at the speed now; its owners get a team alert when one runs out before the leg ends); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
   return M
 end

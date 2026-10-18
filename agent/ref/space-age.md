@@ -54,7 +54,10 @@
   Example: `./fh call platform_rename --args '{"platform":"Sunward","name":"Kestrel"}'`
 - `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
-  hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute. `route`: the locations
+  hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
+  of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
+  whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
+  before the leg ends, again after 5 minutes). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an
@@ -130,7 +133,7 @@
   `platform_defense`: first what is stopped or blocked (the supply chain's stops: collectors, crushers, fuel and
   oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines
   on no power), then the route and arrival, hub slots and the chunks in it, chunks collected and where each goes,
-  crushers and makers (state, in and out), thrusters, tanks and ammunition (stock, made and used, run-out, stranded),
+  crushers and makers (state, in and out), thrusters, the fuel outlook, tanks and ammunition (stock, made and used, run-out, stranded),
   turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
 - `platform_tiles {platform, positions | area}`: up to 64 tiles at exact coordinates: the tile, marked for removal, a
   tile ghost, what stands on it; for foundation whether the hub takes it away now once marked (`remove {now, why}`: one

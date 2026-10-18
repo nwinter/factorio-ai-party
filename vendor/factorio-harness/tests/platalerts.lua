@@ -215,6 +215,17 @@ do
   -- Up to speed: nothing.
   platform.speed=1; jump(601); alerts(astra); jump(601)
   eq(has(alerts(astra),'flies at'),nil)
+  -- batch27 B1 (Luna): flying, thruster fuel that runs out before the leg ends is told once to those the platform's
+  -- alerts go to, with the outlook line; again after 5 minutes.
+  local kept_outlook=runtime.endurance.fuel_outlook
+  runtime.endurance.fuel_outlook=function() return {short={'thruster-fuel'},line='leg nauvis->gleba, 9000 km left; thruster-fuel 900 held, made 0/min, used 300/min: runs out in 3m00s, 3m00s before the leg ends'} end
+  jump(601)
+  local fl=has(alerts(astra),'runs out before the leg ends')
+  assert(fl and fl:find('thruster-fuel runs out before the leg ends: leg nauvis->gleba',1,true),tostring(fl))
+  jump(601); eq(has(alerts(astra),'runs out before the leg ends'),nil,'told once')
+  runtime.endurance.fuel_outlook=function() return {line='lasts'} end
+  jump(601); eq(has(alerts(astra),'runs out before the leg ends'),nil)
+  runtime.endurance.fuel_outlook=kept_outlook
   platform.state=6; platform.space_location={name='nauvis'}; platform.space_connection=nil; platform.speed=0
   psurf.find_entities_filtered=find
 end
