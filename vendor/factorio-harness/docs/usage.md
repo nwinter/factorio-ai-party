@@ -7212,3 +7212,21 @@ fh watch    # deploy on every change
   area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
   each with its tile, mark, tile ghost and what stands on it; foundation: `remove {now, why}`; empty space: `build
   {now, why}`. tests/tilecheck.lua.
+
+## d17 batch24 Group C
+- C1 (Sonnet: a drill batch left untried after one spot refused): a `build` batch whose entries all place mining drills
+  tries every entry unless `all: false` (as `all: true`), and `left` names each spot left: `#3 (233.5,-219.5):
+  placement blocked by ghost gun-turret (232,-220)`. In Sonnet's shift29 a 4-drill batch stopped at entry 2 (a pole
+  and a belt); its shift31 batch with `all: true` already went on past a ghost-blocked spot. runtime_test.
+- C2 (Haiku: a 1,194-item corpse at (-314,-296) sat near a wave for minutes): `threat.groups_near` reads the live enemy
+  groups (gathered with a target) standing in chunks our force sees now within a radius: size, kinds, where, distance,
+  heading (gathered to now), closing (nearer than where it gathered, or its target within 32 tiles). `recover` names
+  them per corpse (160 tiles), leaves out a corpse with one within `group_radius` (8..160, default 48) unless
+  `ignore_groups: true`, and its dry run gives `groups`. A death of ours whose corpse holds items is one team line per
+  agent (`M.death_lines`: who, where, items, killer, groups near). tests/threat.lua, tests/round1520d.lua.
+- C4 (Opus, ~8 times by script that reported success when the chest did not fit): `turret_feeds {area | positions,
+  ammo?, count?, chest?, inserter?, dry_run?}` (turretfeed.lua): per ammo turret no inserter feeds, a side tile where
+  an inserter's drop lands in it (targets.points, as the build reply reads inserters) with its pickup tile free, both
+  checked with can_place_entity (manual) and against the spots planned before it; then one `build` batch with `all`
+  of a requester chest (its request as an entry setting) and the inserter per turret, from the inventory. Rows: the
+  spots, skipped (why), short (items ran out), not_built (build's refusal). tests/turretfeed.lua.

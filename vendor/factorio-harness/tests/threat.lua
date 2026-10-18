@@ -227,6 +227,18 @@ eq(#T.operator.attack_groups_live({}).groups,0); eq(#storage.live_groups,0)
 -- at most 10 kept
 for i=1,12 do T.on_group{tick=game.tick,group={valid=true,force=enemy,surface=field,position={x=i,y=500},state=0,members={unit('small-biter')},command={destination={x=0,y=0}}}} end
 eq(#storage.live_groups,10); eq(#T.operator.attack_groups_live({}).groups,10)
+-- batch24 C2 (Haiku: a corpse near a wave): the groups our force sees round a point, how far, which way, closing
+storage.live_groups=nil
+local wave={valid=true,force=enemy,surface=field,position={x=90,y=0},state=1,members={unit('big-biter'),unit('big-biter'),unit('small-spitter')},command={destination={x=10,y=0}}}
+local unseen={valid=true,force=enemy,surface=field,position={x=130,y=0},state=1,members={unit('small-biter')},command={destination={x=10,y=0}}}
+T.on_group{tick=game.tick,group=wave}; T.on_group{tick=game.tick,group=unseen}
+wave.position={x=60,y=0}
+local near=T.groups_near(mine,field,{x=20,y=0},160)
+eq(#near,1) -- the other stands in a chunk our force does not see
+eq(near[1].size,3); eq(near[1].distance,40); eq(near[1].heading,'W'); eq(near[1].closing,true)
+eq(T.groups_line(near),'enemy groups our force sees: a group of 3 (2 big-biter, 1 small-spitter) at (60,0), 40 tiles off, moving W, closing on it')
+eq(T.groups_line({}),'no enemy group our force sees within reach of it')
+eq(#T.groups_near(mine,field,{x=20,y=0},30),0)
 -- Big enemies (big_enemies_live): demolishers found by a type search every 10 s, followed by reference; their speed,
 -- whether they close on our nearest building, the ETA, the nearest character. Platforms are not searched.
 local demo={valid=true,unit_number=77,name='small-demolisher',position={x=-536,y=68}}

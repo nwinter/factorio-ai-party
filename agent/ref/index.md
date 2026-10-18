@@ -11,7 +11,7 @@
 - `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `configure`,
   `assembler_batch`, `requests`.
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
-  `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.
+  `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`, `turret_feeds`.
 - `analysis`, factory reads, the factory digest: `progress`, `research`, `research done`, `science`, `supply`,
   `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `belt_flow`,
   `pipe_gaps`, `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`,
