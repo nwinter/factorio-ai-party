@@ -221,7 +221,7 @@
 - A full `status` gives `robots`: per planet or platform, all its logistic networks' robots by kind (idle, working,
   charging, waiting to charge) and the networks with the most waiting. Its fuel and power warnings name the surface and
   the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`). `alerts.out_of_sight`: per planet, our
-  drills, machines and turrets in chunks our force does not see now (remote view, remote inspect and scan need sight),
+  drills, machines and turrets in chunks our force does not see now (no radar or character of ours sees them),
   by 64-tile area with the nearest radar and its state, and the radars not working. `alerts.outside_coverage`: per
   planet, what lies outside every roboport's construction area (buildings and ghosts, by 64-tile area and name) and the
   requester and buffer chests outside every logistic area. The team block carries both once an hour.

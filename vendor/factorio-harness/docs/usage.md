@@ -7032,6 +7032,8 @@ fh watch    # deploy on every change
     radars not working: radar (-264.5,-354.5) no power`. A planet with no radar says `nearest radar none on NAME`; one
     with everything in sight but a radar down says that.
   - The team block carries the same lines at most once an hour (h.sight_tick).
+  - Since the fog view (main f9ef402d, fog_strict off by default) our own buildings in fog are read as they stand; the
+    lines say only what is out of sight and which radars are down.
   - Copy: lines for gleba, nauvis and vulcanus (the copy is older than n: 4 vulcanus drills unseen at (-225,37)); two
     agents got the team lines once, the next call none. tests/d17_territory.lua.
 
