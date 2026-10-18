@@ -7263,3 +7263,9 @@ fh watch    # deploy on every change
   is a queue plan already, `collect {positions, item, walk: true}` then `transfer {position, item, direction:
   to_entity, walk: true}` (each a timed tour with the tours' enemy checks); from one chest, `collect {pick, positions,
   item, to}` in one call. Written into collect's entry (moving-items.md) with the plan; no new action.
+- B1 (Opus: straight lines placed over a curve broke a trunk): `belt_upgrade {position, to?, tiles?, dry_run?}`
+  (beltupgrade.lua) traces the line both ways (the straight input or the only one back, the first output on,
+  undergrounds to their pair) and sends `build` one entry per tile, each at its own position and direction (an
+  underground's type kept), with `all`; the target is `to`'s tier or each entity's `next_upgrade`. Replacement is
+  build's (replace.lua: the old entity is mined, so its belt items go to the inventory; in the game's own
+  fast-replace they stay on the belt). tests/beltupgrade.lua.

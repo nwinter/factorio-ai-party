@@ -1989,6 +1989,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.beltupgrade and M.beltupgrade.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -13332,6 +13333,10 @@ M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targe
   entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
   build=function(p,a) return handlers.build(p,a) end}
 function handlers.turret_feeds(p,a) return M.turretfeed.handler(p,a) end
+-- belt_upgrade (beltupgrade.lua, batch25 B1): a traced belt line replaced tile by tile by build, each tile's own direction.
+M.beltupgrade=require('beltupgrade'){entity=function(p,a) return entity(p,a,true) end,compass=function(d) return compass_names[d] end,
+  build=function(p,a) return handlers.build(p,a) end}
+function handlers.belt_upgrade(p,a) return M.beltupgrade.handler(p,a) end
 -- (the list is bots.lua's, which lets a bot aboard a platform make these calls)
 for _,name in ipairs(M.bots.PLATFORM_ACTIONS) do
   local handler=handlers[name]
