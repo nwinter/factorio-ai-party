@@ -168,7 +168,7 @@ def main():
         run("setup", "codex", "gpt-6.1-sol", d)
         import tomllib
         cfg = tomllib.load(open(os.path.join(d, ".codex", "config.toml"), "rb"))
-        assert cfg["model_context_window"] == 272000 and cfg["model_auto_compact_token_limit"] == 140000  # Sol: 140000 again (d17; 200000 from 2026-10-15)
+        assert cfg["model_context_window"] == 272000 and cfg["model_auto_compact_token_limit"] == 200000  # Sol: 200000 (2026-10-15; 140000 for shift32 only)
         assert os.path.exists(cfg["experimental_compact_prompt_file"])
         # Muse applies the fractions to a 512K effective window (shake2 compacted at 0.191 x 512000 = 97,792).
         opts = run("setup", "muse", "muse-spark-1.3", d).split()
