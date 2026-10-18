@@ -7183,6 +7183,6 @@ fh watch    # deploy on every change
   `ammo_below`, counting an item request on the way, get an item request up to `target_count`, which the hub fills as
   `deliver`'s; `refills` counts requests and rounds per platform. A platform write of the remote and platform lanes;
   `queue_repeat` with `interval_ticks` keeps topping up. tests/platrearm.lua, tests/queue_lanes.lua.
-- A4 (Gemini): load_silo `dry_run` already gives each item's weight, the rocket's lift (1000 kg on 2.0.77, from the
-  prototype) and room, whether the list fits and the split; a transfer into rocket cargo moves only what fits
+- A4 (Gemini): load_silo `dry_run` already gives each item's weight, the rocket's lift (the game's rocket_lift_weight,
+  1000 kg) and room, whether the list fits and the split; a transfer into rocket cargo moves only what fits
   (`weight_limited`). The silo read's `cargo` now adds `room_kg` (the lift left) and its line `(N kg free)`. tests/silo.lua.
