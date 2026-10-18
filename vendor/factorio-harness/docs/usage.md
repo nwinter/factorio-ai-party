@@ -7419,3 +7419,8 @@ fh watch    # deploy on every change
   incident once; `since` a tick, else since the agent's last digest read (kept per agent; the first: 10 minutes), with
   `next_since`. status adds `alerts_new` (places with news since the mark). The wake filters already exist and are
   unchanged: `--no-urgent`, `--urgent-radius N`, `--until "alert near=X,Y radius=R min_size=N"`. tests/alertdigest.lua.
+- B2 (Astra: Aquilo lithium furnaces at 9/min against 49/min; each requester asked 10 over 80 tiles while 139 sat in a
+  provider): `requester_rate {position | area}` (reqrate.lua): per chest and item, the request, what it holds, the fed
+  machines' use a minute (recipe at crafting speed; a furnace's previous recipe), the network's pick
+  (select_pickup_point) and its distance, the round trip at the logistic robot's speed with our speed bonus, at most
+  the request a round trip and that a minute, and the minutes of use the request covers. tests/reqrate.lua.

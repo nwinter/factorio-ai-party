@@ -1995,6 +1995,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltupgrade and M.beltupgrade.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.alertdigest and M.alertdigest.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.reqrate and M.reqrate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -14436,6 +14437,7 @@ reads.platform_digest=true
 reads.belt_flow=true
 reads.platform_tiles=true
 reads.alerts_digest=true
+reads.requester_rate=true
 reads.circuit_audit=true
 reads.pods=true
 reads.logistics_audit=true
@@ -15615,6 +15617,9 @@ function handlers.losses(p,a) return M.lostlog.read(p,a) end
 -- alerts_digest (alertdigest.lua, batch26 B1): attacks, losses and groups by surface and place, each once, since a tick.
 M.alertdigest=require('alertdigest'){state=state}
 function handlers.alerts_digest(p,a) return M.alertdigest.read(p,a) end
+-- requester_rate (reqrate.lua, batch26 B2): a requester's request against its machines' use and the robots' round trip.
+M.reqrate=require('reqrate'){position=position,entity=function(p,a) return entity(p,a,true) end}
+function handlers.requester_rate(p,a) return M.reqrate.read(p,a) end
 function handlers.rebuild(p,a) return M.lostlog.rebuild(p,a) end
 -- inspect {position} out of sight: the remembered building nearest the point (within 1.5 tiles), with our ghost there now
 -- and a loss there, when the read memory's ring holds no sighting.
