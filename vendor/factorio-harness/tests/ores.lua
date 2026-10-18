@@ -140,6 +140,13 @@ do
   eq(one.patches[1].drill_list[1], '(59,3) electric-mining-drill no_minable_resources: 4,000 iron-ore under it (4 tiles)')
   local home = ores.handlers.ores(me, {patch={x=8, y=6}})
   eq(home.patches[1].tiles, 33); eq(home.patches[1].drill_list[1], '(1.5,1.5) electric-mining-drill working: 1,600 iron-ore under it (16 tiles)')
+  -- batch27 B5 (Sonnet: coal fell to 3 of 56 drills working with no warning): the depletion forecast: the drill takes
+  -- 30/min (mining speed 0.5, mining time 1) of the 1,600 under it: stopped in about 53 min; the nearest other patch.
+  local f = ores.handlers.ores(me, {patch={x=8, y=6}, forecast=true}).patches[1].forecast
+  eq(f.drills, 1); eq(f.working, 1); eq(f.under, 1600); eq(f.take_per_min, 30); eq(f.half_min, 53); eq(f.all_min, 53)
+  eq(f.line, '1 drill (1 working) on iron-ore: 1,600 under them, taken 30/min now; half of them stopped in about 53m, all in about 53m (each drill\'s share of the ore under it at its rate now; tiles under several shared)')
+  assert(f.alternatives and f.alternatives[1]:find('^iron%-ore at %(%d+,%d+%), %d+ tiles away: 4,000 in 4 tiles'), tostring(f.alternatives and f.alternatives[1]))
+  assert(not pcall(ores.handlers.ores, me, {forecast=true}), 'forecast goes with patch')
   local ok, err = pcall(ores.handlers.ores, me, {patch={x=120, y=40}})
   assert(not ok and tostring(err):find('no patch with ore within 8 tiles of (120,40) in the 48 charted chunks read so far; the nearest is iron-ore (60,0)-(62,2)', 1, true), err)
   d1.status, d2.status = nil, nil

@@ -790,4 +790,30 @@ do
   bio.status=5; stacks[1].spoil_tick=game.tick+20000; eq(A.seed_spoiling(bio),nil)
   defines.entity_status,defines.inventory=kept_status,kept_inv
 end
+-- batch27 B5 (Sonnet: coal fell to 3 of 56 drills working with no warning): the patches the ores survey has our drills
+-- on, and a mine whose drills half stop within 30 min as a mine_depleting group to their builders, with the nearest
+-- untapped patch of the ore.
+do
+  local st={ores={['player@1']={force='player',surface=1,patches={
+    {name='coal',l=0,t=0,r=20,b=20,centre={x=10,y=10},miners=56,amount=50000},
+    {name='coal',l=200,t=0,r=230,b=30,centre={x=215,y=15},miners=0,amount=900000},
+    {name='crude-oil',l=0,t=50,r=10,b=60,centre={x=5,y=55},miners=2,yield=300}}}}}
+  local nauvis={name='nauvis',index=1}
+  local kept_surfaces=game.surfaces
+  game.surfaces={[1]=nauvis,nauvis=nauvis}
+  local drills={}
+  for i=1,3 do drills[i]={name='electric-mining-drill',last_user={name='sonnet'}} end
+  local horizon=20
+  local M5=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    mine_forecast=function(s,f,q) return {entities=drills,drills=56,half_min=horizon,line='56 drills (3 working) on coal: 1,200 under them, taken 90/min now; half of them stopped in about 20m, all in about 25m'} end,
+    territory=function() return nil end}
+  local ms=M5.mine_patches({name='player'})
+  eq(#ms,1); eq(ms[1].name,'coal'); eq(ms[1].surface,'nauvis')
+  local g=M5.mine_group({name='player'},ms[1])
+  eq(g.kind,'mine_depleting'); eq(g.by.sonnet,3)
+  eq(g.line,'mine running out near (10,10): 56 drills (3 working) on coal: 1,200 under them, taken 90/min now; half of them stopped in about 20m, all in about 25m; nearest untapped coal (215,15) 205 tiles, about 900000')
+  horizon=45
+  eq(M5.mine_group({name='player'},ms[1]),nil,'half stop past 30 min: not told')
+  game.surfaces=kept_surfaces
+end
 print('pushalerts: ok')

@@ -12367,7 +12367,15 @@ handlers.flamers=M.defense.handlers.flamers
 handlers.turrets=M.defense.handlers.turrets
 -- Every resource patch on the charted map (ores.lua, Opus: finding new iron in
 -- one call): amount left, distances, nests within 50 tiles, our drills on it.
+-- (batch27 B5) the demolisher territory at a spot, as the demolishers read tells it, or nil
+function M.territory_line(surface,force,pos)
+  local t=surface.get_territory_for_chunk({x=math.floor(pos.x/32),y=math.floor(pos.y/32)})
+  if not t then return nil end
+  local _,text=M.demolishers.state(surface,force,t)
+  return 'in a demolisher territory: '..text
+end
 M.ores=require('ores'){state=state,integer=integer,position=position,
+  territory=function(surface,force,pos) return M.territory_line(surface,force,pos) end,
   charted=function(force,surface,chunk) local pl=surface.platform if pl and pl.force==force then return true end return force.is_chunk_charted(surface,chunk) end}
 handlers.ores=M.ores.handlers.ores
 -- Ghosts at absolute positions, as a player places them from the cursor or
@@ -15879,7 +15887,8 @@ passive.robot_losses=true
 -- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
 function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
 passive.eggs=true
-M.pushalerts=require('pushalerts'){belt_groups=function(f)
+M.pushalerts=require('pushalerts'){mine_forecast=function(surface,force,q) return M.ores.forecast(surface,force,q) end,
+  territory=function(surface,force,pos) return M.territory_line(surface,force,pos) end,belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
     for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end

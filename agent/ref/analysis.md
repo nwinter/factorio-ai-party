@@ -206,7 +206,11 @@
   within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer only
   over its request), with how many. `area` (up to 128x128) lists the machines short of something (`all: true`: every
   one). Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`
-- `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
+- `ores {resource?, surface?, min_amount?, limit?, position?, patch?, forecast?}`: `forecast: true` with `patch`: our
+  drills' depletion there: each drill's share of the ore under it (a tile under several shared) at what it takes a
+  minute working (speed with bonus, mining time, drain), the minutes until half and all of them stop, and the 3
+  nearest other patches of the ore (size, a demolisher territory one lies in); half stopping within 30 minutes is
+  also a team alert (`mine_depleting`) to their builders. Otherwise the patches on the charted map (one resource, or
   every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
   and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
   8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its

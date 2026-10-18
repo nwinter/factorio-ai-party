@@ -646,6 +646,72 @@ return function(api)
     return lines, #rows
   end
 
+  -- forecast (batch27 B5, Sonnet: coal fell to 3 of 56 drills working with no warning): for a patch's drills of ours, the
+  -- ore under each one's mining area, a tile under several shared evenly among them, against what it takes a minute
+  -- working (its mining speed with its speed bonus, the resource's mining time, the drill's resource drain; productivity
+  -- adds output, not drain): when each stops, so when half and all of them have, and what they take a minute now.
+  -- Stopped drills count as stopped. An estimate at today's rates.
+  local function mins_text(m)
+    if not m then return 'never at this rate' end
+    if m >= 600 then return string.format('%dh', math.floor(m / 60 + 0.5)) end
+    if m >= 60 then return string.format('%dh%02dm', math.floor(m / 60), math.floor(m % 60)) end
+    return string.format('%dm', math.floor(m + 0.5))
+  end
+  function M.forecast(surface, force, q)
+    local drills = {}
+    for _, d in pairs(surface.find_entities_filtered{area={{q.l-5, q.t-5}, {q.r+5, q.b+5}}, type='mining-drill', force=force}) do
+      if d.valid then
+        local r = radius[d.name]
+        if not r then r = try(function() return d.prototype.mining_drill_radius end) or 1; radius[d.name] = r end
+        local x, y = d.position.x, d.position.y
+        local target = try(function() return d.mining_target end)
+        local mines = target and target.valid and target.name
+        if x+r > q.l and x-r < q.r and y+r > q.t and y-r < q.b and (not mines or mines == q.name) and #drills < M.MAX_LIST then
+          drills[#drills+1] = {e=d, x=x, y=y, r=r, tiles={}}
+        end
+      end
+    end
+    local cover, amount = {}, {}
+    for _, dr in ipairs(drills) do
+      for _, o in pairs(surface.find_entities_filtered{area={{dr.x-dr.r, dr.y-dr.r}, {dr.x+dr.r, dr.y+dr.r}}, type='resource', name=q.name}) do
+        local key = o.position.x .. ',' .. o.position.y
+        cover[key] = (cover[key] or 0) + 1; amount[key] = o.amount
+        dr.tiles[#dr.tiles+1] = key
+      end
+    end
+    local mtime = try(function() return prototypes.entity[q.name].mineable_properties.mining_time end) or 1
+    local times, take, working, under = {}, 0, 0, 0
+    for key, n in pairs(amount) do under = under + n end
+    for _, dr in ipairs(drills) do
+      local share = 0
+      for _, key in ipairs(dr.tiles) do share = share + amount[key] / cover[key] end
+      local st = status_name(dr.e.status)
+      local t = 0
+      if st == 'working' and share > 0 then
+        local speed = (try(function() return dr.e.prototype.mining_speed end) or 0.5) * (1 + (try(function() return dr.e.speed_bonus end) or 0))
+        local drain = (try(function() return dr.e.prototype.resource_drain_rate_percent end) or 100) / 100
+        local per_min = speed * 60 / mtime * drain
+        take = take + per_min; working = working + 1
+        t = per_min > 0 and share / per_min or nil
+      end
+      times[#times+1] = t or math.huge
+    end
+    table.sort(times)
+    local n = #times
+    local half = n > 0 and times[math.ceil(n / 2)] or nil
+    local all = n > 0 and times[n] or nil
+    if half == math.huge then half = nil end
+    if all == math.huge then all = nil end
+    local ents = {}
+    for i, dr in ipairs(drills) do ents[i] = dr.e end
+    return {entities=ents, drills=n, working=working, under=under, take_per_min=math.floor(take * 10 + 0.5) / 10,
+      half_min=half and math.floor(half + 0.5), all_min=all and math.floor(all + 0.5),
+      line=string.format('%d drill%s (%d working) on %s: %s under them, taken %s/min now; half of them stopped %s, all %s (each drill\'s share of the ore under it at its rate now; tiles under several shared)',
+        n, n == 1 and '' or 's', working, q.name, fmt(under), fmt(take), half == 0 and 'now' or half and 'in about ' .. mins_text(half) or 'not at this rate',
+        all == 0 and 'now' or all and 'in about ' .. mins_text(all) or 'not at this rate')}
+  end
+  M.mins_text = mins_text
+
   function M.handlers.ores(p, a)
     a = a or {}
     local want
@@ -721,6 +787,7 @@ return function(api)
     local rows, totals, torder = select()
     -- patch: the one patch with ore at or within 8 tiles of that position, with every drill of ours on it (B2).
     local only
+    assert(a.forecast == nil or (a.forecast == true and a.patch ~= nil), 'forecast is true, with patch (a spot on the patch)')
     if a.patch ~= nil then
       local pp = api.position(a.patch)
       local best, bd
@@ -771,6 +838,26 @@ return function(api)
         local lines, n = drill_list(surface, force, q)
         row.drill_list = lines
         row.drill_list_note = n > #lines and string.format('%d drills; the first %d listed', n, #lines) or nil
+        if a.forecast then
+          row.forecast = M.forecast(surface, force, q)
+          row.forecast.entities = nil
+          -- the nearest other patches of the ore, their size, and a demolisher territory they lie in (demolishers.lua)
+          local near = {}
+          for _, other in ipairs(entry.patches or {}) do
+            if other ~= q and other.name == q.name then
+              near[#near+1] = {o=other, d=math.sqrt((other.centre.x - q.centre.x) ^ 2 + (other.centre.y - q.centre.y) ^ 2)}
+            end
+          end
+          table.sort(near, function(u, v) return u.d < v.d end)
+          local alts = {}
+          for i = 1, math.min(3, #near) do
+            local o = near[i].o
+            local terr = api.territory and try(function() return api.territory(surface, force, o.centre) end)
+            alts[i] = string.format('%s at (%d,%d), %d tiles away: %s in %s tiles%s', o.name, round(o.centre.x), round(o.centre.y), round(near[i].d),
+              fmt(o.amount or 0), fmt(o.tiles or 0), terr and '; ' .. terr or '')
+          end
+          row.forecast.alternatives = #alts > 0 and alts or nil
+        end
       end
       if d then row.distance = round(d); row.direction = d > 0 and compass(origin, q.centre) or nil end
       if q.building_d then
@@ -804,6 +891,7 @@ return function(api)
       survey_error=fault and 'a background read failed and ended its pass (this call began another): '..fault or nil}
   end
   M.schema.ores = {resource='optional resource name or array (iron-ore, crude-oil, ...; default every resource)',
+    forecast='optional true, with patch: the depletion forecast of our drills on it: each drill\'s share of the ore under its mining area (a tile under several shared) against what it takes a minute working (mining speed with its speed bonus, the resource\'s mining time, the drill\'s drain; productivity adds output, not drain): forecast {drills, working, under, take_per_min, half_min, all_min (minutes until half and all of them have stopped; stopped ones count), line, alternatives (the 3 nearest other patches of the ore: where, how far, how much, and a demolisher territory one lies in)}',
     patch='optional {x,y}: only the patch with ore at or within 8 tiles of it, with drill_list: every mining drill of ours on it, one line each (position, name, status, the patch\'s ore under its mining area), stopped ones first, then the least ore; at most '..M.MAX_LIST..' lines (drill_list_note gives the count past that)',
     surface='optional planet or surface name (default yours)', position='optional {x,y}: measure distance from here instead of the character',
     min_amount='optional: leave out patches with less left (oil and other infinite resources: their yield %)', limit='1..100 patches (default 20)',
