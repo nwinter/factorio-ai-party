@@ -148,7 +148,7 @@
   queued launch step.
   Example: `./fh call launch --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","wait_ready":true}' --wait`
 - `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
-  its feeders), the cargo's kg and slots, the last launch, `robots_bringing` (what logistic robots carry or have
+  its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
   `next_parts` counts parts for the rocket after it. `platform_requests` flags each request a platform above makes:
   matched (the planet's network holds it), below_min_payload, split_networks (another network holds it), hub_full,
