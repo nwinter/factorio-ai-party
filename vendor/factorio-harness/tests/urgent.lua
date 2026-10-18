@@ -23,11 +23,14 @@ game.tick=1100
 s.damage={a={id=7,at={x=30,y=0},surface='nauvis',damage=30,hits=1,last=1100},b={id=8,at={x=100,y=0},surface='nauvis',damage=300,hits=9,last=1100}}
 has(U.check(p,base),'attack on our structures 30 tiles from you: attack #7 at (30,0)')
 eq(U.check(p,base),nil,'told once')
--- It continues: told again only after 5 minutes, and only if it grew.
+-- It continues (batch28 B2, Luna: attack #6942 woke each time its damage grew): never told again, grown or not; a
+-- new incident id (hits after a minute's quiet) is new.
 game.tick=1100+U.REPEAT; s.damage.a.last=game.tick
 eq(U.check(p,base),nil,'not grown')
 s.damage.a.hits=5
-has(U.check(p,base),'attack #7')
+eq(U.check(p,base),nil,'grown: not told again')
+s.damage.a.id=17
+has(U.check(p,base),'attack #17')
 -- Another surface's attack at the same spot is not near.
 s.damage={c={id=9,at={x=5,y=5},surface='gleba',damage=10,hits=1,last=game.tick}}
 eq(U.check(p,base),nil)
@@ -156,7 +159,7 @@ game.tick=60100; s.damage={a={id=40,at={x=10,y=10},surface='nauvis',damage=50,hi
 r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'urgent'); has(r.urgent,'attack on our structures 14 tiles from you')
 eq(W.handlers.sleep_check(p,{}).woke,'urgent','the reason sticks')
 -- A sleep right after it runs, and the same attack does not wake it again (Haiku, shift17 09:20: "the next sleep
--- repeats it"); told once, again only 5 minutes later and grown.
+-- repeats it"); told once.
 game.tick=60200; r=W.handlers.sleep(p,{seconds=600}); eq(r['repeat'],nil); eq(r.woke,nil)
 s.damage.a.last=60250; s.damage.a.hits=3; game.tick=60260
 eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'the same attack, told already')
@@ -220,5 +223,21 @@ do
   s.damage={f={id=72,at={x=90,y=0},surface='nauvis',damage=5,hits=1,last=90070}}
   game.tick=90080
   has(U.check(p,b100),'90 tiles from you'); s.damage=nil
+end
+-- batch28 B2: a lasting state (a captive spawner here, a power collapse alike) wakes once; while checks keep finding it,
+-- never again; gone 2 minutes unseen and back, it wakes again.
+do
+  local caps={}
+  local s2={}
+  local U2=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return s2 end,who=function(q) return q.name end,captive=function() return caps end}
+  local q={index=7,name='luna',surface={name='nauvis'},character={valid=true,position={x=0,y=0}},force={platforms={}}}
+  game.tick=200000
+  local b2=U2.base(q)
+  caps={{key='spawner-1',level=1,line='captive spawner (5,5) dies within 2 minutes'}}
+  has(U2.check(q,b2),'captive spawner (5,5)')
+  for i=1,5 do game.tick=game.tick+60; eq(U2.check(q,b2),nil,'still there: not again') end
+  caps={}; game.tick=game.tick+3*3600; eq(U2.check(q,b2),nil)
+  caps={{key='spawner-1',level=1,line='captive spawner (5,5) dies within 2 minutes'}}
+  has(U2.check(q,b2),'captive spawner (5,5)')
 end
 print('urgent: ok')

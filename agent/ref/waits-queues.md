@@ -135,7 +135,10 @@
   losses wait), and `--until alert` on your surface; `--wake-on-orders`: a standing order's rounds end a sleep too (by
   default only the plan you submitted, finishing or stalling: `queue_done`, `queue_stalled`); `--urgent-radius N`
   (1..200): attacks, groups, losses and deaths count only within N tiles of you. Urgent alerts and the action ending
-  still end every wait. A sleep on a platform's arrival or departure
+  still end every wait. Each attack, group, loss or death wakes you once, however its counts grow (an attack after a
+  minute's quiet is a new one); a power collapse or captive spawner again only when it comes back after 2 minutes gone
+  (`alerts_digest` keeps the counts). A platform's alert lines (turrets empty, slow, fuel short, no repair packs) are
+  told once while they last, again when their state changes or after 2 minutes clear. A sleep on a platform's arrival or departure
   (`fh sleep 900 --until 'platform Wren at vulcanus'`, or `left gleba`) goes on through tells; `--wake-on-tells` keeps
   them waking it.
 - A tell or mention ends `--wait` or `./fh wait` on an action with `told`, `still_running` (the action keeps going),

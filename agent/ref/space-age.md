@@ -57,7 +57,7 @@
   hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
   of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
   whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
-  before the leg ends, again after 5 minutes). `route`: the locations
+  before the leg ends, once while it lasts). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an

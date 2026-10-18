@@ -121,16 +121,17 @@ jump(3600); hit(t2,40); jump(60)
 eq(has(alerts(astra),' hit '),S..' hit 2 times, 80 damage, last 1s ago: gun-turret 80; by medium-metallic-asteroid 2')
 
 -- Turrets empty or low, with the ammo flow (Kestrel: 920 in the hub, 4 of 5
--- guns empty); told again only when worse or after 5 minutes.
+-- guns empty); told again only when the state changes (some low, some empty, all empty) or it comes back after 2 min
+-- clear (batch28 B2, Luna: alerts that repeat).
 hub_ammo=920
 t1.rounds=0; t2.rounds=4; jump(601)
 eq(has(alerts(sol),'turrets empty'),S..': 1 of 2 gun-turrets empty, 1 low (under 10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920')
 jump(601); eq(has(alerts(sol),'turrets empty'),nil)
 t2.rounds=0; jump(601)
 eq(has(alerts(sol),'turrets empty'),S..': 2 of 2 gun-turrets empty; turrets hold 0 rounds, the hub firearm-magazine 920')
--- (d17 alerts: the same words again only after 10 minutes in the team block; platalerts tells it again after 5)
+-- lasting: not told again, however long
 jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
-jump(5*3600); assert(has(alerts(sol),'2 of 2 gun-turrets empty'))
+jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
 -- The platforms read: the same defence for every platform, fresh.
 local prow=sol('platforms',{}).platforms[1]
 eq(prow.defense.hub_health,'1000/1000'); eq(prow.defense.turrets,'2 gun-turrets: 2 empty, 0 low (under 10 rounds)')
@@ -228,5 +229,22 @@ do
   runtime.endurance.fuel_outlook=kept_outlook
   platform.state=6; platform.space_location={name='nauvis'}; platform.space_connection=nil; platform.speed=0
   psurf.find_entities_filtered=find
+end
+-- batch28 B2: a turret alert cleared for under 2 minutes and back is not news; cleared for longer and back, it is told.
+-- Read from platalerts' own lines with a hint table of its own (the team block adds its 10-minute same-words rule).
+do
+  local kept=hub_ammo
+  hub_ammo=920
+  local bot=runtime.bots.lookup(runtime.bots.index_of('sol'))
+  local h={}
+  local function lines() return runtime.platalerts.lines(bot,h) end
+  t1.rounds,t2.rounds=0,0; jump(601)
+  assert(has(lines(),'2 of 2 gun-turrets empty'),'first told')
+  jump(601); eq(has(lines(),'2 of 2 gun-turrets empty'),nil,'lasting: not again')
+  t1.rounds,t2.rounds=50,50; jump(601); lines()
+  t1.rounds,t2.rounds=0,0; jump(601); eq(has(lines(),'2 of 2 gun-turrets empty'),nil,'back within 2 min: not news')
+  t1.rounds,t2.rounds=50,50; jump(601); lines(); jump(3*3600); lines()
+  t1.rounds,t2.rounds=0,0; jump(601); assert(has(lines(),'2 of 2 gun-turrets empty'),'back after 2 min clear: told')
+  hub_ammo=kept
 end
 print('platalerts: ok')
