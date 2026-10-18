@@ -54,7 +54,7 @@
   filter it holds and the chunk signals there.
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
-  ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?}`: a machine's or building's
+  ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?}`: a machine's or building's
   settings, as its GUI sets them; `inspect` reads each back.
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
     where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
@@ -78,6 +78,10 @@
     ghost's) priority list as its GUI does, on one or `positions`; blueprints keep it. A turret ghost's targeting
     (configure, or `configure` on a `place_ghosts` entry) is checked once it is built: a turret that reads otherwise
     is set to the ghost's, and you are told. Artillery: `auto_targeting: false` switches automatic targeting off.
+  - A programmable speaker: `speaker_alert {show_alert?, show_on_map?, message?, icon?, condition?}` sets its GUI's
+    alert part (the rest kept; `icon: false` clears it) and its circuit condition (`"rocket-part < 1"`); the reply
+    reads them back with whether the condition holds now. It alerts while the condition holds: `game_alerts {kind:
+    "speaker"}`, the team block and `fh wait --until "alert speaker"` tell it.
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
     there by remote view where our force sees the chunk.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`

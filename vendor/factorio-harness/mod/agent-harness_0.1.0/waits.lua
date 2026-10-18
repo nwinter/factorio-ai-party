@@ -210,7 +210,7 @@ return function(api)
         alert = true
         if m.kinds ~= nil then
           local list = type(m.kinds) == 'string' and {m.kinds} or m.kinds
-          assert(type(list) == 'table' and #list >= 1 and #list <= 16, 'kinds: 1..16 alert kinds (game_alerts names them: low_power, no_power, no_fuel, boiler_fuel, ...; starved: machines lacking ingredients in your claims)')
+          assert(type(list) == 'table' and #list >= 1 and #list <= 16, 'kinds: 1..16 alert kinds (game_alerts names them: low_power, no_power, no_fuel, boiler_fuel, ...; starved: machines lacking ingredients in your claims; speaker: programmable speaker alerts)')
           kinds = kinds or {}
           for _, k in ipairs(list) do
             assert(type(k) == 'string' and k:match('^[%w_.-]+$'), 'kinds are alert kind names')

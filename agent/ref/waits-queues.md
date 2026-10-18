@@ -33,7 +33,8 @@
   every part), `produced iron-gear-wheel>=50 at 10.5,20.5`, `queue_done` (your queue finishing or stalling, a standing
   order's round too; at once when none runs), `alert` (a new attack, enemy group or nest alert),
   `alert low_power starved` (a new or grown alert group of those kinds addressed to you, as `game_alerts` names them;
-  `starved`: an assembler or furnace in your own claims that lacks ingredients and did not when the wait began),
+  `starved`: an assembler or furnace in your own claims that lacks ingredients and did not when the wait began;
+  `speaker`: a programmable speaker of yours or on your surface starting an alert),
   `alert near=X,Y radius=R min_size=N` (or `area=X1,Y1,X2,Y2`: only an attack, group or nest there and that big;
   `woke: alert` names it), `tell` (wait only), `platform_arrived Sunward gleba`, or a wait_until condition as JSON. A
   sleep's reply says first whether your queue keeps running, your action keeps going until a tick, or your character

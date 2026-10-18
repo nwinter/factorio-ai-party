@@ -2161,6 +2161,11 @@ return function(api)
       local ok, list = pcall(api.captive_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- Programmable speaker alerts on this agent's surface or of its speakers, each once while up (pushalerts.lua; batch30 A2).
+    if api.speaker_lines then
+      local ok, list = pcall(api.speaker_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Eggs of ours on this agent's surface or built by it that hatch within 5 minutes (spoil.lua).
     if api.hatch_lines then
       local ok, list = pcall(api.hatch_lines, p, h)
