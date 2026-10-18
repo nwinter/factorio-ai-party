@@ -297,3 +297,23 @@ do
   fails(function() grok('requests',{set={{item='iron-plate',count=200}}}) end,'requests set[1]: count is not a request field')
 end
 print('d17_batch35 A6 record lists checked field by field: ok')
+
+-- A7 (operator 14:45, Gleba silo (65.5,14.5): "loading for Cinder (loaded by hand by grok, 6h58m ago); aboard nothing"):
+-- a hand load's record holds while the rocket holds what that load put aboard.
+do
+  defines.inventory.rocket_silo_rocket=9
+  local cargo={}
+  local silo={valid=true,unit_number=777,get_inventory=function(i) assert(i==9); return {get_contents=function() return cargo end} end}
+  local loads=runtime.silo_loads()
+  loads[777]={platform='Cinder',by='grok',tick=1,items={'nutrients','bioflux'}}
+  cargo={{name='bioflux',count=20}}
+  eq(runtime.silo_load_record(silo).platform,'Cinder','its cargo aboard: kept')
+  cargo={{name='rocket-fuel',count=5}}
+  eq(runtime.silo_load_record(silo),nil,'only other cargo: dropped'); eq(loads[777],nil)
+  -- a record from before (no items): kept while anything is aboard, dropped when the rocket is empty
+  loads[777]={platform='Cinder',by='grok',tick=1}
+  eq(runtime.silo_load_record(silo).by,'grok')
+  cargo={}
+  eq(runtime.silo_load_record(silo),nil); eq(loads[777],nil)
+end
+print('d17_batch35 A7 a stale hand-load record is dropped: ok')

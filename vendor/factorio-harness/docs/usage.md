@@ -7984,3 +7984,7 @@ fh watch    # deploy on every change
   circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7
   circuit_set calls with signals as an object, and 16 ghost entries with `network`, `role` or `flow`, each dropped
   without a word then.
+- silo's `loading` line and launch's cargo_for check read a hand load's record only while the rocket holds an item
+  that load put aboard (A7, operator 14:45: Gleba's silo read `loading for Cinder (loaded by hand by grok, 6h58m
+  ago); aboard nothing` with the rocket empty and automatic requests on). load_silo now records the items it loaded;
+  a record without them (from before) holds while anything is aboard. A record that no longer holds is dropped.
