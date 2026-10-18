@@ -139,7 +139,9 @@
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
   ghosts. `stops: true` lists every train stop of ours on a surface: name, position, rail, limit and the trains
   heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
-  read gives its `id` and `front` (name, position, surface).
+  read gives its `id` and `front` (name, position, surface). `wagons` (a train read; inspect of a cargo wagon:
+  `wagon_slots`): each cargo wagon's slots used per item with the count, free slots, slot filters and the red-X limit,
+  and `full: nothing else loads into it` when no slot is free.
   Example: `./fh call train --args '{"position":{"x":40,"y":-30},"path_to":"iron-pickup"}'`
 - `clear_cliffs {positions}`: throws cliff explosives you hold at those cliffs, walking into their 10-tile range
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the

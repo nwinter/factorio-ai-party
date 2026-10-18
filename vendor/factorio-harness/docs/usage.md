@@ -7435,3 +7435,26 @@ fh watch    # deploy on every change
   `unpowered` the count; `ghosts: true` places each turret's chest (request on the ghost), inserter and, when no pole of
   ours covers the inserter, a pole ghost (default small-electric-pole) on a free tile within 2 of it, inside its supply
   area and within wire reach of our nearest pole (else `pole_note` says why), all by `place_ghosts`. tests/turretfeed.lua.
+- A0b (operator 23:02). Luna on shift32 (05:38:14-05:38:34 UTC) set Spindle, waiting at Fulgora, to 4 schedules whose
+  current stop was fulgora: all read no_schedule, the record by record rebuild too; at 05:40:22 the same stops with
+  current 2 (gleba) went on_the_path at once. With Sol's 4 at Aquilo, 8 of 8. No copy was reachable (a and b refuse,
+  c and sa close RCON), so what the game does there was not found. platform_schedule now:
+  - `current_note` when the current stop is the station the platform waits at: the 8 of 8 seen, and the current
+    that departed (the next stop); in the state_note too when it reads no_schedule;
+  - in flight, `leg`: `it was flying X->Y (N%); the current stop is now Z: the same destination | it turns back the
+    way it came | a new destination` (Astra 22:52: Sol's 05:32:53 edit sent Spindle back to gleba, unsaid);
+  - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
+    no leg, or when the stops hold no stop for the destination.
+  tests/space.lua.
+
+## d17 batch25 Group C
+- C1 (Grok: Spindle 48 s from Gleba with a 60 s stop; wait_platform refused any walk): `load_silo {wait_platform:
+  true, walk: true, from, launch, platform}` is the walking load: it gathers from the chests in from, then holds at the
+  silo loading nothing while the platform is headed here (and until the rocket is ready), then loads and launches in
+  that tick; it ends short when the platform goes elsewhere. The walking load with launch and platform did this
+  already (M.ready holds for a headed platform); the refusal was the argument check. Without walk, from is refused
+  as before. tests/rocketload.lua.
+- C2 (Muse: a wagon full of one item blocked all other loading on the uranium route; an hour to find): trains.lua
+  `wagon_slots`: a cargo wagon's slots used per item (with the count), free slots (under the red-X limit), slot
+  filters and the limit, and `full: nothing else loads into it`. The train read gives `wagons` (each cargo wagon, 8 at
+  most); inspect of a cargo wagon gives `wagon_slots`. tests/wagonslots.lua.

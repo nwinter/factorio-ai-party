@@ -32,7 +32,7 @@
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
 - `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
   waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
-- `platform_schedule {platform, stops, current?, paused?}`: each stop `{station, wait: [...]}`; a wait is `{type,
+- `platform_schedule {platform, stops, current?, keep_leg?, paused?}`: each stop `{station, wait: [...]}`; a wait is `{type,
   ticks?, condition?, compare: "and"|"or"}`. Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
   `any_request_not_satisfied`, `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a
   fluid), `circuit` (any signal on the hub's red and green wires: wire a tank or a combinator to the hub;
@@ -41,8 +41,12 @@
   the schedule. With stops it then calls the GUI's go to station for `current` (`sent_to`). If the state still reads
   `no_schedule`, it writes the schedule again record by record, as the GUI does, and sends it again (`rebuilt` says
   what came of it). `state` is read after; `state_note` says when it is `no_schedule`, `no_path` or `paused` (the
-  platform goes nowhere). Swiftlet, waiting at Aquilo, read `no_schedule` after four schedules holding an Aquilo
-  record (20:05); one without it departed. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
+  platform goes nowhere). Seen on world n, not found on a copy: 8 of 8 edits whose current stop was the station the
+  platform waited at read `no_schedule` (Sol's 4 at Aquilo, Luna's 4 on Spindle at Fulgora), the rebuild too; the
+  same stops with the current on the next stop departed at once. `current_note` says so when an edit's current stop
+  is the station it waits at. In flight, `leg` gives the leg before the edit and the current stop now (the same
+  destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
+  destination (refused when the stops hold none). `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
   `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
   Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
 - `platform_rename {platform, name}`: renames one, listing the queues, orders, plans and board items still naming the
@@ -221,7 +225,9 @@
   over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`
   queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
-  launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. A rocket
+  launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`
+  and `from` the walk gathers from the chests first, then waits at the silo the same way (a walking load with `launch`
+  and `platform` holds at the silo while the platform flies here). A rocket
   holding what a platform above asks for is launched by the game when it stops, one item type a rocket: the wait then
   ends `launched_by_game` (what went, and what stayed in the silo). A silo with automatic requests on is refused,
   naming what is aboard; `auto_requests: "pause"` (with `launch`) turns them off for this manifest and back on after
