@@ -15919,7 +15919,7 @@ M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
-M.fleet=require('fleet'){gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
   where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end,
   requests_off=function(pl) return M.rocketload.requests_off(pl) end}

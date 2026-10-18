@@ -291,11 +291,18 @@ do
   eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 30s ago: firearm-magazine*20 (coming down onto the platform)')
   pod.valid=false
   eq(F2.incoming(pl),nil,'delivered: the pod is gone')
+  -- (batch27 B2) pod_watch times the arrival: the next launch says when it arrives at that time
+  F2.pod_watch(pl,game.tick)
+  eq(st2.freight[7].up_times[1],1800)
   -- A pod kept past a minute (the game lost it some other way) is no longer counted.
   pod.valid=true
   F2.on_launch({rocket={attached_cargo_pod=pod},rocket_silo={surface={name='nauvis'}}})
-  game.tick=game.tick+3599
+  pod.surface={name='nauvis'}
+  game.tick=game.tick+600
+  eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 10s ago: firearm-magazine*20 (rising over nauvis); arrives in about 20s (the last 1 arrival took about 30s from launch)')
+  game.tick=game.tick+2999
   eq(F2.incoming(pl).rockets,1)
+  assert(F2.incoming(pl).lines[1]:find('past the usual 30s from launch',1,true))
   game.tick=game.tick+1
   eq(F2.incoming(pl),nil,'kept a minute at most')
   trash={}

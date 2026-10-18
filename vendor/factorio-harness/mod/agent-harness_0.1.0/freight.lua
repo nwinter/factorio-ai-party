@@ -782,9 +782,35 @@ return function(api)
     local d = pod_dest(pod)
     return d ~= nil and d.surface ~= nil and d.surface ~= try(function() return pl.surface.name end)
   end
+  -- Rockets on their way up, settled (batch27 B2, Astra: shipment and queue_status every minute on each courier leg): a
+  -- pod gone (it reached the platform) gives its launch-to-arrival time (to POD_TICKS), the last UP_TIMES kept; one
+  -- followed past UP_MAX is dropped.
+  local UP_TIMES, UP_MAX = 8, 3600
+  function M.up_settle(rec, tick)
+    local keep = {}
+    for _, r in ipairs(rec.incoming or {}) do
+      if r.pod and try(function() return r.pod.valid end) then
+        if tick - r.tick < UP_MAX then keep[#keep+1] = r end
+      else
+        rec.up_times = rec.up_times or {}
+        rec.up_times[#rec.up_times+1] = tick - r.tick
+        while #rec.up_times > UP_TIMES do table.remove(rec.up_times, 1) end
+      end
+    end
+    rec.incoming = #keep > 0 and keep or nil
+  end
+  -- The middle of the recent launch-to-arrival times (ticks), and how many.
+  function M.up_time(rec)
+    local t = {}
+    for i, v in ipairs(rec and rec.up_times or {}) do t[i] = v end
+    if #t == 0 then return nil, 0 end
+    table.sort(t)
+    return t[math.floor((#t + 1) / 2)], #t
+  end
   function M.pod_watch(pl, tick)
     local rec = store()[pl.index]
     if not rec then return end
+    pcall(M.up_settle, rec, tick)
     -- The pods followed: where they are, and the ones gone.
     local keep = {}
     for _, p in ipairs(rec.pods or {}) do
@@ -986,24 +1012,29 @@ return function(api)
     if not (rec and rec.incoming) then return nil end
     local keep, lines, all = {}, {}, {}
     local here = try(function() return pl.surface.name end)
+    local up, n_up = M.up_time(rec)
+    -- (the list itself is settled by pod_watch, which times each arrival)
     for _, r in ipairs(rec.incoming) do
-      if r.pod and r.pod.valid and game.tick - r.tick < 3600 then
+      if r.pod and try(function() return r.pod.valid end) and game.tick - r.tick < UP_MAX then
         keep[#keep+1] = r
         local on = try(function() return r.pod.surface.name end)
         local items = {}
         for name, n in pairs(r.cargo or {}) do items[#items+1] = name .. '*' .. n; all[name] = (all[name] or 0) + n end
         table.sort(items)
-        lines[#lines+1] = string.format('a rocket from %s launched %s ago: %s (%s)', tostring(r.from or '?'), secs(game.tick - r.tick),
-          #items > 0 and table.concat(items, ' ') or 'empty', on == here and 'coming down onto the platform' or 'rising over ' .. tostring(on))
+        local age = game.tick - r.tick
+        r.eta = up and math.max(0, up - age) or nil
+        lines[#lines+1] = string.format('a rocket from %s launched %s ago: %s (%s)%s', tostring(r.from or '?'), secs(age),
+          #items > 0 and table.concat(items, ' ') or 'empty', on == here and 'coming down onto the platform' or 'rising over ' .. tostring(on),
+          up and (age < up and string.format('; arrives in about %s (the last %d arrival%s took about %s from launch)', secs(up - age), n_up, n_up == 1 and '' or 's', secs(up))
+            or string.format('; past the usual %s from launch', secs(up))) or '')
       end
     end
-    rec.incoming = #keep > 0 and keep or nil
     if #keep == 0 then return nil end
     -- rows (shipment.lua): each rocket's cargo, where it is, launched when
     local rows = {}
     for _, r in ipairs(keep) do
       local on = try(function() return r.pod.surface.name end)
-      rows[#rows+1] = {cargo=r.cargo or {}, from=r.from, tick=r.tick, down=on == here}
+      rows[#rows+1] = {cargo=r.cargo or {}, from=r.from, tick=r.tick, down=on == here, eta_ticks=r.eta}
     end
     local total = {}
     for name, n in pairs(all) do total[#total+1] = name .. '*' .. n end

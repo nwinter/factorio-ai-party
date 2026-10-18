@@ -106,6 +106,7 @@ print('d17_batch20 B3 belt line: ok')
 -- B4 (Sol): fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel.
 do
   local pl={valid=true,name='Swiftlet',hub={valid=true}}
+  local st20={}
   local F=dofile('mod/agent-harness_0.1.0/fleet.lua'){
     gate=function(_,a) return {lines={a.platform..': at station gleba; stop 2 of 3: gleba (wait: carbon-fiber >= 400: holds 120, 280 to go)'}} end,
     hub_counts=function() return {['carbon-fiber']=120,['tungsten-carbide']=50,['plastic-bar']=900} end,
@@ -114,12 +115,25 @@ do
       {direction='up',state='loading',item='carbon-fiber',planet='gleba'},
       {direction='up',state='waiting',item='bioflux',planet='gleba',min=200,hub=0,gate='the silo\'s request flag: below_min_payload (holds 150 of 200)'},
       {direction='down',state='aboard for vulcanus',item='plastic-bar',planet='vulcanus',count=500}} end,
-    incoming=function() return {rockets=1,cargo='carbon-fiber*80'} end,
+    incoming=function() return {rockets=1,cargo='carbon-fiber*80',lines={'a rocket from gleba launched 12s ago: carbon-fiber*80 (rising over gleba); arrives in about 22s (the last 3 arrivals took about 34s from launch)'}} end,
     where=function() return {stopped=true,at='gleba'} end,
-    fuel_text=function() return 'thruster fuel 4000 units (+12/min over 10 min)' end}
+    fuel_text=function() return 'thruster fuel 4000 units (+12/min over 10 min)' end,
+    state=function() return st20 end,
+    condition=function(_,c) return false,'carbon-fiber 120 in Swiftlet hub (landed stock; excludes incoming cargo and hub trash)' end}
   local r=F.read({force={platforms={pl}}},{})
   eq(r.lines[1],'Swiftlet: at station gleba; stop 2 of 3: gleba (wait: carbon-fiber >= 400: holds 120, 280 to go); hub holds plastic-bar*900 carbon-fiber*120 tungsten-carbide*50; requests: 1 delivered, 1 loading, 1 waiting (loading carbon-fiber from gleba); aboard for vulcanus\'s pads: plastic-bar*500; 1 rocket on the way: carbon-fiber*80; thruster fuel 4000 units (+12/min over 10 min); waits on bioflux 200 from gleba (the hub holds 0): the silo\'s request flag: below_min_payload (holds 150 of 200)')
   fails(function() F.read({force={platforms={pl}}},{platform='Kestrel'}) end,'no platform of ours named Kestrel')
+  -- batch27 B2 (Astra: shipment and queue_status every minute on each courier leg): leg: the fleet line, the caller's
+  -- waits naming the platform (here a remote-lane step), read now, and each rocket on its way with its arrival.
+  st20.remote_queues={[4]={current={action='wait_until',args={['until']='item_count',platform='Swiftlet',item='carbon-fiber',at_least=400}}}}
+  st20.queues={[4]={current={action='walk',args={}}}}
+  local lr=F.read({index=4,force={platforms={pl}}},{platform='Swiftlet',leg=true})
+  eq(lr.lines[1],r.lines[1])
+  eq(lr.lines[2],'your remote lane step: not yet: carbon-fiber 120 in Swiftlet hub (landed stock; excludes incoming cargo and hub trash)')
+  eq(lr.lines[3],'a rocket from gleba launched 12s ago: carbon-fiber*80 (rising over gleba); arrives in about 22s (the last 3 arrivals took about 34s from launch)')
+  st20.remote_queues={}
+  eq(F.read({index=4,force={platforms={pl}}},{platform='Swiftlet',leg=true}).lines[2],'no wait of yours names Swiftlet')
+  fails(function() F.read({index=4,force={platforms={pl}}},{leg=true}) end,'leg goes with platform')
 end
 print('d17_batch20 B4 fleet: ok')
 
