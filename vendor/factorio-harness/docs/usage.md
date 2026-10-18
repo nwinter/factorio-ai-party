@@ -7153,3 +7153,17 @@ fh watch    # deploy on every change
     (-284.5,-313.5), ...`.
   - The hourly team line carries these after the radar lines. Copy: lines for fulgora, gleba, nauvis and vulcanus.
     tests/d17_territory.lua.
+
+## d17 batch23 (the agents' 19:50 poll)
+- A0 (Sol 20:06, urgent): platform_schedule set Swiftlet's records at Aquilo and replied with state no_schedule and no
+  word about it; Sol lost 15 to 19 rockets of ammo a minute. In Sol's journal, four schedules holding an Aquilo
+  record, set while Swiftlet waited at Aquilo (current 1 or 2, either order), all read no_schedule; [gleba, nauvis,
+  fulgora] departed at once. Spindle departed from Nauvis with a Nauvis record (01:22) and from Gleba while paused
+  (01:50), so a record for the place alone is not the rule. No copy was reachable, so the rule was not found in the
+  game. platform_schedule with stops now:
+  - sets the records as before, then calls go_to_station(current) (the GUI's go to station): `sent_to`;
+  - if the state reads no_schedule with records set, writes them again through LuaSchedule (remove_record and
+    add_record, as trains.lua does) and calls go_to_station again: `rebuilt` gives the state after. A rebuild refused
+    part way sets the records back as given;
+  - `state_note` says plainly when the state is no_schedule, no_path or paused (on every platform_schedule reply).
+  tests/space.lua.
