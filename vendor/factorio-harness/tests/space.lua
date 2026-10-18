@@ -2,7 +2,7 @@
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
-defines={space_platform_state={waiting_for_starter_pack=0,waiting_at_station=6,paused=7},
+defines={space_platform_state={waiting_for_starter_pack=0,on_the_path=3,no_schedule=4,no_path=5,waiting_at_station=6,paused=7},
   rocket_silo_status={building_rocket=5,rocket_ready=9},inventory={hub_main=1,rocket_silo_rocket=2},
   cargo_destination={orbit=1,station=2,surface=3,space_platform=4}}
 prototypes={item={['iron-plate']={},coal={},['space-platform-starter-pack']={}},space_location={nauvis={},vulcanus={}}}
@@ -259,6 +259,42 @@ local sch=space.platform_schedule(p,{platform='alpha',stops={{station='vulcanus'
 eq(sch.schedule,'>vulcanus (time 10s) | nauvis (all_requests_satisfied)'); eq(platform.paused,false)
 eq(platform.schedule.records[1].wait_conditions[1].ticks,600)
 fails(function() space.platform_schedule(p,{platform='alpha',stops={{station='moon'}}}) end,'station must be a planet')
+-- (d17 batch23 A0, Sol: Swiftlet read no_schedule after its schedule was set, and the reply said nothing of it) the
+-- GUI's go to station is called; still no_schedule: written again record by record and sent again; each step said.
+do
+  local recs,sent,rebuilt={},{},false
+  local fail_add=false
+  local lsch={get_record_count=function() return #recs end,remove_record=function() table.remove(recs,1); rebuilt=true end,
+    add_record=function(r) assert(not fail_add,'add_record refused'); recs[#recs+1]=r; rebuilt=true end,
+    go_to_station=function(i) sent[#sent+1]=i; if rebuilt and not _G.stays then platform.state=3 end end}
+  platform.get_schedule=function() return lsch end
+  platform.state=4
+  local stops={{station='nauvis',wait={{type='time',ticks=60}}},{station='vulcanus',wait={{type='time',ticks=216000}}}}
+  local r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2,paused=false})
+  eq(sent[1],2); eq(sent[2],2); eq(#recs,2); eq(recs[2].station,'vulcanus')
+  eq(r.state,'on_the_path'); eq(r.state_note,nil); eq(r.sent_to,'stop 2 (vulcanus): go to station called')
+  eq(r.rebuilt,'the state read no_schedule after the schedule was set and sent to stop 2; it was written again record by record (as the GUI does) and sent again: on_the_path now')
+  -- departing at once: no rebuild
+  rebuilt,sent=false,{}
+  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=1})
+  eq(#sent,1); eq(r.rebuilt,nil); eq(r.state,'on_the_path')
+  -- still no_schedule after both: said plainly
+  platform.state,_G.stays,rebuilt,sent=4,true,false,{}
+  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
+  eq(r.state,'no_schedule'); eq(r.state_note,'state no_schedule: the platform follows no schedule now and goes nowhere (go to station 2 was called)')
+  -- a rebuild refused part way: the records set back as given
+  fail_add,rebuilt=true,false
+  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
+  assert(r.rebuilt:find('was refused',1,true) and r.rebuilt:find('the records were set back as given',1,true),r.rebuilt)
+  eq(#platform.schedule.records,2)
+  -- no_path and paused said too
+  platform.state=5
+  eq(space.platform_schedule(p,{platform='alpha'}).state_note,'state no_path: the platform has no way from where it is to its next stop and goes nowhere')
+  platform.get_schedule,platform.state,_G.stays=nil,7,nil
+  platform.paused=true
+  eq(space.platform_schedule(p,{platform='alpha'}).state_note,'state paused: the platform goes nowhere until unpaused (paused: false)')
+  platform.paused=false
+end
 -- Launch: only a ready rocket, to a platform in orbit here or explicitly to orbit.
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'rocket is not ready: building_rocket')
 silo.rocket_silo_status=9

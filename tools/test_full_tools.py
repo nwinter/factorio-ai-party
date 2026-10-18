@@ -242,7 +242,9 @@ def codex_and_grok():
         saved, full_tools.SUBAGENTS_OFF = full_tools.SUBAGENTS_OFF, off
         try:
             nosub = full_tools.paragraph("codex", "haiku")
-            assert "spawn_agent" not in nosub and "view_image" in nosub, nosub
+            # Codex 0.162.1 lists spawn_agent whatever features.multi_agent says, so the -nosub line names the tools
+            # as off rather than leaving them out (d17).
+            assert "Subagents (the multi-agent" not in nosub and "not to be called" in nosub and "view_image" in nosub, nosub
             assert "spawn_agent" in full_tools.paragraph("codex", "luna")
         finally:
             full_tools.SUBAGENTS_OFF = saved
