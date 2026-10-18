@@ -1212,6 +1212,33 @@ return function(api)
     if plat.freshness then plat.line = plat.line .. '; hub cargo: ' .. table.concat(plat.freshness, '; ') end
     return plat
   end
+  -- (d17 batch21 B4, Gemini) the hub's request sections that are off and hold requests: not requested while off.
+  function M.requests_off(pl)
+    local secs = try(function() return pl.hub.get_logistic_sections() end)
+    local parts = {}
+    for i = 1, secs and secs.sections_count or 0 do
+      local sec = secs.get_section(i)
+      if sec and sec.active == false then
+        local items, n = {}, 0
+        for _, f in ipairs(try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local name = type(v) == 'table' and v.name or v
+          if type(name) == 'table' then name = name.name end
+          if type(name) == 'string' and (f.min or 0) > 0 then
+            n = n + 1
+            local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+            if #items < 4 then items[#items+1] = string.format('%s %d%s', name, f.min, from and ' from ' .. from or '') end
+          end
+        end
+        if n > 0 then
+          local g = try(function() return sec.group end)
+          parts[#parts+1] = string.format('hub section %d%s is off: its %d request%s (%s%s) %s not made', i, g and g ~= '' and ' ("' .. g .. '")' or '', n, n == 1 and '' or 's',
+            table.concat(items, ', '), n > #items and ', ...' or '', n == 1 and 'is' or 'are')
+        end
+      end
+    end
+    return #parts > 0 and table.concat(parts, '; ') or nil
+  end
   local function platforms(p, a, here, inv, held, extra_cache)
     if a.platform ~= nil then
       local pl = api.platform(p, a.platform)
@@ -1240,13 +1267,20 @@ return function(api)
       for k, v in pairs(extra) do plat[k] = v end
       if plat.incoming_cargo then plat.line = one_line(plat.line .. '; ' .. plat.incoming_cargo) end
       if plat.empty_turrets then plat.line = one_line(plat.line .. '; ' .. table.concat(plat.empty_turrets, '; ')) end
+      plat.requests_off = try(function() return M.requests_off(pl) end)
+      if plat.requests_off then plat.line = one_line(plat.line .. '; ' .. plat.requests_off) end
       return {plat}
     end
     local out = {}
     for _, pl in pairs(p.force.platforms or {}) do
       if pl.valid then
         local v = platform_view(pl, here, inv, held, true, true)
-        if v.arrived or v.headed_here then out[#out+1] = platform_view(pl, here, inv, held, true) end
+        if v.arrived or v.headed_here then
+          local view = platform_view(pl, here, inv, held, true)
+          view.requests_off = try(function() return M.requests_off(pl) end)
+          if view.requests_off and view.line then view.line = one_line(view.line .. '; ' .. view.requests_off) end
+          out[#out+1] = view
+        end
       end
     end
     table.sort(out, function(x, y)

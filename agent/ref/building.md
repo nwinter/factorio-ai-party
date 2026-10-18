@@ -72,7 +72,7 @@
   `preserve_existing_settings_and_wires: true` adds only what is missing. A paste leaves the requests of a hub or
   requester chest it lands on, a hub's construction requests too (`requests_kept`).
   Example: `./fh call paste --args '{"name":"smelter-row","position":{"x":40,"y":12},"dry_run":true}'`
-- `placements {name, near?, radius?, limit?, separate?, powered?, surface?}`: up to 10 (`limit` up to 50) positions
+- `placements {name, near?, radius?, limit?, separate?, powered?, surface?, resource?}`: up to 10 (`limit` up to 50) positions
   where it fits now, nearest first, by the game's build check, without building (`blocked`: positions something stands
   in). `"separate": true` lists spots that do not overlap each other, `"powered": true` only spots in one of our poles'
   supply areas; without them `overlapping` and `no_supply` count such spots, and count 0 names what is in the way
@@ -80,8 +80,13 @@
   and minable, or trees and rocks, with how many to mine first and which (`(47,187): mine 2 first (accumulator 2):
   ...`). `surface` reads another planet; each spot gives `network`. A cargo bay keeps to its 2-tile grid: the position
   offered is where it lands. A refused build of an offshore pump, or of anything onto water, lists the nearest valid
-  placements.
+  placements. `resource` (a name, or true) with a drill or pumpjack: its spots on that resource within `radius` (1..32,
+  default 16): a pumpjack every well, free with the directions it fits, taken by our drill, or blocked; a drill each
+  tile centre whose mining area holds the ore, the most ore first, the free ones none overlapping. Each blocked spot
+  says why (the build refusal's text: what stands there, a tile and the foundation it needs, a cliff), and
+  `blocked_by` counts them by kind.
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`
+  Example: `./fh call placements --args '{"name":"pumpjack","resource":"crude-oil","near":{"x":-7,"y":100}}'`
 - `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with
   offshore-pump spots there.
 - `conflicts {name, position, direction?}` (a read): what building there takes away: everything in the way, the fluid

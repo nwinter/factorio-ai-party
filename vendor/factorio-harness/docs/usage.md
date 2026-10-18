@@ -6848,3 +6848,38 @@ fh watch    # deploy on every change
   nearest the character first; up to 8 of them are checked for a closed pocket (pathing.region, 16 tiles out, as the
   dry runs' closed_in check reads it) and the first with a way out is walked to (else the nearest); up to 6 tries.
   runtime_test.lua.
+
+### Group B
+- B1 (Sonnet): inspect's area rows read every pipe and pumpjack `holds: empty` (they read item inventories only), about
+  10 times while he looked for the segment that starved an acid line.
+  - Area rows and compact lines of an entity with fluid boxes now carry `fluid`: each box's fluid and amount over its
+    capacity, its segment's capacity and extent, or `empty` with the fluid it is locked to (pipes.fluids, as scan
+    fields=fluids reads them, without the connections).
+  - `pipe_gaps {line: {x,y}}` (pipegaps.lua M.network): the pipe network through that pipe, pipe-to-ground, tank or
+    pump, followed through fluid neighbours (through pumps too; each starts a segment) in chunks our force sees now, up
+    to 1024 entities. Per fluid segment (the engine's id): fluid and amount over capacity (get_fluid_segment_contents,
+    get_capacity), entities and box, `empty`; flow where the game gives one (get_flow); the machines it touches (not
+    followed into) with each box's fluid. tests/d17_batch21.lua.
+- B2 (Sonnet): pumpjack and drill spots were tried one placement at a time. `placements {name, resource, near?,
+  radius?, limit?}` (drillspots.lua) with a mining drill or pumpjack: the resource it mines (a name, or true) within
+  radius 1..32 (default 16) of near, in chunks our force sees now. A pumpjack: every well, `taken by our pumpjack ...`,
+  free with the directions it fits (`crude-oil (10.5,10.5) yield 300000: fits facing north, east`), or blocked. A
+  solid-ore drill: every tile centre (a corner for an even footprint) whose mining area holds the ore, the most ore
+  under it first, free ones taken so none overlaps another (`(1.5,1.5): 16 iron-ore tiles, 1600 under its mining
+  area`). A blocked spot carries the build refusal's text (placement_error: an entity, `tiles: oil-ocean-shallow (needs
+  foundation (not researched))`, a cliff ...) for up to 24 spots; `blocked_by` counts them by kind with one place each.
+  One find of the resource and one placement check a spot (four for a well). tests/d17_batch21.lua.
+- B3 (Luna): breeders held 12/30 and 24/30 nutrients while status said only missing nutrients. `ingredient_gap {position
+  | positions | area, all?}` (gap.lua, a read): per crafting machine (assembler, furnace, biochamber, silo; up to 32),
+  each ingredient of its recipe's next craft: needed, held in its input, how many of those spoil within 5 min (spoil.lua
+  rows), usable (the rest) and short; a fluid ingredient, what its boxes hold. For a short item, the places within 64
+  tiles of the machine that can spare it (M.where_kept, as craft's shortfall reads them: a requester or buffer chest
+  only over its own request, robots' pickup reservations off; else the logistic networks holding it). `area` (up to
+  128x128) lists the machines short of something; `all: true` every one. e.g. `biochamber (10.5,4.5) pentapod-egg
+  (item_ingredient_shortage): nutrients 20/30 (24 held, 4 of them spoil within 5 min): 10 short; enough at
+  requester-chest (14.5,4.5) 4 tiles, 40 free over its request; ...`. tests/d17_batch21.lua.
+- B4 (Gemini): a platform's requests held because their hub section was off showed only as `off: true` on the section
+  in `platforms`. rocketload.requests_off gives one line for every hub section that is off and holds requests: `hub
+  section 2 ("GROUP") is off: its 3 requests (rocket-fuel 100 from nauvis, ...) are not made`. It is in preflight's
+  platform lines and rows (`requests_off`), platforms (`requests_off_line`; compact lines), and fleet's line.
+  tests/rocketload.lua (its preflight line now ends with it, the fake hub having an off section).
