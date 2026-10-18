@@ -21,7 +21,8 @@
   and `settings_line` say what was set or refused (a refused setting leaves the entry placed); each setting goes to the
   ghost or entity of the entry's name at its position. A dry run gives `settings_planned` and `settings_check`, each
   setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
-  (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`) or an inserter with no target reads
+  (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already
+  (`exists`) or an inserter with no target reads
   `dry_run_ok: false` and `verdict: fails: ...` naming the first of each, and `fh` exits 1. Settings are read as their own call reads them (`settings_corrected`: a
   requests `set` map, ...). An entry's `settings: {...}` is read as those keys (`settings_alias`); a setting key such as
   `modules` at the entry's top level is refused with the shape. `"check_inserters": true` checks every planned
@@ -89,7 +90,8 @@
   offered is where it lands. A refused build of an offshore pump, or of anything onto water, lists the nearest valid
   placements. `resource` (a name, or true) with a drill or pumpjack: its spots on that resource within `radius` (1..32,
   default 16): a pumpjack every well, free with the directions it fits, taken by our drill, or blocked; a drill each
-  tile centre whose mining area holds the ore, the most ore first, the free ones none overlapping. Each blocked spot
+  tile centre whose mining area holds the ore, the most ore first, the free ones none overlapping, a spot with an
+  entity of ours in its footprint taken (`ours already`, though the game's placement check passes there). Each blocked spot
   says why (the build refusal's text: what stands there, a tile and the foundation it needs, a cliff), and
   `blocked_by` counts them by kind.
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`

@@ -14107,6 +14107,12 @@ function M.dry_verdict(out,a)
   if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused' end
   -- (batch28 A1, Astra ~4 times: ok while an unavailable recipe, floor the hub never builds or inserters with no
   -- target were listed) what the real call refuses or leaves undone fails the verdict too, each named
+  -- (batch29 A2, Opus: a drill spot held one of our drills) an entry where the same entity of ours stands already
+  local exists,first_exists=0,nil
+  for _,e in ipairs(type(out.entities)=='table' and out.entities or {}) do
+    if e.status=='exists' then exists=exists+1; first_exists=first_exists or string.format('#%s %s (%g,%g)',tostring(e.index),tostring(e.name),e.position and e.position.x or 0,e.position and e.position.y or 0) end
+  end
+  if exists>0 then parts[#parts+1]=string.format('%d entr%s where ours stands already (%s)',exists,exists==1 and 'y' or 'ies',first_exists) end
   local recipes=#(out.recipes_refused or {})
   if recipes>0 then parts[#parts+1]=string.format('%d refused for the recipe (%s)',recipes,out.recipes_refused[1]) end
   local tiles=type(out.tiles)=='table' and out.tiles.unbuilt_count or 0

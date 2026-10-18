@@ -331,6 +331,9 @@ do
     inserters={{index=2,name='inserter',position={x=1.5,y=2.5}},{index=3,name='inserter',position={x=4.5,y=2.5},missing='no drop target'}}},{dry_run=true})
   eq(v.dry_run_ok,false)
   eq(v.verdict,'fails: 1 refused for the recipe (entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available), 2 foundation tiles the hub never builds ((3.5,4.5): no foundation among the 8 tiles round it), 1 inserter with no target (#3 inserter (4.5,2.5): no drop target)')
+  -- batch29 A2 (Opus: a drill spot held one of our drills): an entry where ours stands already fails it too
+  local v2=runtime.dry_verdict({dry_run=true,entities={{index=1,name='electric-mining-drill',position={x=413.5,y=-264.5},status='exists'}}},{dry_run=true})
+  eq(v2.verdict,'fails: 1 entry where ours stands already (#1 electric-mining-drill (413.5,-264.5))')
 end
 -- batch28 C2 (Opus: base to south copper failed unless given exact via points, 6 times): a move_to through via points
 -- that arrived is kept per agent and pair of 64-tile areas; one with none ending unreachable there walks again once
