@@ -28,9 +28,9 @@ return function()
     'configure?', 'requests?', 'circuit?', 'wires?', 'settings?'}, hint=with(SETTING_HINTS, {quality='a ghost takes no quality here'})}
   local TRAIN_WAIT = {label='train wait', fields={'type', 'ticks?', 'compare?', 'condition?'}, hint={seconds='ticks (60 a second)', compare_type='compare'}}
   local TRAIN_STOP = {label='train stop record', fields={'station', 'wait?'}, hint={name='station', stop='station', waits='wait'},
-    nested={wait={list=TRAIN_WAIT, example='[{"type":"time","ticks":1800}]'}}}
+    nested={wait={list=TRAIN_WAIT, groups=true, example='[{"type":"time","ticks":1800}]'}}}
   local DELIVER_ITEM = {label='item', fields={'name', 'count?', 'item?'}, hint={amount='count'}}
-  local STOP = {label='stop', fields={'station', 'wait?'}, hint={planet='station', name='station', waits='wait', conditions='wait'}}
+  local STOP = {label='stop', fields={'station', 'wait?', 'save_as?', 'wait_from?'}, hint={planet='station', name='station', waits='wait', conditions='wait'}}
   -- list: the record; map: an object of name = number also taken (the form the docs give); how many entries each
   -- handler takes is its own check
   M.SHAPES = {
@@ -74,6 +74,8 @@ return function()
   end
   function check_list(where, v, s)
     if s.scalar and type(v) == s.scalar then return end
+    -- (d18 batch36 A3) a wait list given as any_of / all_of groups: waitgroups.lua reads it
+    if s.groups and type(v) == 'table' and (v.any_of ~= nil or v.all_of ~= nil) then return end
     if type(v) ~= 'table' then
       error(string.format('%s must be %s: %s (not a %s)', where, shape_text(s), s.example, type(v)), 0)
     end

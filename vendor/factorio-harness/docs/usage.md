@@ -8039,6 +8039,51 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+
+## d18 batch36 (the agents' 15:20 poll)
+
+- `logistics_audit {network | position, backlog: true}` (A1, Luna and Grok, all of shift35: Gleba's science requester
+  at (15.5,28.5) lacked 10 nutrients for about 36 minutes with about 98 in a provider 9 tiles off; logistics_audit said
+  not_sent and "all 250 logistic bots occupied"). Per network: the oldest unfilled requests first (256 requester points
+  read, 12 rows, `limit` up to 48): chest, item, short, `short_s` (how long since the networks watch first saw it
+  short), the provider the game would take it from (select_pickup_point) with what it holds and what robots already
+  reserve there (its targeted_items_pickup), and `held_by`, the first of these that reads true now: the delivery on
+  the way covers it; no room in the chest; none in the network's providers or storage; no provider the game picks;
+  every unit there reserved; no idle logistic robot (with how many hold cargo with no order and what, the orders the
+  rest are on by type and what they carry, and the queue to charge); robots queued to charge with every charging slot
+  taken; else idle robots and an unreserved provider, not sent yet (the game's dispatch is not exposed). `robots`:
+  total, idle (available_logistic_robots), on orders by type (robot_order_queue), carrying (top 5), holding cargo
+  with no order, charging and queued to charge (each cell's charging_robot_count and to_charge_robot_count), charging
+  slots (each roboport's logistic_parameters.charging_station_count) and how many are free. Read from the game: those
+  fields. Not read: when the game will dispatch a robot, and any minimum the game sends for (a requester chest has
+  none the API shows). On world n (18 Oct, network #98 on Gleba, 122 requester points, 250 robots) it ran
+  3.1-3.4 ms; in three reads a few minutes apart the robots were 201 holding cargo with no order (firearm-magazine 396,
+  ice 348, agricultural-science-pack 36, cannon-shell 20) and 4 idle, then all 250 on orders (126 deliver, 124
+  pickup) with 25 queued to charge, and nutrients read none free in the network for 21 short requesters.
+- `launch_needs` (A2, viewer Aurora 15:36: Swiftlet waited at a stop for carbon fiber while the silo there could not
+  finish rockets for want of processing units Swiftlet's hub held). On platform_schedule's reply, the platforms read
+  of one platform, and each silo line of shipment's readiness read: for a stop that waits on items (an item_count or
+  request wait) at the planet the platform is stopped at (else the stop it flies to), each rocket silo of ours there
+  whose input holds less than one rocket part's worth of an ingredient while it has parts left to make, and what of
+  that ingredient the waiting platform's own hub holds: `Swiftlet holds 400 processing-unit; rocket-silo (5.5,10.5)
+  on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)`. The silos come from the census pass (no
+  search; a whole-surface find took 10.5 ms on Nauvis); 0.01-0.25 ms a platform on world n. Only rocket parts are
+  read: a payload is the platform's own requests, which its hub already holds and asks more of.
+- Stop waits as the game evaluates them (A3, Luna 15:58: an item-count OR time departure written without compare: "or"
+  ran as and, so the gate held past the time fallback; viewer Aurora 16:09: Spindle needed repeated fixes).
+  waitgroups.lua, for platform_schedule (stops and stop/wait) and train schedules:
+  - Waits of more than one kind with no compare past the first are refused, naming the default and the way to say
+    or: `stop 1: its waits mix item_count and time with no compare on wait 2; the game joins a wait with no compare by
+    and (the default), so every one must hold. Say each: compare: "and" or compare: "or" ...`. Waits of one kind keep
+    the default and. In shifts 33-36, 69 of 506 platform wait lists mixed kinds with no compare.
+  - `wait: {any_of: [...]}` or `{all_of: [...]}` is written as the game's chain (any_of may hold all_of groups; the
+    chain is ors of ands, so (a or b) and c is written as two all_of groups); read_as says so.
+  - The readback groups the waits as the game evaluates them (and binds before or): `nauvis (fluid_count
+    thruster-fuel >= 24000 or time 300s) [branch 2, time 300s, departs with no fuel condition]`. A branch is named when
+    another branch has a fuel (thruster-fuel, or an item with a fuel value), oxidizer or ammunition condition and it
+    has none.
+  - A platform stop's `save_as: NAME` keeps its wait list (as written) in the harness's storage, and `wait_from: NAME`
+    takes it on another stop or platform; read_as says which and who saved it.
 - `configure {position, hand_size}` on an inserter, built or ghost (C1, Astra: a one-egg surplus export took a
   constant combinator and a stack size signal only to set hand size 1). The 2.0 inserter GUI has the setting: a
   forum thread asks to rename its "Stack size override", and Bilka renamed it "Override hand size" for 2.1.22

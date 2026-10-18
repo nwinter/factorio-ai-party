@@ -12158,7 +12158,8 @@ M.paste_plan=blueprint_handlers.plan
 -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
-M.argshapes=require('argshapes')()  -- the record lists in args, field by field (check_args; d17 batch35 A6)
+M.argshapes=require('argshapes')()
+M.launchneed=require('launchneed'){state=state,crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
@@ -16886,7 +16887,8 @@ M.shipment=require('shipment'){state=state,drops_taken=function(f) return M.drop
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
-  gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end}
+  gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
+  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -16988,7 +16990,7 @@ M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=fu
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
 M.platwait=require('platwait'){state=state}
-space=space_module{dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{launch_need=function(pl) return M.launchneed.for_platform(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,

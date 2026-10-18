@@ -333,6 +333,9 @@ return function(api)
         if gr then found[#found+1] = gr; gl[#gl+1] = gr.line end
       end
       parts[#parts+1] = #gl > 0 and string.format('conditions within %d tiles: %s', FEED, table.concat(gl, '; ')) or string.format('no inserter or loader within %d tiles has a circuit or logistic condition', FEED)
+      -- (d18 batch36 A2) what its rocket parts lack that this platform's hub holds
+      local need = api.launch_need and try(function() return api.launch_need(pl, {e}) end)
+      if need then parts[#parts+1] = table.concat(need, '; ') end
       lines[#lines+1] = string.format('silo %s %s: %s', e.name, at(e.position), table.concat(parts, '; '))
       out.silos[#out.silos+1] = {position={x=e.position.x, y=e.position.y}, auto=x.auto, rocket_ready=rk and rk.rocket_ready or nil, gates=#found > 0 and found or nil}
     end

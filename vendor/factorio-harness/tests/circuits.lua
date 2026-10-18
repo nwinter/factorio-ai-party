@@ -496,6 +496,10 @@ eq(train.schedule.records[2].wait_conditions[2].compare_type,'or'); eq(train.sch
 eq(r.automatic,true); eq(r.schedule[1],'Iron pickup: full'); eq(r.schedule[2],'Smelting drop: empty or time 10s') -- and/or as the GUI shows them
 r=astra('train',{position={x=14,y=0},schedule={}}); eq(train.schedule,nil); eq(#r.schedule,0)
 fails(function() astra('train',{position={x=14,y=0},schedule={{station='X',wait={{type='forever'}}}}}) end,'type is time')
+-- (d18 batch36 A3) kinds mixed with no compare refused; all_of / any_of as the chain, grouped in the readback
+fails(function() astra('train',{position={x=14,y=0},schedule={{station='X',wait={{type='full'},{type='time',ticks=600}}}}}) end,'schedule 1: its waits mix full and time with no compare on wait 2')
+r=astra('train',{position={x=14,y=0},schedule={{station='X',wait={any_of={{all_of={{type='full'},{type='inactivity',ticks=300}}},{type='time',ticks=600}}}}}})
+eq(r.schedule[1],'X: (full and inactivity 5s) or time 10s')
 fails(function() astra('train',{position={x=14,y=0},station='x'}) end,'station and limit are for a train stop')
 fails(function() astra('train',{position={x=12,y=0},automatic=true}) end,'are for a train')
 fails(function() astra('train',{position={x=2,y=0},automatic=true}) end,'neither a train stop nor part of a train')
