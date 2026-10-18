@@ -5442,6 +5442,14 @@ do
   assert(q and q.x>=30 and runtime.reach_dist(q,rt)<=9.75,'a free spot within reach')
   local q2=runtime.reach_ring(p,rt,{q})
   assert(q2 and ((q2.x-q.x)^2+(q2.y-q.y)^2)^0.5>=2,'another spot, not the tried one')
+  -- (d17 batch21 A5, Gemini) the nearest spots in a closed pocket among machines: the nearest with a way out
+  rt.region=runtime.pathing.region
+  runtime.pathing.region=function(_,x) return {closed=x.x<36} end
+  q=runtime.reach_ring(p,rt,{})
+  assert(q and q.x>=36 and runtime.reach_dist(q,rt)<=9.75,'a spot with a way out: '..tostring(q and q.x))
+  runtime.pathing.region=function() return {closed=true} end
+  assert(runtime.reach_ring(p,rt,{}),'all closed: the nearest still')
+  runtime.pathing.region=rt.region
   blocked=function() return true end
   eq(runtime.reach_ring(p,rt,{}),nil,'nowhere free: none')
   p.position,p.surface=saved,surf

@@ -3887,31 +3887,44 @@ end
 -- build spot, else the nearest reachable point), and whether it takes squeeze.
 -- Other spots within reach of a target (D8): 16 round its box, just inside the reach, moved to the nearest spot the
 -- character's box fits within 1.5 tiles, still within reach, not within 2 tiles of one tried; the nearest to you.
-M.REACH_TRIES=4
+-- (d17 batch21 A5, Gemini: transfer and collect walks to a chest among machines stalled, closed_in_goal) the spots
+-- within reach on rings at several distances, nearest you first; each checked against a closed pocket (pathing.region,
+-- 16 tiles out, at most REACH_CHECKS of them): the first with a way out, else the nearest.
+M.REACH_TRIES,M.REACH_CHECKS=6,8
 function M.reach_ring(p,rt,tried)
   local e=rt.entity
   if rt.point or not (e and e.valid) then return nil end
   local b=rt.box
   local cx,cy=(b[1]+b[3])/2,(b[2]+b[4])/2
   local half=math.max(b[3]-b[1],b[4]-b[2])/2
-  local best,bd
-  for k=0,15 do
-    local ang=2*math.pi*k/16
-    local q={x=cx+math.cos(ang)*(half+rt.r-1.5),y=cy+math.sin(ang)*(half+rt.r-1.5)}
-    for _=1,3 do
-      if M.reach_dist(q,rt)<=rt.r-0.5 then break end
-      q={x=cx+(q.x-cx)*0.8,y=cy+(q.y-cy)*0.8}
-    end
-    local ok,free=pcall(function() return p.surface.find_non_colliding_position('character',q,1.5,0.25) end)
-    q=ok and free or nil
-    if q and M.reach_dist(q,rt)<=rt.r-0.25 then
-      local near=false
-      for _,t in ipairs(tried) do if distance(t,q)<2 then near=true; break end end
-      local d=distance(p.position,q)
-      if not near and (not bd or d<bd) then best,bd=q,d end
+  local cands={}
+  for _,f in ipairs({1,0.75,0.5,0.3}) do
+    for k=0,15 do
+      local ang=2*math.pi*(k+(f<1 and 0.5 or 0))/16
+      local q={x=cx+math.cos(ang)*(half+(rt.r-1.5)*f),y=cy+math.sin(ang)*(half+(rt.r-1.5)*f)}
+      for _=1,3 do
+        if M.reach_dist(q,rt)<=rt.r-0.5 then break end
+        q={x=cx+(q.x-cx)*0.8,y=cy+(q.y-cy)*0.8}
+      end
+      local ok,free=pcall(function() return p.surface.find_non_colliding_position('character',q,1.5,0.25) end)
+      q=ok and free or nil
+      if q and M.reach_dist(q,rt)<=rt.r-0.25 then
+        local near=false
+        for _,t in ipairs(tried) do if distance(t,q)<2 then near=true; break end end
+        for _,c in ipairs(cands) do if distance(c,q)<1 then near=true; break end end
+        if not near then q.d=distance(p.position,q); cands[#cands+1]=q end
+      end
     end
   end
-  return best
+  table.sort(cands,function(x,y) return x.d<y.d end)
+  local c=p.character
+  local okh,hf=pcall(function() return c and c.valid and M.pathing.half(c) end)
+  for i=1,math.min(#cands,M.REACH_CHECKS) do
+    local q=cands[i]
+    local okr,r=pcall(M.pathing.region,p.surface,q,okh and hf or 0.2,{window=16})
+    if not okr or not (r and r.closed) then return {x=q.x,y=q.y} end
+  end
+  return cands[1] and {x=cands[1].x,y=cands[1].y} or nil
 end
 function M.reach_spot(p,nav,rt)
   local e=rt.entity

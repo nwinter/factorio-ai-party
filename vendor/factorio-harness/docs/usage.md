@@ -6788,3 +6788,9 @@ fh watch    # deploy on every change
   under 0 now reads `network count -2: reserved beyond stock: deliveries have reserved 2 more bioflux than the network
   holds, and a logistic condition reads -2; a wire from a provider or storage chest reads what that chest holds:
   circuit_gate {source: the chest} compares that` (circuits.negative_note). tests/circuits.lua, tests/pushalerts.lua.
+- A5 (Gemini): transfer and collect walks to a chest among machines on Fulgora stalled (closed_in_goal in the dry
+  runs). When no path reaches a target, the walk tries other spots within reach (M.reach_ring, d16 batch10 D8): those
+  were 16 points on one ring near reach's edge, 4 tries. Now rings at four distances within reach (16 points each),
+  nearest the character first; up to 8 of them are checked for a closed pocket (pathing.region, 16 tiles out, as the
+  dry runs' closed_in check reads it) and the first with a way out is walked to (else the nearest); up to 6 tries.
+  runtime_test.lua.
