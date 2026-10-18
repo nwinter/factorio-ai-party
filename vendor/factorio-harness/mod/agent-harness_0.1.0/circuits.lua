@@ -662,6 +662,35 @@ return function(api)
   function M.condition_text(c) return condition_text(c) end
   -- One entity's circuit settings in a few words (circaudit.lua's network readback, d17 batch16 B3).
   function M.short(e) local c = try(function() return M.read(e) end); return short_settings(c) end
+  -- The enable and logistic conditions as read shows them (enable, enable_met, logistic, logistic_met, disabled);
+  -- returns the circuit and logistic condition tables when set.
+  local function on_off(cb, out)
+    local circuit, logistic
+    if try(function() return cb.circuit_enable_disable end) then
+      circuit = try(function() return cb.circuit_condition end)
+      out.enable = condition_text(circuit) or 'blank'
+      -- (false too: an unmet condition read as nil was dropped from the reply)
+      if type(circuit) == 'table' then out.enable_met = circuit.fulfilled end
+      circuit = circuit or true
+    else out.enable = false end
+    if try(function() return cb.connect_to_logistic_network end) then
+      logistic = try(function() return cb.logistic_condition end)
+      out.logistic = condition_text(logistic) or 'blank'
+      if type(logistic) == 'table' then out.logistic_met = logistic.fulfilled end
+      logistic = logistic or true
+    else out.logistic = false end
+    out.disabled = try(function() return cb.disabled end) or nil
+    return circuit, logistic
+  end
+  -- (d17 batch22 B3) Only the conditions, without the wires and their networks' signals read walks: gates reads
+  -- 256 entities a call with this (circuits.read was about 0.4 ms an entity on world n).
+  function M.conditions(e, cb)
+    if cb == nil then cb = try(function() return e.get_control_behavior() end) end
+    if not cb then return nil end
+    local out = {}
+    if props_of(cb, kind_of(cb)).on_off then on_off(cb, out) end
+    return out
+  end
   function M.read(e, cb)
     if cb == nil then cb = try(function() return e.get_control_behavior() end) end
     local wires, nets = wires_of(e)
@@ -671,24 +700,11 @@ return function(api)
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
     if props.on_off then
-      local enabled = try(function() return cb.circuit_enable_disable end)
-      if enabled then
-        local c = try(function() return cb.circuit_condition end)
-        out.enable = condition_text(c) or 'blank'
-        -- (false too: an unmet condition read as nil was dropped from the reply)
-        if type(c) == 'table' then out.enable_met = c.fulfilled end
-        -- No red or green wire: the game ignores a circuit condition, and the entity runs (Astra 21:00: a fast
-        -- inserter on Fulgora with enable EM < 0 and no wire read disabled and kept working).
-        if not nets and e.type ~= 'entity-ghost' then out.enable_ignored = 'no red or green wire connects it: the game ignores this condition' end
-      else out.enable = false end
-      local logistic = try(function() return cb.connect_to_logistic_network end)
-      if logistic then
-        local c = try(function() return cb.logistic_condition end)
-        out.logistic = condition_text(c) or 'blank'
-        if type(c) == 'table' then out.logistic_met = c.fulfilled end
-        out.logistic_reads = logistic_reads(e, c)
-      else out.logistic = false end
-      out.disabled = try(function() return cb.disabled end) or nil
+      local circuit, logistic = on_off(cb, out)
+      -- No red or green wire: the game ignores a circuit condition, and the entity runs (Astra 21:00: a fast
+      -- inserter on Fulgora with enable EM < 0 and no wire read disabled and kept working).
+      if circuit and not nets and e.type ~= 'entity-ghost' then out.enable_ignored = 'no red or green wire connects it: the game ignores this condition' end
+      if logistic then out.logistic_reads = logistic_reads(e, logistic) end
     end
     local settings, off = {}, {}
     for _, name in ipairs(names(props)) do

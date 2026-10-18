@@ -7075,7 +7075,7 @@ fh watch    # deploy on every change
   add it to the disabled_by_control_behavior count and to each such worst row. tests/rates.lua.
 - B3 (Muse): backup boilers gated on coal > 8000 in a network holding 3609 never started, and a viewer found it.
   `gates {surface? | area?, page?}` (gates.lua, a read): every circuit and logistic condition on our entities there,
-  256 entities a call in reading order. A surface reads the entities the census's last pass found with a control
+  128 entities a call in reading order. A surface reads the entities the census's last pass found with a control
   behavior (census.lua now keeps them: inserters, pumps, machines, drills, lamps, power switches, belts, train stops,
   signals, agricultural towers, collectors, loaders; up to 1024 a surface); an area (up to 128x128) finds them now.
   Each line: the condition as its GUI shows it, what it reads now (circuit: its signal on its wires; logistic: the
@@ -7083,6 +7083,13 @@ fh watch    # deploy on every change
   `item > N`, `>= N` or `= N` above what the network can hold, its count and what its storage and provider chests could
   still take of the item (up to 256 chests looked at), is flagged `CANNOT BE MET:` and listed first; so is one with no
   logistic network over it. tests/d17_batch22.lua.
+- B3 timed on world n (cp2): circuits.read was about 0.4 ms an entity, so gates reads only the two conditions
+  (circuits.conditions, about 50 us an entity with its logistic line). The network's room is looked at only for a
+  `>`, `>=` or `=` above its count, and only until the threshold is reached: at most 256 chests a network and item and
+  512 a call (about 3 us a chest); a look cut short says what it saw and is not flagged. The list is sorted on
+  positions read once (2 ms for 1024; the old comparator read them each compare, about 18 ms). The page is 128
+  entities. A storage chest is read as the entity it is: `owner` on one was an error that dropped every row with a
+  logistic item condition.
 
 ### Group C (Haiku 18:58)
 - C1 (Haiku): hand-fed turrets ran low about every 20 minutes and were found only by polling. The background read's
