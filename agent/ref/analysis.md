@@ -238,7 +238,8 @@
 - `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?, unrequested?}`:
   `unrequested: true`: requester and buffer chests in our logistic networks on the surface holding items they do not
   request (`item` for one), the most first, each with what it asks and whether trash unrequested sends them to storage
-  (off: they stay there); `items` sums them per item. `items: [...]`
+  (off: they stay there); `items` sums them per item; 1024 requester points a call (`page: 2` reads the next, `next`
+  says so). `items: [...]`
   (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is, landed
   cargo pods (of any force: kind `pod`) and stacks on the ground in sight (kind `ground`, `on_ground`, not in the total)
   among the places with their positions. With

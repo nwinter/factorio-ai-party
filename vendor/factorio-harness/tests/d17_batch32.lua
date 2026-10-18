@@ -138,6 +138,13 @@ do
   eq(#r.chests,2); eq(r.chests[1].count,2000); eq(r.items[1].item,'production-science-pack')
   r=R.unrequested({name='nauvis'},force,'spoilage')
   eq(#r.chests,1); has(r.lines[1],'hold spoilage they do not request: spoilage 30 in 1 chest')
+  eq(r.next,nil); eq(r.page,nil)
+  -- 1024 points a call: the next page reads on
+  for i=1,1030 do net.requester_points[#net.requester_points+1]={owner=chest(100+i,{{name='coal',count=1,quality='normal'}}),mode=2,filters={}} end
+  r=R.unrequested({name='nauvis'},force)
+  eq(r.next,2); has(r.lines[#r.lines],'requester points 1-1024 of 1034 read; stock {unrequested: true, page: 2} reads the next')
+  r=R.unrequested({name='nauvis'},force,nil,2)
+  eq(r.next,nil); eq(r.page,2); has(r.lines[1],'10 of 10 requester and buffer chests'); has(r.lines[#r.lines],'requester points 1025-1034 of 1034 read')
   defines=nil
 end
 print('d17_batch32 B4 unrequested: ok')
