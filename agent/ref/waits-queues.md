@@ -38,6 +38,10 @@
   the sleep. A tell or board line shown in a sleep reply that your next sleep followed within 5 s comes again in
   `team.missed_while_asleep`. Egg news ends a sleep that takes no messages only for eggs you carry. Example:
   `./fh sleep 120 --until "item_count nutrients<50 at 4.5,15.5" --then inspect '{"position":{"x":4.5,"y":15.5}}'`
+  `--require-met`: the wake's first line is `condition met after N s` or `condition not met: woke told after N s`
+  (a tell, an urgent alert, the time up), and the exit status 0 when the condition held, 3 when not, 1 when the wait
+  failed; a tell or urgent news still ends the wait at once. Without it the exit status is 0 whatever woke it.
+  Example: `./fh sleep 300 --until "item_count power-armor-mk2>=1" --require-met && ./fh call equipment ...`
 - `wait_ticks {ticks, pause_queue?}`: your character stands idle `ticks` (1..54000): a direct timed action (outcome
   `duration_elapsed`, or `told` or `mentioned` when a tell or mention ends it early) or a queue step. A direct
   `wait_ticks` or `wait_until` while your queue runs runs as a sleep (`as_sleep`) and the queue keeps going;
