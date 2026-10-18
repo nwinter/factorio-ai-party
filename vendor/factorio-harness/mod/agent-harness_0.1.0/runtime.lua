@@ -1915,7 +1915,8 @@ function handlers.describe(_,a)
       blueprint_rename={name='team library entry',new_name='1..40 letters, digits, _ . -',note='its author any time, anyone after 24 game hours unused'},
       blueprint_capture={platform='optional platform name: capture on that space platform by remote view (platform coordinates, hub at 0,0)',surface='optional planet name: capture an area there by remote view',area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={preserve_existing_settings_and_wires='true: what already stands where the blueprint puts the same entity (built, or its ghost) is left out of the paste, keeping its settings (recipe, filters, circuit conditions) and wires; the rest is pasted where the whole blueprint would land, and wires from new ghosts to what stands are joined; preserved says how many',dry_run='boolean: place nothing; check the plan instead (a read: the running action and queue go on): where each blueprint entity and tile lands, per entity ok or why not (what collides and where, water/lava/out of map/platform empty space), tiles it needs first (landfill, foundation; on a platform also the empty tiles new foundation would enclose), power (wire reach, groups of planned poles with no wire path to a built pole, machines no supply area covers), standing spots that reach every placement, items vs held; inserters [{index, name, position, direction, pickup, drop, missing}]: what stands on each planned inserter\'s pickup and drop point (built, planned in this call, a ghost; or none: the ground, empty space, or what is there that takes no items), missing \'no pickup target\' / \'no drop target\'; inserters_without_target (count); connections and connections_open as build dry_run (a flipped paste: connections_note); requests_kept: entities with requests it lands on, whose requests stay (and a hub\'s construction requests: whether they stay on)',platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center | saved: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); a library entry saved with an anchor is placed by it (saved, default there: position is where that point lands; no flips); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',name='or a team library entry (blueprint_save; blueprint_list lists them): its last use is recorded',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',ammo='the new turret ghosts request ammo, as place_ghosts ammo (a name, {name?, count?}, or false); a ghost whose blueprint requests ammo keeps that request. Returns ammo_requests [{item, count, ghosts, network_holds}]',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason; inserters_without_target (as place_ghosts); requests_kept: each entity with requests the blueprint lands on (hub, requester and buffer chests, landing pads) and its requests after (changed while the blueprint carried none, they are put back; the blueprint\'s own are not applied); on a hub, its construction requests (Request missing construction materials: the game\'s section of what the ghosts need), which a paste of a hub blueprint that has the setting off switches off: switched back on and said (construction requests kept on)'},blueprint_place={preserve_existing_settings_and_wires='true: what already stands where the blueprint puts the same entity (built, or its ghost) is left out of the paste, keeping its settings (recipe, filters, circuit conditions) and wires; the rest is pasted where the whole blueprint would land, and wires from new ghosts to what stands are joined; preserved says how many',dry_run='boolean: as paste dry_run',platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center | saved: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); a library entry saved with an anchor is placed by it (saved, default there: position is where that point lands; no flips); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',name='or a team library entry (blueprint_save; blueprint_list lists them): its last use is recorded',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',ammo='the new turret ghosts request ammo, as place_ghosts ammo (a name, {name?, count?}, or false); a ghost whose blueprint requests ammo keeps that request. Returns ammo_requests [{item, count, ghosts, network_holds}]',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason; inserters_without_target (as place_ghosts); requests_kept: each entity with requests the blueprint lands on (hub, requester and buffer chests, landing pads) and its requests after (changed while the blueprint carried none, they are put back; the blueprint\'s own are not applied); on a hub, its construction requests (Request missing construction materials: the game\'s section of what the ghosts need), which a paste of a hub blueprint that has the setting off switches off: switched back on and said (construction requests kept on)'},deconstruct={cancel='optional true: cancel the deconstruction marks in the area instead (as cancel_deconstruction, with the same filters); returns cancelled',platform='optional platform name: act on that space platform (hub at 0,0)',surface='optional planet name: mark there by remote view (Sol, 23:13)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
         tiles='optional: true (every minable tile in the area) or 1..32 tile names, e.g. ["space-platform-foundation"], ["landfill"]: marks tiles as a planner in tile mode does (robots take them back to the hub or a roboport) and removes our tile ghosts of those tiles (tile_ghosts_removed: landfill planned over water, before robots build it); entities then only with entity_names/entity_types. Returns tiles_marked, tiles_already, tiles_refused with refused {under_entity, engine, not_minable, error}, tiles_blocked (marked tiles under entities not marked; a note names them), tile_ghosts_removed; on a platform also every marked tile there played out by the game\'s rule (the hub removes one tile at a time, and only one with exactly one run of empty side neighbours joined through the empty corners round it): tiles_go (those it removes, in order, each once a side neighbour is empty space) and tiles_waiting with waiting (the first 8, each with why: none of its four side neighbours is empty space; its empty side neighbours do not meet through the tiles round it (it would join separate empty space); the hub has no room for its item; something stands on it; a marked tile beside it waits too)',
-        dry_run='true: mark nothing (deconstruct is passive: the running action and queue go on): with tiles, tiles_would_mark (those not marked yet with nothing standing on them; refused under_entity for the rest, as the game refuses those), tile_ghosts_would_go, and on a platform tiles_go and waiting as if they were marked; entities: would_mark and would_mark_by_name, and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither) for the heat parts it would mark (the live reply too, when not none)'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',surface='optional planet name: cancel marks there by remote view',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks)',
+        dry_run='true: mark nothing (deconstruct is passive: the running action and queue go on): with tiles, tiles_would_mark (those not marked yet with nothing standing on them; refused under_entity for the rest, as the game refuses those), tile_ghosts_would_go, and on a platform tiles_go and waiting as if they were marked; entities: would_mark and would_mark_by_name, and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither) for the heat parts it would mark (the live reply too, when not none). With tiles on a platform (live or dry): spans_cut, each underground belt or pipe-to-ground pair (built or ghost) whose span, the tiles between its ends, holds a tile this marks or one marked already, with those tiles (a span over empty space is cut)',
+        cut_spans='true: mark tiles under underground spans anyway; without it a live tile deconstruct on a platform that would is refused, naming the pairs (spans_cut), and marks nothing'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',surface='optional planet name: cancel marks there by remote view',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks)',
         tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
       screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080'}},
     limitations={'No teleport, resource creation, free crafting, direct mining, remote building, or map reveal',
@@ -11861,7 +11862,7 @@ local blueprint_handlers=blueprint_module{position=position,visible=visible,dist
   placed=function(p,e) return M.efficiency.built(M.board.who(p),e) end,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
-  who=function(p) return M.board.who(p) end}
+  who=function(p) return M.board.who(p) end,tunnels=function(s,force,ghosts,on) return M.platplan.tunnels(s,force,ghosts,on) end}
 for name,handler in pairs(blueprint_handlers) do if name~='plan' and name~='operator' then handlers[name]=handler end end
 -- The team blueprint library's operator read (tools/bplibrary.py mirrors it to runs/RUN/blueprints/).
 M.bplibrary_operator=blueprint_handlers.operator
@@ -12163,10 +12164,96 @@ function M.silo_pause(p,a,rockets)
   return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch; a load that ends short or failed leaves them off%s',
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
 end
+-- load_silo {position, platform, first: [items]} (d17 batch31 B7, Gemini about 4 times: a silo's automatic requests
+-- loaded iron ore before foundation, collectors or ammo; the game has no priority among them): the items named, each at
+-- what the platform's hub lacks of its requests (or the count given), from what you hold and the chests of the silo's
+-- logistic network that hold them (the one robots would take from first, select_pickup_point, up to 4 an item) or the
+-- chests in from, walked as load_silo walk does, launched to the platform with the silo's automatic requests paused
+-- (auto_requests "pause": off now, back on after the launch).
+function M.load_first(p,a)
+  local function try(fn) local ok,v=pcall(fn); if ok then return v end end
+  assert(type(a.platform)=='string','first goes with platform (the platform the rocket goes to)')
+  assert(a.items==nil and a.launch==nil and a.auto_requests==nil and a.walk==nil and a.rockets==nil,'first sets items, walk, launch and auto_requests itself (from and position are yours)')
+  local pl=space.platform(p,a.platform)
+  local hub=pl.hub
+  assert(hub and hub.valid,a.platform..' has no hub')
+  local want,order={},{}
+  if type(a.first)=='table' and a.first[1]==nil then
+    for item,n in pairs(a.first) do
+      assert(prototypes.item[item],'first: unknown item '..tostring(item))
+      assert(type(n)=='number' and n>=1 and n==math.floor(n),'first: '..item..' count is 1 or more')
+      want[item]=n; order[#order+1]=item
+    end
+    table.sort(order)
+  else
+    assert(type(a.first)=='table' and #a.first>=1 and #a.first<=8,'first is 1..8 item names (each at what the hub lacks of its requests) or {item: count}')
+    -- what the hub asks of each (its sections that are on) against what it holds
+    local asks={}
+    local secs=try(function() return hub.get_logistic_sections() end)
+    for i=1,secs and secs.sections_count or 0 do
+      local sec=secs.get_section(i)
+      if sec and sec.active~=false then
+        for _,f in pairs(try(function() return sec.filters end) or {}) do
+          local v=f.value
+          local n=v and (type(v.name)=='string' and v.name or try(function() return v.name.name end))
+          if n and (f.min or 0)>0 then asks[n]=(asks[n] or 0)+f.min end
+        end
+      end
+    end
+    local none={}
+    for _,item in ipairs(a.first) do
+      assert(type(item)=='string' and prototypes.item[item],'first: unknown item '..tostring(item))
+      local lack=(asks[item] or 0)-(try(function() return hub.get_item_count(item) end) or 0)
+      if lack>0 then want[item]=lack; order[#order+1]=item
+      else none[#none+1]=string.format('%s (the hub %s)',item,asks[item] and string.format('asks %d and holds them',asks[item]) or 'does not request it') end
+    end
+    assert(#order>0,'first: '..a.platform..'\'s hub lacks none of them: '..table.concat(none,', ')..'; give counts as {item: count}')
+    a.first_skipped=#none>0 and none or nil
+  end
+  local silo=remote_entity(p,{position=a.position})
+  assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
+  -- the chests: yours in from, else those the silo's network would give from first
+  local from=a.from
+  local chests
+  if from==nil then
+    local net=try(function() return silo.surface.find_logistic_network_by_position(silo.position,silo.force) end)
+    local seen={}
+    from={}
+    chests={}
+    for _,item in ipairs(order) do
+      for _=1,4 do
+        local pt=net and try(function() return net.select_pickup_point{name=item,position=silo.position} end)
+        local c=pt and try(function() return pt.owner end)
+        if not (c and c.valid) then break end
+        local k=c.unit_number or (c.position.x..','..c.position.y)
+        if seen[k] then break end
+        seen[k]=true
+        if #from<16 then from[#from+1]={x=c.position.x,y=c.position.y}; chests[#chests+1]=string.format('%s (%g,%g) holding %d %s',c.name,c.position.x,c.position.y,try(function() return c.get_item_count(item) end) or 0,item) end
+      end
+    end
+    if #from==0 then from=nil end
+  end
+  local items={}
+  for _,item in ipairs(order) do items[item]=want[item] end
+  local args={position=a.position,platform=a.platform,items=items,launch=true,auto_requests=try(function() return silo.use_transitional_requests end) and 'pause' or nil,
+    walk=true,from=from,launch_split=a.launch_split,dry_run=a.dry_run}
+  local out=handlers.load_silo(p,args)
+  if type(out)=='table' then
+    local parts={}
+    for _,item in ipairs(order) do parts[#parts+1]=item..' '..want[item] end
+    out.first=string.format('%s first: %s%s, launched to %s with the silo\'s automatic requests %s; from %s',
+      silo.name,table.concat(parts,', '),type(a.first[1])=='string' and ' (what the hub lacks of its requests)' or '',a.platform,
+      args.auto_requests and 'paused (back on after the launch)' or 'off already',
+      a.from~=nil and 'the chests in from' or (chests and #chests>0 and 'what you hold and the network\'s chests robots would take from first: '..table.concat(chests,'; ')) or 'what you hold (the silo\'s network holds none of them)')
+    out.first_skipped=a.first_skipped
+  end
+  return out
+end
 function handlers.load_silo(p,a)
   -- the silo (Grok d17 16:16: walk with from [chest] and no position failed "position requires x and y" and read as
   -- the from list being wrong): without position, the silos here and the call that works.
   if a.position==nil then error(M.launch_needs_silo(p,a,'load_silo'),0) end
+  if a.first~=nil then return M.load_first(p,a) end
   -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way): one
   -- timed call that ends when the rocket launches, or when the platform goes elsewhere. Nothing goes into the rocket
   -- until the platform is stopped in orbit here; then the load goes in and launches in that tick, as one rocket
@@ -12224,7 +12311,12 @@ function handlers.load_silo(p,a)
         multi=M.rocketload.split(list,okc and l or 1000000,okc and sl or 20)~=nil
       end
     end
-    local paused=not multi and M.silo_pause(p,a,a.pause_left or 1) or nil
+    -- (batch31 B7) a dry run pauses nothing: it would leave them off, with no launch to bring them back
+    local paused
+    if a.dry_run then
+      local oks,silo=pcall(remote_entity,p,{position=a.position})
+      paused=oks and silo.valid and silo.type=='rocket-silo' and silo.use_transitional_requests and 'a dry run: nothing switched; the load would switch the silo\'s automatic requests off, and back on after its launch' or nil
+    else paused=not multi and M.silo_pause(p,a,a.pause_left or 1) or nil end
     local ok,out=pcall(handlers.load_silo_run,p,a)
     if not ok then
       local back=M.silo_unpause(p.index,'the load was refused')
@@ -16379,8 +16471,9 @@ M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods,departure=fun
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
 M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
-  pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force) return M.silo.request_rows(e,force) end,
-  last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
+  pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
+  last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
+  gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -16437,7 +16530,9 @@ M.platplan=require('platplan'){platform=function(p,name) return space.platform(p
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
-  thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end}
+  thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
+-- The fuel feedstock trace (fuelstock.lua; d17 batch31 B5, Sol).
+M.fuelstock=require('fuelstock'){}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
 -- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
 M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,

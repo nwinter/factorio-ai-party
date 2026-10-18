@@ -7617,3 +7617,105 @@ fh watch    # deploy on every change
       last send.
     - Another platform_schedule without harness waits clears the watch. So does a record that no longer holds the
       never condition (the schedule changed elsewhere).
+- B1 (Luna 06:20: one compact platform/silo freight readiness read): `shipment {platform, ready: true}` (shipment.lua
+  M.ready), for the planet the platform stops at, else the stop it flies to:
+  - `gate:` the platform_gate line. A circuit wait at the stop it waits at now says what the hub's red and green wires
+    read of its signals (space.lua wait_text; also in platform_gate, fleet and platforms), or that the hub has no wire.
+  - `up from PLANET:` each hub request importing from there that is not delivered, with shipment's state and gate.
+  - Each silo of ours there (up to 4): its rocket (silo's rocket line), automatic requests on or off and the platform
+    it fills a rocket for, what its rocket holds, and each request of this platform from silo's request_rows (flag,
+    the payload a rocket waits for, the network's stock, hub slots) with what the rocket holds of it. Then the circuit
+    and logistic conditions of inserters and loaders within 8 tiles of it (gates.lua's rows, up to 16), each with what
+    it reads now.
+  - The landing pads there (up to 8 named): free slots each, and per item the hub would send down (the pads' asks less
+    what they hold, less the hub's own requests, as the cargo conflict lines count it): the count, the slots it takes,
+    what the pads can take of it now (get_insertable_count) and how many short; the slots in all against the free ones.
+  - request_rows takes the one platform (`only`), so the other platforms above are not read. The silo and pad search
+    on a planet is one find a minute, kept in storage with shipment's silo list.
+  - Cost on world n (the module loaded into a throwaway env, the gate stubbed): Cinder at Gleba 4.9 ms with the
+    search, Swift's Nauvis 16.1 ms with the search (Nauvis is the largest surface), about 1 ms after it.
+  - Live on n, Cinder at Gleba: agricultural-science-pack 500 waits `below_min_payload`, the network holds 424 of the
+    500 min payload, the silo's rocket is built and holds none of it.
+- B4 (Astra 06:20: a salvage kept the ends of pipe-to-ground and underground belts but took the floor under their
+  spans, and both thruster feeds stopped): a tile deconstruct on a platform (blueprints.lua spans_cut), before
+  anything is marked (tile ghosts removed, entities with filters):
+  - The tiles it would mark (minable, nothing standing on them) and those marked already, against every underground
+    belt and pipe-to-ground pair on the platform, built or ghost, paired as platform_plan's floor and salvage pair
+    them (platplan.lua M.tunnels, which now hands the pair to its callback).
+  - `spans_cut`: one line a pair whose span holds such a tile, with the tiles (up to 8 named). A pipe-to-ground pair,
+    walked from both ends, is named once. `spans_note` says a span over empty space is cut.
+  - In a dry run that is a read. A live call is refused with nothing marked, naming the pairs, unless
+    `cut_spans: true`.
+  - Cost on world n: the pairing over Kestrel II's 83 undergrounds (53 pairs) 2.5 ms, Swift's 28 and Cinder's 22
+    about 1.3 ms.
+- B5 (Sol 06:22: nominal production rates hid missing feedstock most of a shift): `platform_supply {platform, fuel:
+  true}` (fuelstock.lua), from the thrusters back, one line a link, indented by level:
+  - The thrusters' thruster-fuel and thruster-oxidizer boxes against their capacity (short under half). The fluid
+    segments they join, through pumps: on world n a pump's box carries no segment id and its two connections join
+    two segments, as Cinder's fuel tank (segment 4209) and its thruster (4217) show. What the pipes hold, the tanks
+    on them, and each machine whose recipe makes the fluid with an output joining them.
+  - Per maker, each ingredient against one craft (short below it):
+    - An item comes through the inserters dropping into it. Static GUI filters count; filters the circuit network
+      sets are not judged (Cinder's hub unloader is a whitelist set by circuit). Sources: a machine making it, the
+      hub (holding none: the machines making it that unload into the hub), a collector (chunks only) or a chest.
+    - Or the item comes from a belt walked upstream (256 tiles a walk, 1024 a trace, each belt once an item): what it
+      holds of the item, the inserters dropping onto it (one moving from another belt goes on up that belt), a start
+      nothing feeds, an underground exit with no entrance paired, or an underground span over empty-space tiles.
+    - A fluid comes through the pipes its input joins, to its makers.
+    - And so on down to crushers, ice melters and collectors.
+  - `first_missing`: the first consumer short of an ingredient whose way is broken (no inserter, a belt start, a cut
+    underground, a pump not working, no maker on its pipes, the hub holding none). Else, when its sources are short
+    themselves, the first missing link below them. Else a source not working, else the consumer short while its
+    sources work.
+  - Cost on world n: Cinder 3.9 ms, Swift 2.8 ms, Spindle 2.8 ms, Kestrel II 9.4 ms (98-tile belts, 3 ice melters).
+    None was missing a link at the probe: each maker's output was full and the thrusters' boxes were full.
+- B6 (Astra 06:27: Cinder, with space-platform-foundation 50..inf from fulgora and 85 held, dropped all 85 at Nauvis):
+  the rule, from the journals (no copy was reachable: the dev world's RCON closed the connection):
+  - Cinder: Astra's journal, shift33. At the Nauvis stop about tick 27162800 one pod took all 85 foundation down to the
+    pad at (52,54), under `space-platform-foundation 50..inf from fulgora min payload 50`.
+  - Swift (the copy of world n, 2026-10-17, shipment.lua's case): at Nauvis it kept its 501 magazines under a pad ask
+    of 1461. Its request then was Sol's `firearm-magazine 500..2000 from nauvis` (shift27).
+  - So at a stop the hub keeps what its requests importing from that planet ask. A request from another planet keeps
+    nothing there, and the landing pads take what they ask for.
+  - space.lua `M.hub_keep_at` sums the requests' mins by import planet. `sends_down` is figured per stop with what
+    the requests from that stop's planet keep after the change; its lines say what they would keep and kept by planet,
+    and `sends_down_rule` gives the rule with the two cases. It comes on any change that alters what the requests
+    keep of an item held (before: only a drop in the total).
+  - shipment.lua: the down rows, the cargo conflict lines and the readiness read keep per stop only what the requests
+    from that planet ask. Before, every request counted at every stop.
+- C3 (Astra 06:31, 06:34: a dry run of clear then set without from gave "100..inf from nauvis"; from: false refused):
+  - Where nauvis came from: the game. The harness passes no import planet for a new slot set without `from`. All 16
+    such slots in the journals read back `from nauvis`, and Wren (shift27), Kestrel II (shift31), Meridian (shift26) and
+    Aegis (shift18) were stopped at Fulgora when theirs were set.
+  - `from: false` (or `""`) sets the slot with no import planet, the slot's own dropped. `stored` adds
+    `(no import planet given: the game set nauvis)`, as for a new slot without `from`. By B6 such a request keeps its
+    stock only at Nauvis.
+- B7 (Gemini about 4 times: a silo's automatic requests loaded iron ore before foundation, collectors or ammo):
+  - What `load_silo {auto_requests: "pause", launch: true, platform, items}` already did: it switches the silo's
+    automatic requests off, loads the items (from you, the chests in reach or `from`, walked with `walk: true`),
+    launches, and switches them back on after the manifest's last launch. A short or failed load leaves them off.
+  - `load_silo {position, platform, first}` (runtime.lua M.load_first) builds that call:
+    - `items`: each item named at what the hub lacks of its requests (its sections that are on), or `{item: count}`.
+      Items it lacks none of are named in `first_skipped`, and a call where it lacks none of them is refused.
+    - `from`: the chests of the silo's logistic network that robots would take each item from first
+      (select_pickup_point, up to 4 an item, 16 in all), unless `from` is given.
+    - `walk: true`, `launch: true`, and `auto_requests: "pause"` when the silo's automatic requests are on. `first`
+      in the reply says the counts and the chests.
+  - Found on the way: a dry run with `auto_requests: "pause"` switched the automatic requests off and never back on
+    (no launch follows a dry run). A dry run now switches nothing and says what the load would do.
+- B8 (Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer >= 24000 she set current 2, as current =
+  the stop it waits at had read no_schedule, and it left at once with 4,660 fuel): `platform_schedule {platform, stop:
+  N, wait: [...], current?, go?}`:
+  - The record's waits are replaced through LuaSchedule's own calls (remove_wait_condition, add_wait_condition,
+    change_wait_condition, set_wait_condition_mode; all present on world n's Spindle, read without calling them). The
+    records, the current stop and the platform's state are kept. The waits are parsed as a stops entry's (shared
+    stop_waits: read_as, the B9 checks, `harness: true`), and the harness watch for the other stops is kept.
+  - Before anything changes, whether it makes the platform leave now:
+    - `current` set to another stop while it waits;
+    - the stop it waits at left with no wait;
+    - the new waits at that stop holding now (and binds before or): time from its arrival as the harness saw it,
+      item_count against the hub, circuit against the hub's wires, all_requests_satisfied against the hub's requests.
+  - Any of these is refused with nothing changed unless `go: true`; `leaves` says which. Waits it does not read
+    (inactivity, fluid_count, the other request waits) are named in `may_leave` when they could decide it.
+  - Not run against the game: n is read-only and the dev world's RCON closed the connection. The mock follows the
+    method names read on n.

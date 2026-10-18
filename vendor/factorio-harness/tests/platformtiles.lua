@@ -181,4 +181,34 @@ r=bot('deconstruct',{platform='Sunward',area={left_top={x=8,y=6},right_bottom={x
 eq(r.tiles_would_mark,3); has(r.tiles_go,'3 marked tiles on the platform go')
 fails(function() bot('cancel_deconstruction',{platform='Sunward',area={left_top={x=8,y=6},right_bottom={x=11,y=7}},tiles=true,dry_run=true}) end,'unknown argument dry_run for cancel_deconstruction')
 fails(function() bot('deconstruct',{platform='Sunward',area={left_top={x=8,y=6},right_bottom={x=11,y=7}},tiles=true,dry_run='yes'}) end,'dry_run must be true or false')
+-- 5. (d17 batch31 B4, Astra) an underground belt pair east along y=-7, its span over x=6..8: a tile deconstruct over the
+-- span names the pair, and a live one is refused unless cut_spans: true.
+prototypes.entity['underground-belt']={name='underground-belt',max_underground_distance=5}
+local function ub(x,kind) return {valid=true,name='underground-belt',type='underground-belt',belt_to_ground_type=kind,direction=4,position={x=x+0.5,y=-6.5},force=force,surface=psurf,
+  bounding_box={left_top={x=x+0.1,y=-6.9},right_bottom={x=x+0.9,y=-6.1}},get_inventory=function() return nil end,get_fluid_contents=function() return {} end} end
+on_platform[#on_platform+1]=ub(5,'input'); on_platform[#on_platform+1]=ub(9,'output')
+local span={platform='Sunward',area={left_top={x=7,y=-7},right_bottom={x=10,y=-6}},tiles={'space-platform-foundation'}}
+span.dry_run=true
+r=bot('deconstruct',span)
+eq(r.spans_cut[1],'underground-belt (5.5,-6.5) to underground-belt (9.5,-6.5): 2 tiles of its span would be empty space: (7,-7) (8,-7)')
+eq(r.tiles_would_mark,2); has(r.spans_note,'a span over empty space is cut')
+span.dry_run=nil
+fails(function() bot('deconstruct',span) end,'nothing marked: 1 underground pair would lose floor under its span: underground-belt (5.5,-6.5) to underground-belt (9.5,-6.5): 2 tiles')
+eq(next(marks),nil,'refused: nothing marked')
+-- beside the span: no pair named
+r=bot('deconstruct',{platform='Sunward',area={left_top={x=7,y=-6},right_bottom={x=9,y=-5}},tiles={'space-platform-foundation'},dry_run=true})
+eq(r.spans_cut,nil)
+-- a pipe-to-ground pair (walked from both ends) named once
+prototypes.entity['pipe-to-ground']={name='pipe-to-ground',fluidbox_prototypes={{pipe_connections={{},{max_underground_distance=10}}}}}
+local function ptg(y,dir) return {valid=true,name='pipe-to-ground',type='pipe-to-ground',direction=dir,position={x=2.5,y=y+0.5},force=force,surface=psurf,
+  bounding_box={left_top={x=2.1,y=y+0.1},right_bottom={x=2.9,y=y+0.9}},get_inventory=function() return nil end,get_fluid_contents=function() return {} end} end
+local p1,p2=ptg(-9,0),ptg(-5,8)
+on_platform[#on_platform+1]=p1; on_platform[#on_platform+1]=p2
+r=bot('deconstruct',{platform='Sunward',area={left_top={x=2,y=-8},right_bottom={x=3,y=-6}},tiles={'space-platform-foundation'},dry_run=true})
+eq(#r.spans_cut,1); has(r.spans_cut[1],'pipe-to-ground (2.5,-8.5) to pipe-to-ground (2.5,-4.5): 2 tiles of its span would be empty space: (2,-8) (2,-7)')
+table.remove(on_platform); table.remove(on_platform)
+span.cut_spans=true
+r=bot('deconstruct',span)
+eq(r.tiles_marked,2); eq(#r.spans_cut,1)
+bot('cancel_deconstruction',{platform='Sunward',area={left_top={x=7,y=-7},right_bottom={x=10,y=-6}},tiles={'space-platform-foundation'}})
 print('platformtiles: ok')
