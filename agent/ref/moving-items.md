@@ -117,7 +117,10 @@
   A tile of a building's footprint away from its centre is refused, naming the building and its centre (`name` mines
   it). `dry_run: true` says what a position picks (`off_centre`) and reads `heat_loss`: heat-network parts cut off
   from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at 30 C
-  or more. An entity takes one `position` per call or queue step; `positions` and `area` need `tiles: true`.
+  or more. An entity takes one `position` per call or queue step; `positions` and `area` need `tiles: true`. A pipe,
+  pipe-to-ground, tank or pump gives `fluid_split` (dry run too): the parts its segment would split into, per part its
+  pipes, what takes from it and what puts into it; one that leaves a part with takers and no source is refused unless
+  `cut_fluid: true` (`deconstruct` does the same for what it would mark).
   - `tiles: true` mines a laid tile (landfill, concrete, stone path, artificial soil): the tile under it goes back and
     the item to you; `positions`, `area`, `"walk":true`, `"dry_run":true`; a tile anything stands on is refused,
     naming it. `construct` mines tiles marked for deconstruction too.

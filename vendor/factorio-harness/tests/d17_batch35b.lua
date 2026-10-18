@@ -66,4 +66,37 @@ do
   eq(FJ.removal(force,{r2}),nil)
 end
 
+-- B4 (Luna): game_alerts by claim (an id, or mine: your own) and since a cursor: only new groups, compact. ----------
+do
+  defines={entity_status={},inventory={},alert_type={}}
+  storage={board={items={[7]={id=7,kind='claim',status='claimed',owner='luna',surface='nauvis',area={left_top={x=0,y=-10},right_bottom={x=50,y=10}}},
+    [8]={id=8,kind='claim',status='open',owner='sol',surface='nauvis',area={left_top={x=190,y=-10},right_bottom={x=210,y=10}}}}}}
+  local force={name='player',players={}}
+  game={tick=36000,surfaces={}}
+  local function grp(kind,surface,n,x,name) return {key=kind..'|'..surface..'|'..x..',0',kind=kind,surface=surface,n=n,names={[name]=n},sx=x*n,sy=0,at={{x=x,y=0}},by={},center={x=x,y=0},observed_tick=35000} end
+  storage.push_bg=true
+  local groups={grp('no_power','nauvis',12,10,'assembling-machine-2'),grp('no_power','nauvis',3,200,'inserter'),grp('no_storage','nauvis',1,40,'logistic-robot'),grp('no_power','vulcanus',5,0,'electric-mining-drill')}
+  storage.push_alerts={player={tick=35400,groups=groups}}
+  local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return storage end,agents=function() return {} end,who=function(p) return p.name end,place=function() return nil end}
+  local p={name='luna',force=force,surface={name='nauvis'}}
+  local r=A.read(p,{mine=true})
+  eq(r.counts,'2 groups: no_power 1, no_storage 1'); eq(#r.lines,2); eq(r.groups,nil); eq(r.cursor,1)
+  r=A.read(p,{claim=8})
+  eq(r.counts,'1 group: no_power 1'); has(r.lines[1],'no_power nauvis: '); eq(r.cursor,2)
+  -- since an older cursor: said, and every group listed; then since the last one: nothing new, then a new group
+  game.tick=36600
+  r=A.read(p,{mine=true,since=1})
+  eq(#r.lines,2); has(r.since_note,'not the cursor of your last game_alerts reply (that was 2)')
+  r=A.read(p,{mine=true}); local cur=r.cursor
+  game.tick=37200
+  r=A.read(p,{mine=true,since=cur})
+  eq(r.new,0); eq(r.gone_since,0); eq(r.note,'no new alert or warning since the cursor in the claims named')
+  groups[#groups+1]=grp('no_fuel','nauvis',2,30,'boiler')
+  table.remove(groups,3)
+  r=A.read(p,{mine=true,since=r.cursor})
+  eq(r.new,1); eq(r.gone_since,1); eq(#r.lines,1); has(r.lines[1],'no_fuel nauvis: ')
+  local ok,err=pcall(A.read,p,{claim=99}); assert(not ok and tostring(err):find('no open claim #99 on the board',1,true),tostring(err))
+  defines,storage,game=nil,nil,nil
+end
+
 print('d17 batch35b ok')
