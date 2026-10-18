@@ -933,11 +933,13 @@ return function(api)
               if api.step_begin then pcall(api.step_begin,index,step) end
               local c=p.character
               if c and c.valid and c.position and c.surface then step.from_pos={x=c.position.x,y=c.position.y,surface=c.surface.name}; step.index=index end
-              -- A repeating loop's hand steps walk into reach (Muse, d15 twice: a hand haul ended elsewhere and the loop's
-              -- collect failed out of reach, past the 32 tiles a call walks by default): a transfer, collect, feed, rearm
-              -- or refuel step with a position and no walk runs with walk: true; walk: false keeps it from walking.
+              -- A queue's hand steps walk into reach (Muse, d15 twice: a hand haul ended elsewhere and the loop's collect
+              -- failed out of reach, past the 32 tiles a call walks by default; d17 batch23 C2, Grok: a plan's copper
+              -- transfer past the 64 a transfer walks by default refused, and the Swiftlet repair plan stopped): a
+              -- transfer, collect, feed, rearm or refuel step with a position and no walk runs with walk: true, walking
+              -- any distance with move_to's enemy checks; walk: false keeps it from walking. Standing orders keep theirs.
               local args=step.args
-              if q.loop and not step.order and LOOP_WALK[step.action] and type(args)=='table' and args.walk==nil and args.from==nil
+              if not step.order and LOOP_WALK[step.action] and type(args)=='table' and args.walk==nil and args.from==nil
                 and (args.position~=nil or args.positions~=nil) then
                 local c={}
                 for k,v in pairs(args) do c[k]=v end

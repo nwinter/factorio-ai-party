@@ -328,7 +328,8 @@ fails(function() luna('feed',{positions={{x=60.5,y=20.5},{x=61.5,y=20.5}},item='
 luna('queue_submit',{steps={{action='transfer',args={positions={{x=60.5,y=20.5},{x=61.5,y=20.5}},item='yumako-seed',count=1,direction='to_entity'}}}})
 advance(2)
 h=luna('queue_status').history
-eq(h[#h].ok,false); assert(tostring(h[#h].result.reason):find('all 2 targets failed',1,true),tostring(h[#h].result.reason))
+-- (d17 batch23 C2: a queue's transfer step walks, walk: true; positions that do not resolve refuse before a walk)
+eq(h[#h].ok,false); assert(tostring(h[#h].result.reason):find('none of the 2 positions resolves',1,true),tostring(h[#h].result.reason))
 luna('queue_cancel',{})
 -- A walking tour whose every stop fails ends failed (a nonzero --wait exit), with the first reason.
 body.position={x=-150,y=-100}

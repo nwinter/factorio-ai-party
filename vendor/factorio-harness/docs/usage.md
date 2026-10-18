@@ -7383,3 +7383,9 @@ fh watch    # deploy on every change
   - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
     no leg, or when the stops hold no stop for the destination.
   tests/space.lua.
+- C2 (Grok: a plan's copper transfer refused past 64 tiles and the Swiftlet repair plan stopped): the limit is the
+  64 tiles a transfer, collect, feed, rearm or refuel walks by default (32 for the rest; autowalk.lua), past which a
+  call is refused naming the same call with walk: true. Only a repeating loop's steps ran with walk: true. Every
+  queue's hand step with a position and no walk now runs with walk: true, walking any distance as move_to does with
+  its enemy checks (unsafe_goal, avoid_enemies); walk: false keeps a step from walking; standing orders are as before
+  (max_walk). tests/d15_batch4.lua, tests/picksource.lua.
