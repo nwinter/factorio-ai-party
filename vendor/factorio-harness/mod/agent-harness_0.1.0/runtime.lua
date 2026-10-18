@@ -14789,7 +14789,7 @@ M.pods=require('pods'){state=state}
 -- Landed cargo pods on the ground (landed.lua; d17 pods, Nick 15:45): the pods read, status and the team block.
 M.landed=require('landed'){state=state,position=position}
 function handlers.pods(p,a) return M.landed.read(p,a) end
-M.stores=require('stores'){pods=M.pods,agents=function() return M.board.agents() end,
+M.stores=require('stores'){pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
   character=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and p.character or nil end}
 function handlers.where_is(p,a) return M.stores.where_is(p,a) end
 -- The construction robots of a logistic network: each in the air, what holds it up (robots.lua; Astra, shift13).
@@ -14800,6 +14800,7 @@ function handlers.construction_robots(p,a)
   assert(a.position~=nil or a.network~=nil,'construction_robots with surface needs position or network there')
   local args={}
   for k,v in pairs(a) do if k~='surface' then args[k]=v end end
+  args._where=string.format(', surface: "%s"',a.surface)
   return M.robots.read(M.on_surface(p,a.surface),args)
 end
 -- Tells: lines to named teammates outside the chat (tells.lua).
@@ -15044,6 +15045,7 @@ end
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
 -- clock runs for it like any timed action).
 function handlers.wait_until(p,a)
+  assert(a.on_timeout==nil,'on_timeout is a queue step\'s (queue_submit {steps: [{action: "wait_until", args: {..., on_timeout: "hold"}}]}): a direct wait ends at its timeout')
   assert(a.wake_on_viewers==nil or type(a.wake_on_viewers)=='boolean','wake_on_viewers must be true or false')
   assert(a.wake_on_messages==nil or type(a.wake_on_messages)=='boolean','wake_on_messages must be true or false')
   local urgent_on,urgent_radius=M.urgent.option(a.wake_on_urgent)
@@ -16433,7 +16435,8 @@ function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end
 M.logaudit=require('logaudit'){state=state,surface_named=function(f,a) return M.networks.surface_named(f,a) end}
 function handlers.logistics_audit(p,a) return M.logaudit.read(p,a) end
 -- Each ghost near a point or in an area: what places it and whether robots can build it (ghostlist.lua; A10, Muse).
-M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer,robot_row=function(r,net,cache) return M.robots.row(r,net,cache) end}
+M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer,robot_row=function(r,net,cache) return M.robots.row(r,net,cache) end,
+  under=function(g) return M.robots.under(g) end,under_lines=function(list,where) return M.robots.under_lines(list,where) end}
 function handlers.ghosts(p,a) return M.ghostlist.read(p,a) end
 -- What sends a platform on besides its schedule's waits: agents' queue steps and orders (departure.lua; Grok 16:50).
 M.research_target=require('researchtarget'){state=state}
@@ -16527,7 +16530,7 @@ function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end}
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
-M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+M.shipment=require('shipment'){state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,

@@ -131,7 +131,10 @@
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
   built yet are asked no second time), lowered as they are built and removed when none is left; each tick a drop in
   what the hub holds of an item it asks for lowers that request by as much at once (the hub spends its stock on ghosts
-  before they count as built), and the rewrite every 10 s counts all again (`request: false`
+  before they count as built), and the rewrite every 10 s counts all again; each item keeps its slot from one
+  rewrite to the next (one no longer needed is cleared where it stands, a new one takes a free slot). With ghosts
+  open, `requests_check` says whether every item they still need has an active hub request, and `unrequested` names
+  each one that has none while the hub, pods in flight and robots hold less than the ghosts need (`request: false`
   removes it; `import_from`,
   `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
@@ -190,7 +193,8 @@
   it`).
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
-  planet's landing pads ask of the hub, and the last visit's pad receipts and spills; with `item`, that item over
+  planet's landing pads ask of the hub, and the last visit's pad receipts and spills, and the platform's last 2 drops
+  into a pad there with what the pad showed after (as the drops read's pad line); with `item`, that item over
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what its requests from that planet keep, what goes
   down there, what is left aboard). At a stop the hub keeps only what its requests from that planet ask (as
@@ -331,7 +335,12 @@
   in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
   the rest; `spill`: what would land on the ground). A drop's landing line gives the container's exact position and
   the other cargo pod containers within 8 tiles with what each holds; one sent to a full landing pad says it landed
-  beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`.
+  beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`. A drop into a
+  landing pad: the pad's count of the sent items before and when it landed, then for 20 s each fall in it with the
+  construction and logistic robots of ours within 8 tiles holding that item (and the first ghost or entity each flies
+  to); its landing line comes 20 s after it lands with that line (the drops read: `pad`, `pad_verdict` such as `landed, then
+  taken by construction robots`, `pad_now`). The game reserves nothing for the sender: robots may take what lands in a
+  pad.
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
@@ -340,7 +349,8 @@
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert; inserter hands and
   what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
-  `spoils_within_2_min` beside the total and per place.
+  `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
+  surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
   and so do tell, chat, say, operator, the board, research, platform calls, waits on `platform_arrived` and

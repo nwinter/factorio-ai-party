@@ -26,7 +26,9 @@
   `fuel_below`, `health_below`, `health_above`, `damaged`, `ghosts_waiting` (`./fh help wait_until`). `until` also
   takes the `--until` words (`"item_count yumako>=40"`), and `ticks` or `timeout_ticks` for `timeout` (1..54000 ticks,
   default 3600; with `--wait` it comes from `--wait-timeout`: `600000` is 10 minutes, 15 at most); hitting it fails
-  with `timed_out`. Status and `last` show `saw`, `wait_estimates` (each condition's ETA with its rate basis, or no
+  with `timed_out`; a queue step with `on_timeout: "hold"` stays first in pending instead and the queue pauses with
+  it (`paused_why` names the condition still unmet and what it saw; `queue_resume` waits for it again with a fresh
+  timeout). Status and `last` show `saw`, `wait_estimates` (each condition's ETA with its rate basis, or no
   estimate) and `idle_s` (idle seconds in this wait). A direct call takes the wake options below and `pause_queue` (as
   `wait_ticks`). Example: `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait`
 - `./fh sleep SECONDS --until COND` and `./fh wait --until COND`: COND in words, several joined by `|` (or a JSON

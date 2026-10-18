@@ -272,7 +272,10 @@
   Characters' requests are left out.
 - `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
-  target out of the area, waiting to charge, no charge); `ghosts_waiting`: each ghost in a held-up robot's queue.
+  target out of the area, waiting to charge, no charge, its target ghost standing over a live entity of ours not marked
+  for upgrade or deconstruction); `ghosts_waiting`: each ghost in a held-up robot's queue; `ghosts_blocked`: the ghosts
+  in the orders of robots in the air that stand over such an entity, counted per ghost and entity name with the `upgrade` (or
+  `deconstruct`) call that marks them.
   `sources: true`: per group of waiting ghosts and item requests, the
   network's chests holding the item (nearest 3) and whether the straight line from each passes within a worm's or
   spawner's reach the map shows.

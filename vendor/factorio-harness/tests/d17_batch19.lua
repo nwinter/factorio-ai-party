@@ -36,6 +36,7 @@ do
     local sec={group=g,slots={},filters_count=0}
     sec.set_slot=function(i,x) sec.slots[i]=x; sec.filters_count=math.max(sec.filters_count,i) end
     sec.clear_slot=function(i) sec.slots[i]=nil end
+    sec.get_slot=function(i) return sec.slots[i] end
     sections[#sections+1]=sec; secs.sections_count=#sections; return sec
   end
   secs.remove_section=function(i) table.remove(sections,i); secs.sections_count=#sections end
