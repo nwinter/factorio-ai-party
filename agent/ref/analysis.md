@@ -158,7 +158,9 @@
   not connected; one taking from a belt: that belt line's length, its head and why it stops there, and its gaps, so a
   broken link reads apart from a shortage), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from}` call
   (`from: "nearest"` for a chest, the belt's position for a belt).
-- `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
+- `game_alerts {kind?, surface?, compact?}`: the game's alerts and warnings in groups, worst first, after `counts`
+  (groups per kind, the most first). `kind` takes several (`["no_storage","no_power"]` or `"no_storage,no_power"`);
+  `compact: true` gives `lines`, one a group (`KIND SURFACE: line`), in place of the groups. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
   placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a

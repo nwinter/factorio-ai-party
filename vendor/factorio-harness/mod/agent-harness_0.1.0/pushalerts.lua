@@ -2154,12 +2154,31 @@ return function(api)
   end
   -- The game_alerts read: every group now, with who it goes to.
   function M.read(p, a)
+    -- (d17 batch32 B2, Sol: 148 groups in 82 KB hid no_storage) kind: one kind, several (an array or "a,b"), each with
+    -- its sub-kinds; compact: true: counts per kind first, then one line a group
+    assert(a.compact == nil or type(a.compact) == 'boolean', 'compact must be true or false')
+    assert(a.surface == nil or type(a.surface) == 'string', 'surface is a surface name')
+    local kinds
+    if a.kind ~= nil then
+      kinds = {}
+      if type(a.kind) == 'string' then for w in a.kind:gmatch('[^,%s]+') do kinds[#kinds+1] = w end
+      else
+        assert(type(a.kind) == 'table', 'kind is an alert kind, several in an array, or "a,b"')
+        for _, w in ipairs(a.kind) do assert(type(w) == 'string', 'kind names are strings'); kinds[#kinds+1] = w end
+      end
+      assert(#kinds >= 1 and #kinds <= 16, 'kind: 1..16 alert kinds')
+    end
+    local function wanted(kind)
+      if not kinds then return true end
+      for _, k in ipairs(kinds) do if kind == k or kind:sub(1, #k + 1) == k .. '.' then return true end end
+      return false
+    end
     local c = current(p.force)
     local who = roster()
     local here = try(function() return p.surface.name end)
     local rows = {}
     for _, g0 in ipairs(c.groups) do
-      local g = (a.surface == nil or g0.surface == a.surface) and (a.kind == nil or g0.kind == a.kind or g0.kind:sub(1, #a.kind + 1) == a.kind .. '.')
+      local g = (a.surface == nil or g0.surface == a.surface) and wanted(g0.kind)
         and M.recheck(g0, p.force)
       if g then
         -- One group that fails to read is listed with why; the others still are.
@@ -2174,7 +2193,7 @@ return function(api)
       end
     end
     -- speaker alerts (A2), read live
-    if a.kind == nil or a.kind == 'speaker' then
+    if wanted('speaker') then
       for _, r in ipairs(M.speakers(p.force)) do
         if a.surface == nil or r.surface == a.surface then
           local to = {}
@@ -2186,12 +2205,32 @@ return function(api)
         end
       end
     end
-    return {groups=rows, scanned=string.format('%ds ago', math.floor((game.tick - c.tick) / 60)),
+    -- counts per kind (the most groups first) and per surface
+    local by, order = {}, {}
+    for _, r in ipairs(rows) do
+      if not by[r.kind] then by[r.kind] = 0; order[#order+1] = r.kind end
+      by[r.kind] = by[r.kind] + 1
+    end
+    table.sort(order, function(x, y) return by[x] > by[y] or (by[x] == by[y] and x < y) end)
+    local parts = {}
+    for _, k in ipairs(order) do parts[#parts+1] = k .. ' ' .. by[k] end
+    local counts = #rows > 0 and string.format('%d group%s: %s', #rows, #rows == 1 and '' or 's', table.concat(parts, ', ')) or nil
+    local scanned = string.format('%ds ago', math.floor((game.tick - c.tick) / 60))
+    if a.compact then
+      local lines = {}
+      for _, r in ipairs(rows) do
+        local l = string.format('%s %s: %s', r.kind, r.surface or '?', tostring(r.line or ''):gsub('[%c]+', ' '))
+        lines[#lines+1] = #l > 300 and l:sub(1, 297) .. '...' or l
+      end
+      return {counts=counts, lines=#lines > 0 and lines or nil, scanned=scanned, note=#rows == 0 and 'no alerts or warnings' .. (kinds and ' of ' .. table.concat(kinds, ', ') or '') .. (a.surface and ' on ' .. a.surface or '') or nil}
+    end
+    return {counts=counts, groups=rows, scanned=scanned,
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
     game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; frozen: on a planet whose entities need heating, our frozen entities per 64-tile area (pipes and machines with what they hold, belts as one run, how long frozen since first seen, the nearest heater with its temperature and distance from the nearest frozen one); line_cut: a long belt or pipe line (8+ tiles) cut where ours died, naming the cut tiles (and what else stands on one), how far the line runs either side and what it carried, until a belt or pipe stands there again; also a belt line blocked: a build that leaves a belt facing into a tile with no belt but another entity (not an inserter) and a belt within 2 tiles past it facing the same way, naming that entity, after 30 s, until it or either belt is gone or a belt stands there; belt_cut names what stands on a missing tile in sight; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), output_full (mining drills waiting for space in a chest they drop into, per 64-tile area: each drill, what it mines, the chest and its slots used, what fills it; a backed-up belt is not said), off_by_condition (assemblers, furnaces, labs, drills and silos off by their own circuit or logistic condition, each with the condition and the value it reads; a condition on what its recipe makes, a stock cap, is not said), no_ammo, flamer_dry, speaker (programmable speakers alerting now, read live: message, icon, since_tick, to: who built it and agents on its surface), artillery_empty (artillery turrets with no shell for 5+ min: each with the inserters feeding it, their requester chest\'s shell request and holdings, its network\'s shells); out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots); seed_spoiling (a machine whose recipe takes pentapod eggs or bacteria, not crafting while that seed in its input hatches or spoils within 3 min: the seed, when, and why it is not crafting); output_chest_full (a full_output maker whose output inserter puts into a chest with no free slot: the maker, the inserter, the chest and what fills its slots); catalyst_gone (a starved machine whose recipe takes an item it also makes, with none of it in its input: the item, what its output holds, and each inserter taking from it with its hand size);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
-      returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
+      compact='optional true: counts (groups per kind, the most first), then lines: one line a group, "KIND SURFACE: its line" (cut at 300 characters), in place of groups',
+      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
 end

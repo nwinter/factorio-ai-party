@@ -86,3 +86,32 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d17_batch32 A3 seed alerts: ok')
+
+-- B2 (Sol: 148 groups, 82 KB, no_storage lost in noise): game_alerts filters by kind (several) and surface; compact:
+-- counts per kind first, one line a group.
+do
+  defines={entity_status={},inventory={},alert_type={}}
+  storage={board={items={}}}
+  local force={name='player',players={}}
+  game={tick=36000,surfaces={}}
+  local function grp(kind,surface,n,x,name) return {key=kind..'|'..surface..'|'..x..',0',kind=kind,surface=surface,n=n,names={[name]=n},sx=x*n,sy=0,at={{x=x,y=0}},by={},center={x=x,y=0},observed_tick=35000} end
+  storage.push_bg=true
+  storage.push_alerts={player={tick=35400,groups={grp('no_power','nauvis',12,10,'assembling-machine-2'),grp('no_power','nauvis',3,200,'inserter'),
+    grp('no_storage','nauvis',1,40,'logistic-robot'),grp('no_power','vulcanus',5,0,'electric-mining-drill')}}}
+  local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return storage end,agents=function() return {} end,who=function(p) return p.name end,place=function() return nil end}
+  local p={name='sol',force=force,surface={name='nauvis'}}
+  local r=A.read(p,{})
+  eq(r.counts,'4 groups: no_power 3, no_storage 1'); eq(#r.groups,4)
+  r=A.read(p,{compact=true,surface='nauvis'})
+  eq(r.counts,'3 groups: no_power 2, no_storage 1'); eq(r.groups,nil); eq(#r.lines,3)
+  has(r.lines[1],'no_power nauvis: '); eq(r.scanned,'10s ago')
+  r=A.read(p,{compact=true,kind='no_storage'})
+  eq(r.counts,'1 group: no_storage 1'); eq(#r.lines,1); has(r.lines[1],'no_storage nauvis: ')
+  r=A.read(p,{compact=true,kind={'no_storage','no_power'},surface='vulcanus'})
+  eq(r.counts,'1 group: no_power 1')
+  r=A.read(p,{compact=true,kind='no_storage,no_fuel',surface='vulcanus'})
+  eq(r.counts,nil); eq(r.note,'no alerts or warnings of no_storage, no_fuel on vulcanus')
+  fails(function() A.read(p,{compact='yes'}) end,'compact must be true or false')
+  defines,storage,game=nil,nil,nil
+end
+print('d17_batch32 B2 game_alerts compact: ok')
