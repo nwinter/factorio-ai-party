@@ -7313,6 +7313,13 @@ fh watch    # deploy on every change
   queue's hand step with a position and no walk now runs with walk: true, walking any distance as move_to does with
   its enemy checks (unsafe_goal, avoid_enemies); walk: false keeps a step from walking; standing orders are as before
   (max_walk). tests/d15_batch4.lua, tests/picksource.lua.
+- C3 (Muse, three tries: `vehicle {position}` replied `vehicle: false` and seated nobody; "vehicle board needs
+  enter:true"): with no enter, exit, drive or go_to (and no targeting switch) the call read only the character's own
+  seat. A position there is now refused: `position names the vehicle for enter: true (get in), go_to or the targeting
+  switches; with none of them nothing is done (car stands there): vehicle {position: {x: 3, y: 0}, enter: true} gets
+  in` (and, seated, that exit comes first); a drive argument (dry_run, pathfind, reverse, avoid_enemies, combat,
+  retreat, ticks) without drive is refused naming drive. A position alone is not taken as enter: on a spidertron it
+  can mean go_to or the switches. `vehicle {}` still reads the seat. tests/vehicles.lua.
 
 ## d17 study1 part 2
 - 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):

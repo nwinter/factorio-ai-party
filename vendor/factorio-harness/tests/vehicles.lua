@@ -108,6 +108,11 @@ local car=vehicle('car','car',3,0)
 
 -- Get in: the driver's seat, then a passenger; on foot, vehicle reads false.
 eq(astra('vehicle',{}).vehicle,false)
+-- (d17 batch23 C3, Muse) a position with no enter, exit, drive or go_to is refused naming enter: true, and seats nobody;
+-- a drive argument without drive too
+fails(function() astra('vehicle',{position={x=3,y=0}}) end,'with none of them nothing is done (car stands there): vehicle {position: {x: 3, y: 0}, enter: true} gets in')
+eq(car.driver,nil)
+fails(function() astra('vehicle',{ticks=600}) end,'ticks goes with drive: {x,y}')
 local r=astra('vehicle',{position={x=3,y=0},enter=true})
 eq(r.vehicle.name,'car'); eq(r.vehicle.seat,'driver'); eq(car.driver,a_body)
 r=sol('vehicle',{position={x=3,y=0},enter=true}); eq(r.vehicle.seat,'passenger')
