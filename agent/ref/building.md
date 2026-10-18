@@ -47,7 +47,9 @@
   (the same ghost or the built entity) is counted apart: `already_placed`, `already`; only real refusals are `failed`.
   A real call says on the `warning:` line when what it placed closes you in. Turret ghosts request ammo, so the robots
   that build them bring it (`ammo`: a name, `{name, count}` or false; default 10 of what the logistic network there
-  holds most of); so do the ghosts of turrets that died. `surface: "vulcanus"` places by remote view.
+  holds most of; `ammo_note` says what the default added); so do the ghosts of turrets that died. `configure
+  {position, ammo}` on a turret ghost changes its ammo request in place (false clears it; its module requests stay).
+  `surface: "vulcanus"` places by remote view.
   Example: `./fh call place_ghosts --args '{"entities":[{"name":"assembling-machine-2","position":{"x":20.5,"y":8.5},"recipe":"iron-gear-wheel"}],"dry_run":true}'`
 - `belt_upgrade {position, to?, tiles?, dry_run?}`: the belt line through position traced both ways (up to `tiles`,
   default 256; undergrounds to their pair), each tile replaced by hand with the faster one at its own position and

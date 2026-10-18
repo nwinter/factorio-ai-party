@@ -119,3 +119,28 @@ do
   game,prototypes=nil,nil
 end
 print('d17_batch33 A4 pod_landed in the lanes, one drop: ok')
+
+-- A5 (Sol 09:59: 7 railgun ghosts each asked 10 ammo by place_ghosts' default): a turret ghost's ammo request changed
+-- or cleared in place, its module requests kept; place_ghosts names the default it adds.
+do
+  defines={inventory={turret_ammo=7,turret_modules=3}}
+  prototypes={item={['railgun-ammo']={type='ammo',stack_size=10,ammo_category={name='railgun'}},['firearm-magazine']={type='ammo',stack_size=200}},
+    get_item_filtered=function() return {['railgun-ammo']={name='railgun-ammo',type='ammo',ammo_category={name='railgun'},order='a'}} end}
+  local T=dofile('mod/agent-harness_0.1.0/turretammo.lua'){state=function() return {} end}
+  local proto={type='ammo-turret',attack_parameters={ammo_categories={'railgun'}},automated_ammo_count=10,get_inventory_size=function() return 1 end}
+  local ghost={valid=true,type='entity-ghost',ghost_name='railgun-turret',ghost_prototype=proto,position={x=3.5,y=-8.5},surface={find_logistic_network_by_position=function() return nil end},force={},
+    insert_plan={{id={name='railgun-ammo',quality='normal'},items={in_inventory={{inventory=7,stack=0,count=10}}}},
+      {id={name='speed-module',quality='normal'},items={in_inventory={{inventory=3,stack=0,count=1}}}}}}
+  local r=T.set(ghost,{name='railgun-ammo',count=2})
+  eq(r.before,'railgun-ammo*10'); eq(r.after,'railgun-ammo*2')
+  eq(#ghost.insert_plan,2); eq(ghost.insert_plan[1].id.name,'speed-module','the module request stays'); eq(ghost.insert_plan[2].items.in_inventory[1].count,2)
+  r=T.set(ghost,false)
+  eq(r.before,'railgun-ammo*2'); eq(r.after,'none'); eq(#ghost.insert_plan,1)
+  fails(function() T.set({valid=true,type='ammo-turret'},false) end,'a built turret takes ammo by rearm or transfer')
+  local rows={}
+  T.add(rows,{name='railgun-ammo',count=10,default=true}); for _=1,6 do T.add(rows,{name='railgun-ammo',count=10,default=true}) end
+  eq(T.default_note(rows),'by default 7 turret ghosts each request 10 railgun-ammo (the entry\'s ammo: false for none, or {name, count}; configure {position, ammo} changes it on a ghost)')
+  eq(T.default_note({{item='railgun-ammo',count=2,ghosts=1}}),nil,'asked for: no note')
+  defines,prototypes=nil,nil
+end
+print('d17_batch33 A5 a ghost\'s ammo request in place: ok')
