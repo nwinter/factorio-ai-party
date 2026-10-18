@@ -330,7 +330,7 @@ return function(api)
         if blocked then row.stops[#row.stops+1] = way .. ': ' .. blocked
         elseif not src then row.stops[#row.stops+1] = way .. ': takes from nothing'
         elseif BELT[src.e.type] then
-          pending[#pending+1] = {row=row, way=way, src=src, takes=takes, slot=#row.ways + 1}
+          pending[#pending+1] = {row=row, way=way, src=src, takes=takes, slot=#row.ways + 1, ins=i}
           row.ways[#row.ways+1] = false
           starts[#starts+1] = src
         elseif src.e.type == 'space-platform-hub' then
@@ -352,6 +352,45 @@ return function(api)
     for _, w in ipairs(pending) do local c = comp[w.src.k]; w.order = c and c.order or math.huge end
     table.sort(pending, function(x, y) return x.order < y.order end)
     for _, n in ipairs(nodes) do reached_belts[n.k] = n.e end
+    -- (d17 batch32 B5, Astra: Kestrel II read 15 railgun rounds able to reach a railgun while both railguns stood empty:
+    -- the rounds sat behind magazines on a full ring) the lanes a feeder picks from at its pickup tile: a lane full of
+    -- items whose front item the turret does not take holds back everything behind it. Every lane the inserter picks
+    -- that way blocked: the way is blocked now ({item ahead, line naming each lane's mix}); nil otherwise.
+    local function lane_ahead(ins, belt, takes)
+      local blocked, parts = 0, {}
+      local picked = 0
+      for k = 1, 2 do
+        local lane_key = k == 1 and 'pickup_from_left_lane' or 'pickup_from_right_lane'
+        if try(function() return ins[lane_key] end) ~= false then
+          picked = picked + 1
+          local line = try(function() return belt.get_transport_line(k) end)
+          local det = line and try(function() return line.get_detailed_contents() end) or {}
+          local len = line and try(function() return line.line_length end) or 1
+          local front, fp, mix = nil, nil, {}
+          for _, d in ipairs(det) do
+            local st = d.stack
+            local n = st and try(function() return st.valid_for_read and st.name end)
+            if n then
+              mix[n] = (mix[n] or 0) + (try(function() return st.count end) or 1)
+              if not fp or d.position > fp then front, fp = n, d.position end
+            end
+          end
+          if front and #det >= math.floor(len * 4 + 0.5) and not takes(front) then
+            blocked = blocked + 1
+            local m = {}
+            for n, c in pairs(mix) do m[#m+1] = c .. ' ' .. n end
+            table.sort(m)
+            parts[#parts+1] = {item=front, text=string.format('the %s lane at %s is full, %s at its front (mix: %s)', k == 1 and 'left' or 'right', at(belt.position), front, table.concat(m, ', '))}
+          end
+        end
+      end
+      if picked > 0 and blocked == picked then
+        local texts = {}
+        for _, x in ipairs(parts) do texts[#texts+1] = x.text end
+        return {item=parts[1].item, line=table.concat(texts, '; ')}
+      end
+      return nil
+    end
     -- each turret's way back along its belt
     local held_memo = {}
     for _, w in ipairs(pending) do
@@ -373,15 +412,18 @@ return function(api)
         if not row.hub_counted then row.hub_counted = true; row.reaches = row.reaches + held_of({sp={e=hub, k=key(hub)}}) end
       end
       local src_list, gates, relays, seen_src = a.srcs, a.gates, a.relays, {}
+      local okb, ahead = pcall(lane_ahead, w.ins, src.e, takes)
+      ahead = okb and ahead or nil
+      local gain = on
       for _, x in ipairs(src_list) do
         if not x.off and x.sp.e.type ~= 'space-platform-hub' and not seen_src[x.sp.k] then
           seen_src[x.sp.k] = true
           local n = held_of(x)
           reached_src[x.sp.k] = {e=x.sp.e, n=n}
-          row.reaches = row.reaches + n
+          gain = gain + n
         end
       end
-      row.reaches = row.reaches + on
+      if ahead then row.blocked = (row.blocked or 0) + gain else row.reaches = row.reaches + gain end
       row.belts = (row.belts or 0) + a.n
       -- (d17 batch23 A2, Astra: a disabled old loader was named beside the bulk inserter feeding the loop) the
       -- switched-off ones are named only when nothing else puts items on
@@ -402,6 +444,10 @@ return function(api)
           src.e.name, at(src.e.position), on)
       end
       if #gates > 0 then row.stops[#row.stops+1] = table.concat(gates, '; ') end
+      if ahead then
+        text = text .. string.format('; blocked by %s ahead (%s)', ahead.item, ahead.line)
+        row.stops[#row.stops+1] = string.format('%s: blocked by %s ahead: %s; the %d behind it do not reach the turret now', way, ahead.item, ahead.line, gain)
+      end
       row.ways[w.slot] = text
     end
     for _, row in ipairs(rows) do
@@ -551,7 +597,8 @@ return function(api)
       if all or low then
         shown = shown + 1
         if shown <= 16 then
-          lines[#lines+1] = string.format('%s %s: holds %d; %d reach it%s%s', row.name, at(row.position), row.own, row.reaches,
+          lines[#lines+1] = string.format('%s %s: holds %d; %d reach it%s%s%s', row.name, at(row.position), row.own, row.reaches,
+            row.blocked and string.format(', %d more blocked by other ammunition ahead', row.blocked) or '',
             #row.ways > 0 and ' (' .. table.concat(row.ways, ' | ') .. ')' or '', #row.stops > 0 and '; STOPPED: ' .. table.concat(row.stops, '; ') or '')
         end
       end

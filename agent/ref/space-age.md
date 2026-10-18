@@ -146,7 +146,9 @@
   those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed
   bridges) and counts only inserters not switched off; belts running back into the hub count as reaching when the
   hub feeds a turret (`belts back into the hub`); a belt that ends just past a pickup on a turret's way is listed
-  apart (`at belt ends`), not as stranded. Switched-off loaders are named only when nothing else puts items on.
+  apart (`at belt ends`), not as stranded. Switched-off loaders are named only when nothing else puts items on. A way
+  whose pickup lane is full with another ammunition at its front reads `blocked by firearm-magazine ahead` with the
+  lane's mix, and what lies behind counts as blocked, apart from what reaches the turret.
   `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. Cover is per asteroid size (small, medium, big, huge): a turret engages what its
   priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range and past its

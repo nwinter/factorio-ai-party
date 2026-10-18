@@ -208,3 +208,58 @@ do
   game=nil
 end
 print('d17_batch33 B2 ownership read: ok')
+
+-- batch32 B5 (Astra: Kestrel II read 15 railgun rounds able to reach a railgun while both railguns stood empty: the
+-- rounds sat behind magazines on a full ring): a way open by topology but blocked now by another ammunition at the
+-- front of the lane it picks from reads blocked, apart from reaching, with the lane's mix.
+do
+  defines={inventory={turret_ammo=1,hub_main=2,chest=3},entity_status={disabled_by_control_behavior=99}}
+  prototypes={item={['firearm-magazine']={type='ammo',ammo_category='bullet'},['railgun-ammo']={type='ammo',ammo_category='railgun'}}}
+  local n=0
+  local function contents(t) local out={} for name,c in pairs(t) do out[#out+1]={name=name,count=c} end return out end
+  local function inv(t) return {get_contents=function() return contents(t) end} end
+  -- lane 1 of a belt: its items front first ({name, count}) as detailed contents, 4 a tile when full
+  local function belt(x,y,lane)
+    n=n+1
+    local b={valid=true,unit_number=n,type='transport-belt',name='transport-belt',position={x=x,y=y},belt_neighbours={inputs={}}}
+    b.get_max_transport_line_index=function() return 2 end
+    b.get_transport_line=function(i)
+      local items=i==1 and lane or {}
+      local sum={}
+      for _,it in ipairs(items) do sum[it]=(sum[it] or 0)+1 end
+      local det={}
+      for k,it in ipairs(items) do det[k]={stack={valid_for_read=true,name=it,count=1},position=1-k*0.25} end
+      return setmetatable({line_length=1,get_contents=function() return contents(sum) end,get_detailed_contents=function() return det end},
+        {__len=function() return #items end})
+    end
+    return b
+  end
+  local turret={valid=true,unit_number=100,type='ammo-turret',name='railgun-turret',position={x=0,y=-10},prototype={attack_parameters={ammo_categories={'railgun'}}}}
+  turret.get_inventory=function() return inv({}) end
+  local hub={valid=true,unit_number=200,type='space-platform-hub',name='space-platform-hub',position={x=0,y=0}}
+  hub.get_inventory=function() return inv({}) end
+  local b1=belt(0,-8,{'firearm-magazine','firearm-magazine','firearm-magazine','railgun-ammo'})
+  local b2=belt(0,-7,{'railgun-ammo','railgun-ammo','railgun-ammo','railgun-ammo'})
+  b1.belt_neighbours.inputs={b2}; b2.belt_neighbours.inputs={b1}
+  local ins={valid=true,unit_number=300,type='inserter',name='fast-inserter',position={x=0,y=-9},drop_target=turret,pickup_target=b1,pickup_from_right_lane=false}
+  local surface={find_entities_filtered=function(f)
+    local t=type(f.type)=='table' and f.type[1] or f.type
+    if t=='inserter' then return {ins} end
+    if t=='ammo-turret' then return {turret} end
+    if t=='transport-belt' then return {b1,b2} end
+    return {}
+  end}
+  local F=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){}
+  local tr=F.trace({surface=surface,force='player',hub=hub})
+  local row=tr.rows[1]
+  eq(row.reaches,0); eq(row.blocked,5)
+  has(table.concat(row.stops,' | '),'blocked by firearm-magazine ahead: the left lane at (0,-8) is full, firearm-magazine at its front (mix: 1 railgun-ammo, 3 firearm-magazine); the 5 behind it do not reach the turret now')
+  local lines=F.lines(tr,true)
+  has(table.concat(lines,' | '),'railgun-turret (0,-10): holds 0; 0 reach it, 5 more blocked by other ammunition ahead')
+  -- the front item one the turret takes: not blocked
+  b1=belt(0,-8,{'railgun-ammo','firearm-magazine','firearm-magazine','firearm-magazine'}); b1.belt_neighbours.inputs={b2}; b2.belt_neighbours.inputs={b1}; ins.pickup_target=b1
+  tr=F.trace({surface=surface,force='player',hub=hub})
+  eq(tr.rows[1].blocked,nil); eq(tr.rows[1].reaches,5)
+  defines,prototypes=nil,nil
+end
+print('d17_batch33 batch32 B5 ammunition blocked by other ammunition ahead: ok')
