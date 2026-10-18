@@ -15202,7 +15202,8 @@ function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
-  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end}
+  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end,
+  requests_off=function(pl) return M.rocketload.requests_off(pl) end}
 function handlers.fleet(p,a) return M.fleet.read(p,a) end
 -- Progress on owned board items from the game, stalls, blocked items ranked (progress.lua; d17 batch15 Group C).
 M.progress=require('progress'){state=state,items=function() return M.board.items() end,agents=function() return M.board.agents() end,
@@ -15272,7 +15273,7 @@ M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.bo
 M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
-space=space_module{circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{requests_off=function(pl) return M.rocketload.requests_off(pl) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,

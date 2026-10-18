@@ -6824,3 +6824,8 @@ fh watch    # deploy on every change
   128x128) lists the machines short of something; `all: true` every one. e.g. `biochamber (10.5,4.5) pentapod-egg
   (item_ingredient_shortage): nutrients 20/30 (24 held, 4 of them spoil within 5 min): 10 short; enough at
   requester-chest (14.5,4.5) 4 tiles, 40 free over its request; ...`. tests/d17_batch21.lua.
+- B4 (Gemini): a platform's requests held because their hub section was off showed only as `off: true` on the section
+  in `platforms`. rocketload.requests_off gives one line for every hub section that is off and holds requests: `hub
+  section 2 ("GROUP") is off: its 3 requests (rocket-fuel 100 from nauvis, ...) are not made`. It is in preflight's
+  platform lines and rows (`requests_off`), platforms (`requests_off_line`; compact lines), and fleet's line.
+  tests/rocketload.lua (its preflight line now ends with it, the fake hub having an off section).
