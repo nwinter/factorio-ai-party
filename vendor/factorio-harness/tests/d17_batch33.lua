@@ -10,7 +10,8 @@ do
   game={tick=1000,surfaces={}}
   local found={}
   for x=0,9 do found[x..','..0]=true end
-  local surface={index=7,get_tile=function(x,y) return {name=found[x..','..y] and 'space-platform-foundation' or 'empty-space'} end}
+  local surface={index=7,get_tile=function(x,y) return {name=found[x..','..y] and 'space-platform-foundation' or 'empty-space'} end,
+    count_tiles_filtered=function() local n=0 for _ in pairs(found) do n=n+1 end return n end}
   game.surfaces[7]=surface
   local TC=dofile('mod/agent-harness_0.1.0/tilecheck.lua')()
   local tiles={}
@@ -35,9 +36,11 @@ do
   eq(r.state,'running'); has(r.line,'floor check #1 (test fill): 201 tiles, running: 0 rule checks so far (150 a tick), 201 tiles still queued')
   for _=1,20 do F.tick() end
   r=F.read(id)
-  eq(r.state,'done'); eq(r.built,200); eq(r.unbuilt_count,1)
+  eq(r.state,'done'); eq(r.would_build,200); eq(r.never_built,1); eq(r.built,nil)
   eq(r.unbuilt[1],'(40.5,40.5): no foundation among the 8 tiles round it')
-  has(r.line,'201 tiles checked by the hub\'s rules'); has(r.line,'200 built in turn, 1 never built (1 no foundation among the 8 tiles round it)')
+  -- (A6, Sol 10:16) what the plan would build, beside the floor built now
+  eq(r.floor_now,10)
+  has(r.line,'201 planned tiles played through the hub\'s rules'); has(r.line,'200 would be built in turn, 1 never (1 no foundation among the 8 tiles round it); the floor built now: 10 tiles')
   eq(st.floorcheck.jobs[id].ghosts,nil,'the large tables go when done')
   fails(function() F.read(99) end,'no floor check #99 (kept: 1)')
   game=nil
