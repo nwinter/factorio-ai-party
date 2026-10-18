@@ -154,7 +154,9 @@
   those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed
   bridges) and counts only inserters not switched off; belts running back into the hub count as reaching when the
   hub feeds a turret (`belts back into the hub`); a belt that ends just past a pickup on a turret's way is listed
-  apart (`at belt ends`), not as stranded. Switched-off loaders are named only when nothing else puts items on.
+  apart (`at belt ends`), not as stranded. Switched-off loaders are named only when nothing else puts items on. A way
+  whose pickup lane is full with another ammunition at its front reads `blocked by firearm-magazine ahead` with the
+  lane's mix, and what lies behind counts as blocked, apart from what reaches the turret.
   `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. Cover is per asteroid size (small, medium, big, huge): a turret engages what its
   priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range and past its
@@ -243,7 +245,9 @@
   and `went_up`. `./fh queue submit --file plan.json --args '{"dry_run":true}'` shows the silo cargo before each
   queued launch step.
   Example: `./fh call launch --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","wait_ready":true}' --wait`
-- `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
+- `silo {position?, surface?, why?}`: `loading` near the head (when anything is): for whom (the platform its automatic
+  requests fill for, else the platform a hand load was for and by whom), the requests it fills now, what is aboard,
+  what robots bring and a paused manifest's rockets left; a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
   its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
   `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min).
