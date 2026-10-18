@@ -154,6 +154,15 @@ return function(api)
         n=inv.get_item_count(c.item)
         scope={'platform',c.platform}
         where=' in '..c.platform..' hub (landed stock; excludes incoming cargo and hub trash)'
+      elseif c.network then
+        -- network {x,y} (batch27 A6): the logistic network covering that spot (on surface, else yours), as its GUI shows it
+        local surf=c.surface and game.get_surface(c.surface) or p.surface
+        local pos=api.position(c.network)
+        local ln=surf.find_logistic_network_by_position(pos,p.force)
+        assert(ln,string.format('no logistic network of ours covers (%g,%g)%s',pos.x,pos.y,surf~=p.surface and ' on '..surf.name or ''))
+        n=ln.get_item_count(c.item)
+        scope={'network',surf.name,pos.x..','..pos.y}
+        where=string.format(' in the logistic network at (%g,%g)%s',pos.x,pos.y,surf~=p.surface and ' on '..surf.name or '')
       elseif c.surface and not positions then
         -- surface alone (E6, Sol board #755 and Gemini 19:50: from Aquilo, a wait on Nauvis U-235): what our logistic
         -- networks there hold, as each network's GUI shows it
@@ -399,6 +408,32 @@ return function(api)
       if holder.platform_was_there then return true,c.platform..' left '..holder.platform_was_there..'; now '..w.text end
       return false,c.platform..' '..w.text..'; met when it stops '..(c.location and 'at '..c.location or 'somewhere')..' and leaves again (a departure before this wait does not count)'
     end,
+    -- spoil_within {position, seconds, item?} (batch27 A6, Grok, dozens of times an hour: the copper cultivator dies when
+    -- copper ore stays over 300 longer than the bacteria last, ~40 s, and only inspect showed it): the machine at
+    -- position, its input's first stack (of item, or any) that spoils or hatches, met when that is within seconds.
+    spoil_within=function(p,c)
+      local surf=c.surface and game.get_surface(c.surface) or p.surface
+      local pos=api.position(c.position)
+      local e
+      for _,x in pairs(surf.find_entities_filtered{position=pos,radius=0.6,force=p.force}) do
+        if x.valid and (x.type=='assembling-machine' or x.type=='furnace') then e=x; break end
+      end
+      if not e then return false,string.format('no assembler or furnace of ours at (%g,%g)',pos.x,pos.y) end
+      local ok,inv=pcall(function() return e.get_inventory(e.type=='furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input) end)
+      local best,item
+      for i=1,ok and inv and #inv or 0 do
+        local st=inv[i]
+        if st.valid_for_read and (not c.item or st.name==c.item) then
+          local okt,tick=pcall(function() return st.spoil_tick end)
+          if okt and type(tick)=='number' and tick>0 and (not best or tick<best) then best,item=tick,st.name end
+        end
+      end
+      local where=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y)
+      if not best then return false,string.format('%s: no %s in its input spoils',where,c.item or 'item') end
+      local left=(best-game.tick)/60
+      local hatch=pcall(function() return prototypes.item[item].spoil_to_trigger_result end) and prototypes.item[item].spoil_to_trigger_result
+      return left<c.seconds,string.format('%s: its input\'s first %s %s in %ds',where,item,hatch and 'hatches' or 'spoils',math.max(0,math.floor(left+0.5)))
+    end,
     -- Our burner machines (furnaces, drills, boilers, burner inserters...) holding under count fuel items.
     fuel_below=function(p,c)
       local centre,radius=area(p,c)
@@ -425,7 +460,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -482,6 +517,10 @@ return function(api)
       assert(c.at_least~=nil or c.below~=nil,'item_count requires at_least or below')
       if c.at_least~=nil then number(c.at_least,0,1e9,'at_least') end
       if c.below~=nil then number(c.below,1,1e9,'below') end
+      if c.network~=nil then
+        api.position(c.network)
+        assert(c.position==nil and c.positions==nil and c.platform==nil,'item_count network counts that logistic network; no position, positions or platform')
+      end
       if c.positions~=nil then
         assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'item_count positions takes 1..64 {x,y} (chests)')
         for _,pos in ipairs(c.positions) do api.position(pos) end
@@ -528,6 +567,12 @@ return function(api)
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
+    if kind=='spoil_within' then
+      assert(c.position~=nil,'spoil_within requires position (an assembler, furnace or biochamber)')
+      number(c.seconds,1,3600,'seconds')
+      assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'item must be a known item')
+      assert(c.surface==nil or (type(c.surface)=='string' and game.get_surface(c.surface)),'surface must be a surface name')
+    end
     if kind=='platform_arrived' or kind=='platform_left' then
       assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
       assert(c.location==nil or (type(c.location)=='string' and prototypes.space_location[c.location]),'location must be a space location (a planet name)')
