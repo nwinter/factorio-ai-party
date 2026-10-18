@@ -13,6 +13,7 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
+  local TC = require('tilecheck')()
   M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true, belt_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
@@ -1145,7 +1146,7 @@ return function(api)
     -- builds no foundation that leaves a hole of empty space (tilecheck.lua);
     -- a region followed past HOLE_LIMIT tiles counts as open space. Tile
     -- ghosts already ordered count as foundation.
-    local holes, unchecked = 0, false
+    local holes, unchecked, holes_other = 0, false, nil
     if on_platform then
       local filled, seeds = {}, {}
       for k, t in pairs(planned) do filled[k] = true; seeds[#seeds+1] = {t.x, t.y} end
@@ -1162,10 +1163,17 @@ return function(api)
       local foundation_item
       for _, n in ipairs(need_list) do foundation_item = foundation_item or n.item end
       foundation_item = foundation_item or 'space-platform-foundation'
-      for _, seed in ipairs(seeds) do
+      -- (d17 batch22 A1, Sol: a bridge's dry run listed both void regions, hundreds of tiles for one gap) the hub builds
+      -- a tile once its empty side neighbours form one run: beside a new tile, every enclosed region must be filled when
+      -- open space is beside it too, else all but the largest (that one may stay empty). A region no new tile needs
+      -- filled is left out (holes_other).
+      local regions, seed_fids = {}, {}
+      for si, seed in ipairs(seeds) do
+        seed_fids[si] = {}
         for _, d in ipairs(DIRS) do
           local sx, sy = seed[1]+d[1], seed[2]+d[2]
           local sk = key(sx, sy)
+          if seen[sk] then seed_fids[si][seen[sk]] = true end
           if not seen[sk] and not filled[sk] and empty(sx, sy) and not ghost_unread(sx, sy) then
             fid = fid + 1
             seen[sk] = fid
@@ -1192,12 +1200,29 @@ return function(api)
               if open then break end
             end
             if open then open_ids[fid] = true
-            else
-              for _, c in ipairs(q) do need(c[1], c[2], foundation_item, 'hole'); holes = holes + 1 end
-            end
+            else regions[fid] = q end
+            seed_fids[si][fid] = true
           end
         end
       end
+      local required = {}
+      for _, fids in ipairs(seed_fids) do
+        local open_near, largest = false, nil
+        for fid in pairs(fids) do
+          if open_ids[fid] then open_near = true
+          elseif regions[fid] and (not largest or #regions[fid] > #regions[largest]) then largest = fid end
+        end
+        for fid in pairs(fids) do
+          if regions[fid] and (open_near or fid ~= largest) then required[fid] = true end
+        end
+      end
+      local other = 0
+      for fid, q in pairs(regions) do
+        if required[fid] then
+          for _, c in ipairs(q) do need(c[1], c[2], foundation_item, 'hole'); holes = holes + 1 end
+        else other = other + #q end
+      end
+      holes_other = other > 0 and other or nil
     end
 
     -- Tiles needed, by item; on a platform, new foundation that touches none
@@ -1227,6 +1252,8 @@ return function(api)
       end
       if holes > 0 then
         t.holes_note = string.format('%d empty tile%s would be enclosed by the new foundation; the game builds no foundation that leaves a hole, so they need foundation too (in positions)', holes, holes == 1 and '' or 's')
+          .. (holes_other and string.format('; %d more enclosed empty tiles are left out: beside each new tile with only enclosed regions round it, the largest may stay empty (the hub builds a tile once its empty side neighbours form one run)', holes_other) or '')
+        t.holes_other = holes_other
       end
       if unchecked then t.unchecked = 'the hole check stopped at its budget; some enclosed tiles may be missing' end
       if on_platform then
@@ -1271,6 +1298,49 @@ return function(api)
             end
           end
           if ahead > 0 then t.collector_clearance = string.format('%d new foundation tile%s refused in front of asteroid collectors (their tile rule keeps their collection area empty space): %s', ahead, ahead == 1 and ' is' or 's are', first) end
+        end
+        -- (d17 batch22 A1, Sol and Astra: a sparse Kestrel floor refused ~100 placements while footprint audits said
+        -- clear) the hub's build rules (tilecheck.lua, as the game showed them on a copy of world n) played over the new
+        -- tiles and the ghosts ordered: each tile that stays unbuilt and why, and for those with no foundation near, the
+        -- fewest tiles joining them to the built floor (a chain touching by sides or corners), checked by the same play.
+        do
+          local hubf = try(function() return s.platform.hub end)
+          local thr = try(function() return s.find_entities_filtered{type='thruster', limit=64} end) or {}
+          local ghosts = {}
+          for _, c0 in pairs(new) do ghosts[#ghosts+1] = {c0[1], c0[2], 'space-platform-foundation'} end
+          local tc = {}
+          local play = TC.play(s, ghosts, hubf, thr, tc)
+          local rows, far, nun = {}, {}, 0
+          for _, g in ipairs(ghosts) do
+            if not play.built[TC.key(g[1], g[2])] and TC.is_empty(s, g[1], g[2], tc) then
+              nun = nun + 1
+              local r = play.rule(g)
+              local why = type(r) == 'string' and r or type(r) == 'table' and 'building it would split the empty space beside it (its empty side neighbours meet only through it)' or 'held by tiles round it that stay unbuilt'
+              if r == 'no foundation among the 8 tiles round it' then far[#far+1] = g end
+              if #rows < 12 then rows[#rows+1] = tile_text(g[1], g[2]) .. ': ' .. why end
+            end
+          end
+          if #rows > 0 then t.unbuilt = rows; t.unbuilt_count = nun end
+          if #far > 0 then
+            local chain = TC.connect(s, far, tc)
+            if chain and #chain > 0 then
+              local ghosts2 = {}
+              for _, g in ipairs(ghosts) do ghosts2[#ghosts2+1] = g end
+              for _, c in ipairs(chain) do ghosts2[#ghosts2+1] = {c[1], c[2], 'space-platform-foundation'} end
+              local tc2 = {}
+              local play2 = TC.play(s, ghosts2, hubf, thr, tc2)
+              local still = 0
+              for _, g in ipairs(ghosts2) do if not play2.built[TC.key(g[1], g[2])] and TC.is_empty(s, g[1], g[2], tc2) then still = still + 1 end end
+              local shown = {}
+              for j = 1, math.min(#chain, 24) do shown[j] = {x=chain[j][1] + 0.5, y=chain[j][2] + 0.5} end
+              t.connect = shown
+              t.connect_line = string.format('%d foundation tile%s join%s them to the built floor: %s%s; %s', #chain, #chain == 1 and '' or 's', #chain == 1 and 's' or '',
+                (function() local p2 = {}; for j = 1, math.min(#chain, 8) do p2[j] = tile_text(chain[j][1], chain[j][2]) end; return table.concat(p2, ' ') end)(),
+                #chain > 8 and ' ...' or '', still == 0 and 'with them every tile here is built by the hub\'s rules' or string.format('with them %d tile%s still stay unbuilt', still, still == 1 and '' or 's'))
+            elseif not chain then
+              t.connect_line = 'no chain of empty tiles within 48 tiles joins them to the built floor'
+            end
+          end
         end
         local hub = try(function() return s.platform.hub end)
         if hub and hub.valid then

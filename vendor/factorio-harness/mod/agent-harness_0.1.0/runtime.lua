@@ -5160,7 +5160,7 @@ local function placement_error(p,proto,pos,direction,near)
         return ' by tiles: '..table.concat(tiles,', ')..' under it, with tile ghosts of '..(items[1] or 'space-platform-foundation')..' at '..table.concat(tg,' ')
           ..' not built yet: the game\'s ghost check refuses this entity\'s ghost while they are ghosts, and takes it once the foundation under it is built (the hub builds foundation ghosts from hub items)'
       end
-      return ' by tiles: '..table.concat(tiles,', ')..' under it, with no foundation or foundation tile ghost there (needs '..(#items>0 and table.concat(items,' or ') or 'space-platform-foundation')..')'
+      return ' by tiles: '..table.concat(tiles,', ')..' under it, with no foundation or foundation tile ghost there (needs '..(#items>0 and table.concat(items,' or ') or 'space-platform-foundation')..'; the same call with dry_run: true names the foundation the hub would not build and the fewest tiles that join it to the floor: tiles.unbuilt, tiles.connect)'
     end
     local wet,lava=false,false
     for _,t in ipairs(tiles) do

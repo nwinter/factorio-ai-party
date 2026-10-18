@@ -228,7 +228,13 @@
 - Platform foundation: the hub removes a marked foundation tile only beside empty space (a north, east, south or west
   neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
   time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
-  `"dry_run":true` marks nothing.
+  `"dry_run":true` marks nothing. The hub builds a foundation ghost only with foundation among the 8 tiles round it (a
+  corner is enough) and its empty side neighbours in one run (it never splits empty space, even when both sides stay
+  open). A dry run on a platform (place_ghosts, build, paste with `dry_run: true`) plays those rules over the new tiles
+  and the ghosts ordered: `tiles.unbuilt` names each tile that stays unbuilt and why; for one with no foundation near,
+  `tiles.connect` lists the fewest tiles that join it to the built floor (a chain touching by sides or corners,
+  `connect_line`); `holes` lists the enclosed tiles that need foundation (beside a new tile with only enclosed regions
+  round it, the largest may stay empty: `holes_other`).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
   to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
   a planet with no pad lands the same way, near its `near` spot.

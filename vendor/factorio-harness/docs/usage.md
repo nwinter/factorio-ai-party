@@ -6907,3 +6907,22 @@ fh watch    # deploy on every change
   `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
   hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
   deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+## d17 batch22 (operator 18:30: the agents' 18:20 poll)
+- A1 (Sol and Astra): a sparse Kestrel II floor refused about 100 placements while footprint audits said clear, and a
+  bridge's dry run listed both void regions (hundreds of tiles for one gap).
+  - The rules are tilecheck.lua's, as the game showed them on a copy of world n (platformtiles2): the hub builds a
+    foundation ghost only with foundation among its 8 neighbours (a corner is enough) and its empty side neighbours in
+    one run. No copy was reachable this time (the sandbox refused the docker socket and SSH, and the dev worlds refused
+    RCON); one read-only check on world n (3.1 ms) played them over 64 of Kestrel II's 301 tile ghosts: 52 buildable
+    (the hub holds no foundation), 10 held because building them would split empty space, 2 with no foundation near.
+  - A dry run on a platform now plays those rules (tilecheck M.play) over the new tiles and the ghosts ordered:
+    `tiles.unbuilt` names each tile that stays unbuilt and why (up to 12; `unbuilt_count`). For tiles with no
+    foundation near, `tiles.connect` (and `connect_line`) gives the fewest tiles that join them to the built floor:
+    the shortest chain touching by sides or corners (M.connect, within 48 tiles), played again with them to say
+    whether every tile then builds.
+  - Holes: beside each new tile, an enclosed region needs filling when open space is beside that tile too; with only
+    enclosed regions round it, all but the largest. A region no new tile needs filled is left out (`holes_other`).
+    A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
+  - A refused entity ghost over empty space on a platform says the dry run gives those fields.
+  tests/dryrun.lua.

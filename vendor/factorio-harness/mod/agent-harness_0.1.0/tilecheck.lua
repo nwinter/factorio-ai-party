@@ -233,6 +233,75 @@ return function()
   -- The tile ghosts of a platform played out: built in the order the rules let them; the rest stay, with why.
   -- ghosts: {x, y, name} each. Returns lines naming each stalled tile ghost; nil when none. A ghost held back only by
   -- ghosts on one side (an enclosed side all ghosted, some past the ones read) is not named: those go first.
+  -- The ghosts played out by the build rules: {built = {key = true}, rule = function(g)} (rule: nil, a reason string,
+  -- or the runs a split leaves). The cache holds the end state (a built ghost is not empty).
+  function M.play(s, ghosts, hub, thrusters, cache)
+    cache = cache or {}
+    local at_key, built = {}, {}
+    for _, g in ipairs(ghosts) do at_key[key(g[1], g[2])] = g end
+    local function rule(g)
+      local x, y = g[1], g[2]
+      if hub and hub.valid and y + 0.5 < hub.position.y - 200 then return 'more than 200 tiles north of the hub' end
+      for _, t in ipairs(thrusters or {}) do
+        local b = t.bounding_box
+        if x + 0.5 > b.left_top.x and x + 0.5 < b.right_bottom.x and y + 0.5 > b.right_bottom.y and y + 0.5 < b.right_bottom.y + 82 then
+          return string.format('in the 82 tiles south of the thruster at (%g,%g), where no foundation is built', t.position.x, t.position.y)
+        end
+      end
+      local near = false
+      for _, d in ipairs(RING) do if not is_empty(s, x + d[1], y + d[2], cache) then near = true end end
+      if not near then return 'no foundation among the 8 tiles round it' end
+      local runs = M.runs(s, x, y, cache)
+      if #runs >= 2 then return runs end
+      return nil
+    end
+    local work, steps = {}, 0
+    for i = #ghosts, 1, -1 do work[#work+1] = ghosts[i] end
+    while #work > 0 and steps < STEPS do
+      local g = table.remove(work)
+      local k = key(g[1], g[2])
+      steps = steps + 1
+      if not built[k] and is_empty(s, g[1], g[2], cache) and rule(g) == nil then
+        built[k] = true; cache[k] = false
+        for _, d in ipairs(RING) do
+          local n = at_key[key(g[1] + d[1], g[2] + d[2])]
+          if n and not built[key(n[1], n[2])] then work[#work+1] = n end
+        end
+      end
+    end
+    return {built=built, rule=rule, left=#work}
+  end
+  -- The fewest empty tiles that join tiles (cells: {x, y} each) to built foundation (d17 batch21->22 A1, Sol and Astra:
+  -- a placement on a sparse floor): the shortest chain of tiles each touching the next by a side or a corner (a
+  -- corner is enough for the hub to build), from any of them to a tile that is foundation in cache's end state; within
+  -- WINDOW tiles of the first, at most SEARCH tiles looked at. Returns the chain (nearest the cells first) or nil.
+  local WINDOW, SEARCH = 48, 6000
+  function M.connect(s, cells, cache)
+    if #cells == 0 then return nil end
+    local ox, oy = cells[1][1], cells[1][2]
+    local from, queue, start = {}, {}, {}
+    for _, c in ipairs(cells) do local k = key(c[1], c[2]); start[k] = true; from[k] = false; queue[#queue+1] = c end
+    local i, goal = 1, nil
+    while queue[i] and i <= SEARCH do
+      local c = queue[i]; i = i + 1
+      for _, d in ipairs(RING) do
+        local nx, ny = c[1] + d[1], c[2] + d[2]
+        local k = key(nx, ny)
+        if from[k] == nil and math.abs(nx - ox) <= WINDOW and math.abs(ny - oy) <= WINDOW then
+          if not is_empty(s, nx, ny, cache) then goal = c; break end
+          from[k] = c; queue[#queue+1] = {nx, ny}
+        end
+      end
+      if goal then break end
+    end
+    if not goal then return nil end
+    local chain = {}
+    local c = goal
+    while c and not start[key(c[1], c[2])] do chain[#chain+1] = c; c = from[key(c[1], c[2])] end
+    local out = {}
+    for j = #chain, 1, -1 do out[#out+1] = chain[j] end
+    return out
+  end
   function M.plan_builds(s, ghosts, hub, thrusters, cache)
     cache = cache or {}
     local at_key, built, ghosted = {}, {}, {}
