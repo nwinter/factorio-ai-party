@@ -1934,6 +1934,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -15173,10 +15174,15 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 M.lightning=require('lightning'){}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
 M.linecut=require('linecut'){state=state}
+M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
+function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
+passive.robot_losses=true
 M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
     for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
+    local okr,lost=pcall(M.robotloss.alert_groups,f)
+    for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
     return out
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
@@ -16454,6 +16460,8 @@ function M.on_event(event)
       and e.force and e.force.name~='enemy' and e.force.name~='neutral' and M.linecut then
       pcall(M.linecut.note,event)
     end
+    -- a robot of ours an enemy killed, with the job that sent it (robotloss.lua, d17 batch21 C2)
+    if e and e.valid and (e.type=='construction-robot' or e.type=='logistic-robot') and M.robotloss then pcall(M.robotloss.note,event) end
     if e and e.valid and e.force and e.force.name=='enemy' and (e.type=='unit-spawner' or e.type=='turret') and event.force and event.force.name~='enemy' then
       s.kills=s.kills or {}
       table.insert(s.kills,{tick=event.tick,name=e.name,position=e.position})
