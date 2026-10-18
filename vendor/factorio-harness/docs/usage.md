@@ -7193,3 +7193,11 @@ fh watch    # deploy on every change
   arrival, hub slots and chunks, chunks collected and where they go, crushers, makers, thrusters, tanks, ammunition,
   turrets, power; `errors` for a read that failed. `platform_supply` now also returns `stops` (every entry not
   working, in the chain's order; `first_stop` is the first). tests/platdigest.lua.
+- B2 (Astra, ~10 times on Kestrel): `belt_flow {position, seconds?, platform?}` (beltsample.lua) walks the belt line
+  (64 tiles back and on, undergrounds followed), cuts it into sections at each merge, and samples each section's last
+  tile and each belt merging in for 2..30 s: each lane's items by `unique_id` (2.0.77's detailed transport line
+  contents), every half of the ticks an item takes to cross a tile. An item gone at a later sample has passed: items a
+  minute per lane; a lane whose items did not move is stopped (full at 4 or more on the tile). `merges`: the line
+  before and each belt in, against the line after. The sampler runs from on_tick (at most 16 tiles, 2 lanes each; 16
+  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {}` each second until the result is in
+  (`--no-wait`: the start). tests/beltsample.lua, tests/cli.test.ts.

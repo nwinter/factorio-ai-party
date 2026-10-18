@@ -1958,6 +1958,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -13255,6 +13256,9 @@ function handlers.upgrade(p,a) return M.upgrade.run(p,a) end
 M.platrearm=require('platrearm'){state=state,remote_entity=remote_entity,on_platform=on_platform,
   deliver_one=function(p,e,items) return M.deliver.deliver_one(p,e,items) end}
 function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
+-- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
+M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform}
+function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- (the list is bots.lua's, which lets a bot aboard a platform make these calls)
 for _,name in ipairs(M.bots.PLATFORM_ACTIONS) do
   local handler=handlers[name]
@@ -14279,6 +14283,7 @@ reads.platform_bom=true
 reads.platform_production=true
 reads.platform_defense=true
 reads.platform_digest=true
+reads.belt_flow=true
 reads.circuit_audit=true
 reads.pods=true
 reads.logistics_audit=true
@@ -16565,6 +16570,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
+  if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops

@@ -141,6 +141,12 @@
   facts as inspect's `starving`, to their builder and their feeders' builders; under 2 minutes left it is
   `captive_urgent`, and `captive_died` names the hostile spawner standing in its place; both show in the team block's
   urgent part and wake a sleep.
+- `belt_flow {position, seconds?, platform?}`: the belt line through position (64 tiles back and on, undergrounds
+  followed), cut into sections at each merge (a side-load, a splitter), sampled for `seconds` (2..30, default 10) by
+  item at each section's last tile and each belt merging in: per lane items a minute that left the tile, by name, and
+  `stopped` (`full` with 4 or more on the tile) for a lane whose items did not move; `merges` gives the line before
+  each merge and each belt merging in against the line after it. The call returns when the sampling ends;
+  `belt_flow {}` reads the last result. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
   ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
   (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a
