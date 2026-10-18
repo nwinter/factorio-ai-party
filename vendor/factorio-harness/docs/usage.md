@@ -7719,6 +7719,20 @@ fh watch    # deploy on every change
     (inactivity, fluid_count, the other request waits) are named in `may_leave` when they could decide it.
   - Not run against the game: n is read-only and the dev world's RCON closed the connection. The mock follows the
     method names read on n.
+- C1 (Sol 06:22: 10 rockets stranded among 214 belts on Kestrel III, recovered by paging): `scan` with `item` or a
+  type naming a belt type:
+  - `belt_items`: the belts of ours among all the entities found (before `limit` cuts the rows) read line by line
+    (get_contents per transport line), summed by item, up to 1024 belts.
+  - With `item`, `belt_item`: the count, how many belts hold it, each belt's position, name and count (64; `more`),
+    and a line naming the first 12.
+  - Cost on world n (Kestrel II, read-only probe bounded by count): 64 belts 0.23 ms, 512 belts 3.1 ms (about 6 us a
+    belt), so 1024 is about 6 ms.
+- C2 (Opus twice: a personal request cleared after a sleep ended early, before its items arrived):
+  - A sleep that ends before its time (woke anything but elapsed) gives `personal_requests` in the reply that reads
+    the wake. A direct wait_ticks or wait_until ended told, mentioned, urgent or damaged puts it in `last`.
+  - Each line is personal.lua's unfilled row: what you hold of the min, what robots are bringing, and why it is not
+    filled (12 lines, then a count). Nothing is added when every request is filled.
+  - Cost: the character's own requester point only.
 - C4 (urgent, Astra and Sol 11:09: Kestrel II at Fulgora set to [nauvis], current 1, paused false, read no_schedule even
   after the rebuild; Swiftlet the same; [fulgora, nauvis] current 2 left; and the queue step reported success, then
   waited):

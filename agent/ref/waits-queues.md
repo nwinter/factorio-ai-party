@@ -56,7 +56,9 @@
   `wait_ticks` or `wait_until` while your queue runs runs as a sleep (`as_sleep`) and the queue keeps going;
   `pause_queue: true` pauses the queue for the wait instead.
 - `sleep_check`: the running sleep's state (`woke`, `slept_s`, `saw`) with `wait_estimates` and `idle_s` refreshed;
-  wake replies refresh them too, and `fh wait --until` puts them on its line.
+  wake replies refresh them too, and `fh wait --until` puts them on its line. A sleep that ends before its time, and
+  a direct `wait_ticks` or `wait_until` ended by a message, an urgent alert or damage (`last`), give
+  `personal_requests`: your personal requests still unfilled, each `item: hold N of M (K on the way); why`.
 - `queue_submit {steps, mode?, guards?, lane?, dry_run?}` (`./fh queue submit --file plan.json`): runs steps
   `{action, args, wait?, label?, on_fail?, min_moved?, on_short?}` inside the game; an error names the step's path.
   At submit a step naming a platform that is not ours is refused (unless an earlier step creates it), and a requests

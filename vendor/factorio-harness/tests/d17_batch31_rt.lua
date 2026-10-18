@@ -122,3 +122,54 @@ do
   force.platforms=nil
 end
 print('d17_batch31_rt B7 load_silo first: ok')
+
+-- C1 (Sol: 10 rockets stranded among 214 belts on Kestrel III): scan with a belt type aggregates the belts' contents by
+-- item, all of them before limit; with item it lists the belts holding it.
+do
+  prototypes.item.rocket={name='rocket'}; prototypes.item['iron-ore']=prototypes.item['iron-ore'] or {name='iron-ore'}
+  local belts={}
+  for i=1,30 do
+    local held=i%10==0 and {{name='rocket',count=i//10}} or {{name='iron-ore',count=2}}
+    belts[i]={valid=true,name='transport-belt',type='transport-belt',force=force,surface=surface,position={x=i+0.5,y=3.5},
+      get_max_transport_line_index=function() return 2 end,
+      get_transport_line=function(li) return {get_contents=function() return li==1 and held or {} end} end}
+  end
+  local was=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f) return belts end
+  local r=grok('scan',{area={left_top={x=0,y=0},right_bottom={x=40,y=8}},type='transport-belt',item='rocket',limit=5})
+  surface.find_entities_filtered=was
+  eq(r.belt_items,'30 belts carry iron-ore*54 rocket*6')
+  eq(r.belt_item.count,6); eq(r.belt_item.belts,3); eq(r.belt_item.positions[1].x,10.5)
+  eq(r.belt_item.line,'6 rocket on 3 of 30 belts: (10.5,3.5) 1, (20.5,3.5) 2, (30.5,3.5) 3')
+  eq(#r.entities,5,'the rows keep their limit; the aggregate counts all')
+  fails(function() grok('scan',{area={left_top={x=0,y=0},right_bottom={x=40,y=8}},item='rockets'}) end,'item is an item name')
+end
+print('d17_batch31_rt C1 scan belts by item: ok')
+
+-- C2 (Opus twice: a request cleared before its items arrived): a direct wait or a sleep that ends early lists the
+-- personal requests still unfilled, with what is on the way.
+do
+  defines.logistic_member_index=defines.logistic_member_index or {character_requester=1}
+  local index=runtime.bots.index_of('sol')
+  local sp=runtime.lookup(index)
+  local c=sp.character
+  local net={network_id=7,all_logistic_robots=40,available_logistic_robots=12,get_item_count=function() return 300 end}
+  c.get_logistic_point=function() return {filters={{name='repair-pack',count=100}},targeted_items_deliver={{name='repair-pack',count=40}},logistic_network=net,enabled=true} end
+  c.items['repair-pack']=10
+  storage.agent_harness.active[index]={kind='wait_ticks',until_tick=game.tick+600,start_tick=game.tick,queued=false}
+  runtime.stop_player(index,'told')
+  local last=storage.agent_harness.last[index]
+  eq(last.outcome,'told')
+  eq(last.personal_requests[1],'repair-pack: hold 10 of 100 (40 on the way); robots are bringing 40; network 7 holds 300 more')
+  -- elapsed: none
+  storage.agent_harness.active[index]={kind='wait_ticks',until_tick=game.tick+600,start_tick=game.tick,queued=false}
+  runtime.stop_player(index,'duration_elapsed')
+  eq(storage.agent_harness.last[index].personal_requests,nil)
+  -- a sleep (waits.lua): woke told, read once
+  local W=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return {sleeps={[index]={start_tick=game.tick,until_tick=game.tick+600,woke='told',out={woke='told',slept_s=3}}}} end,
+    personal_unfilled=function(p) return runtime.personal_unfilled_lines(p) end}
+  local r=W.handlers.sleep_check(sp,{})
+  eq(r.personal_requests[1],'repair-pack: hold 10 of 100 (40 on the way); robots are bringing 40; network 7 holds 300 more')
+  c.get_logistic_point=nil
+end
+print('d17_batch31_rt C2 an early wake lists unfilled personal requests: ok')
