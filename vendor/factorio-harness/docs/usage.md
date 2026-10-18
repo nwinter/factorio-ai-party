@@ -7467,3 +7467,11 @@ fh watch    # deploy on every change
   `danger {position, quiet_s}`: attacks on our structures within 24 tiles of the straight way from the character in
   the last quiet_s seconds (the latest named), and enemy units seen now there; `quiet: true` when neither.
   tests/danger.lua, runtime_test.
+- C2 (Sonnet: recover stopped 16 times in a solar and accumulator field on Vulcanus). Sonnet's journal, 07:16-07:17:
+  the tour stalled 7 times at (259.1,-231.3) among 3 accumulators, 3 solar panels and 2 ashland lichen trees, 68
+  tiles short of the corpse; three move_to calls to (275,-246) from there stalled 16 times each with 6 path requests
+  failed, the escape walked out 3 moves, and the corridor named the two accumulators whose mining opens a way. Path
+  requests take the character's box (0.2, +0.15 on the first level) and route through gaps the steering then sticks
+  in, and each stall replan asked for the same box. Now each stall-driven replan adds 0.15 tiles either side, to 0.45
+  (`stall_pad`, kept for that walk's later levels and named in `last.stall_pad`). Not seen in the game (no world to
+  test writes on); runtime_test checks the boxes asked.

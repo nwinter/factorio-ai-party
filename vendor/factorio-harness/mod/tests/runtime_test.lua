@@ -151,13 +151,15 @@ eq(path_requests[#path_requests-1].radius>request.radius,true) -- wider radius
 -- Both fail: the character's own box from the nearest free tile centre, then
 -- the half-tile grid, then the quarter-tile grid with a wider goal.
 local padded=path_requests[#path_requests-1]
+eq(padded.bounding_box[1][1],-0.5) -- the character's 0.2, the padded level's 0.15, and the stall replan's 0.15 (batch26 C2)
 p.surface.find_non_colliding_position=function(name,pos,radius,precision,tile_centre)
   eq(tile_centre,true); return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
 end
 runtime.on_event{name=10,id=#path_requests-1,path=nil}; runtime.on_event{name=10,id=#path_requests,path=nil}
 do
   local own=path_requests[#path_requests]
-  eq(own.bounding_box[1][1],-0.2); eq(own.radius,padded.radius); eq(own.start.x,math.floor(p.position.x)+0.5); eq(own.path_resolution_modifier,nil)
+  -- (the third stall's replan asked for 0.15 tiles more room either side: batch26 C2; it stays on the finer levels)
+  eq(own.bounding_box[1][1],-0.35); eq(own.radius,padded.radius); eq(own.start.x,math.floor(p.position.x)+0.5); eq(own.path_resolution_modifier,nil)
 end
 runtime.on_event{name=10,id=#path_requests,path=nil}
 eq(path_requests[#path_requests].path_resolution_modifier,1); eq(path_requests[#path_requests].start.x,p.position.x)

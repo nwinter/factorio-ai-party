@@ -105,7 +105,8 @@
   what it gets, and each one left out with the ammunition it wants. The dry run checks the route in straight lines
   for pockets; it does not ask the game's path. A tour's walk that stalls and ends `blocked` names in
   `first_unreached` where it stopped and what stands within 2.5 tiles that the character collides with (and enemy
-  units within 6 tiles). When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
+  units within 6 tiles). A walk (move_to or a tour) that stalls asks for its route again with 0.15 tiles more room
+  either side each time, to 0.45 (`stall_pad`), so it keeps out of the narrow gaps of a dense block of our buildings. When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
   then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold

@@ -428,6 +428,7 @@ local function finish(index, outcome)
     elseif outcome=='blocked' and (action.escape_stalled or action.trail_still) then
       last.why=action.why
     elseif outcome=='blocked' then
+      last.stall_pad=action.stall_pad
       last.why=string.format('stalled %d times%s; stopped at %s, %.1f tiles from the target',action.stalls or 0,
         action.no_progress and string.format(' (%d of them no progress for 90 ticks)',action.no_progress) or '',here and at(here) or '?',here and distance(here,action.position) or 0)
     elseif outcome=='timed_out' and here then
@@ -16366,6 +16367,8 @@ navigate=function(p,nav)
       return 'blocked'
     end
     if nav.stalls%(nav.replan_every or 3)==0 and (nav.replans or 0)<MAX_REPLANS and not nav.direct then
+      -- each stall-driven replan asks for 0.15 tiles more room either side, to 0.45 (batch26 C2: stalls in a dense block)
+      nav.stall_pad=math.min(0.45,(nav.stall_pad or 0)+0.15)
       nav.replans=(nav.replans or 0)+1; nav.path_level=0; request_path(p,nav); return
     end
     -- Slide around the obstacle: 90 degrees off the heading, alternating sides.
