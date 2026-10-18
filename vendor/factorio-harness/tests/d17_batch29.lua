@@ -36,15 +36,15 @@ do
   local r=space.requests(p,{platform='Swiftlet',clear={'firearm-magazine'},dry_run=true})
   eq(r.dry_run,true); has(r.dry_note,'nothing was changed')
   eq(#r.sends_down,1)
-  eq(r.sends_down[1],'firearm-magazine: the hub holds 400 and would keep 0 of it (kept 400): 400 surplus; 400 down to nauvis (here) (its landing pads ask 1461, hold 61)')
+  eq(r.sends_down[1],'firearm-magazine: the hub holds 400; its requests would keep none (kept 400 at nauvis): 400 down to nauvis (here) (its landing pads ask 1461, hold 61)')
   eq(#r.sections[1].requests,1,'the reply shows the section as it would be')
   eq(slots[1].value.name,'firearm-magazine'); eq(slots[1].min,400); eq(slots[2].value.name,'rocket-fuel')
   eq(st.hub_min_payload[77]['firearm-magazine|normal'],nil,'the kept min payload is put back too')
   -- held past the first stop's ask: the rest goes to the next stop's pads, then stays aboard
   pads.nauvis.hold['firearm-magazine']=1361
   r=space.requests(p,{platform='Swiftlet',clear_all=true,dry_run=true})
-  eq(r.sends_down[1],'firearm-magazine: the hub holds 400 and would keep 0 of it (kept 400): 400 surplus; 100 down to nauvis (here) (its landing pads ask 1461, hold 1361), 200 down to vulcanus (its landing pads ask 200, hold 0); 100 stay aboard')
-  eq(r.sends_down[2],'rocket-fuel: the hub holds 50 and would keep 0 of it (kept 50): 50 surplus; no landing pad on its stops asks for it: it stays aboard')
+  eq(r.sends_down[1],'firearm-magazine: the hub holds 400; its requests would keep none (kept 400 at nauvis): 100 down to nauvis (here) (its landing pads ask 1461, hold 1361), 200 down to vulcanus (its landing pads ask 200, hold 0); 100 stay aboard')
+  eq(r.sends_down[2],'rocket-fuel: the hub holds 50; its requests would keep none (kept 50 at vulcanus): no landing pad on its stops asks for more than its requests from there keep: it stays aboard')
   eq(slots[1].min,400)
   -- keep: clear_all, the magazines stay requested at the count held (import planet and min payload of the dropped one)
   r=space.requests(p,{platform='Swiftlet',clear_all=true,keep={'firearm-magazine','coal'}})
@@ -52,7 +52,7 @@ do
   eq(slots[1].value.name,'firearm-magazine'); eq(slots[1].min,400); eq(slots[1].import_from,'nauvis'); eq(slots[1].minimum_delivery_count,100); eq(slots[2],nil)
   has(r.stored[1],'firearm-magazine: kept at the 400 the hub holds (firearm-magazine 400')
   eq(r.stored[2],'coal: kept already (the hub holds 0, its requests keep 0)')
-  eq(#r.sends_down,1); has(r.sends_down[1],'rocket-fuel: the hub holds 50 and would keep 0')
+  eq(#r.sends_down,1); has(r.sends_down[1],'rocket-fuel: the hub holds 50; its requests would keep none')
   -- refusals
   fails(function() space.requests(p,{platform='Swiftlet',keep={'coal'}}) end,'keep goes with a change')
   fails(function() space.requests(p,{platform='Swiftlet',clear={'coal'},dry_run=true,trash_unrequested=true}) end,'dry_run reads set')

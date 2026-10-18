@@ -163,6 +163,14 @@ return function(api)
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
+    -- (d17 batch31 B5, Sol) the fuel feedstock trace from the thrusters back (fuelstock.lua)
+    if a.fuel ~= nil then
+      assert(a.fuel == true, 'fuel is true')
+      local r = api.fuelstock(pl)
+      r.platform = pl.name
+      r.note = 'from the thrusters back: what each consumer holds against one craft, the inserters, belts and pipes on the way and their sources, as the game shows them now; read only'
+      return r
+    end
     local s, force = pl.surface, pl.force
     local lines, first, stops = {}, nil, {}
     local function stop(text) first = first or text; stops[#stops+1] = text end
@@ -271,6 +279,7 @@ return function(api)
       chunk_flags=okt and flags and #flags > 0 and flags or nil, trace_error=not okt and tostring(chunks) or nil}
   end
   M.schema = {platform_supply = {platform='platform name',
+    fuel='optional true: the fuel feedstock trace instead, from the thrusters back: thruster-fuel and thruster-oxidizer in the thrusters\' boxes, the pipes they join (through pumps, each with its state; what they hold, tanks) and the machines making the fluid there; per maker each ingredient against one craft, through the inserters dropping into it (static filters), from a machine making it, the hub (when it holds none: the machines making it that unload into it), a collector (chunks) or a chest, or a belt walked upstream (what it holds of the item, the inserters dropping onto it, a start nothing feeds, an underground exit with no entrance, an underground span over empty space); a fluid through its pipes to its makers; and so on down to crushers, ice melters and collectors. Returns {lines (first missing link first, then the links indented by level), first_missing, cut}. first_missing: the first consumer short of an ingredient whose way is broken, else the first missing link below its sources, else a source not working, else its sources working while it is short',
     returns='lines, in the chain\'s order: first stop (the first of these not working: a collector (not working, no inserter takes from it, or foundation ghosts in its open space), a crusher, a fuel or oxidizer maker, a thruster under half, an empty gun); collectors (status, chunks held, filters, the inserters taking from them and where they put the chunks); crushers (recipe, status, input and output); thruster-fuel and thruster-oxidizer makers (status, what they hold, fluids); thrusters; guns (an empty one with what feeds it); ghosts by name, apart. first_stop; stops (every one not working, in that order). chunks: each asteroid chunk type its collectors take, where it goes through the inserters (their filters) and belts: the crushers (one whose recipe does not take it says so), the hub. chunk_flags: a static inserter filter (whitelist or blacklist set in its GUI) that keeps a collected type out, and a crusher stopped with its output full while its output inserters drop into a hub with no free slot. Read only'}}
   return M
 end
