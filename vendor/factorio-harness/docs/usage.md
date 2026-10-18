@@ -6863,3 +6863,8 @@ fh watch    # deploy on every change
   unit is within 48 tiles of the first place held, then runs again (last.then_call), at most 6 times. With no unit
   there already (an area under attack counts 30 s past its last hit) it waits 30 s (wait_ticks) first, rearm too
   (`cleared` in the reply). runtime_test.lua.
+- D3 (Muse): a backwards inserter 700 tiles off took a deconstruct and a new build; rotate turned an entity on your own
+  surface only in reach (walking within 32 tiles first). Now, out of sight or reach and not walked to (past the 32
+  tiles a call walks, or `walk: false`), rotate turns it by remote view in a chunk our force sees now, as a player
+  rotates in the map (`by: "remote view"`); `walk: true` still walks to it first. runtime_test.lua (its `walk: false`
+  case, refused before, now turns it by remote view).
