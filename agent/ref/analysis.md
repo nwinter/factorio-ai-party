@@ -56,6 +56,10 @@
   cluster with every position. A maker stopped by its own circuit or logistic condition carries the gate inline (the
   condition and what it reads now), in bottleneck's groups (`gate`, with area or positions) and in supply's and
   bottleneck item's maker lines. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
+  `chain: true` (with item): each link of the recipe chain back from the item, with its makers and their states, made
+  and used a minute now, full speed, what the link it feeds asks at its full speed, and logistic stock; `limit` is the
+  link the shortage comes down to (followed while a link's makers mostly lack an input), with its numbers and its
+  makers' states. Up to 16 links and 24 makers a link read; machines from the census pass (`as_of`).
 - `trace {position | item, platform? | surface?, forward?, audit?, upstream?, throughput?, circuit?, all?, near?,
   radius?}`: on a machine or lab, per ingredient it lacks each feeding inserter, what that inserter reads and how much
   is there, and a container within 10 tiles holding it that nothing reads. `forward: true` follows its output inserters

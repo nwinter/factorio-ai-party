@@ -3,7 +3,9 @@
   reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8,
   12); `recipe` sets an assembler's recipe; a machine the game placed facing north without its recipe's fluid ports
   is turned the way asked once the recipe is set (`direction_note`; place_ghosts: `directions_turned`). `"all": true` builds every entry it can and lists the rest in `failed` (a batch of mining drills does so unless `all: false`, and `left` names each spot left with what blocked it)
-  with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. Errors name the
+  with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. A railgun
+  entry (build, place_ghosts, their dry runs) adds `line_of_fire`: the entities of ours its shots would cross from
+  there by the prototypes' arc and line (ghosts apart: hit once built). Errors name the
   blocker (tree, rock, the character, water); trees and rocks go with `place_ghosts` + `construct`, or `mine`.
   Standing on the footprint, the character steps aside first: the reply gives `not_yet`, `still_to_build` and
   `built_so_far` (nothing of that entry built yet); `--wait` or status `last.built` counts it, and a retry with the

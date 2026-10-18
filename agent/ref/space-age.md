@@ -114,7 +114,8 @@
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
 - `platform_defense {platform, feed?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
-  runs. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
+  runs. A railgun's `line of fire` names the entities of ours its shots cross: it aims within 36 degrees of its facing
+  (72 in all), and its ammo's line (1 wide, to 53.6 tiles from its centre) damages ours too; with what it engages. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
   those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed

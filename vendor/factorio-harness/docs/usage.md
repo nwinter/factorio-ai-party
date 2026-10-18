@@ -7526,3 +7526,53 @@ fh watch    # deploy on every change
   asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
   character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
   becomes its centre and the radius that covers it. tests/cli.test.ts.
+
+## d17 batch31 (the agents' 06:20 poll)
+
+- A1 (Sonnet: coal -> petroleum -> plastic -> LDS -> silo; Opus: crude -> refinery -> petroleum -> chem plant -> plastic,
+  about 30 minutes by hand each time): `bottleneck {item, chain: true, surface?}` walks the item's recipe chain back
+  from the item, one link per item (chain.lua):
+  - Makers: the crafters on the recipe most of them run (the other recipes making it counted in), drills on its
+    resource, and offshore pumps of the fluid. They come from the census pass's entity lists (census.lua lists crafters
+    by recipe, drills by resource and pumps by fluid; no find in the read). Up to 24 a link are read now: state,
+    crafting or mining speed, productivity.
+  - Rates: made and used a minute now (the surface's production statistics, last 10 minutes), and full, what its makers
+    make at full speed (the read makers' average times all of them; a pumpjack at its yield).
+  - asked: what the link it feeds takes at that link's full speed, per recipe that takes it, net of what the recipe
+    gives back.
+  - stock: what the surface's logistic networks hold (items).
+  - `limit`: from the item down, while most of a link's read makers lack an input, the ingredient made the smallest
+    share of its ask while below it. The walk ends at the link where that stops, with its numbers and its makers' own
+    states: lack an input, output full, lack power or fuel, off by a condition, or working with full speed below the
+    ask.
+  - Bounds and as_of: at most 16 links and 8 levels. `as_of` gives the census pass's age; machines built since then
+    are not in it. Before the first pass after a runtime start, the reply says so.
+  - On world n (06:50, 243 machines listed from a bounded find): plastic-bar gave 5 links and read 38 makers in 0.8 to
+    2.6 ms. The worst case is 16 x 24 makers, about 7 ms at that rate.
+  - Example from that probe: `petroleum-gas: 10 oil-refinery on advanced-oil-processing and 2 other recipes (7 working,
+    3 fluid_ingredient_shortage); made 4026/min now (used 4020/min), 7518/min at full speed; asked 5100/min at full
+    speed by plastic-bar 5100/min`.
+- B3 (Astra: big asteroids enabled behind Kestrel II's bow, the shots broke an ammo belt; Nick 07:10: placing a railgun
+  in the game shows every structure of ours it would shoot in red): a railgun's line of fire over our entities
+  (fireline.lua).
+  - The rule, read from the 2.0.77 prototypes at runtime:
+    - railgun-turret's base has a direction, and its attack_parameters give turn_range 0.2 of a turn (it aims within
+      36 degrees of its facing, 72 in all), range 40 and projectile_creation_distance 3.6.
+    - railgun-ammo's action is a `line` 50 long and 1 wide with force `all`, and its collision mask takes every object
+      layer, belts included. It damages every entity it crosses, ours too.
+    - An entity of ours with health whose box (widened by half the line) a ray at some bearing of the arc crosses
+      between 3.6 and 53.6 tiles is hit when the turret fires that way. The test uses the box corners' bearings and
+      distances, and 17 rays where the box straddles the start or the reach.
+    - Ghosts take no damage. They are named apart, as hit once built.
+    - Any turret whose shots are a line and whose turn_range is under a full turn is read the same way.
+  - Where it shows:
+    - `platform_defense` lines `line of fire: ...` for each such turret (up to 16), with what it engages, and
+      `line_of_fire` and `hits` on its turret row.
+    - `configure {priority_targets | ignore_unprioritised}` on one: `line_of_fire`.
+    - `build` (item) and `place_ghosts` (name) entries of one, their dry runs too: `line_of_fire`, a line for each
+      such entry (up to 8), from the entry's position and direction.
+  - The find covers the arc's own box (6 tiles wider), and an entity's box is read only when its centre lies within 6
+    tiles of the arc.
+  - On world n (07:30, Kestrel II, saved first): 1,894 entities of ours lay within 55 tiles of its two railguns. Both
+    face north at (-10.5,-30.5) and (5.5,-30.5) and hit none of ours. Reading both took 1.1 ms; the first call read
+    the prototypes in 0.7 ms. Before the narrower find it took 13 ms.

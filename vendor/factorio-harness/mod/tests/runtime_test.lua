@@ -3303,6 +3303,22 @@ do
   eq(r.ammo_requests[1].ghosts,1); eq(r.ammo_requests[1].network_holds,nil)
   eq(made[1].insert_plan[1].items.in_inventory[1].count,30); eq(#made[2].insert_plan,0)
   eq(call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}}}).ammo_requests[1].count,10,'the default count')
+  -- (d17 batch31 B3) a railgun ghost's line of fire: the entities of ours its shots would cross from there
+  local rail={name='railgun-turret',type='ammo-turret',items_to_place_this={{name='railgun-turret',count=1}},automated_ammo_count=10,
+    attack_parameters={turn_range=0.2,range=40,projectile_creation_distance=3.6,ammo_categories={'railgun'}},get_inventory_size=function() return 1 end}
+  prototypes.entity['railgun-turret']=rail
+  prototypes.item['railgun-ammo']={type='ammo',order='a',stack_size=10,ammo_category={name='railgun'},get_ammo_type=function() return {action={{type='line',range=50,width=1}}} end}
+  prototypes.item['railgun-turret']={type='item',place_result=rail}
+  local filtered_kept=prototypes.get_item_filtered
+  prototypes.get_item_filtered=function() return {['firearm-magazine']=prototypes.item['firearm-magazine'],['railgun-ammo']=prototypes.item['railgun-ammo']} end
+  local find=p.surface.find_entities_filtered
+  local belt={valid=true,name='transport-belt',type='transport-belt',position={x=30.5,y=-16.5},is_entity_with_health=true,
+    bounding_box={left_top={x=30,y=-17},right_bottom={x=31,y=-16}}}
+  p.surface.find_entities_filtered=function(f) if f.area and not f.type and not f.name then return {belt} end return find(f) end
+  local rr=call('place_ghosts',{entities={{name='railgun-turret',position={x=30,y=4},direction='north'}},ammo=false})
+  assert(rr.line_of_fire and rr.line_of_fire[1]:find('hit 1 of ours: 1 transport-belt (30.5,-16.5)',1,true),tostring(rr.line_of_fire and rr.line_of_fire[1]))
+  p.surface.find_entities_filtered=find
+  prototypes.get_item_filtered=filtered_kept
   fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}},ammo='iron-plate'}) end,'not an ammo item: iron-plate')
   local bad=call('place_ghosts',{entities={{name='gun-turret',position={x=14,y=4},ammo='iron-plate'},{name='gun-turret',position={x=16,y=4}}}})
   eq(bad.placed,1); assert(bad.failed[1].error:find('not an ammo item',1,true),bad.failed[1].error)
