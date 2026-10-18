@@ -16,7 +16,10 @@
   `platform_endurance` counts); `incoming` rockets; `freight` (per stop: what was expected down and up, what left the
   hub, what came aboard, with what construction robots placed from a rocket's cargo at once as "built at once N" and
   the platform's count before and after, and what spoiled; the rockets sent to it; the cargo pods sent down with what
-  each landing pad received and the pods still in flight; per leg what spoiled on the way); `spoiling` (when its
+  each landing pad received and the pods still in flight; per leg what spoiled on the way; a stop where the platform
+  arrived and left between two looks a second apart reads `0s`); `landed` (each cargo pod's receipt, the last 8,
+  kept after its stop leaves the freight list: what, received by which pad or landed where, when, the pod's number,
+  from which stop); `spoiling` (when its
   spoilable items spoil, against the arrival); `engine` (the last 60 and 180 s: mean, lowest and highest speed,
   thruster fuel and oxidizer used and made, the thrusters' tanks at start and end, the pumps' share of time working).
 - `platform_arrived {platform, location?}` and `platform_left {platform, location?}`: wait conditions, in `./fh wait

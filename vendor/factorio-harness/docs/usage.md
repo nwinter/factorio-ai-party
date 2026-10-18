@@ -7194,3 +7194,16 @@ fh watch    # deploy on every change
   Kestrel II with 4 turrets 23 ms (all 1209 belts walked; main with 2 turrets 19 ms); a full Kestrel II read about
   25 ms (not run whole on n). The platform alert traces only while a turret holds under 20 rounds, at most once a
   minute (it traced every 10 s). tests/d17_batch23.lua.
+- A3 (Sol: Swift dropped 250 tungsten plates at Nauvis and left within the second; the platform read's freight went
+  from leg vulcanus->nauvis to leg nauvis->fulgora with no stop, so the pod's receipt was nowhere). freight.lua looks
+  once a second; a stop shorter than that was never seen. Now:
+  - a leg to X followed by a leg from X, the platform's last visited location become X during the first leg, records
+    a stop at X: `stop at nauvis (0s, Ns ago; arrived and left between two looks a second apart)`, with the arrival and
+    departure events. A turn back in flight (the last visited location unchanged) is no stop;
+  - cargo pods leaving the hub are looked for up to 10 s after a stop ends (a pod sent in a stop's last second, or at
+    a 0 s stop, is still leaving the platform then);
+  - each pod gone is a landed receipt (the last 16 per platform, apart from the 8 stops and legs kept): `landed` in
+    the platform read, newest first: `tungsten-plate*250 received by cargo-landing-pad (52,54) on nauvis, 3m30s ago
+    (pod #5751033, left the hub 3m32s ago, from the stop at nauvis)`; `landed as cargo-pod-container ...` without a
+    pad; `was gone before leaving the platform`.
+  tests/d17_batch23.lua, tests/freight.lua.

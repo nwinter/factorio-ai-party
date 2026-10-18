@@ -141,3 +141,61 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch23 A2 ammunition feed: hub return, switched-off loaders, belt ends, one read per belt: ok')
+
+-- A3 (Sol: Swift dropped 250 tungsten plates at Nauvis and left within the second; the stop and its pod's receipt were
+-- never recorded): a 0 s stop between a leg to X and a leg from X, the pod followed after it, and a landed receipt per
+-- pod kept apart from the stops.
+do
+  defines={space_platform_state={on_the_path=3,waiting_at_station=6},inventory={hub_main=1,hub_trash=2,cargo_unit=4}}
+  prototypes={item={['tungsten-plate']={get_spoil_ticks=function() return 0 end}},space_location={nauvis={},vulcanus={},fulgora={}}}
+  local function inv(t) return {get_contents=function() local out={} for n,c in pairs(t) do out[#out+1]={name=n,count=c,quality='normal'} end return out end} end
+  local main={['tungsten-plate']=250}
+  local hub={valid=true,get_inventory=function(id) return id==1 and inv(main) or inv({}) end,get_logistic_sections=function() return {sections_count=0} end}
+  local on_platform={}
+  local plsurf={name='platform-2',find_entities_filtered=function(f) if f.type=='cargo-pod' then return on_platform end return {} end}
+  local swift={valid=true,index=2,name='Swift',hub=hub,surface=plsurf,state=3,space_connection={from={name='vulcanus'},to={name='nauvis'},length=10000},distance=0.5,
+    speed=1,schedule={records={{station='nauvis'},{station='fulgora'}},current=1},last_visited_space_location={name='vulcanus'}}
+  local force={name='player',platforms={swift}}
+  swift.force=force
+  local nauvis_s={name='nauvis',find_entities_filtered=function() return {} end}
+  game={tick=0,forces={player=force},planets={nauvis={surface=nauvis_s}},surfaces={nauvis=nauvis_s}}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  local function second() game.tick=game.tick+60; F.tick(game.tick); F.pod_tick(game.tick) end
+  second(); second()
+  -- within the next second: at Nauvis, the pod sent, gone again toward Fulgora
+  swift.space_connection={from={name='nauvis'},to={name='fulgora'},length=10000}; swift.distance=0.01; swift.schedule.current=2
+  swift.last_visited_space_location={name='nauvis'}
+  local pad={name='cargo-landing-pad',position={x=52,y=54},surface=nauvis_s,valid=true}
+  local pod={valid=true,unit_number=5751033,surface=plsurf,position={x=0,y=-2},cargo_pod_origin=hub,cargo_pod_destination={station=pad}}
+  pod.get_inventory=function() return inv({['tungsten-plate']=250}) end
+  on_platform={pod}; main={}
+  second()
+  local fr=F.read(swift)
+  eq(fr[1].kind,'leg'); eq(fr[1].from,'nauvis')
+  has(fr[2].line,'stop at nauvis (0s, 0s ago; arrived and left between two looks a second apart)')
+  has(fr[2].line,'in flight 1 (tungsten-plate*250): #5751033 to cargo-landing-pad leaving the platform')
+  -- it lands in the pad
+  on_platform={}; pod.surface=nauvis_s; second(); pod.valid=false; second()
+  fr=F.read(swift)
+  has(fr[2].line,'received by landing pads 1 (tungsten-plate*250) at cargo-landing-pad (52,54) on nauvis')
+  local rc=F.receipts(swift)
+  has(rc[1],'tungsten-plate*250 received by cargo-landing-pad (52,54) on nauvis, 0s ago (pod #5751033, left the hub 2s ago, from the stop at nauvis)')
+  -- a turnaround in flight (a leg to X, then a leg from X without visiting it) is no stop
+  local n=#st.freight[2].segs
+  swift.space_connection={from={name='fulgora'},to={name='nauvis'},length=10000}; swift.schedule.current=1
+  second()
+  eq(st.freight[2].segs[#st.freight[2].segs].kind,'leg'); eq(#st.freight[2].segs,n+1)
+  swift.space_connection={from={name='nauvis'},to={name='fulgora'},length=10000}; swift.schedule.current=2
+  second()
+  eq(#st.freight[2].segs,n+2,'fulgora was not visited: no stop')
+  -- the stop scrolls off (KEEP segments); the receipt stays
+  for i=1,10 do
+    swift.space_connection={from={name=i%2==0 and 'nauvis' or 'fulgora'},to={name=i%2==0 and 'fulgora' or 'nauvis'},length=10000}
+    swift.schedule.current=i%2==0 and 2 or 1; second()
+  end
+  for _,s in ipairs(st.freight[2].segs) do assert(not s.zero,'scrolled off') end
+  has(F.receipts(swift)[1],'tungsten-plate*250 received by cargo-landing-pad (52,54) on nauvis')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch23 A3 freight: 0 s stops and landed receipts: ok')
