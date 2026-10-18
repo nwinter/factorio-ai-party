@@ -7207,3 +7207,8 @@ fh watch    # deploy on every change
     (pod #5751033, left the hub 3m32s ago, from the stop at nauvis)`; `landed as cargo-pod-container ...` without a
     pad; `was gone before leaving the platform`.
   tests/d17_batch23.lua, tests/freight.lua.
+- A4 (Opus: robot_losses cancel failed with "LuaEntity API call when LuaEntity was invalid" at (-224,-30)): the
+  grouping read each job's target's unit number, and a target gone since the robots died (its ghost built, removed or
+  its job done) raised. A gone target is now kept by its place; `cancel` skips it and names it in `ended` ("construct
+  gun-turret ghost (-224.5,-30.5): ended before the cancel (built, removed or done), skipped") and `cancel_line` counts
+  them. tests/d17_batch23.lua.

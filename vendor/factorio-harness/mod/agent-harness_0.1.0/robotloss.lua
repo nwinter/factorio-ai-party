@@ -54,7 +54,13 @@ return function(api)
         local jk = j and (j.order .. ' ' .. (j.target and j.target.name or j.item or '?')) or 'no order read'
         if not g.jobs[jk] then g.jobs[jk] = {n=0, text=jk, where=j and j.target and j.target.position or nil}; g.jorder[#g.jorder+1] = jk end
         g.jobs[jk].n = g.jobs[jk].n + 1
-        if j and j.target and j.target.ref then g.targets[j.target.ref.unit_number or at(j.target.position)] = {job=j, ref=j.target.ref} end
+        -- (d17 batch23 A4, Opus: "LuaEntity API call when LuaEntity was invalid" at (-224,-30)) a job's target that is
+        -- gone (built, removed, done) is kept by its place, not read
+        if j and j.target and j.target.ref then
+          local ref = j.target.ref
+          local un = try(function() return ref.valid and ref.unit_number end)
+          g.targets[un or at(j.target.position) .. ' ' .. tostring(j.target.name)] = {job=j, ref=ref}
+        end
       end
     end
     table.sort(order, function(x, y) return x.last > y.last end)
@@ -77,12 +83,16 @@ return function(api)
   end
   -- Cancels the jobs that sent the group's robots, as a player would: rows of what was done.
   local function cancel(force, g)
-    local done, named = {}, {}
+    local done, named, ended = {}, {}, {}
     for _, t in pairs(g.targets) do
       local e, j = t.ref, t.job
-      if try(function() return e.valid end) then
-        local what = j.target.name .. ' ' .. at(j.target.position)
-        if e.type == 'entity-ghost' or e.type == 'tile-ghost' or e.type == 'item-request-proxy' then
+      local what = tostring(j.target.name) .. ' ' .. at(j.target.position)
+      local etype = try(function() return e.valid and e.type end)
+      -- (A4) a job that ended since the robots died, or with an earlier cancel here (a ghost's item request goes with
+      -- it): skipped and named
+      if not etype then ended[#ended+1] = string.format('%s %s: ended before the cancel (built, removed or done), skipped', j.order, what)
+      else
+        if etype == 'entity-ghost' or etype == 'tile-ghost' or etype == 'item-request-proxy' then
           if try(function() e.destroy(); return true end) then done[#done+1] = 'removed ' .. what end
         elseif j.order == 'deconstruct' and try(function() return e.to_be_deconstructed() end) then
           if try(function() e.cancel_deconstruction(force); return true end) then done[#done+1] = 'deconstruction cancelled on ' .. what end
@@ -91,7 +101,7 @@ return function(api)
         else named[#named+1] = string.format('%s %s: not cancelled (a %s order)', j.order, what, j.order) end
       end
     end
-    return done, named
+    return done, named, ended
   end
   function M.read(p, a)
     local minutes = api.integer(a.minutes, 30, 1, 900, 'minutes')
@@ -111,11 +121,13 @@ return function(api)
         if not bd or d < bd then best, bd = g, d end
       end
       assert(best and bd <= 16, string.format('no robots lost within 16 tiles of %s in the last %d min', at(q), minutes))
-      local done, named = cancel(p.force, best)
+      local done, named, ended = cancel(p.force, best)
       out.cancelled = #done > 0 and done or nil
       out.not_cancelled = #named > 0 and named or nil
-      out.cancel_line = string.format('%d job%s cancelled of the robots %s %s killed%s', #done, #done == 1 and '' or 's', best.killer.name, at(best.killer.position),
-        #named > 0 and string.format('; %d named, not cancelled', #named) or '')
+      out.ended = #ended > 0 and ended or nil
+      out.cancel_line = string.format('%d job%s cancelled of the robots %s %s killed%s%s', #done, #done == 1 and '' or 's', best.killer.name, at(best.killer.position),
+        #named > 0 and string.format('; %d named, not cancelled', #named) or '',
+        #ended > 0 and string.format('; %d ended before the cancel, skipped: %s', #ended, table.concat(ended, '; ', 1, math.min(4, #ended))) or '')
     end
     if #out.lines == 0 then out.lines = {string.format('no robot of ours lost to enemies on %s in the last %d min', surface, minutes)} end
     return out
@@ -136,6 +148,6 @@ return function(api)
   M.schema = {robot_losses={surface='optional (default yours)', minutes='1..900 (default 30): deaths in that time',
     cancel='optional true, with near: cancel the jobs that sent the robots that killer killed, as by hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled',
     near='with cancel: {x,y} near a group\'s killer (within 16 tiles)',
-    returns='groups [{killer {name, position, type}, robots, line}]: our construction and logistic robots killed by enemies, by killer: how many of which, the jobs that sent them (order and target, where), how many of those jobs stand; lines; with cancel: cancelled, not_cancelled, cancel_line. A group with a death in the last 5 min is a team alert (robots_lost)'}}
+    returns='groups [{killer {name, position, type}, robots, line}]: our construction and logistic robots killed by enemies, by killer: how many of which, the jobs that sent them (order and target, where), how many of those jobs stand; lines; with cancel: cancelled, not_cancelled, ended (jobs gone before the cancel: built, removed or done; skipped), cancel_line. A group with a death in the last 5 min is a team alert (robots_lost)'}}
   return M
 end

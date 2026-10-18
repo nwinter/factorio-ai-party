@@ -168,7 +168,8 @@
   `minutes` (default 30), by killer: how many, the jobs that sent them (order and target, where), and how many of those
   jobs stand; a killer with a death in the last 5 min is a team alert (`robots_lost`). `cancel: true, near: {x,y}` (a
   killer's position) cancels those jobs as by hand: ghosts, tile ghosts and item request proxies removed,
-  deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled.
+  deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled; a job gone by then (built,
+  removed or done) is skipped and named in `ended`.
   Example: `./fh call robot_losses --args '{"cancel":true,"near":{"x":200,"y":40}}'`
 - `ingredient_gap {position | positions | area, all?}`: per crafting machine (up to 32), each ingredient of its next
   craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the places

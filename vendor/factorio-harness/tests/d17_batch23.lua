@@ -199,3 +199,45 @@ do
   defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch23 A3 freight: 0 s stops and landed receipts: ok')
+
+-- A4 (Opus: robot_losses cancel failed with "LuaEntity API call when LuaEntity was invalid" at (-224,-30)): a job
+-- whose target is gone between the read and the cancel is skipped and named.
+do
+  game={tick=1000}
+  defines={robot_order_type={construct=1,deconstruct=2}}
+  local st={}
+  local R=dofile('mod/agent-harness_0.1.0/robotloss.lua'){state=function() return st end,integer=function(v,d) return v or d end,position=function(v) return v end}
+  local worm={valid=true,name='medium-worm-turret',type='turret',position={x=-230,y=-30},force={name='enemy'}}
+  local force={name='player'}
+  -- an entity whose every read but valid raises once it is gone, as the game's does
+  local function entity(t)
+    local alive=true
+    return setmetatable({},{__index=function(_,k)
+      if k=='valid' then return alive end
+      if k=='kill' then return function() alive=false end end
+      if not alive then error('LuaEntity API call when LuaEntity was invalid.') end
+      return t[k]
+    end})
+  end
+  local built=entity({type='entity-ghost',name='entity-ghost',ghost_name='gun-turret',position={x=-224.5,y=-30.5},unit_number=21})
+  local other=entity({type='entity-ghost',name='entity-ghost',ghost_name='wall',position={x=-226.5,y=-30.5},unit_number=22})
+  rawset(other,'destroy',nil)
+  local destroyed=false
+  local o_meta=getmetatable(other).__index
+  getmetatable(other).__index=function(t,k) if k=='destroy' then return function() destroyed=true; other.kill() end end return o_meta(t,k) end
+  local function robot(target) return {valid=true,type='construction-robot',name='construction-robot',force=force,surface={name='nauvis'},position={x=-228,y=-30},
+    robot_order_queue={{type=1,target=target}}} end
+  R.note({entity=robot(built),cause=worm,tick=1000}); R.note({entity=robot(other),cause=worm,tick=1000})
+  game.tick=1300
+  local r=R.read({force=force,surface={name='nauvis'}},{})
+  has(r.lines[1],'2 of those jobs stand')
+  built.kill()  -- the turret ghost is built between the read and the cancel
+  r=R.read({force=force,surface={name='nauvis'}},{})
+  has(r.lines[1],'1 of those jobs stand')
+  r=R.read({force=force,surface={name='nauvis'}},{cancel=true,near={x=-224,y=-30}})
+  eq(destroyed,true); eq(#r.cancelled,1); eq(#r.ended,1)
+  has(r.ended[1],'construct gun-turret ghost (-224.5,-30.5): ended before the cancel (built, removed or done), skipped')
+  has(r.cancel_line,'1 job cancelled of the robots medium-worm-turret (-230,-30) killed; 1 ended before the cancel, skipped')
+  defines,game=nil,nil
+end
+print('d17_batch23 A4 robot_losses cancel after a job ended: ok')
