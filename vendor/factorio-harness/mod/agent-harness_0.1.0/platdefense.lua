@@ -233,6 +233,17 @@ return function(api)
     local part = {}
     for _, t in ipairs(turrets) do if t.only and #part < 8 then part[#part+1] = string.format('%s %s engages %s%s', t.name, at(t.position), t.engages, t.min_range > 0 and string.format(', not within %g tiles', t.min_range) or '') end end
     if #part > 0 then lines[#lines+1] = 'by their priority lists: ' .. table.concat(part, '; ') end
+    -- (d17 batch31 B3, Astra: big asteroids enabled behind Kestrel II's bow, the shots broke an ammo belt) a turret whose
+    -- shots are a line (railgun): the entities of ours they cross within its arc (fireline.lua), with what it engages
+    local fire = 0
+    for i, t in ipairs(turrets) do
+      local r = fire < 16 and api.fireline and try(function() return api.fireline.of(t.entity) end)
+      if r then
+        fire = fire + 1
+        lines[#lines+1] = 'line of fire: ' .. r.line .. (t.engages and '; it engages ' .. t.engages or '')
+        if trows[i] then trows[i].line_of_fire, trows[i].hits = r.line, r.hit end
+      end
+    end
     -- (d17 batch13 B1) each turret's way back to its ammunition: what can reach it and what is stranded
     local feed
     if api.ammofeed then

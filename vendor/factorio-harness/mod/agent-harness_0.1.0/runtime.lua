@@ -7302,7 +7302,10 @@ function M.configure_turret(e,a)
   -- a ghost's targeting is checked again once it is built (turretwatch.lua; backlog #569)
   if e.type=='entity-ghost' and M.turretwatch then pcall(M.turretwatch.watch,e,M.caller_index) end
   local now=M.turret_targets(e)
-  return {name=name,position=e.position,ghost=e.type=='entity-ghost' or nil,priority_targets=now.list,ignore_unprioritised=now.ignore,targeting=now.line}
+  -- (d17 batch31 B3, Astra) a railgun: the entities of ours its shots would cross (fireline.lua)
+  local okf,fire=pcall(function() return M.fireline and M.fireline.of(e) end)
+  return {name=name,position=e.position,ghost=e.type=='entity-ghost' or nil,priority_targets=now.list,ignore_unprioritised=now.ignore,targeting=now.line,
+    line_of_fire=okf and fire and fire.line or nil}
 end
 local function configure_check(p,a,e,near)
   if e.type=='rocket-silo' or a.filters~=nil or (a.recipe==nil and (a.filter_mode~=nil or a.use_filters~=nil)) then return end
@@ -16153,7 +16156,50 @@ function handlers.platform_production(p,a) return M.platbom.production(p,a) end
 -- A platform's turret cover of its collectors and hull (platdefense.lua; A4, Astra 01:50).
 -- A platform's ammunition by whether it can reach a turret (ammofeed.lua; d17 batch13 B1).
 M.ammofeed=require('ammofeed'){state=state}
-M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed}
+-- A railgun's line of fire over our entities (fireline.lua; d17 batch31 B3, Astra, Nick 07:10): in platform_defense,
+-- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
+M.fireline=require('fireline'){}
+M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,fireline=M.fireline}
+do
+  local function target_surface(p,a)
+    if type(a.platform)=='string' then
+      for _,pl in pairs(p.force.platforms) do if pl.valid and pl.name==a.platform and pl.surface then return pl.surface end end
+    end
+    if type(a.surface)=='string' and game.get_surface(a.surface) then return game.get_surface(a.surface) end
+    return p.surface
+  end
+  -- each railgun entry's line: the entities of ours its shots would cross from there, facing its direction
+  local function lines_of(p,a,entries)
+    local s,out=target_surface(p,a),{}
+    for _,en in ipairs(entries) do
+      if #out>=8 then break end
+      -- (build takes item, place_ghosts name)
+      local nm=type(en)=='table' and (type(en.name)=='string' and en.name or type(en.item)=='string' and (function()
+        local ok,pr=pcall(function() return prototypes.item[en.item].place_result end); return ok and pr and pr.name or nil end)()) or nil
+      if nm and M.fireline.arc(nm) and en.position~=nil then
+        local okp,pos=pcall(position,en.position)
+        local d=en.direction
+        if type(d)=='string' then d=directions[d] end
+        if okp and (d==nil or type(d)=='number') then
+          local ok,r=pcall(M.fireline.hits,s,p.force,nm,pos,d or 0)
+          if ok and r then out[#out+1]=r.line end
+        end
+      end
+    end
+    return #out>0 and out or nil
+  end
+  local build,place=handlers.build,handlers.place_ghosts
+  handlers.build=function(p,a)
+    local out=build(p,a)
+    if type(out)=='table' and type(a)=='table' then out.line_of_fire=lines_of(p,a,type(a.builds)=='table' and a.builds or {a}) end
+    return out
+  end
+  handlers.place_ghosts=function(p,a)
+    local out=place(p,a)
+    if type(out)=='table' and type(a)=='table' and type(a.entities)=='table' then out.line_of_fire=lines_of(p,a,a.entities) end
+    return out
+  end
+end
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
 function handlers.platform_gate(p,a) return space.gate(p,a) end

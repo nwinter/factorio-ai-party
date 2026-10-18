@@ -7552,3 +7552,27 @@ fh watch    # deploy on every change
   - Example from that probe: `petroleum-gas: 10 oil-refinery on advanced-oil-processing and 2 other recipes (7 working,
     3 fluid_ingredient_shortage); made 4026/min now (used 4020/min), 7518/min at full speed; asked 5100/min at full
     speed by plastic-bar 5100/min`.
+- B3 (Astra: big asteroids enabled behind Kestrel II's bow, the shots broke an ammo belt; Nick 07:10: placing a railgun
+  in the game shows every structure of ours it would shoot in red): a railgun's line of fire over our entities
+  (fireline.lua).
+  - The rule, read from the 2.0.77 prototypes at runtime:
+    - railgun-turret's base has a direction, and its attack_parameters give turn_range 0.2 of a turn (it aims within
+      36 degrees of its facing, 72 in all), range 40 and projectile_creation_distance 3.6.
+    - railgun-ammo's action is a `line` 50 long and 1 wide with force `all`, and its collision mask takes every object
+      layer, belts included. It damages every entity it crosses, ours too.
+    - An entity of ours with health whose box (widened by half the line) a ray at some bearing of the arc crosses
+      between 3.6 and 53.6 tiles is hit when the turret fires that way. The test uses the box corners' bearings and
+      distances, and 17 rays where the box straddles the start or the reach.
+    - Ghosts take no damage. They are named apart, as hit once built.
+    - Any turret whose shots are a line and whose turn_range is under a full turn is read the same way.
+  - Where it shows:
+    - `platform_defense` lines `line of fire: ...` for each such turret (up to 16), with what it engages, and
+      `line_of_fire` and `hits` on its turret row.
+    - `configure {priority_targets | ignore_unprioritised}` on one: `line_of_fire`.
+    - `build` (item) and `place_ghosts` (name) entries of one, their dry runs too: `line_of_fire`, a line for each
+      such entry (up to 8), from the entry's position and direction.
+  - The find covers the arc's own box (6 tiles wider), and an entity's box is read only when its centre lies within 6
+    tiles of the arc.
+  - On world n (07:30, Kestrel II, saved first): 1,894 entities of ours lay within 55 tiles of its two railguns. Both
+    face north at (-10.5,-30.5) and (5.5,-30.5) and hit none of ours. Reading both took 1.1 ms; the first call read
+    the prototypes in 0.7 ms. Before the narrower find it took 13 ms.

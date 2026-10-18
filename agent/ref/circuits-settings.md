@@ -77,7 +77,7 @@
   - Turrets: `priority_targets: ["big-metallic-asteroid", ...]` with `ignore_unprioritised: true` sets a turret's (or
     ghost's) priority list as its GUI does, on one or `positions`; blueprints keep it. A turret ghost's targeting
     (configure, or `configure` on a `place_ghosts` entry) is checked once it is built: a turret that reads otherwise
-    is set to the ghost's, and you are told. Artillery: `auto_targeting: false` switches automatic targeting off.
+    is set to the ghost's, and you are told. A railgun's reply adds `line_of_fire` (as platform_defense). Artillery: `auto_targeting: false` switches automatic targeting off.
   - A programmable speaker: `speaker_alert {show_alert?, show_on_map?, message?, icon?, condition?}` sets its GUI's
     alert part (the rest kept; `icon: false` clears it) and its circuit condition (`"rocket-part < 1"`); the reply
     reads them back with whether the condition holds now. It alerts while the condition holds: `game_alerts {kind:
