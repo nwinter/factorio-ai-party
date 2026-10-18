@@ -720,4 +720,22 @@ do
   eq(next(st.push_frozen.player),nil,'thawed ones forgotten')
   table.remove(game.surfaces); ents.aquilo=nil; ents.nauvis={}
 end
+-- batch26 B3 (Grok: a biochamber holding eggs or bacteria that stops crafting loses the seed): not working with the
+-- seed spoiling within 3 minutes: said, with why; working, or later than 3 minutes: not.
+do
+  local kept_status,kept_inv=defines.entity_status,defines.inventory
+  defines.entity_status={working=0,item_ingredient_shortage=5,no_power=1}
+  defines.inventory={crafter_input=2}
+  local stacks={{valid_for_read=true,name='pentapod-egg',count=3,spoil_tick=game.tick+7800},{valid_for_read=true,name='nutrients',count=0},{valid_for_read=false}}
+  stacks[2].valid_for_read=false
+  local inv=setmetatable({get_item_count=function(n) local c=0 for _,x in ipairs(stacks) do if x.valid_for_read and x.name==n then c=c+x.count end end return c end},
+    {__index=function(_,i) return stacks[i] end,__len=function() return #stacks end})
+  local bio={valid=true,name='biochamber',type='assembling-machine',position={x=10.5,y=20.5},status=5,
+    get_recipe=function() return {ingredients={{type='item',name='pentapod-egg',amount=1},{type='item',name='nutrients',amount=30}}} end,
+    get_inventory=function(i) assert(i==2); return inv end}
+  eq(A.seed_spoiling(bio),'biochamber (10.5,20.5) holds pentapod-egg 3: the first hatches in 2m10s; not crafting: item_ingredient_shortage (nutrients 0 of 30)')
+  bio.status=0; eq(A.seed_spoiling(bio),nil)
+  bio.status=5; stacks[1].spoil_tick=game.tick+20000; eq(A.seed_spoiling(bio),nil)
+  defines.entity_status,defines.inventory=kept_status,kept_inv
+end
 print('pushalerts: ok')

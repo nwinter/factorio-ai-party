@@ -7424,3 +7424,9 @@ fh watch    # deploy on every change
   machines' use a minute (recipe at crafting speed; a furnace's previous recipe), the network's pick
   (select_pickup_point) and its distance, the round trip at the logistic robot's speed with our speed bonus, at most
   the request a round trip and that a minute, and the minutes of use the request covers. tests/reqrate.lua.
+- B3 (Grok: a biochamber holding eggs or copper bacteria that stops crafting loses the seed): pushalerts kind
+  `seed_spoiling` in the background read's machine checks: an assembling machine whose recipe takes pentapod-egg,
+  copper-bacteria or iron-bacteria, not working, with that seed in its input whose first stack's spoil_tick is within
+  3 minutes: the seed and count, when the first hatches or spoils, and why (status; for a shortage, the short
+  ingredient); to its builder and its feeders' builders; it comes before input_spoilage, catalyst_gone, off_by_condition
+  and the power kinds on that machine. tests/pushalerts.lua.
