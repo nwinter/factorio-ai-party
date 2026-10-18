@@ -7727,3 +7727,9 @@ fh watch    # deploy on every change
     and a line naming the first 12.
   - Cost on world n (Kestrel II, read-only probe bounded by count): 64 belts 0.23 ms, 512 belts 3.1 ms (about 6 us a
     belt), so 1024 is about 6 ms.
+- C2 (Opus twice: a personal request cleared after a sleep ended early, before its items arrived):
+  - A sleep that ends before its time (woke anything but elapsed) gives `personal_requests` in the reply that reads
+    the wake. A direct wait_ticks or wait_until ended told, mentioned, urgent or damaged puts it in `last`.
+  - Each line is personal.lua's unfilled row: what you hold of the min, what robots are bringing, and why it is not
+    filled (12 lines, then a count). Nothing is added when every request is filled.
+  - Cost: the character's own requester point only.

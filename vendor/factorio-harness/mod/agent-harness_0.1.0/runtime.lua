@@ -284,6 +284,12 @@ local function finish(index, outcome)
   if action and action.retreated and action.retreated.idle and outcome=='retreated' then pcall(M.flee_on,index) end
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
+  -- (d17 batch31 C2, Opus twice: a request cleared before its items arrived) a direct wait ended early by a message,
+  -- an urgent alert or damage: the personal requests still unfilled, with what is on the way
+  if action and (action.kind=='wait_ticks' or action.kind=='wait_until') and M.WAIT_EARLY[outcome] then
+    local ok,lines=pcall(M.personal_unfilled_lines,M.lookup(index))
+    if ok and lines then s.last[index].personal_requests=lines end
+  end
   -- Replaced by the next call (Haiku 13:50: a walk and transfer cut off read moved 0 with no sign the walk stopped; Muse,
   -- three times after fh --wait exited 3): what it had done, for that call's reply (replaced).
   if action and outcome=='replaced' then local ok,line=pcall(M.replaced_line,index,action); s.last[index].replaced_line=ok and line or nil end
@@ -14711,7 +14717,7 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
 -- Wakes a loop of sleeps throws away, shown again later (missed.lua; Opus, shift12 12:26).
 M.missed=require('missed'){state=state,clock_mode=function() return clock and clock.report().mode end}
-M.waits=require('waits'){state=state,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+M.waits=require('waits'){state=state,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
@@ -16097,6 +16103,17 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
+-- (d17 batch31 C2) the personal requests unfilled, a line each, or nil: for a sleep or direct wait that ends early.
+M.WAIT_EARLY={told=true,mentioned=true,urgent=true,damaged=true}
+function M.personal_unfilled_lines(p)
+  if not (p and p.valid) then return nil end
+  local rows=M.personal.unfilled(p)
+  if not rows or #rows==0 then return nil end
+  local out={}
+  for i,r in ipairs(rows) do if i<=12 then out[i]=r.line end end
+  if #rows>12 then out[#out+1]=string.format('+%d more',#rows-12) end
+  return out
+end
 M.reqchest=require('reqchest'){}
 -- A logistic network's reservations, read only (reservations.lua; Luna 06:20).
 M.reservations=require('reservations'){}

@@ -145,3 +145,31 @@ do
   fails(function() grok('scan',{area={left_top={x=0,y=0},right_bottom={x=40,y=8}},item='rockets'}) end,'item is an item name')
 end
 print('d17_batch31_rt C1 scan belts by item: ok')
+
+-- C2 (Opus twice: a request cleared before its items arrived): a direct wait or a sleep that ends early lists the
+-- personal requests still unfilled, with what is on the way.
+do
+  defines.logistic_member_index=defines.logistic_member_index or {character_requester=1}
+  local index=runtime.bots.index_of('sol')
+  local sp=runtime.lookup(index)
+  local c=sp.character
+  local net={network_id=7,all_logistic_robots=40,available_logistic_robots=12,get_item_count=function() return 300 end}
+  c.get_logistic_point=function() return {filters={{name='repair-pack',count=100}},targeted_items_deliver={{name='repair-pack',count=40}},logistic_network=net,enabled=true} end
+  c.items['repair-pack']=10
+  storage.agent_harness.active[index]={kind='wait_ticks',until_tick=game.tick+600,start_tick=game.tick,queued=false}
+  runtime.stop_player(index,'told')
+  local last=storage.agent_harness.last[index]
+  eq(last.outcome,'told')
+  eq(last.personal_requests[1],'repair-pack: hold 10 of 100 (40 on the way); robots are bringing 40; network 7 holds 300 more')
+  -- elapsed: none
+  storage.agent_harness.active[index]={kind='wait_ticks',until_tick=game.tick+600,start_tick=game.tick,queued=false}
+  runtime.stop_player(index,'duration_elapsed')
+  eq(storage.agent_harness.last[index].personal_requests,nil)
+  -- a sleep (waits.lua): woke told, read once
+  local W=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return {sleeps={[index]={start_tick=game.tick,until_tick=game.tick+600,woke='told',out={woke='told',slept_s=3}}}} end,
+    personal_unfilled=function(p) return runtime.personal_unfilled_lines(p) end}
+  local r=W.handlers.sleep_check(sp,{})
+  eq(r.personal_requests[1],'repair-pack: hold 10 of 100 (40 on the way); robots are bringing 40; network 7 holds 300 more')
+  c.get_logistic_point=nil
+end
+print('d17_batch31_rt C2 an early wake lists unfilled personal requests: ok')
