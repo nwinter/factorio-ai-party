@@ -129,7 +129,8 @@
   removes it; `import_from`,
   `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
-  request less what the hub holds). `surface: "gleba"` with no platform:
+  request less what the hub holds, a slot on the game's default, a full rocket by weight, too; each line says the
+  minimum payload the slot has). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).

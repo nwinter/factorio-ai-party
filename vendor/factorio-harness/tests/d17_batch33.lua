@@ -43,3 +43,104 @@ do
   game=nil
 end
 print('d17_batch33 A1 floor check across ticks: ok')
+
+-- A3 (Sol: Wayfarer's arithmetic combinators asked 2 against the default, a full rocket of 50, even with tail): tail
+-- lowers a slot on the game's default minimum payload too, and each line says the minimum the slot has.
+do
+  game={tick=0,forces={}}
+  defines={inventory={hub_main=1}}
+  prototypes={space_location={nauvis={}},item={['arithmetic-combinator']={weight=20000}},utility_constants={rocket_lift_weight=1000000}}
+  local ghosts={}
+  local proto={name='arithmetic-combinator',items_to_place_this={{name='arithmetic-combinator',count=1}}}
+  for i=1,4 do ghosts[i]={type='entity-ghost',ghost_name='arithmetic-combinator',ghost_prototype=proto} end
+  local sections={}
+  local function section(group)
+    local sec={group=group,slots={},is_manual=true,filters_count=0}
+    sec.set_slot=function(i,f) sec.slots[i]=f; sec.filters_count=math.max(sec.filters_count,i) end
+    sec.get_slot=function(i) return sec.slots[i] end
+    sec.clear_slot=function(i) sec.slots[i]=nil end
+    return sec
+  end
+  local secs={sections_count=0}
+  secs.get_section=function(i) return sections[i] end
+  secs.add_section=function(g) sections[#sections+1]=section(g); secs.sections_count=#sections; return sections[#sections] end
+  secs.remove_section=function(i) table.remove(sections,i); secs.sections_count=#sections end
+  local held=2
+  local hub={valid=true,get_logistic_sections=function() return secs end,get_inventory=function() return {get_item_count=function() return held end} end}
+  local pl={valid=true,index=6,name='Wayfarer',hub=hub,space_location={name='nauvis'},surface={find_entities_filtered=function() return ghosts end}}
+  local force={name='player',platforms={pl}}
+  pl.force=force; game.forces={player=force}
+  local st={}
+  local B=dofile('mod/agent-harness_0.1.0/platbom.lua'){platform=function() return pl end,state=function() return st end}
+  -- without tail: the game's default, said
+  local r=B.read({force=force},{platform='Wayfarer',request=true,import_from='nauvis'})
+  eq(sections[1].slots[1].minimum_delivery_count,nil)
+  has(r.lines[1],'minimum payload: a full rocket, 50 by weight (the game\'s default)')
+  -- tail: 4 asked, 2 held: 2 to come, under the 50 a full rocket takes
+  r=B.read({force=force},{platform='Wayfarer',request=true,import_from='nauvis',tail=true})
+  eq(sections[1].slots[1].minimum_delivery_count,2)
+  has(r.lines[1],'custom minimum payload 2 (tail: 2 of the 50 a full rocket takes, what is still to come)')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch33 A3 tail on the default payload: ok')
+
+-- A4 (Astra 09:50: Petrel's freight queue stopped at each drop for a hand check): pod_landed in the remote and platform
+-- lanes, and one drop by drop_id or last_drop.
+do
+  game={tick=100}
+  prototypes={item={}}
+  local drops={{id=7,platform='Petrel',state='descending',surface='nauvis'},{id=9,platform='Petrel',state='descending',surface='nauvis'}}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,
+    drop_record=function(id) for _,r in ipairs(drops) do if r.id==id then return r end end end,
+    last_drop=function(name) local b; for _,r in ipairs(drops) do if r.platform==name and (not b or r.id>b) then b=r.id end end return b end}
+  local pl={valid=true,name='Petrel'}
+  local p={force={platforms={pl}}}
+  local rec={}
+  local c={['until']='pod_landed',platform='Petrel',last_drop=true}
+  C.validate(c)
+  local met,saw=C.check(p,c,nil,rec)
+  eq(met,false); eq(saw,'drop #9 from Petrel still descending'); eq(rec.drop_id,9)
+  drops[3]={id=10,platform='Petrel',state='descending'}  -- a later drop does not move the wait
+  drops[2].state='landed'; drops[2].into='cargo-landing-pad'; drops[2].at={x=12.5,y=3.5}
+  met,saw=C.check(p,c,nil,rec)
+  eq(met,true); eq(saw,'drop #9 from Petrel landed in cargo-landing-pad at (12.5,3.5) on nauvis')
+  met=C.check(p,{['until']='pod_landed',platform='Petrel',drop_id=7},nil,{})
+  eq(met,false)
+  fails(function() C.validate({['until']='pod_landed',platform='Petrel',drop_id=7,last_drop=true}) end,'drop_id or last_drop, not both')
+  fails(function() C.validate({['until']='pod_landed',platform='Petrel',last_drop=true,at_least=2}) end,'wait for one drop')
+  fails(function() C.check(p,{['until']='pod_landed',platform='Petrel',drop_id=3},nil,{}) end,'drop #3 is no longer kept')
+  -- the remote lane takes it
+  local remote
+  dofile('mod/agent-harness_0.1.0/queue_lanes.lua'){scheduler={handlers={},schema={queue_submit={},queue_status={returns=''}}},base={},
+    factory=function(r_) remote=r_; return {handlers={}} end,is_read=function() return false end}
+  remote.check_step('wait_until',{['until']='pod_landed',platform='Petrel',last_drop=true})
+  remote.check_step('wait_until',{['until']='all',conditions={{['until']='pod_landed',platform='Petrel'},{['until']='platform_left',platform='Petrel'}}})
+  fails(function() remote.check_step('wait_until',{['until']='pod_landed'}) end,'pod_landed with platform')
+  game,prototypes=nil,nil
+end
+print('d17_batch33 A4 pod_landed in the lanes, one drop: ok')
+
+-- A5 (Sol 09:59: 7 railgun ghosts each asked 10 ammo by place_ghosts' default): a turret ghost's ammo request changed
+-- or cleared in place, its module requests kept; place_ghosts names the default it adds.
+do
+  defines={inventory={turret_ammo=7,turret_modules=3}}
+  prototypes={item={['railgun-ammo']={type='ammo',stack_size=10,ammo_category={name='railgun'}},['firearm-magazine']={type='ammo',stack_size=200}},
+    get_item_filtered=function() return {['railgun-ammo']={name='railgun-ammo',type='ammo',ammo_category={name='railgun'},order='a'}} end}
+  local T=dofile('mod/agent-harness_0.1.0/turretammo.lua'){state=function() return {} end}
+  local proto={type='ammo-turret',attack_parameters={ammo_categories={'railgun'}},automated_ammo_count=10,get_inventory_size=function() return 1 end}
+  local ghost={valid=true,type='entity-ghost',ghost_name='railgun-turret',ghost_prototype=proto,position={x=3.5,y=-8.5},surface={find_logistic_network_by_position=function() return nil end},force={},
+    insert_plan={{id={name='railgun-ammo',quality='normal'},items={in_inventory={{inventory=7,stack=0,count=10}}}},
+      {id={name='speed-module',quality='normal'},items={in_inventory={{inventory=3,stack=0,count=1}}}}}}
+  local r=T.set(ghost,{name='railgun-ammo',count=2})
+  eq(r.before,'railgun-ammo*10'); eq(r.after,'railgun-ammo*2')
+  eq(#ghost.insert_plan,2); eq(ghost.insert_plan[1].id.name,'speed-module','the module request stays'); eq(ghost.insert_plan[2].items.in_inventory[1].count,2)
+  r=T.set(ghost,false)
+  eq(r.before,'railgun-ammo*2'); eq(r.after,'none'); eq(#ghost.insert_plan,1)
+  fails(function() T.set({valid=true,type='ammo-turret'},false) end,'a built turret takes ammo by rearm or transfer')
+  local rows={}
+  T.add(rows,{name='railgun-ammo',count=10,default=true}); for _=1,6 do T.add(rows,{name='railgun-ammo',count=10,default=true}) end
+  eq(T.default_note(rows),'by default 7 turret ghosts each request 10 railgun-ammo (the entry\'s ammo: false for none, or {name, count}; configure {position, ammo} changes it on a ghost)')
+  eq(T.default_note({{item='railgun-ammo',count=2,ghosts=1}}),nil,'asked for: no note')
+  defines,prototypes=nil,nil
+end
+print('d17_batch33 A5 a ghost\'s ammo request in place: ok')

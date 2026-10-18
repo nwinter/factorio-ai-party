@@ -462,6 +462,18 @@ return function(api)
     pod_landed=function(p,c,estimate,record)
       assert(record,'pod_landed counts from the start of a wait: a wait_until step or a direct wait_until')
       local pl=M.platform_named(p,c.platform)
+      -- (d17 batch33 A4, Astra 09:50: Petrel's freight queue stopped at each drop for a hand check) one drop: drop_id, or
+      -- last_drop (the platform's latest drop when the wait began); met once it is no longer descending
+      if c.drop_id~=nil or c.last_drop then
+        record.drop_id=record.drop_id or c.drop_id or (api.last_drop and api.last_drop(c.platform))
+        assert(record.drop_id,'no drop from '..c.platform..' is recorded (the last 20 drops are kept)')
+        local r=api.drop_record and api.drop_record(record.drop_id)
+        assert(r,'drop #'..tostring(record.drop_id)..' is no longer kept (the last 20 drops are)')
+        local landed=r.state~='descending'
+        return landed,string.format('drop #%d from %s %s',r.id,tostring(r.platform),landed and ('landed'..(r.into and ' in '..r.into or '')
+          ..(r.at and string.format(' at (%g,%g)',r.at.x,r.at.y) or '')..(r.surface and ' on '..r.surface or '')) or 'still descending'),
+          estimate and {value=landed and 1 or 0,scope='drop:'..r.id} or nil
+      end
       record.pod_since=record.pod_since or game.tick
       local list=api.receipts and api.receipts(pl,record.pod_since) or {}
       local pods,items,last=0,0,nil
@@ -618,6 +630,10 @@ return function(api)
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
     if kind=='pod_landed' then
       assert(type(c.platform)=='string' and #c.platform>0,'pod_landed requires platform (the platform the pods come down from)')
+      assert(c.drop_id==nil or (type(c.drop_id)=='number' and c.drop_id==math.floor(c.drop_id) and c.drop_id>=1),'drop_id is a drop number (drop and drops give it)')
+      assert(c.last_drop==nil or type(c.last_drop)=='boolean','last_drop must be true or false')
+      assert(not (c.drop_id and c.last_drop),'drop_id or last_drop, not both')
+      assert(not ((c.drop_id or c.last_drop) and (c.item or c.at_least)),'drop_id and last_drop wait for one drop: no item or at_least')
       assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'item must be a known item')
       if c.at_least~=nil then number(c.at_least,1,1e9,'at_least') end
     end
