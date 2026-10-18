@@ -1163,6 +1163,7 @@ class Feed:
         # (d17 batch35 D1) every line's delivery as the site shows it: id -> {status, why, to, t}, the last DELIVERY_MAX
         self.deliveries = collections.OrderedDict()
         self.clf_error = None
+        self.logged = {}                   # id -> (passed, reasons) from the verdict logs read at start (preload)
         self.recheck = []                  # lines that passed the filters while Clef failed: classified again next time
 
     def remember(self, m):
@@ -1199,6 +1200,8 @@ class Feed:
                             continue
                         if isinstance(row, dict) and row.get("id"):
                             self.remember(row)
+                            if "pass" in row:  # its verdict, for a backlog line read again (backlog_status)
+                                self.logged[row["id"]] = (bool(row["pass"]), list(row.get("reasons") or []))
             except OSError:
                 continue
 
@@ -1227,8 +1230,7 @@ class Feed:
                 self.rec_f.flush()
             if m.get("backlog") and now - float(m.get("t") or 0) > self.max_age:
                 self.dropped["backlog"] += 1
-                not_relayed(m, f"backlog: over {int(self.max_age)} s old when the relay first read the chat")
-                self.deliver(m, "not_relayed", "backlog")
+                self.backlog_status(m)
                 continue
             v, reasons = self.filt.check(m, now)
             if reasons:
@@ -1379,6 +1381,17 @@ class Feed:
         except OSError as e:
             log(f"viewer deletions: {e}")
         return row
+
+    def backlog_status(self, m):
+        """(d17 batch35 cp3, operator 16:03: after a restart the re-read backlog showed 47 lines not relayed, 37 of them in
+        viewer-relayed.jsonl) an old line read again at a restart keeps what happened to it: relayed when its id is in the
+        relayed files (this run's and the last), its verdict when the verdict logs refused it, else no status."""
+        if self.relay and m.get("id") in self.relay.done:
+            self.deliver(m, "relayed", "before the restart")
+            return
+        lg = self.logged.get(m.get("id"))
+        if lg and not lg[0]:
+            self.deliver(m, "not_relayed", ", ".join(lg[1]) or "refused")
 
     def deliver(self, v, status, why=None, to=None):
         """(D1) a line's delivery for the site: relayed (to whom), held, operator, not_relayed (and why)."""
