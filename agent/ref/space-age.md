@@ -178,7 +178,9 @@
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills; with `item`, that item over
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
-  of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
+  of two or more coming stops ask, per stop in order (ask, hold, what its requests from that planet keep, what goes
+  down there, what is left aboard). At a stop the hub keeps only what its requests from that planet ask (as
+  `requests` says). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
   `shipment {platform, ready: true}`: freight readiness for the planet it stops at (else the stop it flies to): its
   gate (as `platform_gate`), the requests from there not delivered, each silo of ours there (its rocket; automatic

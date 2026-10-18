@@ -331,3 +331,70 @@ do
   eq(r.first_missing,nil); has(r.lines[1],'first missing link: none')
 end
 print('d17_batch31 B5 fuel feedstock: ok')
+
+-- B6 (Astra 06:27) and C3 (Astra 06:31, 06:34): at a stop the hub keeps only what its requests from that planet ask;
+-- from: false (or "") names no import planet and drops the slot's, and the game stores nauvis, as for a new slot. -----
+do
+  game={tick=0}
+  defines={space_platform_state={paused=7},rocket_silo_status={},inventory={hub_main=1,hub_trash=2},cargo_destination={}}
+  prototypes={item={['space-platform-foundation']={},['firearm-magazine']={}},space_location={nauvis={},fulgora={},gleba={}},quality={normal={}}}
+  local slots={}
+  local sec={index=1,is_manual=true,group='',active=true,filters_count=0}
+  local function recount() local n=0; for i in pairs(slots) do n=math.max(n,i) end; sec.filters_count=n end
+  sec.get_slot=function(i) return slots[i] or {} end
+  -- the game: a hub request given no import planet is stored from nauvis
+  sec.set_slot=function(i,f) local c={} for k,v in pairs(f) do c[k]=v end; c.import_from=c.import_from or 'nauvis'; slots[i]=c; recount() end
+  sec.clear_slot=function(i) slots[i]=nil; recount() end
+  setmetatable(sec,{__index=function(_,k) if k=='filters' then local out={}; for i=1,sec.filters_count do out[i]=slots[i] or {} end; return out end end,
+    __newindex=function(t,k,v) if k=='filters' then slots={}; for i,f in ipairs(v) do slots[i]=f end; recount() else rawset(t,k,v) end end})
+  local secs=setmetatable({get_section=function(i) return i==1 and sec or nil end,add_section=function() return sec end},{__index=function(_,k) if k=='sections_count' then return 1 end end})
+  local held={['space-platform-foundation']=85,['firearm-magazine']=501}
+  local main={get_item_count=function(n) return held[n] or 0 end,get_contents=function() return {} end}
+  local platform={valid=true,name='Cinder',index=1,space_location={name='nauvis'},force='player',schedule={current=1,records={{station='nauvis'},{station='fulgora'}}},
+    hub={valid=true,unit_number=78,type='space-platform-hub',position={x=0,y=0},get_logistic_sections=function() return secs end,get_inventory=function() return main end,
+      get_item_count=function(n) return held[n] or 0 end}}
+  local p={index=1,force={platforms={platform}}}
+  local st={}
+  local pads={nauvis={ask={['space-platform-foundation']=100,['firearm-magazine']=1461},hold={}},fulgora={ask={},hold={}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    keep=function() return {set_construction=function(_,on) return on end,construction=function() return nil end} end,
+    freight={where=function() return {stopped=true,at='nauvis'} end,pads=function(planet) return pads[planet].ask,pads[planet].hold end}}
+  -- C3: a new slot with no from: the game set nauvis, and stored says so
+  local r=space.requests(p,{platform='Cinder',set={{item='firearm-magazine',min=500,max=2000}}})
+  eq(r.stored[1],'firearm-magazine 500..2000 from nauvis (no import planet given: the game set nauvis)')
+  r=space.requests(p,{platform='Cinder',set={{item='space-platform-foundation',min=50,from='fulgora'}}})
+  -- B6: Cinder at Nauvis under 50..inf from fulgora: a change of that request keeps nothing at Nauvis; all 85 go down
+  r=space.requests(p,{platform='Cinder',set={{item='space-platform-foundation',min=100,from='fulgora'}},dry_run=true})
+  eq(r.sends_down[1],'space-platform-foundation: the hub holds 85; its requests would keep 85 at fulgora (kept 50 at fulgora): 85 down to nauvis (here) (its landing pads ask 100, hold 0)')
+  has(r.sends_down_rule,'a request from another planet keeps nothing there')
+  -- the magazines from nauvis: a lower min there keeps less at Nauvis, the rest goes down
+  r=space.requests(p,{platform='Cinder',set={{item='firearm-magazine',min=300}},dry_run=true})
+  eq(r.sends_down[1],'firearm-magazine: the hub holds 501; its requests would keep 300 at nauvis (kept 500 at nauvis): 201 down to nauvis (here) (its landing pads ask 1461, hold 0; its requests from nauvis keep 300); 300 stay aboard')
+  -- C3: from false on a slot from fulgora: dropped, and the game sets nauvis
+  r=space.requests(p,{platform='Cinder',set={{item='space-platform-foundation',min=50,from=false}}})
+  eq(r.stored[1],'space-platform-foundation 50..inf from nauvis (no import planet given: the game set nauvis) (was space-platform-foundation 50..inf from fulgora)')
+  eq(slots[2].import_from,'nauvis')
+  r=space.requests(p,{platform='Cinder',set={{item='space-platform-foundation',min=50,from=''}}})
+  has(r.stored[1],'(no import planet given: the game set nauvis)')
+  local ok,err=pcall(space.requests,p,{platform='Cinder',set={{item='space-platform-foundation',min=50,from='mars'}}})
+  assert(not ok and tostring(err):find('mars is not one',1,true),tostring(err))
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch31 B6 and C3 hub keep rule, from false: ok')
+-- B6 in shipment's cargo conflict lines: a request from gleba keeps its stock at the Gleba stop, nothing at Nauvis
+do
+  game={tick=0,planets={}}
+  defines={inventory={hub_main=1}}
+  local sec={active=true,filters={{value={name='processing-unit'},min=100,import_from='gleba'}}}
+  local pl={valid=true,name='Spindle',index=3,force={},hub={valid=true,get_logistic_sections=function() return {sections_count=1,get_section=function() return sec end} end},
+    schedule={current=1,records={{station='nauvis'},{station='gleba'}}}}
+  local S=dofile('mod/agent-harness_0.1.0/shipment.lua'){state=function() return {} end,
+    hub_counts=function() return {['processing-unit']=500} end,
+    where=function() return {at='nauvis',stopped=true} end,
+    pads=function(planet) if planet=='nauvis' then return {['processing-unit']=300},{} end return {['processing-unit']=400},{} end}
+  local c=S.conflicts(pl)
+  eq(c[1],'cargo conflict on Spindle: the hub holds 500 processing-unit; stop 1 nauvis (here): its pads ask 300 (hold 0), 300 go down there, 200 left aboard; stop 2 gleba: its pads ask 400 (hold 0), its requests from gleba keep 100, 100 go down there, 100 left aboard')
+  game,defines=nil,nil
+end
+print('d17_batch31 B6 cargo conflicts by import planet: ok')

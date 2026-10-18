@@ -173,9 +173,11 @@ return function(api)
       local ask, hold = {}, {}
       if api.pads and not fast then local a1, h1 = api.pads(planet, pl.force); ask, hold = a1 or {}, h1 or {} end
       local down = {}
+      -- (batch31 B6) the hub keeps at a stop what its requests from that planet ask, and no more
+      local keep_here = reqs[planet] or {}
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
-        local carry = counts[item] or 0
+        local carry = (counts[item] or 0) - (keep_here[item] or 0)
         if want > 0 and carry > 0 and (not only or item == only) then
           down[#down+1] = string.format('%s %d (pads ask %d, hold %d)', item, math.min(want, carry), a, hold[item] or 0)
           rows[#rows+1] = {platform=pl.name, planet=planet, item=item, direction='down', state=here and 'unloading' or 'aboard for ' .. planet, count=math.min(want, carry)}
@@ -224,34 +226,34 @@ return function(api)
       if st and not seen[st] then seen[st] = true; order[#order+1] = {i=idx, planet=st, here=w.stopped and w.at == st} end
     end
     local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
-    -- what the hub requests itself it keeps (on the copy of world n, Swift stopped at Nauvis kept its 501 magazines,
-    -- 500 requested, under a pad ask of 1461): only the rest goes down
-    local keep = {}
-    for _, list in pairs(requests(pl)) do for item, min in pairs(list) do keep[item] = (keep[item] or 0) + min end end
+    -- what the hub keeps at a stop (space.lua KEEP_RULE, batch31 B6): what its requests importing from that planet ask
+    -- (on the copy of world n Swift at Nauvis kept its 501 magazines under 500..2000 from nauvis; Cinder at Nauvis sent all
+    -- 85 foundation down under 50..inf from fulgora); a request from another planet keeps nothing there
+    local reqs = requests(pl)
     local asks = {}
     for _, o in ipairs(order) do
       local ask, hold = {}, {}
       if api.pads then local a1, h1 = api.pads(o.planet, pl.force); ask, hold = a1 or {}, h1 or {} end
+      local keep = reqs[o.planet] or {}
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
         if want > 0 and (counts[item] or 0) - (keep[item] or 0) > 0 then
           asks[item] = asks[item] or {}
-          table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0})
+          table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0, keep=keep[item] or 0})
         end
       end
     end
     local lines = {}
     for item, list in pairs(asks) do
       if #list >= 2 then
-        local left, parts = counts[item] - (keep[item] or 0), {}
+        local left, parts = counts[item], {}
         for _, x in ipairs(list) do
-          local take = math.min(left, x.want)
+          local take = math.max(0, math.min(left - x.keep, x.want))
           left = left - take
-          parts[#parts+1] = string.format('stop %d %s%s: its pads ask %d (hold %d), %d go down there, %d left aboard',
-            x.stop.i, x.stop.planet, x.stop.here and ' (here)' or '', x.ask, x.hold, take, left)
+          parts[#parts+1] = string.format('stop %d %s%s: its pads ask %d (hold %d)%s, %d go down there, %d left aboard',
+            x.stop.i, x.stop.planet, x.stop.here and ' (here)' or '', x.ask, x.hold, x.keep > 0 and string.format(', its requests from %s keep %d', x.stop.planet, x.keep) or '', take, left)
         end
-        lines[#lines+1] = string.format('cargo conflict on %s: the hub holds %d %s%s; %s', pl.name, counts[item], item,
-          keep[item] and string.format(' (%d of them under its own request, kept)', math.min(counts[item], keep[item])) or '', table.concat(parts, '; '))
+        lines[#lines+1] = string.format('cargo conflict on %s: the hub holds %d %s; %s', pl.name, counts[item], item, table.concat(parts, '; '))
       end
     end
     table.sort(lines)
@@ -264,8 +266,8 @@ return function(api)
   -- ours there (up to SILOS): its rocket, its automatic requests and why it waits (this platform's rows of silo's
   -- request_rows: the flag, the payload a rocket waits for, the network's stock, with what the rocket holds of it), and the circuit and logistic
   -- conditions of the inserters and loaders within FEED tiles (gates' rows, with what each reads now); the landing pads
-  -- there (up to PADS): free slots each, and per item the hub would send down (the pads' asks less what they hold, the
-  -- hub's own requests kept) what the pads can take of it now and the slots it takes. Read only.
+  -- there (up to PADS): free slots each, and per item the hub would send down (the pads' asks less what they hold, beyond
+  -- what the hub's requests from that planet keep) what the pads can take of it now and the slots it takes. Read only.
   local SILOS, PADS, FEED, GATED = 4, 8, 8, 16
   local FEED_TYPES = {'inserter', 'loader', 'loader-1x1'}
   function M.ready(p, pl)
@@ -334,8 +336,8 @@ return function(api)
     -- down: the landing pads there
     local pads = sil.pads
     local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
-    local keep = {}
-    for _, list in pairs(requests(pl)) do for item, min in pairs(list) do keep[item] = (keep[item] or 0) + min end end
+    -- the hub keeps there what its requests from that planet ask (space.lua KEEP_RULE)
+    local keep = requests(pl)[planet] or {}
     -- what the pads ask (their active sections' minimums) and hold, as freight's pads reads them
     local ask, hold, invs = {}, {}, {}
     for i, pad in ipairs(pads) do
@@ -384,7 +386,7 @@ return function(api)
       end
       lines[#lines+1] = string.format('landing pads on %s: %s%s; %s', planet, table.concat(pl_parts, ', '), #pads > PADS and ', ...' or '',
         #down > 0 and string.format('the hub would send down %s: %d slots in all, %d free%s', table.concat(down, ', '), slots, free, slots > free and ' (fewer)' or '')
-        or 'the hub holds nothing the pads ask for beyond its own requests')
+        or 'the hub holds nothing the pads ask for beyond what its requests from ' .. planet .. ' keep')
       out.pad_free_slots = free
     end
     out.lines = lines

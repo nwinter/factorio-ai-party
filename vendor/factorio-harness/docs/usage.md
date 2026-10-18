@@ -7669,3 +7669,24 @@ fh watch    # deploy on every change
     sources work.
   - Cost on world n: Cinder 3.9 ms, Swift 2.8 ms, Spindle 2.8 ms, Kestrel II 9.4 ms (98-tile belts, 3 ice melters).
     None was missing a link at the probe: each maker's output was full and the thrusters' boxes were full.
+- B6 (Astra 06:27: Cinder, with space-platform-foundation 50..inf from fulgora and 85 held, dropped all 85 at Nauvis):
+  the rule, from the journals (no copy was reachable: the dev world's RCON closed the connection):
+  - Cinder: Astra's journal, shift33. At the Nauvis stop about tick 27162800 one pod took all 85 foundation down to the
+    pad at (52,54), under `space-platform-foundation 50..inf from fulgora min payload 50`.
+  - Swift (the copy of world n, 2026-10-17, shipment.lua's case): at Nauvis it kept its 501 magazines under a pad ask
+    of 1461. Its request then was Sol's `firearm-magazine 500..2000 from nauvis` (shift27).
+  - So at a stop the hub keeps what its requests importing from that planet ask. A request from another planet keeps
+    nothing there, and the landing pads take what they ask for.
+  - space.lua `M.hub_keep_at` sums the requests' mins by import planet. `sends_down` is figured per stop with what
+    the requests from that stop's planet keep after the change; its lines say what they would keep and kept by planet,
+    and `sends_down_rule` gives the rule with the two cases. It comes on any change that alters what the requests
+    keep of an item held (before: only a drop in the total).
+  - shipment.lua: the down rows, the cargo conflict lines and the readiness read keep per stop only what the requests
+    from that planet ask. Before, every request counted at every stop.
+- C3 (Astra 06:31, 06:34: a dry run of clear then set without from gave "100..inf from nauvis"; from: false refused):
+  - Where nauvis came from: the game. The harness passes no import planet for a new slot set without `from`. All 16
+    such slots in the journals read back `from nauvis`, and Wren (shift27), Kestrel II (shift31), Meridian (shift26) and
+    Aegis (shift18) were stopped at Fulgora when theirs were set.
+  - `from: false` (or `""`) sets the slot with no import planet, the slot's own dropped. `stored` adds
+    `(no import planet given: the game set nauvis)`, as for a new slot without `from`. By B6 such a request keeps its
+    stock only at Nauvis.

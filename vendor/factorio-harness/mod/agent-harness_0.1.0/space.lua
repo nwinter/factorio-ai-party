@@ -195,7 +195,11 @@ return function(api)
       end
       -- The import planet named.
       local from=r.from
-      if from~=nil then
+      -- (d17 batch31 C3, Astra) false (or ""): no import planet named, the slot's own dropped too; the game then stores
+      -- nauvis (16 new hub slots set with none read back "from nauvis", Wren, Kestrel II, Meridian and Aegis stopped at
+      -- Fulgora among them)
+      if from==false or from=='' then from=false
+      elseif from~=nil then
         local names={}
         for n in pairs(prototypes.space_location or {}) do names[#names+1]=n end
         table.sort(names)
@@ -241,9 +245,31 @@ return function(api)
     end
     return keep
   end
-  -- Per item a change leaves the hub keeping less of than it holds: what goes down where. The game sends a hub's surplus
-  -- down to the landing pads of the planet it stops at (their ask less what they hold); what the hub requests itself it
-  -- keeps (seen on a copy of world n, shipment.lua). The stops: where it waits now, then its schedule's in order.
+  -- (d17 batch31 B6) what a hub keeps by the import planet of its requests: {planet={item=sum of mins}}, the sections
+  -- that are on.
+  function M.hub_keep_at(secs)
+    local keep={}
+    for i=1,secs.sections_count or 0 do
+      local s_=secs.get_section(i)
+      if s_ and s_.active~=false then
+        for _,f in pairs(try(function() return s_.filters end) or {}) do
+          local v=f.value
+          local n=v and (type(v.name)=='string' and v.name or try(function() return v.name.name end))
+          local from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)) or '?'
+          if n and (f.min or 0)>0 then keep[from]=keep[from] or {}; keep[from][n]=(keep[from][n] or 0)+f.min end
+        end
+      end
+    end
+    return keep
+  end
+  -- The rule (d17 batch31 B6, from the game as two cases showed it): at a stop the game sends down to the planet's
+  -- landing pads (their ask less what they hold) what the hub holds beyond what its requests importing from that
+  -- planet ask; a request from another planet keeps nothing there. Swift at Nauvis kept its 501 magazines under
+  -- firearm-magazine 500..2000 from nauvis (pads asking 1461, the copy of world n, 2026-10-17); Cinder at Nauvis sent
+  -- all 85 of its foundation down under space-platform-foundation 50..inf from fulgora (shift33, about tick 27162800).
+  M.KEEP_RULE='at a stop the hub sends down to the landing pads there (their ask less what they hold) what it holds beyond what its requests importing from that planet ask; a request from another planet keeps nothing there (Cinder at Nauvis sent all 85 foundation down under 50..inf from fulgora; Swift at Nauvis kept 501 magazines under 500..2000 from nauvis)'
+  -- Per item whose kept stock a change alters: what goes down at each stop after it. The stops: where it waits now,
+  -- then its schedule's in order. before, after: hub_keep_at.
   function M.sends_down(hub,pl,before,after)
     local stops,seen={},{}
     local sch=pl and try(function() return pl.schedule end)
@@ -263,27 +289,46 @@ return function(api)
       end
       return pads[planet]
     end
-    local names,lines={},{}
-    for n in pairs(before) do names[#names+1]=n end
+    local names,named={},{}
+    for _,t in ipairs({before,after}) do
+      for _,list in pairs(t) do for n in pairs(list) do if not named[n] then named[n]=true; names[#names+1]=n end end end
+    end
     table.sort(names)
+    local function kept(t,n,held)
+      local parts,total={},0
+      local planets={}
+      for planet,list in pairs(t) do if (list[n] or 0)>0 then planets[#planets+1]=planet end end
+      table.sort(planets)
+      for _,planet in ipairs(planets) do parts[#parts+1]=string.format('%d at %s',math.min(held,t[planet][n]),planet); total=total+t[planet][n] end
+      return #parts>0 and table.concat(parts,', ') or 'none',total
+    end
+    local lines={}
     for _,n in ipairs(names) do
       local held=try(function() return hub.get_item_count(n) end) or 0
-      local was,now=math.min(held,before[n]),math.min(held,after[n] or 0)
-      if now<was and #lines<12 then
-        local left=held-now
+      local differs=false
+      for planet in pairs(seen) do
+        if ((before[planet] or {})[n] or 0)~=((after[planet] or {})[n] or 0) then differs=true end
+      end
+      for planet,list in pairs(before) do if (list[n] or 0)~=((after[planet] or {})[n] or 0) then differs=true end end
+      if differs and held>0 and #lines<12 then
+        local left=held
         local parts={}
         for _,st in ipairs(stops) do
           local pd=pad(st.planet)
           local want=(pd.ask[n] or 0)-(pd.hold[n] or 0)
-          if want>0 and left>0 then
-            local go=math.min(left,want)
+          local keep=(after[st.planet] or {})[n] or 0
+          local go=math.max(0,math.min(left-keep,want))
+          if go>0 then
             left=left-go
-            parts[#parts+1]=string.format('%d down to %s%s (its landing pads ask %d, hold %d)',go,st.planet,st.here and ' (here)' or '',pd.ask[n],pd.hold[n] or 0)
+            parts[#parts+1]=string.format('%d down to %s%s (its landing pads ask %d, hold %d%s)',go,st.planet,st.here and ' (here)' or '',pd.ask[n],pd.hold[n] or 0,
+              keep>0 and string.format('; its requests from %s keep %d',st.planet,keep) or '')
           end
         end
-        lines[#lines+1]=string.format('%s: the hub holds %d and would keep %d of it (kept %d): %d surplus; %s',n,held,now,was,held-now,
+        local now_text=kept(after,n,held)
+        local was_text=kept(before,n,held)
+        lines[#lines+1]=string.format('%s: the hub holds %d; its requests would keep %s (kept %s): %s',n,held,now_text,was_text,
           #parts>0 and table.concat(parts,', ')..(left>0 and string.format('; %d stay aboard',left) or '')
-          or 'no landing pad on its stops asks for it: it stays aboard')
+          or 'no landing pad on its stops asks for more than its requests from there keep: it stays aboard')
       end
     end
     return #lines>0 and lines or nil
@@ -338,7 +383,7 @@ return function(api)
     local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
     -- (d17 batch29 C4) on a hub: what it keeps before the change (sends_down), and for dry_run every manual section's
     -- slots and switch and the hub's kept minimum payloads, put back after the read
-    local before=hub and hub.valid and changing and M.hub_keep(secs) or nil
+    local before=hub and hub.valid and changing and M.hub_keep_at(secs) or nil
     local snap
     if a.dry_run then
       snap={count=secs.sections_count,secs={}}
@@ -463,7 +508,9 @@ return function(api)
         -- The import planet: the one named, else the one the slot already has (Luna, shift12 19:30: an edit of min
         -- and max without from turned three requests from vulcanus into from nauvis).
         local from,kept=e.from,false
-        if from==nil and old and old.import_from then
+        local none=from==false
+        if none then from=nil end
+        if from==nil and not none and old and old.import_from then
           from=type(old.import_from)=='string' and old.import_from or try(function() return old.import_from.name end)
           kept=from~=nil
         end
@@ -477,7 +524,10 @@ return function(api)
         local was=old and filter_text(old,is_hub)
         ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from,minimum_delivery_count=mp or nil}); changed=true
         local now=filter_text(ssec.get_slot(i),is_hub) or name
+        local set_from=is_hub and not kept and e.from==nil or none
+        local read_from=set_from and is_hub and now:match(' from (%S+)')
         stored[#stored+1]=now..max_note..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')
+          ..(read_from and string.format(' (no import planet given: the game set %s)',read_from) or '')
           ..(mp_kept and ' (min payload kept: not named in this edit)' or '')
           ..(mp_back and string.format(' (min payload %d kept from the request cleared before)',mp_back) or '')..(was and was~=now and ' (was '..was..')' or '')
       end
@@ -509,7 +559,8 @@ return function(api)
     end
     local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
     if before then
-      out.sends_down=M.sends_down(hub,a.platform~=nil and M.platform(p,a.platform) or try(function() return hub.surface.platform end),before,M.hub_keep(secs))
+      out.sends_down=M.sends_down(hub,a.platform~=nil and M.platform(p,a.platform) or try(function() return hub.surface.platform end),before,M.hub_keep_at(secs))
+      if out.sends_down then out.sends_down_rule=M.KEEP_RULE end
     end
     if snap then
       for i=secs.sections_count,snap.count+1,-1 do pcall(secs.remove_section,i) end
@@ -2046,10 +2097,10 @@ return function(api)
   M.schema={
     platform_gate={platform='optional platform name (default every one of ours)',returns='lines: a line a platform: at station X, moving (the leg as flown, from->to with the share flown) or stopped (paused, no schedule, no path), and the current stop of its schedule with each departure condition and what the hub holds against it (item counts: holds N, met or N to go; time left; unmet requests); note. Read only'},
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',trash_unrequested='boolean: the "trash unrequested" switch of a requester or buffer chest, a hub or your own logistics; on, robots take to storage what it holds that no request names (spoilage among it); the reply\'s trash_unrequested says on or off and, for a chest, what it holds that goes',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
-      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept),min_payload? (platform hubs: the GUI\'s custom minimum payload for the request, minimum_delivery_count; omitted: the slot\'s is kept; false clears it). Seen on 2.0.77 above Fulgora: with min_payload 10 and min 50, automatic silos sent rockets of 28, 10 and 12 stone, 50 in all; with none, one full rocket (100 concrete for a min of 50). min is how much the hub asks for; min_payload how little a rocket may carry for it} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',keep='platform hubs, with a change: item names (array) the change would leave the hub keeping less of than it holds: each stays requested up to the count held (the dropped request\'s import planet and min payload; stored says), so none goes down as surplus',dry_run='true: change nothing; the reply (sections, stored, sends_down) is what the change would make',section='1-based section index (default the first manual ungrouped section, created if none)',
+      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept; false or "": none named, the slot\'s dropped too: the game then stores nauvis, as it does for a new slot with none, and stored says so. At a stop the hub keeps only what its requests from that planet ask; the rest the landing pads there ask for goes down),min_payload? (platform hubs: the GUI\'s custom minimum payload for the request, minimum_delivery_count; omitted: the slot\'s is kept; false clears it). Seen on 2.0.77 above Fulgora: with min_payload 10 and min 50, automatic silos sent rockets of 28, 10 and 12 stone, 50 in all; with none, one full rocket (100 concrete for a min of 50). min is how much the hub asks for; min_payload how little a rocket may carry for it} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',keep='platform hubs, with a change: item names (array) the change would leave the hub keeping less of than it holds: each stays requested up to the count held (the dropped request\'s import planet and min payload; stored says), so none goes down as surplus at a stop on that import planet',dry_run='true: change nothing; the reply (sections, stored, sends_down) is what the change would make',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
-      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub: per item it would then keep less of than it holds, the surplus and what goes down to the landing pads of its stops, where it waits first then its schedule\'s, at their ask less what they hold, or that it stays aboard); call with no set/clear/active to just read'},
+      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub that alters what its requests keep of an item it holds: what they would keep and kept, by import planet, and what goes down to the landing pads of its stops, where it waits first then its schedule\'s: at each stop their ask less what they hold, beyond what its requests from that planet keep; or that it stays aboard), sends_down_rule (the rule, with the two cases it comes from); call with no set/clear/active to just read'},
     platform={platform='optional platform name (or name): the platforms read of that one (as platforms {platform}); none: every platform',name='the same as platform',compact='as platforms',returns='as platforms'},
     platforms={eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='true: a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received, those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), the hub\'s main inventory and the turrets now; in flight the reserve at the arrival at that rate, or when it runs out first; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},

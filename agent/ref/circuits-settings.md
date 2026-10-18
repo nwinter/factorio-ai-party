@@ -101,7 +101,9 @@
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":
   "inf"` sets none). An edit echoes what is stored per item (`stored`) and keeps the import planet when `from` is not
-  given; a `set` without `section` edits the slot of the section that already requests the item (`sections_note`
+  given. `from: false` (or `""`) drops it; the game stores `nauvis` for a hub request with no import planet, a new
+  slot's too, and `stored` says so (16 new slots set with none read back `from nauvis`, platforms at Fulgora among
+  them). Such a request keeps its stock only at Nauvis. A `set` without `section` edits the slot of the section that already requests the item (`sections_note`
   names a shared group or a second section). `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what
   you hold; a personal `max` under what you hold is refused without `force: true` (the game trashes the rest). With
   `surface` (a planet) and `position` it acts there by remote view where our force sees the chunk.
@@ -115,10 +117,12 @@
     request's import planet; `construction_requests: true` switches the hub's Request missing construction materials
     on. A set entry's `min_payload` is the custom minimum payload; an edit that does not name it keeps it, and one
     removed by `clear` or `clear_all` comes back when the item is set again without it (`min payload N kept from the
-    request cleared before`); `min_payload: false` clears it. What a hub holds over what its requests keep is surplus,
-    and the game sends it down to the landing pads of the planet it stops at: a change (`clear`, `clear_all`, `active:
-    false`, a lower `min`) gives `sends_down`, per item it would then keep less of than it holds, how many go down to
-    which stop's pads (where it waits first, then its schedule's) or stay aboard. `keep: ["firearm-magazine"]` keeps
+    request cleared before`); `min_payload: false` clears it. At a stop the hub keeps what its requests importing
+    from that planet ask; the rest that the landing pads there ask for (their ask less what they hold) goes down. A
+    request from another planet keeps nothing there: Cinder at Nauvis sent all 85 foundation down under `50..inf from
+    fulgora`, while Swift at Nauvis kept 501 magazines under `500..2000 from nauvis`. A change of what its requests keep
+    gives `sends_down`: per item, what they would keep and kept by planet, and how many go down to which stop's pads
+    (where it waits first, then its schedule's) or stay aboard. `keep: ["firearm-magazine"]` keeps
     those requested up to the count held (with the dropped request's import planet and min payload). `dry_run: true`
     changes nothing and replies with the sections, `stored` and `sends_down` the change would make.
   - Your own: `unfilled` lists the personal requests not filled, each with why (no network where you stand, no
