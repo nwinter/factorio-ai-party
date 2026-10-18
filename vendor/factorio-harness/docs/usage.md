@@ -7167,3 +7167,11 @@ fh watch    # deploy on every change
     part way sets the records back as given;
   - `state_note` says plainly when the state is no_schedule, no_path or paused (on every platform_schedule reply).
   tests/space.lua.
+
+## d17 study1 part 2
+- 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):
+  `fh sleep S --until COND --require-met` and `fh wait --until COND --require-met` print `condition met after N s` or
+  `condition not met: woke WHAT after N s` first on the wake reply (JSON: `result.require_met {met, line}`) and exit 0
+  when the condition held, 3 when not, 1 when the wait failed. A tell or urgent news still ends the wait at once; the
+  default (no flag) is unchanged. Refused without `--until` and a game condition, and on other commands.
+  tests/waits.test.ts.
