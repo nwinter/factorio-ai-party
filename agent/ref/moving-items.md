@@ -35,6 +35,13 @@
     within transfer reach of the entity (a silo, a pad), as `move_to {target}` does.
   - `via: [{"x":30,"y":5}]` walks those points first; a walking transfer's `last.route` gives where it started, each
     via point and stop as reached, and the tiles walked.
+  - Robots bring items to you: `requests {set: [{item, min}]}` with no position sets your own logistic requests, and
+    the logistic robots of the network you stand in bring them to your inventory while you stay in its logistic area
+    (Opus, shift35 131h: copper-plate 28 to 500 in about 80 s; advanced-circuit 38 to 304 in 2 min, 3.5 a second).
+    The reply's `unfilled` says per item what you hold, what is on the way and why the rest is not coming (no network
+    where you stand, no logistic robots, none free in the network). `clear: ["item"]` ends one and keeps what came.
+    A sleep or wait that ends early gives `personal_requests`. `./fh wait --until "item_count copper-plate>=500"` waits
+    for it. Example: `./fh call requests --args '{"set":[{"item":"steel-plate","min":200},{"item":"concrete","min":500}]}'`
   - Personal requests: what you take over a request's max goes to your trash slots (`trash` says how much; collect and
     pickup too); `up_to: true` stops at the max, `keep_max: true` refuses the take. A courier over a max says how much
     would arrive (`personal_logistics`, the dry run's `arrives`); `personal_logistics: "pause"` switches your requests

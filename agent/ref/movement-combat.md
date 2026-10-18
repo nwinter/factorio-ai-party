@@ -59,6 +59,12 @@
     (pockets every 8 tiles on the straight legs and at via points), `rail_crossings` and, with no way round,
     `via_round`. feed, collect, transfer, rearm and refuel with positions take `dry_run` too.
   Example: `./fh call move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}' --wait`
+  With `--wait` the completion's first line says `walk: arrived at (x,y)` (or `(arrived_near)`) or `walk: not arrived:
+  ...`. Exit 0: it arrived; 1: it ended another way; 3: a tell, a mention or an urgent alert ended the wait (or the
+  wait's time ran out) while the walk goes on, so `&& next` does not run; `./fh wait` waits for it again.
+  `--wait-through-tells` keeps a tell or mention from ending the wait, so the next command of an `&&` chain runs once
+  the walk has arrived (exit 3 still comes on urgent news or the wait's time). Example:
+  `./fh call move_to --args '{"position":{"x":12,"y":-40}}' --wait-through-tells`
 - `retreat_guard {to, health_below?, shield_below?, idle?}`: a standing `retreat` for `move_to`, `shoot`, `kite` and
   `vehicle {drive}` until `{"clear":true}`; a call's own `"retreat":{"to":{"x":260,"y":-60},"health_below":0.5,
   "shield_below":0.2}` wins. Hit under it, the action ends `retreated` and you walk back (guns on auto) or the vehicle

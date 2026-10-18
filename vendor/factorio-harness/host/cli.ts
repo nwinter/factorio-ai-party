@@ -12,7 +12,7 @@ import { Harness, retryBudgetMs, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync, renameSync } from 'node:fs';
-import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
+import { formatCompact, finalLine, actionHelp, paginate, walkLine } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { lookaheadDue } from './lookahead.js';
 import { pollNews } from './polls.js';
@@ -2041,7 +2041,12 @@ async function main() {
         await mkdir(dirname(resolve(values.out)),{recursive:true});
         await writeFile(values.out,reply.result.blueprint+'\n');
         output({...reply,result:{...reply.result,blueprint:undefined,path:resolve(values.out)}});
-      } else output(reply);
+      } else {
+        // (d17 batch34 C3) a walk's --wait reply says first whether it arrived
+        const walk = values.wait ? walkLine(action, reply, exitCode(reply)) : undefined;
+        if (walk && outputFormat === 'compact') process.stdout.write(walk + '\n');
+        output(walk && outputFormat !== 'compact' && reply.result && typeof reply.result === 'object' ? {...reply, result:{walk, ...reply.result}} : reply);
+      }
       setExit(reply);
     }
   } finally {
