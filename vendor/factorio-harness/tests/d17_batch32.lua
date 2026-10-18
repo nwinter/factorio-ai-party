@@ -115,3 +115,29 @@ do
   defines,storage,game=nil,nil,nil
 end
 print('d17_batch32 B2 game_alerts compact: ok')
+
+-- B4 (Opus: 2000 production science packs sat in one requester while all labs starved): stock {unrequested}.
+do
+  defines={inventory={chest=1},logistic_mode={requester=2,buffer=3,active_provider=1}}
+  local function chest(x,contents) return {valid=true,type='logistic-container',name='requester-chest',position={x=x,y=0},
+    get_inventory=function() return {get_contents=function() return contents end} end} end
+  local A=chest(1.5,{{name='production-science-pack',count=2000,quality='normal'},{name='iron-plate',count=50,quality='normal'}})
+  local B=chest(10.5,{{name='copper-plate',count=100,quality='normal'}})
+  local C=chest(20.5,{{name='spoilage',count=30,quality='normal'}})
+  local net={network_id=243,requester_points={
+    {owner=A,mode=2,filters={{name='iron-plate',count=100}},trash_not_requested=false},
+    {owner=B,mode=2,filters={{name='copper-plate',count=100}}},
+    {owner=C,mode=3,filters={{name='bioflux',count=10}},trash_not_requested=true},
+    {owner={valid=true,type='character',name='character'},mode=2,filters={}}}}
+  local force={logistic_networks={nauvis={net}}}
+  local R=dofile('mod/agent-harness_0.1.0/reqrate.lua'){}
+  local r=R.unrequested({name='nauvis'},force)
+  eq(r.lines[1],'nauvis: 2 of 3 requester and buffer chests in our logistic networks hold items they do not request: production-science-pack 2000 in 1 chest, spoilage 30 in 1 chest')
+  eq(r.lines[2],'requester-chest (1.5,0) #243 holds production-science-pack*2000 that it does not request (it asks iron-plate); trash unrequested off: they stay (requests {position, trash_unrequested: true} sends them to storage)')
+  eq(r.lines[3],'requester-chest (20.5,0) #243 holds spoilage*30 that it does not request (it asks bioflux); trash unrequested on: robots take them to storage')
+  eq(#r.chests,2); eq(r.chests[1].count,2000); eq(r.items[1].item,'production-science-pack')
+  r=R.unrequested({name='nauvis'},force,'spoilage')
+  eq(#r.chests,1); has(r.lines[1],'hold spoilage they do not request: spoilage 30 in 1 chest')
+  defines=nil
+end
+print('d17_batch32 B4 unrequested: ok')

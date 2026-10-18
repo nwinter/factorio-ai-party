@@ -232,7 +232,10 @@
   8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
   mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
   Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
-- `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: `items: [...]`
+- `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?, unrequested?}`:
+  `unrequested: true`: requester and buffer chests in our logistic networks on the surface holding items they do not
+  request (`item` for one), the most first, each with what it asks and whether trash unrequested sends them to storage
+  (off: they stay there); `items` sums them per item. `items: [...]`
   (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is, landed
   cargo pods (of any force: kind `pod`) and stacks on the ground in sight (kind `ground`, `on_ground`, not in the total)
   among the places with their positions. With
