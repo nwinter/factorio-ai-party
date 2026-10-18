@@ -104,7 +104,9 @@
 - `requests {position | platform?, set?, clear?, clear_all?, section?, active?, trash_unrequested?, construction_requests?,
   keep?, dry_run?, force?, surface?}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
-  logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":
+  logistic robotics). `set` takes a list or a map `{item: min}`; an entry is `{item, min, max?, quality?, from?,
+  min_payload?}` and any other field is refused (as in every record list: signals, builds, entities, stops); an entry
+  without `max` keeps the slot's max (`"max":
   "inf"` sets none). An edit echoes what is stored per item (`stored`) and keeps the import planet when `from` is not
   given. `from: false` (or `""`) drops it; the game stores `nauvis` for a hub request with no import planet, a new
   slot's too, and `stored` says so (16 new slots set with none read back `from nauvis`, platforms at Fulgora among

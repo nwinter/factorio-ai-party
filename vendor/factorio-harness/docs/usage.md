@@ -7970,6 +7970,24 @@ fh watch    # deploy on every change
   claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
   with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
   last one only). A cursor that is not the last one is said, and everything is listed.
+- Record lists in args are checked field by field (A6, Muse: requests `set` with `{count}` for `{min}` read 0..inf and
+  fetched nothing; Sol 14:20: `import_from` for `from` defaulted to nauvis, and circuit_set `signals` as an object
+  was read as none). argshapes.lua, walked by the schema check every call and every queued step passes through:
+  requests `set`, circuit_set `signals`, drop `items`, load_silo and silo_stage `items`, deliver `items`, build
+  `builds`, craft `recipes`, place_ghosts `entities`, platform_schedule `stops`, train `schedule` (and its waits). A
+  field the record does not take is refused, naming the fields it takes and what was likely meant: `requests set[1]:
+  count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count:
+  min is how much it asks for, max caps it)`. An object where an array goes is refused with the shape: `circuit_set
+  signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
+  not read as one` (the map form `{name: count}` stays where the docs give it: requests set, load_silo, silo_stage,
+  deliver). The fields are those each action's parser reads (build and ghost entries also take configure, requests,
+  circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7
+  circuit_set calls with signals as an object, and 16 ghost entries with `network`, `role` or `flow`, each dropped
+  without a word then.
+- silo's `loading` line and launch's cargo_for check read a hand load's record only while the rocket holds an item
+  that load put aboard (A7, operator 14:45: Gleba's silo read `loading for Cinder (loaded by hand by grok, 6h58m
+  ago); aboard nothing` with the rocket empty and automatic requests on). load_silo now records the items it loaded;
+  a record without them (from before) holds while anything is aboard. A record that no longer holds is dropped.
 - B6 (viewer Aurora 14:48: guns can read as covering big asteroids): platform_defense's damage apart from reach
   (platdefense.lua `M.damage`), for `route` or the schedule's next leg (the connection it flies):
   - Each asteroid that spawns on the connection (asteroid_spawn_definitions of type entity; chunks left out), its

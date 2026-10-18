@@ -3862,7 +3862,7 @@ handlers.launch=function(p,a)
   assert(a.cargo_for==nil or a.cargo_for=='any','cargo_for is "any": launch whatever platform the cargo was loaded for')
   do
     local oks,silo=pcall(remote_entity,p,{position=a.position,name=a.name,unit_number=a.unit_number})
-    local rec=oks and silo and silo.valid and M.silo_loads()[silo.unit_number]
+    local rec=oks and silo and silo.valid and M.silo_load_record(silo)
     if rec and a.cargo_for~='any' and a.platform~=nil and rec.platform~=a.platform then
       local inv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
       local held={}
@@ -12119,6 +12119,7 @@ M.paste_plan=blueprint_handlers.plan
 -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
+M.argshapes=require('argshapes')()  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
@@ -12318,7 +12319,7 @@ end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
 M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end,
-  pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_loads()[e.unit_number] end,
+  pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
@@ -12338,7 +12339,12 @@ M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofee
   move_stacks=move_stacks,give_sources=give_sources,
   fresh_lines=function(p,acc) return M.fresh_lines(p.force,acc) end,merge_fresh=function(into,acc) return M.fresh_merge(into,acc) end,
   launch=function(p,a) return handlers.launch(p,a) end,
-  loaded_for=function(p,silo,platform) if silo and silo.valid and platform then M.silo_loads()[silo.unit_number]={platform=platform,by=M.board.who(p),tick=game.tick} end end,
+  loaded_for=function(p,silo,platform,moved)
+    if not (silo and silo.valid and platform) then return end
+    local items={}
+    for _,m in ipairs(moved or {}) do items[#items+1]=m.name end
+    M.silo_loads()[silo.unit_number]={platform=platform,by=M.board.who(p),tick=game.tick,items=#items>0 and items or nil}
+  end,
   -- load_silo walk: the silo and chests in sight or on the map (a walk brings them into reach), and a take by hand
   -- there (partial: up to the request max, as a walking take).
   sight_entity=function(p,pos) local e=entity(p,{position=pos},true); friendly(p,e); return e end,
@@ -12366,6 +12372,21 @@ M.SILO_PAUSE_TICKS=432000
 function M.silo_pauses() local st=state(); st.silo_pause=st.silo_pause or {}; return st.silo_pause end
 -- The platform each silo's cargo was loaded for (D11): {platform, by, tick} by the silo's unit number; cleared at launch.
 function M.silo_loads() local st=state(); st.silo_loads=st.silo_loads or {}; return st.silo_loads end
+-- (d17 batch35 A7, operator 14:45: Gleba's silo read "loading for Cinder (loaded by hand by grok, 6h58m ago); aboard
+-- nothing" with the rocket empty and automatic requests on) A hand load's record holds while the rocket holds any of
+-- the items that load put aboard (a record from before: any cargo); else it is dropped.
+function M.silo_load_record(e)
+  local loads=M.silo_loads()
+  local rec=e and e.valid and loads[e.unit_number]
+  if not rec then return nil end
+  local held={}
+  local ok,cont=pcall(function() return e.get_inventory(defines.inventory.rocket_silo_rocket).get_contents() end)
+  for _,c in ipairs(ok and cont or {}) do held[c.name]=true end
+  local keep=false
+  if rec.items then for _,n in ipairs(rec.items) do if held[n] then keep=true end end else keep=next(held)~=nil end
+  if not keep then loads[e.unit_number]=nil; return nil end
+  return rec
+end
 function M.silo_unpause(index,why,unit)
   local lines={}
   for u,rec in pairs(M.silo_pauses()) do
@@ -15453,6 +15474,8 @@ function check_args(action,args)
         ..(closest and '; closest name: '..closest or ''),0)
     end
   end
+  -- (d17 batch35 A6) the record lists inside them: each record's fields, and a list where a list goes
+  M.argshapes.check(action,args)
 end
 M.check_args=check_args
 -- A transfer call that works for what the call seems to want (Muse, Luna, shift11: to_entity or to beside position,
