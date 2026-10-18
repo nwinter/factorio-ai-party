@@ -15884,7 +15884,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
 -- the minutes only.
@@ -16119,7 +16119,7 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   status_name=function(e) return entity_status_names[e.status] end,
   belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end}
 M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) return M.readmemory.observe(e) end}
-M.chain=require('chain'){crafters=function(s) return M.census.crafters(s) end,status_name=function(e) return M.machine_status(e) end}
+M.chain=require('chain'){makers=function(s) return M.census.makers(s) end,status_name=function(e) return M.machine_status(e) end}
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
 -- Opus, d15 06:20 and 07:50).
 M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}

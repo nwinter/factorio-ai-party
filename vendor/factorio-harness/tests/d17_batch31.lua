@@ -29,7 +29,7 @@ do
   for i=1,4 do jacks[i]=m('pumpjack','working',{mining_target={amount=150000}}) end
   local drill=m('electric-mining-drill','working',{ms=0.5})
   local census={n=10,craft={['plastic-bar']=plants,['basic-oil-processing']=refs},mine={['crude-oil']=jacks,coal={drill}},pump={}}
-  local C=dofile('mod/agent-harness_0.1.0/chain.lua'){crafters=function() return census,30000 end,status_name=function(e) return e.st end}
+  local C=dofile('mod/agent-harness_0.1.0/chain.lua'){makers=function() return census,30000 end,status_name=function(e) return e.st end}
   local r=C.read({force=force},{item='plastic-bar'},{name='nauvis',index=1})
   eq(#r.links,4)
   has(r.lines[1],'plastic-bar: 2 chemical-plant on plastic-bar (2 fluid_ingredient_shortage); made 100/min now (used 0/min), 240/min at full speed')
@@ -54,7 +54,7 @@ do
   eq(r.limit.item,'petroleum-gas')
   has(r.limit_line,'3 of the 3 read have their output full')
   -- no census pass yet
-  local C2=dofile('mod/agent-harness_0.1.0/chain.lua'){crafters=function() return nil end,status_name=function(e) return e.st end}
+  local C2=dofile('mod/agent-harness_0.1.0/chain.lua'){makers=function() return nil end,status_name=function(e) return e.st end}
   has(C2.read({force=force},{item='plastic-bar'},{name='nauvis',index=1}).line,'no census pass has listed the machines by recipe')
 end
 print('d17_batch31 A1 chain: ok')

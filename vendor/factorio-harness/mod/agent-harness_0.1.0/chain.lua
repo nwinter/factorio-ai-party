@@ -114,7 +114,7 @@ return function(api)
   function M.read(p, a, surface)
     local item = a.item
     local force = p.force
-    local c, as_of = api.crafters(surface)
+    local c, as_of = api.makers(surface)
     if not c then
       return {item=item, surface=surface.name, chain=false,
         line='no census pass has listed the machines by recipe since the runtime started (a pass takes about 30 s); bottleneck {item} reads the chain without the rates'}

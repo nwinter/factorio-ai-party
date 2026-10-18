@@ -131,7 +131,7 @@ return function(api)
   -- Fuel users for the fuel budget (fuelbudget.lua; Opus, d15 06:20 and 07:50): entities with a burner (boilers, stone
   -- and steel furnaces, burner drills and inserters, heating towers, burner generators), and machines whose recipe
   -- takes a fuel item as an ingredient (plastic from coal, ...). Entity references only, at most FUEL_MAX a surface.
-  local FUEL_MAX = 4096
+  local FUEL_MAX, CRAFTERS_MAX = 4096, 8192
   local burner_of, fuel_item = {}, {}
   local function has_burner(name)
     local b = burner_of[name]
@@ -159,12 +159,12 @@ return function(api)
     return v
   end
   -- Our crafters, drills and offshore pumps by recipe, resource or fluid (chain.lua; d17 batch31 A1): entity references,
-  -- at most CRAFT_MAX a surface.
-  local CRAFT_MAX = 8192
-  local function add_crafter(job, s, kind, key, e)
-    local c = job.crafters[s.index]
-    if not c then c = {n=0, craft={}, mine={}, pump={}}; job.crafters[s.index] = c end
-    if c.n >= CRAFT_MAX then return end
+  -- at most MAKERS_MAX a surface.
+  local MAKERS_MAX = 8192
+  local function add_maker(job, s, kind, key, e)
+    local c = job.makers[s.index]
+    if not c then c = {n=0, craft={}, mine={}, pump={}}; job.makers[s.index] = c end
+    if c.n >= MAKERS_MAX then return end
     local list = c[kind][key]
     if not list then list = {}; c[kind][key] = list end
     list[#list+1] = e; c.n = c.n + 1
@@ -194,9 +194,9 @@ return function(api)
         list[#list+1] = e
       end
     end
-    if t == 'offshore-pump' and job.crafters then
+    if t == 'offshore-pump' and job.makers then
       local fl = try(function() local f = e.fluidbox[1]; return f and f.name end) or try(function() local f = e.fluidbox.get_filter(1); return f and f.name end)
-      if fl then add_crafter(job, s, 'pump', fl, e) end
+      if fl then add_maker(job, s, 'pump', fl, e) end
     end
     if t == 'rocket-silo' and job.silos then
       job.silos[s.index] = job.silos[s.index] or {}
@@ -211,6 +211,13 @@ return function(api)
     -- Per-prototype planetary counts use this same pass, never a second find. Old in-flight jobs have no map.
     local counts=job.building_counts and job.building_counts[s.index]
     if counts and SNAP[t] then counts.entities[name]=(counts.entities[name] or 0)+1 end
+    -- (d17 batch30 B2) our assemblers and furnaces, entity references (supply requesters reads their recipes now), at
+    -- most CRAFTERS_MAX a surface
+    if (t == 'assembling-machine' or t == 'furnace') and job.crafters then
+      local list = job.crafters[s.index]
+      if not list then list = {}; job.crafters[s.index] = list end
+      if #list < CRAFTERS_MAX then list[#list+1] = e end
+    end
     if MACH[t] then
       local r
       if t == 'assembling-machine' or t == 'furnace' or t == 'rocket-silo' then
@@ -225,7 +232,7 @@ return function(api)
         r = target and target.name or nil
       end
       -- (d17 batch31 A1) entity references by recipe (a drill's by the resource it mines), for the chain read
-      if r and job.crafters and t ~= 'lab' and t ~= 'boiler' and t ~= 'generator' then add_crafter(job, s, t == 'mining-drill' and 'mine' or 'craft', r, e) end
+      if r and job.makers and t ~= 'lab' and t ~= 'boiler' and t ~= 'generator' then add_maker(job, s, t == 'mining-drill' and 'mine' or 'craft', r, e) end
       local key = name .. '|' .. (r or '-')
       local st = status_names()[e.status or -1] or 'unknown'
       local row = job.mach[key] or {}
@@ -342,7 +349,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, building_counts={}, fuel={}, planets={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, makers={}, building_counts={}, fuel={}, planets={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -541,7 +548,7 @@ return function(api)
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
-        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters,
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters, makers=job.makers,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -575,10 +582,20 @@ return function(api)
     for _, e in ipairs(d and d.gated and d.gated[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
     return out, d and d.gated and d.start or nil
   end
-  -- Our crafters, drills and pumps the last pass found on a surface ({n, craft, mine, pump}), and its tick.
-  function M.crafters(surface)
+  -- Our crafters, drills and pumps by recipe, resource or fluid the last pass found on a surface ({n, craft, mine, pump}),
+  -- and its tick (chain.lua).
+  function M.makers(surface)
     local d = (api.state().census or {}).done
-    return d and d.crafters and d.crafters[surface.index] or nil, d and d.crafters and d.start or nil
+    return d and d.makers and d.makers[surface.index] or nil, d and d.makers and d.start or nil
+  end
+  -- Our assemblers and furnaces the last pass found on a surface (supply requesters), still valid, and its tick; nil
+  -- before a pass that kept them.
+  function M.crafters(force, surface)
+    local d = (api.state().census or {}).done
+    if not (d and d.crafters) then return nil end
+    local out = {}
+    for _, e in ipairs(d.crafters[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
+    return out, d.start
   end
   function M.towers(force, surface)
     local d = (api.state().census or {}).done

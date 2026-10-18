@@ -1684,6 +1684,182 @@ return function(api)
     if #list >= SPLIT_CRAFTERS then lines[#lines+1] = string.format('the first %d crafters read', SPLIT_CRAFTERS) end
     return {lines=lines, groups=rows, lone_requesters=lone > 0 and {chests=lone, asks=lone_ask} or nil}
   end
+  -- requesters (batch30 B2, Sonnet 05:39: 12 advanced-circuit assemblers starved the low-density-structure row of plastic,
+  -- whose requesters asked for none): who gets an item. Every requester or buffer chest of ours on the surface that asks
+  -- for it, with its request, what it holds, what robots are bringing it now (its logistic point's targeted deliveries),
+  -- the machines its inserters feed that use it (their take a minute at full speed, how many work) and whether its
+  -- network's robots serve it now (bringing, met, or why not: no network, none free, no idle robot); served first, then
+  -- unmet, then met. Then requester and buffer chests whose inserters feed machines that use the item while they ask for
+  -- none of it, each with what they ask. Read only.
+  -- Cost on world n (06:52, read only, bounded): a whole-surface find costs 2.4-5.8 ms even at limit 1-64 (crafters 8.7
+  -- ms at 512), so the crafters come from the census's last pass (entity references, their recipes read now) and the
+  -- chests from each logistic network's requester points (about 4 us a point); a find only when no pass has them yet.
+  local REQ_ROWS, REQ_POINTS, REQ_USERS = 24, 4096, 1024
+  function M.requesters(surface, force, item)
+    local crafters, as_of = nil, nil
+    if api.census_crafters then crafters, as_of = api.census_crafters(force, surface) end
+    local found = crafters == nil
+    if found then as_of = nil; crafters = try(function() return surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=force, limit=SPLIT_CRAFTERS} end) or {} end
+    -- each recipe's use of the item read once, by name (on world n a recipe's ingredients read for each of 771
+    -- crafters took 3.9 ms)
+    local uses, users, per_recipe = {}, {}, {}
+    local function use_of(rn)
+      local v = per_recipe[rn]
+      if v == nil then
+        local pr, amount = prototypes.recipe[rn], 0
+        for _, ing in ipairs(pr and pr.ingredients or {}) do if ing.name == item then amount = amount + (ing.amount or 0) end end
+        v = amount > 0 and {amount=amount, energy=pr.energy > 0 and pr.energy or 1} or false
+        per_recipe[rn] = v
+      end
+      return v
+    end
+    for _, e in ipairs(crafters) do
+      local r = e.valid and e.get_recipe()
+      if not r and e.valid and e.type == 'furnace' then r = e.previous_recipe end
+      local rn = r and r.name
+      if rn and type(rn) ~= 'string' then rn = rn.name end
+      local u = type(rn) == 'string' and use_of(rn)
+      if u and e.unit_number then
+        uses[e.unit_number] = {e=e, recipe=rn, rate=u.amount * 60 * e.crafting_speed / u.energy, working=api.status_name and api.status_name(e) == 'working' or false}
+        users[#users+1] = e
+      end
+    end
+    -- the requester and buffer chests whose inserters feed those machines: a small find round each one (its box and
+    -- 2.5 tiles, a long inserter's reach; a cluster's whole box returned thousands of inserters on world n)
+    local feeds = {}
+    for i, m in ipairs(users) do
+      if i > REQ_USERS then break end
+      local bb = m.bounding_box
+      for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=force,
+          area={{bb.left_top.x - 2.5, bb.left_top.y - 2.5}, {bb.right_bottom.x + 2.5, bb.right_bottom.y + 2.5}}} end) or {}) do
+        local d = try(function() return ins.drop_target end)
+        local u = d and d.valid and d.unit_number and uses[d.unit_number]
+        local t = u and try(function() return ins.pickup_target end)
+        local mode = t and t.valid and t.type == 'logistic-container' and try(function() return t.prototype.logistic_mode end)
+        if (mode == 'requester' or mode == 'buffer') and t.unit_number then
+          local f = feeds[t.unit_number] or {e=t, machines={}}
+          feeds[t.unit_number] = f
+          f.machines[d.unit_number] = u
+        end
+      end
+    end
+    -- what a chest asks of the item (and, with whole, of every item); the filters read is most of this read's cost
+    local function asks_of(c, pt, whole)
+      pt = pt or try(function() return c.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+      local all, mine = whole and {} or nil, 0
+      for _, f in ipairs(pt and pt.filters or {}) do
+        local n = f.name
+        if type(n) == 'table' then n = n.name end
+        local k = f.count or 0
+        if n and k > 0 then
+          if all then all[n] = (all[n] or 0) + k end
+          if n == item then mine = mine + k end
+        end
+      end
+      return mine, all, pt
+    end
+    local function fed_text(f)
+      if not f then return 'feeds none of the machines that use it', 0 end
+      local names, n, working, rate = {}, 0, 0, 0
+      for _, u in pairs(f.machines) do
+        n = n + 1; rate = rate + u.rate
+        if u.working then working = working + 1 end
+        local k = u.e.name .. ' (' .. u.recipe .. ')'
+        names[k] = (names[k] or 0) + 1
+      end
+      local parts = {}
+      for k, c in pairs(names) do parts[#parts+1] = c .. ' ' .. k end
+      table.sort(parts)
+      return string.format('feeds %s, %d working, taking %g/min at full speed', table.concat(parts, ', '), working, math.floor(rate * 10 + 0.5) / 10), rate
+    end
+    local nets, rows, unasked = {}, {}, {}
+    -- the chests: every requester point of the surface's logistic networks whose owner is a requester or buffer chest,
+    -- and the chests feeding the machines (one in no network among them)
+    local chests, points, seen, read = {}, {}, {}, 0
+    local LM = defines.logistic_mode or {}
+    for _, ln in ipairs(try(function() return force.logistic_networks[surface.name] end) or {}) do
+      for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
+        read = read + 1
+        if read > REQ_POINTS then break end
+        local c = pt.owner
+        if c and c.valid and c.type == 'logistic-container' and (pt.mode == nil or pt.mode == LM.requester or pt.mode == LM.buffer) and c.unit_number and not seen[c.unit_number] then
+          seen[c.unit_number] = true; chests[#chests+1] = c; points[c.unit_number] = pt
+        end
+      end
+    end
+    for unit, f in pairs(feeds) do
+      if not seen[unit] then
+        local mode = try(function() return f.e.prototype.logistic_mode end)
+        if mode == 'requester' or mode == 'buffer' then seen[unit] = true; chests[#chests+1] = f.e end
+      end
+    end
+    for _, c in ipairs(chests) do
+      do
+        local f = c.unit_number and feeds[c.unit_number]
+        local want, all, pt = asks_of(c, points[c.unit_number], f ~= nil)
+        if want > 0 then
+          local held = try(function() return c.get_item_count(item) end) or 0
+          local coming = 0
+          for _, t in ipairs(pt and try(function() return pt.targeted_items_deliver end) or {}) do
+            if (type(t.name) == 'table' and t.name.name or t.name) == item then coming = coming + (t.count or 0) end
+          end
+          local ln = try(function() return c.logistic_network end)
+          local net
+          if ln then
+            net = nets[ln.network_id]
+            if not net then
+              net = {id=ln.network_id, free=(try(function() return ln.get_item_count(item, 'providers') end) or 0) + (try(function() return ln.get_item_count(item, 'storage') end) or 0),
+                idle=try(function() return ln.available_logistic_robots end) or 0, robots=try(function() return ln.all_logistic_robots end) or 0, chests=0}
+              nets[ln.network_id] = net
+            end
+            net.chests = net.chests + 1
+          end
+          local state, rank
+          if coming > 0 then state, rank = string.format('served now: robots bringing %d', coming), 1
+          elseif held >= want then state, rank = 'met', 3
+          elseif not ln then state, rank = 'unmet: in no logistic network', 2
+          elseif net.free <= 0 then state, rank = string.format('unmet: none free in network #%d', net.id), 2
+          elseif net.idle <= 0 then state, rank = string.format('unmet: no idle logistic robot in network #%d', net.id), 2
+          else state, rank = string.format('unmet: network #%d holds %d free and has %d idle robots, none on the way yet', net.id, net.free, net.idle), 2 end
+          local text, rate = fed_text(f)
+          rows[#rows+1] = {rank=rank, rate=rate, row={chest=c.name, position=c.position, network=ln and ln.network_id or nil, asks=want, holds=held, coming=coming > 0 and coming or nil,
+              use_per_min=rate > 0 and math.floor(rate * 10 + 0.5) / 10 or nil, state=state,
+              line=string.format('%s %s%s: asks %d, holds %d; %s; %s', c.name, at(c.position), ln and ' #' .. ln.network_id or '', want, held, state, text)}}
+        elseif f then
+          local list = {}
+          for n, k in pairs(all) do list[#list+1] = {n=n, k=k} end
+          table.sort(list, function(x, y) return x.k > y.k or (x.k == y.k and x.n < y.n) end)
+          local asks = {}
+          for i = 1, math.min(3, #list) do asks[i] = list[i].n .. ' ' .. list[i].k end
+          local text = fed_text(f)
+          unasked[#unasked+1] = {chest=c.name, position=c.position, asks=#asks > 0 and table.concat(asks, ', ') .. (#list > 3 and ', ...' or '') or 'nothing',
+            line=string.format('%s %s %s, and asks for no %s (asks %s)', c.name, at(c.position), text, item, #asks > 0 and table.concat(asks, ', ') .. (#list > 3 and ', ...' or '') or 'nothing')}
+        end
+      end
+    end
+    table.sort(rows, function(x, y) if x.rank ~= y.rank then return x.rank < y.rank end; if x.rate ~= y.rate then return x.rate > y.rate end; return x.row.line < y.row.line end)
+    table.sort(unasked, function(x, y) return x.line < y.line end)
+    local lines, out_rows = {}, {}
+    local ids = {}
+    for id in pairs(nets) do ids[#ids+1] = id end
+    table.sort(ids)
+    local nt = {}
+    for _, id in ipairs(ids) do local n = nets[id]; nt[#nt+1] = string.format('network #%d: %d free in providers and storage, %d of %d logistic robots idle, %d chests asking', id, n.free, n.idle, n.robots, n.chests) end
+    lines[1] = string.format('%s on %s: %d requester or buffer chest%s ask%s for it%s', item, surface.name, #rows, #rows == 1 and '' or 's', #rows == 1 and 's' or '', #nt > 0 and '; ' .. table.concat(nt, '; ') or '')
+    for i, r in ipairs(rows) do
+      if i > REQ_ROWS then lines[#lines+1] = string.format('+%d more chests asking', #rows - REQ_ROWS); break end
+      lines[#lines+1] = r.row.line; out_rows[#out_rows+1] = r.row
+    end
+    for i, u in ipairs(unasked) do
+      if i > REQ_ROWS then lines[#lines+1] = string.format('+%d more chests feeding its users without asking for it', #unasked - REQ_ROWS); break end
+      lines[#lines+1] = u.line
+    end
+    if #users > REQ_USERS then lines[#lines+1] = string.format('the feeders of the first %d of %d machines using it read', REQ_USERS, #users) end
+    if found and #crafters >= SPLIT_CRAFTERS then lines[#lines+1] = string.format('the first %d crafters read', SPLIT_CRAFTERS) end
+    if read > REQ_POINTS then lines[#lines+1] = string.format('the first %d requester points read', REQ_POINTS) end
+    return {lines=lines, requesters=out_rows, unasked=#unasked > 0 and unasked or nil,
+      crafters_as_of=as_of and string.format('the census pass of %ds ago (a machine built since is not read)', math.floor((game.tick - as_of) / 60)) or 'found now'}
+  end
   local function packs_of(force)
     local tech, packs = force.current_research, {}
     for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do packs[ing.name] = true end
@@ -1721,7 +1897,7 @@ return function(api)
   M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
     main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
-  M.schema = {supply = {split='true, with an item or a fluid (a fluid: each group fed from the pipe segments its input boxes are on, each with the machines making it there): where it goes now: every crafter of ours on the surface whose recipe takes it, grouped by recipe and place (within 12 tiles), each group with machines, how many work, its take at full speed and share of the take, and what its feeding inserters pick from (belts, requester or buffer chests by logistic network, chests, drills dropping straight in); then the requester and buffer chests asking for it that feed none of them; against the surface\'s use and make in the last 10 min: lines, groups [{recipe, box, machines, working, per_min, from}], lone_requesters. Read only',all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
+  M.schema = {supply = {requesters='true, with an item (Sonnet: a row starved while its requesters asked for none): who gets it: every requester or buffer chest in our logistic networks on the surface asking for it (one in no network only when it feeds the machines; the machines from the census pass, crafters_as_of says when), with asks, holds, coming (robots bringing it now), the machines its inserters feed that use it (how many work, their take a minute at full speed) and state (served now, met, or unmet and why: no network, none free, no idle robot, none on the way yet); served first, then unmet, then met; per network its free stock and idle robots; then unasked: requester and buffer chests whose inserters feed machines that use it while they ask for none of it, with what they ask. lines, requesters [{chest, position, network, asks, holds, coming, use_per_min, state, line}], unasked [{chest, position, asks, line}]. Read only',split='true, with an item or a fluid (a fluid: each group fed from the pipe segments its input boxes are on, each with the machines making it there): where it goes now: every crafter of ours on the surface whose recipe takes it, grouped by recipe and place (within 12 tiles), each group with machines, how many work, its take at full speed and share of the take, and what its feeding inserters pick from (belts, requester or buffer chests by logistic network, chests, drills dropping straight in); then the requester and buffer chests asking for it that feed none of them; against the surface\'s use and make in the last 10 min: lines, groups [{recipe, box, machines, working, per_min, from}], lone_requesters. Read only',all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
     returns='one read, the same for everyone: flow (made/used in 10 min); made_by_spoiling (an item others spoil into: each source, how many are held in the places read and how many spoil within 5 min; the production statistics do not count spoiling); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a short one whose input inserter is off by its circuit or logistic condition, or whose requester asks for less than one craft, first: the condition and what its source holds; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
@@ -1733,6 +1909,19 @@ return function(api)
       assert(type(a.surface) == 'string', 'surface must be a surface name')
       surface = game.get_surface(a.surface)
       assert(surface, 'no surface ' .. a.surface)
+    end
+    if a.requesters ~= nil then
+      assert(a.requesters == true, 'requesters is true')
+      assert(prototypes.item[item], 'requesters is for an item: chests ask for items')
+      -- about 18 ms on Nauvis of world n (06:58: 775 crafters, 1204 requester points): reused for the same item and surface
+      local key = string.format('requesters|%s|%s|%s', tostring(surface.index or surface.name), p.force.name, item)
+      local out = M.reuse(key, function() return M.requesters(surface, p.force, item) end)
+      local copy = {}
+      for k, v in pairs(out) do copy[k] = v end
+      out = copy
+      out.item, out.surface = item, surface.name
+      out.note = 'take at full speed: each machine\'s recipe at its crafting speed; robots bringing: what the game has robots carrying to that chest now. Read only'
+      return out
     end
     if a.split ~= nil then
       assert(a.split == true, 'split is true')
