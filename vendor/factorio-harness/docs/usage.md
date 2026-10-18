@@ -7212,3 +7212,19 @@ fh watch    # deploy on every change
   its job done) raised. A gone target is now kept by its place; `cancel` skips it and names it in `ended` ("construct
   gun-turret ghost (-224.5,-30.5): ended before the cancel (built, removed or done), skipped") and `cancel_line` counts
   them. tests/d17_batch23.lua.
+- A5 (Opus, four times: to (8,545) the walk went by (-106,506) and timed out; to (0,100) it timed out at (19,149)). In
+  Opus's journal (shift31, ticks 24927330 and 24942809) both walks went round enemy nests on or near the straight
+  line (`avoided_enemies` around (-6,357) and (0,357); a biter spawner at (0,345)), and on n the straight line from
+  (-4,78) to (8,545) crosses a lake from (4,376) to (7,521) (water, deepwater): the route goes round its west shore.
+  Each timed out with 12 and 15 path requests failed along the way, on a limit set from the straight line (467 and
+  475 tiles) that never grew with the detour. Now:
+  - without `ticks`, each path found sets the limit again: 1.5 times the walking time of what is left (the path, then
+    a straight line to the goal, through via points still ahead) plus 10 s, never lower than before, at most 36000
+    ticks from the start; `limit` says so (`set again to N ticks from the start when a path was found ...`);
+  - `straight_line` in the reply: what the straight line (through via points) crosses, sampled in 8-tile boxes every
+    8 tiles (at most 128 boxes): ground the character cannot cross (tile names, from and to), cliffs, buildings, trees
+    or rocks (count, the first, three names); or `nothing on the straight line (N tiles) ...`. 0.63 ms on n for
+    Opus's 467-tile line;
+  - `last.route`: `walked N tiles against M in a straight line, at most D tiles off it (at (x,y)); it went round: ...`
+    (what the straight line crosses, enemies' reach with avoided_enemies, a path off belts), or `on the straight line`.
+  mod/tests/runtime_test.lua.

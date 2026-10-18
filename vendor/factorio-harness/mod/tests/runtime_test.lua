@@ -5631,4 +5631,41 @@ do
   fails(function() runtime.shoot_sight(p,{x=20,y=0},2) end,'20.0 tiles from you in a chunk our force does not see now')
   runtime.gun_rows,p.position,p.force.is_chunk_visible=rows,where,vis
 end
+-- d17 batch23 A5 (Opus: to (8,545) the walk went by (-106,506) and timed out; to (0,100) it timed out at (19,149)): the
+-- reply names what the straight line crosses; a path found sets the limit again from what is left; the walk's last
+-- says how far it went off the straight line and what it went round.
+;(function()
+  game.connected_players=game.connected_players or {}
+  local s=p.surface
+  local ct,ft,ce=s.count_tiles_filtered,s.find_tiles_filtered,s.count_entities_filtered
+  -- a lake across y 100..200 on x -20..20
+  local function wet(area) local a,b=area[1],area[2] return b[2]>100 and a[2]<200 and b[1]>-20 and a[1]<20 end
+  s.count_tiles_filtered=function(f) return wet(f.area) and 64 or 0 end
+  s.find_tiles_filtered=function(f) return wet(f.area) and {{name='deepwater',position={x=f.area[1][1],y=f.area[1][2]}}} or {} end
+  s.count_entities_filtered=function() return 0 end
+  p.position={x=0,y=0}
+  local r=call('move_to',{position={x=0,y=300},avoid_enemies=false})
+  assert(r.straight_line:find('the straight line (300 tiles) crosses ground it cannot cross (deepwater) from (0,103) to (0,197)',1,true),r.straight_line)
+  local first=r.until_tick
+  -- the path round the lake: 300 tiles more
+  local n=#path_requests
+  runtime.on_event{name=10,id=n-1,path={{position={x=0,y=0}},{position={x=-150,y=150}},{position={x=0,y=300}}}}
+  runtime.on_event{name=10,id=n,path=nil}
+  advance(1)
+  local a=call('status').active
+  assert(a.until_tick>first,'the limit grew: '..tostring(a.until_tick)..' vs '..first)
+  -- walk it: the trail keeps a point every 8 tiles
+  for i=1,15 do p.position={x=-10*i,y=10*i}; advance(1) end
+  for i=1,15 do p.position={x=-150+10*i,y=150+10*i}; advance(1) end
+  p.position={x=0,y=300}; advance(2)
+  local last=call('status').last
+  eq(last.outcome,'arrived')
+  eq(last.route,'walked 424 tiles against 300 in a straight line, at most 150 tiles off it (at (-150,150)); it went round: the straight line (300 tiles) crosses ground it cannot cross (deepwater) from (0,103) to (0,197)')
+  -- nothing in the way: the reply says so
+  s.count_tiles_filtered=function() return 0 end
+  r=call('move_to',{position={x=0,y=320},avoid_enemies=false})
+  assert(r.straight_line:find('nothing on the straight line (20 tiles)',1,true),r.straight_line)
+  call('stop',{})
+  s.count_tiles_filtered,s.find_tiles_filtered,s.count_entities_filtered=ct,ft,ce
+end)()
 print('runtime: '..assertions..' assertions passed')

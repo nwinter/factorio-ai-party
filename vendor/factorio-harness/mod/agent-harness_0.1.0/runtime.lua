@@ -440,6 +440,9 @@ local function finish(index, outcome)
     end
     if action.blind then last.steered='without a path: '..action.blind end
     if action.avoided then last.path='off belts' end
+    -- (A5) why the route bends: walked against the straight line, the farthest off it, what the line crosses and
+    -- what was gone round
+    if action.straight and action.trail_pts and here then M.route_note(last,action,here) end
     -- A gap the path did not lead into, a squeeze walked out of, a closed area mined out of (pathing.lua).
     local pk=action.pocket
     if pk then
@@ -4101,6 +4104,34 @@ function M.short_check(p,action,outcome)
     action.off_belt and ' (it had stepped off a belt or rail there)' or '')
   return 'stopped_short'
 end
+-- (d17 batch23 A5, Opus: "to (8,545) it went by (-106,506)") last.route: the tiles walked (the trail, a point every 8
+-- tiles) against the straight line, the point farthest off it, and what bent it: what the straight line crosses
+-- (pathing.line_crossing at the call), the enemies gone round (avoided_enemies), a path off belts.
+function M.route_note(last,action,here)
+  local st=action.straight
+  local pts=action.trail_pts
+  local walked,far,fd=0,nil,0
+  local a=pts[1]
+  local b=action.via and action.via.final or action.position
+  for i=2,#pts+1 do
+    local q=pts[i] or here
+    walked=walked+distance(pts[i-1],q)
+    local dx,dy=b.x-a.x,b.y-a.y
+    local L=dx*dx+dy*dy
+    local t=L>0 and math.max(0,math.min(1,((q.x-a.x)*dx+(q.y-a.y)*dy)/L)) or 0
+    local d=distance(q,{x=a.x+dx*t,y=a.y+dy*t})
+    if d>fd then far,fd=q,d end
+  end
+  local why={}
+  if st and (st.water or st.cliffs or st.solid) then why[#why+1]=st.text end
+  if last.avoided_enemies then why[#why+1]=string.format('enemies\' reach: %d group%s (avoided_enemies)',#last.avoided_enemies,#last.avoided_enemies==1 and '' or 's') end
+  if action.avoided then why[#why+1]='belts: the path off belts was taken (at most a quarter longer)' end
+  local straight=st and st.length or distance(a,b)
+  local bent=fd>=4
+  last.route=string.format('walked %s%d tiles against %d in a straight line%s%s',#pts>=64 and 'at least ' or '',math.floor(walked+0.5),math.floor(straight+0.5),
+    bent and string.format(', at most %d tiles off it (at (%d,%d))',math.floor(fd+0.5),math.floor(far.x+0.5),math.floor(far.y+0.5)) or ', on the straight line',
+    bent and (#why>0 and '; it went round: '..table.concat(why,'; ') or '; nothing on the straight line, no enemy avoided: the engine\'s path') or '')
+end
 -- Leg i's goal: via point i, then the walk's position.
 function M.via_leg(p,action,i)
   local v=action.via
@@ -4229,7 +4260,11 @@ function handlers.move_to(p,a)
   local action={kind='move_to',position=target,tolerance=tolerance,off_belts=true,
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false,pocket_check=true,squeeze=a.squeeze==true or nil,
     avoid_mode=M.walk_mode(a),reach_target=rt,near=a.near,limit_text=limit_text,
-    trail_pts={{x=p.position.x,y=p.position.y}},surface_name=p.surface.name}
+    trail_pts={{x=p.position.x,y=p.position.y}},surface_name=p.surface.name,
+    -- (d17 batch23 A5, Opus) the limit set again from each path found unless ticks was given; what the straight line crosses
+    limit_auto=a.ticks==nil and {start=game.tick,cap=36000,speed=speed,text=limit_text} or nil,
+    straight=M.pathing.line_crossing and (function() local pts={{x=p.position.x,y=p.position.y}} for _,q in ipairs(via or {}) do pts[#pts+1]=q end pts[#pts+1]=target
+      local ok,r=pcall(M.pathing.line_crossing,p.surface,pts) return ok and r or nil end)()}
   -- The give-up's spots for a target count within its reach, to its box (pathing.lua).
   if rt then action.reach_r=rt.r; action.reach_box=rt.box; action.reach_label=rt.kind end
   if via then
@@ -4287,7 +4322,7 @@ function handlers.move_to(p,a)
     local oku,u=pcall(M.routecheck.unchecked,p,pts)
     unchecked=oku and u or nil
   end
-  return {until_tick=game.tick+ticks,limit=limit_text,position=target,pathfinding=not action.direct,combat=combat,avoid_enemies=foes and M.avoid.describe(foes.mode) or nil,under_range=under,
+  return {until_tick=game.tick+ticks,limit=limit_text,position=target,pathfinding=not action.direct,straight_line=action.straight and action.straight.text or nil,combat=combat,avoid_enemies=foes and M.avoid.describe(foes.mode) or nil,under_range=under,
     enters_unchecked=unchecked,rail_crossings=crossings,
     retreat=back and M.retreat.line(back) or nil,
     via=via and #via or nil,legs=via and #via+1 or nil,via_added=via_added,unsafe_goal=unsafe and table.concat(unsafe,'; ') or nil,
