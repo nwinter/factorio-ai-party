@@ -200,6 +200,26 @@ return function(api)
     return head, side, loops
   end
 
+  -- Tiles as rectangles of neighbouring tiles (one deconstruct call each): runs on a row, then the same run on the next rows.
+  function M.rects(taken)
+    table.sort(taken, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+    local areas = {}
+    for _, t in ipairs(taken) do
+      local last = areas[#areas]
+      if last and last.y == t.y and last.x1 == t.x - 1 then last.x1 = t.x
+      else areas[#areas+1] = {y=t.y, x0=t.x, x1=t.x} end
+    end
+    local rects, open = {}, {}
+    for _, r in ipairs(areas) do
+      local key = r.x0 .. ':' .. r.x1
+      local o = open[key]
+      if o and o.y1 == r.y - 1 then o.y1 = r.y
+      else o = {x0=r.x0, x1=r.x1, y0=r.y, y1=r.y}; open[key] = o; rects[#rects+1] = o end
+    end
+    local out = {}
+    for i, r in ipairs(rects) do out[i] = {left_top={x=r.x0, y=r.y0}, right_bottom={x=r.x1 + 1, y=r.y1 + 1}} end
+    return out
+  end
   -- salvage (C6, Astra 13:50: Wren's salvage took about 60 deconstruct calls and a second pass): up to n built foundation
   -- tiles to take up, from the edge in, farthest from the hub first. A tile qualifies when nothing of ours stands on it
   -- (built or ghost, whole footprints), no planned tile ghost is there, no underground belt or pipe passes under it, and the
@@ -270,25 +290,7 @@ return function(api)
       end
       if not progress then break end
     end
-    -- Rows of neighbouring tiles as areas (one deconstruct call each).
-    table.sort(taken, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
-    local areas = {}
-    for _, t in ipairs(taken) do
-      local last = areas[#areas]
-      if last and last.y == t.y and last.x1 == t.x - 1 then last.x1 = t.x
-      else areas[#areas+1] = {y=t.y, x0=t.x, x1=t.x} end
-    end
-    -- the same run on the next rows: one rectangle
-    local rects, open = {}, {}
-    for _, r in ipairs(areas) do
-      local key = r.x0 .. ':' .. r.x1
-      local o = open[key]
-      if o and o.y1 == r.y - 1 then o.y1 = r.y
-      else o = {x0=r.x0, x1=r.x1, y0=r.y, y1=r.y}; open[key] = o; rects[#rects+1] = o end
-    end
-    local out = {}
-    for i, r in ipairs(rects) do out[i] = {left_top={x=r.x0, y=r.y0}, right_bottom={x=r.x1 + 1, y=r.y1 + 1}} end
-    return taken, out, #built >= MAX_TILES
+    return taken, M.rects(taken), #built >= MAX_TILES
   end
   local DIRV = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
   -- The tiles each underground belt or pipe-to-ground pair passes under (built or ghost), on(x, y) once a tile; the
@@ -424,6 +426,102 @@ return function(api)
     for _, t in pairs(need) do list[#list+1] = t end
     table.sort(list, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
     return list, why
+  end
+  -- support (batch26 C3, Sol: 1,619 foundation ghosts trimmed by hand over 32 launches after a blanket of tile ghosts):
+  -- the foundation the chosen entities (built and ghost) need and nothing more: their footprints, the tiles under the
+  -- underground belt and pipe-to-ground spans (built pairs and the chosen ghosts'), and for a group of those not joined
+  -- to the hub's foundation the fewest tiles that join it (through tile ghosts or empty space). Holes are not filled.
+  -- The foundation tile ghosts outside that are the ones it would remove; strands: the entity ghosts not chosen that
+  -- stand on one of them. Read only. chosen: the chosen entities; returns a table.
+  function M.support(s, force, hub, chosen)
+    local built, ghost = {}, {}
+    for _, t in ipairs(try(function() return s.find_tiles_filtered{name='space-platform-foundation', limit=MAX_TILES} end) or {}) do built[k(t.position.x, t.position.y)] = true end
+    local tile_ghosts = try(function() return s.find_entities_filtered{type='tile-ghost', ghost_name='space-platform-foundation', limit=MAX_TILES} end) or {}
+    for _, g in ipairs(tile_ghosts) do
+      local key = k(math.floor(g.position.x), math.floor(g.position.y))
+      if not built[key] then ghost[key] = true end
+    end
+    local keep, why, is_chosen, chosen_ghosts = {}, {foot=0, tunnel=0, link=0}, {}, {}
+    local function want(x, y, kind)
+      local key = k(x, y)
+      if not built[key] and not keep[key] then keep[key] = {x=x, y=y, kind=kind, ghost=ghost[key]}; why[kind] = why[kind] + 1 end
+    end
+    for _, e in ipairs(chosen) do
+      is_chosen[e] = true
+      if e.type == 'entity-ghost' then chosen_ghosts[#chosen_ghosts+1] = e end
+      for _, t in ipairs((M.footprint(e))) do want(t.x, t.y, 'foot') end
+    end
+    M.tunnels(s, force, chosen_ghosts, function(x, y) want(x, y, 'tunnel') end)
+    local function solid(key) return built[key] or keep[key] end
+    -- Links: from the tiles joined to the hub, the fewest tiles to the nearest needed group not joined, one group at a time.
+    local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+    for _, set in ipairs({built, ghost, keep}) do
+      for key in pairs(set) do
+        local x, y = math.floor(key / 65536) - 32768, key % 65536 - 32768
+        x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x), math.max(y1, y)
+      end
+    end
+    local hx, hy = hub and math.floor(hub.position.x) or 0, hub and math.floor(hub.position.y) or 0
+    local D4 = {{1,0},{-1,0},{0,1},{0,-1}}
+    local unjoined = 0
+    if x0 < math.huge and (x1 - x0 + 9) * (y1 - y0 + 9) <= 250000 then
+      for _ = 1, 32 do
+        local seen, queue = {[k(hx, hy)]=true}, {{hx, hy}}
+        local i = 1
+        while queue[i] do
+          local c = queue[i]; i = i + 1
+          for _, d in ipairs(D4) do
+            local key = k(c[1] + d[1], c[2] + d[2])
+            if not seen[key] and solid(key) then seen[key] = true; queue[#queue+1] = {c[1] + d[1], c[2] + d[2]} end
+          end
+        end
+        local left = false
+        for key in pairs(keep) do if not seen[key] then left = true; break end end
+        if not left then break end
+        -- breadth first over the tiles neither built nor kept, from every joined tile, to the first kept tile not joined
+        local from, j, goal = {}, 1, nil
+        local q2 = {}
+        for _, c in ipairs(queue) do q2[#q2+1] = c end
+        while q2[j] and not goal do
+          local c = q2[j]; j = j + 1
+          for _, d in ipairs(D4) do
+            local x, y = c[1] + d[1], c[2] + d[2]
+            local key = k(x, y)
+            if x >= x0 - 4 and x <= x1 + 4 and y >= y0 - 4 and y <= y1 + 4 and not seen[key] then
+              seen[key] = true
+              if solid(key) then goal = c; break end
+              from[key] = c; q2[#q2+1] = {x, y}
+            end
+          end
+        end
+        if not goal then unjoined = unjoined + 1; break end
+        local c = goal
+        while c and from[k(c[1], c[2])] ~= nil do want(c[1], c[2], 'link'); c = from[k(c[1], c[2])] end
+      end
+    end
+    -- what goes: the foundation tile ghosts outside keep
+    local remove, removed = {}, {}
+    for key in pairs(ghost) do
+      if not keep[key] then
+        removed[key] = true
+        remove[#remove+1] = {x=math.floor(key / 65536) - 32768, y=key % 65536 - 32768}
+      end
+    end
+    table.sort(remove, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+    local add, kept_ghosts = {}, 0
+    for _, t in pairs(keep) do if t.ghost then kept_ghosts = kept_ghosts + 1 else add[#add+1] = t end end
+    table.sort(add, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+    local strands = {}
+    if #remove > 0 then
+      for _, g in ipairs(try(function() return s.find_entities_filtered{type='entity-ghost', force=force, limit=8192} end) or {}) do
+        if not is_chosen[g] then
+          for _, t in ipairs((M.footprint(g))) do
+            if removed[k(t.x, t.y)] then strands[#strands+1] = string.format('%s %s', g.ghost_name, at(g.position.x, g.position.y)); break end
+          end
+        end
+      end
+    end
+    return {remove=remove, add=add, kept_ghosts=kept_ghosts, tile_ghosts=#tile_ghosts, why=why, strands=strands, unjoined=unjoined}
   end
   -- ready {positions?, area?, tiles?} (D2, Sol 00:20: Meridian's 779-tile core read against a capped 1000-ghost list that
   -- mixed in the hull he deferred on purpose): a chosen subset only. The entity ghosts at the positions and in the area,
@@ -661,6 +759,65 @@ return function(api)
           .. (pages > 1 and string.format(' (page %d of %d: entries %d to %d; page: N reads the others, each a place_ghosts call)', page, pages, first, first + #entries - 1) or '')
           .. held_text}
     end
+    if a.support ~= nil then
+      local sp = a.support
+      assert(sp == true or type(sp) == 'table' and (sp.positions ~= nil or sp.area ~= nil or sp.names ~= nil),
+        'support is true (every entity of ours, built and ghost) or {positions, area, names}: the entities chosen (any of them)')
+      local s, force = pl.surface, pl.force
+      local chosen, seen = {}, {}
+      local function take(e)
+        if e.valid and e.type ~= 'tile-ghost' and e.type ~= 'character' and not seen[e] then seen[e] = true; chosen[#chosen+1] = e end
+      end
+      local names
+      if type(sp) == 'table' and sp.names ~= nil then
+        assert(type(sp.names) == 'table' and #sp.names >= 1 and #sp.names <= 32, 'support.names: 1..32 entity names')
+        names = {}
+        for _, n in ipairs(sp.names) do names[n] = true end
+      end
+      local function named(e) return not names or names[e.type == 'entity-ghost' and e.ghost_name or e.name] end
+      if sp == true or sp.positions == nil and sp.area == nil then
+        for _, e in ipairs(s.find_entities_filtered{force=force}) do if named(e) then take(e) end end
+      end
+      if type(sp) == 'table' and sp.positions ~= nil then
+        assert(type(sp.positions) == 'table' and #sp.positions >= 1 and #sp.positions <= 512, 'support.positions takes 1..512 {x,y}')
+        for _, q in ipairs(sp.positions) do
+          local pos = api.position and api.position(q) or q
+          local got = false
+          for _, e in ipairs(s.find_entities_filtered{position=pos, radius=0.6, force=force}) do
+            if e.type ~= 'tile-ghost' and named(e) then take(e); got = true end
+          end
+          assert(got, 'support.positions: nothing of ours at ' .. at(pos.x, pos.y))
+        end
+      end
+      if type(sp) == 'table' and sp.area ~= nil then
+        for _, ar in ipairs(areas_of(sp.area, 'support.area')) do
+          for _, e in ipairs(s.find_entities_filtered{area=ar, force=force}) do if named(e) then take(e) end end
+        end
+      end
+      assert(#chosen > 0, 'support: no entity of ours chosen')
+      local r = M.support(s, force, pl.hub and pl.hub.valid and pl.hub or nil, chosen)
+      local areas = M.rects(r.remove)
+      local PAGE = 64
+      local pages = math.max(1, math.ceil(#areas / PAGE))
+      local page = a.page ~= nil and (api.integer and api.integer(a.page, 1, 1, pages, 'page (1..' .. pages .. ')') or a.page) or 1
+      local first = (page - 1) * PAGE + 1
+      local list = {}
+      for i = first, math.min(#areas, first + PAGE - 1) do list[#list+1] = areas[i] end
+      local entries = {}
+      for i, t in ipairs(r.add) do if i <= 256 then entries[#entries+1] = {name='space-platform-foundation', position={x=t.x + 0.5, y=t.y + 0.5}} end end
+      local strands = {}
+      for i, x in ipairs(r.strands) do if i <= LIST then strands[i] = x end end
+      return {platform=pl.name, chosen=#chosen,
+        support={tile_ghosts=r.tile_ghosts, keep=r.kept_ghosts, remove=#r.remove, add=#r.add, footprints=r.why.foot, tunnels=r.why.tunnel, links=r.why.link,
+          strands=#r.strands, unjoined=r.unjoined > 0 and r.unjoined or nil},
+        remove_areas=#list > 0 and list or nil, page=#areas > 0 and page or nil, pages=#areas > 0 and pages or nil,
+        next=page < pages and string.format('platform_plan {platform: "%s", support: (as before), page: %d}', pl.name, page + 1) or nil,
+        place_ghosts_entries=#entries > 0 and entries or nil, strands=#strands > 0 and strands or nil,
+        line=string.format('%d entities chosen; of %d foundation tile ghosts %d stay (their footprints, underground belt and pipe spans, links to the hub\'s floor) and %d would go, in %d areas (each a deconstruct {platform, area, tiles: ["space-platform-foundation"]}%s); %d empty tiles they need hold no tile ghost (place_ghosts_entries); holes are left open',
+          #chosen, r.tile_ghosts, r.kept_ghosts, #r.remove, #areas, pages > 1 and string.format('; page %d of %d, %d areas a page', page, pages, PAGE) or '', #r.add)
+          .. (#r.strands > 0 and string.format('; %d entity ghosts not chosen stand on tiles that would go: %s', #r.strands, table.concat(strands, ', ')) or '')
+          .. (r.unjoined > 0 and '; a needed group no run of tiles joins to the hub within the platform\'s box' or '')}
+    end
     if a.salvage ~= nil then
       local n = api.integer and api.integer(a.salvage, nil, 1, 2000, 'salvage') or a.salvage
       local taken, areas, capped = M.salvage(pl.surface, pl.force, pl.hub and pl.hub.valid and pl.hub or nil, n)
@@ -694,7 +851,7 @@ return function(api)
     return {platform=pl.name, foundation_tiles=ntiles, hub_group=main and main.size or nil, islands=islands, belts=nbelts, loops=loops,
       head_on=#head > 0 and head or nil, side_loads=#side > 0 and side or nil, lines=lines}
   end
-  M.schema = {platform_plan = {platform='platform name',ready='optional {positions (1..512 {x,y}), area (an area or a list), tiles (an area or a list of areas)}: that subset only (D2): the entity ghosts at the positions and in the area, the tile ghosts in tiles; what they need of each item against the hub (lines: missing from the hub), the support under each entity ghost (on built foundation, waiting on tile ghosts, over empty space with no tile ghost: never built), settings (assembler ghosts with no recipe), and positions holding a built entity or nothing; pockets [{tiles, area, without_ghost, under, open, line}] (the empty space under each ghost\'s footprint: the 4-neighbour region bounded by foundation, up to 1024 tiles; it fills only when every tile holds a tile ghost) and pocket_entries (place_ghosts entries for its tiles without one): ready {ghosts, tile_ghosts, items [{item, need, hub, missing}], on_foundation, waiting_on_tiles, over_empty, over_empty_list, no_recipe, built_at, nothing_at}, lines',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor; a tunnel runs to the next underground of its name facing the same way, one crossing it passed over), rows, tile_ghosts_held (tile ghosts counted as floor that the hub\'s foundation rules never build, each with why), place_ghosts_entries (one page of 256 tiles as place_ghosts entries, in reading order: page, pages, next), line; tiles built or with a tile ghost count as there',page='with floor: 1..pages (default 1): which 256 entries place_ghosts_entries holds; the order is the same every read',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground belt or pipe span under it or at its ends, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
+  M.schema = {platform_plan = {platform='platform name',ready='optional {positions (1..512 {x,y}), area (an area or a list), tiles (an area or a list of areas)}: that subset only (D2): the entity ghosts at the positions and in the area, the tile ghosts in tiles; what they need of each item against the hub (lines: missing from the hub), the support under each entity ghost (on built foundation, waiting on tile ghosts, over empty space with no tile ghost: never built), settings (assembler ghosts with no recipe), and positions holding a built entity or nothing; pockets [{tiles, area, without_ghost, under, open, line}] (the empty space under each ghost\'s footprint: the 4-neighbour region bounded by foundation, up to 1024 tiles; it fills only when every tile holds a tile ghost) and pocket_entries (place_ghosts entries for its tiles without one): ready {ghosts, tile_ghosts, items [{item, need, hub, missing}], on_foundation, waiting_on_tiles, over_empty, over_empty_list, no_recipe, built_at, nothing_at}, lines',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor; a tunnel runs to the next underground of its name facing the same way, one crossing it passed over), rows, tile_ghosts_held (tile ghosts counted as floor that the hub\'s foundation rules never build, each with why), place_ghosts_entries (one page of 256 tiles as place_ghosts entries, in reading order: page, pages, next), line; tiles built or with a tile ghost count as there',page='with floor: 1..pages (default 1): which 256 entries place_ghosts_entries holds; with support: which 64 remove_areas; the order is the same every read',support='true (every entity of ours, built and ghost) or {positions (1..512 {x,y}), area (an area or a list), names (1..32 entity names)}: the foundation those chosen need and nothing more, and the foundation tile ghosts that would go (C3): kept are their footprints (less the empty space a collector or thruster keeps), the tiles under underground belt and pipe-to-ground spans (built pairs and the chosen ghosts\', paired as floor pairs them) and the fewest tiles joining a needed group to the hub\'s floor; holes are left open. support {tile_ghosts, keep, remove, add, footprints, tunnels, links, strands, unjoined}, remove_areas (rectangles of tile ghosts that would go, 64 a page: each a deconstruct {platform, area, tiles: ["space-platform-foundation"]}; page, pages, next), place_ghosts_entries (up to 256 empty tiles they need that hold no tile ghost), strands (entity ghosts not chosen standing on a tile that would go), line',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground belt or pipe span under it or at its ends, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
     returns='a platform as planned, built and ghosts together (read only): foundation_tiles (built and tile ghosts), hub_group (the 4-joined tiles with the hub), islands [{size, ghost_tiles, tile, line}] (groups no foundation joins with the hub), belts (transport belts, undergrounds and splitters, built and ghosts), loops [{belts, ghosts, exits, first, line}] (belts whose items come round again; exits 0: no belt leaves it), head_on (a belt moving its items into one facing it), side_loads (a belt feeding the side of another), lines'}}
   return M
 end

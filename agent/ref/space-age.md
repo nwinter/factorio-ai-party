@@ -73,7 +73,7 @@
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
   its crusher, a crusher stopped full over a full hub.
-- `platform_plan {platform, floor?, page?, ready?, salvage?}`: the platform as planned, built entities and ghosts
+- `platform_plan {platform, floor?, page?, ready?, salvage?, support?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
@@ -83,7 +83,11 @@
   those without a tile ghost (the hub fills a pocket only when every tile of it holds one) and `pocket_entries` for
   place_ghosts to stamp them; past 1024 tiles, open space. Floor and ready leave out the tiles a collector's rule keeps empty
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
-  (never one under an underground belt or pipe span, or at its ends).
+  (never one under an underground belt or pipe span, or at its ends). `support: true` or `{positions, area, names}`:
+  the floor those entities (built and ghost) need and no more (footprints, underground belt and pipe spans, the fewest
+  tiles joining them to the hub's floor; holes left open), and the foundation tile ghosts outside it as `remove_areas`,
+  64 a page, each a `deconstruct {platform, area, tiles: ["space-platform-foundation"]}`; `strands` names entity ghosts
+  not chosen that stand on a tile that would go. Read only.
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item, what the ghosts
   still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
