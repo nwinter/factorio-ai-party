@@ -1034,6 +1034,12 @@ return function(api)
     for _, o in ipairs(order) do
       local text = o.n .. ' ' .. o.s
       if SHORT[o.s] and next(short) then text = text .. ' (' .. short_list(short, 6) .. ')'; short = {} end
+      -- (d17 batch22 B2, Muse) the first one's own gate, the condition and what it reads now
+      if o.s == 'disabled_by_control_behavior' and api.state_text then
+        for _, w in ipairs(ranked) do
+          if w.status == o.s then local g = try(api.state_text, w.e); if g then text = text .. ' (' .. g .. ')' end; break end
+        end
+      end
       parts[#parts+1] = text
     end
     if (states.working or 0) == 0 then table.insert(parts, 1, '0 working') end
@@ -1057,6 +1063,7 @@ return function(api)
       local text = at(w.e.position) .. ' ' .. w.e.name .. ' ' .. (w.held and held_text(w.held, w.lacks) .. '; so ' or '') .. w.status
       if #w.lacks > 0 then text = text .. ' (missing ' .. table.concat(w.lacks, ', ') .. ')' end
       if w.status == 'burnt_result_full' and api.burnt_line then text = text .. ' (' .. (try(api.burnt_line, w.e) or '') .. ')' end
+      if w.status == 'disabled_by_control_behavior' and api.state_text then local g = try(api.state_text, w.e); if g then text = text .. ' (' .. g .. ')' end end
       if role ~= 'makers' then
         text = text .. '; holds ' .. (w.u.has or 0)
         -- The feeder that carries this item: its source asks for it or

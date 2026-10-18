@@ -15152,7 +15152,7 @@ function handlers.science(p,a)
   end
   return M.labs.science(p,a)
 end
-rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end}
+rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end}
 -- Electric and logistic networks and turrets, one line each (networks.lua):
 -- the shift block, the networks read, and the network push alerts.
 -- Space not in play yet (Nick 12:35, item 4, for a fresh run): no rocket launched, no platform, and no planet but

@@ -7013,3 +7013,9 @@ fh watch    # deploy on every change
   tiles): `12 pentapod-egg in requester-chest at (0,0): the first hatches in 10s; in range of 1 turret ready (1
   gun-turret), 1 more in range without ammunition, power or fluid`. The team block's egg alerts end with the same
   coverage. tests/d17_batch22.lua.
+- B2 (Muse): three times a stopped line read as a shortage and was stock-gated by design. A maker whose status is
+  disabled_by_control_behavior now carries its gate inline, from thrust.state_text (the circuit condition with its
+  signal on its wires, the logistic condition with the network's count, as supply's input lines since batch18 B1):
+  bottleneck {area | positions} groups get `gate` (the first such maker: `assembling-machine-1 (0.5,0.5): off by its
+  logistic condition stone-wall < 200 (network 5 ...: stone-wall 200)`); supply's and bottleneck {item}'s maker lines
+  add it to the disabled_by_control_behavior count and to each such worst row. tests/rates.lua.

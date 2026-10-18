@@ -45,7 +45,9 @@
   `per_min: 30`: each step's rate for that target, what it makes now, its makers' rate each and the machines the target
   takes; an ingredient is counted net of what its recipe gives back (asteroid crushing). A fluid adds `shares`: each
   recipe's machines and share of the fluid at full speed. `all_stopped: true`: every maker not working, grouped by
-  cluster with every position. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
+  cluster with every position. A maker stopped by its own circuit or logistic condition carries the gate inline (the
+  condition and what it reads now), in bottleneck's groups (`gate`, with area or positions) and in supply's and
+  bottleneck item's maker lines. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
 - `trace {position | item, platform? | surface?, forward?, audit?, upstream?, throughput?, circuit?, all?, near?,
   radius?}`: on a machine or lab, per ingredient it lacks each feeding inserter, what that inserter reads and how much
   is there, and a container within 10 tiles holding it that nothing reads. `forward: true` follows its output inserters
