@@ -165,6 +165,10 @@
   blueprint's: the construction robots of the network covering it bring it (the row names that network's stock and
   free robots). Modules: `configure`; ingredients: inserters or a requester chest.
   Example: `./fh call deliver --args '{"position":{"x":12.5,"y":-40.5},"items":{"firearm-magazine":20}}'`
+- Game rule, ghosts: a ghost is no logistic request. The construction robots of the network covering it take its item
+  from active and passive provider, storage and buffer chests there (never from requester chests); with none held it
+  waits, and the game shows a missing-materials alert. Items reach a network only by a request (a requester or buffer
+  chest, a landing pad's or hub's slots) or by hand. `ghosts` names, per ghost, the item its network holds none of.
 - Item moves (`transfer`, `collect`, `feed`, `pickup`, `rearm`, `refuel`, `mine`, `craft`, `cancel_craft`, a
   `configure` recipe change) say `moved` and end with `inv` (free slots, what you hold of the items moved); a move
   over time says `timed`, and `last.moved`/`last.inv` when it ends; queue and standing-order history entries carry
