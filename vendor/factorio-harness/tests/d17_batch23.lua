@@ -290,3 +290,36 @@ do
   game=nil
 end
 print('d17_batch23 B2 stock by holder: ok')
+
+-- B3 (Gemini; Sonnet): per silo, rocket parts made and the rate; per request what the network's provider and storage
+-- chests can give now and whether an automatic launch goes under min_payload or full; the next automatic launch.
+do
+  game={tick=36000}
+  defines={inventory={hub_main=1}}
+  prototypes={item={['low-density-structure']={weight=10000,stack_size=50},['processing-unit']={weight=3333,stack_size=100}},utility_constants={rocket_lift_weight=1000000}}
+  local st={}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return st end}
+  local silo={unit_number=77,products_finished=100}
+  local r=S.sample_made(silo)
+  eq(r.made,100); eq(r.per_min,nil)
+  game.tick=game.tick+300; silo.products_finished=105
+  eq(#st.silo_made[77],1,'not sampled again within 10 s'); eq(S.sample_made(silo).per_min,60)  -- 5 parts in 5 s
+  game.tick=game.tick+3300; silo.products_finished=130
+  r=S.sample_made(silo); eq(r.made,130); eq(r.per_min,30); eq(r.over_s,60); eq(#st.silo_made[77],2)
+  -- the requests a platform above makes of this planet
+  local net={network_id=5}
+  net.get_item_count=function(name,member) local t={['low-density-structure']={providers=80,storage=40},['processing-unit']={providers=10,storage=0}} local x=t[name] or {providers=0,storage=0}
+    if member then return x[member] end return x.providers+x.storage end
+  local main={count_empty_stacks=function() return 20 end}
+  local hub={valid=true,get_inventory=function() return main end,get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+    filters={{value={name='low-density-structure'},min=100,import_from='nauvis',minimum_delivery_count=100},{value={name='processing-unit'},min=50,import_from='nauvis'}}} end} end}
+  local force={platforms={{valid=true,name='Swiftlet',space_location={name='nauvis'},hub=hub}},logistic_networks={nauvis={net}}}
+  local e={surface={name='nauvis',planet={name='nauvis'}},position={x=0,y=0}}
+  local rows=S.request_rows(e,force,net)
+  eq(#rows,2)
+  eq(rows[1].item,'low-density-structure'); eq(rows[1].providers,80); eq(rows[1].storage,40); eq(rows[1].network_holds,120); eq(rows[1].next_launch,'min_payload 100'); eq(rows[1].flag,'matched')
+  has(rows[1].line,'the silo\'s network can give 120 now (provider chests 80, storage chests 40, less what robots have reserved)')
+  eq(rows[2].next_launch,'full 300'); eq(rows[2].flag,'below_min_payload')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch23 B3 silo parts rate and requests: ok')

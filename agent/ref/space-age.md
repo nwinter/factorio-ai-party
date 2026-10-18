@@ -174,9 +174,12 @@
 - `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
   its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
-  `next_parts` counts parts for the rocket after it. `platform_requests` flags each request a platform above makes:
-  matched (the planet's network holds it), below_min_payload, split_networks (another network holds it), hub_full,
-  filling. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
+  `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min).
+  `platform_requests` flags each request a platform above makes: matched (the planet's network holds it),
+  below_min_payload, split_networks (another network holds it), hub_full, filling; each with what the silo's network
+  can give now (provider and storage chests, less robots' reservations; requester and buffer chests not counted) and
+  `next_launch` (an automatic launch for it goes under `min_payload N` or `full N` by weight); `next_auto_launch` names
+  the request the next automatic launch serves. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
   request and its network's stock), then that item's chain on the planet down to the root, with makers not working.
   `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically` on a silo)
   take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk. A silo's

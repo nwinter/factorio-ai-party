@@ -7314,3 +7314,11 @@ fh watch    # deploy on every change
   (requester and buffer chests: held for their requests), chests (no logistics), machines (outputs), other (landing
   pads, wagons, vehicles), and its line. The stock summary (stock's, craft's and construct's notes) carries that split
   when a provider, storage, requester or buffer chest holds the item. tests/d17_batch23.lua.
+- B3 (Gemini; Sonnet's first ask), in `silo`: per silo `parts_made` (products_finished) and `parts_per_min` over the
+  last 10 min of samples (a silo read and the alert scan sample it, at most every 10 s; the first read says the rate
+  needs a second sample); per platform request (each request a platform above makes of this planet that its hub
+  lacks) `network_can_give` (the game's count of the silo's network: provider and storage chests, less what robots
+  have reserved; on n, get_item_count without a member equals providers plus storage, and requester chests are not
+  in it), `providers`, `storage`, and `next_launch`: `min_payload N` when the request sets one, else `full N` by
+  weight; `next_auto_launch`: the request filled now, else the first whose payload the network can give.
+  tests/d17_batch23.lua, tests/d15_batch4.lua.

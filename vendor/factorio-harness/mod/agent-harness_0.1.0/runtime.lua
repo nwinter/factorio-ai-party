@@ -15637,7 +15637,7 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local okr,lost=pcall(M.robotloss.alert_groups,f)
     for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
     return out
-  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
+  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,silo_sample=function(e) return M.silo.sample_made(e) end,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
   negative_note=function(item,n) return M.circuits.negative_note(item,n) end,
