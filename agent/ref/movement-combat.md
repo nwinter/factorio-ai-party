@@ -125,9 +125,12 @@
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold
   it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles (30 s when none is there now) and rearms
-  again (6 tries). `dry_run:
+  again (6 tries); a tour that leaves out turrets for passing enemies goes back to them once it ends, waiting the same
+  way (`left_out_retry`). `from: {position, count?}` takes `count` (default 200) of the ammo from that chest first,
+  walking to it, then runs the tour with the other arguments once the take ends with ammo taken (`then_rearm`; in
+  reach, the tour at once): a resupply in one call. `dry_run:
   true`: the stops, each turret's rounds and what it gets, those wanting ammo you do not carry, and the route.
-  Example: `./fh call rearm --args '{"surface":true,"below":5}' --wait`
+  Example: `./fh call rearm --args '{"position":{"x":-300,"y":-320},"radius":35,"count":20,"below":10,"partial":true,"retry_when_clear":true,"from":{"position":{"x":-280.5,"y":-300.5},"count":200}}'`
 - `artillery {surface?, position?, radius?}`: our artillery with shells, automatic targeting and the spawners and
   worms in range, nearest first; `units_near`: enemy units within 64 tiles of each piece, their range, and how many of
   our turrets reach them. It and the targeting remote's reply give `shells_used` (shots fired, from the production

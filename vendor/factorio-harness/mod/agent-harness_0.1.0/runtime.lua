@@ -814,7 +814,7 @@ local function finish(index, outcome)
       s.then_calls=s.then_calls or {}
       s.then_calls[#s.then_calls+1]={index=index,call=action.then_call}
       s.last[index].then_call=action.then_call.action..' runs again now'
-    else s.last[index].then_call=string.format('%s not run again: the wait ended %s',action.then_call.action,outcome) end
+    else s.last[index].then_call=string.format('%s not run again: the %s ended %s',action.then_call.action,action.then_after and 'action' or 'wait',outcome) end
   end
   -- launch {wait_ready}: the wait met, the launch now (last.launch; launch_failed when it is refused).
   if action and action.then_launch and outcome=='met' and s.last[index] then

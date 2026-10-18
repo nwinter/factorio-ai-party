@@ -5852,6 +5852,32 @@ do
   fails(function() call('build',{item='small-electric-pole',position={x=-187.5,y=-29.5},retry_when_clear=true}) end,'an area under attack now')
   runtime.build_now,runtime.avoid.goal_check=now,chk
 end
+-- rearm {from} (d17 batch34 C2, Haiku): a take from the chest, then the tour once it ends with ammo; a tour leaving out
+-- turrets for passing enemies goes back to them once it ends (retry_when_clear).
+do
+  local tnow,rnow=runtime.transfer_now,runtime.rearm_now
+  local took
+  runtime.transfer_now=function(_,a) took=a; storage.agent_harness.active[1]={kind='wait_ticks',until_tick=game.tick+600}; return {until_tick=game.tick+600} end
+  local r=call('rearm',{radius=30,count=20,from={position={x=5,y=5},count=150},retry_when_clear=true})
+  eq(took.direction,'to_player'); eq(took.count,150); eq(took.item,'firearm-magazine'); eq(took.walk,true)
+  local a=storage.agent_harness.active[1]
+  eq(a.then_call.action,'rearm'); eq(a.then_call.args.from,nil); eq(a.then_call.args.retry_when_clear,true); eq(a.then_after.transferred,true)
+  assert(r.then_rearm:find('the rearm tour starts once the take has ended with ammo taken',1,true),tostring(r.then_rearm))
+  call('stop',{})
+  eq(storage.agent_harness.last[1].then_call,'rearm not run again: the action ended stopped')
+  fails(function() call('rearm',{radius=30,from='chest'}) end,'from is {position: {x,y}, count?}')
+  runtime.rearm_now=function()
+    runtime.tour_stock().last_refusal={tick=game.tick,passing=2,staying=0,at={x=40,y=1},passing_at={{x=40,y=1},{x=42,y=1}},kept=3}
+    storage.agent_harness.active[1]={kind='wait_ticks',until_tick=game.tick+600}
+    return {until_tick=game.tick+600}
+  end
+  r=call('rearm',{radius=30,count=20,retry_when_clear=true})
+  assert(r.left_out_retry:find('2 turrets left out for passing enemies: once this tour ends, rearm goes to them',1,true),tostring(r.left_out_retry))
+  a=storage.agent_harness.active[1]
+  eq(a.then_call.args.positions[2].x,42); eq(a.then_call.args.walk,true); eq(a.then_call.args.count,20); eq(a.then_after.topped_up,true)
+  call('stop',{})
+  runtime.transfer_now,runtime.rearm_now=tnow,rnow
+end
 -- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
 do
   local rows,surf,ch=runtime.gun_rows,p.surface,p.character
