@@ -83,6 +83,16 @@ def payload_tests():
                   {"id": "yt:4", "name": "mod", "text": "hi", "t": round(now - 5, 1), "staff": True}], yt
     many = [dict(lane[0], id=f"yt:{i}", t=now + i) for i in range(push_live.YOUTUBE_MAX + 5)]
     assert [r["id"] for r in push_live.public_youtube(many)][0] == "yt:5"  # the newest kept, oldest first
+    # (d17 batch35 D1) site lines' delivery: by seq, YouTube left out, unknown statuses dropped
+    dv = push_live.public_delivery({"delivery": [{"id": "site:2707", "status": "relayed", "to": "astra"},
+                                                 {"id": "site:2721", "status": "not_relayed", "why": "clef:injection"},
+                                                 {"id": "yt:9", "status": "relayed", "to": "sol"},
+                                                 {"id": "site:2730", "status": "held", "why": "Clef unavailable"},
+                                                 {"id": "site:2731", "status": "weird"}]})
+    assert dv == {"2707": {"s": "relayed", "to": "astra"}, "2721": {"s": "not_relayed", "why": "clef:injection"},
+                  "2730": {"s": "held", "why": "Clef unavailable"}}, dv
+    assert push_live.public_delivery(None) == {} and len(push_live.public_delivery(
+        {"delivery": [{"id": f"site:{i}", "status": "held"} for i in range(200)]})) == 150
     assert push_live.public_state(dict(s, viewers=lane))["youtube_chat"][0]["name"] == "Joonazan"
 
 
