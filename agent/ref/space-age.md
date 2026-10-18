@@ -95,7 +95,11 @@
   runs. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
   way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
-  those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
+  those belts into the hub). A way goes on through inserters moving items from belt to belt (relays, long-handed
+  bridges) and counts only inserters not switched off; belts running back into the hub count as reaching when the
+  hub feeds a turret (`belts back into the hub`); a belt that ends just past a pickup on a turret's way is listed
+  apart (`at belt ends`), not as stranded. Switched-off loaders are named only when nothing else puts items on.
+  `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. Cover is per asteroid size (small, medium, big, huge): a turret engages what its
   priority list allows (ignore unprioritised targets on: only those listed) and reaches within its range and past its
   minimum range (rocket turret 15 tiles); a size is covered where every kind of it (metallic, carbonic, oxide;

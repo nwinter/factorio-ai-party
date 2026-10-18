@@ -7177,3 +7177,20 @@ fh watch    # deploy on every change
   their runs; a `by their priority lists:` line names the turrets that engage part of the asteroids. Rows:
   collectors[].by_size, sides[].by_size, turrets[].min_range and engages, kinds. Measured on n (Swiftlet): as fast as
   before. tests/d17_batch23.lua.
+- A2 (Astra, Kestrel II, every few minutes): the ammunition trace (ammofeed.lua: platform_defense's feed,
+  platform_endurance, preflight, the platform alerts) read as stranded the ammo on Kestrel II's belt back into the hub
+  (x 8.5, into the hub at (4.5,0.5)) while the hub fed the turrets, and the 8 rounds on each long-handed bridge's
+  belt end; it named the switched-off old loader (4.5,-0.5) beside bulk inserter (4.5,-1.5). Now:
+  - belts whose way ends in an inserter (not switched off) dropping into the hub count as reaching when the hub's
+    ammunition reaches a turret: `via_hub`, `belts back into the hub N` in the first line;
+  - a belt that ends (no belt after it) within 4 belts past a belt on a turret's way: `at_end`, `at_end_rows` (the
+    belt end, the belt before it and the inserter picking from it), a line `at belt ends past a pickup on a turret's
+    way (not counted as stranded; they move on when the belt beyond is joined)`. Not in `stranded` or the alert;
+  - switched-off inserters putting items on a turret's belts are named only when none is live (then in the stop);
+  - relays and bridges count when not switched off and their filters pass some ammunition.
+  Cost: main's trace read each turret's way afresh: 180 ms on Kestrel II (43 turrets, 1267 belts) on n. Each belt is
+  now read once per trace: the belts upstream of the turrets' belts as one graph, loops as one (Tarjan), each turret's
+  way summed along its chain from the nearest way found upstream. Measured on n: Swiftlet 4.3 ms (main 5.0),
+  Kestrel II with 4 turrets 23 ms (all 1209 belts walked; main with 2 turrets 19 ms); a full Kestrel II read about
+  25 ms (not run whole on n). The platform alert traces only while a turret holds under 20 rounds, at most once a
+  minute (it traced every 10 s). tests/d17_batch23.lua.
