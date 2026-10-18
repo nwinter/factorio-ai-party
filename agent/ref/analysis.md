@@ -236,6 +236,8 @@
   mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
   Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
 - `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?, unrequested?}`:
+  `quality`: places and reads round a position count that quality; a planet's whole count is of normal quality only
+  (with another quality, `surface` alone is refused and the default total is the 128 tiles round you).
   `unrequested: true`: requester and buffer chests in our logistic networks on the surface holding items they do not
   request (`item` for one), the most first, each with what it asks and whether trash unrequested sends them to storage
   (off: they stay there); `items` sums them per item; 512 requester points a call (`page: 2` reads the next, `next`
