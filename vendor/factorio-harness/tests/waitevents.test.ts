@@ -678,6 +678,23 @@ test('urgent radius (Grok, d15 14:07): --urgent-radius N sends wake_on_urgent {r
   const waits=seen.filter(r=>r.action==='wait_ticks').map(r=>r.args.wake_on_urgent);
   assert.deepEqual(waits,[{radius:12},{radius:12},undefined]);
 });
+test('wake near (batch36 B1, Haiku): --wake-near N sends wake_on_urgent {near} on fh sleep and direct waits; held alerts come with the reply',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:request.args.seconds}};
+    if(request.action==='wait_until')return {ok:true,result:{until_tick:100}};
+    return {ok:true,result:{slept_s:3,woke:'elapsed',held_alerts:['enemy group of 12 gathered at (150,0)'],held_alerts_count:1}};
+  },async port=>{
+    const {stdout}=await cli(port,['sleep','60','--wake-near','40'],'compact');
+    assert.match(stdout,/held_alerts/);
+    await cli(port,['call','wait_until','--args','{"until":"crafting_done"}','--wake-near','25'],'compact');
+    await assert.rejects(cli(port,['sleep','60','--wake-near','300']),(error:any)=>/--wake-near takes 1..200 tiles/.test(error.stdout+error.stderr));
+    await assert.rejects(cli(port,['sleep','60','--wake-near','30','--urgent-radius','12']),(error:any)=>/--wake-near goes alone/.test(error.stdout+error.stderr));
+  });
+  assert.deepEqual(seen.filter(r=>r.action==='sleep').map(r=>r.args.wake_on_urgent),[{near:40}]);
+  assert.deepEqual(seen.filter(r=>r.action==='wait_until').map(r=>r.args.wake_on_urgent),[{near:25}]);
+});
 test('d15 H3/H4: fh wait prints the cap and what is open for the agent last',async()=>{
   await engine(request=>{
     if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action: your character stands idle for up to 300 s',sleeping_s:300,capped:'capped at 300 s: no queue, action or condition'}};

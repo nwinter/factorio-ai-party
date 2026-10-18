@@ -117,10 +117,18 @@ return function(api)
   -- by attacks 40 tiles away): on, with attacks, groups, losses and deaths counted within N tiles of the character
   -- (1..200) instead of NEAR and GROUP_NEAR, and a loss in a claim only within N too. Returns on, radius.
   M.MAX_RADIUS = 200
+  -- (d18 batch36 B1, Haiku: an urgent alert every 15-30 s on Nauvis woke each wait) {near=N} (a sleep's or wait's
+  -- wake: {near: N}): only an attack on ours or buildings of ours destroyed within N tiles of the character wake it;
+  -- every other urgent alert is held and given with the reply (held_alerts). Damage to the character wakes as before.
   function M.option(v)
     if v == nil or v == true then return true, nil end
     if v == false then return false, nil end
-    assert(type(v) == 'table', 'wake_on_urgent is true, false or {radius: N} (1..' .. M.MAX_RADIUS .. ' tiles)')
+    assert(type(v) == 'table', 'wake_on_urgent is true, false, {radius: N} or {near: N} (1..' .. M.MAX_RADIUS .. ' tiles)')
+    if v.near ~= nil then
+      for k in pairs(v) do assert(k == 'near', 'wake: {near: N} takes near only (unknown: ' .. tostring(k) .. ')') end
+      assert(type(v.near) == 'number' and v.near >= 1 and v.near <= M.MAX_RADIUS, 'wake near is 1..' .. M.MAX_RADIUS .. ' tiles')
+      return true, {near=v.near}
+    end
     for k in pairs(v) do assert(k == 'radius', 'wake_on_urgent takes radius only (unknown: ' .. tostring(k) .. ')') end
     assert(type(v.radius) == 'number' and v.radius >= 1 and v.radius <= M.MAX_RADIUS, 'wake_on_urgent radius is 1..' .. M.MAX_RADIUS .. ' tiles')
     return true, v.radius
@@ -128,7 +136,8 @@ return function(api)
   -- What a sleep or wait remembers at its start: the hub damage per platform (hits before it do not wake it), and the
   -- radius when one was given.
   function M.base(p, radius)
-    local base = {tick=game.tick, hub={}, radius=radius}
+    local near_only = type(radius) == 'table' and radius.near or nil
+    local base = {tick=game.tick, hub={}, radius=near_only or radius, near_only=near_only}
     local by = try(function() return api.state().platform_alerts.by end)
     for index, r in pairs(by or {}) do
       base.hub[index] = r.total and r.total.entities and r.total.entities['space-platform-hub'] or 0
@@ -207,7 +216,21 @@ return function(api)
       end
     end
   end
+  -- near_only: the kinds that wake (attack, loss near); the rest are held for the reply, at most HELD lines.
+  M.HELD = 8
+  local function out(base, kind, line)
+    if not line then return nil end
+    if not base.near_only or kind == 'attack' or kind == 'loss' then return line end
+    base.held = base.held or {}
+    if #base.held < M.HELD then base.held[#base.held+1] = line end
+    base.held_n = (base.held_n or 0) + 1
+    return nil
+  end
   function M.check(p, base)
+    local line = M.check_inner(p, base)
+    return line
+  end
+  function M.check_inner(p, base)
     local s = api.state()
     local surface, pos = where(p)
     local told = told_of(p.index)
@@ -223,7 +246,7 @@ return function(api)
           if d <= near and news(told, key, v.hits or 0) then
             tell(told, key, v.hits or 0)
             local line = api.attack_line and api.attack_line(v, false, surface) or string.format('attack at (%d,%d)', v.at.x, v.at.y)
-            return string.format('attack on our structures %d tiles from you: %s', round(d), line)
+            return out(base, 'attack', string.format('attack on our structures %d tiles from you: %s', round(d), line))
           end
         end
       end
@@ -239,9 +262,10 @@ return function(api)
             -- while 31 turrets held with no damage): told again only when it changed (M.again).
             local again, why = M.again(told, g, d, surface, s)
             if again then
-              return string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you%s',
+              local held = out(base, 'group', string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you%s',
                 g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
-                g.target.x, g.target.y, round(d), why and '; again: ' .. why or '')
+                g.target.x, g.target.y, round(d), why and '; again: ' .. why or ''))
+              if held then return held end
             end
           end
         end
@@ -252,7 +276,7 @@ return function(api)
     if api.captive then
       for _, r in ipairs(try(function() return api.captive(p) end) or {}) do
         local key = 'captive|' .. r.key
-        if news(told, key, r.level, true) then tell(told, key, r.level); return r.line end
+        if news(told, key, r.level, true) then tell(told, key, r.level); local held = out(base, 'captive', r.line); if held then return held end end
       end
     end
     -- An outpost's output gone (Opus, d15 22:51: the NW coal mine was wiped and noticed 15 minutes later via cold
@@ -272,9 +296,10 @@ return function(api)
               local causes = {}
               for name, n in pairs(i.causes or {}) do causes[#causes+1] = n .. ' ' .. name end
               table.sort(causes)
-              return string.format('outpost output: %s from drills at (%d,%d) is 0/min now, was about %d/min (%d drill%s destroyed%s; loss incident #%s); no drill of ours mining %s works within %d tiles there',
+              local held = out(base, 'output', string.format('outpost output: %s from drills at (%d,%d) is 0/min now, was about %d/min (%d drill%s destroyed%s; loss incident #%s); no drill of ours mining %s works within %d tiles there',
                 item, round((b[1] + b[3]) / 2), round((b[2] + b[4]) / 2), round(m.per_min), m.drills, m.drills == 1 and '' or 's',
-                #causes > 0 and ' by ' .. table.concat(causes, ', ', 1, math.min(3, #causes)) or '', tostring(i.id), item, M.OUT_MARGIN)
+                #causes > 0 and ' by ' .. table.concat(causes, ', ', 1, math.min(3, #causes)) or '', tostring(i.id), item, M.OUT_MARGIN))
+              if held then return held end
             end
           end
         end
@@ -300,8 +325,9 @@ return function(api)
           if why then
             tell(told, key, i.total or 0)
             local c = box_centre(i.box)
-            return string.format('%s: loss #%s at (%d,%d)%s: %d destroyed (%s) by %s', why, tostring(i.id), round(c.x), round(c.y),
-              i.surface ~= surface and ' on ' .. tostring(i.surface) or '', i.total or 0, names_text(i.names, 3), names_text(i.causes, 2))
+            local held = out(base, i.platform and 'platform' or 'loss', string.format('%s: loss #%s at (%d,%d)%s: %d destroyed (%s) by %s', why, tostring(i.id), round(c.x), round(c.y),
+              i.surface ~= surface and ' on ' .. tostring(i.surface) or '', i.total or 0, names_text(i.names, 3), names_text(i.causes, 2)))
+            if held then return held end
           end
         end
       end
@@ -323,8 +349,9 @@ return function(api)
           local hub = try(function() return pl.hub end)
           local health = hub and try(function() return hub.valid and hub.health end)
           local max = hub and try(function() return hub.valid and hub.max_health end)
-          return string.format('platform %s: its hub took %d damage%s%s', name, round(lost),
-            health and max and string.format(', health %d of %d', round(health), round(max)) or '', next(r.total.by or {}) and '; hits by ' .. names_text(r.total.by, 2) or '')
+          local held = out(base, 'platform', string.format('platform %s: its hub took %d damage%s%s', name, round(lost),
+            health and max and string.format(', health %d of %d', round(health), round(max)) or '', next(r.total.by or {}) and '; hits by ' .. names_text(r.total.by, 2) or ''))
+          if held then return held end
         end
       end
     end
@@ -340,7 +367,8 @@ return function(api)
           tell(told, key, 1)
           local at = e.position and string.format(' at (%d,%d)', e.position.x, e.position.y) or ''
           local d = pos and e.position and string.format(', %d tiles from you', round(dist(e.position, pos))) or ''
-          return string.format('%s died%s%s%s', tostring(e.agent), at, e.by and ', killed by ' .. e.by or '', d)
+          local held = out(base, 'death', string.format('%s died%s%s%s', tostring(e.agent), at, e.by and ', killed by ' .. e.by or '', d))
+          if held then return held end
         end
       end
     end
@@ -348,15 +376,16 @@ return function(api)
     -- alert and woke nobody, since the part cut off had a new network id the collapse rule had never seen with power):
     -- CUT_MACHINES or more machines in the parts cut off or left with no pole, the cut not joined again.
     local cut = api.timed and api.timed('urgent.power_cut', M.cut_check, s, surface, pos, base, told, since) or M.cut_check(s, surface, pos, base, told, since)
-    if cut then return cut end
+    if cut then local held = out(base, 'power', cut); if held then return held end end
     -- Power collapse on this surface.
     for _, x in ipairs(collapsed(p)) do
       if x.surface == surface and news(told, x.key, x.level, true) then
         tell(told, x.key, x.level)
         local r = x.r
         local at = r.center and string.format(' near (%d,%d)', round(r.center.x), round(r.center.y)) or ''
-        return string.format('power collapse: electric #%s%s has %d of %d machines on low or no power (%d low, %d none)', tostring(r.id), at,
-          x.level, r.machines, r.low or 0, r.none or 0)
+        local held = out(base, 'power', string.format('power collapse: electric #%s%s has %d of %d machines on low or no power (%d low, %d none)', tostring(r.id), at,
+          x.level, r.machines, r.low or 0, r.none or 0))
+        if held then return held end
       end
     end
   end

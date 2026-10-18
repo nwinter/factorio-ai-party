@@ -109,6 +109,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wake-local (the same waits: only tells and mentions to you, urgent news on your surface or in your claims, an alert on your surface)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
          --urgent-radius N (the same waits: attacks, enemy groups, losses and teammates' deaths wake it only within N tiles of you, 1..200; default 40)
+         --wake-near N (the same waits: only an attack on ours or buildings of ours destroyed within N tiles of you wake it, 1..200; other urgent alerts come with the reply as held_alerts)
          --wake-on-orders (fh sleep, fh wait --until: a standing order's round finishing or stalling ends it; by default only your own plan's does)
          --operator-repeat (FH_OPERATOR_REPEAT=1: print an operator message on every reply that carries it; by default once)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
@@ -693,7 +694,7 @@ function inventoryChange(before: unknown, after: unknown): string | undefined {
 // A flag the command does not read is refused before anything is sent, naming the flags it takes.
 const FLAGS_ALL = ['format','help','journal','bot','deadline-file','operator-repeat','full'];
 const FLAGS_GAME = ['player','host','port','timeout','session','bridge-socket','socket','id'];
-const FLAGS_WAIT = ['wait','no-wait','wait-timeout','wait-through-tells','wake-on-tells','wake-from','wake-local','no-operator-wake','wake-on-viewers','no-urgent','urgent-radius','wake-on-orders'];
+const FLAGS_WAIT = ['wait','no-wait','wait-timeout','wait-through-tells','wake-on-tells','wake-from','wake-local','no-operator-wake','wake-on-viewers','no-urgent','urgent-radius','wake-near','wake-on-orders'];
 const FLAGS_CALL = [...FLAGS_GAME, ...FLAGS_WAIT, 'args', 'args-file', 'since', 'limit', 'peek'];
 const MESSAGE_FLAGS = ['text-file','aloud','look','fyi','wake','title'];
 function commandFlags(positionals: string[]): {label: string, own: string[], flags: Set<string>} {
@@ -744,7 +745,7 @@ const CLI_OPTIONS = {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'no-wait':{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'require-met':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'no-wait':{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'require-met':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-near':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -1563,6 +1564,15 @@ async function main() {
   // stay unread) about once a second, then read it once more normally so the
   // reply carries the team block with whatever woke the agent. A sleep never
   // runs past the workspace deadline: it is cut to the time left and ends there.
+  // --wake-near N (batch36 B1, Haiku): 1..200 tiles, or undefined when not given.
+  function wakeNear(): number | undefined {
+    const raw = values['wake-near'];
+    if (raw === undefined) return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 1 || n > 200) throw new Error(`--wake-near takes 1..200 tiles, not ${String(raw)}`);
+    if (values['urgent-radius'] !== undefined || values['no-urgent'] === true) throw new Error('--wake-near goes alone: not with --urgent-radius or --no-urgent');
+    return n;
+  }
   // --urgent-radius N: 1..200 tiles, or undefined when not given.
   function urgentRadius(): number | undefined {
     const raw = values['urgent-radius'];
@@ -1596,13 +1606,14 @@ async function main() {
     // --urgent-radius N (Grok, d15 14:07): urgent wakes only within N tiles of you; a runtime from before it says
     // wake_on_urgent must be true or false, and the sleep runs with the default 40 (said on stderr).
     let radius = noUrgent ? undefined : urgentRadius();
+    const near = wakeNear();
     // --wait-through-tells: no tell or mention ends the sleep (wake_on_messages: false; a tell with --wake still does).
     // A sleep on platform arrivals or departures alone does so too (Sonnet 18:20: "so I do not wake on every unrelated
     // tell while waiting for a ship"); --wake-on-tells keeps tells ending it.
     const shipWait = !!condition && platformOnly(condition);
     let deaf = values['wait-through-tells'] === true || (shipWait && values['wake-on-tells'] !== true);
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
-      ...(noUrgent ? {wake_on_urgent:false} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
+      ...(noUrgent ? {wake_on_urgent:false} : near !== undefined ? {wake_on_urgent:{near}} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
       ...(deaf ? {wake_on_messages:false} : {}), ...wakeArgs()});
     // A direct wait the runtime ran as a sleep (your queue runs: as_sleep) is followed from its reply.
     let started = begunReply ?? await harness.request('sleep',sleepArgs(quiet));
@@ -1824,6 +1835,8 @@ async function main() {
     // --urgent-radius N: urgent wakes only within N tiles of you.
     const radiusArg = values['no-urgent'] !== true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined ? urgentRadius() : undefined;
     if (radiusArg !== undefined) args = {...args, wake_on_urgent:{radius:radiusArg}};
+    const nearArg = (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined && args.wake === undefined ? wakeNear() : undefined;
+    if (nearArg !== undefined) args = {...args, wake_on_urgent:{near:nearArg}};
     let reply: Reply;
     try {
       reply = await harness.request(action,args,requestId);

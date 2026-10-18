@@ -151,3 +151,39 @@ do
   defines,prototypes,game=nil,nil,nil
 end
 print('d18_batch36 A3 mixed waits, any_of/all_of, grouped readback: ok')
+
+-- B1 (Haiku: an urgent alert every 15-30 s on Nauvis woke every wait): wake {near: N}: only an attack on ours or a loss
+-- within N tiles wakes; other urgent alerts are held for the reply.
+do
+  game={tick=1000,forces={}}
+  local st={damage={},attack_groups={},losses={},chronicle={events={}}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return st end,who=function(p) return p.name end}
+  local on,r=U.option({near=40}); eq(on,true); eq(r.near,40)
+  fails(function() U.option({near=500}) end,'wake near is 1..200 tiles')
+  fails(function() U.option({near=40,radius=3}) end,'wake: {near: N} takes near only')
+  local p={index=7,name='haiku',surface={name='nauvis'},character={valid=true,position={x=0,y=0}},force={platforms={}}}
+  local base=U.base(p,{near=40})
+  eq(base.near_only,40); eq(base.radius,40)
+  -- an enemy group heading 20 tiles from you and a teammate's death: held, not woken
+  st.attack_groups[1]={tick=1001,seq=1,target={x=20,y=0},position={x=150,y=0},size=12,surface='nauvis'}
+  st.chronicle.events[1]={tick=1002,kind='death',agent='luna',surface='nauvis',position={x=10,y=0},id=5}
+  game.tick=1010
+  eq(U.check(p,base),nil)
+  eq(#base.held,2); has(base.held[1],'enemy group of 12'); has(base.held[2],'luna died')
+  -- an attack 30 tiles off: wakes
+  st.damage['nauvis:0,0']={id=9,at={x=30,y=0},damage=40,hits=2,last=1011,surface='nauvis'}
+  game.tick=1020
+  has(U.check(p,base),'attack on our structures 30 tiles from you')
+  -- one 60 tiles off: not
+  local b2=U.base(p,{near=40})
+  st.damage['nauvis:0,0']={id=10,at={x=60,y=0},damage=40,hits=2,last=1021,surface='nauvis'}
+  game.tick=1030
+  eq(U.check(p,b2),nil)
+  -- without wake, the group wakes as before
+  local b3=U.base(p,nil)
+  st.attack_groups[2]={tick=1031,seq=2,target={x=0,y=-25},position={x=0,y=-200},size=12,surface='nauvis'}  -- (another spot: the first was told)
+  game.tick=1040
+  has(U.check(p,b3),'enemy group of 12')
+  game=nil
+end
+print('d18_batch36 B1 wake near: ok')

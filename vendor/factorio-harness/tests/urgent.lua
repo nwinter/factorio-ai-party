@@ -201,7 +201,7 @@ fails(function() W.handlers.sleep(p,{seconds=60,condition={['until']='any',condi
 -- claim too) and deaths count only within it; true, false and nil as before; anything else refused.
 do
   eq(select(1,U.option(nil)),true); eq(select(1,U.option(false)),false); eq(select(2,U.option({radius=12})),12)
-  fails(function() U.option({radius=0}) end,'radius is 1..200'); fails(function() U.option({near=5}) end,'radius only'); fails(function() U.option('x') end,'true, false or {radius')
+  fails(function() U.option({radius=0}) end,'radius is 1..200'); fails(function() U.option({near=5,radius=3}) end,'near only'); fails(function() U.option({size=5}) end,'radius only'); fails(function() U.option('x') end,'true, false, {radius: N} or {near: N}')
   game.tick=90000
   local b12=U.base(p,12); local b40=U.base(p)
   eq(b12.radius,12)

@@ -8092,3 +8092,10 @@ fh watch    # deploy on every change
   for none. Returns hand_size, hand_size_before, hand_max, and circuit_note when the inserter's circuit set stack
   size is on (that signal sets the hand while it is on the wires). It goes with filters and spoil_priority in the
   same call. No combinator is placed.
+- `wake: {near: N}` on sleep, wait_ticks and wait_until, `fh ... --wake-near N` (B1, Haiku: an urgent alert every 15-30
+  s on Nauvis woke each wait). Only an attack on our structures or buildings of ours destroyed within N tiles of the
+  character (1..200) wake it as urgent; every other urgent alert (enemy groups, platform hits, a teammate's death, power
+  cut or collapse, an outpost's output, a captive spawner) is held and given with the reply: `held_alerts` (up to 8
+  lines) and `held_alerts_count` (a direct wait's `last` has them). Damage to the character, tells and mentions wake as
+  before. The direct wait_until now takes `wake_on_urgent` too: the scheduler's schema lacked it, so `fh call
+  wait_until --no-urgent` and `--urgent-radius` were refused as an unknown argument.
