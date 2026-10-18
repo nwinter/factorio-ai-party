@@ -144,7 +144,9 @@ return function(api)
     local L = M.LEVELS[level + 1]
     local start = p.position
     if L.centre then start = M.start_centre(p) end
-    local h = M.half(c) + L.pad
+    -- (batch26 C2, Sonnet: a recover and three move_to calls stalled 16 times in a solar and accumulator block) after
+    -- stalls a replan asks for more room either side (nav.stall_pad), so the route keeps out of gaps the steering sticks in
+    local h = M.half(c) + L.pad + (nav.stall_pad or 0)
     local id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=mask or c.prototype.collision_mask, start=start,
       goal=nav.position, force=p.force, radius=nav.precise_corner and nav.tolerance or nav.tolerance + 1 + (nav.replans or 0) + (L.wide or 0), entity_to_ignore=c, can_open_gates=true,
       -- finer grids take more steps: let the engine spread them over ticks

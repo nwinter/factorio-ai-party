@@ -495,6 +495,14 @@ return function(api)
       action.waiting={since=game.tick,finished=finished(e),output=now,per_craft=per_craft(e),last=now,arrived={},grabbed={},gone={},hands={}}
       -- (a followed chest keeps the wait's end: D1)
       action.wait_end=action.wait_end or game.tick+action.wait
+      -- to (batch26 C4): the machine given to is in reach from here, or the wait ends before it takes
+      local g=action.give_to and action.give_to.entity
+      if g and not (g.valid and p.can_reach_entity(g)) then
+        action.unreached=1
+        action.why=g.valid and string.format('to: %s (%g,%g) is out of reach from where the wait stands at %s (%g,%g); stand in reach of both',
+          g.name,g.position.x,g.position.y,e.name,e.position.x,e.position.y) or 'to: the machine given to is gone'
+        return 'unreached'
+      end
     end
     -- follow during the wait (D1, Sol 00:20: one finished barrel sat in an output chest out of reach while the wait stood
     -- at the machine until a rescue by hand): every half second, the chests its output inserters fill; one in reach that
@@ -546,6 +554,17 @@ return function(api)
             action.items[st.name]=(action.items[st.name] or 0)+st.count
             -- (taken out of the output now: not gone otherwise at the next tick)
             if w.last then w.last[st.name]=math.max(0,(w.last[st.name] or 0)-st.count) end
+          end
+        end
+        -- to (batch26 C4): what was taken goes on into the other machine now, by hand
+        local g=action.give_to
+        if g and out.transferred>0 then
+          local okg,gave=pcall(api.give,p,g.entity,action.item,action.quality,out.transferred,g.inventory)
+          local n=okg and gave and gave.transferred or 0
+          action.gave=(action.gave or 0)+n
+          if n<out.transferred then
+            action.gave_short=string.format('%d stayed in your inventory: %s',out.transferred-n,
+              okg and (gave and gave.entity_full and 'the machine given to had no room' or 'the give moved fewer') or tostring(gave):gsub('^[^:]*:%d+: ',''))
           end
         end
         if out.inventory_full then return 'inventory_full' end
@@ -610,6 +629,12 @@ return function(api)
       out.followed_took=table.concat(parts,', ')
     end
     out.followed_to=action.followed_to and action.followed_to..' (from '..tostring(action.machine)..')' or nil
+    if action.give_to then
+      local g=action.give_to.entity
+      out.gave=string.format('%d %s into %s %s',action.gave or 0,tostring(action.item),g.valid and string.format('%s (%g,%g)',g.name,g.position.x,g.position.y) or 'the machine (gone)',
+        tostring(action.give_to.inventory))
+      out.gave_short=action.gave_short
+    end
     if action.also then
       local parts={}
       for k,n in pairs(action.also_took or {}) do parts[#parts+1]=k..' '..n end

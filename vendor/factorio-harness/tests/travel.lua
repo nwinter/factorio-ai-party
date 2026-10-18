@@ -119,8 +119,8 @@ local proxy=bots.actor(b.index)
 eq(proxy.surface,platform_surface); eq(proxy.character,nil); eq(proxy.force,force)
 fails(function() return proxy.get_main_inventory() end,'aboard platform alpha with no body')
 for _,ok in ipairs({{'platforms',{}},{'platform_schedule',{platform='alpha'}},{'land',{}},{'research',{}},{'requests',{platform='alpha'}},
-  {'place_ghosts',{platform='alpha'}},{'observe',{scope='platforms'}},{'chat',{}}}) do bots.check_action(b.index,ok[1],ok[2]) end
-for _,no in ipairs({{'move_to',{}},{'craft',{}},{'requests',{}},{'place_ghosts',{}},{'build',{}},{'inventory',{}},{'craftable',{}},
+  {'place_ghosts',{platform='alpha'}},{'observe',{scope='platforms'}},{'chat',{}},{'platform_rearm',{platform='alpha',ammo_below=10,target_count=20}}}) do bots.check_action(b.index,ok[1],ok[2]) end
+for _,no in ipairs({{'move_to',{}},{'craft',{}},{'requests',{}},{'place_ghosts',{}},{'platform_rearm',{ammo_below=10,target_count=20}},{'build',{}},{'inventory',{}},{'craftable',{}},
   {'wait_until',{['until']='crafting_done'}},{'wait_until',{['until']='item_count',item='coal',at_least=5}},{'collect',{}}}) do
   fails(function() bots.check_action(b.index,no[1],no[2]) end,'remote view only')
 end

@@ -407,3 +407,48 @@ do
   assert(action.why:find('its output inserters put copper-cable into iron-chest (30,0), out of reach: the wait walked there and takes from it; the walk to it ended unreachable out of reach',1,true),action.why)
 end
 print('stock collect follow during the wait: ok')
+-- collect wait_ticks with to (batch26 C4, Grok: nutrients taken by robots from a provider within 5 s, a craft lost
+-- several times an hour): each take from the output goes the same tick into the other machine by hand; one out of reach
+-- from where the wait stands ends it unreached, saying so; a give that moves fewer says what stayed.
+do
+  prototypes.item.nutrients={}
+  local o={n=0}
+  o.get_item_count=function(f) return f.name=='nutrients' and o.n or 0 end
+  o.get_contents=function() return o.n>0 and {{name='nutrients',quality='normal',count=o.n}} or {} end
+  o.is_empty=function() return o.n==0 end
+  local maker={valid=true,name='biochamber',type='assembling-machine',position={x=2,y=0},force=p.force,products_finished=0,
+    bounding_box={left_top={x=0.5,y=-1.5},right_bottom={x=3.5,y=1.5}},surface={find_entities_filtered=function() return {} end}}
+  maker.get_output_inventory=function() return o end
+  maker.get_recipe=function() return {name='nutrients-from-spoilage',products={{type='item',name='nutrients',amount=10}}} end
+  local user={valid=true,name='biochamber',type='assembling-machine',position={x=6,y=0}}
+  local given,room={},100
+  local api5={}
+  for k,v in pairs(api) do api5[k]=v end
+  api5.take=function(_,e,item,_,count) local n=math.min(o.n,count); o.n=o.n-n; return {transferred=n,items={{name=item,count=n}}} end
+  api5.give=function(_,e,item,_,count,inv)
+    eq(e,user); eq(inv,'fuel')
+    local n=math.min(room,count); room=room-n; given[#given+1]=game.tick..':'..n
+    return {transferred=n,entity_full=n<count and {slots=1} or nil}
+  end
+  local W=dofile('mod/agent-harness_0.1.0/stock.lua')(api5)
+  local fp={position={x=0,y=0},force=p.force,reach_distance=10,can_reach_entity=function() return true end}
+  game.tick=7000
+  local action=W.start_wait(fp,{item='nutrients'},maker,600)
+  action.give_to={entity=user,inventory='fuel'}
+  eq(W.tick(fp,action),nil); eq(#given,0,'nothing made yet: nothing given')
+  game.tick=7001; o.n=10; maker.products_finished=1
+  eq(W.tick(fp,action),nil); eq(given[1],'7001:10','given the tick it was taken'); eq(o.n,0)
+  room=4
+  game.tick=7002; o.n=10
+  eq(W.tick(fp,action),nil); eq(given[2],'7002:4')
+  game.tick=7000+600; eq(W.tick(fp,action),'collected')
+  local r=W.wait_report(action)
+  eq(r.gave,'14 nutrients into biochamber (6,0) fuel'); eq(r.gave_short,'6 stayed in your inventory: the machine given to had no room')
+  -- the machine given to out of reach from where the wait stands
+  fp.can_reach_entity=function(e) return e~=user end
+  action=W.start_wait(fp,{item='nutrients'},maker,600)
+  action.give_to={entity=user,inventory='fuel'}
+  eq(W.tick(fp,action),'unreached')
+  eq(action.why,'to: biochamber (6,0) is out of reach from where the wait stands at biochamber (2,0); stand in reach of both')
+end
+print('stock collect wait with to: ok')

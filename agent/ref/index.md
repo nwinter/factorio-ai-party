@@ -6,7 +6,7 @@
   `inventory`, `craft`, `cancel_craft`, `deliver`.
 - `building`, placing and removing (landfill, tiles, nuclear): `build`, `place_ghosts`, `construct`, `ghosts`,
   `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
-  `belt_route`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `rebuild`, `blueprint_save`,
+  `belt_route`, `belt_upgrade`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `rebuild`, `blueprint_save`,
   `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`.
 - `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `configure`,
   `assembler_batch`, `requests`.

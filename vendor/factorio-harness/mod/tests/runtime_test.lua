@@ -151,13 +151,15 @@ eq(path_requests[#path_requests-1].radius>request.radius,true) -- wider radius
 -- Both fail: the character's own box from the nearest free tile centre, then
 -- the half-tile grid, then the quarter-tile grid with a wider goal.
 local padded=path_requests[#path_requests-1]
+eq(padded.bounding_box[1][1],-0.5) -- the character's 0.2, the padded level's 0.15, and the stall replan's 0.15 (batch26 C2)
 p.surface.find_non_colliding_position=function(name,pos,radius,precision,tile_centre)
   eq(tile_centre,true); return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
 end
 runtime.on_event{name=10,id=#path_requests-1,path=nil}; runtime.on_event{name=10,id=#path_requests,path=nil}
 do
   local own=path_requests[#path_requests]
-  eq(own.bounding_box[1][1],-0.2); eq(own.radius,padded.radius); eq(own.start.x,math.floor(p.position.x)+0.5); eq(own.path_resolution_modifier,nil)
+  -- (the third stall's replan asked for 0.15 tiles more room either side: batch26 C2; it stays on the finer levels)
+  eq(own.bounding_box[1][1],-0.35); eq(own.radius,padded.radius); eq(own.start.x,math.floor(p.position.x)+0.5); eq(own.path_resolution_modifier,nil)
 end
 runtime.on_event{name=10,id=#path_requests,path=nil}
 eq(path_requests[#path_requests].path_resolution_modifier,1); eq(path_requests[#path_requests].start.x,p.position.x)
@@ -1249,8 +1251,26 @@ eq(changed.recipe,'copper-cable'); eq(changed.returned['iron-plate'],8); eq(chan
 eq(changed.spilled['iron-gear-wheel'],2); eq(table.concat(spills,','),'iron-gear-wheel:2')
 eq(plate_stack.valid_for_read,false); eq(gear_stack.valid_for_read,false)
 am.fluidbox={{name='water',amount=10}}
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'force=true')
-eq(call('configure',{position=am.position,recipe='iron-gear-wheel',force=true}).recipe,'iron-gear-wheel')
+-- batch26 A3 (Sol): a fluid the new recipe takes none of: refused, naming it; drain flushes the box; keep (or force) changes it.
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'assembling-machine-1 holds water 10 (fluidbox 1), which recipe iron-gear-wheel takes none of')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'fluid: "drain" flushes those boxes first')
+do
+local kept=call('configure',{position=am.position,recipe='iron-gear-wheel',force=true})
+eq(kept.recipe,'iron-gear-wheel'); assert(kept.fluid:find('^kept: '),kept.fluid)
+local flushed_box
+am.fluidbox.flush=function(i,name) flushed_box=i..':'..name; return 10 end
+am.set_recipe('copper-cable')
+local drained=call('configure',{position=am.position,recipe='iron-gear-wheel',fluid='drain'})
+eq(flushed_box,'1:water'); assert(drained.fluid:find('water 10 from fluidbox 1',1,true),drained.fluid)
+am.fluidbox.flush=nil
+end
+-- batch26 C4 (Grok): collect wait_ticks with to hands each take on to another machine; refusals before any wait.
+do
+fails(function() call('collect',{position=am.position,wait_ticks=60,to={x=9,y=0}}) end,'to needs item')
+fails(function() call('collect',{position=am.position,wait_ticks=60,item='iron-gear-wheel',to={x=9,y=0}}) end,'to is the machine waited at')
+fails(function() call('collect',{position=am.position,wait_ticks=60,to_inventory='fuel'}) end,'to_inventory goes with to')
+fails(function() call('collect',{position=am.position,to={x=9,y=0}}) end,'items and to go with pick')
+end
 -- Out of reach, remote view changes an empty machine's recipe but not a stocked one's.
 am.fluidbox={}
 p.can_reach_entity=function() return false end
@@ -5615,6 +5635,20 @@ do
   fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear=true}) end,'a worm is there')
   fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear='yes'}) end,'retry_when_clear must be true or false')
   runtime.transfer_now=now
+end
+-- build {retry_when_clear} (batch26 C1, Haiku): refused with the entry's spot in an area under attack (the walk's goal
+-- check): waits for units_clear there, then builds again; a worm there: refused as it was.
+do
+  local now,chk=runtime.build_now,runtime.avoid.goal_check
+  runtime.build_now=function() error('goal (-187.5,-29.5) is within 24 tiles of attack #12, an area under attack now',0) end
+  runtime.avoid.goal_check=function() return {m={attack=true,name='attack #12'},d=5} end
+  local w=call('build',{item='small-electric-pole',position={x=-187.5,y=-29.5},retry_when_clear=true})
+  assert(w.retry:find('refused for an area under attack: goal (-187.5,-29.5) is within 24 tiles of attack #12, an area under attack now; waits until no enemy unit is within 48 tiles of (-187.5,-29.5)',1,true),w.retry)
+  eq(storage.agent_harness.active[1].then_call.action,'build'); eq(storage.agent_harness.active[1].then_call.args.retries,1)
+  call('stop',{})
+  runtime.avoid.goal_check=function() return {m={name='big-worm-turret',range=48},d=5} end
+  fails(function() call('build',{item='small-electric-pole',position={x=-187.5,y=-29.5},retry_when_clear=true}) end,'an area under attack now')
+  runtime.build_now,runtime.avoid.goal_check=now,chk
 end
 -- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
 do

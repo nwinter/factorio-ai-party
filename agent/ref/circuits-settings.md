@@ -3,7 +3,10 @@
   reach or by remote view (our entities in visible chunks, all of a platform); `inspect` reads back the conditions,
   settings, each wire's far end and the signals on each network now. After the call it says `stays disabled` when one
   of the entity's conditions is not met; a circuit condition counts only with a red or green wire on the entity
-  (without one the game ignores it, and the line says `condition ignored`). A logistic condition reads the network
+  (without one the game ignores it, and the line says `condition ignored`). `switch_off: true` sets a condition that
+  never holds (`signal-dot < -2147483648`): the entity stops while a wire connects it; `remove_condition: true` takes
+  the condition away: it runs whatever its wires read; `enable: false` is refused naming both; `now` says what the
+  entity does after either. A logistic condition reads the network
   whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met). The game's network count is what
   the network holds less what deliveries have reserved: under 0 (`network count -2: reserved beyond stock`) a
   condition such as `bioflux >= 0` is false; a wire from a provider or storage chest reads what that chest holds
@@ -56,7 +59,10 @@
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
     where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
     what it held comes to your inventory (the reply says `moved` and ends with `inv`). A remote refusal never walks the body. Aboard,
-    `configure {position, recipe}` uses the platform you are on.
+    `configure {position, recipe}` uses the platform you are on. A fluid the machine holds that the new recipe takes
+    none of stays in its box and keeps out the new recipe's fluid: the change is refused naming it; `fluid: "drain"`
+    flushes those boxes first (the GUI's flush: the whole pipe segment joined to the box), `fluid: "keep"` (or
+    `force: true`) changes it anyway; the reply's `fluid` says which.
   - `modules: ["speed-module-2","speed-module-2"]` sets a machine's module slots: the modules it already holds that
     the list names stay in their slots, the rest go into the other slots (past the list: empty);
     `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes only slot 2. In

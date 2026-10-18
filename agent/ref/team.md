@@ -150,6 +150,11 @@
   (353.5,95.5) stands where the belt's next tile should be (placed by sonnet); the belt runs 6 tiles from (359.5,95.5)
   to (354.5,95.5) and stops there, holding coal 42; the line goes on from (352.5,95.5)", after 30 s, until the entity
   or either belt is gone or a belt stands there. An inserter there is not counted.
+- A machine whose recipe keeps a seed going (pentapod eggs, copper or iron bacteria) that is not crafting while the
+  seed in its input hatches or spoils within 3 minutes is a team alert (`seed_spoiling`) to its builder and its
+  feeders' builders: the seed and how many, when the first hatches or spoils, and why it is not crafting (its status;
+  a short ingredient named), e.g. "biochamber (10.5,20.5) holds pentapod-egg 3: the first hatches in 2m10s; not
+  crafting: item_ingredient_shortage (nutrients 0 of 30)".
 - Frozen entities on a planet that needs heating (Aquilo) are a team alert (`frozen`), a line per 64-tile area, to the
   builder or claim owner: pipes and machines first with what they hold, a belt run as one line with what it carries,
   how long the oldest has been frozen (since the alerts first saw it), and the nearest heater with its temperature and

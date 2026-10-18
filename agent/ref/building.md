@@ -43,6 +43,12 @@
   that build them bring it (`ammo`: a name, `{name, count}` or false; default 10 of what the logistic network there
   holds most of); so do the ghosts of turrets that died. `surface: "vulcanus"` places by remote view.
   Example: `./fh call place_ghosts --args '{"entities":[{"name":"assembling-machine-2","position":{"x":20.5,"y":8.5},"recipe":"iron-gear-wheel"}],"dry_run":true}'`
+- `belt_upgrade {position, to?, tiles?, dry_run?}`: the belt line through position traced both ways (up to `tiles`,
+  default 256; undergrounds to their pair), each tile replaced by hand with the faster one at its own position and
+  direction (an underground's input or output kept, a splitter on its centre), by `build` from your inventory with
+  `all`. `to`: fast-, express- or turbo-transport-belt (that tier's undergrounds and splitters with it); default each
+  one's next upgrade. `rows` and `needs` say what goes where; `left`: tiles already at the target. A replaced belt's
+  items go to your inventory. Example: `./fh call belt_upgrade --args '{"position":{"x":12.5,"y":-40.5},"to":"fast-transport-belt","dry_run":true}'`
 - `construct {area?, avoid_enemies?, unsafe_goal?, dry_run?}`: builds ghosts from your inventory and mines what is
   marked for deconstruction, tiles too, walking between them. Its walks go round worms and spawners (not areas under
   attack unless `avoid_enemies: true`) and stand no nearer a worm or spawner than its reach + the margin; a ghost
@@ -133,7 +139,9 @@
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
   ghosts. `stops: true` lists every train stop of ours on a surface: name, position, rail, limit and the trains
   heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
-  read gives its `id` and `front` (name, position, surface).
+  read gives its `id` and `front` (name, position, surface). `wagons` (a train read; inspect of a cargo wagon:
+  `wagon_slots`): each cargo wagon's slots used per item with the count, free slots, slot filters and the red-X limit,
+  and `full: nothing else loads into it` when no slot is free.
   Example: `./fh call train --args '{"position":{"x":40,"y":-30},"path_to":"iron-pickup"}'`
 - `clear_cliffs {positions}`: throws cliff explosives you hold at those cliffs, walking into their 10-tile range
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the

@@ -7372,6 +7372,69 @@ fh watch    # deploy on every change
   the singular is (a list of one: its entry), any other unknown argument dropped, each change named; offered only when
   the corrected call passes the argument check (else the action's stock example, as before). A scoped observe is
   corrected as observe. runtime_test.
+
+## d17 batch25 Group B
+- B2 (Sonnet: free ore tiles to move drills, every shift): `drill_sites` takes any position, an `area` (up to 48x48)
+  or `drill` (default electric-mining-drill) with `direction` (default north): the spots for that drill on `resource`,
+  else the resource most found there (`any_spot`, `resource_source: the most found there`; `limit` up to 16); a spot the
+  placement check refuses is named with what stands there (`blocked_by`, the first 6). A depleted drill of ours at
+  position reads as before. tests/drill_sites.lua.
+- B3 (Sonnet: move, collect, transfer by hand about 10 times a shift on Vulcanus): a haul from several chests into one
+  is a queue plan already, `collect {positions, item, walk: true}` then `transfer {position, item, direction:
+  to_entity, walk: true}` (each a timed tour with the tours' enemy checks); from one chest, `collect {pick, positions,
+  item, to}` in one call. Written into collect's entry (moving-items.md) with the plan; no new action.
+- B1 (Opus: straight lines placed over a curve broke a trunk): `belt_upgrade {position, to?, tiles?, dry_run?}`
+  (beltupgrade.lua) traces the line both ways (the straight input or the only one back, the first output on,
+  undergrounds to their pair) and sends `build` one entry per tile, each at its own position and direction (an
+  underground's type kept), with `all`; the target is `to`'s tier or each entity's `next_upgrade`. Replacement is
+  build's (replace.lua: the old entity is mined, so its belt items go to the inventory; in the game's own
+  fast-replace they stay on the belt). tests/beltupgrade.lua.
+
+## d17 batch26 Group A (the agents' 00:20 poll)
+- A1 (Muse, twice: a reactor's feed misconfigured): `circuit_set {enable: false}` set `circuit_enable_disable = false`,
+  which takes the condition away (the entity runs), while the schema said "false: off". Now `switch_off: true` sets a
+  condition that never holds (`signal-dot < -2147483648`; the entity stops while a red or green wire connects it,
+  as the game counts a circuit condition only then), `remove_condition: true` takes the condition away, and
+  `enable: false` is refused naming both. `now` says what the entity does: stopped, runs (no condition), or runs
+  because no wire connects it; a logistic condition holding it off is added. On a chest, remove_condition clears its
+  circuit condition and switch_off is refused. tests/circuits.lua.
+- A2 (Astra request967: the Kestrel II refill loop paused every flight, "bot astra is aboard platform Kestrel II with
+  no body"): bots.lua's aboard check lets `platform_rearm` with `platform` through, as requests and the other platform
+  writes by remote view; the aboard note names it. tests/travel.lua.
+- A3 (Sol: a queued configure from the railgun recipe left cold fluoroketone in a box and the hardware queue stopped):
+  a recipe change on a built machine reads its fluidboxes against the new recipe's fluid ingredients and products. A
+  fluid it takes none of refuses the change by default, naming it, its box and amount; `fluid: "drain"` flushes those
+  boxes first (LuaFluidBox.flush, the GUI's flush: the whole connected segment) and says what went; `fluid: "keep"`
+  changes it anyway and says what stays. The old guard (any fluid held: refused unless force=true, "a recipe change
+  destroys it") is replaced; force=true reads as keep. runtime_test.
+- A4 (Opus: view with position and radius drew an empty map round the character): observe read round the position
+  asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
+  character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
+  becomes its centre and the radius that covers it. tests/cli.test.ts.
+
+## d17 batch26 Group B
+- B1 (Luna: repeated Nauvis attack and group alerts flooded status; every wait woke on each new attack):
+  `alerts_digest {surface?, since?, limit?}` (alertdigest.lua) reads threat.lua's attack incidents, the loss incidents
+  and the enemy groups seen gathering with a target, one line per surface and 64-tile place, newest first, each
+  incident once; `since` a tick, else since the agent's last digest read (kept per agent; the first: 10 minutes), with
+  `next_since`. status adds `alerts_new` (places with news since the mark). The wake filters already exist and are
+  unchanged: `--no-urgent`, `--urgent-radius N`, `--until "alert near=X,Y radius=R min_size=N"`. tests/alertdigest.lua.
+- B2 (Astra: Aquilo lithium furnaces at 9/min against 49/min; each requester asked 10 over 80 tiles while 139 sat in a
+  provider): `requester_rate {position | area}` (reqrate.lua): per chest and item, the request, what it holds, the fed
+  machines' use a minute (recipe at crafting speed; a furnace's previous recipe), the network's pick
+  (select_pickup_point) and its distance, the round trip at the logistic robot's speed with our speed bonus, at most
+  the request a round trip and that a minute, and the minutes of use the request covers. tests/reqrate.lua.
+- B3 (Grok: a biochamber holding eggs or copper bacteria that stops crafting loses the seed): pushalerts kind
+  `seed_spoiling` in the background read's machine checks: an assembling machine whose recipe takes pentapod-egg,
+  copper-bacteria or iron-bacteria, not working, with that seed in its input whose first stack's spoil_tick is within
+  3 minutes: the seed and count, when the first hatches or spoils, and why (status; for a shortage, the short
+  ingredient); to its builder and its feeders' builders; it comes before input_spoilage, catalyst_gone, off_by_condition
+  and the power kinds on that machine. tests/pushalerts.lua.
+- B4 (Opus: walked about 2000 tiles placing feeds; 20 old feed inserters stood unpowered unnoticed): `turret_feeds`
+  says `inserter unpowered` (no pole reaches it, or no power on its network) for a turret already fed, with
+  `unpowered` the count; `ghosts: true` places each turret's chest (request on the ghost), inserter and, when no pole of
+  ours covers the inserter, a pole ghost (default small-electric-pole) on a free tile within 2 of it, inside its supply
+  area and within wire reach of our nearest pole (else `pole_note` says why), all by `place_ghosts`. tests/turretfeed.lua.
 - A0b (operator 23:02). Luna on shift32 (05:38:14-05:38:34 UTC) set Spindle, waiting at Fulgora, to 4 schedules whose
   current stop was fulgora: all read no_schedule, the record by record rebuild too; at 05:40:22 the same stops with
   current 2 (gleba) went on_the_path at once. With Sol's 4 at Aquilo, 8 of 8. No copy was reachable (a and b refuse,
@@ -7389,3 +7452,53 @@ fh watch    # deploy on every change
   queue's hand step with a position and no walk now runs with walk: true, walking any distance as move_to does with
   its enemy checks (unsafe_goal, avoid_enemies); walk: false keeps a step from walking; standing orders are as before
   (max_walk). tests/d15_batch4.lua, tests/picksource.lua.
+
+## d17 batch25 Group C
+- C1 (Grok: Spindle 48 s from Gleba with a 60 s stop; wait_platform refused any walk): `load_silo {wait_platform:
+  true, walk: true, from, launch, platform}` is the walking load: it gathers from the chests in from, then holds at the
+  silo loading nothing while the platform is headed here (and until the rocket is ready), then loads and launches in
+  that tick; it ends short when the platform goes elsewhere. The walking load with launch and platform did this
+  already (M.ready holds for a headed platform); the refusal was the argument check. Without walk, from is refused
+  as before. tests/rocketload.lua.
+- C2 (Muse: a wagon full of one item blocked all other loading on the uranium route; an hour to find): trains.lua
+  `wagon_slots`: a cargo wagon's slots used per item (with the count), free slots (under the red-X limit), slot
+  filters and the limit, and `full: nothing else loads into it`. The train read gives `wagons` (each cargo wagon, 8 at
+  most); inspect of a cargo wagon gives `wagon_slots`. tests/wagonslots.lua.
+
+## d17 batch26 Group C
+- C1 (Haiku: 23 poles held; the walks to (-187.5,-29.5) and (-187.5,-41.5) lay in an area under attack): rearm and
+  transfer had retry_when_clear already; `build {retry_when_clear: true}` now does the same when the walk's own goal
+  check at the entry's spot finds an area under attack (passing enemies; a worm or spawner is refused as before):
+  wait_until units_clear within 48 tiles there (retry_ticks, default 5 min), then builds again, at most 6 times.
+  `danger {position, quiet_s}`: attacks on our structures within 24 tiles of the straight way from the character in
+  the last quiet_s seconds (the latest named), and enemy units seen now there; `quiet: true` when neither.
+  tests/danger.lua, runtime_test.
+- C2 (Sonnet: recover stopped 16 times in a solar and accumulator field on Vulcanus). Sonnet's journal, 07:16-07:17:
+  the tour stalled 7 times at (259.1,-231.3) among 3 accumulators, 3 solar panels and 2 ashland lichen trees, 68
+  tiles short of the corpse; three move_to calls to (275,-246) from there stalled 16 times each with 6 path requests
+  failed, the escape walked out 3 moves, and the corridor named the two accumulators whose mining opens a way. Path
+  requests take the character's box (0.2, +0.15 on the first level) and route through gaps the steering then sticks
+  in, and each stall replan asked for the same box. Now each stall-driven replan adds 0.15 tiles either side, to 0.45
+  (`stall_pad`, kept for that walk's later levels and named in `last.stall_pad`). Not seen in the game (no world to
+  test writes on); runtime_test checks the boxes asked.
+## d17 batch26 Group A (the agents' 00:20 poll)
+- A1 (Muse, twice: a reactor's feed misconfigured): `circuit_set {enable: false}` set `circuit_enable_disable = false`,
+  which takes the condition away (the entity runs), while the schema said "false: off". Now `switch_off: true` sets a
+  condition that never holds (`signal-dot < -2147483648`; the entity stops while a red or green wire connects it,
+  as the game counts a circuit condition only then), `remove_condition: true` takes the condition away, and
+  `enable: false` is refused naming both. `now` says what the entity does: stopped, runs (no condition), or runs
+  because no wire connects it; a logistic condition holding it off is added. On a chest, remove_condition clears its
+  circuit condition and switch_off is refused. tests/circuits.lua.
+- A2 (Astra request967: the Kestrel II refill loop paused every flight, "bot astra is aboard platform Kestrel II with
+  no body"): bots.lua's aboard check lets `platform_rearm` with `platform` through, as requests and the other platform
+  writes by remote view; the aboard note names it. tests/travel.lua.
+- A3 (Sol: a queued configure from the railgun recipe left cold fluoroketone in a box and the hardware queue stopped):
+  a recipe change on a built machine reads its fluidboxes against the new recipe's fluid ingredients and products. A
+  fluid it takes none of refuses the change by default, naming it, its box and amount; `fluid: "drain"` flushes those
+  boxes first (LuaFluidBox.flush, the GUI's flush: the whole connected segment) and says what went; `fluid: "keep"`
+  changes it anyway and says what stays. The old guard (any fluid held: refused unless force=true, "a recipe change
+  destroys it") is replaced; force=true reads as keep. runtime_test.
+- A4 (Opus: view with position and radius drew an empty map round the character): observe read round the position
+  asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
+  character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
+  becomes its centre and the radius that covers it. tests/cli.test.ts.

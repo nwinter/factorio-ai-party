@@ -70,7 +70,19 @@
 - Out of sight (no radar or character of ours sees the chunk), `inspect {area}`, `scan` and `observe` (and `./fh view`)
   add `fog`: our buildings and belts we saw there that no longer stand there (`remembered`, with `seen_s_ago` and status
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
-  remembered ones dim, ghosts blue, losses as red outlines.
+  remembered ones dim, ghosts blue, losses as red outlines. `./fh view --args '{"position":{"x":5,"y":563},"radius":26}' --out
+  v.png` draws round that position (radius up to 32); `area` (up to 64x64) is drawn round its centre.
+- `requester_rate {position | area}`: per requester or buffer chest (24 at most) and item: what it asks and holds, what
+  the machines its inserters feed use a minute (their recipe at their crafting speed now), the stock the network's
+  robots would take it from (the game's pick) and how far, the robot round trip there and back at our robot speed
+  (charging not counted), the most deliveries bring a round trip (they come for what is under the request: at most
+  the request) and so a minute, and the minutes of use the request covers.
+- `alerts_digest {surface?, since?, limit?}`: enemy and structure alerts in one read: one line per surface and 64-tile
+  place, newest first, each incident once: the attacks there (ids, hits, attackers, what was hit), what was lost,
+  enemy groups seen gathering heading there. Without `since` it gives what came after your last digest read (the
+  first: the last 10 minutes) and moves your mark; `next_since` is the tick to pass as `since`. status's `alerts_new`
+  counts the places with news since your mark. What wakes a wait stays its own filters (`--no-urgent`,
+  `--urgent-radius N`, `--until "alert near=X,Y radius=R min_size=N"`).
 - `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
   when, the cause (`lightning` for a strike on Fulgora), whether its ghost stands now and whether robots can build it (the covering network, its idle
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).
@@ -165,11 +177,18 @@
   attacks, losses, groups and deaths there; the nests the straight line from you passes; your health, armor and
   shield; `eggs`: each egg site within the radius that hatches (count, holder, the first hatch time), with the turrets
   of ours in range of it (ready: ammunition, power or fluid; in range without). The egg alerts name the same turrets.
+  `quiet_s: 60`: whether the straight way from you to it (24 tiles either side) has had an attack on our structures in
+  the last 60 s, and the enemy units seen there now (`quiet: true` when neither). `build`, `rearm` and `transfer` take
+  `retry_when_clear: true`: refused for passing enemies (an area under attack), they wait until no unit is within 48
+  tiles there, then run again.
   Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
-- `drill_sites {position, resource?, radius?, limit?, surface?}`: for one depleted drill of ours, the nearest visible
-  placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
-  earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
-  (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
+- `drill_sites {position | area, resource?, drill?, direction?, radius?, limit?, surface?}`: for one depleted drill of
+  ours, the nearest visible placements on the same resource, with mining-area amounts and placement checks; `resource`
+  gives the name when no earlier mining target was recorded. Any other position, an `area` (up to 48x48: round its
+  centre) or `drill` given: the spots for that drill (default electric-mining-drill, `direction` default north) on
+  `resource`, else the resource most found there (`any_spot`; `limit` up to 16). Spots where a drill or drill ghost
+  already stands are left out and named (`occupied_by`); spots the placement check refuses name what stands there
+  (`blocked_by`). Sites are alternatives, not one layout. Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
 - `robot_losses {surface?, minutes?, cancel?, near?}`: our construction and logistic robots killed by enemies in the last
   `minutes` (default 30), by killer: how many, the jobs that sent them (order and target, where), and how many of those
   jobs stand; a killer with a death in the last 5 min is a team alert (`robots_lost`). `cancel: true, near: {x,y}` (a
