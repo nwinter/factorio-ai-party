@@ -88,6 +88,23 @@ do
   eq(astra('stock',{network=96,item='iron-plate'}).line,'logistic network #96 on nauvis holds iron-plate 400')
   fails(function() astra('stock',{network=7}) end,'no logistic network #7 of ours on nauvis')
   fails(function() astra('stock',{network='96'}) end,'network is a logistic network number')
+  -- batch27 B3 (Gemini: a platform's whole payload was a call an item): items, a row each from the read stock {item}
+  -- gives with the same other arguments; one that fails is a row with its error.
+  local kept_protos=prototypes
+  prototypes={item={['iron-plate']={},['copper-plate']={}}}
+  local kept=runtime.stock_one
+  local seen={}
+  runtime.stock_one=function(_,a)
+    seen[#seen+1]=a.item..'@'..tostring(a.surface)
+    if a.item=='copper-plate' then error('no copper here',0) end
+    return {total=7,summary='7 '..a.item..' on Kestrel as a whole'}
+  end
+  local rr=astra('stock',{items={'iron-plate','copper-plate'},surface='Kestrel'})
+  eq(seen[1],'iron-plate@Kestrel'); eq(rr.rows[1].total,7); eq(rr.lines[1],'7 iron-plate on Kestrel as a whole')
+  eq(rr.rows[2].item,'copper-plate'); eq(rr.rows[2].error,'no copper here')
+  fails(function() astra('stock',{items={'iron-plate'},item='iron-plate'}) end,'items is one row an item')
+  fails(function() astra('stock',{items={'nonsense'}}) end,'items: unknown item nonsense')
+  runtime.stock_one=kept; prototypes=kept_protos
 end
 print('d15_batch5_g3 stock network: ok')
 

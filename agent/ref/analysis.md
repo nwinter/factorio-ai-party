@@ -209,7 +209,8 @@
   8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
   mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
   Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
-- `stock {item?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: where an item is. With
+- `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: `items: [...]`
+  (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is. With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
