@@ -39,4 +39,28 @@ eq(r.lines[2],'iron-plate near (0,0)-(0,9): 4 steel-furnace (3 working) take 150
 eq(r.lines[3],'iron-plate near (100,0)-(100,3): 2 steel-furnace (2 working) take 75/min at full speed, 33% of the take; fed from requester chests of logistic network #5 (2 inserters)')
 eq(r.lines[4],'1 requester or buffer chest asks 40 in all and feeds none of these machines')
 assert(not pcall(S.supply,{surface=surface,force=force},{item='iron-ore',split=1}),'split is true')
+-- batch28 B4 (Opus: where petroleum gas goes, 3 times): a fluid's groups with the pipe segments they draw from and the
+-- machines making it on each.
+do
+  prototypes.fluid={['petroleum-gas']={}}
+  prototypes.recipe['plastic-bar']={name='plastic-bar',energy=1,ingredients={{type='fluid',name='petroleum-gas',amount=20},{type='item',name='coal',amount=1}}}
+  prototypes.recipe['advanced-oil-processing']={name='advanced-oil-processing',energy=5,ingredients={{type='fluid',name='crude-oil',amount=100}},products={{type='fluid',name='petroleum-gas',amount=55}}}
+  local function fb(seg,name) local t={{name=name,amount=50}}; t.get_filter=function() return nil end; t.get_fluid_segment_id=function() return seg end; return setmetatable(t,{__len=function() return 1 end}) end
+  local function plant(x,seg,working)
+    n=n+1
+    return {valid=true,unit_number=n,name='chemical-plant',type='assembling-machine',position={x=x,y=40},crafting_speed=1,working=working,
+      get_recipe=function() return prototypes.recipe['plastic-bar'] end,fluidbox=fb(seg,'petroleum-gas')}
+  end
+  local a1,a2,b1=plant(0,7,true),plant(3,7,true),plant(200,9,false)
+  n=n+1
+  local refinery={valid=true,unit_number=n,name='oil-refinery',type='assembling-machine',position={x=-10,y=40},crafting_speed=1,
+    get_recipe=function() return prototypes.recipe['advanced-oil-processing'] end,fluidbox=fb(7,'petroleum-gas')}
+  local fsurf={name='nauvis',find_entities_filtered=function(f) if type(f.type)=='table' then return {a1,a2,b1,refinery} end return {} end}
+  local fforce={get_fluid_production_statistics=function() return {get_flow_count=function(a) return a.category=='output' and 25000 or 24000 end} end}
+  local r=S.supply({surface=fsurf,force=fforce},{item='petroleum-gas',split=true})
+  eq(#r.groups,2)
+  eq(r.lines[1],'petroleum-gas on nauvis: used 2500/min, made 2400/min (last 10 min); 2 groups of machines take 3600/min at full speed:')
+  eq(r.lines[2],'plastic-bar near (0,40)-(3,40): 2 chemical-plant (2 working) take 2400/min at full speed, 67% of the take; fed from pipe segment #7 (made on it by 1 oil-refinery)')
+  eq(r.lines[3],'plastic-bar near (200,40)-(200,40): 1 chemical-plant (0 working) take 1200/min at full speed, 33% of the take; fed from pipe segment #9 (no machine making it is on it: tanks, pumps or a pipe in between)')
+end
 print('supplysplit: ok')

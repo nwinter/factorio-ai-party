@@ -57,7 +57,7 @@
   hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
   of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
   whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
-  before the leg ends, again after 5 minutes). `route`: the locations
+  before the leg ends, once while it lasts). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an
@@ -174,7 +174,8 @@
   last arrivals' launch-to-arrival time. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
-  platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
+  platforms (0 or false clears it), nothing else changed. It runs in the remote lane too. A minimum payload heavier
+  than a rocket lifts (1000 kg) is refused here, in `requests` and in `platform_bom`, naming the most that fits.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
   hub_full?, surface?}`: launches the silo's rocket to `platform` in orbit of this planet. A cargo the platform's hub has
@@ -275,8 +276,9 @@
   Example: `./fh call preflight --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","items":{"agricultural-science-pack":1000}}'`
 - `land`: from a platform stopped at a planet, drops you to it in a cargo pod (the core's Space Age part says where
   you land and with what).
-- `drop {items, platform?, full?, dry_run?}`: sends one cargo pod (10 slots) of hub items to the planet below a
-  stopped platform; `short` says what stays in the hub. `full: true` sends every pod the list takes (each pod's items
+- `drop {items, platform?, full?, dry_run?, partial?}`: sends one cargo pod (10 slots) of hub items to the planet below
+  a stopped platform; `short` says what stays in the hub, and `partial {sent, stayed, why}` when it sent part of the
+  list: a queue step with it fails unless `partial: true`. `full: true` sends every pod the list takes (each pod's items
   in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
   the rest; `spill`: what would land on the ground). A drop's landing line gives the container's exact position and
   the other cargo pod containers within 8 tiles with what each holds; one sent to a full landing pad says it landed
@@ -284,7 +286,8 @@
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
-- `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it,
+- `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
+  (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert. A spoilable item adds
   `spoils_within_2_min` beside the total and per place.

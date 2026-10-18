@@ -10,7 +10,8 @@
 --   death: a teammate's character died on your surface;
 --   power: an electric network on your surface with MIN_MACHINES+ machines, half of them on low or no power;
 --   power cut: a pole loss on your surface that left CUT_MACHINES+ machines with no power (powercut.lua).
--- Each one wakes an agent once (an attack, group, loss incident, death), and again only after REPEAT if it grew. All
+-- Each one wakes an agent once (an attack, group, loss incident, death), and again only when it comes back after
+-- CLEARED unseen (batch28 B2; it used to wake again after REPEAT when it grew). All
 -- of it is read from what the harness already keeps (threat.lua's attacked areas and groups, the loss incidents, the
 -- platform hit counts, the chronicle's deaths, the networks' cached view): no scan, a few small tables a check.
 -- alert(p, from, filter): which attack, group or nest news woke an `until=alert` sleep, optionally filtered by area
@@ -43,10 +44,19 @@ return function(api)
     if not t then t = {}; s.urgent_told[index] = t end
     return t
   end
-  -- New to this agent, or grown since it was told REPEAT ago.
-  local function news(told, key, level)
+  -- New to this agent (batch28 B2, Luna: attack #6942 woke each time its damage grew): a count that grows (hits,
+  -- losses) wakes no one again; alerts_digest keeps the counts. An incident that stops and comes back is a new one
+  -- (an attack area a minute without hits takes a new id: threat.lua INCIDENT_GAP). A state with a lasting key (a
+  -- power collapse, a captive spawner) is news again only when it comes back after CLEARED without being seen: each
+  -- check that finds it still there marks it seen.
+  M.CLEARED = 2 * 3600
+  local function news(told, key, level, state)
     local t = told[key]
-    return not t or (game.tick - t.tick >= M.REPEAT and level > t.level)
+    if not t then return true end
+    if not state then return false end
+    local was = t.seen or t.tick
+    t.seen = game.tick
+    return game.tick - was >= M.CLEARED
   end
   local function tell(told, key, level)
     told[key] = {tick=game.tick, level=level}
@@ -242,7 +252,7 @@ return function(api)
     if api.captive then
       for _, r in ipairs(try(function() return api.captive(p) end) or {}) do
         local key = 'captive|' .. r.key
-        if news(told, key, r.level) then tell(told, key, r.level); return r.line end
+        if news(told, key, r.level, true) then tell(told, key, r.level); return r.line end
       end
     end
     -- An outpost's output gone (Opus, d15 22:51: the NW coal mine was wiped and noticed 15 minutes later via cold
@@ -341,7 +351,7 @@ return function(api)
     if cut then return cut end
     -- Power collapse on this surface.
     for _, x in ipairs(collapsed(p)) do
-      if x.surface == surface and news(told, x.key, x.level) then
+      if x.surface == surface and news(told, x.key, x.level, true) then
         tell(told, x.key, x.level)
         local r = x.r
         local at = r.center and string.format(' near (%d,%d)', round(r.center.x), round(r.center.y)) or ''

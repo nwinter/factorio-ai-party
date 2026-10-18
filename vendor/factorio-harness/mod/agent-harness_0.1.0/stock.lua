@@ -69,27 +69,61 @@ return function(api)
         end
       end
     end
+    -- (batch28 B3, Muse: 15 minutes for 5 collectors and 350 ice) landed cargo pods of any force in the read (a pod
+    -- landed with no pad), and the stacks on the ground in chunks our force sees now: places with positions (kind pod,
+    -- ground); the ground is not in total (on_ground counts it).
+    local on_ground
+    if not opts.types or opts.pods then
+      local function key(e) return e.unit_number or (e.name..'@'..e.position.x..','..e.position.y) end
+      local seen={}
+      for _,x in ipairs(places) do if x.entity then seen[key(x.entity)]=true end end
+      local pf={name='cargo-pod-container'}
+      if not opts.whole then pf.position=centre; pf.radius=opts.radius or 128 end
+      for _,e in pairs(M.try(function() return (opts.surface or p.surface).find_entities_filtered(pf) end) or {}) do
+        if e.valid and e.name=='cargo-pod-container' and not seen[key(e)] then
+          local inv=output_of(e)
+          local n=inv and inv.get_item_count{name=item,quality=quality} or 0
+          if n>0 then
+            total=total+n
+            local g=groups[e.name] or {name=e.name,entities=0,count=0,chest=true}
+            groups[e.name]=g; g.entities=g.entities+1; g.count=g.count+n
+            places[#places+1]={entity=e,name=e.name,position=e.position,count=n,distance=api.distance(centre,e.position)}
+          end
+        end
+      end
+      local g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item) end)
+      for _,c in ipairs(g and g.cells or {}) do
+        local d=api.distance(centre,c.position)
+        if opts.whole or d<=(opts.radius or 128) then
+          on_ground=(on_ground or 0)+c.count
+          places[#places+1]={name=string.format('%d stack%s on the ground',c.stacks,c.stacks==1 and '' or 's'),position=c.position,count=c.count,distance=d,ground=true}
+        end
+      end
+    end
     table.sort(places,function(x,y) return x.distance<y.distance end)
     local list={}
     for _,g in pairs(groups) do list[#list+1]=g end
     table.sort(list,function(x,y) return x.count>y.count end)
-    return {item=item,total=total,groups=list,places=places,makers=next(makers) and makers or nil}
+    return {item=item,total=total,groups=list,places=places,makers=next(makers) and makers or nil,on_ground=on_ground}
   end
   -- One line an agent cannot skim past: how much, in what, and where.
   -- (d17 batch23 B2, Sonnet: 4k copper cable read as ready twice; it sat in requester chests) a stock's places by what
   -- can be taken: provider and storage chests (robots can take it), requester and buffer chests (held for a request),
   -- plain chests, machine outputs, the rest.
   function M.split(places)
-    local t={free=0,requested=0,chest=0,machine=0,other=0}
+    local t={free=0,requested=0,chest=0,machine=0,pod=0,other=0}
     for _,x in ipairs(places) do
-      local ok,k=pcall(M.holder_kind,x.entity)
-      k=ok and k or 'other'
-      local slot=(k=='provider' or k=='storage') and 'free' or (k=='requester' or k=='buffer') and 'requested' or (k=='chest' or k=='machine') and k or 'other'
-      t[slot]=t[slot]+x.count
+      if not x.ground then
+        local ok,k=pcall(M.holder_kind,x.entity)
+        k=ok and k or 'other'
+        local slot=(k=='provider' or k=='storage') and 'free' or (k=='requester' or k=='buffer') and 'requested' or (k=='chest' or k=='machine' or k=='pod') and k or 'other'
+        t[slot]=t[slot]+x.count
+      end
     end
     local bits={string.format('provider and storage chests %d (robots can take it)',t.free),string.format('requester and buffer chests %d (held for their requests)',t.requested)}
     if t.chest>0 then bits[#bits+1]=string.format('plain chests %d',t.chest) end
     if t.machine>0 then bits[#bits+1]=string.format('machine outputs %d',t.machine) end
+    if t.pod>0 then bits[#bits+1]=string.format('landed cargo pods %d (take them by hand)',t.pod) end
     if t.other>0 then bits[#bits+1]=string.format('elsewhere %d (landing pads, wagons, vehicles)',t.other) end
     t.text=table.concat(bits,', ')
     return t
@@ -151,8 +185,10 @@ return function(api)
   end
   -- What kind of holder a place is (Muse 09:24: 3-4 stock calls to find a provider robots had not committed): provider
   -- (active or passive), storage, requester, buffer, chest (no logistics), machine, or the entity type.
-  local KINDS={provider=true,storage=true,requester=true,buffer=true,chest=true,machine=true,wagon=true,pad=true,vehicle=true}
+  local KINDS={provider=true,storage=true,requester=true,buffer=true,chest=true,machine=true,wagon=true,pad=true,vehicle=true,pod=true,ground=true}
   function M.holder_kind(e)
+    if not e then return 'ground' end
+    if e.type=='temporary-container' then return 'pod' end
     local mode=e.type=='logistic-container' and (pcall(function() return e.prototype.logistic_mode end) and e.prototype.logistic_mode)
     if mode=='active-provider' or mode=='passive-provider' then return 'provider' end
     if mode then return mode end
@@ -183,7 +219,7 @@ return function(api)
       for _,k in ipairs(list) do assert(KINDS[k],'holders: unknown kind '..tostring(k)..' (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle)'); want[k]=true end
       local kept={}
       for _,x in ipairs(s.places) do if want[M.holder_kind(x.entity)] then kept[#kept+1]=x end end
-      s={item=s.item,total=s.total,groups=s.groups,places=kept,makers=s.makers}
+      s={item=s.item,total=s.total,groups=s.groups,places=kept,makers=s.makers,on_ground=s.on_ground}
     end
     -- page (A9, Muse: places past 128 tiles unfindable): places limit at a time, nearest first, from page 1.
     local pages=math.max(1,math.ceil(#s.places/limit))
@@ -192,7 +228,7 @@ return function(api)
     local places={}
     for i=1,math.min(limit,#s.places-skip) do
       local x=s.places[skip+i]
-      local reserved=api.reserved and api.reserved(x.entity,a.item) or 0
+      local reserved=x.entity and api.reserved and api.reserved(x.entity,a.item) or 0
       places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),kind=M.holder_kind(x.entity),
         reserved=reserved>0 and reserved or nil,
         first_spoils_in=x.spoil_tick and api.spoil.secs(x.spoil_tick-game.tick) or nil,spoiled_percent=x.spoil_tick and math.floor(x.spoil_percent*100+0.5) or nil,
@@ -245,7 +281,7 @@ return function(api)
       for _,x in ipairs(s.places) do soon2=soon2+(x.soon2 or 0) end
     end
     local h=api.spoil and api.spoil.hatch(a.item)
-    return {item=a.item,total=s.total,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
+    return {item=a.item,total=s.total,on_ground=s.on_ground,on_ground_note=s.on_ground and 'stacks on the ground in chunks our force sees now: places of kind ground, not in total' or nil,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
       spoils_within_2_min=soon2,
       page=pages>1 and page or nil,pages=pages>1 and pages or nil,
       covered=whole and string.format('every machine output and chest of ours on %s',surface.name)

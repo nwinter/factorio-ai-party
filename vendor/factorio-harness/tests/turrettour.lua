@@ -156,6 +156,10 @@ eq(r.places,2); eq(active('opus').targets[1].entity,b1)
 -- A radius: the same, clustered.
 r=opus('rearm',{radius=30,below=5,ammo='firearm-magazine'})
 eq(r.places,2); eq(active('opus').targets[1].entity,a1)
+-- batch28 C3 (Haiku): a tour's end gives a line per turret; stopped before any visit, each says not reached
+opus('stop',{})
+local tl=storage.agent_harness.last[runtime.bots.index_of('opus')].turret_lines
+eq(#tl,2); assert(tl[1]:find('^gun%-turret %(.-%): not reached %(the tour ended '),tl[1])
 -- below defaults to count: the turret with 12 rounds is under 20.
 r=opus('rearm',{radius=30,count=20,ammo='firearm-magazine'})
 eq(r.places,3); eq(r.below,20)

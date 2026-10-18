@@ -23,7 +23,10 @@
     (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to
     (inside a machine, a silo, a landing pad) is walked near: it ends `arrived_near` at that spot (`last.near_walk`;
     `"near":false` ends `unreachable`). `unreachable` and `no_safe_route` name a `staging` spot or via point from
-    teammates' walks of the last 30 minutes near you and the goal.
+    teammates' walks of the last 30 minutes near you and the goal. A walk of yours through `via` points that arrived
+    is kept (per pair of 64-tile areas, start and goal); a walk with none between the same areas that ends
+    `unreachable` or `no_safe_route` walks again once through them, and `last.route_memory` says so (or that the
+    kept route failed too).
   - A target in a narrow gap no path leads into ends `arrived_near` before it (`last.pocket`); `"squeeze":true` walks
     in (ending short of the gap it says where, `squeezed`). Squeezed in, the walk gets out along the gaps first
     (`last.escaped`); closed in, `last.mine_to_get_out` names everything to mine to open ground (chests, accumulators,
@@ -98,6 +101,8 @@
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
+  A line per turret: `turret_lines` in reach, `last.turret_lines` after a tour (what each got and holds now; those
+  the tour did not reach, named).
   Before it walks (and in `dry_run`), `magazines` gives per ammo type what the stops need to reach `count` against
   what you carry and craft, how many stops that completes in the tour's order, and the turrets left short; a tour
   it cannot finish is refused unless `partial: true` (`partial` then says how many stops get their full count).

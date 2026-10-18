@@ -782,6 +782,24 @@ local function finish(index, outcome)
   if action and action.kind~='drive' then s.last[index].on_belt=M.belt.note(body(M.lookup(index))) end
   stop(body(M.lookup(index)))
   if action and action.started_by and s.last[index] then s.last[index].started_by=action.started_by end
+  -- The route memory (batch28 C2): a move_to through via points that arrived keeps them; one with none that ended
+  -- unreachable or no_safe_route runs once more through a kept route between the same two areas.
+  if action and action.kind=='move_to' and s.last[index] then pcall(M.route_memory,index,action,outcome,s.last[index]) end
+  -- (batch28 C3) a rearm tour: a line per turret, those not reached named
+  if action and action.op=='rearm' and s.last[index] then
+    local lines={}
+    for i,l in ipairs(action.turret_lines or {}) do lines[i]=l end
+    for _,t in ipairs(action.targets or {}) do
+      local e=t.entity
+      local seen=false
+      if e and e.valid then
+        local key=string.format('%s (%g,%g):',e.name,e.position.x,e.position.y)
+        for _,l in ipairs(lines) do if l:sub(1,#key)==key then seen=true; break end end
+        if not seen then lines[#lines+1]=string.format('%s (%g,%g): not reached (the tour ended %s)',e.name,e.position.x,e.position.y,tostring(outcome)) end
+      end
+    end
+    if #lines>0 then s.last[index].turret_lines=lines end
+  end
   -- A call to run once the wait is met (A2: rearm {retry_when_clear}): next tick, outside this finish.
   if action and action.then_call and s.last[index] then
     if outcome=='met' then
@@ -1842,7 +1860,7 @@ function handlers.describe(_,a)
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
       stock={items='optional 1..32 item names instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
-      craft={force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
+      craft={spoiling='optional true: a recipe with a spoilable ingredient queues every craft asked; without it only the crafts that finish before the first held stack of it spoils (the hand queue ahead, then each craft at your crafting speed), and spoil says how many; products_spoil: how long each spoilable product lasts fresh once it lands',force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
@@ -4251,6 +4269,53 @@ function M.via_report(action)
   end
   return legs
 end
+-- Route memory (batch28 C2, Opus: base to south copper failed unless given exact via points, 6 times): per agent, per
+-- pair of 64-tile areas (where the walk started, its goal), the via points of the last move_to through them that
+-- arrived (at most ROUTES a agent). A move_to with no via points that ends unreachable or no_safe_route between two
+-- such areas runs once more through them (then_call, next tick); last.route_memory says which.
+M.ROUTE_CELL,M.ROUTES=64,16
+M.ROUTE_KEYS={'position','target','tolerance','within','avoid_enemies','unsafe_goal','combat','retreat','ticks','pathfind','reach','near','squeeze','mine_out','stay_in_turret_coverage','max_uncovered','route_retry'}
+function M.route_args(a)
+  local out={}
+  for _,k in ipairs(M.ROUTE_KEYS) do out[k]=a[k] end
+  return out
+end
+function M.walk_route_key(surface,from,to)
+  local c=M.ROUTE_CELL
+  return string.format('%s|%d,%d|%d,%d',tostring(surface),math.floor(from.x/c),math.floor(from.y/c),math.floor(to.x/c),math.floor(to.y/c))
+end
+function M.route_memory(index,action,outcome,last)
+  local st=state()
+  st.routes=st.routes or {}
+  local mine=st.routes[index] or {}
+  st.routes[index]=mine
+  local from,to=action.route_from,action.via and action.via.final or action.position
+  if not (from and to) then return end
+  local key=M.walk_route_key(action.surface_name,from,to)
+  if (outcome=='arrived' or outcome=='arrived_near') and action.via and #(action.via.points or {})>0 then
+    local pts={}
+    for i,q in ipairs(action.via.points) do pts[i]={x=q.x,y=q.y} end
+    mine[key]={via=pts,tick=game.tick,from={x=from.x,y=from.y},to={x=to.x,y=to.y}}
+    local n,oldest,ok_=0,nil,nil
+    for k,r in pairs(mine) do n=n+1; if not oldest or r.tick<mine[oldest].tick then oldest=k end end
+    if n>M.ROUTES and oldest then mine[oldest]=nil end
+    last.route_memory=string.format('kept: the %d via points of this walk, for the next move_to from around (%d,%d) to around (%d,%d)',#pts,math.floor(from.x),math.floor(from.y),math.floor(to.x),math.floor(to.y))
+  elseif (outcome=='unreachable' or outcome=='no_safe_route') and not action.via then
+    local r=mine[key]
+    if not r then return end
+    if action.route_args and action.route_args.route_retry then
+      last.route_memory=string.format('the kept route (via %d points, kept %s ago) ended %s too',#r.via,ago(game.tick-r.tick),outcome)
+      return
+    end
+    local args={}
+    for k,v in pairs(action.route_args or {}) do args[k]=v end
+    args.via=r.via; args.route_retry=true
+    st.then_calls=st.then_calls or {}
+    st.then_calls[#st.then_calls+1]={index=index,call={action='move_to',args=args}}
+    last.route_memory=string.format('ended %s; it walks again through the %d via points of your walk from around (%d,%d) to around (%d,%d) that arrived %s ago',
+      outcome,#r.via,math.floor(r.from.x),math.floor(r.from.y),math.floor(r.to.x),math.floor(r.to.y),ago(game.tick-r.tick))
+  end
+end
 function handlers.move_to(p,a)
   -- target: an entity's reach (M.walk_target); its centre is the walk's position.
   local rt
@@ -4333,6 +4398,8 @@ function handlers.move_to(p,a)
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false,pocket_check=true,squeeze=a.squeeze==true or nil,
     avoid_mode=M.walk_mode(a),reach_target=rt,near=a.near,limit_text=limit_text,
     trail_pts={{x=p.position.x,y=p.position.y}},surface_name=p.surface.name,
+    -- (batch28 C2) the call's own arguments and where it started, for the route memory
+    route_args=M.route_args(a),route_from={x=p.position.x,y=p.position.y},
     -- (d17 batch23 A5, Opus) the limit set again from each path found unless ticks was given; what the straight line crosses
     limit_auto=a.ticks==nil and {start=game.tick,cap=36000,speed=speed,text=limit_text} or nil,
     straight=M.pathing.line_crossing and (function() local pts={{x=p.position.x,y=p.position.y}} for _,q in ipairs(via or {}) do pts[#pts+1]=q end pts[#pts+1]=target
@@ -5020,17 +5087,67 @@ local function craft_facts(p,out,started)
   end
   return out
 end
+-- A spoilable hand craft (batch28 C1, Grok: 40 yumako-processing crafts, and the mash spoiled before the bacteria
+-- batch used it, 3 times): when the first held stack of a spoilable ingredient spoils, against when each craft would
+-- finish (the hand queue ahead, then each craft's time at the character's crafting speed): how many finish before
+-- it; and how long each spoilable product lasts fresh once it lands (its prototype's spoil time). nil when neither.
+function M.craft_spoil(p,name,count)
+  local recipe=type(name)=='string' and p.force.recipes[name]
+  if not recipe then return nil end
+  local function spoil_ticks(n) local ok,t=pcall(function() return prototypes.item[n].get_spoil_ticks() end); return ok and type(t)=='number' and t>0 and t or nil end
+  local inv=p.get_main_inventory()
+  local first,item
+  for _,ing in ipairs(recipe.ingredients or {}) do
+    if ing.type~='fluid' and spoil_ticks(ing.name) then
+      for i=1,inv and #inv or 0 do
+        local st=inv[i]
+        if st.valid_for_read and st.name==ing.name then
+          local ok,t=pcall(function() return st.spoil_tick end)
+          if ok and type(t)=='number' and t>0 and (not first or t<first) then first,item=t,ing.name end
+        end
+      end
+    end
+  end
+  local products={}
+  for _,pr in ipairs(recipe.products or {}) do
+    local t=pr.type~='fluid' and spoil_ticks(pr.name)
+    if t then products[#products+1]=string.format('%s lasts %ds fresh once it lands (a fresh one; made from part-spoiled ingredients, less)',pr.name,math.floor(t/60)) end
+  end
+  if not first and #products==0 then return nil end
+  local per=(recipe.energy or 0.5)/hand_speed(p)
+  local ahead=crafting_left(p)
+  local fits=count
+  if first then fits=math.max(0,math.min(count,math.floor(((first-game.tick)/60-ahead)/per))) end
+  return {fits=fits,item=item,spoils_in=first and math.floor((first-game.tick)/60) or nil,per=per,ahead=ahead,products=products}
+end
 function handlers.craft(p,a)
   local notes,shorts={},{}
   if not a.recipes then
     local fromq={}
     assert(a.check_stock==nil or type(a.check_stock)=='boolean','check_stock must be true or false')
+    assert(a.spoiling==nil or type(a.spoiling)=='boolean','spoiling must be true or false')
+    -- (C1) a spoilable ingredient: only the crafts that finish before it spoils, unless spoiling: true
+    local want=type(a.count)=='number' and a.count or 1
+    local sp=M.craft_spoil(p,a.recipe,want)
+    local spoil_line
+    if sp and sp.item then
+      spoil_line=string.format('the first %s you hold spoils in %ds; with %ds of hand crafting ahead and %gs a craft, %d of the %d crafts finish before it',
+        sp.item,sp.spoils_in,math.floor(sp.ahead+0.5),sp.per,sp.fits,want)
+      if sp.fits<want and a.spoiling~=true then
+        if sp.fits==0 then
+          return {started=0,nothing_queued=string.format('nothing was queued for %s: %s; spoiling: true queues them anyway',a.recipe,spoil_line),spoil=spoil_line,
+            products_spoil=#sp.products>0 and sp.products or nil}
+        end
+        spoil_line=spoil_line..string.format('; %d queued (spoiling: true queues all %d)',sp.fits,want)
+        a=setmetatable({count=sp.fits},{__index=a})
+      end
+    end
     local started=begin_craft(p,a.recipe,a.count,a.force==true or (a.check_stock==true and 'check') or nil,notes,shorts,fromq)
     local hand_s,queue_s,assemblers=craft_cost(p,{[a.recipe]=started})
     -- Nothing queued, said plainly (Sonnet 07:50: "started: cargo-bay=0" read as a partial start).
     local none=started==0 and string.format('nothing was queued for %s: %s',tostring(a.recipe),shorts[a.recipe] or 'not hand-craftable now') or nil
     return craft_facts(p,{started=started,nothing_queued=none,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
-      hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},{[a.recipe]=started})
+      hand_s=hand_s,queue_s=queue_s,assemblers=assemblers,spoil=spoil_line,products_spoil=sp and #sp.products>0 and sp.products or nil},{[a.recipe]=started})
   end
   assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=32,'recipes requires 1..32 {recipe,count} entries')
   -- Every entry is attempted: a shortfall in one should not hide what the
@@ -8785,6 +8902,16 @@ function M.rearm_now(p,a)
   if type(out)=='table' then
     out.other_ammo=other_line
     if #order_items>1 then out.ammo_each='each turret its own ammo: '..table.concat(order_items,', ') end
+    -- (batch28 C3, Haiku) a line per turret: what it got and what it holds now
+    local lines={}
+    for _,row in ipairs(out.entities or {}) do
+      local okq,e=pcall(entity,p,{position=row.position},true)
+      if okq and e then
+        local okh,h=pcall(function() return e.get_inventory(defines.inventory[ammo_inventory[e.type]]).get_item_count() end)
+        lines[#lines+1]=string.format('%s (%g,%g): +%d, holds %s now%s',e.name,e.position.x,e.position.y,row.moved or 0,okh and tostring(h) or '?',row.full and ' (full)' or '')
+      end
+    end
+    out.turret_lines=#lines>0 and lines or nil
   end
   if below and type(out)=='table' then out.below=below; out.held_enough=enough end
   return out
@@ -13929,6 +14056,20 @@ function M.dry_verdict(out,a)
   local parts={}
   if blocked>0 then parts[#parts+1]=blocked..' entr'..(blocked==1 and 'y' or 'ies')..' blocked' end
   if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused' end
+  -- (batch28 A1, Astra ~4 times: ok while an unavailable recipe, floor the hub never builds or inserters with no
+  -- target were listed) what the real call refuses or leaves undone fails the verdict too, each named
+  local recipes=#(out.recipes_refused or {})
+  if recipes>0 then parts[#parts+1]=string.format('%d refused for the recipe (%s)',recipes,out.recipes_refused[1]) end
+  local tiles=type(out.tiles)=='table' and out.tiles.unbuilt_count or 0
+  if tiles>0 then parts[#parts+1]=string.format('%d foundation tile%s the hub never builds (%s)',tiles,tiles==1 and '' or 's',out.tiles.unbuilt and out.tiles.unbuilt[1] or '') end
+  local loose=type(out.inserters_without_target)=='number' and out.inserters_without_target or #(type(out.inserters_without_target)=='table' and out.inserters_without_target or {})
+  if loose>0 then
+    local first
+    for _,i in ipairs(type(out.inserters)=='table' and out.inserters or {}) do
+      if i.missing then first=string.format('#%s %s (%g,%g): %s',tostring(i.index),tostring(i.name),i.position and i.position.x or 0,i.position and i.position.y or 0,tostring(i.missing)); break end
+    end
+    parts[#parts+1]=string.format('%d inserter%s with no target%s',loose,loose==1 and '' or 's',first and ' ('..first..')' or '')
+  end
   out.dry_run_ok=#parts==0
   out.verdict=#parts==0 and 'ok: every entry places and every setting is taken' or 'fails: '..table.concat(parts,', ')..(out.settings_line and '; '..out.settings_line or '')
   return out
@@ -14064,7 +14205,7 @@ local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},t
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
+local conditions=conditions_module{receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
@@ -16092,7 +16233,7 @@ function M.last_drop(index)
   local last=state().last_drop and state().last_drop[index]
   return last and game.tick-last.tick<=3600 and last or nil
 end
-stock=stock_module{give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
@@ -16177,6 +16318,12 @@ stock=stock_module{give=function(p,e,item,quality,count,inv) return transfer_one
     local args={direction='to_entity',item=item,quality=action.quality,count=action.count,up_to=action.count,
       inventory=action.op=='refuel' and 'fuel' or nil}
     local out=transfer_one(p,args,nil,e)
+    -- (batch28 C3, Haiku) a rearm tour's line per turret: what it got and what it holds now (last.turret_lines)
+    if action.op=='rearm' then
+      local okh,h=pcall(function() return e.get_inventory(defines.inventory[ammo_inventory[e.type]]).get_item_count() end)
+      action.turret_lines=action.turret_lines or {}
+      action.turret_lines[#action.turret_lines+1]=string.format('%s (%g,%g): +%d %s, holds %s now',e.name,e.position.x,e.position.y,out.transferred or 0,tostring(item),okh and tostring(h) or '?')
+    end
     if action.item_of then
       action.items=action.items or {}
       if (out.transferred or 0)>0 then action.items[item]=(action.items[item] or 0)+out.transferred end

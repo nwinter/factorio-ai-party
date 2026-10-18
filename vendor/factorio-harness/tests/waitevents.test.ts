@@ -214,6 +214,22 @@ test('--wait-through-tells keeps waiting past a tell; the end lists it and the e
     assert.match(compact.stdout,/coal first/);
   });
 });
+// batch28 A5 (Grok: --wait-through-tells alone returned at once; the next command cancelled a walk): the flag on an
+// action waits as --wait does.
+test('--wait-through-tells alone on an action waits for it',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='move_to')return {ok:true,result:{until_tick:600}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:50,y:5},inventory:[]}}};
+    polls++;
+    if(polls<3)return {ok:true,result:{active:{kind:'move_to',until_tick:600}}};
+    return {ok:true,result:{active:false,last:{kind:'move_to',outcome:'arrived',tick:300}}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait-through-tells'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.completion.last.outcome,'arrived');
+    assert.ok(polls>=3,'it polled until the walk ended');
+  });
+});
 test('fh wait --wait-through-tells waits for the action through a mention',async()=>{
   let polls=0;
   await engine(()=>{

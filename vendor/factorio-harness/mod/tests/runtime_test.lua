@@ -321,6 +321,44 @@ do
   end
   call('queue_cancel',{})
 end
+-- batch28 A1 (Astra ~4 times: a dry run said ok while listing an unavailable recipe, floor the hub never builds and
+-- inserters with no target): each fails the verdict, named.
+do
+  local ok=runtime.dry_verdict({dry_run=true},{dry_run=true})
+  eq(ok.dry_run_ok,true); eq(ok.verdict,'ok: every entry places and every setting is taken')
+  local v=runtime.dry_verdict({dry_run=true,recipes_refused={'entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available'},
+    tiles={unbuilt_count=2,unbuilt={'(3.5,4.5): no foundation among the 8 tiles round it'}},inserters_without_target=1,
+    inserters={{index=2,name='inserter',position={x=1.5,y=2.5}},{index=3,name='inserter',position={x=4.5,y=2.5},missing='no drop target'}}},{dry_run=true})
+  eq(v.dry_run_ok,false)
+  eq(v.verdict,'fails: 1 refused for the recipe (entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available), 2 foundation tiles the hub never builds ((3.5,4.5): no foundation among the 8 tiles round it), 1 inserter with no target (#3 inserter (4.5,2.5): no drop target)')
+end
+-- batch28 C2 (Opus: base to south copper failed unless given exact via points, 6 times): a move_to through via points
+-- that arrived is kept per agent and pair of 64-tile areas; one with none ending unreachable there walks again once
+-- through them (then_call), and says so; the retry failing too is said.
+do
+  local st=storage.agent_harness
+  local last={}
+  local arrived={kind='move_to',surface_name='nauvis',route_from={x=10,y=10},position={x=300,y=-200},
+    via={points={{x=100,y=0},{x=200,y=-100}},final={x=300,y=-200}},route_args={position={x=300,y=-200}}}
+  runtime.route_memory(9,arrived,'arrived',last)
+  assert(last.route_memory:find('^kept: the 2 via points of this walk'),last.route_memory)
+  local failed={kind='move_to',surface_name='nauvis',route_from={x=20,y=30},position={x=310,y=-210},route_args={position={x=310,y=-210},avoid_enemies=true}}
+  last={}
+  st.then_calls=nil
+  runtime.route_memory(9,failed,'no_safe_route',last)
+  eq(#st.then_calls,1); eq(st.then_calls[1].call.action,'move_to'); eq(#st.then_calls[1].call.args.via,2)
+  eq(st.then_calls[1].call.args.route_retry,true); eq(st.then_calls[1].call.args.avoid_enemies,true)
+  assert(last.route_memory:find('ended no_safe_route; it walks again through the 2 via points',1,true),last.route_memory)
+  -- the retry failing too: said, no third walk
+  st.then_calls=nil; last={}
+  failed.route_args.route_retry=true
+  runtime.route_memory(9,failed,'unreachable',last)
+  eq(st.then_calls,nil); assert(last.route_memory:find('ended unreachable too',1,true),last.route_memory)
+  -- another agent, or another pair of areas: nothing kept
+  last={}; failed.route_args.route_retry=nil
+  runtime.route_memory(8,failed,'unreachable',last); eq(last.route_memory,nil)
+  st.routes=nil; st.then_calls=nil
+end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
 advance(1)
@@ -939,7 +977,8 @@ end
 -- report each entity and keep going past one that fails.
 local function inv(...)
   local t={...}; t.valid=true
-  t.get_item_count=function(f) local n=0; for _,s in ipairs(t) do if s.valid_for_read and s.name==f.name then n=n+s.count end end; return n end
+  -- (no argument: every item, as the engine counts)
+  t.get_item_count=function(f) local n=0; for _,s in ipairs(t) do if s.valid_for_read and (f==nil or s.name==f.name) then n=n+s.count end end; return n end
   return t
 end
 defines.inventory.fuel,defines.inventory.furnace_source,defines.inventory.furnace_result=2,3,4
@@ -1961,6 +2000,8 @@ p.surface.find_entities_filtered=function() return {turret} end
 main=inv(stack('firearm-magazine',30))
 eq(call('transfer',{position=turret.position,item='firearm-magazine',count=5,direction='to_entity'}).inventory,'turret_ammo'); eq(mag_slot.count,5)
 local rearmed=call('rearm',{count=10}); eq(rearmed.transferred,5); eq(mag_slot.count,10); eq(main[1].count,20)
+-- batch28 C3 (Haiku): a line per turret, what it got and what it holds now
+eq(rearmed.turret_lines[1],'gun-turret (5,0): +5, holds 10 now')
 fails(function() call('rearm',{ammo='coal'}) end,'ammo must be')
 -- Crafted ammo lands in the gun ammo slots; rearm draws there after the
 -- main inventory, and holding none at all fails instead of reading as unchanged.
@@ -2311,6 +2352,35 @@ do
   eq(#cancels,0); eq(made.from_queue,nil); eq(queue[1].count,75)
   p.begin_crafting,p.cancel_crafting,p.get_main_inventory,p.crafting_queue=saved.begin,saved.cancel,saved.inv,saved.queue
   p.force.recipes['electronic-circuit'],p.force.recipes['laser-turret']=nil,nil
+end
+-- batch28 C1 (Grok: 40 yumako-processing crafts, and the mash spoiled before the bacteria batch used it): a spoilable
+-- ingredient's first held stack against when each craft finishes; only those that finish first are queued unless
+-- spoiling: true; how long a product lasts fresh once it lands.
+do
+  local saved={begin=p.begin_crafting,inv=p.get_main_inventory,queue=p.crafting_queue,protos=prototypes.item}
+  prototypes.item=prototypes.item or {}
+  prototypes.item['yumako']={get_spoil_ticks=function() return 3600*60 end}
+  prototypes.item['yumako-mash']={get_spoil_ticks=function() return 3600*3 end}
+  prototypes.item['yumako-seed']={get_spoil_ticks=function() return 0 end}
+  p.force.recipes['yumako-processing']={enabled=true,category='crafting',energy=1,
+    products={{type='item',name='yumako-mash',amount=2},{type='item',name='yumako-seed',amount=1}},ingredients={{type='item',name='yumako',amount=1}}}
+  local stacks={{valid_for_read=true,name='yumako',count=40,spoil_tick=game.tick+60*15}}
+  p.get_main_inventory=function() local t={get_item_count=function() return 40 end}; for i,st in ipairs(stacks) do t[i]=st end; return setmetatable(t,{__len=function() return #stacks end}) end
+  p.crafting_queue={{recipe='iron-gear-wheel',count=5}}  -- 5 x 0.5 s ahead
+  p.force.recipes['iron-gear-wheel'].energy=0.5
+  local asked
+  p.begin_crafting=function(r) asked=r.count; return r.count end
+  local made=call('craft',{recipe='yumako-processing',count=40})
+  eq(asked,12,'only the crafts that finish before the yumako spoils: (15 s - 2.5 s ahead) / 1 s')
+  eq(made.spoil,'the first yumako you hold spoils in 15s; with 3s of hand crafting ahead and 1s a craft, 12 of the 40 crafts finish before it; 12 queued (spoiling: true queues all 40)')
+  eq(made.products_spoil[1],'yumako-mash lasts 180s fresh once it lands (a fresh one; made from part-spoiled ingredients, less)')
+  made=call('craft',{recipe='yumako-processing',count=40,spoiling=true})
+  eq(asked,40,'spoiling: true queues all')
+  stacks[1].spoil_tick=game.tick+60
+  made=call('craft',{recipe='yumako-processing',count=40})
+  eq(made.started,0); assert(made.nothing_queued:find('0 of the 40 crafts finish before it; spoiling: true queues them anyway',1,true),made.nothing_queued)
+  p.begin_crafting,p.get_main_inventory,p.crafting_queue,prototypes.item=saved.begin,saved.inv,saved.queue,saved.protos
+  p.force.recipes['yumako-processing']=nil
 end
 -- A machine-only recipe says so (shake3: Grok's engine-unit read "not hand-craftable now").
 p.force.recipes['engine-unit']={enabled=true,category='advanced-crafting'}

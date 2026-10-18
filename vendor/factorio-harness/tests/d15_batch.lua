@@ -18,6 +18,7 @@ do
     build=function(p,a) active[p.index]=game.tick+3; last[p.index]={outcome='done',result={built=1,failed=a.bad and {{index=2,item='inserter',position={x=4,y=4},error='nothing was placed'}} or nil}}; return {walking=true} end,
     long=function(p,a) active[p.index]=game.tick+100; return {accepted=true} end,
     craft=function() return {started=1} end,
+    drop=function(p,a) return {dropped={'rocket-fuel*200'},partial={sent='rocket-fuel*200',stayed='rocket-fuel*200',why='a cargo pod holds 10 slots and the list takes 2 pods; without full only pod 1 goes'}} end,
   }
   local stopped=0
   local s=require('scheduler'){
@@ -57,6 +58,17 @@ do
   h.queue_submit(p,{steps={{action='build',args={}},{action='craft'}}})
   for _=1,5 do tick() end
   q=h.queue_status(p); eq(q.paused,false); eq(q.history[#q.history].action,'craft'); eq(q.history[#q.history-1].ok,true)
+  -- batch28 A2 (Astra: a drop sent 200 of 400 rocket fuel and the remote queue went on): a partial step fails, unless
+  -- its args say partial: true
+  h.queue_cancel(p,{})
+  h.queue_submit(p,{steps={{action='drop',args={}},{action='craft'}}})
+  tick(); q=h.queue_status(p)
+  eq(q.paused,true,'a partial drop pauses the plan')
+  has(q.history[#q.history].result.reason,'drop partial: sent rocket-fuel*200; rocket-fuel*200 stayed (a cargo pod holds 10 slots and the list takes 2 pods; without full only pod 1 goes); partial: true lets a queue go on')
+  h.queue_cancel(p,{})
+  h.queue_submit(p,{steps={{action='drop',args={partial=true}},{action='craft'}}})
+  tick(); q=h.queue_status(p)
+  eq(q.paused,false); eq(q.history[#q.history-1].ok,true)
 
   -- 12 (Sonnet): mode replace stops the active step of an ordinary plan, which is not run again.
   h.queue_cancel(p,{})

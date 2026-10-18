@@ -12,7 +12,7 @@ return function(api)
   local M = {}
   local SCAN_TICKS, KEEP_MINUTES, WORKERS, WORKER_TICKS = 600, 10, 3, 2 * 216000
   local LOW_AMMO = 10            -- rounds in a turret's ammo slots
-  local REPEAT = 5 * 3600        -- a condition that lasts is told again after 5 min
+  local CLEAR = 2 * 3600         -- a condition told comes back as news only after this long clear (batch28 B2)
   local FEED_TICKS = 3600        -- the ammunition trace (ammofeed.lua) read again after 1 min
   local DAMAGE_GAP = 3600        -- hit lines at most once a minute per reader and platform
   local HUB_HISTORY = 30         -- hub health samples kept (one per scan)
@@ -24,6 +24,23 @@ return function(api)
     if sec >= 3600 then return string.format('%dh%02dm', math.floor(sec / 3600), math.floor(sec / 60) % 60) end
     if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
     return sec .. 's'
+  end
+  -- (batch28 B2, Luna: Swiftlet's zero-fuel alert came again after a reported recovery) a lasting condition is told
+  -- once; again only when its state changes (another key) or it comes back after CLEAR clear, never because a count
+  -- grew or time passed. seen[name]: the key told while it holds; name_last, name_clear: the last key and when it cleared.
+  local function again(seen, name, key)
+    local k = seen[name]
+    if k == nil then
+      local cleared = seen[name .. '_clear']
+      if seen[name .. '_last'] == key and cleared and game.tick - cleared < CLEAR then seen[name] = key; return false end
+      seen[name], seen[name .. '_last'], seen[name .. '_clear'] = key, key, nil
+      return true
+    end
+    if k ~= key then seen[name], seen[name .. '_last'] = key, key; return true end
+    return false
+  end
+  local function clear(seen, name)
+    if seen[name] ~= nil then seen[name] = nil; seen[name .. '_clear'] = game.tick end
   end
   local function store()
     local s = api.state()
@@ -354,26 +371,24 @@ return function(api)
         for m = now_m - 6, now_m - 2 do base = base + minute(r, m) end
         base = base / 5
         if last >= 10 and last >= 2 * base + 5 then
-          if last >= 1.5 * (seen.rising or 0) or game.tick - (seen.rising_tick or -REPEAT) >= REPEAT then
+          if again(seen, 'rising', 'on') then
             lines[#lines+1] = string.format('platform %s: hits per minute rising, %d in the last minute, %g a minute over the 5 before', name, last, math.floor(base * 10 + 0.5) / 10)
-            seen.rising, seen.rising_tick = last, game.tick
           end
-        else seen.rising = nil end
+        else clear(seen, 'rising') end
         -- Turrets empty or low, with the ammo flow: what the turrets hold
         -- against what waits in the hub (Kestrel: 920 in the hub, 4 of 5 empty).
         local level = sc.empty * 1000 + sc.low
         if level > 0 then
-          if level > (seen.turrets or 0) or game.tick - (seen.turrets_tick or -REPEAT) >= REPEAT then
+          if again(seen, 'turrets', sc.empty >= sc.turrets and 'all empty' or sc.empty > 0 and 'empty' or 'low') then
             local feeds = sc.empty > 0 and try(function() return M.empty_turrets(pl, sc) end) or {}
             lines[#lines+1] = string.format('platform %s: %d of %d %s%s empty%s; %s%s', name, sc.empty, sc.turrets, sc.turret_name or 'turret', sc.turrets == 1 and '' or 's',
               sc.low > 0 and string.format(', %d low (under %d rounds)', sc.low, LOW_AMMO) or '', ammo_text(sc), #feeds > 0 and '; ' .. table.concat(feeds, '; ') or '')
-            seen.turrets, seen.turrets_tick = level, game.tick
           end
-        else seen.turrets = nil end
+        else clear(seen, 'turrets') end
         -- Feeds running dry while the platform's total looks enough (d17 batch13 B1, Kestrel: the bow turrets ran empty
         -- while hundreds of magazines sat on a rear loop): turrets with nothing more coming (no ammo on the way to them
         -- and nothing that loads it) and under 20 rounds, while 20 or more aboard are stranded or in the hub. Read with
-        -- the scan (ammofeed.lua), told again after REPEAT or when more turrets starve.
+        -- the scan (ammofeed.lua), told once while it lasts (batch28 B2).
         -- (d17 batch23 A2: the trace cost 180 ms on Kestrel II and ran every scan) traced only while a turret holds
         -- under 2 * LOW_AMMO (none can starve otherwise), at most once a minute
         if api.ammofeed and sc.turrets > 0 and (sc.under or 0) > 0 then
@@ -395,15 +410,14 @@ return function(api)
           end
           local spare = tr and (tr.stranded + (tr.hub_reaches and 0 or tr.hub_ammo)) or 0
           if #starving > 0 and spare >= 2 * LOW_AMMO then
-            if #starving > (seen.starving or 0) or game.tick - (seen.starving_tick or -REPEAT) >= REPEAT then
+            if again(seen, 'starving', 'on') then
               local first = starving[1]
               lines[#lines+1] = string.format('platform %s: %d turret%s in (%g,%g)-(%g,%g) can reach under %d rounds and nothing more comes (%s %s: %s) while %d aboard can reach no turret%s; platform_defense {platform: "%s"} traces each feed',
                 name, #starving, #starving == 1 and '' or 's', x0, y0, x1, y1, 2 * LOW_AMMO, first.name, at(first.position),
                 #first.stops > 0 and first.stops[1] or 'its feed is dry', spare,
                 #tr.stranded_groups > 0 and ' (on belts: ' .. table.concat(tr.stranded_groups, '; ', 1, math.min(3, #tr.stranded_groups)) .. ')' or ' (in the hub, no inserter takes it toward a turret)', pl.name)
-              seen.starving, seen.starving_tick = #starving, game.tick
             end
-          else seen.starving = nil end
+          else clear(seen, 'starving') end
         end
         -- Flying under 5 km/s: which thrusters lack which input, and the chain behind it.
         if sc.slow then
@@ -412,30 +426,27 @@ return function(api)
           if not t or t.count == 0 then why = 'it has no thrusters'
           elseif #t.lines > 0 then why = table.concat(t.lines, ' | ')
           else why = string.format('no thruster tank is under half (lowest: %s); %d thruster%s', api.thrust_lowest and api.thrust_lowest(t) or '?', t.count, t.count == 1 and '' or 's') end
-          local key = t and table.concat(t.lines, '|'):gsub('%d+%%', '') or 'none'
-          if key ~= seen.slow_key or game.tick - (seen.slow_tick or -REPEAT) >= REPEAT then
+          local key = (sc.slow.kms < 0 and 'back|' or 'slow|') .. (t and table.concat(t.lines, '|'):gsub('%d+%%', '') or 'none')
+          if again(seen, 'slow', key) then
             lines[#lines+1] = string.format('platform %s flies at %g km/s (under %d%s) on %s: %s', name, sc.slow.kms, SLOW_KMS,
               sc.slow.kms < 0 and '; backwards along its leg' or '', sc.slow.leg or '?', why)
-            seen.slow_key, seen.slow_tick = key, game.tick
           end
-        else seen.slow_key = nil end
+        else clear(seen, 'slow') end
         -- Thruster fuel or oxidizer running out before the leg ends (batch27 B1, Luna).
         if sc.fuel and sc.fuel.short then
           local key = table.concat(sc.fuel.short, '|')
-          if key ~= seen.fuel_key or game.tick - (seen.fuel_tick or -REPEAT) >= REPEAT then
+          if again(seen, 'fuel', key) then
             lines[#lines+1] = string.format('platform %s: %s runs out before the leg ends: %s', name, table.concat(sc.fuel.short, ' and '), sc.fuel.line)
-            seen.fuel_key, seen.fuel_tick = key, game.tick
           end
-        else seen.fuel_key = nil end
+        else clear(seen, 'fuel') end
         -- No repair packs while it takes hits.
         local recent = r.last_hit and game.tick - r.last_hit <= KEEP_MINUTES * 3600
         if sc.packs == 0 and pl.hub and pl.hub.valid and (recent or (sc.health and sc.max and sc.health < sc.max)) then
-          if game.tick - (seen.packs_tick or -REPEAT) >= REPEAT then
+          if again(seen, 'packs', 'on') then
             lines[#lines+1] = string.format('platform %s: no repair packs in the hub (the game repairs platform entities only with hub repair packs)%s', name,
               recent and ', and it was hit ' .. ago(game.tick - r.last_hit) .. ' ago' or '')
-            seen.packs_tick = game.tick
           end
-        else seen.packs_tick = nil end
+        else clear(seen, 'packs') end
         -- The hub's health falling: below this reader's baseline (what it was
         -- last told, raised when the hub is repaired), else below the
         -- earliest sample of the last 5 minutes.

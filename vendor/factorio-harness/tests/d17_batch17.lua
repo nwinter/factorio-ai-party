@@ -53,15 +53,21 @@ do
   defines={wire_connector_id={circuit_red=1,circuit_green=2},inventory={hub_main=1}}
   prototypes={item={['iron-plate']={}},fluid={['thruster-fuel']={},water={}},virtual_signal={['signal-A']={}}}
   game={tick=0}
-  local tanks={{get_fluid_count=function(f) return f=='thruster-fuel' and 6000 or 0 end},{get_fluid_count=function(f) return f=='thruster-fuel' and 5000 or 0 end}}
+  local tanks={{type='storage-tank',get_fluid_count=function(f) return f=='thruster-fuel' and 6000 or 0 end},{type='storage-tank',get_fluid_count=function(f) return f=='thruster-fuel' and 5000 or 0 end}}
   local red={get_signal=function(s) return s.name=='thruster-fuel' and 11000 or 0 end}
   local hub={valid=true,get_circuit_network=function(id) return id==1 and red or nil end}
-  local swift={valid=true,name='Swift',hub=hub,surface={find_entities_filtered=function(f) assert(f.type=='storage-tank'); return tanks end}}
+  local swift={valid=true,name='Swift',hub=hub,surface={find_entities_filtered=function(f) assert(type(f.type)=='table'); return tanks end}}
   local p={force={platforms={swift}}}
   local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){}
   C.validate({['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=10000})
   local met,saw=C.check(p,{['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=10000})
-  eq(met,true); has(saw,"thruster-fuel 11000 in Swift's 2 storage tanks")
+  eq(met,true); has(saw,"thruster-fuel 11000 on Swift: tanks 11000 (2)")
+  -- batch28 A4 (Sol: full propellant in pipes and thrusters, and a tank gate would wait forever): every fluidbox counts
+  tanks[3]={type='pipe',get_fluid_count=function(f) return f=='thruster-fuel' and 100 or 0 end}
+  tanks[4]={type='thruster',get_fluid_count=function(f) return f=='thruster-fuel' and 1000 or 0 end}
+  met,saw=C.check(p,{['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=12000})
+  eq(met,true); has(saw,'thruster-fuel 12100 on Swift: tanks 11000 (2), pipes 100 (1), thrusters 1000 (1)')
+  tanks[3],tanks[4]=nil,nil
   met=C.check(p,{['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=12000})
   eq(met,false)
   met,saw=C.check(p,{['until']='circuit_signal',platform='Swift',signal='thruster-fuel',at_least=10000})

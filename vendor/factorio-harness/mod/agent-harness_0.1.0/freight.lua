@@ -807,6 +807,16 @@ return function(api)
     table.sort(t)
     return t[math.floor((#t + 1) / 2)], #t
   end
+  -- The platform's landed receipts after a tick (batch28 B1, Luna: polled silo, shipment and where_is for each pod):
+  -- {tick, kind (received | landed | gone), where, cargo {item = count}} each, oldest first.
+  function M.receipts_since(pl, since)
+    local out = {}
+    local rec = store()[pl.index]
+    for _, r in ipairs(rec and rec.receipts or {}) do
+      if r.tick > since then out[#out+1] = {tick=r.tick, kind=r.kind, where=r.where, cargo=r.cargo} end
+    end
+    return out
+  end
   function M.pod_watch(pl, tick)
     local rec = store()[pl.index]
     if not rec then return end

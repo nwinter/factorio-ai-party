@@ -6,13 +6,16 @@
   there (all of them summed), in the remote lane too; `network: {x,y}`: the one logistic network covering that spot;
   `platform`: the landed items in that hub, not incoming cargo or hub trash); `spoil_within` (`position`: an assembler,
   furnace or biochamber; `seconds` 1..3600; `item` optional: met when its input's first stack, of item or any,
-  spoils or hatches within seconds; saw names it and the seconds left);
+  spoils or hatches within seconds; saw names it and the seconds left); `pod_landed` (`platform`, `item`?,
+  `at_least`?: pods sent down from it that landed since the wait began, by freight's receipts: received by a pad or
+  landed as a container; with `item`, how many of it; default 1). A rocket's cargo loaded to N is `item_count` with
+  the silo's position; what a hub or a landing pad holds is `item_count` with `platform` or the pad's position;
   `rocket_ready` (`position`: the silo); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts`
   is the same name); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
-  `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: its storage
-  tanks) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
+  `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
+  pipe, thruster and machine of ours there holding it, saw saying how much in each kind) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
   `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
   every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
@@ -124,14 +127,18 @@
 - `reminders`: lists them.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
-  `--wait` and `./fh wait` on an action too), a tell sent with `--wake` still does; `--wake-from sol,astra`
+  `--wait` and `./fh wait` on an action too; on an action alone it waits as `--wait` does), a tell sent with `--wake`
+  still does; `--wake-from sol,astra`
   (`wake_from`): only a tell or mention from those (or `operator`); `--no-operator-wake` (`wake_on_operator: false`):
   operator tells and reminder jobs do not; `--wake-local` (`wake_local: true`): only tells and mentions to you (a tell
   to the whole team waits for your next reply), urgent news on your surface or in your claims (another platform's
   losses wait), and `--until alert` on your surface; `--wake-on-orders`: a standing order's rounds end a sleep too (by
   default only the plan you submitted, finishing or stalling: `queue_done`, `queue_stalled`); `--urgent-radius N`
   (1..200): attacks, groups, losses and deaths count only within N tiles of you. Urgent alerts and the action ending
-  still end every wait. A sleep on a platform's arrival or departure
+  still end every wait. Each attack, group, loss or death wakes you once, however its counts grow (an attack after a
+  minute's quiet is a new one); a power collapse or captive spawner again only when it comes back after 2 minutes gone
+  (`alerts_digest` keeps the counts). A platform's alert lines (turrets empty, slow, fuel short, no repair packs) are
+  told once while they last, again when their state changes or after 2 minutes clear. A sleep on a platform's arrival or departure
   (`fh sleep 900 --until 'platform Wren at vulcanus'`, or `left gleba`) goes on through tells; `--wake-on-tells` keeps
   them waking it.
 - A tell or mention ends `--wait` or `./fh wait` on an action with `told`, `still_running` (the action keeps going),

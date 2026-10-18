@@ -20,8 +20,9 @@
   build sets each entry's as it is placed, ghosts after every entry is placed, then the wires; the reply's `settings`
   and `settings_line` say what was set or refused (a refused setting leaves the entry placed); each setting goes to the
   ghost or entity of the entry's name at its position. A dry run gives `settings_planned` and `settings_check`, each
-  setting checked as the real call checks it; a refused setting or a blocked entry reads `dry_run_ok: false` and
-  `verdict: fails: ...`, and `fh` exits 1. Settings are read as their own call reads them (`settings_corrected`: a
+  setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
+  (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`) or an inserter with no target reads
+  `dry_run_ok: false` and `verdict: fails: ...` naming the first of each, and `fh` exits 1. Settings are read as their own call reads them (`settings_corrected`: a
   requests `set` map, ...). An entry's `settings: {...}` is read as those keys (`settings_alias`); a setting key such as
   `modules` at the entry's top level is refused with the shape. `"check_inserters": true` checks every planned
   inserter's pickup, drop, power and filters first and places nothing if one would not work; each row's `line` (and

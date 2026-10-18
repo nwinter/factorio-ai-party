@@ -207,17 +207,27 @@ return function(api)
     end,
     -- fluid_count {platform, fluid, at_least | below} (d17 batch17 A5, Astra board #842: Swift's reserve tanks had no
     -- departure guard): the fluid in the platform's storage tanks, as each tank's window shows it.
+    -- (batch28 A4, Sol: Kestrel III held full propellant in pipes and thrusters, and a gate on the tanks would wait
+    -- forever) every fluidbox of ours on the platform that holds it: storage tanks, pipes (pipes, pipes-to-ground,
+    -- pumps), thrusters and machines, each kind said.
     fluid_count=function(p,c,estimate)
       local pl=M.platform_named(p,c.platform)
-      local n,tanks=0,0
-      for _,e in pairs(pl.surface.find_entities_filtered{type='storage-tank',force=p.force,limit=256}) do
-        tanks=tanks+1
+      local KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
+        ['assembling-machine']='machines',furnace='machines'}
+      local n,by,count={},{},{}
+      local total=0
+      for _,e in pairs(pl.surface.find_entities_filtered{type={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace'},force=p.force,limit=4096}) do
         local ok,k=pcall(function() return e.get_fluid_count(c.fluid) end)
-        if ok and k then n=n+k end
+        local kind=KIND[e.type] or 'other'
+        if ok and k and k>0 then by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
       end
-      local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,string.format('%s %d in %s\'s %d storage tank%s',c.fluid,math.floor(n),c.platform,tanks,tanks==1 and '' or 's'),
-        estimate and {value=n,scope='fluid:'..c.platform..':'..c.fluid} or nil
+      local parts={}
+      for _,kind in ipairs({'tanks','pipes','thrusters','machines'}) do
+        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',kind,math.floor(by[kind]+0.5),count[kind]) end
+      end
+      local met=(c.at_least==nil or total>=c.at_least) and (c.below==nil or total<c.below)
+      return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),c.platform,#parts>0 and table.concat(parts,', ') or 'none in its tanks, pipes, thrusters or machines'),
+        estimate and {value=total,scope='fluid:'..c.platform..':'..c.fluid} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
     -- together, as a circuit wait condition reads it.
@@ -434,6 +444,28 @@ return function(api)
       local hatch=pcall(function() return prototypes.item[item].spoil_to_trigger_result end) and prototypes.item[item].spoil_to_trigger_result
       return left<c.seconds,string.format('%s: its input\'s first %s %s in %ds',where,item,hatch and 'hatches' or 'spoils',math.max(0,math.floor(left+0.5)))
     end,
+    -- pod_landed {platform, item?, at_least?} (batch28 B1, Luna: polled silo, shipment and where_is for Spindle's packs
+    -- and two fuel pods): pods sent down from the platform that landed since the wait began (freight's receipts: received
+    -- by a landing pad, or landed as a cargo pod container); with item, how many of it they carried; met at at_least
+    -- (default 1: one pod, or one of the item).
+    pod_landed=function(p,c,estimate,record)
+      assert(record,'pod_landed counts from the start of a wait: a wait_until step or a direct wait_until')
+      local pl=M.platform_named(p,c.platform)
+      record.pod_since=record.pod_since or game.tick
+      local list=api.receipts and api.receipts(pl,record.pod_since) or {}
+      local pods,items,last=0,0,nil
+      for _,r in ipairs(list) do
+        if r.kind~='gone' then
+          local n=c.item and ((r.cargo or {})[c.item] or 0) or 1
+          if n>0 then pods=pods+1; items=items+(c.item and n or 0); last=r end
+        end
+      end
+      local want=c.at_least or 1
+      local have=c.item and items or pods
+      return have>=want,string.format('%d pod%s from %s landed since the wait began%s%s',pods,pods==1 and '' or 's',c.platform,
+        c.item and string.format(' with %d %s',items,c.item) or '',last and string.format(' (the last %s)',tostring(last.where)) or ''),
+        estimate and {value=have,scope='pods:'..c.platform..':'..tostring(c.item)} or nil
+    end,
     -- Our burner machines (furnaces, drills, boilers, burner inserters...) holding under count fuel items.
     fuel_below=function(p,c)
       local centre,radius=area(p,c)
@@ -460,7 +492,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -567,6 +599,11 @@ return function(api)
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
+    if kind=='pod_landed' then
+      assert(type(c.platform)=='string' and #c.platform>0,'pod_landed requires platform (the platform the pods come down from)')
+      assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'item must be a known item')
+      if c.at_least~=nil then number(c.at_least,1,1e9,'at_least') end
+    end
     if kind=='spoil_within' then
       assert(c.position~=nil,'spoil_within requires position (an assembler, furnace or biochamber)')
       number(c.seconds,1,3600,'seconds')
