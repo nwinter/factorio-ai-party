@@ -95,3 +95,25 @@ do
   has(PA.text(g,'nauvis'),'2 electric-mining-drill stopped by a full chest near (130,118) on vulcanus: electric-mining-drill (124.5,123.5) mining calcite')
 end
 print('d17_territory part 2 output_full: ok')
+
+-- Part 3 (Nick 17:22): our buildings out of radar sight per planet, with the nearest radar and its state; radars not
+-- working; hourly in the team block.
+do
+  defines={entity_status={working=1,no_power=2,low_power=3}}
+  local st={push_alerts={player={tick=100,groups={},sight={unread=0,cells={
+    ['vulcanus|3,-4']={surface='vulcanus',drills=28,machines=0,turrets=2,n=30,sx=30*192,sy=30*-256},
+    ['vulcanus|-4,0']={surface='vulcanus',drills=4,machines=0,turrets=0,n=4,sx=4*-225,sy=4*37},
+    ['aquilo|0,0']={surface='aquilo',drills=0,machines=1,turrets=0,n=1,sx=10,sy=-5}},
+    radars={vulcanus={{x=210,y=-214,status=2},{x=-29.5,y=98.5,status=1}},gleba={{x=-171,y=-98,status=2}}}}}}}
+  game={tick=200}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function(p) return p.name end}
+  local lines=PA.sight_lines({name='player'})
+  eq(#lines,3)
+  eq(lines[1],'out of radar sight on aquilo: 0 drills, 1 machines, 0 turrets in 1 area (64 tiles): 1 machine near (10,-5), nearest radar none on aquilo')
+  has(lines[2],'on gleba every drill, machine and turret of ours is in sight; radars not working: radar (-171,-98) no power')
+  has(lines[3],'out of radar sight on vulcanus: 32 drills, 0 machines, 2 turrets in 2 areas (64 tiles): 28 drills, 2 turrets near (192,-256), nearest radar (210,-214) 46 tiles, no power; 4 drills near (-225,37), nearest radar (-29.5,98.5) 205 tiles, working; radars not working: radar (210,-214) no power')
+  local h={}
+  eq(#PA.sight_team({force={name='player'}},h),3); eq(#PA.sight_team({force={name='player'}},h),0)
+  game.tick=200+216000; eq(#PA.sight_team({force={name='player'}},h),3)
+end
+print('d17_territory part 3 out of radar sight: ok')

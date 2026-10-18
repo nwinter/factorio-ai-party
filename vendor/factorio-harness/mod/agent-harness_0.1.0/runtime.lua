@@ -2330,6 +2330,9 @@ function handlers.status(p,a)
   end
   -- Items on the ground: full landing pads that spill, piles near our buildings (ground.lua, a pass every 30 s).
   local alerts=recent_alerts(a,p)
+  -- Our buildings out of radar sight per planet, with the nearest radar's state (pushalerts.lua; d17 territory, Nick 17:22).
+  local oks,sight=pcall(M.pushalerts.sight_lines,p.force)
+  if oks and sight then alerts=alerts or {}; alerts.out_of_sight=sight end
   local ground=alive and M.ground.alerts(p)
   if ground then alerts=alerts or {}; alerts.ground_items=ground end
   if now and now.stuck_s then
@@ -13602,7 +13605,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
+  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,

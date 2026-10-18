@@ -2219,6 +2219,11 @@ return function(api)
       local ok, list = pcall(api.push_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- Our buildings out of radar sight per planet, at most once an hour (pushalerts.lua; d17 territory, Nick 17:22).
+    if api.sight_lines then
+      local ok, list = pcall(api.sight_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     return M.alerts_seen(h, lines, urgent_upto)
   end
   -- (d17 audit item 8: in shift27 18% of the team block's alert bytes were an alert that agent had been shown word for

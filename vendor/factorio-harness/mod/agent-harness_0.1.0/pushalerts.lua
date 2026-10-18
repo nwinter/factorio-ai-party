@@ -431,10 +431,53 @@ return function(api)
       used, inv and #inv or 0, #parts > 0 and ' (' .. table.concat(parts, ', ') .. ')' or '')
   end
   M.drill_full = drill_full
+  -- Out of radar sight (d17 territory addition, Nick 17:22: remote view, inspect, configure and scan by remote view need
+  -- chunks our force sees now; on n 40 of Vulcanus' 98 drills stood in unseen chunks, two radars had no power, Aquilo
+  -- has none): while the read walks our entities, per surface and 64-tile cell the drills, machines and turrets in a
+  -- chunk no force of players sees now, and every radar with its status. Kept in the read's side table
+  -- (mining.__sight), with the result.
+  local SIGHT_KIND = {['mining-drill']='drills', ['assembling-machine']='machines', furnace='machines', lab='machines', ['rocket-silo']='machines',
+    ['agricultural-tower']='machines', ['ammo-turret']='turrets', ['electric-turret']='turrets', ['fluid-turret']='turrets'}
+  -- (is_chunk_visible took about 0.18 ms a chunk on the copy: at most VIS_STEP a slice of the read; past it, the previous
+  -- read's answer for that chunk (storage push_vis), else the entity is counted unread)
+  local VIS_STEP = 16
+  local function sight_note(mining, s, e)
+    if not mining then return end
+    local sight = mining.__sight
+    if not sight then sight = {vis={}, cells={}, radars={}, unread=0, budget=VIS_STEP}; mining.__sight = sight end
+    if e.type == 'radar' then
+      local list = sight.radars[s.name] or {}
+      sight.radars[s.name] = list
+      if #list < 256 then list[#list+1] = {x=e.position.x, y=e.position.y, status=e.status} end
+      return
+    end
+    local kind = SIGHT_KIND[e.type]
+    if not kind then return end
+    local cx, cy = math.floor(e.position.x / 32), math.floor(e.position.y / 32)
+    local ck = s.name .. '|' .. cx .. ',' .. cy
+    local seen = sight.vis[ck]
+    if seen == nil then
+      if (sight.budget or 0) > 0 then
+        sight.budget = sight.budget - 1
+        seen = try(function() return e.force.is_chunk_visible(s, {x=cx, y=cy}) end) or false; sight.vis[ck] = seen
+      else
+        local prev = (api.state().push_vis or {})[e.force.name]
+        seen = prev and prev[ck]
+        if seen == nil then sight.unread = (sight.unread or 0) + 1; return end
+      end
+    end
+    if seen then return end
+    local key = s.name .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+    local c = sight.cells[key]
+    if not c then c = {surface=s.name, drills=0, machines=0, turrets=0, n=0, sx=0, sy=0}; sight.cells[key] = c end
+    c[kind] = c[kind] + 1; c.n = c.n + 1; c.sx = c.sx + e.position.x; c.sy = c.sy + e.position.y
+  end
   local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
+    if mining and mining.__sight then mining.__sight.budget = VIS_STEP end
     local st = statuses()
     for i = from or 1, to or #list do
       local e = list[i]
+      if e.valid then pcall(sight_note, mining, s, e) end
       if e.valid and mem and e.type == 'inserter' then watch_inserter(groups, s, e, mem) end
       if e.valid then pcall(spoiling, e, s, mining) end
       if e.valid then
@@ -701,7 +744,9 @@ return function(api)
     forget_unseen(mem)
     turrets_read(tmem, budget > 0)
     game_alerts(groups, force)
-    return merge(groups, network_groups(force), mining, force)
+    local sight = mining.__sight
+    if sight then local st = api.state(); st.push_vis = st.push_vis or {}; st.push_vis[force.name] = sight.vis end
+    return merge(groups, network_groups(force), mining, force), sight and {cells=sight.cells, radars=sight.radars, unread=sight.unread} or {cells={}, radars={}}
   end
   -- The background read, one stage per tick, its state in storage so every
   -- peer runs the same: started when the last read is SCAN_TICKS old.
@@ -790,7 +835,9 @@ return function(api)
         if done then job.extra, job.net = out, nil; job.i = job.i + 1 end
       else job.i = job.i + 1; job.extra = network_groups(force) end
     elseif stage.step=='merge' then
-      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force)}
+      local sight=job.mining.__sight
+      if sight then s.push_vis=s.push_vis or {}; s.push_vis[force.name]=sight.vis end
+      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force),sight=sight and {cells=sight.cells,radars=sight.radars,unread=sight.unread} or {cells={},radars={}}}
       job.i=job.i+1;job.site_index=1
       job.stages[job.i]=job.stages[job.i] or {step='drill_sites'}
     else
@@ -864,7 +911,8 @@ return function(api)
     s.push_alerts = s.push_alerts or {}
     local c = s.push_alerts[force.name]
     if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return with_belts(c,force) end
-    c = {tick=game.tick, groups=scan(force)}
+    local groups, sight = scan(force)
+    c = {tick=game.tick, groups=groups, sight=sight}
     s.push_alerts[force.name] = c
     return with_belts(c,force)
   end
@@ -1277,6 +1325,69 @@ return function(api)
     return lines
   end
 
+  -- Out of radar sight, per planet (status alerts.out_of_sight; an hourly team line): our drills, machines and turrets
+  -- in chunks no force of players sees now, by 64-tile area (the most first, up to SIGHT_AREAS), each with the nearest
+  -- radar of ours on that planet and its state; and the radars not working. From the last background read.
+  local SIGHT_AREAS, SIGHT_TEAM = 5, 216000
+  local RADAR_WORDS = {no_power='no power', low_power='low power', disabled_by_control_behavior='off by its circuit condition', no_minable_resources=nil}
+  local function radar_state(status)
+    for k, v in pairs(defines.entity_status or {}) do if v == status then return RADAR_WORDS[k] or k:gsub('_', ' ') end end
+    return 'unknown'
+  end
+  function M.sight_lines(force)
+    local c = (api.state().push_alerts or {})[force.name]
+    local sight = c and c.sight
+    if not sight then return nil end
+    local by = {}
+    for _, cell in pairs(sight.cells or {}) do
+      local list = by[cell.surface] or {}; by[cell.surface] = list; list[#list+1] = cell
+    end
+    local surfaces = {}
+    for name in pairs(by) do surfaces[#surfaces+1] = name end
+    for name in pairs(sight.radars or {}) do if not by[name] then surfaces[#surfaces+1] = name end end
+    table.sort(surfaces)
+    local working = (defines.entity_status or {}).working
+    local lines = {}
+    for _, name in ipairs(surfaces) do
+      local cells, radars = by[name] or {}, (sight.radars or {})[name] or {}
+      local parts, off = {}, {}
+      local total = {drills=0, machines=0, turrets=0}
+      table.sort(cells, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.sx < b.sx end)
+      for i, cell in ipairs(cells) do
+        for k in pairs(total) do total[k] = total[k] + cell[k] end
+        if i <= SIGHT_AREAS then
+          local mx, my = cell.sx / cell.n, cell.sy / cell.n
+          local what = {}
+          for _, k in ipairs({'drills', 'machines', 'turrets'}) do if cell[k] > 0 then what[#what+1] = cell[k] .. ' ' .. (cell[k] == 1 and k:sub(1, -2) or k) end end
+          local best, bd
+          for _, r in ipairs(radars) do
+            local d = math.sqrt((r.x - mx) ^ 2 + (r.y - my) ^ 2)
+            if not bd or d < bd then best, bd = r, d end
+          end
+          parts[#parts+1] = string.format('%s near (%d,%d), nearest radar %s', table.concat(what, ', '), math.floor(mx), math.floor(my),
+            best and string.format('(%g,%g) %d tiles, %s', best.x, best.y, math.floor(bd + 0.5), best.status == working and 'working' or radar_state(best.status)) or 'none on ' .. name)
+        end
+      end
+      for _, r in ipairs(radars) do if r.status ~= working then off[#off+1] = string.format('radar (%g,%g) %s', r.x, r.y, radar_state(r.status)) end end
+      if #cells > 0 or #off > 0 then
+        local head = #cells > 0 and string.format('out of radar sight on %s: %d drills, %d machines, %d turrets in %d area%s (64 tiles): %s%s', name, total.drills, total.machines, total.turrets,
+          #cells, #cells == 1 and '' or 's', table.concat(parts, '; '), #cells > SIGHT_AREAS and string.format('; +%d more areas', #cells - SIGHT_AREAS) or '') or string.format('on %s every drill, machine and turret of ours is in sight', name)
+        lines[#lines+1] = head .. (#off > 0 and '; radars not working: ' .. table.concat(off, ', ', 1, math.min(6, #off)) .. (#off > 6 and string.format(', +%d more', #off - 6) or '') or '')
+      end
+    end
+    if #lines > 0 and (sight.unread or 0) > 0 then
+      lines[#lines+1] = string.format('(%d buildings in chunks not yet read for sight; the next reads take them)', sight.unread)
+    end
+    return #lines > 0 and lines or nil, c.tick
+  end
+  -- The team line: at most once an hour (h.sight_tick), the same lines.
+  function M.sight_team(p, h)
+    if h.sight_tick and game.tick - h.sight_tick < SIGHT_TEAM then return {} end
+    local lines = M.sight_lines(p.force)
+    if not lines then return {} end
+    h.sight_tick = game.tick
+    return lines
+  end
   -- Drills out of ore per surface (the shift start's networks block): 'drills out of ore: 14 (nauvis 12, vulcanus 2)';
   -- nil when none.
   function M.out_of_ore_line(force)
