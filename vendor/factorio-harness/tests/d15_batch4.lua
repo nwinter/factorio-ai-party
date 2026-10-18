@@ -213,6 +213,25 @@ do
   r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
   has(r.ingredients[1].lanes[1].line,'comes onto it from inserter (2.5,3.5)')
   assert(not r.ingredients[1].lanes[1].line:find('iron-plate joins',1,true),r.ingredients[1].lanes[1].line)
+  -- d17 study P2 (s29 Astra 2060, Sol 3993: "attempt to call global 'drill_items'"): an inserter whose source is a
+  -- mining drill, holding nothing and with nothing in the drill's output, on the lane walked back.
+  local dbelts={}
+  for x=1,4 do
+    dbelts[x]=belt(x+0.5,12.5,{},{},'D')
+    if x>1 then dbelts[x].belt_neighbours.inputs={dbelts[x-1]}; dbelts[x-1].belt_neighbours.outputs={dbelts[x]} end
+  end
+  local drill=ent{name='electric-mining-drill',type='mining-drill',position={x=1.5,y=14.5},
+    mining_target={prototype={mineable_properties={products={{name='iron-ore'}}}}}}
+  local dout=inv({}); drill.get_output_inventory=function() return dout end
+  local T3=crafter(4.5,14.5,'chemical-plant',oxidizer,{},{},'item_ingredient_shortage')
+  inserter(1.5,13.5,drill,dbelts[1],{drop={x=1.5,y=12.25}})
+  inserter(4.5,13.5,dbelts[4],T3,{status='waiting_for_source_items'})
+  r=trace.trace(p,{position={x=4.5,y=14.5},upstream=true})
+  has(r.ingredients[1].lanes[1].line,'comes onto it from inserter (1.5,13.5) working from electric-mining-drill (1.5,14.5)')
+  -- A drill of another ore there: not where iron-ore comes onto the lane.
+  drill.mining_target={prototype={mineable_properties={products={{name='copper-ore'}}}}}
+  r=trace.trace(p,{position={x=4.5,y=14.5},upstream=true})
+  assert(not r.ingredients[1].lanes[1].line:find('comes onto it from inserter (1.5,13.5)',1,true),r.ingredients[1].lanes[1].line)
 end
 print('d15_batch4 2 upstream: ok')
 
