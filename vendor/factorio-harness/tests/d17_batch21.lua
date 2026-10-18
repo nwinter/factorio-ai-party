@@ -162,3 +162,32 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch21 B3 ingredient gap: ok')
+
+-- C2 (Opus): robots killed by enemies: by killer, the jobs that sent them; cancel removes the ghosts and cancels marks.
+do
+  game={tick=1000}
+  defines={robot_order_type={construct=1,deconstruct=2,repair=3,deliver=4}}
+  local st={}
+  local R=dofile('mod/agent-harness_0.1.0/robotloss.lua'){state=function() return st end,integer=function(v,d) return v or d end,position=function(v) return v end}
+  local worm={valid=true,name='big-worm-turret',type='turret',position={x=200,y=40},force={name='enemy'}}
+  local force={name='player'}
+  local ghost={valid=true,type='entity-ghost',ghost_name='solar-panel',name='entity-ghost',position={x=230.5,y=40.5},unit_number=7}
+  ghost.destroy=function() ghost.valid=false end
+  local marked={valid=true,type='tree',name='tree-01',position={x=231,y=44},unit_number=8,to_be_deconstructed=function() return true end}
+  marked.cancel_deconstruction=function() marked.cancelled=true end
+  local function robot(order,target) return {valid=true,type='construction-robot',name='construction-robot',force=force,surface={name='nauvis'},position={x=205,y=40},
+    robot_order_queue={{type=order,target=target}}} end
+  for _=1,3 do R.note({entity=robot(1,ghost),cause=worm,tick=1000}) end
+  R.note({entity=robot(2,marked),cause=worm,tick=1000})
+  game.tick=1600
+  local r=R.read({force=force,surface={name='nauvis'}},{})
+  eq(#r.groups,1); eq(r.groups[1].robots,4)
+  has(r.lines[1],'4 construction-robot robots lost to big-worm-turret (200,40) on nauvis, the last 10s ago, sent to: 3 construct solar-panel ghost at (230.5,40.5); 1 deconstruct tree-01 at (231,44); 2 of those jobs stand')
+  local g=R.alert_groups(force)
+  eq(g[1].kind,'robots_lost'); eq(g[1].center.x,200)
+  r=R.read({force=force,surface={name='nauvis'}},{cancel=true,near={x=201,y=41}})
+  eq(ghost.valid,false); eq(marked.cancelled,true); eq(#r.cancelled,2)
+  fails(function() R.read({force=force,surface={name='nauvis'}},{cancel=true}) end,'cancel: true takes near')
+  defines=nil
+end
+print('d17_batch21 C2 robots lost to enemies: ok')

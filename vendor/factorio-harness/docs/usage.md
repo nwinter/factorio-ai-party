@@ -6849,3 +6849,21 @@ fh watch    # deploy on every change
   by sol (the team's record: chat seq 2143); none seen since`; a place_ghosts dry run at (-219.5,29.5) says the same.
 - territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is left out
   only when it was killed. tests/d17_territory.lua.
+
+### Group C
+- C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
+  the blast; M.melee_guard guards the character. While shoot fires area ammunition on foot (fixed or auto), every 5
+  ticks: an enemy unit within 6 tiles of the character, or the aim point within the blast's radius of it, switches the
+  gun to a slot holding ammunition without an area (`last_combat.switched_gun`: `big-biter 3.0 tiles from you: switched
+  to gun slot 1 submachine-gun with piercing-rounds-magazine ...`); with none, fire holds (`held_melee`, with how many
+  ticks). runtime_test.lua.
+- C2 (Opus): about 300 construction robots died to worms in one shift before the jobs sending them were found by hand.
+  robotloss.lua: on a robot of ours an enemy kills (on_entity_died, the robot still there), its first order (2.0
+  robot_order_queue: construct, deconstruct, repair, deliver, ...) and that order's target are kept with the killer
+  (up to 512, 15 min). `robot_losses {surface?, minutes?}` groups them by killer: `4 construction-robot robots lost to
+  big-worm-turret (200,40) on nauvis, the last 10s ago, sent to: 3 construct solar-panel ghost at (230.5,40.5); 1
+  deconstruct tree-01 at (231,44); 2 of those jobs stand (robot_losses {cancel: true, near: ...} cancels them)`; a
+  killer with a death in the last 5 min is a team alert group (`robots_lost`, in game_alerts and the team block).
+  `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
+  hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
+  deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
