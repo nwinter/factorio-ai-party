@@ -118,7 +118,10 @@
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
-  surface?}`: launches the silo's rocket to `platform` in orbit of this planet. `wait_ready: true` waits for the
+  hub_full?, surface?}`: launches the silo's rocket to `platform` in orbit of this planet. A cargo the platform's hub has
+  no room for (the slots it takes after topping up part stacks, against the hub's free slots, asteroid chunks named)
+  is refused unless `hub_full: true`; load_silo (it launches through this), its dry run (`platform_hub_room`) and
+  preflight's platform line say the same. `wait_ready: true` waits for the
   rocket and launches in the tick it is ready (a queue step too; a queued one whose rocket goes records `launched`);
   with `platform` it also waits until the platform is in orbit of the silo's planet (`wait_platform`, the default
   then); a plain tell does not end these waits (one with `wake: true` or an urgent alert does), and a wait that ends

@@ -6935,3 +6935,9 @@ fh watch    # deploy on every change
 - A3 (Gemini): `load_silo {walk: true, chests: false}` was refused; a walk without from already loaded from your own
   inventory. chests: false now goes with walk (the same walk); with from it is refused; chests: true with walk is
   refused as before. tests/rocketload.lua.
+- A4 (Gemini): a launch to a hub whose slots were taken (asteroid chunks among them) jams its pods. rocketload.hub_room
+  counts the hub slots a cargo takes after topping up the hub's part stacks of the same items, against the hub's free
+  slots, and the slots asteroid chunks take: `the cargo takes 2 hub slots; the hub has 1 of 99 free (asteroid chunks
+  take 40): it does not fit`. launch (space.lua) refuses a cargo that does not fit unless `hub_full: true` (then said
+  in `hub_full`); load_silo launches through it; load_silo's dry run gives `platform_hub_room` (the list and what is
+  aboard); preflight's platform line and `hub_room` give it for the rocket's cargo. tests/d17_batch22.lua.

@@ -505,6 +505,34 @@ return function(api)
     end
     return out
   end
+  -- A platform hub's room for a cargo (d17 batch22 A4, Gemini: a hub full of asteroid chunks): the slots the cargo takes
+  -- after topping up the hub's part stacks of the same items, against its free slots; the slots asteroid chunks take.
+  -- items: {name, quality, count} each. Returns {fits, need, free, chunks, line} or nil (no hub inventory).
+  function M.hub_room(hub, items)
+    local inv = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    if not inv then return nil end
+    local part, chunks, free = {}, 0, 0
+    for i = 1, #inv do
+      local st = inv[i]
+      if not st.valid_for_read then free = free + 1
+      else
+        if st.name:find('asteroid%-chunk$') then chunks = chunks + 1 end
+        local k = st.name .. '|' .. quality_of(st)
+        part[k] = (part[k] or 0) + math.max(0, stack_size(st.name) - st.count)
+      end
+    end
+    local need = 0
+    for _, r in ipairs(items) do
+      local k = r.name .. '|' .. (r.quality or 'normal')
+      local left = math.max(0, r.count - (part[k] or 0))
+      part[k] = math.max(0, (part[k] or 0) - r.count)
+      need = need + math.ceil(left / stack_size(r.name))
+    end
+    local fits = need <= free
+    return {fits=fits, need=need, free=free, chunks=chunks, size=#inv,
+      line=string.format('the cargo takes %d hub slot%s; the hub has %d of %d free%s%s', need, need == 1 and '' or 's', free, #inv,
+        chunks > 0 and string.format(' (asteroid chunks take %d)', chunks) or '', fits and '' or ': it does not fit')}
+  end
   -- Ready to rerun a waiting load_silo: the rocket is there (and ready, for a launch), or the silo is gone.
   -- The waiting goes on while the silo makes parts (Sonnet, shift14 22:50: load_silo re-issued 3 times as its wait ran
   -- out each minute through the build): ticks is the initial idle window. Observed intervals to part increases
@@ -679,11 +707,16 @@ return function(api)
         split[i] = string.format('rocket %d: %s (%g kg)', i, table.concat(t, ', '), kg(g))
       end
     end
-    local hub_free
+    local hub_free, hub_room
     if a.platform ~= nil then
       for _, pl in pairs(p.force.platforms) do
         if pl.valid and pl.name == a.platform and pl.hub and pl.hub.valid then
           hub_free = try(function() return pl.hub.get_inventory(defines.inventory.hub_main).count_empty_stacks() end)
+          -- (d17 batch22 A4) the list and what is aboard, against the hub's room
+          local all = {}
+          for _, r in ipairs(contents(inv)) do all[#all+1] = r end
+          for _, r in ipairs(list) do all[#all+1] = {name=r.name, quality=r.quality, count=a.to_total and math.max(0, r.count - aboard(inv, r)) or r.count} end
+          hub_room = try(function() return M.hub_room(pl.hub, all) end)
         end
       end
     end
@@ -693,7 +726,8 @@ return function(api)
         or string.format('over what this rocket takes now (%s aboard): to_total, a smaller list, or unload first', list_text(contents(inv)))))
     local up = M.goes_up_with(silo, list)
     if up.line then line = line .. '; ' .. up.line end
-    return {dry_run=true, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
+    if hub_room and not hub_room.fits then line = line .. '; ' .. hub_room.line end
+    return {dry_run=true, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
       free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
       platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, line=line}
   end
@@ -1292,6 +1326,9 @@ return function(api)
       if plat.empty_turrets then plat.line = one_line(plat.line .. '; ' .. table.concat(plat.empty_turrets, '; ')) end
       plat.requests_off = try(function() return M.requests_off(pl) end)
       if plat.requests_off then plat.line = one_line(plat.line .. '; ' .. plat.requests_off) end
+      -- (d17 batch22 A4) the hub's room for this rocket's cargo
+      local room = #held > 0 and try(function() return M.hub_room(pl.hub, held) end)
+      if room then plat.hub_room = room.line; if not room.fits then plat.line = one_line(plat.line .. '; ' .. room.line) end end
       return {plat}
     end
     local out = {}
