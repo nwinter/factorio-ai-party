@@ -7389,3 +7389,14 @@ fh watch    # deploy on every change
   underground's type kept), with `all`; the target is `to`'s tier or each entity's `next_upgrade`. Replacement is
   build's (replace.lua: the old entity is mined, so its belt items go to the inventory; in the game's own
   fast-replace they stay on the belt). tests/beltupgrade.lua.
+- A0b (operator 23:02). Luna on shift32 (05:38:14-05:38:34 UTC) set Spindle, waiting at Fulgora, to 4 schedules whose
+  current stop was fulgora: all read no_schedule, the record by record rebuild too; at 05:40:22 the same stops with
+  current 2 (gleba) went on_the_path at once. With Sol's 4 at Aquilo, 8 of 8. No copy was reachable (a and b refuse,
+  c and sa close RCON), so what the game does there was not found. platform_schedule now:
+  - `current_note` when the current stop is the station the platform waits at: the 8 of 8 seen, and the current
+    that departed (the next stop); in the state_note too when it reads no_schedule;
+  - in flight, `leg`: `it was flying X->Y (N%); the current stop is now Z: the same destination | it turns back the
+    way it came | a new destination` (Astra 22:52: Sol's 05:32:53 edit sent Spindle back to gleba, unsaid);
+  - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
+    no leg, or when the stops hold no stop for the destination.
+  tests/space.lua.
