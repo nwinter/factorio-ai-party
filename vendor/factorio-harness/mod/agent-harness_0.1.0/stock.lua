@@ -761,14 +761,17 @@ return function(api)
   function M.screen(p,places,mode,unsafe)
     if not mode or unsafe or not api.goal_inside then return places,nil end
     local drop,lines,n={},{},0
-    local passing,staying,first_at=0,0,nil
+    local passing,staying,first_at,passing_at=0,0,nil,{}
     for i=1,math.min(SCREEN,#places) do
       local pl=places[i]
       local ok,c=pcall(api.goal_inside,p,pl.position,mode)
       if ok and c then
         drop[i]=true; n=n+1
         -- (d17 batch13 A2) what holds it: a worm or spawner stays; an attack, units or a group seen now pass
-        if c.m and c.m.attack then passing=passing+1; first_at=first_at or pl.position else staying=staying+1 end
+        if c.m and c.m.attack then
+          passing=passing+1; first_at=first_at or pl.position
+          if #passing_at<64 then passing_at[#passing_at+1]={x=pl.position.x,y=pl.position.y} end
+        else staying=staying+1 end
         if #lines<8 then
           local e=pl.entity
           local name=(e and e.valid and e.name) or pl.name or 'place'
@@ -779,8 +782,8 @@ return function(api)
     if n==0 then return places,nil end
     local kept={}
     for i,pl in ipairs(places) do if not drop[i] then kept[#kept+1]=pl end end
-    local left={lines=lines,count=n,passing=passing,staying=staying,at=first_at}
-    M.last_refusal={tick=game.tick,passing=passing,staying=staying,at=first_at}
+    local left={lines=lines,count=n,passing=passing,staying=staying,at=first_at,passing_at=passing_at}
+    M.last_refusal={tick=game.tick,passing=passing,staying=staying,at=first_at,passing_at=passing_at,kept=#kept}
     return kept,left
   end
   -- What holds the places left out (A2, Haiku: three rearms refused "within 40 tiles of biter-spawner", retried by

@@ -7893,3 +7893,48 @@ fh watch    # deploy on every change
   claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
   with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
   last one only). A cursor that is not the last one is said, and everything is listed.
+- A5 (Astra 12:24, twice on Aquilo, queue jobs 35322 and 35326: load_silo from (9.5,0.5) and (29.5,29.5), 1000
+  cryogenic science; the character held all 1000 and stood "in gather" at (20.34,0.63) for over 40 s; stopped, and a
+  load_silo without from launched):
+  - Found in the journal: the gather phase had ended. The tour stood at its silo stop in reach (the silo's box is
+    within 10 tiles of (20.34,0.63); "14 tiles" was to its centre), holding for the rocket, as a walking load with
+    `launch` does (Astra 06:23's rule: nothing goes into a rocket not ready).
+  - In status during the hold: `silo_wait` parts 29, 22 of them added in the 42 s, 31 a minute. The stopped step's
+    last read "waiting at the silo for the rocket to be ready (building the rocket: parts 22/50); nothing loaded yet".
+    But status's active gave `progress: stop 3 of 3 (rocket-silo ...), 14 tiles to it` and `stuck_s: 42`, and the
+    warning line "made no progress ... likely physically stuck". That read as a stalled walk.
+  - Status now: a gather holding at its silo stop gives `holding` (rocketload.lua `hold_line`: the stop, in reach,
+    why, rocket parts of required and their rate, the time to the last part at that rate, held for it, how long, the
+    give-up tick). It gives no `progress` and no `stuck_s`, so no stuck warning.
+  - Test: tests/rocketload.lua, two sources: both taken (60 and 40), then the hold at the silo, nothing loaded, and
+    the hold line.
+- C1 (Muse: three long walking tours; "no bot-fetch to player inventory"): already there. `requests` with no position
+  sets the character's own logistic requests, and the network's logistic robots bring them while the character stands
+  in its logistic area. Opus used it on shift35 at 131h: copper-plate 28 to 500 in about 80 s, advanced-circuit 38 to
+  304 in 2 min. moving-items.md now says so with an example (its unfilled lines, clear, the item_count wait). No code.
+- C2 (Haiku, about 10 times in 30 minutes: take ammo from a chest, then a rearm tour, skipping turrets with enemies
+  near and coming back when they clear): a rearm `from` argument, not a queue plan.
+  - `rearm {from: {position, count?}}`: a transfer of the ammo (default 200) from that chest to you, walking to it.
+    The tour then runs with the other arguments once the take ends `transferred`, `collected` or `topped_up`
+    (`then_after`: finish now runs a then_call after those outcomes too, not only after a met wait). In reach, the tour
+    runs at once (`took_first`).
+  - `retry_when_clear` now also covers turrets a tour leaves out for passing enemies (stock.screen records their
+    positions, 64). Once the tour ends, it runs `rearm {positions: them, walk, retry_when_clear}` (`left_out_retry`),
+    which waits for units_clear as a refused rearm does (6 tries in all).
+- C3 (Haiku: a move_to --wait that exits 3 broke an && chain): exit 3 is a --wait that a tell, a mention or an urgent
+  alert ended (or whose time ran out) while the walk goes on (host STILL_RUNNING_EXIT; stderr says so already).
+  - A move_to --wait reply's first line now says whether the walk arrived (host/format.ts `walkLine`): `walk: arrived
+    at (x,y)`, `walk: arrived (arrived_near)`, `walk: not arrived: unreachable`, or `walk: not arrived: move_to goes
+    on, up to N s more; a tell from sol ended the wait (exit 3: fh wait waits for it again; --wait-through-tells: a
+    tell or mention does not end the wait)`. JSON output gives it as result.walk.
+  - The documented way for a chain is `--wait-through-tells` (movement-combat.md). `--require-met` stays with sleep
+    and wait conditions.
+- C4 (Grok: a breeder cycle in one call): collect's wait_ticks at one machine takes `give: {item: count}` (put in first
+  by hand, in reach, as transfer infers the inventory: recipe input, else fuel) and `take_back: [items]`. At the wait's
+  end (finish), the stacks of those items left in the machine's input and fuel go back to the character, each keeping
+  its spoilage (`last.taken_back`). With `give` and `item` and no `count`, count is the recipe's yield of item (the
+  pentapod-egg recipe on world n: 1 egg, 30 nutrients and 60 water make 2 eggs in 15 s).
+- C5 (Grok: a full inventory hid the egg hatch times): `inventory` gives `spoiling`. These are the main inventory's
+  spoilable stacks, soonest first (24, then `spoiling_more`), each with its slot, the time left (spoil_tick) and spoil
+  percent. An item with spoil_to_trigger_result reads `hatches in` (pentapod-egg on world n; nutrients spoil to
+  spoilage).
