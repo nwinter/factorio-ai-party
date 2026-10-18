@@ -21,6 +21,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = os.path.join(HERE, "static", "layout.json")
 TRIO = os.path.join(HERE, "static", "layout-3cam.json")
 SOURCES = ("stream cam1", "stream cam2", "stream cam3")
+# Host view (hostview.py): the capture of Nick's own client (factorio-nick.exe, tools/obs.py), on only while the
+# program says host, in the on-air hole over the cameras (cropped as they are); off and behind them otherwise.
+HOST = "stream host"
 SLOTS = ("main", "cam2", "cam3")
 
 
@@ -134,7 +137,7 @@ class Cuts:
                            layout=want.get("layout") or "onecam")
         onair, inset = self.by_slot.get(want.get("onair")), self.by_slot.get(want.get("inset") or "")
         self.log(f"[cuts] on air {onair}" + (f", inset {inset}" if inset else "") +
-                 (" (trio)" if want.get("layout") == "trio" else ""))
+                 (" (trio)" if want.get("layout") == "trio" else "") + (" under the host view" if want.get("host") else ""))
 
     def apply(self, target, want):
         o, ref = self.obs, target["ref"]
@@ -150,6 +153,14 @@ class Cuts:
             src = it["sourceName"]
             if re.fullmatch(r"stream cam\d+", src) and bool(it.get("sceneItemEnabled", True)) != (src in cams):
                 o.call("SetSceneItemEnabled", dict(ref, sceneItemId=it["sceneItemId"], sceneItemEnabled=src in cams))
+        host_on = bool(want.get("host"))
+        if HOST in ids:
+            hit = next(it for it in items if it["sourceName"] == HOST)
+            if bool(hit.get("sceneItemEnabled", True)) != host_on:
+                o.call("SetSceneItemEnabled", dict(ref, sceneItemId=ids[HOST], sceneItemEnabled=host_on))
+            if host_on:  # placed (and cropped) each time it comes on: his window's size is known only while it runs
+                self.place(target, ids[HOST], "main")
+                target["placed"][HOST] = "main"
         onair = self.by_slot.get(want.get("onair"))
         inset = self.by_slot.get(want.get("inset")) if want.get("inset") else None
         hole = {}  # capture -> its trio hole, when this scene shows the trio
@@ -161,8 +172,12 @@ class Cuts:
                 self.place(target, iid, role)
                 target["placed"][src] = role
         front = [s for s in (inset, onair) if s in cams] + [s for s in self.by_slot.values() if s in cams and s not in (inset, onair)]
-        final = order([(it["sceneItemId"], it["sceneItemIndex"]) for it in items], list(cams.values()),
-                      [cams[s] for s in front])
+        stack = dict(cams)
+        if HOST in ids:  # in front of every camera while on, behind them while off
+            stack[HOST] = ids[HOST]
+            front = [HOST] + front if host_on else front + [HOST]
+        final = order([(it["sceneItemId"], it["sceneItemIndex"]) for it in items], list(stack.values()),
+                      [stack[s] for s in front])
         cur = [i for i, _ in sorted(((it["sceneItemId"], it["sceneItemIndex"]) for it in items), key=lambda x: x[1])]
         for idx, iid in enumerate(final):  # bottom up: each move leaves the positions below it as they are
             if cur[idx] != iid:
