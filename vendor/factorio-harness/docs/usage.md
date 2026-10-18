@@ -7719,3 +7719,17 @@ fh watch    # deploy on every change
     (inactivity, fluid_count, the other request waits) are named in `may_leave` when they could decide it.
   - Not run against the game: n is read-only and the dev world's RCON closed the connection. The mock follows the
     method names read on n.
+- C4 (urgent, Astra and Sol 11:09: Kestrel II at Fulgora set to [nauvis], current 1, paused false, read no_schedule even
+  after the rebuild; Swiftlet the same; [fulgora, nauvis] current 2 left; and the queue step reported success, then
+  waited):
+  - The rule from the journals, as the task gives it: every one-stop schedule read no_schedule (Sol's lone gleba,
+    Luna's lone fulgora, these two), and so did schedules of two or more stops whose current is the stop it waits at
+    (batch23 A0b's 8 of 8). With current on another stop they left.
+  - platform_schedule fails (space.lua `stuck`; a failed queue step, on_fail as set) when the state after the call
+    reads no_schedule, no_path, or paused without `paused: true`. This covers stops (unless they are [], a clear),
+    next, stop edits and a paused-only call. The schedule stays as set; the error gives the schedule text, the rebuild
+    line and the rule (`M.STUCK_RULE`). A call that changes nothing is a read and is not failed.
+  - One stop that is not where the platform is (stopped at a planet, not flying; current omitted or 1; no keep_leg):
+    written as [where it is, that stop] with current 2. `one_stop` says so, including that after that stop's waits
+    the platform goes back to where it was (at once when the stop has no wait). `one_stop: "as given"` writes the
+    one stop alone (and fails as above if the game reads no_schedule).

@@ -280,14 +280,16 @@ do
   rebuilt,sent=false,{}
   r=space.platform_schedule(p,{platform='alpha',stops=stops,current=1})
   eq(#sent,1); eq(r.rebuilt,nil); eq(r.state,'on_the_path')
-  -- still no_schedule after both: said plainly
+  -- still no_schedule after both: (d17 batch31 C4) the call fails, the schedule as set, the rebuild and the rule said
   platform.state,_G.stays,rebuilt,sent=4,true,false,{}
-  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
-  eq(r.state,'no_schedule'); eq(r.state_note,'state no_schedule: the platform follows no schedule now and goes nowhere (go to station 2 was called)')
+  fails(function() space.platform_schedule(p,{platform='alpha',stops=stops,current=2}) end,
+    'alpha reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule')
+  local ok,err=pcall(space.platform_schedule,p,{platform='alpha',stops=stops,current=2})
+  assert(not ok and err:find('the schedule stays as set: nauvis (time 1s) | >vulcanus',1,true) and err:find('it was written again record by record',1,true),err)
   -- a rebuild refused part way: the records set back as given
   fail_add,rebuilt=true,false
-  r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
-  assert(r.rebuilt:find('was refused',1,true) and r.rebuilt:find('the records were set back as given',1,true),r.rebuilt)
+  ok,err=pcall(space.platform_schedule,p,{platform='alpha',stops=stops,current=2})
+  assert(not ok and err:find('was refused',1,true) and err:find('the records were set back as given',1,true),err)
   eq(#platform.schedule.records,2)
   -- no_path and paused said too
   platform.state=5
