@@ -52,6 +52,46 @@ return function(api)
     end
     return nil, why or 'no side where an inserter drops into it'
   end
+  -- (batch26 B4, Opus: 20 old feed inserters stood unpowered unnoticed) a feed inserter with no power: why, or nil.
+  function M.unpowered(i)
+    if not (i and i.valid) then return nil end
+    if try(function() return i.prototype.electric_energy_source_prototype end) == nil then return nil end
+    if try(function() return i.electric_network_id end) == nil then return 'no pole reaches it' end
+    if try(function() return i.status end) == (defines.entity_status or {}).no_power then return 'no power on its network' end
+    return nil
+  end
+  -- A pole ghost that brings power to an inserter at q (batch26 B4): nil when a pole of ours already covers q; else a
+  -- free tile within 2 of q inside the new pole's supply area and within its wire reach of our nearest pole.
+  local function pole_link(s, force, q, pole, taken)
+    local poles = try(function() return s.find_entities_filtered{type='electric-pole', force=force, position=q, radius=40, limit=64} end) or {}
+    local near, nd
+    for _, o in ipairs(poles) do
+      local sad = try(function() return o.prototype.get_supply_area_distance() end) or 2.5
+      if math.abs(o.position.x - q.x) <= sad + 0.4 and math.abs(o.position.y - q.y) <= sad + 0.4 then return nil end
+      local d = math.sqrt((o.position.x - q.x) ^ 2 + (o.position.y - q.y) ^ 2)
+      if not nd or d < nd then near, nd = o, d end
+    end
+    if not near then return nil, 'no pole of ours within 40 tiles' end
+    local proto = prototypes.entity[pole]
+    local sad = try(function() return proto.get_supply_area_distance() end) or 2.5
+    local reach = try(function() return proto.get_max_wire_distance() end) or try(function() return proto.max_wire_distance end) or 7.5
+    local near_reach = try(function() return near.prototype.get_max_wire_distance() end) or try(function() return near.prototype.max_wire_distance end) or reach
+    local best, bd
+    for dx = -2, 2 do
+      for dy = -2, 2 do
+        local c = {x=math.floor(q.x) + dx + 0.5, y=math.floor(q.y) + dy + 0.5}
+        if not taken[key(c)] and math.abs(c.x - q.x) <= sad and math.abs(c.y - q.y) <= sad then
+          local d = math.sqrt((c.x - near.position.x) ^ 2 + (c.y - near.position.y) ^ 2)
+          if d <= math.min(reach, near_reach) and (not bd or d < bd)
+            and try(function() return s.can_place_entity{name=pole, position=c, force=force, build_check_type=defines.build_check_type.manual_ghost} end) then best, bd = c, d end
+        end
+      end
+    end
+    if not best then
+      return nil, string.format('no spot for a %s beside it within wire reach of %s %s (%d tiles away)', pole, near.name, at(near.position), math.floor(nd + 0.5))
+    end
+    return best
+  end
   function M.handler(p, a)
     local s = p.surface
     local chest_name, ins_name = a.chest or 'requester-chest', a.inserter or 'inserter'
@@ -77,15 +117,23 @@ return function(api)
       assert(#turrets <= MAX, 'more than 32 ammo turrets in the area: a smaller area')
       table.sort(turrets, function(x, y) if x.position.y ~= y.position.y then return x.position.y < y.position.y end return x.position.x < y.position.x end)
     end
-    local inv = p.get_main_inventory()
+    if a.ghosts ~= nil then assert(type(a.ghosts) == 'boolean', 'ghosts must be true or false') end
+    local pole = a.pole or 'small-electric-pole'
+    if a.ghosts then assert(prototypes.entity[pole] and prototypes.entity[pole].type == 'electric-pole', 'pole: an electric pole name (default small-electric-pole)') end
+    local inv = not a.ghosts and try(function() return p.get_main_inventory() end)
     local held_c, held_i = inv and inv.get_item_count(chest_name) or 0, inv and inv.get_item_count(ins_name) or 0
+    if a.ghosts then held_c, held_i = math.huge, math.huge end
     local rows, builds, taken = {}, {}, {}
     local planned, skipped, short = 0, 0, 0
     for _, t in ipairs(turrets) do
       local row = {name=t.name, position=t.position}
       local feeder = fed_by(s, t)
       local ammo = ammo_of(t, a.ammo)
-      if feeder then row.skipped = string.format('fed by %s %s already', feeder.name, at(feeder.position)); skipped = skipped + 1
+      if feeder then
+        local off = M.unpowered(feeder)
+        row.skipped = string.format('fed by %s %s already%s', feeder.name, at(feeder.position), off and '; inserter unpowered: ' .. off or '')
+        row.unpowered = off and true or nil
+        skipped = skipped + 1
       elseif not ammo then row.skipped = 'empty, and no ammo named: ammo names what the chest asks for'; skipped = skipped + 1
       else
         local spot, why = side(s, p.force, t, ins, chest, taken)
@@ -99,16 +147,34 @@ return function(api)
           row.entries = {#builds + 1, #builds + 2}
           builds[#builds+1] = {item=chest_name, position=spot.chest, requests={set={{item=ammo, min=count}}}}
           builds[#builds+1] = {item=ins_name, position=spot.inserter, direction=spot.direction}
+          if a.ghosts then
+            local pc, why = pole_link(s, p.force, spot.inserter, pole, taken)
+            if pc then
+              taken[key(pc)] = true; row.pole = pc; row.entries[3] = #builds + 1
+              builds[#builds+1] = {item=pole, position=pc}
+            elseif why then row.pole_note = why end
+          end
         end
       end
       rows[#rows+1] = row
     end
-    local lines = {}
+    local lines, unpowered = {}, 0
     for _, r in ipairs(rows) do
+      if r.unpowered then unpowered = unpowered + 1 end
       lines[#lines+1] = string.format('%s %s: %s', r.name, at(r.position), r.skipped and 'skipped: ' .. r.skipped or r.short and 'short: ' .. r.short
-        or string.format('%s %s asking %d %s, %s %s facing %s', chest_name, at(r.chest), count, r.ammo, ins_name, at(r.inserter), r.direction))
+        or string.format('%s %s asking %d %s, %s %s facing %s%s%s', chest_name, at(r.chest), count, r.ammo, ins_name, at(r.inserter), r.direction,
+          r.pole and string.format(', %s %s', pole, at(r.pole)) or '', r.pole_note and '; ' .. r.pole_note or ''))
     end
-    local out = {turrets=#rows, planned=planned, skipped=skipped, short=short, rows=rows, lines=lines}
+    local out = {turrets=#rows, planned=planned, skipped=skipped, short=short, unpowered=unpowered > 0 and unpowered or nil, rows=rows, lines=lines}
+    if a.ghosts and not a.dry_run and #builds > 0 then
+      local entities = {}
+      for i, b in ipairs(builds) do entities[i] = {name=b.item, position=b.position, direction=b.direction, requests=b.requests} end
+      local ok, placed = pcall(api.place_ghosts, p, {entities=entities})
+      if not ok then out.error = tostring(placed):gsub('^[^:]*:%d+: ', ''); return out end
+      out.ghosts = placed
+      out.note = 'ghosts for construction robots (by remote view, as place_ghosts); the chest\'s request is set on its ghost'
+      return out
+    end
     if a.dry_run or #builds == 0 then
       out.dry_run = a.dry_run or nil
       out.note = #builds == 0 and 'nothing to build' or 'nothing built (dry_run)'
@@ -133,6 +199,8 @@ return function(api)
   M.schema = {turret_feeds = {area='{left_top, right_bottom} up to 128x128: its ammo turrets of ours (at most 32)', positions='or 1..32 turret positions',
     ammo='optional ammunition name (default what each turret holds now)', count='optional 1..1000: the chest\'s request (default 50)',
     chest='optional logistic chest name (default requester-chest)', inserter='optional inserter name (default inserter)', dry_run='optional true: plan only',
-    returns='turrets, planned, skipped, short, rows [{name, position, skipped (fed already, no free side, no ammo), short (the chests or inserters you hold ran out), chest, inserter, direction, ammo, not_built}], lines; build (the build reply: placed, failed, materials; it walks into reach as build does). From your inventory, as build places them; each spot checked as a hand build checks it'}}
+    ghosts='optional true: place the chest, the inserter and, when no pole of ours covers the inserter, a pole as ghosts for construction robots (by remote view, as place_ghosts), nothing from your inventory',
+    pole='optional pole name for ghosts (default small-electric-pole): beside the inserter, within wire reach of our nearest pole',
+    returns='turrets, planned, skipped, short, unpowered (feeds already there whose inserter has no power: inserter unpowered in skipped), rows [{name, position, skipped (fed already, no free side, no ammo), pole, pole_note, short (the chests or inserters you hold ran out), chest, inserter, direction, ammo, not_built}], lines; build (the build reply: placed, failed, materials; it walks into reach as build does). From your inventory, as build places them; each spot checked as a hand build checks it'}}
   return M
 end

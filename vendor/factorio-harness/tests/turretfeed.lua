@@ -57,4 +57,27 @@ r=F.handler(p,{area={left_top={x=-10,y=-10},right_bottom={x=50,y=10}}})
 eq(r.rows[1].not_built,'chest: placement blocked by stone')
 fails(function() F.handler(p,{area={left_top={x=0,y=0},right_bottom={x=10,y=10}},chest='iron-chest'}) end,'chest: a logistic chest')
 fails(function() F.handler(p,{area={left_top={x=0,y=0},right_bottom={x=10,y=10}},ammo='iron-plate'}) end,'ammo: an ammunition name')
+-- batch26 B4 (Opus: 20 old feed inserters unpowered unnoticed; walked ~2000 tiles): a feed whose inserter has no pole
+-- says so; ghosts: true places the chest, inserter and a pole link as ghosts, nothing from the inventory.
+defines.entity_status={no_power=7}; defines.build_check_type.manual_ghost=2
+feeder.prototype={electric_energy_source_prototype={}}; feeder.electric_network_id=nil
+prototypes.entity['small-electric-pole']={type='electric-pole',name='small-electric-pole',get_supply_area_distance=function() return 2.5 end,get_max_wire_distance=function() return 7.5 end}
+local old_pole={valid=true,name='small-electric-pole',type='electric-pole',position={x=-0.5,y=-8.5},
+  prototype={get_supply_area_distance=function() return 2.5 end,get_max_wire_distance=function() return 7.5 end}}
+local kept_find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f) if f.type=='electric-pole' then return {old_pole} end return kept_find(f) end
+fail_first=false
+local placed_ghosts
+F=require('turretfeed'){points=function(_,q,d) local v=V[d]; return {x=q.x-v[1],y=q.y-v[2]},{x=q.x+v[1],y=q.y+v[2]} end,
+  entity=function(_,q) for _,t in ipairs({A,B,C,D,E}) do if t.position.x==q.position.x and t.position.y==q.position.y then return t end end error('none there') end,
+  position=function(v) return v end,compass=function(d) return ({[0]='north',[4]='east',[8]='south',[12]='west'})[d] end,
+  build=function() error('no build with ghosts') end,place_ghosts=function(_,a) placed_ghosts=a.entities; return {placed=#a.entities} end}
+held={}
+r=F.handler(p,{positions={{x=0,y=0},{x=10,y=0}},ghosts=true})
+eq(r.unpowered,1); assert(r.lines[2]:find('inserter unpowered: no pole reaches it',1,true),r.lines[2])
+eq(r.planned,1); eq(placed_ghosts[1].name,'requester-chest'); eq(placed_ghosts[2].name,'inserter'); eq(placed_ghosts[3].name,'small-electric-pole')
+assert(math.abs(placed_ghosts[3].position.y-(-8.5))<=7.5,'within wire reach of the old pole')
+assert(r.lines[1]:find(', small-electric-pole (',1,true),r.lines[1])
+eq(placed_ghosts[1].requests.set[1].item,'firearm-magazine')
+surface.find_entities_filtered=kept_find
 print('turretfeed: ok')

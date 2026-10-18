@@ -83,7 +83,11 @@
   checks it), and a requester chest there asking `count` (default 50) of its ammunition with the inserter, built from
   your inventory by `build` (its walk into reach). Each turret: the chest and inserter spots, `skipped` (fed already,
   no free side, no ammunition named for an empty one), `short` (the chests or inserters you hold ran out) or
-  `not_built` (build refused an entry). `dry_run: true` plans only. Example:
+  `not_built` (build refused an entry). A feed already there whose inserter has no power says `inserter unpowered`
+  (`unpowered` counts them). `ghosts: true` places the chest (its request set on the ghost), the inserter and, when no
+  pole of ours covers the inserter, a pole (`pole`, default small-electric-pole, beside it within wire reach of our
+  nearest pole) as ghosts for construction robots, by remote view as `place_ghosts`, nothing from your inventory.
+  `dry_run: true` plans only. Example:
   `./fh call turret_feeds --args '{"area":{"left_top":{"x":-20,"y":540},"right_bottom":{"x":20,"y":580}},"dry_run":true}'`
 - `turrets {surface? | area?, hand_fed_low?, below?}`: every turret by front: its ammo (a flamer's oil with its
   buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing: hand-fed);

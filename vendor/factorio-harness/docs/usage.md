@@ -7430,3 +7430,8 @@ fh watch    # deploy on every change
   3 minutes: the seed and count, when the first hatches or spoils, and why (status; for a shortage, the short
   ingredient); to its builder and its feeders' builders; it comes before input_spoilage, catalyst_gone, off_by_condition
   and the power kinds on that machine. tests/pushalerts.lua.
+- B4 (Opus: walked about 2000 tiles placing feeds; 20 old feed inserters stood unpowered unnoticed): `turret_feeds`
+  says `inserter unpowered` (no pole reaches it, or no power on its network) for a turret already fed, with
+  `unpowered` the count; `ghosts: true` places each turret's chest (request on the ghost), inserter and, when no pole of
+  ours covers the inserter, a pole ghost (default small-electric-pole) on a free tile within 2 of it, inside its supply
+  area and within wire reach of our nearest pole (else `pole_note` says why), all by `place_ghosts`. tests/turretfeed.lua.

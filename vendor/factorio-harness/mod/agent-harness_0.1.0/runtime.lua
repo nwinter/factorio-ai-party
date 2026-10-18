@@ -13403,7 +13403,7 @@ function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
   entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
-  build=function(p,a) return handlers.build(p,a) end}
+  build=function(p,a) return handlers.build(p,a) end,place_ghosts=function(p,a) return handlers.place_ghosts(p,a) end}
 function handlers.turret_feeds(p,a) return M.turretfeed.handler(p,a) end
 -- belt_upgrade (beltupgrade.lua, batch25 B1): a traced belt line replaced tile by tile by build, each tile's own direction.
 M.beltupgrade=require('beltupgrade'){entity=function(p,a) return entity(p,a,true) end,compass=function(d) return compass_names[d] end,
