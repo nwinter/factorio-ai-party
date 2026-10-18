@@ -7289,3 +7289,11 @@ fh watch    # deploy on every change
   underground's type kept), with `all`; the target is `to`'s tier or each entity's `next_upgrade`. Replacement is
   build's (replace.lua: the old entity is mined, so its belt items go to the inventory; in the game's own
   fast-replace they stay on the belt). tests/beltupgrade.lua.
+
+## d17 batch25 Group C
+- C1 (Grok: Spindle 48 s from Gleba with a 60 s stop; wait_platform refused any walk): `load_silo {wait_platform:
+  true, walk: true, from, launch, platform}` is the walking load: it gathers from the chests in from, then holds at the
+  silo loading nothing while the platform is headed here (and until the rocket is ready), then loads and launches in
+  that tick; it ends short when the platform goes elsewhere. The walking load with launch and platform did this
+  already (M.ready holds for a headed platform); the refusal was the argument check. Without walk, from is refused
+  as before. tests/rocketload.lua.
