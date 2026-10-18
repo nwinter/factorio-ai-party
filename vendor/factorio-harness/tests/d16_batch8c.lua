@@ -105,9 +105,11 @@ do
   local P=dofile('mod/agent-harness_0.1.0/pathing.lua'){paths=function() return {} end}
   local near={{name='electric-mining-drill',type='mining-drill',valid=true},{name='electric-mining-drill',type='mining-drill',valid=true},
     {name='transport-belt',type='transport-belt',valid=true}}
-  local p={position={x=-300.4,y=-305.4},surface={find_entities_filtered=function() return near end}}
+  -- (the open-spot read of batch35 A4 finds nothing round it here: d17_batch35 tests it)
+  local p={position={x=-300.4,y=-305.4},surface={find_entities_filtered=function(f) if f.collision_mask or (type(f.type)=='table' and f.type[5]=='loader-1x1') then return {} end return near end,
+    find_tiles_filtered=function() return {} end}}
   local nav={region={closed=false}}
-  eq(P.boxed(p,nav),'boxed in at (-300.4,-305.4) by 2 electric-mining-drill, 1 transport-belt within 2.5 tiles: the gaps between them are narrower than a path request starts in, but the area you can reach is not closed in: move_to squeeze=true walks your own steps out along the gaps; pathfind=false steers straight at the goal (belts carry you)')
+  eq(P.boxed(p,nav),'boxed in at (-300.4,-305.4) by 2 electric-mining-drill, 1 transport-belt within 2.5 tiles: the gaps between them are narrower than a path request starts in, but the area you can reach is not closed in: move_to squeeze=true walks your own steps out along the gaps; pathfind=false steers straight at the goal (belts carry you); the nearest open spot: (-300.5,-305.5), 0.1 tiles away, reached straight over the belts as a player walks across them (move_to {position: {x: -300.5, y: -305.5}, pathfind: false}); unbox: true takes that walk in the same call, then the path to the goal')
   nav.squeeze_tried=true
   has(P.boxed(p,nav),'not closed in: pathfind=false steers')
   eq(P.boxed(p,{region={closed=true}}),nil,'closed in says what closes it')

@@ -181,3 +181,50 @@ do
   worm=nil; unit=nil; storage.agent_harness.enemy_chunks=nil
 end
 print('d17_batch35 A3 every threat named; unsafe_goal "moving": ok')
+
+-- A4 (Haiku at (-19.8,545.6) under behemoth fire: boxed in by belts until a guessed pathfind=false).
+do
+  local P=dofile('mod/agent-harness_0.1.0/pathing.lua'){paths=function() return {} end}
+  local ents={}
+  local function add(name,typ,x0,y0,x1,y1,collides)
+    ents[#ents+1]={valid=true,name=name,type=typ,position={x=(x0+x1)/2,y=(y0+y1)/2},collides=collides,
+      bounding_box={left_top={x=x0,y=y0},right_bottom={x=x1,y=y1}}}
+  end
+  -- belts on every tile from x -4..4, y -4..4 (walkable); a wall row east of the field blocks the straight way east
+  for x=-4,3 do for y=-4,3 do add('fast-transport-belt','transport-belt',x+0.1,y+0.1,x+0.9,y+0.9,false) end end
+  for y=-6,5 do add('stone-wall','wall',4,y,5,y+1,true) end
+  local function inside(e,a) local b=e.bounding_box; return b.right_bottom.x>a[1][1] and b.left_top.x<a[2][1] and b.right_bottom.y>a[1][2] and b.left_top.y<a[2][2] end
+  local surface={find_entities_filtered=function(f)
+      local types
+      if f.type then types={}; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end end
+      local out={}
+      for _,e in ipairs(ents) do
+        if inside(e,f.area) and (not types or types[e.type]) and (not f.collision_mask or e.collides) then out[#out+1]=e end
+      end
+      return out
+    end,find_tiles_filtered=function() return {} end,request_path=function() return 7 end}
+  local c={valid=true,prototype={collision_box={left_top={x=-0.2,y=-0.2},right_bottom={x=0.2,y=0.2}}}}
+  local p={position={x=0.3,y=0.2},surface=surface,character=c}
+  local spot,d=P.open_spot(p)
+  -- west, north or south of the field: at least the character's half (0.2) + 1 tile from every belt
+  assert(spot.x<=-5.2 or spot.y<=-5.2 or spot.y>=5.2,spot.x..','..spot.y)
+  assert(spot.x<4,'not through the wall')
+  assert(d<=6,d)
+  local nav={region={closed=false}}
+  local text=P.boxed(p,nav)
+  has(text,string.format('the nearest open spot: (%g,%g), %.1f tiles away, reached straight over the belts as a player walks across them (move_to {position: {x: %g, y: %g}, pathfind: false}); unbox: true takes that walk in the same call',spot.x,spot.y,d,spot.x,spot.y))
+  -- unbox: the probe's boxed end starts the straight walk to it (as an escape), and asks the path again from there
+  nav={region={closed=false},unbox=true,position={x=60,y=0}}
+  P.probed(p,nav,{path=nil})
+  eq(nav.path_state,'escape'); eq(nav.waypoints[1].position.x,spot.x); eq(nav.waypoints[1].position.y,spot.y); eq(nav.unboxed.to.x,spot.x); eq(nav.why,nil)
+  -- once a walk: a second boxed end is said, not walked
+  nav.path_state=nil
+  P.probed(p,nav,{path=nil})
+  has(nav.why,'unbox: true takes that walk'); assert(nav.path_state~='escape')
+  -- the field fenced on every side within 8 tiles: none
+  for x=-5,4 do add('stone-wall','wall',x,-5,x+1,-4,true); add('stone-wall','wall',x,4,x+1,5,true) end
+  for y=-5,4 do add('stone-wall','wall',-5,y,-4,y+1,true) end
+  eq(P.open_spot(p),nil)
+  has(P.boxed(p,{region={closed=false}}),'no open spot (room to turn, no belt or drill within 1 tile) within 8 tiles is reached in a straight line')
+end
+print('d17_batch35 A4 boxed in by belts: the open spot and unbox: ok')

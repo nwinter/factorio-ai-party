@@ -5799,6 +5799,12 @@ fh watch    # deploy on every change
   closed in, and our drills or belts stand within 2.5 tiles, `last.why` adds `boxed in at (x,y) by 7
   burner-mining-drill within 2.5 tiles ...` and names `squeeze=true` and `pathfind=false`. Reproduced on the copy at
   Opus's spot; squeeze=true then arrived.
+  (batch35 A4, Haiku at (-19.8,545.6) under behemoth fire until a guessed pathfind=false) It also names the nearest
+  open spot: room to turn, no belt, splitter, loader or drill within a tile, within 8 tiles on the half-tile grid, and
+  reached from where you stand in a straight line your box sweeps (belts walked over, as a player walks across them):
+  `the nearest open spot: (-25.5,545.5), 5.7 tiles away, reached straight over the belts ... (move_to {position: {x:
+  -25.5, y: 545.5}, pathfind: false})`. `move_to {unbox: true}` takes that walk in the same call when the walk ends
+  boxed in, then asks the path to the goal again from there (`last.unboxed`); once a walk.
 - transfer farther (C5, Luna 18:20: a 39-tile transfer refused twice, split by hand into a walk and two calls):
   transfer, collect, feed, rearm and refuel walk into reach by default within 64 tiles (mine, build, rotate and
   configure keep 32; `walk: true` any distance, as before, which the refusal now says). `transfer {via: [{x,y}, ...]}`

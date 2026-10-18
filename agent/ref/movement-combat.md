@@ -18,7 +18,8 @@
     would read `arrived` more than the tolerance + 3 tiles from the goal is `stopped_short`, `last.why` saying where,
     how far and after how many legs round enemies.
   - No route: it ends at once `unreachable`, with `last.why` (closed in: the area and what closes it in; boxed in
-    among our drills or belts with the area open: it names them and `"squeeze":true` or `"pathfind":false`),
+    among our drills or belts with the area open: it names them, `"squeeze":true` or `"pathfind":false`, and the nearest
+    open spot reached straight over the belts; `"unbox":true` walks there in the same call, then on to the goal),
     `last.nearest_reachable` and `last.build_spot`, a spot you reach within build reach of the target
     (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to
     (inside a machine, a silo, a landing pad) is walked near: it ends `arrived_near` at that spot (`last.near_walk`;
