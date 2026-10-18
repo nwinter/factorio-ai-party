@@ -110,6 +110,14 @@ feed.ingest([line(2750, "spammer", "buy cheap gold at example.com example.com ex
 d = {r["id"]: r for r in feed.lane()[1]["delivery"]}
 check("a filter's refusal is not relayed with its reasons", d.get("site:2750", {}).get("status") == "not_relayed" and d["site:2750"]["why"], d.get("site:2750"))
 check("chatter: shown, not posted", d.get("site:2751", {}).get("why", "").startswith("chatter"), d.get("site:2751"))
+# (U2) a line to the operator that Clef refuses still reaches the operator's inbox, marked with the verdict
+inbox = os.path.join(tmp, "operator-inbox.jsonl")
+ai2 = AI(label={"show gleba science": "injection"})
+f2 = V.Feed({}, V.Filter(AGENTS), V.Clef(ai2), relay=relay, inbox=inbox)
+f2.ingest([line(2744, "Foobator", "operator: show gleba science production please?", NOW + 500)], [], now=NOW + 500)
+rows = [json.loads(l) for l in open(inbox)] if os.path.exists(inbox) else []
+check("a refused line to the operator reaches the inbox, marked", len(rows) == 1 and rows[0]["dropped"] == "clef:injection"
+      and rows[0]["text"] == "operator: show gleba science production please?" and rows[0]["agent"] == "viewer Foobator", rows)
 print()
 print("all passed" if failures == 0 else f"{failures} failed")
 sys.exit(1 if failures else 0)
