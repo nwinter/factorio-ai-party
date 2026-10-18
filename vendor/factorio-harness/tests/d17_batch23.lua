@@ -108,6 +108,38 @@ do
   local lines=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){}.lines(tr,false,'Kestrel II',false)
   has(lines[1],'belts back into the hub 4'); has(lines[1],'stranded: 0')
   eq(reads,6,'each belt read once')
+  -- (operator 23:47) a platform over SYNC_BELTS belts is read in the background, READ_PER_TICK belts a tick, the trace
+  -- computed in the tick after the last: the same result
+  do
+    local st={}
+    game={tick=100}
+    local F=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){state=function() return st end}
+    F.SYNC_BELTS,F.READ_PER_TICK=2,4
+    local surface={index=7,find_entities_filtered=function(f)
+      local t=type(f.type)=='table' and f.type[1] or f.type
+      if t=='inserter' then return {loader,old,back,fa,fb} end
+      if t=='ammo-turret' then return {B,A} end
+      if t=='transport-belt' then return belts end
+      return {}
+    end,count_entities_filtered=function() return #belts end}
+    local pl={index=3,name='Kestrel II',valid=true,surface=surface,force='player',hub=hub}
+    reads=0
+    local tr0,why=F.get(pl)
+    eq(tr0,nil); has(why,'the ammunition trace of Kestrel II (6 belts) is read in the background over about 3 ticks (4 belts a tick, the 20 ms rule)')
+    eq(reads,0,'nothing read in the call')
+    for i=1,3 do game.tick=game.tick+1; F.step() end
+    eq(reads,6,'each belt read once, over two ticks')
+    local tr2=F.get(pl)
+    eq(tr2.stranded,0); eq(tr2.via_hub,4)
+    local r2a
+    for _,row in ipairs(tr2.rows) do if row.entity==A then r2a=row end end
+    eq(r2a.reaches,104)
+    has(tr2.as_of,'read over 3 ticks in the background (6 belts, 4 a tick), 0s ago')
+    -- fresh for FRESH ticks; then a new read begins and the last is given meanwhile
+    game.tick=game.tick+F.FRESH
+    local tr3=F.get(pl); eq(tr3,tr2); assert(st.ammofeed.jobs[3],'a new read began')
+    game=nil
+  end
   -- the bulk loader switched off too: nothing more comes, and both loaders are named as switched off
   loader.get_control_behavior=function() return {disabled=true} end
   tr=run({A},belts,{loader,old,back,fa})

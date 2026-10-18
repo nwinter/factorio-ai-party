@@ -12,29 +12,45 @@
 return function(api)
   local M = {}
   M.MAX_BELTS, M.MAX_TURRETS, M.LOW = 4000, 512, 10
+  -- (d17 batch23 A2, operator 23:47: a whole Kestrel II trace is about 25 ms, over the 20 ms a command may take on n)
+  -- platforms with more than SYNC_BELTS belts are read in the background, READ_PER_TICK belts a tick, and their trace
+  -- computed from those reads in one tick; a read is fresh for FRESH ticks.
+  M.SYNC_BELTS, M.READ_PER_TICK, M.FRESH = 400, 256, 3600
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local BELT = {['transport-belt']=true, ['underground-belt']=true, splitter=true, ['lane-splitter']=true, ['linked-belt']=true}
   local function key(e) return e.unit_number or (e.position.x .. ',' .. e.position.y) end
+  local AMMO = {}
+  local function is_ammo(name)
+    local v = AMMO[name]
+    if v == nil then v = try(function() return prototypes.item[name].type end) == 'ammo'; AMMO[name] = v end
+    return v
+  end
   -- (d17 batch23 A2) the per-belt reads as plain functions, each under one pcall
-  local function read_neighbours(e, dir)
-    local out = {}
-    for _, u in ipairs(e.belt_neighbours[dir]) do if u.valid then out[#out+1] = u end end
+  -- a belt's inputs and outputs from one belt_neighbours read: belts, an underground's other end, a linked belt
+  local function read_neighbours(e)
+    local nb = e.belt_neighbours
+    local ins, outs = {}, {}
+    for _, u in ipairs(nb.inputs) do if u.valid then ins[#ins+1] = u end end
+    for _, u in ipairs(nb.outputs or {}) do if u.valid then outs[#outs+1] = u end end
     local t = e.type
-    if t == 'underground-belt' and e.belt_to_ground_type == (dir == 'inputs' and 'output' or 'input') then
+    if t == 'underground-belt' then
       local x = e.neighbours
-      if x and x.valid then out[#out+1] = x end
+      if x and x.valid then
+        if e.belt_to_ground_type == 'output' then ins[#ins+1] = x else outs[#outs+1] = x end
+      end
     elseif t == 'linked-belt' then
       local x = e.linked_belt_neighbour
-      if x and x.valid then out[#out+1] = x end
+      if x and x.valid then ins[#ins+1] = x end
     end
-    return out
+    return ins, outs
   end
   local function read_contents(e)
     local m = {}
+    -- (only ammunition is kept: the trace counts nothing else)
     for i = 1, e.get_max_transport_line_index() do
       local l = e.get_transport_line(i)
-      if #l > 0 then for _, r in ipairs(l.get_contents()) do m[r.name] = (m[r.name] or 0) + r.count end end
+      if #l > 0 then for _, r in ipairs(l.get_contents()) do if is_ammo(r.name) then m[r.name] = (m[r.name] or 0) + r.count end end end
     end
     return m
   end
@@ -86,27 +102,52 @@ return function(api)
     if mode == 'blacklist' and any then return 'its blacklist (' .. table.concat(names, ', ') .. ') holds the turret\'s ammo back' end
     return nil
   end
-  function M.trace(pl)
-    local s, f = pl.surface, pl.force
-    local hub = try(function() local h = pl.hub; return h and h.valid and h or nil end)
-    -- every inserter by what it drops into
+  -- every inserter of the force on a surface by what it drops into (key)
+  local function inserters_into(s, f)
     local into = {}
     for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=f} end) or {}) do
       local d = try(function() return i.drop_target end)
       if d and d.valid then local k = key(d); into[k] = into[k] or {}; table.insert(into[k], i) end
     end
+    return into
+  end
+  local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'linked-belt'}
+  local function belts_of(s, f) return try(function() return s.find_entities_filtered{type=BELTS, force=f, limit=20000} end) or {} end
+  -- One belt's reads into the caches: {inputs, outputs} of {e, k}, its ammunition, its switch, its place.
+  local function read_belt(b, k, nbr, memo, offm, pos)
+    local ok, ins, outs = pcall(read_neighbours, b)
+    local c = {inputs={}, outputs={}}
+    if ok then
+      for _, u in ipairs(ins) do c.inputs[#c.inputs+1] = {e=u, k=u.unit_number or key(u)} end
+      for _, u in ipairs(outs) do c.outputs[#c.outputs+1] = {e=u, k=u.unit_number or key(u)} end
+    end
+    nbr[k] = c
+    if not memo[k] then local ok2, m = pcall(read_contents, b); memo[k] = ok2 and m or {} end
+    local ok3, v = pcall(read_off, b)
+    if ok3 then offm[k] = v else offm[k] = switched_off(b) end
+    if pos then pos[k] = try(function() return b.position end) end
+  end
+  M.read_belt = read_belt
+  -- pre (optional, the background read below): into, all, all_keys and the caches nbr, belt_memo, offm, pos already
+  -- read; what is missing is read here.
+  function M.trace(pl, pre)
+    local s, f = pl.surface, pl.force
+    local hub = try(function() local h = pl.hub; return h and h.valid and h or nil end)
+    -- every inserter by what it drops into
+    local into = pre and pre.into or inserters_into(s, f)
     -- (d17 batch23 A2: the trace read Kestrel II's 900-belt loop again for each of its 43 turrets, 180 ms on n) each
     -- belt's neighbours, each entity's switch and each inserter's pickup are read once per trace
-    local nbr, offm, pickm = {}, {}, {}
+    local belt_memo_of
+    local nbr, offm, pickm, posm = pre and pre.nbr or {}, pre and pre.offm or {}, {}, pre and pre.pos or {}
     local function neighbours(e, k, dir)
       local c = nbr[k]
-      if not c then c = {}; nbr[k] = c end
-      if c[dir] then return c[dir] end
-      local list = {}
-      local ok, us = pcall(read_neighbours, e, dir)
-      for _, u in ipairs(ok and us or {}) do list[#list+1] = {e=u, k=u.unit_number or key(u)} end
-      c[dir] = list
-      return list
+      if not c then read_belt(e, k, nbr, belt_memo_of(), offm, posm); c = nbr[k] end
+      return c[dir]
+    end
+    local function pos(e, k)
+      local q = posm[k]
+      if not q then q = e.position; posm[k] = q end
+      return q
     end
     local function off(e, k)
       k = k or key(e)
@@ -129,7 +170,8 @@ return function(api)
       if amemo[name] == nil then amemo[name] = try(function() return prototypes.item[name].type end) == 'ammo' end
       return amemo[name]
     end
-    local belt_memo = {}
+    local belt_memo = pre and pre.belt_memo or {}
+    belt_memo_of = function() return belt_memo end
     local function belt_of(b, takes, k)
       k = k or key(b)
       local m = belt_memo[k]
@@ -376,7 +418,7 @@ return function(api)
     for _, n in pairs(hub_ammo) do hub_total = hub_total + n end
     -- stranded: ammo on belts no turret's way reaches, by connected group
     local stranded, groups, stranded_by = 0, {}, {}
-    local all = try(function() return s.find_entities_filtered{type={'transport-belt', 'underground-belt', 'splitter'}, force=f, limit=20000} end) or {}
+    local all = pre and pre.all or belts_of(s, f)
     -- (d17 batch23 A2, Astra: Kestrel II's return belt into the hub read stranded while the hub fed the turrets) belts
     -- whose way ends in an inserter dropping into the hub, when the hub's ammunition reaches a turret: they reach too
     local to_hub, via_hub = {}, 0
@@ -392,8 +434,8 @@ return function(api)
     -- (A2, Astra: a long-handed bridge's belt end read stranded) a belt that ends (no belt after it) a few belts past
     -- a belt on a turret's way: its items wait at that end, past the pickup
     local at_end, at_end_n, end_rows = {}, 0, {}
-    local all_keys = {}
-    for i, b in ipairs(all) do all_keys[i] = key(b) end
+    local all_keys = pre and pre.all_keys
+    if not all_keys then all_keys = {}; for i, b in ipairs(all) do all_keys[i] = key(b) end end
     for i, b in ipairs(all) do
       local k = all_keys[i]
       if not reached_belts[k] and not to_hub[k] and not at_end[k] and b.type == 'transport-belt' and belt_of(b, anyammo, k) > 0 and #neighbours(b, k, 'outputs') == 0 then
@@ -425,7 +467,7 @@ return function(api)
       if not reached_belts[k] and not to_hub[k] and not at_end[k] then
         local n = belt_of(b, anyammo, k)
         if n > 0 then
-          loose[#loose+1] = {e=b, n=n}; stranded = stranded + n
+          loose[#loose+1] = {e=b, k=k, n=n, q=pos(b, k)}; stranded = stranded + n
           for name, c in pairs(belt_memo[k] or {}) do if anyammo(name) then stranded_by[name] = (stranded_by[name] or 0) + c end end
         end
       end
@@ -440,10 +482,10 @@ return function(api)
           local j = table.remove(queue); local y = loose[j]
           g.n = g.n + 1; g.count = g.count + y.n
           g.belts[#g.belts+1] = y
-          local q = y.e.position
+          local q = y.q
           g.x0, g.y0, g.x1, g.y1 = math.min(g.x0, q.x), math.min(g.y0, q.y), math.max(g.x1, q.x), math.max(g.y1, q.y)
           for k, z in ipairs(loose) do
-            if not done[k] and math.abs(z.e.position.x - q.x) <= 3 and math.abs(z.e.position.y - q.y) <= 3 then done[k] = true; queue[#queue+1] = k end
+            if not done[k] and math.abs(z.q.x - q.x) <= 3 and math.abs(z.q.y - q.y) <= 3 then done[k] = true; queue[#queue+1] = k end
           end
         end
         groups[#groups+1] = g
@@ -468,11 +510,11 @@ return function(api)
         -- empty west) the belts holding it, and what else of ours the box round them holds (a deconstruct takes that too)
         table.sort(g.belts, function(x, y) return x.n > y.n end)
         local bl = {}
-        for k, y in ipairs(g.belts) do if k <= 8 then bl[k] = string.format('%s %s %d', y.e.name, at(y.e.position), y.n) end end
+        for k, y in ipairs(g.belts) do if k <= 8 then bl[k] = string.format('%s %s %d', y.e.name, at(y.q), y.n) end end
         local box = {left_top={x=math.floor(g.x0), y=math.floor(g.y0)}, right_bottom={x=math.floor(g.x1) + 1, y=math.floor(g.y1) + 1}}
         local others = 0
-        for _, b in ipairs(all) do
-          local q = b.position
+        for j, b in ipairs(all) do
+          local q = pos(b, all_keys[j])
           if q.x >= box.left_top.x and q.x <= box.right_bottom.x and q.y >= box.left_top.y and q.y <= box.right_bottom.y then others = others + 1 end
         end
         others = others - g.n
@@ -527,5 +569,66 @@ return function(api)
     end
     return lines
   end
+  -- The background read ----------------------------------------------------------------------------------------
+  local function jobs()
+    local st = api.state and api.state()
+    if not st then return nil end
+    st.ammofeed = st.ammofeed or {jobs={}, done={}}
+    return st.ammofeed
+  end
+  -- Begin a read of pl (one at a time per platform): the inserters and belts are found now (one tick).
+  function M.start(pl)
+    local J = jobs()
+    if not J or J.jobs[pl.index] then return end
+    local s, f = pl.surface, pl.force
+    local all = belts_of(s, f)
+    local keys = {}
+    for i, b in ipairs(all) do keys[i] = key(b) end
+    J.jobs[pl.index] = {pl=pl, name=pl.name, started=game.tick, i=1, into=inserters_into(s, f), all=all, all_keys=keys, nbr={}, belt_memo={}, offm={}, pos={}}
+  end
+  -- Each tick: READ_PER_TICK belts of the first job; when all are read, its trace (one tick) is kept in done.
+  function M.step()
+    local J = jobs()
+    if not J then return end
+    local index, job = next(J.jobs)
+    if not index then return end
+    local pl = job.pl
+    if not (pl and pl.valid and pl.surface) then J.jobs[index] = nil; return end
+    if job.i <= #job.all then
+      local last = math.min(#job.all, job.i + M.READ_PER_TICK - 1)
+      for i = job.i, last do
+        local b = job.all[i]
+        if b.valid then read_belt(b, job.all_keys[i], job.nbr, job.belt_memo, job.offm, job.pos) end
+      end
+      job.i = last + 1
+      return
+    end
+    J.jobs[index] = nil
+    -- belts gone during the read are left out
+    local all, keys = {}, {}
+    for i, b in ipairs(job.all) do if b.valid then all[#all+1] = b; keys[#keys+1] = job.all_keys[i] end end
+    job.all, job.all_keys = all, keys
+    local ok, tr = pcall(M.trace, pl, job)
+    J.done[index] = {tick=game.tick, started=job.started, tr=ok and tr or nil, error=not ok and tostring(tr) or nil}
+  end
+  -- The trace for a reader: read at once for a platform of up to SYNC_BELTS belts; else the last background read (said
+  -- with its age; a new one begins when it is older than max_age, default FRESH), or nil and why while the first runs.
+  function M.get(pl, max_age)
+    local J = jobs()
+    local n = J and (try(function() return pl.surface.count_entities_filtered{type=BELTS, force=pl.force} end) or 0) or 0
+    if not J or n <= M.SYNC_BELTS then return M.trace(pl) end
+    local d = J.done[pl.index]
+    if not d or game.tick - d.tick >= (max_age or M.FRESH) then M.start(pl) end
+    if d and d.tr then
+      d.tr.as_of = string.format('read over %d ticks in the background (%d belts, %d a tick), %ds ago', d.tick - d.started, n, M.READ_PER_TICK,
+        math.floor((game.tick - d.tick) / 60))
+      return d.tr
+    end
+    local left = math.ceil(n / M.READ_PER_TICK) + 1
+    return nil, string.format('the ammunition trace of %s (%d belts) is read in the background over about %d ticks (%d belts a tick, the 20 ms rule); read again in a second%s',
+      pl.name, n, left, M.READ_PER_TICK, d and d.error and ' (the last read failed: ' .. d.error .. ')' or '')
+  end
+  -- Drop the reads of platforms gone.
+  function M.forget(index) local J = jobs(); if J then J.jobs[index] = nil; J.done[index] = nil end end
   return M
 end
