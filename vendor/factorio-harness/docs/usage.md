@@ -6815,3 +6815,12 @@ fh watch    # deploy on every change
   area`). A blocked spot carries the build refusal's text (placement_error: an entity, `tiles: oil-ocean-shallow (needs
   foundation (not researched))`, a cliff ...) for up to 24 spots; `blocked_by` counts them by kind with one place each.
   One find of the resource and one placement check a spot (four for a well). tests/d17_batch21.lua.
+- B3 (Luna): breeders held 12/30 and 24/30 nutrients while status said only missing nutrients. `ingredient_gap {position
+  | positions | area, all?}` (gap.lua, a read): per crafting machine (assembler, furnace, biochamber, silo; up to 32),
+  each ingredient of its recipe's next craft: needed, held in its input, how many of those spoil within 5 min (spoil.lua
+  rows), usable (the rest) and short; a fluid ingredient, what its boxes hold. For a short item, the places within 64
+  tiles of the machine that can spare it (M.where_kept, as craft's shortfall reads them: a requester or buffer chest
+  only over its own request, robots' pickup reservations off; else the logistic networks holding it). `area` (up to
+  128x128) lists the machines short of something; `all: true` every one. e.g. `biochamber (10.5,4.5) pentapod-egg
+  (item_ingredient_shortage): nutrients 20/30 (24 held, 4 of them spoil within 5 min): 10 short; enough at
+  requester-chest (14.5,4.5) 4 tiles, 40 free over its request; ...`. tests/d17_batch21.lua.

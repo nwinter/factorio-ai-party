@@ -144,6 +144,11 @@
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
+- `ingredient_gap {position | positions | area, all?}`: per crafting machine (up to 32), each ingredient of its next
+  craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the places
+  within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer only
+  over its request), with how many. `area` (up to 128x128) lists the machines short of something (`all: true`: every
+  one). Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`
 - `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
   every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
   and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within

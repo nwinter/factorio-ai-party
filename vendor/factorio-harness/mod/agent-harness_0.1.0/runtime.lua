@@ -1932,6 +1932,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -11705,6 +11706,13 @@ M.drillspots=require('drillspots'){position=position,integer=integer,read_sight=
   seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
   why=function(p,proto,pos,d) return placement_error(p,proto,pos,d,false) end}
 handlers.placements=M.shore.handlers.placements
+-- ingredient_gap: per crafting machine, the next craft's ingredients held, usable and short, and who can spare them
+-- (gap.lua; d17 batch21 B3, Luna).
+M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
+  seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or distance(p.position,pos)<=32 end,
+  scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
+  status=function(e) return M.machine_status(e) end}
+function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
 M.details=require('details'){}
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
@@ -13937,6 +13945,7 @@ reads.pods=true
 reads.logistics_audit=true
 reads.platform_gate=true
 reads.fleet=true
+reads.ingredient_gap=true
 reads.demolishers=true
 reads.dependency=true
 reads.shipment=true
