@@ -7359,3 +7359,6 @@ fh watch    # deploy on every change
   `enable: false` is refused naming both. `now` says what the entity does: stopped, runs (no condition), or runs
   because no wire connects it; a logistic condition holding it off is added. On a chest, remove_condition clears its
   circuit condition and switch_off is refused. tests/circuits.lua.
+- A2 (Astra request967: the Kestrel II refill loop paused every flight, "bot astra is aboard platform Kestrel II with
+  no body"): bots.lua's aboard check lets `platform_rearm` with `platform` through, as requests and the other platform
+  writes by remote view; the aboard note names it. tests/travel.lua.
