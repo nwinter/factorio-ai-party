@@ -47,7 +47,16 @@
   is the station it waits at. In flight, `leg` gives the leg before the edit and the current stop now (the same
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
-  the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was). `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
+  the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
+  A count wait needs its `condition`. `{item|fluid, count|at_least}` reads as `"NAME >= N"`, and `seconds` reads as
+  ticks (`read_as` says so); any other wait field is refused. `schedule` shows each wait's condition. The game's
+  `fluid_count` on a platform did not count the storage tanks on world n: Cinder waited over 5 min on `>= 22000` with
+  26000 in its tanks (`fluid_count_note`). A `circuit` wait reads the tanks when they are wired to the hub with their
+  contents on the wire; `harness: true` on a fluid_count wait has the harness read the tanks' sum every second while it
+  waits there and send it on. Its stop's other waits may be only `time` and `item_count` joined by and (the harness
+  reads those too). The game's record then holds a circuit wait that never holds. `waits_run` says which way each
+  condition runs, and `harness_waits` (also in `platforms {platform}`) gives the harness's conditions now and its last
+  send. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
   `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
   Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
 - `platform_rename {platform, name}`: renames one, listing the queues, orders, plans and board items still naming the
