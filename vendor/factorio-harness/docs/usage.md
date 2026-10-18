@@ -6815,3 +6815,14 @@ fh watch    # deploy on every change
   by sol (the team's record: chat seq 2143); none seen since`; a place_ghosts dry run at (-219.5,29.5) says the same.
 - territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is left out
   only when it was killed. tests/d17_territory.lua.
+- Part 2 (Nick 17:15, Vulcanus calcite: 2 of the 3 drills still mining stood waiting for space in full iron chests; no
+  alert said so, nor does the game have one): pushalerts.lua's scan groups mining drills whose status is
+  waiting_for_space_in_destination and whose drop target is a chest (container, logistic, linked, infinity) as
+  `output_full`, per 64-tile area. Each detail: `electric-mining-drill (124.5,123.5) mining calcite into iron-chest
+  (126.5,123.5): 32/32 slots used (calcite 1600)`. A drill dropping onto a backed-up belt is not said (often by
+  design). Furnaces and assemblers drop through inserters; their full-output-into-a-full-chest case is
+  output_chest_full already. It goes to the builders and claim owners as every group. The check reads only drills
+  already in that status, within the background read's slices.
+  - Copy: 4 groups: Vulcanus calcite near (134,116) (4 drills, iron and passive provider chests 32/32 and 48/48),
+    Sol's tungsten drills at (-224.5,29.5..44.5) (iron chests 32/32, 1600 tungsten ore each), Fulgora scrap near
+    (-62,83) (5 big drills into full passive providers), and Nauvis uranium near (499,-429). tests/d17_territory.lua.

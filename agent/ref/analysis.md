@@ -119,7 +119,9 @@
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more). `kind: "off_by_condition"`: machines off by their own
+  placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
+  chest they drop into (each drill, what it mines, the chest's slots used and what fills it); a backed-up belt is not
+  said. `kind: "off_by_condition"`: machines off by their own
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
   team alert line to its builders and claim owners.

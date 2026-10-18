@@ -75,3 +75,23 @@ eq(st.demolisher_seeded['vulcanus-t1-sol'],true)
 st.demolisher_deaths['vulcanus|-10,-6']=nil
 eq(select(1,D.state(surface,force,t1)),'not seen','seeded once')
 print('d17_territory: ok')
+
+-- Part 2 (Nick 17:15, Vulcanus calcite): a drill waiting for space in a chest it drops into is output_full; one onto a
+-- backed-up belt is not.
+do
+  defines={entity_status={waiting_for_space_in_destination=31,working=1},inventory={chest=1}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {board={items={}}} end,agents=function() return {} end,who=function(p) return p.name end}
+  local list={{name='calcite',count=1600},{name='stone',count=4}}
+  local chest={valid=true,type='container',name='iron-chest',position={x=126.5,y=123.5},
+    get_inventory=function() local inv={count_empty_stacks=function() return 0 end,get_contents=function() return list end}; return setmetatable(inv,{__len=function() return 32 end}) end}
+  local drill={valid=true,name='electric-mining-drill',position={x=124.5,y=123.5},status=31,drop_target=chest,mining_target={name='calcite'}}
+  eq(PA.drill_full(drill),'electric-mining-drill (124.5,123.5) mining calcite into iron-chest (126.5,123.5): 32/32 slots used (calcite 1600, stone 4)')
+  drill.drop_target={valid=true,type='transport-belt',name='transport-belt',position={x=126.5,y=123.5}}
+  eq(PA.drill_full(drill),nil)
+  drill.drop_target=chest; drill.status=1
+  eq(PA.drill_full(drill),nil)
+  local g={kind='output_full',surface='vulcanus',n=2,names={['electric-mining-drill']=2},by={},center={x=130,y=118},at={{x=124.5,y=123.5},{x=135.5,y=110.5}},
+    lost={'electric-mining-drill (124.5,123.5) mining calcite into iron-chest (126.5,123.5): 32/32 slots used (calcite 1600)'}}
+  has(PA.text(g,'nauvis'),'2 electric-mining-drill stopped by a full chest near (130,118) on vulcanus: electric-mining-drill (124.5,123.5) mining calcite')
+end
+print('d17_territory part 2 output_full: ok')
