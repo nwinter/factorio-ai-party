@@ -1111,7 +1111,11 @@ fh call status
   (strongest magazine kind first; a carried gun goes into an empty gun slot before it) and say so in `equipped`
   (`equipped from your inventory: 20 firearm-magazine to ammo slot 1`; for move_to under `combat`); when the slots run
   dry mid-fight they are refilled the same way and the fight goes on (`last_combat.reloads`, kite `last.reloads`); with
-  nothing carried that fits a gun they fail as before. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  nothing carried that fits a gun they fail as before. The selected gun's own empty ammo slot is loaded from the main
+  inventory first even while another slot holds ammo, as a player's click does (shoot `loaded`: `loaded rocket*20 from
+  your main inventory into ammo slot 2 for rocket-launcher`), and the shoot's gun (move_to combat: the selected one) is
+  loaded again and selected again when it runs dry mid-fight (`last_combat.equipped`); with nothing carried that it
+  fires, `last_combat.dry` says when it ran dry (batch35 A2, Grok: one rocket in the slot, more in the main inventory). `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.

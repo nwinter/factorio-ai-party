@@ -131,7 +131,8 @@
 - `shoot {position | auto, gun?, ammo?, ticks?, fire_anyway?}`: fires at the position (`auto: true`: the nearest enemy); the
   position is within 32 tiles of you or the selected gun's range, the larger, in a chunk our force sees now; replies
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
-  `last_combat.why_none` when nothing fired. Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
+  `last_combat.why_none` when nothing fired. The selected gun's empty ammo slot is loaded from your main inventory first
+  (`loaded`), and again when it runs dry mid-fight (`last_combat.equipped`; `dry` when nothing carried fits it). Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
   position whose blast reaches our own entities is refused, naming them; `auto` holds fire at such a target
   (`last_combat.held_blast`); `fire_anyway: true` fires anyway. With area ammunition, enemy units within 6 tiles of
   you or an aim point inside the blast round you switch the gun to a slot holding ammunition without an area

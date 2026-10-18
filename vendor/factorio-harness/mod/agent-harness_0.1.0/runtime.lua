@@ -900,7 +900,7 @@ local function stop_combat(index,outcome)
   end
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
     gun_used=combat and combat.gun_used,why_none=why_none,held_blast=combat and combat.held_blast,held_blast_ticks=combat and combat.held_blast_n,
-    switched_gun=combat and combat.switched_gun,held_melee=combat and combat.held_melee,held_melee_ticks=combat and combat.held_melee_n,
+    switched_gun=combat and combat.switched_gun,dry=combat and combat.dry,held_melee=combat and combat.held_melee,held_melee_ticks=combat and combat.held_melee_n,
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
@@ -1816,7 +1816,7 @@ function handlers.describe(_,a)
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
-        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={unequip='true, with slot ammo or gun (index? item?): that slot\'s stacks back to your main inventory (what does not fit stays, in left); returns unequipped, left',slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
+        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped; the selected gun\'s empty ammo slot is loaded from your main inventory (loaded), and the shoot\'s gun reloaded the same way when it runs dry mid-fight (last_combat reloads, equipped; dry: it ran dry with nothing carried that it fires); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={unequip='true, with slot ammo or gun (index? item?): that slot\'s stacks back to your main inventory (what does not fit stays, in left); returns unequipped, left',slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
       danger={quiet_s='optional 10..3600: whether the straight way from you to it (24 tiles either side) has had an attack on our structures in the last quiet_s seconds, and the enemy units seen there now (quiet: true when neither)',position='{x,y}: the destination (default where your character stands)',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now: sight and radar) by name and the nearest, and those more than 24 tiles from every spawner read in packs (units within 16 tiles of a pack\'s first: count, names, where, how far; packs: the first 6) apart from those by their nests; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
       pipe_gaps={line='{x,y} of one pipe, pipe-to-ground, tank or pump of ours, instead of from and to: the pipe network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities; returns segments [{segment, entities, box, fluid, amount, capacity, flow, empty, line}] by the engine\'s segment id, empty (the empty ones), machines (what it joins, each box\'s fluid), not_in_sight, line',
         from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
@@ -4605,11 +4605,17 @@ function handlers.move_to(p,a)
   if a.combat~=nil and a.combat~=false then
     local radius=a.combat==true and 20 or integer(a.combat,20,1,32,'combat radius')
     local equipped=kite.ammo_count(p)==0 and kite.auto_equip(p) or nil
+    -- (d17 batch35 A2) the selected gun's empty ammo slot loaded from the main inventory, then kept loaded on the walk
+    local sel=p.character and p.character.selected_gun_index
+    local loaded=sel and M.ammoslots.load(p,sel) or nil
+    if loaded then equipped=equipped and equipped..'; '..loaded or loaded end
     local ammo=kite.ammo_count(p)
     assert(ammo>0,'combat needs ammunition in the ammo slots and none is carried that fits a gun: craft firearm-magazine')
+    local okg,gname=pcall(function() return p.get_inventory(defines.inventory.character_guns)[sel].name end)
     state().combat=state().combat or {}
     combat_targets()[p.index]=nil
-    state().combat[p.index]={until_tick=game.tick+ticks,auto=true,radius=radius,ammo_start=ammo,with_move=true}
+    state().combat[p.index]={started=game.tick,until_tick=game.tick+ticks,auto=true,radius=radius,ammo_start=ammo,with_move=true,
+      gun_used=sel and okg and gname and {slot=sel,name=gname} or nil}
     combat={auto=true,radius=radius,ammo=ammo,equipped=equipped}
   end
   state().active[p.index]=action
@@ -11740,6 +11746,11 @@ function handlers.shoot(p,a)
   -- ammo the trigger does nothing, so say so instead of "shooting". Empty
   -- slots are first filled from carried ammo (kite.auto_equip), and the reply says so.
   local equipped=kite.ammo_count(p)==0 and kite.auto_equip(p) or nil
+  -- (d17 batch35 A2, Grok died at the north raft: rockets in the main inventory, the launcher's ammo slot empty) the
+  -- selected gun's empty ammo slot is loaded from the main inventory first, as a player's click does, and said.
+  local sel0=p.character and p.character.selected_gun_index
+  local loaded,unloaded
+  if sel0 then loaded,unloaded=M.ammoslots.load(p,sel0) end
   local ammo=kite.ammo_count(p)
   assert(ammo>0,'no ammunition in the ammo slots and none carried that fits a gun: craft firearm-magazine')
   -- The gun that fires (Sol, d15 07:50: the aggregated ammo count hid an empty rocket launcher; 10 s shoots used 0):
@@ -11757,7 +11768,7 @@ function handlers.shoot(p,a)
       -- Ammo that fits it in another ammo slot (Grok, shift19 00:36), and that slot's gun slot.
       local okr,r=pcall(M.ammoslots.read,p)
       local there=okr and M.ammoslots.elsewhere(r,gun_row.index)
-      why={no_compatible_ammo=string.format('gun slot %d (%s) has nothing in ammo slot %d%s%s',gun_row.index,gun_row.gun,gun_row.index,
+      why={no_compatible_ammo=string.format('gun slot %d (%s) has nothing in ammo slot %d and your main inventory holds no ammunition it fires; nothing fires from it%s%s',gun_row.index,gun_row.gun,gun_row.index,
         #others>0 and '; '..table.concat(others,', ')..' (gun_slot picks it)' or '',
         there and '; '..there..'; equip {slot: ammo, item, index: '..gun_row.index..'} moves it between ammo slots' or '')}
     elseif pos and gun_row.range and distance(p.position,pos)>gun_row.range then
@@ -11778,12 +11789,37 @@ function handlers.shoot(p,a)
   end
   state().combat=state().combat or {}
   combat_targets()[p.index]=nil
-  state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo,
+  state().combat[p.index]={started=game.tick,until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo,
     gun_used=gun,why_start=why,blast=blast and {radius=blast,ammo=gun_row.ammo} or nil,fire_anyway=a.fire_anyway==true or nil}
   M.retreat.arm(p,state().combat[p.index],back)
-  local out={until_tick=game.tick+ticks,ammo=ammo,gun=gun,equipped=equipped,retreat=back and M.retreat.line(back) or nil}
+  local out={until_tick=game.tick+ticks,ammo=ammo,gun=gun,equipped=equipped,loaded=loaded,retreat=back and M.retreat.line(back) or nil}
   for k,v in pairs(why or {}) do out[k]=v end
   return out
+end
+-- (d17 batch35 A2) The shoot's gun ran dry mid-fight while its ammo was carried (Grok: one rocket in the slot, more in
+-- the main inventory): the slot is loaded from the main inventory and the gun selected again, said in equipped; when
+-- nothing carried fits it, dry says so once (last_combat).
+function M.combat_reload(p,action)
+  local g=action.gun_used
+  local slot=g and g.name~='empty' and g.slot
+  if not slot then return end
+  local okr,r=pcall(M.ammoslots.read,p)
+  if not (okr and r.guns[slot]) or r.ammo[slot] then return end
+  local line,why=M.ammoslots.load(p,slot)
+  if not line then
+    if not action.dry then action.dry=string.format('gun slot %d ran dry at %ds: %s',slot,math.floor((game.tick-(action.started or game.tick))/60),why) end
+    return
+  end
+  local okn,s=pcall(function() local st=p.get_inventory(defines.inventory.character_ammo)[slot]; return {name=st.name,count=st.count} end)
+  action.ammo_start=(action.ammo_start or 0)+(okn and s.count or 0)
+  action.reloads=(action.reloads or 0)+1
+  action.equipped=action.equipped and action.equipped..'; '..line or line
+  -- selected again unless the melee guard moved off it; the blast guard follows what is loaded now
+  if not action.switched_gun then
+    pcall(function() p.character.selected_gun_index=slot end)
+    local blast=okn and M.blast_radius(s.name) or nil
+    action.blast=blast and {radius=blast,ammo=s.name} or nil
+  end
 end
 function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
@@ -16106,7 +16142,7 @@ local function waypoint_goal(p,action,goal)
   while action.waypoint<=#action.waypoints and distance(p.position,action.waypoints[action.waypoint].position)<=reach do action.waypoint=action.waypoint+1 end
   return action.waypoint<=#action.waypoints and action.waypoints[action.waypoint].position or goal
 end
-kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
+kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions,ammoslots=M.ammoslots}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event)
   M.board.on_character_hit(event)
   -- a bot hit while nothing walks it walks away (round1950a item 2)
@@ -17635,6 +17671,7 @@ function M.tick_body(event)
       end
     elseif action.ammo_start and kite.ammo_count(p)==0 and not kite.reload(p,action) then stop_combat(index,'out_of_ammo')
     else
+      if event.tick%10==0 then pcall(M.combat_reload,p,action) end
       local target=action.position
       if action.auto then
         local e=M.combat_scan(p,action,index,event.tick)
