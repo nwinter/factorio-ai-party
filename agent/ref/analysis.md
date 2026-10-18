@@ -80,6 +80,8 @@
   - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
     a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
     holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
+  - a captive biter spawner not producing: `starving`: its health, the minutes it has left (it loses 1 HP a second
+    while it makes nothing; at 0 a hostile biter-spawner takes its place) and why (fuel slot empty, output full);
   - fluid connection tiles (`fluid_connections[].joins` is where a pipe must go); a ghost shows its fluid ports as
     `ports` does; a heat entity its heat connections and temperature; `inspect.heating` reports freezing, demand,
     adjacent heat buffers and the heat connections there;
@@ -124,7 +126,10 @@
   said. `kind: "off_by_condition"`: machines off by their own
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
-  team alert line to its builders and claim owners.
+  team alert line to its builders and claim owners. `captive_starving`: captive spawners not producing, with the same
+  facts as inspect's `starving`, to their builder and their feeders' builders; under 2 minutes left it is
+  `captive_urgent`, and `captive_died` names the hostile spawner standing in its place; both show in the team block's
+  urgent part and wake a sleep.
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
   ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
   (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a

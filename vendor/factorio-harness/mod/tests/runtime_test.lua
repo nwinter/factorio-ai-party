@@ -3798,6 +3798,21 @@ end)()
   eq(storage.agent_harness.active[1],body_action)
   fails(function() call('queue_submit',{lane='remote',steps={{action='wait_until',args={['until']='item_count',item='coal',at_least=1}}}}) end,'steps[1]')
   call('stop',{});call('queue_cancel',{lane='remote'})
+  -- (d17 batch21 D1, Sol) a lane per platform: its wait runs apart from the remote lane's and the body's
+  landed=0
+  call('queue_submit',{lane='platform:Freight',steps={{action='wait_until',args=c}}})
+  call('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=5}}}})
+  advance(12)
+  eq(call('queue_status',{lane='platform:Freight'}).active.action,'wait_until')
+  eq(call('queue_status',{lane='remote'}).active,false,'the remote lane went on')
+  eq(call('queue_status',{}).lanes.platforms.Freight.active.action,'wait_until')
+  landed=50; advance(10)
+  local pq=call('queue_status',{lane='platform:Freight'})
+  eq(pq.active,false); eq(pq.history[#pq.history].result.outcome,'met'); eq(pq.lane,'platform:Freight')
+  fails(function() call('queue_submit',{lane='platform:Freight',steps={{action='walk',args={direction='east',ticks=5}}}}) end,'not supported in the remote lane')
+  fails(function() call('queue_submit',{lane='Freight',steps={}}) end,'lane must be body, remote or platform:NAME')
+  call('queue_cancel',{lane='platform:Freight'})
+  tick=tick-22; game.tick=tick -- (the later tests count ticks from here as before)
   p.force.platforms,defines.inventory.hub_main=platforms,hub_id
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
@@ -3831,6 +3846,14 @@ advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'dur
 p.can_reach_entity=function() return false end
 local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
 fails(function() call('rotate',{position=ins.position,walk=false}) end,'out of reach')
+-- past the 32 tiles a call walks: by remote view in a chunk our force sees (d17 batch21 D3, Muse)
+do
+  local here=p.position
+  p.position={x=ins.position.x-700,y=ins.position.y}
+  ins.direction=0; ins.rotate=function() ins.direction=(ins.direction+4)%16; return true end
+  local remote_turn=call('rotate',{position=ins.position}); eq(remote_turn.by,'remote view'); eq(remote_turn.after,'east')
+  ins.rotate=nil; ins.direction=nil; p.position=here
+end
 -- By default it walks into reach first (autowalk.lua).
 ins.bounding_box={left_top={x=2.15,y=-0.35},right_bottom={x=2.85,y=0.35}}
 local turn=call('rotate',{position=ins.position}); eq(turn.walking_for,'rotate'); call('stop',{})
@@ -5496,6 +5519,22 @@ do
   eq(ok,false); assert(tostring(err):find('unknown argument step_options',1,true),'step_options is docs, not an argument: '..tostring(err))
   ok,err=pcall(call,'guards',{})
   eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
+end
+-- transfer {retry_when_clear}: a refusal for passing enemies only waits for units_clear, then transfers again (d17 batch21 D2).
+do
+  local now=runtime.transfer_now
+  runtime.transfer_now=function(_,a)
+    runtime.tour_stock().last_refusal={tick=game.tick,passing=1,staying=0,at={x=34,y=202}}
+    error('every place of this tour lies in enemy reach the map shows: an area under attack now',0)
+  end
+  local w=call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',count=10,retry_when_clear=true})
+  assert(w.retry:find('refused for passing enemies only: every place of this tour lies in enemy reach the map shows: an area under attack now; waits until no enemy unit is within 48 tiles of (34,202)',1,true),w.retry)
+  eq(storage.agent_harness.active[1].then_call.action,'transfer'); eq(storage.agent_harness.active[1].then_call.args.retries,1)
+  call('stop',{})
+  runtime.transfer_now=function() runtime.tour_stock().last_refusal={tick=game.tick,passing=0,staying=1,at={x=1,y=1}}; error('a worm is there',0) end
+  fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear=true}) end,'a worm is there')
+  fails(function() call('transfer',{position={x=34,y=202},direction='to_entity',item='firearm-magazine',retry_when_clear='yes'}) end,'retry_when_clear must be true or false')
+  runtime.transfer_now=now
 end
 -- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
 do

@@ -33,7 +33,7 @@ return function(api)
   -- Kinds and how a line says them; game alert types not listed read as their name.
   local LABEL = {robots_lost='robots lost to enemies on their routes',line_cut='belt or pipe line cut',no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
     no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil', rebuilt_empty='rebuilt empty',
-    burnt_full='stopped by a full burnt-result slot', output_full='drills stopped by a full chest they drop into', off_by_condition='stopped by their own circuit or logistic condition',
+    burnt_full='stopped by a full burnt-result slot', output_full='drills stopped by a full chest they drop into', off_by_condition='stopped by their own circuit or logistic condition', captive_starving='captive spawners losing health', captive_urgent='captive spawners dying within 2 min', captive_died='captive spawners died',
     no_material_for_construction='ghosts waiting for materials (no robot can bring them)',
     not_enough_construction_robots='not enough construction robots', not_enough_repair_packs='robots out of repair packs',
     no_storage='robots have no storage for what they carry', no_roboport_storage='no roboport storage',
@@ -130,6 +130,7 @@ return function(api)
         if g.nunits <= MAX_UNITS then g.units[unit] = true end
       end
     end
+    return g
   end
   local function builder(e)
     return try(function() local u = e.last_user; return u and u.name end)
@@ -375,6 +376,70 @@ return function(api)
       end
     end
   end
+  -- A starving captive spawner (d17 batch18 C6, viewer Foobator; game data, space-age entities.lua): a
+  -- captive-biter-spawner has 350 health; production_health_effect not_producing -1/60 a tick (1 HP a second while it
+  -- makes nothing: unfed or output blocked), producing +1/60; its dying_trigger_effect creates a hostile biter-spawner in
+  -- its place (as_enemy, protected; read on the copy). Not producing: where, its health, minutes until it dies at that
+  -- rate, and why (its fuel slot empty, with what it burns; output full; else its status); under CAPTIVE_URGENT seconds
+  -- its own kind (captive_urgent), told at once. Its builder and the builders of the inserters feeding it hear it.
+  local CAPTIVE, CAPTIVE_LOSS, CAPTIVE_URGENT = 'captive-biter-spawner', 1, 120
+  local CAPTIVE_FUELS
+  local function captive_fuels(e)
+    if not CAPTIVE_FUELS then
+      CAPTIVE_FUELS = {}
+      local cats = try(function() return e.prototype.burner_prototype.fuel_categories end) or {}
+      for name, it in pairs(prototypes.item) do
+        local cat = try(function() return it.fuel_category end)
+        if cat and cats[cat] then CAPTIVE_FUELS[#CAPTIVE_FUELS+1] = name end
+      end
+      table.sort(CAPTIVE_FUELS)
+    end
+    return CAPTIVE_FUELS
+  end
+  function M.captive(e)
+    if not (e and e.valid and e.name == CAPTIVE) then return nil end
+    local st = defines.entity_status or {}
+    local status = try(function() return e.status end)
+    if status == st.working then return nil end
+    local hp, max = e.health or 0, try(function() return e.max_health end) or 350
+    local secs = hp / CAPTIVE_LOSS
+    local why
+    local fuel = try(function() return e.get_fuel_inventory() end)
+    local left = try(function() return e.burner.remaining_burning_fuel end) or 0
+    if fuel and try(function() return fuel.is_empty() end) and left <= 0 then
+      local f = captive_fuels(e)
+      why = 'its fuel slot is empty' .. (#f > 0 and ' (it burns ' .. table.concat(f, ', ', 1, math.min(3, #f)) .. ')' or '')
+    elseif FULL[status] then
+      local parts = {}
+      for _, x in ipairs(try(function() return e.get_output_inventory().get_contents() end) or {}) do parts[#parts+1] = x.count .. ' ' .. x.name end
+      why = 'its output is full' .. (#parts > 0 and ' (' .. table.concat(parts, ', ') .. ')' or '')
+    else
+      for k, v in pairs(st) do if v == status then why = 'its status is ' .. k end end
+    end
+    local text = string.format('%s %s: health %d/%d, not producing (%s); it loses %d HP a second while it makes nothing, so it dies in about %.1f min, and a hostile biter-spawner takes its place',
+      e.name, at_text(e.position), math.floor(hp), math.floor(max), why or 'not working', CAPTIVE_LOSS, secs / 60)
+    return secs < CAPTIVE_URGENT and 'captive_urgent' or 'captive_starving', text
+  end
+  local function feeder_builders(e)
+    local out = {}
+    for _, i in ipairs(try(function() return e.surface.find_entities_filtered{position=e.position, radius=4, type='inserter', force=e.force, limit=32} end) or {}) do
+      if try(function() return i.drop_target == e end) then local b = builder(i); if b then out[#out+1] = b end end
+    end
+    return out
+  end
+  -- A captive spawner of ours that died (the runtime's on_entity_died): kept CAPTIVE_KEEP ticks, its group naming what
+  -- stands in its place now.
+  local CAPTIVE_KEEP = 36000
+  function M.captive_died(e)
+    if not (e and e.valid and e.name == CAPTIVE) then return end
+    local s = api.state()
+    s.push_captive = s.push_captive or {}
+    local by = {}
+    local b = builder(e); if b then by[#by+1] = b end
+    for _, x in ipairs(feeder_builders(e)) do by[#by+1] = x end
+    table.insert(s.push_captive, {tick=game.tick, force=e.force.name, surface=e.surface.name, position={x=e.position.x, y=e.position.y}, by=by})
+    while #s.push_captive > 32 do table.remove(s.push_captive, 1) end
+  end
   -- A machine its own circuit or logistic condition stops (d17 batch18 B2, Grok: the agricultural science biochamber
   -- stopped when the network's bioflux fell under 200): each unmet condition as its GUI shows it, with the value its
   -- first signal reads now (on its wires, or in the logistic network over it). A machine whose unmet conditions are all
@@ -578,11 +643,19 @@ return function(api)
           local cf = try(function() return api.timed and api.timed('pushalerts.output_chest_full', chest_full, e) or chest_full(e) end)
           if cf then kind, detail = 'output_chest_full', cf end
         end
+        local feeders
+        if e.name == CAPTIVE then
+          local ck, cd = M.captive(e)
+          if ck then kind, detail, feeders = ck, cd, feeder_builders(e) end
+        end
         if not kind and OFF_TYPES[e.type] and try(function() return e.status end) == (defines.entity_status or {}).disabled_by_control_behavior then
           local off = try(function() return off_text(e) end)
           if off then kind, detail = 'off_by_condition', off end
         end
-        if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e), detail) end
+        if kind then
+          local g = add(groups, kind, s.name, e, e.position, e.name, builder(e), detail)
+          for _, b in ipairs(feeders or {}) do g.by[b] = (g.by[b] or 0) + 1 end
+        end
       end
     end
   end
@@ -931,6 +1004,16 @@ return function(api)
         add(lost, 'outpost_turret_lost', l.surface, nil, l.position, l.name, nil, string.format('%s %s destroyed %ds ago', l.name, at_text(l.position), math.floor((game.tick - l.tick) / 60)))
       end
     end
+    for _, d in ipairs(api.state().push_captive or {}) do
+      if d.force == force.name and game.tick - d.tick <= CAPTIVE_KEEP then
+        local sf = game.get_surface(d.surface)
+        local spawner = sf and try(function() return sf.find_entities_filtered{position=d.position, radius=4, type='unit-spawner', limit=1}[1] end)
+        local g = add(lost, 'captive_died', d.surface, nil, d.position, CAPTIVE, d.by[1], string.format('%s %s died %s ago; %s', CAPTIVE, at_text(d.position),
+          (function() local m = math.floor((game.tick - d.tick) / 3600); return m > 0 and m .. 'm' or math.floor((game.tick - d.tick) / 60) .. 's' end)(),
+          spawner and string.format('a hostile %s (force %s) stands in its place at %s', spawner.name, spawner.force.name, at_text(spawner.position)) or 'nothing stands in its place now'))
+        for k = 2, #d.by do g.by[d.by[k]] = (g.by[d.by[k]] or 0) + 1 end
+      end
+    end
     if not api.belt_groups and not next(lost) then return c end
     local out={tick=c.tick,groups={}}
     for _,g in ipairs(c.groups) do out.groups[#out.groups+1]=g end
@@ -1269,6 +1352,11 @@ return function(api)
           return f and f.text and '; ' .. f.text .. (f.item and f.area and string.format('; refuel {area: %s, from: "nearest", fuel: "%s"}', f.area, f.item) or '') or ''
         end)() or '')
     end
+    if g.kind == 'captive_starving' or g.kind == 'captive_urgent' or g.kind == 'captive_died' then
+      local head = g.kind == 'captive_died' and 'captive spawner died' or g.kind == 'captive_urgent' and 'captive spawner dies within 2 min' or 'captive spawner losing health'
+      return string.format('%s%s%s: %s%s', head, g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+        table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
+    end
     if g.kind == 'off_by_condition' then
       -- '1 biochamber stopped by its own circuit or logistic condition near (57,61): biochamber (45.5,72.5) (agricultural-science-pack): off by its logistic condition bioflux > 200 (...)'
       return string.format('%s stopped by %s own circuit or logistic condition near %s%s%s: %s%s', what(g), g.n == 1 and 'its' or 'their', near_text(g),
@@ -1323,6 +1411,9 @@ return function(api)
   -- addressed to p that are new or grew since p was told. A group's rank,
   -- when it has one, is what grows (boiler_fuel: the step it reached, then
   -- how many boilers); its now_text is kept to say what it was.
+  -- (C6) a captive spawner dying within 2 minutes, or dead, is told in the team block's urgent part and wakes a sleep
+  -- (M.urgent_captive), not here.
+  local URGENT_KINDS = {captive_urgent=true, captive_died=true}
   function M.lines(p, h)
     local mem = h.push or {told={}}
     if mem.tick and game.tick - mem.tick < DIGEST_TICKS then return {} end
@@ -1333,7 +1424,7 @@ return function(api)
     local now, lines, more = {}, {}, 0
     for _, g0 in ipairs(c.groups) do
       -- One of yours, a turret group read again first: refilled since, it is not shown (nor counted as told).
-      local g = owners(g0, who)[me] and M.recheck(g0, p.force) or nil
+      local g = not URGENT_KINDS[g0.kind] and owners(g0, who)[me] and M.recheck(g0, p.force) or nil
       if g then
         local level = g.rank or g.n
         now[g.key] = level
@@ -1464,6 +1555,27 @@ return function(api)
     for _, l in ipairs(M.coverage_lines(p.force) or {}) do lines[#lines+1] = l end
     if #lines == 0 then return {} end
     h.sight_tick = game.tick
+    return lines
+  end
+  -- The urgent captive groups addressed to p now: {key, level, line}.
+  function M.urgent_captive(p)
+    local c = current(p.force)
+    local me = api.who(p)
+    local here = try(function() return p.surface.name end)
+    local who, out = roster(), {}
+    for _, g in ipairs(c.groups) do
+      if URGENT_KINDS[g.kind] and owners(g, who)[me] then out[#out+1] = {key=g.key, level=g.n, line=M.text(g, here)} end
+    end
+    return out
+  end
+  -- The team block's urgent part: each such group once (again when it grows), h.captive: key -> level told.
+  function M.captive_lines(p, h)
+    local told, now, lines = h.captive or {}, {}, {}
+    for _, r in ipairs(M.urgent_captive(p)) do
+      now[r.key] = told[r.key]
+      if not told[r.key] or r.level > told[r.key] then lines[#lines+1] = r.line; now[r.key] = r.level end
+    end
+    h.captive = next(now) and now or nil
     return lines
   end
   -- Drills out of ore per surface (the shift start's networks block): 'drills out of ore: 14 (nauvis 12, vulcanus 2)';

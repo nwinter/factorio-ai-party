@@ -9,6 +9,9 @@ const exec = promisify(execFile);
 test('Lua contract: tests/d17_batch18.lua', () => {
   execFileSync(process.env.LUA_BIN ?? 'lua', ['tests/d17_batch18.lua'], { stdio: 'pipe' });
 });
+test('Lua contract through the runtime: tests/d17_batch18_rt.lua', () => {
+  execFileSync(process.env.LUA_BIN ?? 'lua', ['tests/d17_batch18_rt.lua'], { stdio: 'pipe' });
+});
 async function engine(reply: (request: any) => any, run: (port: number) => Promise<void>) {
   const sockets = new Set<Socket>();
   const server = createServer(socket => {

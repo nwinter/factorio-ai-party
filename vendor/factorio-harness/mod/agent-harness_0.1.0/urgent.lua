@@ -237,6 +237,14 @@ return function(api)
         end
       end
     end
+    -- A captive spawner of the sleeper's (built, fed, claimed or nearest) dying within 2 minutes or dead (pushalerts.lua;
+    -- d17 batch18 C6): it turns into a hostile biter spawner inside the base.
+    if api.captive then
+      for _, r in ipairs(try(function() return api.captive(p) end) or {}) do
+        local key = 'captive|' .. r.key
+        if news(told, key, r.level) then tell(told, key, r.level); return r.line end
+      end
+    end
     -- An outpost's output gone (Opus, d15 22:51: the NW coal mine was wiped and noticed 15 minutes later via cold
     -- furnaces): a loss incident that destroyed drills, where no drill of ours mining that item still works in or
     -- within OUT_MARGIN tiles of its box, wakes the agents who built those drills and those whose claim covers it.

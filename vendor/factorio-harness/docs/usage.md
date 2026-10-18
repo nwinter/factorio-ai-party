@@ -6637,6 +6637,69 @@ fh watch    # deploy on every change
   storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
   Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
   nothing reserved. tests/d17_batch18.lua.
+- C1 (Astra, #862): belt_route and pole_route take `surface` (bots.lua SURFACE_ACTIONS: the remote-view proxy that
+  place_ghosts surface= uses; both only lay ghosts). A belt_route dry run with surface is planned there too (the
+  dry_run action took surface for place_ghosts only). route.lua plans in charted chunks; place_ghosts refuses
+  uncharted ones. pole_route's note by remote view: `ghosts placed on vulcanus by remote view; its construction robots
+  build them (no hand reach there)`. Copy, Astra on nauvis: belt_route on vulcanus placed 29 ghosts (27 belts, 2
+  undergrounds), pole_route 6 medium pole ghosts; the dry run's standing says `you are on another surface: the ghosts
+  on vulcanus are built by its construction robots`. tests/d17_batch18.lua.
+- C2 (Opus): a whole circuit block was built unpowered outside the robot network. build (one entry or a batch) and
+  place_ghosts (and the routes and pastes that place through it) add `no_power_coverage`: electric entities (not
+  poles, generators, solar, accumulators) no pole's supply area covers. A built one has no electric network
+  (M.unpowered: the nearest pole within 64 tiles); a ghost has no pole or pole ghost within 12 tiles whose supply area
+  (get_supply_area_distance) meets its collision box. `outside_construction_area`: what no roboport's construction
+  area covers (find_logistic_networks_by_construction_area). Each: how many, the first 8. Read for up to 256 entities
+  a call; not on a platform. Copy: ghosts at (260.5,0.5) and (264.5,0.5) named both (the chest has no power source);
+  a lamp ghost by a pole in the base and a lamp and chest built there say neither. 64 lamp ghosts placed in 21-23 ms
+  on the copy with and without the notes. tests/d17_batch18_rt.lua.
+- C3 (Opus): after a walking feed, rearm or refuel tour (a fuel round too), last (and fh --wait) gives
+  `enemy_groups_toward`: the enemy groups the harness tracks (threat.lua live_groups: gathered, with a target) in a
+  chunk our force sees now (avoid.seen_now) whose target lies within 48 tiles of a place the tour served, or within
+  256 tiles of one and nearer to it than the group is. Each: `enemy group of 11 (8 small-biter, 3 small-spitter) at
+  (177,44), 77 tiles from gun-turret (104,20), heading west for (98,17), 7 tiles from it`; up to 4, nearest first.
+  Copy: a rearm tour by Opus over 6 turrets ended topped_up with none (no tracked group headed there). A group made by
+  script does not raise the gathering event, so the line was checked with fakes (tests/d17_batch18.lua).
+- C4 (Gemini): a moving train read by position failed as it moved. `train {train_id}` reads one of ours by its id
+  (game.train_manager.get_train_by_id; the game's trains list opens any of ours), with schedule, state, speed,
+  heading_to and the rest as a read by position, and takes the same settings. Every train read now gives `id` and
+  `front` {name, position, surface}; train {stops} already named ids (`train 15 heading there`). Not ours or no such
+  id: refused, naming train {stops}. Copy: train 15 on Fulgora read from Gemini twice, 2 s apart: front (-15.13,191)
+  at 4 km/h, then (-30.45,191) at 46 km/h, 147 tiles left to Fulgora Scrap North. tests/d17_batch18.lua.
+- C5 (viewer Foobator 13:38): demolishers.lua gave the head only, and the walk checks found the head only. Engine
+  (2.0.77, read on the copy): LuaSegmentedUnit.segments lists the head first (its entity is the segmented-unit),
+  then the body, each a LuaSegment with entity (type segment, force enemy), position and orientation; a small
+  demolisher had 42 segments about 1.2 tiles apart, 51 tiles of body; a segment entity's segmented_unit is its unit.
+  - demolishers: a demolisher with any segment in a chunk our force sees now is in sight; `body`: segments in sight of
+    all, the line through them simplified (points within 1.5 tiles, at most 16), length, tiles under the segments'
+    boxes, the box, the head's heading and speed. Copy (a radar placed near it): `small-demolisher: head at
+    (299,357), health 30000/30000, seen now; body 51 tiles long over 279 tiles (42 of its 42 segments in sight), box
+    (277,311)-(301,359), along (299,357) (290,342) (286,320) (279,312); head moving southeast at 4 km/h`. A body seen
+    without its head is remembered at its first body point.
+  - Walk planning, stand points and tours (avoid.lua attack_discs with a box: the area round the way only): the
+    segmented-unit and segment entities seen now, per demolisher in 8-tile cells, each a disc of 24 + the margin
+    round the cell's middle, widened by its farthest segment, so every segment keeps the margin; named `small-demolisher
+    body (7 segments)` or `head`. Copy: move_to dry run to (265,330) named three body discs and refused the goal
+    without unsafe_goal; 313-tile dry runs took median 106 ms with it, 99-101 ms without (the dry run's own cost).
+  - safety.threats (walking's stop-and-defend check, kite): a demolisher is one unit at its nearest segment in sight,
+    named by its head. tests/d17_batch18.lua.
+- C6 (viewer Foobator, operator 15:10): a starving captive spawner turns into a hostile biter spawner. Game data
+  (space-age entities.lua, as the brief quotes it): 350 health; production_health_effect not_producing -1/60 a tick, so
+  1 HP a second while it makes nothing; the API gives no production_health_effect, so the rate is that constant. Its
+  dying_trigger_effect, read on the copy: create-entity biter-spawner, as_enemy, protected.
+  - pushalerts.lua: a captive-biter-spawner of ours whose status is not working is `captive_starving` (under 120 s
+    left: `captive_urgent`): `captive-biter-spawner (29.5,-56.5): health 347/350, not producing (its fuel slot is empty
+    (it burns bioflux)); it loses 1 HP a second while it makes nothing, so it dies in about 5.8 min, and a hostile
+    biter-spawner takes its place` (output full: what fills it; else its status). It goes to its builder and the
+    builders of the inserters dropping into it (and claim owners; else the nearest agent).
+  - Its death (on_entity_died) is kept 10 min as `captive_died`, naming what stands in its place now: `captive-biter-
+    spawner (263.5,8.5) died 32s ago; a hostile biter-spawner (force enemy) stands in its place at (263.5,8.5)`.
+  - captive_urgent and captive_died are told in the team block's urgent part (always shown, once a group, again when
+    it grows) and wake sleeps (urgent.lua), not in the 2.5-minute push digest. inspect gives the same line as
+    `starving`.
+  - Copy: three unfed spawners on nauvis (one at 100 health) went captive_starving, then captive_urgent, then
+    captive_died with the biter-spawner at the same position; Opus's team block carried the died line.
+    tests/d17_batch18.lua, game_alerts_groups.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun
@@ -6829,6 +6892,46 @@ fh watch    # deploy on every change
   section 2 ("GROUP") is off: its 3 requests (rocket-fuel 100 from nauvis, ...) are not made`. It is in preflight's
   platform lines and rows (`requests_off`), platforms (`requests_off_line`; compact lines), and fleet's line.
   tests/rocketload.lua (its preflight line now ends with it, the fake hub having an off section).
+
+### Group C
+- C1 (Opus): killed by his own explosive rocket's splash with biters touching him. batch19 D1 guards our entities in
+  the blast; M.melee_guard guards the character. While shoot fires area ammunition on foot (fixed or auto), every 5
+  ticks: an enemy unit within 6 tiles of the character, or the aim point within the blast's radius of it, switches the
+  gun to a slot holding ammunition without an area (`last_combat.switched_gun`: `big-biter 3.0 tiles from you: switched
+  to gun slot 1 submachine-gun with piercing-rounds-magazine ...`); with none, fire holds (`held_melee`, with how many
+  ticks). runtime_test.lua.
+- C2 (Opus): about 300 construction robots died to worms in one shift before the jobs sending them were found by hand.
+  robotloss.lua: on a robot of ours an enemy kills (on_entity_died, the robot still there), its first order (2.0
+  robot_order_queue: construct, deconstruct, repair, deliver, ...) and that order's target are kept with the killer
+  (up to 512, 15 min). `robot_losses {surface?, minutes?}` groups them by killer: `4 construction-robot robots lost to
+  big-worm-turret (200,40) on nauvis, the last 10s ago, sent to: 3 construct solar-panel ghost at (230.5,40.5); 1
+  deconstruct tree-01 at (231,44); 2 of those jobs stand (robot_losses {cancel: true, near: ...} cancels them)`; a
+  killer with a death in the last 5 min is a team alert group (`robots_lost`, in game_alerts and the team block).
+  `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
+  hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
+  deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+### Group D
+- D1 (Sol): three couriers, and one platform's cargo wait held the steps of the others (the remote lane runs its steps
+  in turn; about 12 times a shift Sol's body walks also interrupted the Swiftlet wait he had queued in the body lane).
+  `lane: "platform:NAME"` on every queue call (queue_lanes.lua): a remote lane of its own for that platform, built as
+  the remote lane is (the same steps: platform waits and writes, body-independent reads), its queues in storage under
+  `lane_queues|NAME` and the lane names under `platform_lanes`; each is ticked as the remote lane. queue_status
+  `{lane: "platform:Swiftlet"}` reads it; every queue_status's `lanes.platforms` lists them (`{Swiftlet: {paused,
+  pending, active, ...}}`). A harness update keeps them as it keeps the remote lane (carry.lua), and clock, departure
+  and waiteta read them with the others. runtime_test.lua.
+- D2 (Muse): feeding guns in a hot zone was refused 3 times (`every place of this tour lies in enemy reach ...: an area
+  under attack now`, the refusal naming `retry_when_clear: true`), and transfer refused that argument. transfer now
+  takes `retry_when_clear` (and `retry_ticks`) as rearm does: a refusal for passing enemies only waits until no enemy
+  unit is within 48 tiles of the first place held, then runs again (last.then_call), at most 6 times. With no unit
+  there already (an area under attack counts 30 s past its last hit) it waits 30 s (wait_ticks) first, rearm too
+  (`cleared` in the reply). runtime_test.lua.
+- D3 (Muse): a backwards inserter 700 tiles off took a deconstruct and a new build; rotate turned an entity on your own
+  surface only in reach (walking within 32 tiles first). Now a target past the 32 tiles a call walks (without `walk:
+  true`) is turned by remote view in a chunk our force sees now, as a player rotates in the map (`by: "remote view"`).
+  Within 32 tiles it walks into reach as before, and with `walk: false` the reach refusal still names a spot in reach
+  (tests/minerotate.lua). runtime_test.lua.
+
 ## d17 territory (operator 17:10; Nick 17:08)
 - On n (read only), Vulcanus territory 1 (87 chunks, x -320..96, y -192..416, the main base included) has no
   demolisher: Sol killed it at tick 4,888,121. The demolishers read said `no demolisher in sight now` for it, as for one
