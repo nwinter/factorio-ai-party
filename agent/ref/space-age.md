@@ -291,7 +291,10 @@
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
   launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`
   and `from` the walk gathers from the chests first, then waits at the silo the same way (a walking load with `launch`
-  and `platform` holds at the silo while the platform flies here). A rocket
+  and `platform` holds at the silo while the platform flies here). With `launch` a walking load that reaches the silo
+  before the rocket is ready holds there, in reach, loading nothing until it is; status's active then gives `holding`
+  (`at the silo stop (17.5,-13.5), in reach: waiting for the rocket to be ready (rocket parts 29 of 50, 31.1 a minute),
+  the last part in about 40s at that rate; held for it: 1000; holding 42s`) and no `stuck_s`. A rocket
   holding what a platform above asks for is launched by the game when it stops, one item type a rocket: the wait then
   ends `launched_by_game` (what went, and what stayed in the silo). A silo with automatic requests on is refused,
   naming what is aboard; `auto_requests: "pause"` (with `launch`) turns them off for this manifest and back on after

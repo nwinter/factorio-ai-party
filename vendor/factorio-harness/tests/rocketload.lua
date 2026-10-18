@@ -562,6 +562,18 @@ local hold_last={}; R.walk_last(act,hold_last); assert(hold_last.silo_wait and h
 outcome,act=tour(w,function(action,n) if n==2 then silo.rocket_silo_status=7 end end)
 eq(outcome,'launched'); eq(launched.platform,'Sunward'); eq(cargo.counts['agricultural-science-pack@normal'],100); eq(act.why,nil)
 silo.rocket_silo_status=7
+-- (d17 batch34 A5, Astra 12:24: from two sources, 1000 gathered, then 40 s "in gather" 14 tiles from the silo, read as
+-- stuck and stopped) two sources, the rocket not ready: both taken, then the hold at the silo, said by hold_line.
+cargo.counts={}; cargo.order={}; main=Inv(8,{}); launched=nil
+provinv.counts={}; provinv.order={}; provinv.add('agricultural-science-pack',60)
+chestA.counts={}; chestA.order={}; chestA.add('agricultural-science-pack',40)
+silo.rocket_silo_status=0
+w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=100},from={{x=129.5,y=14.5},{x=60.5,y=10.5}},walk=true,launch=true,platform='Sunward',all_or_nothing=true})
+eq(#w.entities,3); eq(w.entities[3],silo)
+outcome,act=tour(w,function(action,n) return n>=4 end)
+eq(outcome,'holding'); eq(act.taken,100); eq(main.counts['agricultural-science-pack@normal'],100); eq(cargo.counts['agricultural-science-pack@normal'],nil)
+eq(R.hold_line(act):match('^(.-); holding'),'at the silo stop (65.5,14.5), in reach: waiting for the rocket to be ready (building the rocket: parts 20/50); nothing loaded yet; held for it: 100')
+silo.rocket_silo_status=7
 -- The chest runs out: short, naming what the rocket still needs and what the chest holds.
 cargo.counts={}; cargo.order={}; main=Inv(4,{})
 provinv.counts={}; provinv.order={}; provinv.add('agricultural-science-pack',120)

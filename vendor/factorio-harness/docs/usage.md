@@ -7848,3 +7848,18 @@ fh watch    # deploy on every change
     construct jobs on the far east network: 5.4 ms with the enemy read, 0.9 ms for 24 without. A first version that
     read enemies leg by leg and every roboport per group ran 88 ms for 36 jobs; the structures read once and the
     roboports read once a network brought it down.
+- A5 (Astra 12:24, twice on Aquilo, queue jobs 35322 and 35326: load_silo from (9.5,0.5) and (29.5,29.5), 1000
+  cryogenic science; the character held all 1000 and stood "in gather" at (20.34,0.63) for over 40 s; stopped, and a
+  load_silo without from launched):
+  - Found in the journal: the gather phase had ended. The tour stood at its silo stop in reach (the silo's box is
+    within 10 tiles of (20.34,0.63); "14 tiles" was to its centre), holding for the rocket, as a walking load with
+    `launch` does (Astra 06:23's rule: nothing goes into a rocket not ready).
+  - In status during the hold: `silo_wait` parts 29, 22 of them added in the 42 s, 31 a minute. The stopped step's
+    last read "waiting at the silo for the rocket to be ready (building the rocket: parts 22/50); nothing loaded yet".
+    But status's active gave `progress: stop 3 of 3 (rocket-silo ...), 14 tiles to it` and `stuck_s: 42`, and the
+    warning line "made no progress ... likely physically stuck". That read as a stalled walk.
+  - Status now: a gather holding at its silo stop gives `holding` (rocketload.lua `hold_line`: the stop, in reach,
+    why, rocket parts of required and their rate, the time to the last part at that rate, held for it, how long, the
+    give-up tick). It gives no `progress` and no `stuck_s`, so no stuck warning.
+  - Test: tests/rocketload.lua, two sources: both taken (60 and 40), then the hold at the silo, nothing loaded, and
+    the hold line.
