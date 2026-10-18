@@ -56,7 +56,9 @@
   `load_silo` too); `mode: "pending"` replaces only the pending steps. `on_fail`: `abort` pauses, `skip` goes on (it
   acquires nothing), `goto:<label>` jumps to that pending label. A `place_ghosts` or `build` step with failed entries
   fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies. A transfer step
-  that moves fewer than asked (a full target) succeeds short; `min_moved: N` fails it below N moved. `guards` (up to 8
+  that moves fewer than asked (a full target) succeeds short; `min_moved: N` fails it below N moved. A transfer,
+  collect, feed, rearm or refuel step with a position and no `walk` runs with `walk: true`: it walks into reach from
+  any distance, with move_to's enemy checks (`walk: false` keeps it from walking; standing orders keep `max_walk`). `guards` (up to 8
   `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing.
   `lane: "remote"`: the remote lane (`./fh help space-age`); `lane: "platform:NAME"`: a remote lane of its own for that
   platform (the same steps), apart from the remote lane and the other platforms' lanes; each queue call takes the same

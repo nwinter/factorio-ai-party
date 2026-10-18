@@ -668,6 +668,39 @@ do
   assert(to:find('haiku (built)',1,true) and to:find('sol (near)',1,true),to)
   ents.nauvis={}
 end
+-- (d17 batch23 C1, Opus) an artillery turret with no shell for 5 min: artillery_empty, to its builder and the builder of
+-- the inserter feeding it, with that inserter's requester chest (its request, what it holds, its network's shells); one
+-- empty under 5 min is not said, and a refilled one drops out when shown.
+do
+  ents.nauvis={}
+  local kept_inv,kept_lmi,kept_lm=defines.inventory,defines.logistic_member_index,defines.logistic_mode
+  defines.inventory={turret_ammo=7,artillery_turret_ammo=9,chest=1}
+  defines.logistic_member_index={logistic_container=0}
+  local shells=0
+  local piece=ent('nauvis','artillery-turret','artillery-turret',150.5,-134.5,{unit_number=501,last_user=user('opus'),surface=nauvis,force=force,
+    get_inventory=function(i) eq(i,9); return {get_item_count=function() return shells end} end})
+  local net={get_item_count=function(n) eq(n,'artillery-shell'); return 0 end}
+  local chest=ent('nauvis','requester-chest','logistic-container',147.5,-134.5,{
+    get_inventory=function(i) eq(i,1); return {get_item_count=function() return 0 end} end,
+    get_logistic_point=function() return {filters={{name='artillery-shell',count=10}},logistic_network=net,targeted_items_deliver={}} end})
+  ent('nauvis','inserter','inserter',148.5,-134.5,{drop_target=piece,pickup_target=chest,force=force,last_user=user('sol')})
+  local stc={board={items={}}}
+  local RA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return stc end,
+    agents=function() return {{index=1,name='opus'},{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=0,y=0}} end}
+  eq(#RA.read(sol,{kind='artillery_empty'}).groups,0,'empty under 5 min')
+  game.tick=game.tick+18000
+  local g=RA.read(sol,{kind='artillery_empty'}).groups
+  eq(#g,1)
+  assert(g[1].line:find('1 artillery-turret with no shell for 5+ min near (150.5,-134.5): artillery-turret (150.5,-134.5): empty for 5 min; '
+    ..'inserter (148.5,-134.5) takes from requester-chest (147.5,-134.5) (asks 10 artillery-shell, holds 0); its logistic network holds 0 artillery-shell (robots bringing 0)',1,true),g[1].line)
+  local to=table.concat(g[1].to,', ')
+  assert(to:find('opus (built)',1,true) and to:find('sol (built)',1,true),to)
+  shells=5
+  eq(#RA.read(sol,{kind='artillery_empty'}).groups,0,'refilled')
+  defines.inventory,defines.logistic_member_index,defines.logistic_mode=kept_inv,kept_lmi,kept_lm
+  ents.nauvis={}
+end
 -- Frozen (d17 frozen, Nick 17:18: "I see some frozen belts that have been frozen a long time on Aquilo"; on world n 70
 -- belts and 8 pipes): on a planet whose entities require heating, our frozen entities by 64-tile area; pipes and
 -- machines first with what they hold, the belts as one run, how long the oldest has been frozen (first seen frozen), and

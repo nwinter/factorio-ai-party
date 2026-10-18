@@ -7248,6 +7248,86 @@ fh watch    # deploy on every change
   - `last.route`: `walked N tiles against M in a straight line, at most D tiles off it (at (x,y)); it went round: ...`
     (what the straight line crosses, enemies' reach with avoided_enemies, a path off belts), or `on the straight line`.
   mod/tests/runtime_test.lua.
+- A2 cost, after the operator's 23:47 note (a whole Kestrel II trace, about 25 ms, is over the 20 ms rule): a
+  platform with more than 400 belts is read in the background (ammofeed.lua `get`): one tick finds its inserters and
+  belts, then 256 belts a tick are read (neighbours, ammunition on them, switch, place), then the trace is computed
+  from those reads in one tick and kept; it is fresh for a minute. platform_defense, platform_endurance, preflight and
+  the platform alert read it; a read past a minute begins a new one and the last is given meanwhile, with `ammunition
+  trace read over N ticks in the background (B belts, 256 a tick), Ss ago`. The first call on such a platform says
+  the trace is being read and to read again in a second. Platforms of up to 400 belts are traced at once as before.
+  Measured on n: Kestrel II (1270 belts) setup 1.7 ms, a 256-belt read tick 3.2 ms; Swiftlet (210 belts) reads
+  2.4 ms and compute 2.2 ms. The Kestrel II compute tick is estimated at about 13 ms from Swiftlet's phases (turrets
+  53 us each, about 3 us a belt in the graph, 2 us a belt for the loops); it is not measured whole on n, since its
+  reads must come first in the same command.
+- B1 (Luna, Grok: the hatch alerts named one holder at a time while several hatched at once): `eggs {surface?,
+  limit?}` lists every holder the egg sweep found on a surface (the sweep keeps all it found, at most 512): count,
+  item, holder, position, who placed it, spoiled percent (mean and the first stack), the first hatch, how many within
+  5 min, turret cover (danger's coverage, the first `limit` holders, default 64); the head line gives the eggs due
+  within 5 min by 64-tile area and the sweep's age. The egg alert is one line a surface: the eggs and holders due
+  within 5 min, the first holder, the areas; told to an agent again only when the set of holders due on that surface
+  changes (the mark under 1 minute no longer repeats it; sleepers still wake on it). tests/spoil.lua.
+- B2 (Sonnet: 4000 copper cable read as ready twice; it sat in requester chests): `stock {item}` gives `by_holder`
+  over the places read: provider_storage (provider and storage chests: robots can take it), requester_buffer
+  (requester and buffer chests: held for their requests), chests (no logistics), machines (outputs), other (landing
+  pads, wagons, vehicles), and its line. The stock summary (stock's, craft's and construct's notes) carries that split
+  when a provider, storage, requester or buffer chest holds the item. tests/d17_batch23.lua.
+- B3 (Gemini; Sonnet's first ask), in `silo`: per silo `parts_made` (products_finished) and `parts_per_min` over the
+  last 10 min of samples (a silo read and the alert scan sample it, at most every 10 s; the first read says the rate
+  needs a second sample); per platform request (each request a platform above makes of this planet that its hub
+  lacks) `network_can_give` (the game's count of the silo's network: provider and storage chests, less what robots
+  have reserved; on n, get_item_count without a member equals providers plus storage, and requester chests are not
+  in it), `providers`, `storage`, and `next_launch`: `min_payload N` when the request sets one, else `full N` by
+  weight; `next_auto_launch`: the request filled now, else the first whose payload the network can give.
+  tests/d17_batch23.lua, tests/d15_batch4.lua.
+- B4 (Astra: tile_wait said no blocker while the game said a tile would split empty space; by hand, water's pipe
+  needed one 374-tile pocket, not 41 tiles nor all 1935 ghosts): platform_plan `ready` gives `pockets`, the empty space
+  under each ghost's footprint by tilecheck's rules: the 4-neighbour region of empty tiles round it bounded by
+  foundation, at most 1024 tiles (past that: open space beside the hull, or a larger pocket), with its tile count,
+  area, the ghosts over it, and the tiles of it holding no tile ghost. The hub builds no tile that splits empty space,
+  so a pocket fills only once every tile of it holds a ghost; `pocket_entries` (up to 512) are place_ghosts entries
+  for those tiles. A read looks at most 1536 tiles and 8 pockets (about 4.6 ms on n for a 1024-tile open read on
+  Kestrel III). tests/d17_batch23.lua.
+- A0b (operator 23:02). Luna on shift32 (05:38:14-05:38:34 UTC) set Spindle, waiting at Fulgora, to 4 schedules whose
+  current stop was fulgora: all read no_schedule, the record by record rebuild too; at 05:40:22 the same stops with
+  current 2 (gleba) went on_the_path at once. With Sol's 4 at Aquilo, 8 of 8. No copy was reachable (a and b refuse,
+  c and sa close RCON), so what the game does there was not found. platform_schedule now:
+  - `current_note` when the current stop is the station the platform waits at: the 8 of 8 seen, and the current
+    that departed (the next stop); in the state_note too when it reads no_schedule;
+  - in flight, `leg`: `it was flying X->Y (N%); the current stop is now Z: the same destination | it turns back the
+    way it came | a new destination` (Astra 22:52: Sol's 05:32:53 edit sent Spindle back to gleba, unsaid);
+  - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
+    no leg, or when the stops hold no stop for the destination.
+  tests/space.lua.
+- C1 (Opus: artillery fed by an inserter from a requester chest asking shells sat empty for minutes, found by
+  looking): the no_ammo alert read ammo turrets only, and the alert scan did not read artillery turrets. pushalerts
+  now reads them, kind `artillery_empty`: an artillery turret with no shell in it for 5 min or more (since first read
+  empty; the turret memory by unit number), one line a 64-tile group: `1 artillery-turret with no shell for 5+ min
+  near (x,y): artillery-turret (x,y): empty for N min; inserter (x,y) takes from requester-chest (x,y) (asks 10
+  artillery-shell, holds 0); its logistic network holds 0 artillery-shell (robots bringing 0)` (up to 3 feeding
+  inserters; `no inserter drops into it` when none; an item request on the piece named), to its builder and the
+  builders of the inserters feeding it, as no_ammo; read again when shown (a refilled piece drops out).
+  tests/pushalerts.lua.
+- C2 (Grok: a plan's copper transfer refused past 64 tiles and the Swiftlet repair plan stopped): the limit is the
+  64 tiles a transfer, collect, feed, rearm or refuel walks by default (32 for the rest; autowalk.lua), past which a
+  call is refused naming the same call with walk: true. Only a repeating loop's steps ran with walk: true. Every
+  queue's hand step with a position and no walk now runs with walk: true, walking any distance as move_to does with
+  its enemy checks (unsafe_goal, avoid_enemies); walk: false keeps a step from walking; standing orders are as before
+  (max_walk). tests/d15_batch4.lua, tests/picksource.lua.
+- C3 (Muse, three tries: `vehicle {position}` replied `vehicle: false` and seated nobody; "vehicle board needs
+  enter:true"): with no enter, exit, drive or go_to (and no targeting switch) the call read only the character's own
+  seat. A position there is now refused: `position names the vehicle for enter: true (get in), go_to or the targeting
+  switches; with none of them nothing is done (car stands there): vehicle {position: {x: 3, y: 0}, enter: true} gets
+  in` (and, seated, that exit comes first); a drive argument (dry_run, pathfind, reverse, avoid_enemies, combat,
+  retreat, ticks) without drive is refused naming drive. A position alone is not taken as enter: on a spidertron it
+  can mean go_to or the switches. `vehicle {}` still reads the seat. tests/vehicles.lua.
+- C4 (Muse: item with position and forward tried in turn, each refused tersely; "trace syntax is
+  {"forward":true,"position":{}}"): every argument refusal of trace (trace.lua `need`) says what was wrong, then the
+  shapes it takes (`M.SHAPES`): `{position}` (back to what it lacks; all: true), `{position, forward: true}` (audit),
+  `{position, upstream: true}` (item: one ingredient), `{position, circuit: true}`, `{position, throughput: true}`,
+  `{item}` (near, radius, surface). item with position now reads `item with position goes with upstream: true (that
+  one ingredient back from the machine); item alone traces the item's routes`. `./fh help trace` gives one call a mode
+  (runtime.lua M.EXAMPLES.trace: back, all, forward, forward with audit, upstream with item, circuit, throughput, item,
+  item near), each passing the argument check (runtime_test). tests/d17_batch23.lua.
 
 ## d17 study1 part 2
 - 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):
@@ -7311,45 +7391,6 @@ fh watch    # deploy on every change
   checked with can_place_entity (manual) and against the spots planned before it; then one `build` batch with `all`
   of a requester chest (its request as an entry setting) and the inserter per turret, from the inventory. Rows: the
   spots, skipped (why), short (items ran out), not_built (build's refusal). tests/turretfeed.lua.
-- A2 cost, after the operator's 23:47 note (a whole Kestrel II trace, about 25 ms, is over the 20 ms rule): a
-  platform with more than 400 belts is read in the background (ammofeed.lua `get`): one tick finds its inserters and
-  belts, then 256 belts a tick are read (neighbours, ammunition on them, switch, place), then the trace is computed
-  from those reads in one tick and kept; it is fresh for a minute. platform_defense, platform_endurance, preflight and
-  the platform alert read it; a read past a minute begins a new one and the last is given meanwhile, with `ammunition
-  trace read over N ticks in the background (B belts, 256 a tick), Ss ago`. The first call on such a platform says
-  the trace is being read and to read again in a second. Platforms of up to 400 belts are traced at once as before.
-  Measured on n: Kestrel II (1270 belts) setup 1.7 ms, a 256-belt read tick 3.2 ms; Swiftlet (210 belts) reads
-  2.4 ms and compute 2.2 ms. The Kestrel II compute tick is estimated at about 13 ms from Swiftlet's phases (turrets
-  53 us each, about 3 us a belt in the graph, 2 us a belt for the loops); it is not measured whole on n, since its
-  reads must come first in the same command.
-- B1 (Luna, Grok: the hatch alerts named one holder at a time while several hatched at once): `eggs {surface?,
-  limit?}` lists every holder the egg sweep found on a surface (the sweep keeps all it found, at most 512): count,
-  item, holder, position, who placed it, spoiled percent (mean and the first stack), the first hatch, how many within
-  5 min, turret cover (danger's coverage, the first `limit` holders, default 64); the head line gives the eggs due
-  within 5 min by 64-tile area and the sweep's age. The egg alert is one line a surface: the eggs and holders due
-  within 5 min, the first holder, the areas; told to an agent again only when the set of holders due on that surface
-  changes (the mark under 1 minute no longer repeats it; sleepers still wake on it). tests/spoil.lua.
-- B2 (Sonnet: 4000 copper cable read as ready twice; it sat in requester chests): `stock {item}` gives `by_holder`
-  over the places read: provider_storage (provider and storage chests: robots can take it), requester_buffer
-  (requester and buffer chests: held for their requests), chests (no logistics), machines (outputs), other (landing
-  pads, wagons, vehicles), and its line. The stock summary (stock's, craft's and construct's notes) carries that split
-  when a provider, storage, requester or buffer chest holds the item. tests/d17_batch23.lua.
-- B3 (Gemini; Sonnet's first ask), in `silo`: per silo `parts_made` (products_finished) and `parts_per_min` over the
-  last 10 min of samples (a silo read and the alert scan sample it, at most every 10 s; the first read says the rate
-  needs a second sample); per platform request (each request a platform above makes of this planet that its hub
-  lacks) `network_can_give` (the game's count of the silo's network: provider and storage chests, less what robots
-  have reserved; on n, get_item_count without a member equals providers plus storage, and requester chests are not
-  in it), `providers`, `storage`, and `next_launch`: `min_payload N` when the request sets one, else `full N` by
-  weight; `next_auto_launch`: the request filled now, else the first whose payload the network can give.
-  tests/d17_batch23.lua, tests/d15_batch4.lua.
-- B4 (Astra: tile_wait said no blocker while the game said a tile would split empty space; by hand, water's pipe
-  needed one 374-tile pocket, not 41 tiles nor all 1935 ghosts): platform_plan `ready` gives `pockets`, the empty space
-  under each ghost's footprint by tilecheck's rules: the 4-neighbour region of empty tiles round it bounded by
-  foundation, at most 1024 tiles (past that: open space beside the hull, or a larger pocket), with its tile count,
-  area, the ghosts over it, and the tiles of it holding no tile ghost. The hub builds no tile that splits empty space,
-  so a pocket fills only once every tile of it holds a ghost; `pocket_entries` (up to 512) are place_ghosts entries
-  for those tiles. A read looks at most 1536 tiles and 8 pockets (about 4.6 ms on n for a 1024-tile open read on
-  Kestrel III). tests/d17_batch23.lua.
 
 ## d17 batch25 Group A (the agents' 22:50 poll)
 - A1 (Haiku ~4 times: rearm's dry run said the route was clear, then the walk ended `(-76,161): blocked` after a
@@ -7435,17 +7476,6 @@ fh watch    # deploy on every change
   `unpowered` the count; `ghosts: true` places each turret's chest (request on the ghost), inserter and, when no pole of
   ours covers the inserter, a pole ghost (default small-electric-pole) on a free tile within 2 of it, inside its supply
   area and within wire reach of our nearest pole (else `pole_note` says why), all by `place_ghosts`. tests/turretfeed.lua.
-- A0b (operator 23:02). Luna on shift32 (05:38:14-05:38:34 UTC) set Spindle, waiting at Fulgora, to 4 schedules whose
-  current stop was fulgora: all read no_schedule, the record by record rebuild too; at 05:40:22 the same stops with
-  current 2 (gleba) went on_the_path at once. With Sol's 4 at Aquilo, 8 of 8. No copy was reachable (a and b refuse,
-  c and sa close RCON), so what the game does there was not found. platform_schedule now:
-  - `current_note` when the current stop is the station the platform waits at: the 8 of 8 seen, and the current
-    that departed (the next stop); in the state_note too when it reads no_schedule;
-  - in flight, `leg`: `it was flying X->Y (N%); the current stop is now Z: the same destination | it turns back the
-    way it came | a new destination` (Astra 22:52: Sol's 05:32:53 edit sent Spindle back to gleba, unsaid);
-  - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
-    no leg, or when the stops hold no stop for the destination.
-  tests/space.lua.
 
 ## d17 batch25 Group C
 - C1 (Grok: Spindle 48 s from Gleba with a 60 s stop; wait_platform refused any walk): `load_silo {wait_platform:

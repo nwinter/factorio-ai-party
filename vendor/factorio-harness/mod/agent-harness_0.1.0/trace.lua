@@ -830,10 +830,17 @@ return function(api)
     return out
   end
 
+  -- (d17 batch23 C4, Muse: item + position + forward tried in turn, each refused tersely) an argument refusal names the
+  -- shapes trace takes, one a mode (fh help trace gives a call for each: runtime.lua M.EXAMPLES).
+  local SHAPES = 'trace takes {position} (a machine or lab, back to what it lacks; all: true for every ingredient) | '
+    .. '{position, forward: true} (its output, or a belt tile on; audit: true) | {position, upstream: true} (item: one ingredient) | '
+    .. '{position, circuit: true} | {position, throughput: true} (a belt tile) | {item} (every route of an item; near: {x,y}, radius, surface)'
+  M.SHAPES = SHAPES
+  local function need(ok, text) if not ok then error(text .. '; ' .. SHAPES, 0) end end
   -- trace {item}: every route from the machines making it to the labs, machines and chests taking it.
   function M.items(p, a)
     local item = a.item
-    assert(type(item) == 'string' and prototypes.item[item], 'item must be an item name (chemical-science-pack, iron-gear-wheel, ...)')
+    need(type(item) == 'string' and prototypes.item[item], 'item must be an item name (chemical-science-pack, iron-gear-wheel, ...)')
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -847,7 +854,7 @@ return function(api)
     -- near {x,y} (+ radius): makers and labs in that area only (a whole-surface read is the costly part).
     local area
     if a.near ~= nil then area = {position=api.position(a.near), radius=api.integer(a.radius, 64, 1, 512, 'radius')}
-    else assert(a.radius == nil, 'radius goes with near {x,y}') end
+    else need(a.radius == nil, 'radius goes with near {x,y}') end
     local function find(f)
       f.force = force
       if area then f.position, f.radius = area.position, area.radius end
@@ -1028,27 +1035,27 @@ return function(api)
   local beltrate
   function M.trace(p, a)
     if a.upstream ~= nil then
-      assert(type(a.upstream) == 'boolean', 'upstream must be true or false')
-      assert(a.forward == nil, 'upstream and forward go one way each: give one')
-      assert(a.near == nil and a.radius == nil, 'near and radius go with item alone')
+      need(type(a.upstream) == 'boolean', 'upstream must be true or false')
+      need(a.forward == nil, 'upstream and forward go one way each: give one')
+      need(a.near == nil and a.radius == nil, 'near and radius go with item alone')
     end
     if a.upstream then
-      assert(a.position ~= nil, 'upstream takes position (a machine, lab, thruster, hub, chest or belt tile); item= picks one ingredient')
+      need(a.position ~= nil, 'upstream takes position (a machine, lab, thruster, hub, chest or belt tile); item= picks one ingredient')
       upstream = upstream or require('upstream')(api, M.h)
       return upstream.trace(p, a)
     end
     if a.item ~= nil then
-      assert(a.position == nil and a.forward == nil and a.all == nil, 'item traces the item\'s routes: give item, or position (with forward or all)')
+      need(a.position == nil and a.forward == nil and a.all == nil, a.position ~= nil and 'item with position goes with upstream: true (that one ingredient back from the machine); item alone traces the item\'s routes' or 'item traces the item\'s routes alone: forward and all go with position')
       return M.items(p, a)
     end
-    assert(a.near == nil and a.radius == nil, 'near and radius go with item')
-    assert(a.position ~= nil, 'trace takes position (a machine or lab; forward=true for its output) or item')
+    need(a.near == nil and a.radius == nil, 'near and radius go with item')
+    need(a.position ~= nil, 'position or item is missing')
     -- circuit (D5, Astra 00:20: return-belt deadlocks took dozens of inspect calls): the machine's state, each inserter
     -- feeding it (or taking from it) with its enable condition, its value now, filters and hand, and the circuit
     -- networks on its wires followed back through combinators to what drives them (circuits.lua trace_from).
     if a.circuit ~= nil then
-      assert(a.circuit == true, 'circuit is true')
-      assert(a.forward == nil and a.item == nil and a.upstream == nil and a.throughput == nil, 'circuit takes position (a machine, chest or inserter) alone')
+      need(a.circuit == true, 'circuit is true')
+      need(a.forward == nil and a.item == nil and a.upstream == nil and a.throughput == nil, 'circuit takes position (a machine, chest or inserter) alone')
       local e = target(p, a)
       local C = api.circuits and api.circuits()
       assert(C, 'circuit reads need the circuits module')
@@ -1076,15 +1083,15 @@ return function(api)
     end
     -- throughput (beltrate.lua; B1, Opus 21:20): a belt line's supply against its capacity, per lane.
     if a.throughput ~= nil then
-      assert(a.throughput == true, 'throughput is true')
-      assert(a.position ~= nil and a.forward == nil and a.item == nil and a.upstream == nil, 'throughput takes position (a belt tile) alone')
+      need(a.throughput == true, 'throughput is true')
+      need(a.position ~= nil and a.forward == nil and a.item == nil and a.upstream == nil, 'throughput takes position (a belt tile) alone')
       beltrate = beltrate or require('beltrate'){status_name=api.status_name}
       return beltrate.read(p, target(p, a))
     end
-    assert(a.audit == nil or type(a.audit) == 'boolean', 'audit is true or false')
-    assert(not a.audit or a.forward, 'audit goes with forward (the belts walked from a machine\'s output or a belt tile)')
+    need(a.audit == nil or type(a.audit) == 'boolean', 'audit is true or false')
+    need(not a.audit or a.forward, 'audit goes with forward (the belts walked from a machine\'s output or a belt tile)')
     if a.forward then
-      assert(a.all == nil, 'all goes with a backward trace (no forward)')
+      need(a.all == nil, 'all goes with a backward trace (no forward)')
       return M.forward(p, a)
     end
     -- A start with nothing to trace back (a drill, a belt, a chest; friction3, Grok 23:02: a drill start was refused,

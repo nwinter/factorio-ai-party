@@ -140,8 +140,9 @@
   slots.
   Example: `./fh call equip --args '{"slot":"ammo","item":"piercing-rounds-magazine","index":1}'`
 - `vehicle {position, enter: true} | {exit: true} | {drive: {x,y}} | {position, go_to: {x,y}}`: gets into a car, tank,
-  spidertron, locomotive or wagon, gets out, drives a car or tank (timed), or walks a spidertron. `drive` follows the
-  engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes through units
+  spidertron, locomotive or wagon, gets out, drives a car or tank (timed), or walks a spidertron; a position with none
+  of them is refused, naming `enter: true`. `drive` follows the engine's path for the vehicle around cliffs and water,
+  backs off once when stuck, pushes through units
   (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does; it keeps
   its turning room clear of our buildings and brakes before any of ours (`last.spared`); with no room near the target
   it stops on open ground short of it (`last.stopped_short`). `"dry_run":true` previews the path and names ours it

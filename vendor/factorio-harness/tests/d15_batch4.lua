@@ -534,11 +534,12 @@ do
     {action='transfer',args={from='nearest',item='coal'}},{action='craft',args={recipe='x'}}},interval_ticks=60})
   for _=1,5 do game.tick=game.tick+1; S.tick() end
   eq(seen[1].walk,true,'collect walks'); eq(seen[2].walk,false,'walk: false kept'); eq(seen[3].walk,nil,'from nearest untouched'); eq(seen[4].walk,nil,'craft untouched')
-  -- A plain submitted plan is not a loop: unchanged.
+  -- (d17 batch23 C2, Grok) a submitted plan's hand steps walk too, any distance: walk: true
   seen={}
-  S.handlers.queue_submit(players[1],{mode='replace',steps={{action='collect',args={position={x=10,y=0},item='yumako'}}}})
+  S.handlers.queue_submit(players[1],{mode='replace',steps={{action='collect',args={position={x=10,y=0},item='yumako'}},
+    {action='transfer',args={position={x=150,y=0},direction='to_entity',item='copper-plate',walk=false}}}})
   for _=1,3 do game.tick=game.tick+1; S.tick() end
-  eq(seen[1].walk,nil,'a submitted plan keeps its args')
+  eq(seen[1].walk,true,'a submitted plan\'s collect walks'); eq(seen[2].walk,false,'walk: false kept')
 end
 print('d15_batch4 12 loop walk: ok')
 
