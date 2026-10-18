@@ -71,7 +71,7 @@ return function(api)
     for i = 2, #path do
       if merges[i] then
         section(start, i - 1)
-        for _, x in ipairs(merges[i]) do pts[#pts+1] = {entity=x, kind='side', into=path[i].position, index=i} end
+        for _, x in ipairs(merges[i]) do pts[#pts+1] = {entity=x, kind='side', into=path[i].position, index=i, into_entity=path[i]} end
         start = i
       end
     end
@@ -84,7 +84,17 @@ return function(api)
     local path, merges = M.walk(e)
     local pts = points(path, merges)
     local fastest = 0
-    for _, pt in ipairs(pts) do fastest = math.max(fastest, speed(pt.entity)); pt.lanes = {{}, {}}; pt.left = {{}, {}}; pt.moved = {false, false}; pt.max = {0, 0} end
+    for _, pt in ipairs(pts) do
+      fastest = math.max(fastest, speed(pt.entity)); pt.lanes = {{}, {}}; pt.left = {{}, {}}; pt.moved = {false, false}; pt.max = {0, 0}
+      -- (d17 batch35 B2) each point's lane cap (items a minute: speed x 4 items a tile x 3600), and a merge's geometry
+      pt.cap = speed(pt.entity) * 4 * 3600
+      pt.dir = try(function() return pt.entity.direction end) or 0
+      if pt.kind == 'side' and pt.into_entity then
+        pt.line_dir = try(function() return pt.into_entity.direction end) or 0
+        pt.into_type = pt.into_entity.type
+        pt.into_entity = nil
+      end
+    end
     local every = math.max(1, math.floor(0.5 / fastest))
     local job = {points=pts, start=game.tick, until_tick=game.tick + seconds * 60, every=every, next_tick=game.tick, samples=0,
       path_from=path[1].position, path_to=path[#path].position, tiles=#path, merges=0}
@@ -170,9 +180,79 @@ return function(api)
       end
     end
     for _, m in ipairs(merges) do lines[#lines+1] = m end
+    -- (d17 batch35 B2, Sol: a saturated return side-loaded both its lanes onto one lane and blocked calcite and ice
+    -- downstream; Opus: 9 copper drills blocked and no read said why) each merge's sources and the lane it fills, and
+    -- the point that limits the line.
+    local DIRN = {[0]='north', [4]='east', [8]='south', [12]='west'}
+    local mix = {}
+    for i, pt in ipairs(job.points) do
+      if pt.kind == 'side' then
+        local d, ld = pt.dir or 0, pt.line_dir or 0
+        local text
+        if pt.into_type ~= 'splitter' and (d - ld) % 8 ~= 0 then
+          -- a side-load: from the line's left side when the side belt sits to the left of the line (it faces the line's right turn)
+          local from_left = (ld + 4) % 16 == d
+          text = string.format('side-load at %s: belt %s facing %s comes in from the line\'s %s side (the line faces %s): both its lanes go onto the line\'s %s lane',
+            at(pt.into), at(pt.entity.valid and pt.entity.position or pt.into), DIRN[d] or tostring(d), from_left and 'left' or 'right', DIRN[ld] or tostring(ld), from_left and 'left' or 'right')
+        else
+          text = string.format('merge at %s: belt %s facing %s joins the line (facing %s) through %s: each lane onto the same lane', at(pt.into),
+            at(pt.entity.valid and pt.entity.position or pt.into), DIRN[d] or tostring(d), DIRN[ld] or tostring(ld), pt.into_type == 'splitter' and 'a splitter' or 'its end')
+        end
+        -- the lanes after it: the section that starts at the merge tile
+        for j, q in ipairs(job.points) do
+          if q.kind == 'section' and q.index - q.tiles + 1 == pt.index then
+            local r = rows[j]
+            text = text .. string.format('; after it the left lane carries %s, the right %s', r.left.items or r.left.state, r.right.items or r.right.state)
+          end
+        end
+        mix[#mix+1] = text
+      end
+    end
+    for _, m in ipairs(mix) do lines[#lines+1] = m end
+    -- the limit: the end backed up (the consumers take less than the line carries), a lane at its cap, or a side-load
+    -- waiting while the lane it goes onto runs full (the straight line goes first)
+    local limit
+    local last
+    for j, q in ipairs(job.points) do if q.kind == 'section' then last = j end end
+    local function at_cap(r, k, cap) local l = k == 1 and r.left or r.right; return cap and cap > 0 and l.rate >= 0.9 * cap end
+    local function stopped_full(l) return l.state:find('stopped, full', 1, true) ~= nil end
+    for j, q in ipairs(job.points) do
+      if not limit and q.kind == 'side' and (stopped_full(rows[j].left) or stopped_full(rows[j].right)) then
+        for k2, q2 in ipairs(job.points) do
+          if q2.kind == 'section' and q2.index - q2.tiles + 1 == q.index then
+            local lane = (q.into_type ~= 'splitter' and ((q.line_dir or 0) + 4) % 16 == (q.dir or 0)) and 1 or 2
+            if at_cap(rows[k2], lane, q2.cap) or at_cap(rows[k2], 1, q2.cap) or at_cap(rows[k2], 2, q2.cap) then
+              limit = string.format('a side-load waits at %s: belt %s is stopped full while the line after it runs at its cap (%g/min a lane): the line\'s own items go first',
+                at(q.into), at(rows[j].position or q.into), q2.cap)
+            end
+          end
+        end
+      end
+    end
+    if not limit and last then
+      local r = rows[last]
+      if stopped_full(r.left) and stopped_full(r.right) then
+        limit = string.format('the end is backed up: both lanes stopped full at %s: whatever takes from the end takes less than the line carries', at(r.to))
+      elseif stopped_full(r.left) or stopped_full(r.right) then
+        limit = string.format('the end is backed up on its %s lane at %s', stopped_full(r.left) and 'left' or 'right', at(r.to))
+      end
+    end
+    if not limit then
+      for j, q in ipairs(job.points) do
+        if not limit and q.kind == 'section' then
+          for k = 1, 2 do
+            if not limit and at_cap(rows[j], k, q.cap) then
+              limit = string.format('the %s lane runs at its cap in section %s to %s (%g/min of %g/min): the belt carries no more on it', k == 1 and 'left' or 'right',
+                at(q.from), at(q.to), (k == 1 and rows[j].left or rows[j].right).rate, q.cap)
+            end
+          end
+        end
+      end
+    end
+    if limit then lines[#lines+1] = 'limit: ' .. limit end
     for _, pt in ipairs(job.points) do pt.entity = nil end
     return {done=true, seconds=math.floor((game.tick - job.start) / 6 + 0.5) / 10, samples=job.samples, every_ticks=job.every, tiles=job.tiles,
-      from=job.path_from, to=job.path_to, points=rows, merges=#merges > 0 and merges or nil, lines=lines,
+      from=job.path_from, to=job.path_to, points=rows, merges=#merges > 0 and merges or nil, lane_mix=#mix > 0 and mix or nil, limit=limit, lines=lines,
       note='an item counts once it leaves the tile sampled; a lane whose items did not move over the window is stopped (full: 4 or more on the tile)'}
   end
   function M.tick(tick)
@@ -201,6 +281,6 @@ return function(api)
   end
   M.schema = {belt_flow = {position='a belt, underground or splitter tile {x,y}', seconds='optional 2..30 (default 10): how long to sample',
     platform='optional platform name (platform coordinates)',
-    returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile))}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). Read only'}}
+    returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile))}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). Read only'}}
   return M
 end
