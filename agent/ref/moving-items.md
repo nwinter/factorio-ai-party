@@ -87,9 +87,9 @@
   below `count` (default 10) with `fuel` (default coal) in one walking tour with move_to's enemy checks. Without
   `types` it reads burners only (boilers, furnaces, drills, reactors, burner generators and inserters), so a
   base-sized `area` is not refused for its belts. `legs` lists the stops, `last.route` the walk.
-  - `from: "nearest"` (or a chest position) collects the fuel on the way, from chests and belts read apart (2048
-    chests and 1024 belts) within `from_radius` (default 64, up to 128) of each stop, and the logistic network's
-    pickup point; `last.sources` and `fuel_taken` report the takes. `feed_chests: true` fills the chests inserters
+  - `from: "nearest"` (or a chest or belt position) collects the fuel on the way, from chests (2048 read) within
+    `from_radius` (default 64, up to 128) of each stop, and the logistic network's pickup point; never a belt (taking
+    coal off one cuts its flow) unless `from` names it; `last.sources` and `fuel_taken` report the takes. `feed_chests: true` fills the chests inserters
     feed boilers from instead.
   - `alert: "KEY"`: an out-of-fuel alert lists each burner's position and ends with `refuel {alert: "KEY"}`, a tour
     over exactly those with the fuel you carry (an alert's centre can lie far from them: it joins touching areas).

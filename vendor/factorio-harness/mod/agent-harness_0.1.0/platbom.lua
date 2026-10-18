@@ -170,14 +170,64 @@ return function(api)
     for i = #items + 1, n do pcall(sec.clear_slot, i) end
     local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     local lines = {}
+    -- what was written and what the hub holds now, for the watch (A3)
+    local spent = rec.spent
+    rec.min, rec.held, rec.slot, rec.spent = {}, {}, {}, nil
+    for i, it in ipairs(items) do
+      rec.min[it.item] = it.n; rec.slot[it.item] = i
+      rec.held[it.item] = inv and try(function() return inv.get_item_count(it.item) end) or 0
+    end
     for _, it in ipairs(items) do
-      local held = inv and try(function() return inv.get_item_count(it.item) end) or 0
+      local held = rec.held[it.item]
       lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d%s; the hub holds %d)%s', it.item, it.n, rec.import_from, it.need,
         it.carry and string.format(', construction robots carry %d', it.carry) or '', held, it.mp and string.format('; custom minimum payload %d', it.mp) or '')
         .. (it.tail_of and string.format(' (tail: %d of the %d set, what is still to come)', it.mp, it.tail_of) or '')
         .. (rec.adopted and rec.adopted[it.item] and string.format(' (adopted from the slot, changed by requests or min_payload: %s)', rec.adopted[it.item].mp and tostring(rec.adopted[it.item].mp) or 'none') or '')
+        .. (spent and spent[it.item] and string.format(' (lowered at once by %d since the last rewrite as the hub spent it)', spent[it.item]) or '')
     end
     return lines, false
+  end
+  -- The watch (batch27 A3, Sol: the 10 s rewrite launched a full stack after ghosts used hub stock: 200 pipes, extra
+  -- modules): the hub spends its stock on ghosts at once, and what the ghosts need falls only as they are built and the
+  -- section is rewritten, so in between the hub holds less than the request asks and the planet sends again. Each tick
+  -- a drop in what the hub holds of an item the section asks for lowers that request by as much at once; the rewrite
+  -- every 10 s (M.tick) then counts the ghosts, the robots' cargo and the hub again in full.
+  local platforms = {}
+  local function platform_of(index)
+    local pl = platforms[index]
+    if pl and pl.valid then return pl end
+    for _, f in pairs(game.forces) do
+      for _, x in pairs(f.platforms) do if x.valid and x.index == index then platforms[index] = x; return x end end
+    end
+  end
+  function M.watch()
+    for index, rec in pairs(store()) do
+      local pl = rec.held and platform_of(index)
+      local hub = pl and pl.hub
+      local inv = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+      if inv then
+        local sec
+        for item, was in pairs(rec.held) do
+          local now = inv.get_item_count(item)
+          if now < was and (rec.min[item] or 0) > 0 then
+            sec = sec or section_of(hub, rec.group, false)
+            local i = rec.slot[item]
+            local f = sec and i and try(function() return sec.get_slot(i) end)
+            local v = f and f.value
+            local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
+            if name == item then
+              local min = math.max(0, rec.min[item] - (was - now))
+              if pcall(sec.set_slot, i, {value=v, min=min, max=f.max, import_from=f.import_from, minimum_delivery_count=f.minimum_delivery_count}) then
+                rec.spent = rec.spent or {}
+                rec.spent[item] = (rec.spent[item] or 0) + rec.min[item] - min
+                rec.min[item] = min
+              end
+            end
+          end
+          rec.held[item] = now
+        end
+      end
+    end
   end
   function M.request(p, a, pl)
     assert(pl.hub and pl.hub.valid, 'platform ' .. pl.name .. ' has no hub yet')
@@ -218,13 +268,13 @@ return function(api)
     local tail = a.tail
     if tail == nil and old then tail = old.tail end
     local rec = {group=group, import_from=from, areas=areas, force=p.force.name, by=api.who and api.who(p) or nil, tick=game.tick, min_payload=mpmap, tail=tail or nil,
-      written=old and old.written or nil, adopted=not a.min_payload and old and old.adopted or nil}
+      written=old and old.written or nil, adopted=not a.min_payload and old and old.adopted or nil, spent=old and old.spent or nil}
     recs[pl.index] = rec
     local lines, gone = apply(pl, rec, ghost_need(pl, p.force, areas))
     if gone then recs[pl.index] = nil end
     return {platform=pl.name, request=gone and 'nothing to request: no ghost' .. (areas and ' in the area' or '') or 'set',
       group=group, lines=#lines > 0 and lines or {'no ghost' .. (areas and ' in the area' or '') .. ' on ' .. pl.name .. ': no request kept'},
-      note='a hub section of its own (logistic group "' .. group .. '"), set to what the ghosts' .. (areas and ' in the area' or '') .. ' still need; read again every 10 s: lowered as they are built, removed with the last; your other hub requests stay as they are'}
+      note='a hub section of its own (logistic group "' .. group .. '"), set to what the ghosts' .. (areas and ' in the area' or '') .. ' still need; read again every 10 s: lowered as they are built, removed with the last; each tick a drop in what the hub holds of an item it asks lowers that request by as much at once; your other hub requests stay as they are'}
   end
   function M.tick(tick)
     local recs = store()

@@ -236,7 +236,9 @@ return function(api)
         end
         row.source = best and string.format('%s %s %s %d %s, %.0f tiles from the boilers', best.e.name, at(best.e.position), best.belt and 'carries' or 'holds', best.n, want, bd)
           or string.format('no chest holding 10 %s or belt carrying it within %d tiles', main, SOURCE)
-        row.refuel = string.format('refuel {positions: [%s], fuel: "%s", count: 20%s}', table.concat(positions, ', '), want, best and not best.belt and ', from: "nearest", from_radius: ' .. math.min(128, math.ceil(bd) + 8) or '')
+        -- (batch27 A5) a belt only by its position: from: "nearest" leaves belts out
+        row.refuel = string.format('refuel {positions: [%s], fuel: "%s", count: 20%s}', table.concat(positions, ', '), want,
+          best and (best.belt and string.format(', from: {x: %g, y: %g}', best.e.position.x, best.e.position.y) or ', from: "nearest", from_radius: ' .. math.min(128, math.ceil(bd) + 8)) or '')
         low_line = string.format('  low (under %d %s): %s; fuel: %s; %s', LOW_FUEL, want, table.concat(low, ' | '), row.source, row.refuel)
       end
       lines[#lines+1] = string.format('%d boiler%s near %s (%d working) burn %s %g/min at full use; hold %d in their slots, %d in %d chest%s and %d on %d belt tile%s feeding them; %d drill%s on those belts (%d working) put up to %g/min%s: %s',

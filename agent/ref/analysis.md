@@ -73,11 +73,12 @@
   then), our ghosts there now, and ours destroyed there (`lost`, from the destroyed alerts). `./fh view` draws the
   remembered ones dim, ghosts blue, losses as red outlines. `./fh view --args '{"position":{"x":5,"y":563},"radius":26}' --out
   v.png` draws round that position (radius up to 32); `area` (up to 64x64) is drawn round its centre.
-- `requester_rate {position | area}`: per requester or buffer chest (24 at most) and item: what it asks and holds, what
+- `requester_rate {position | area, surface?}`: per requester or buffer chest (24 at most) and item: what it asks and holds, what
   the machines its inserters feed use a minute (their recipe at their crafting speed now), the stock the network's
   robots would take it from (the game's pick) and how far, the robot round trip there and back at our robot speed
   (charging not counted), the most deliveries bring a round trip (they come for what is under the request: at most
-  the request) and so a minute, and the minutes of use the request covers.
+  the request) and so a minute, and the minutes of use the request covers. `surface`: a chest on that planet, by
+  remote view, as inspect.
 - `alerts_digest {surface?, since?, limit?}`: enemy and structure alerts in one read: one line per surface and 64-tile
   place, newest first, each incident once: the attacks there (ids, hits, attackers, what was hit), what was lost,
   enemy groups seen gathering heading there. Without `since` it gives what came after your last digest read (the
@@ -140,8 +141,8 @@
   furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its
   own fuel lasts, fewest first. `boilers: true`: each boiler group's burn against the fuel in reach and the drills
   supplying it, with the hours left, and each boiler under 5 fuel with its feeding inserters (burner fuel, no power,
-  not connected), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from: "nearest"}`
-  call.
+  not connected), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from}` call
+  (`from: "nearest"` for a chest, the belt's position for a belt).
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered

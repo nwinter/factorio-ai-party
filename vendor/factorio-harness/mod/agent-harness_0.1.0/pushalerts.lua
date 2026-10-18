@@ -46,7 +46,7 @@ return function(api)
     output_chest_full='stopped: the chest their output goes into has no free slot',
     catalyst_gone='short of an ingredient their own recipe makes (none left in the input to start the next craft)',
     requester_full='requester chests with every slot taken while a request is short',
-    heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)',
+    heat_no_fuel='heating towers out of fuel near their heat network\'s threshold (where it feeds heat exchangers, their working temperature from the prototype, 500 C; heating only, 30 C: under it a heater warms nothing)',
     outpost_ammo_low='turrets no construction robots reach, under 20% of their ammo slots',
     ammo_low='hand-fed turrets (no inserter drops into them) under 10 magazines',
     outpost_turret_lost='turrets no construction robots reached destroyed in the last 10 minutes',
@@ -312,6 +312,58 @@ return function(api)
   -- spoil within ROT_SOON ticks, and the first to spoil (its stack's spoil_tick, item and position). An out-of-fuel
   -- group says it for its names (M.text, worked out when shown).
   local ROT_SOON, HEAT_WARN = 3600, 500
+  -- A heating tower's heat network (batch27 A4, Astra board #975: an isolated Aquilo heating tower at 499 C, its network
+  -- at 493 C and no heat exchanger on it, was told as out of fuel under 500 C): walked by heat connections (at most
+  -- HEAT_PARTS), its coldest part and the heat exchangers on it. With exchangers the threshold is the highest working
+  -- temperature of theirs (the prototype's min_working_temperature, 500 C); heating only, 30 C (heating.lua: a heater
+  -- under 30 C warms nothing) with the cooling since the last read (push_heat, by unit number): told under 30 C or
+  -- when that cooling reaches 30 C within HEAT_SOON minutes.
+  local HEAT_PARTS, HEAT_FREEZE, HEAT_SOON = 512, 30, 10
+  function M.heat_network(e)
+    local seen, queue, head = {[e.unit_number or 0]=true}, {e}, 1
+    local cold, exch, need = nil, 0, nil
+    while head <= #queue and #queue <= HEAT_PARTS do
+      local x = queue[head]; head = head + 1
+      local t = try(function() return x.temperature end)
+      local src = x.type == 'boiler' and try(function() return x.prototype.heat_energy_source_prototype end)
+      if src then
+        exch = exch + 1
+        local w = try(function() return src.min_working_temperature end) or HEAT_WARN
+        if not need or w > need then need = w end
+      elseif t and (not cold or t < cold.t) then cold = {t=t, e=x} end
+      for _, n in ipairs(try(function() return x.heat_neighbours end) or {}) do
+        local u = n.unit_number or 0
+        if n.valid and not seen[u] then seen[u] = true; queue[#queue+1] = n end
+      end
+    end
+    return {parts=#queue, exchangers=exch, need=need, cold=cold}
+  end
+  local function heat_memory()
+    local st = api.state()
+    st.push_heat = st.push_heat or {}
+    return st.push_heat
+  end
+  -- kind, detail (or nil) for a heating tower out of fuel at temp.
+  function M.heat_alert(e, temp)
+    local h = M.heat_network(e)
+    local here = string.format('%s %s: %d C, fuel slot empty', e.name, at_text(e.position), math.floor(temp))
+    if h.exchangers > 0 then
+      if temp >= h.need then return nil end
+      return 'heat_no_fuel', string.format('%s; its heat network feeds %d heat exchanger%s, which work at %d C and more', here, h.exchangers, h.exchangers == 1 and '' or 's', h.need)
+    end
+    local c = h.cold or {t=temp, e=e}
+    local mem = heat_memory()
+    local u = e.unit_number or 0
+    local was = mem[u]
+    mem[u] = {tick=game.tick, t=c.t}
+    local rate = was and game.tick > was.tick and (was.t - c.t) * 3600 / (game.tick - was.tick) or nil
+    local mins = rate and rate > 0 and (c.t - HEAT_FREEZE) / rate or nil
+    if c.t >= HEAT_FREEZE and not (mins and mins <= HEAT_SOON) then return nil end
+    return 'heat_no_fuel', string.format('%s; its heat network (%d part%s, no heat exchanger) coldest %d C at %s %s%s; under %d C a heater warms nothing',
+      here, h.parts, h.parts == 1 and '' or 's', math.floor(c.t), c.e.name, at_text(c.e.position),
+      c.t < HEAT_FREEZE and '' or string.format(', cooling %.1f C a minute: about %d min to %d C', rate, math.floor(mins + 0.5), HEAT_FREEZE), HEAT_FREEZE)
+  end
+  function M.heat_forget(e) local mem = api.state().push_heat; if mem then mem[e.unit_number or 0] = nil end end
   local function spoiling(e, s, mining)
     if not (mining and api.first_spoil) then return end
     local burner = e.burner
@@ -740,9 +792,11 @@ return function(api)
           local burning = try(function() return e.burner.currently_burning end)
           local left = try(function() return e.burner.remaining_burning_fuel end) or 0
           local temp = try(function() return e.temperature end)
-          if empty and not burning and left <= 0 and temp and temp < HEAT_WARN then
-            kind, detail = 'heat_no_fuel', string.format('%s %s: %d C, fuel slot empty', e.name, at_text(e.position), math.floor(temp))
-          elseif kind == 'no_fuel' and temp and temp >= HEAT_WARN then kind = nil end
+          if empty and not burning and left <= 0 and temp then
+            local hk, hd = M.heat_alert(e, temp)
+            if hk then kind, detail = hk, hd
+            elseif kind == 'no_fuel' then kind = nil end
+          else pcall(M.heat_forget, e) end
         elseif e.type == 'rocket-silo' then
           local sk, sd = silo_state(e, s)
           if sk then kind, detail = sk, sd end
@@ -1659,8 +1713,8 @@ return function(api)
         g.surface ~= here and 'on ' .. g.surface or 'here', was and string.format(' (was %d)', was) or '', table.concat(g.lost or {}, '; '))
     end
     if g.kind == 'heat_no_fuel' then
-      -- '2 heating-tower out of fuel and under 500 C near (40,12): heating-tower (40.5,12.5): 412 C, fuel slot empty; ...; refuel'
-      return string.format('%s out of fuel and under 500 C near %s%s%s: %s%s%s', what(g), near_text(g),
+      -- '1 heating-tower out of fuel near (40,12): heating-tower (40.5,12.5): 412 C, fuel slot empty; its heat network feeds 2 heat exchangers, which work at 500 C and more; refuel'
+      return string.format('%s out of fuel near %s%s%s: %s%s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
         not plain and (g.key and string.format('; refuel {alert: "%s"}', g.key) or '; refuel') or '')

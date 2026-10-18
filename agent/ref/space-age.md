@@ -83,9 +83,12 @@
   those without a tile ghost (the hub fills a pocket only when every tile of it holds one) and `pocket_entries` for
   place_ghosts to stamp them; past 1024 tiles, open space. Floor and ready leave out the tiles a collector's rule keeps empty
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
-  (never one under an underground belt or pipe span, or at its ends). `support: true` or `{positions, area, names}`:
-  the floor those entities (built and ghost) need and no more (footprints, underground belt and pipe spans, the fewest
-  tiles joining them to the hub's floor; holes left open), and the foundation tile ghosts outside it as `remove_areas`,
+  (never one under an underground belt or pipe span, or at its ends, nor one in a hole the tile ghosts would close:
+  `restored`), played through the hub's removal rule (`go`, `net_saved`, `waiting`). `support: true` or `{positions,
+  area, names}`: the floor those entities (built and ghost) need and no more (footprints, underground belt and pipe
+  spans, the fewest tiles joining them to the hub's floor, and every tile of a hole that floor would enclose: the hub
+  never builds the last ghost round a hole; a hole built floor alone encloses stays open), played through the hub's
+  build rules (`stalls`: kept ghosts it never builds; `net_saved`), and the foundation tile ghosts outside it as `remove_areas`,
   64 a page, each a `deconstruct {platform, area, tiles: ["space-platform-foundation"]}`; `strands` names entity ghosts
   not chosen that stand on a tile that would go. Read only.
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
@@ -94,7 +97,9 @@
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
   rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
-  built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
+  built yet are asked no second time), lowered as they are built and removed when none is left; each tick a drop in
+  what the hub holds of an item it asks for lowers that request by as much at once (the hub spends its stock on ghosts
+  before they count as built), and the rewrite every 10 s counts all again (`request: false`
   removes it; `import_from`,
   `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its

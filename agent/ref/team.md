@@ -163,3 +163,6 @@
   how far it is from the nearest frozen one, e.g. "13 frozen near (-23,-8): pipe (-19.5,-5.5) holding ammonia 40; ...;
   10 transport-belt from (-29.5,-8.5) to (-20.5,-8.5), empty; frozen at least 25m; nearest heater heat-pipe
   (-12.5,-5.5) 12 C, 5 tiles from pipe (-17.5,-5.5) (under 30 C: it heats nothing); a heater warms only what touches it".
+- A heating tower out of fuel (`heat_no_fuel`) is told by its heat network: one that feeds heat exchangers under their
+  working temperature (the prototype's, 500 C); a heating-only one when its coldest part is under 30 C or cools at a
+  rate that reaches 30 C within 10 minutes (measured between two alert reads, at least 30 s apart), naming that part.

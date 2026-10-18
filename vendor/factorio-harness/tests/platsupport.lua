@@ -30,7 +30,7 @@ local surface={
   find_entities_filtered=function(f)
     if f.type=='tile-ghost' then return tile_ghosts end
     if f.type=='entity-ghost' then return {asm,ug_in,ug_out,chest} end
-    if type(f.type)=='table' then return {} end
+    if f.type then return {} end
     local out={}
     for _,e in ipairs(ents) do
       if f.position and near(e,f.position,f.radius or 0) then out[#out+1]=e
@@ -48,7 +48,8 @@ eq(r.chosen,5)
 eq(r.support.tile_ghosts,76); eq(r.support.footprints,9+2+1); eq(r.support.tunnels,2); eq(r.support.links,4)
 eq(r.support.keep,9+2+2+1+4); eq(r.support.add,0); eq(r.support.remove,76-18); eq(r.support.strands,0)
 assert(r.line:find('of 76 foundation tile ghosts 18 stay',1,true),r.line)
-assert(r.line:find('holes are left open',1,true),r.line)
+assert(r.line:find('a hole built floor alone encloses stays open',1,true),r.line)
+eq(r.support.holes,0); eq(r.support.stalls,0); eq(r.support.net_saved,58)
 -- no area holds a kept tile, and the far patch goes as one rectangle
 local kept={}
 for x=4,6 do for y=4,6 do kept[x..','..y]=true end end
@@ -83,4 +84,91 @@ fails(function() PP.read({},{platform='Sol',support={}}) end,'support is true')
 -- salvage's rectangles still come from the shared helper
 local rects=PP.rects({{x=0,y=0},{x=1,y=0},{x=0,y=1},{x=1,y=1},{x=5,y=1}})
 eq(#rects,2); eq(rects[1].right_bottom.x,2); eq(rects[1].right_bottom.y,2)
+-- batch27 A2 (Astra: Kestrel III's support trim left 1,041 unbuildable pocket tiles): the plan played through the tile
+-- rules. A hole the kept floor encloses (open space reaches it while built floor alone counts) is needed whole: the hub
+-- never builds the last ghost round it. A hole built floor alone encloses stays open.
+do
+  local function K(x,y) return (x+32768)*65536+(y+32768) end
+  local built={}
+  for x=0,4 do built[K(x,0)]=true end
+  -- plan: a ring x 0..4, y 1..5 on top of the built row; its inside x 1..3, y 1..4 (12 tiles) is enclosed by the plan
+  local plan={}
+  for x=0,4 do plan[K(x,5)]=true end
+  for y=1,4 do plan[K(0,y)]=true; plan[K(4,y)]=true end
+  local need=PP.must_fill(built,plan,{})
+  eq(#need,12); eq(need[1].x,1); eq(need[1].y,1)
+  -- the same ring all built: an old hole, left open
+  for k in pairs(plan) do built[k]=true end
+  eq(#PP.must_fill(built,{},{}),0)
+  -- kept open by a collector: left out
+  local open={}
+  for x=1,3 do for y=1,4 do open[K(x,y)]=true end end
+  built={}; for x=0,4 do built[K(x,0)]=true end
+  eq(#PP.must_fill(built,plan,open),0)
+end
+-- In a read: four bars round tile ghosts x 1..3, y 4..6 keep those 9 ghosts (holes), and the plan plays clean.
+do
+  local bars={ghost('stone-wall','wall',2.5,3.5,5,1),ghost('stone-wall','wall',2.5,7.5,5,1),ghost('stone-wall','wall',0.5,5.5,1,3),ghost('stone-wall','wall',4.5,5.5,1,3)}
+  local kept_ents,kept_find=ents,surface.find_entities_filtered
+  ents={hub,bars[1],bars[2],bars[3],bars[4]}
+  surface.find_entities_filtered=function(f)
+    if f.type=='entity-ghost' then return bars end
+    return kept_find(f)
+  end
+  local r=PP.read({},{platform='Sol',support=true})
+  eq(r.support.holes,9); eq(r.support.footprints,16); eq(r.support.stalls,0)
+  eq(r.support.keep,16+9+r.support.links); eq(r.support.net_saved,r.support.remove-r.support.add)
+  assert(r.line:find('and 9 tiles of holes that floor would enclose',1,true),r.line)
+  for _,ar in ipairs(r.remove_areas) do
+    for x=ar.left_top.x,ar.right_bottom.x-1 do for y=ar.left_top.y,ar.right_bottom.y-1 do
+      assert(not (x>=1 and x<=3 and y>=4 and y<=6),'a hole tile in a remove area: '..x..','..y)
+    end end
+  end
+  ents,surface.find_entities_filtered=kept_ents,kept_find
+end
+-- A kept ghost the build rules never build: between the built floor above and a built tile below, empty on both
+-- sides, building it would split the empty space beside it (tilecheck.lua).
+do
+  local post=ghost('small-lamp','lamp',3.5,2.5,1,1)
+  local kept_ents,kept_find=ents,surface.find_entities_filtered
+  ents={hub,post}
+  built[#built+1]={position={x=3,y=3}}
+  surface.find_entities_filtered=function(f)
+    if f.type=='entity-ghost' then return {post} end
+    return kept_find(f)
+  end
+  local r=PP.read({},{platform='Sol',support={positions={{x=3.5,y=2.5}}}})
+  eq(r.support.footprints,1); eq(r.support.stalls,1)
+  eq(r.stalls[1],'(3.5,2.5): building it would split the empty space beside it')
+  assert(r.line:find('1 never build (stalls)',1,true),r.line)
+  built[#built]=nil
+  ents,surface.find_entities_filtered=kept_ents,kept_find
+end
+-- salvage after A2 (Astra: 217 tiles salvaged then needed 88 put back): built tiles inside a ring of tile ghosts stay,
+-- since taking them leaves a hole the ghosts close; the rest are played through the removal rule.
+do
+  local B,G={},{}
+  local function isb(x,y) for _,t in ipairs(B) do if t.position.x==x and t.position.y==y then return true end end end
+  for x=0,6 do for y=0,1 do B[#B+1]={position={x=x,y=y}} end end
+  for x=2,4 do for y=2,5 do B[#B+1]={position={x=x,y=y}} end end
+  for y=2,6 do G[#G+1]={valid=true,type='tile-ghost',position={x=1.5,y=y+0.5}}; G[#G+1]={valid=true,type='tile-ghost',position={x=5.5,y=y+0.5}} end
+  for x=2,4 do G[#G+1]={valid=true,type='tile-ghost',position={x=x+0.5,y=6.5}} end
+  -- a built strip far east, nothing round it: free to take
+  for x=10,12 do B[#B+1]={position={x=x,y=0}}; B[#B+1]={position={x=x,y=1}} end
+  for x=7,9 do B[#B+1]={position={x=x,y=0}} end
+  local hub2={valid=true,name='space-platform-hub',type='space-platform-hub',position={x=3.5,y=1},bounding_box={left_top={x=0,y=0},right_bottom={x=7,y=2}}}
+  local s2={find_tiles_filtered=function() return B end,
+    get_tile=function(x,y) return {name=isb(x,y) and 'space-platform-foundation' or 'empty-space'} end,
+    find_entities_filtered=function(f)
+      if f.type=='tile-ghost' then return G end
+      if f.type then return {} end
+      if f.position or f.area then return {} end
+      return {hub2}
+    end}
+  local taken,areas,capped,info=PP.salvage(s2,'us',hub2,100)
+  for _,t in ipairs(taken) do assert(not (t.x>=2 and t.x<=4 and t.y>=2 and t.y<=5),'a tile inside the ghost ring was taken: '..t.x..','..t.y) end
+  eq(info.restored,12,'the 12 tiles in the ring put back'); eq(info.unfilled,0)
+  assert(#taken>0,'the strip goes')
+  eq(info.go+#(info.waiting or {}),#taken)
+end
 print('platsupport: ok')
