@@ -83,3 +83,39 @@ do
   defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch33 A3 tail on the default payload: ok')
+
+-- A4 (Astra 09:50: Petrel's freight queue stopped at each drop for a hand check): pod_landed in the remote and platform
+-- lanes, and one drop by drop_id or last_drop.
+do
+  game={tick=100}
+  prototypes={item={}}
+  local drops={{id=7,platform='Petrel',state='descending',surface='nauvis'},{id=9,platform='Petrel',state='descending',surface='nauvis'}}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,
+    drop_record=function(id) for _,r in ipairs(drops) do if r.id==id then return r end end end,
+    last_drop=function(name) local b; for _,r in ipairs(drops) do if r.platform==name and (not b or r.id>b) then b=r.id end end return b end}
+  local pl={valid=true,name='Petrel'}
+  local p={force={platforms={pl}}}
+  local rec={}
+  local c={['until']='pod_landed',platform='Petrel',last_drop=true}
+  C.validate(c)
+  local met,saw=C.check(p,c,nil,rec)
+  eq(met,false); eq(saw,'drop #9 from Petrel still descending'); eq(rec.drop_id,9)
+  drops[3]={id=10,platform='Petrel',state='descending'}  -- a later drop does not move the wait
+  drops[2].state='landed'; drops[2].into='cargo-landing-pad'; drops[2].at={x=12.5,y=3.5}
+  met,saw=C.check(p,c,nil,rec)
+  eq(met,true); eq(saw,'drop #9 from Petrel landed in cargo-landing-pad at (12.5,3.5) on nauvis')
+  met=C.check(p,{['until']='pod_landed',platform='Petrel',drop_id=7},nil,{})
+  eq(met,false)
+  fails(function() C.validate({['until']='pod_landed',platform='Petrel',drop_id=7,last_drop=true}) end,'drop_id or last_drop, not both')
+  fails(function() C.validate({['until']='pod_landed',platform='Petrel',last_drop=true,at_least=2}) end,'wait for one drop')
+  fails(function() C.check(p,{['until']='pod_landed',platform='Petrel',drop_id=3},nil,{}) end,'drop #3 is no longer kept')
+  -- the remote lane takes it
+  local remote
+  dofile('mod/agent-harness_0.1.0/queue_lanes.lua'){scheduler={handlers={},schema={queue_submit={},queue_status={returns=''}}},base={},
+    factory=function(r_) remote=r_; return {handlers={}} end,is_read=function() return false end}
+  remote.check_step('wait_until',{['until']='pod_landed',platform='Petrel',last_drop=true})
+  remote.check_step('wait_until',{['until']='all',conditions={{['until']='pod_landed',platform='Petrel'},{['until']='platform_left',platform='Petrel'}}})
+  fails(function() remote.check_step('wait_until',{['until']='pod_landed'}) end,'pod_landed with platform')
+  game,prototypes=nil,nil
+end
+print('d17_batch33 A4 pod_landed in the lanes, one drop: ok')
