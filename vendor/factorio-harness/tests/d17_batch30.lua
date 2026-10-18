@@ -86,3 +86,58 @@ do
   prototypes,defines=nil,nil
 end
 print('d17_batch30 A2 speaker alerts: ok')
+
+-- B1 (Sol, Astra and viewer Foobator 05:43): reminder checklists: named steps, each with its own ack and result and
+-- optionally its own cadence; progress per recipient; the grouped read; done only when every step is recorded; leave
+-- and resume.
+do
+  game={tick=1000}
+  local st,sent={},{}
+  local R=dofile('mod/agent-harness_0.1.0/reminders.lua'){state=function() return st end,who=function(p) return p.name end,
+    resolve=function(n) return n end,agents=function() return {{name='sol',index=1},{name='astra',index=2}} end,
+    deliver=function(index,t) sent[#sent+1]={index=index,t=t} end}
+  local sol,astra={name='sol'},{name='astra'}
+  local r=R.handlers.reminder_add(sol,{name='launch',message='Petrel launch',due_in_ticks=600,recipients='sol, astra',
+    steps={'fuel the silo',{name='load the rocket',every_ticks=1800},'launch'}})
+  local id=r.added
+  game.tick=1620; R.tick()
+  eq(#sent,2)
+  eq(sent[1].t.text,'launch (sol, once): Petrel launch; checklist, next step 1 of 3 "fuel the silo" (0 of 3 done); reminder_ack {id: 1, result} records it')
+  -- a step a recipient; the next unfinished step by default
+  local a=R.handlers.reminder_ack(sol,{id=id,result='4 rocket fuel in'})
+  eq(a.recorded,1); eq(a.done,'1 of 3 steps'); has(a.next_step,'step 2 of 3 "load the rocket" (again every 30s while it is next)')
+  eq(R.handlers.reminders(astra,{}).reminders[1].next_step,'step 1 of 3 "fuel the silo"','progress is per recipient')
+  -- step 2's own cadence: its line again while it is sol's next step
+  game.tick=1620+1800; R.tick()
+  eq(#sent,3); eq(sent[3].index,1); has(sent[3].t.text,'next step 2 of 3 "load the rocket" (again every 30s while it is next) (1 of 3 done)')
+  -- an emergency: leave; no step lines; the grouped read says so
+  a=R.handlers.reminder_ack(sol,{id=id,leave=true})
+  eq(a.at_step,2); has(a.note,'set aside at step 2 of 3')
+  game.tick=game.tick+3600; R.tick()
+  eq(#sent,3,'no step line while left')
+  local pend=R.handlers.reminders(sol,{pending=true})
+  eq(pend.count,1); has(pend.lines[1],'#1 launch: Petrel launch; next step 2 of 3 "load the rocket"'); has(pend.lines[1],'(1 of 3 done)'); has(pend.lines[1],'left 1m00s ago (resume')
+  has(R.handlers.reminders(sol,{}).reminders[1].states,'sol left at step 2')
+  -- resume at the next unfinished step, then the rest
+  a=R.handlers.reminder_ack(sol,{id=id,resume=true})
+  eq(a.recorded,nil); eq(a.resumed,true); has(a.next_step,'step 2 of 3')
+  R.handlers.reminder_ack(sol,{id=id,step=3,result='launched'})
+  a=R.handlers.reminder_ack(sol,{id=id})
+  eq(a.recorded,2); eq(a.done,'all 3 steps'); eq(a.checklist_done,nil,'astra has not')
+  eq(R.handlers.reminders(sol,{pending=true}).count,0)
+  local row=R.handlers.reminders(sol,{}).reminders[1]
+  eq(row.done,nil); eq(row.steps[3].result,'launched'); eq(row.steps[1].result,'4 rocket fuel in')
+  for i=1,3 do R.handlers.reminder_ack(astra,{id=id}) end
+  row=R.handlers.reminders(sol,{}).reminders[1]
+  eq(row.done,true)
+  local ok,err=pcall(R.handlers.reminder_ack,astra,{id=id})
+  assert(not ok and tostring(err):find('has no run waiting for you',1,true),tostring(err))
+  -- refusals
+  ok,err=pcall(R.handlers.reminder_add,sol,{message='x',due_in_ticks=600,steps={{name='a',every_ticks=60}}})
+  assert(not ok and tostring(err):find('step 1 every_ticks must be 1800',1,true),tostring(err))
+  local plain=R.handlers.reminder_add(sol,{message='plain',due_in_ticks=600}).added
+  ok,err=pcall(R.handlers.reminder_ack,sol,{id=plain,step=1})
+  assert(not ok and tostring(err):find('for a checklist',1,true),tostring(err))
+  game=nil
+end
+print('d17_batch30 B1 reminder checklists: ok')

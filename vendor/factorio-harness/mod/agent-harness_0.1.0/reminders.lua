@@ -7,10 +7,17 @@
 -- run only. A job never acts in the game: no character, action, queue, machine or chat. Alerts stay apart.
 -- The state lives in the save, so a rollback restores jobs and ticks together; a job whose next run lies more than
 -- one interval past the tick (or whose last run lies after it) is set again from the restored tick.
+-- Checklists (d17 batch30 B1, Sol, Astra and viewer Foobator 05:43): steps, each named and optionally with its own
+-- cadence (every_ticks: the line again while that step is a recipient's next one). A run goes out with the next
+-- unfinished step; each recipient records steps with reminder_ack {id, step?, result} (the next unfinished one by
+-- default), and the run is done for them when every step is recorded (a one-time job is done when every recipient is).
+-- leave: true sets it aside (an emergency): no step lines while left; resume: true (or any step's ack) takes it up at
+-- the next unfinished step. reminders {pending: true} is the grouped read: what waits for you, each at its next step.
 return function(api)
   local M = {}
   local MAX_JOBS, MAX_OWN, MAX_TEXT, MAX_RESULT = 48, 12, 300, 200
   local MIN_EVERY, MAX_EVERY = 3600, 7 * 24 * 216000
+  local MAX_STEPS, MIN_STEP_EVERY = 12, 1800
   local CHECK = 60
   local TEAM = {team=true, all=true, everyone=true}
   local function store()
@@ -66,6 +73,26 @@ return function(api)
     if job.every then return 'every ' .. ago(job.every) end
     return 'once'
   end
+  -- A checklist's progress for a recipient: {done = {[step] = {result, tick}}, left = tick?, nudged = tick?}.
+  local function progress(job, name)
+    job.progress = job.progress or {}
+    job.progress[name] = job.progress[name] or {done={}}
+    return job.progress[name]
+  end
+  local function next_step(job, name)
+    local pr = job.progress and job.progress[name]
+    for i = 1, #(job.steps or {}) do if not (pr and pr.done[i]) then return i end end
+    return nil
+  end
+  local function steps_done(job, name)
+    local pr, n = job.progress and job.progress[name], 0
+    for i = 1, #(job.steps or {}) do if pr and pr.done[i] then n = n + 1 end end
+    return n
+  end
+  local function step_text(job, i)
+    local st = job.steps[i]
+    return string.format('step %d of %d "%s"%s', i, #job.steps, st.name, st.every and ' (again every ' .. ago(st.every) .. ' while it is next)' or '')
+  end
   -- The next run on the cadence after `tick` (anchored at job.anchor).
   local function next_after(job, tick)
     local k = math.floor((tick - job.anchor) / job.every) + 1
@@ -75,7 +102,11 @@ return function(api)
     local pd = job.pending and job.pending[name]
     if pd then
       local late = job.every or 36000
-      return game.tick - pd.tick > late and 'overdue' or 'pending', pd
+      local pr = job.steps and job.progress and job.progress[name]
+      if pr and pr.left then return 'left at step ' .. (next_step(job, name) or '?'), pd end
+      local st = game.tick - pd.tick > late and 'overdue' or 'pending'
+      if job.steps then st = string.format('%s, %d of %d steps done', st, steps_done(job, name), #job.steps) end
+      return st, pd
     end
     if job.acked and job.acked[name] then return 'acknowledged' end
     return job.enabled and 'scheduled' or (job.done and 'done' or 'off')
@@ -94,9 +125,20 @@ return function(api)
     end
     r.states = table.concat(states, '; ')
     if me then r.yours = status_of(job, me) end
+    if job.steps then
+      local pr = me and job.progress and job.progress[me]
+      r.steps = {}
+      for i, st in ipairs(job.steps) do
+        local d = pr and pr.done[i]
+        r.steps[i] = {step=i, name=st.name, every_ticks=st.every, result=d and d.result or nil, done_ago_s=d and math.floor((game.tick - d.tick) / 60) or nil}
+      end
+      local nx = me and job.pending and job.pending[me] and next_step(job, me)
+      r.next_step = nx and step_text(job, nx) or nil
+    end
     local parts = {string.format('#%d %sby %s (%s, to %s): %s', job.id, job.name and job.name .. ', ' or '', job.owner, cadence(job),
       r.recipients, job.message)}
     if job.enabled then parts[#parts+1] = 'next in ' .. ago(job.next_due - game.tick) else parts[#parts+1] = job.done and 'done' or 'off' end
+    if job.steps then parts[#parts+1] = string.format('checklist of %d steps%s', #job.steps, r.next_step and ', yours next: ' .. r.next_step or '') end
     if job.last_result then parts[#parts+1] = string.format('last result %s ago: %s', ago(game.tick - job.result_tick), job.last_result) end
     parts[#parts+1] = r.states
     r.line = table.concat(parts, '; ')
@@ -133,6 +175,22 @@ return function(api)
       job.board_item = a.board_item or nil
     end
     if a.surface ~= nil then job.surface = a.surface ~= false and one_line(a.surface, 40, 'surface') or nil end
+    -- steps: a checklist (B1); a change starts every recipient's progress again
+    if a.steps ~= nil then
+      if a.steps == false then job.steps = nil
+      else
+        assert(type(a.steps) == 'table' and #a.steps >= 1 and #a.steps <= MAX_STEPS, 'steps: 1..' .. MAX_STEPS .. ' steps, each a name or {name, every_ticks?}')
+        local list = {}
+        for i, st in ipairs(a.steps) do
+          if type(st) == 'string' then st = {name=st} end
+          assert(type(st) == 'table', 'step ' .. i .. ' is a name or {name, every_ticks?}')
+          for k in pairs(st) do assert(k == 'name' or k == 'every_ticks', 'step ' .. i .. ' takes name and every_ticks, not ' .. tostring(k)) end
+          list[i] = {name=one_line(st.name, 80, 'step ' .. i .. ' name'), every=st.every_ticks ~= nil and ticks_arg(st.every_ticks, MIN_STEP_EVERY, MAX_EVERY, 'step ' .. i .. ' every_ticks') or nil}
+        end
+        job.steps = list
+      end
+      job.progress = nil
+    end
     if a.expires_tick ~= nil or a.for_ticks ~= nil then
       local e = a.expires_tick or (a.for_ticks and game.tick + ticks_arg(a.for_ticks, 60, 30 * 216000, 'for_ticks'))
       assert(e == false or (type(e) == 'number' and e > game.tick), 'expires_tick must lie after the tick now, or false for none')
@@ -198,6 +256,48 @@ return function(api)
     local result = a.result ~= nil and one_line(a.result, MAX_RESULT, 'result') or nil
     job.pending = job.pending or {}; job.acked = job.acked or {}
     local was = job.pending[me]
+    -- A checklist (B1): a step recorded (the next unfinished one by default), leave, resume; the run is done for you
+    -- when every step is recorded.
+    if job.steps then
+      assert(a.step == nil or (type(a.step) == 'number' and a.step == math.floor(a.step) and a.step >= 1 and a.step <= #job.steps), 'step is 1..' .. #job.steps)
+      assert(not (a.leave and a.resume), 'leave or resume, not both')
+      assert(a.leave == nil or type(a.leave) == 'boolean', 'leave must be true or false')
+      assert(a.resume == nil or type(a.resume) == 'boolean', 'resume must be true or false')
+      assert(was or a.step ~= nil, 'reminder #' .. job.id .. ' has no run waiting for you: its next run brings step 1 (reminder_ack {id, step} records a step anyway)')
+      local pr = progress(job, me)
+      if a.leave then
+        assert(a.step == nil and result == nil, 'leave sets the checklist aside: no step or result with it')
+        pr.left = game.tick
+        local nx = next_step(job, me)
+        return {left=job.id, at_step=nx, note=string.format('set aside at %s: no step lines until resume (reminder_ack {id: %d, resume: true}) or a step\'s ack', nx and step_text(job, nx) or 'the end', job.id), reminder=row(job, me)}
+      end
+      pr.left = nil
+      pr.nudged = game.tick
+      local step
+      if not a.resume or a.step ~= nil or result ~= nil then
+        step = a.step or next_step(job, me)
+        assert(step, 'every step of reminder #' .. job.id .. ' is recorded')
+        pr.done[step] = {result=result, tick=game.tick}
+        if result then job.last_result = string.format('step %d "%s": %s', step, job.steps[step].name, result); job.result_by = me; job.result_tick = game.tick end
+      end
+      local nx = next_step(job, me)
+      if nx then
+        if not was then job.pending[me] = {tick=game.tick, missed=0} end
+        return {recorded=step, step_name=step and job.steps[step].name or nil, resumed=a.resume or nil, next_step=step_text(job, nx),
+          done=string.format('%d of %d steps', steps_done(job, me), #job.steps),
+          note=string.format('next: %s; reminder_ack {id: %d, result} records it', step_text(job, nx), job.id), reminder=row(job, me)}
+      end
+      job.pending[me] = nil; job.acked[me] = game.tick
+      -- a one-time checklist is done when every recipient has recorded every step
+      if not job.every then
+        local all = true
+        for _, n in ipairs(targets(job)) do if job.pending[n] or not job.acked[n] then all = false end end
+        if all then job.done = true; job.enabled = false end
+      end
+      return {recorded=step, step_name=step and job.steps[step].name or nil, acknowledged=job.id, done=string.format('all %d steps', #job.steps),
+        checklist_done=job.done or nil, missed=was and was.missed > 0 and was.missed or nil, reminder=row(job, me)}
+    end
+    assert(a.step == nil and a.leave == nil and a.resume == nil, 'step, leave and resume are for a checklist (reminder_add steps)')
     job.pending[me] = nil; job.acked[me] = game.tick
     if result then job.last_result = result; job.result_by = me; job.result_tick = game.tick end
     -- (A1) with the ack: the next run later (next_in_ticks: the next run only), or a slower cadence (every_ticks, its
@@ -219,6 +319,28 @@ return function(api)
   function M.handlers.reminders(p, a)
     local me = api.who(p)
     assert(a.all == nil or type(a.all) == 'boolean', 'all must be true or false')
+    assert(a.pending == nil or type(a.pending) == 'boolean', 'pending must be true or false')
+    -- pending (B1): the grouped read: what waits for you now, each at its next step
+    if a.pending then
+      local ids, out, lines = {}, {}, {}
+      for id in pairs(store().jobs) do ids[#ids+1] = id end
+      table.sort(ids)
+      for _, id in ipairs(ids) do
+        local job = store().jobs[id]
+        local pd = job.pending and job.pending[me]
+        if pd then
+          local r = row(job, me)
+          local nx = job.steps and next_step(job, me)
+          local pr = job.steps and job.progress and job.progress[me]
+          r.waiting_s = math.floor((game.tick - pd.tick) / 60)
+          out[#out+1] = r
+          lines[#lines+1] = string.format('#%d %s: %s%s, waiting %s%s', id, job.name or 'review', job.message,
+            nx and '; next ' .. step_text(job, nx) .. string.format(' (%d of %d done)', steps_done(job, me), #job.steps) or '',
+            ago(game.tick - pd.tick), pr and pr.left and string.format('; left %s ago (resume: reminder_ack {id: %d, resume: true})', ago(game.tick - pr.left), id) or '')
+        end
+      end
+      return {reminders=out, lines=lines, count=#out, tick=game.tick, note=#out == 0 and 'nothing waits for you' or nil}
+    end
     local out, lines = {}, {}
     local ids = {}
     for id in pairs(store().jobs) do ids[#ids+1] = id end
@@ -239,6 +361,12 @@ return function(api)
   local function deliver(job, name, index, missed)
     local text = string.format('%s (%s, %s%s): %s; reminder_ack {id: %d, result} records the result',
       job.name or 'review', job.owner, cadence(job), job.board_item and ', board #' .. job.board_item or '', job.message, job.id)
+    local nx = job.steps and next_step(job, name)
+    if nx then
+      text = string.format('%s (%s, %s%s): %s; checklist, next %s (%d of %d done); reminder_ack {id: %d, result} records it',
+        job.name or 'review', job.owner, cadence(job), job.board_item and ', board #' .. job.board_item or '', job.message, step_text(job, nx),
+        steps_done(job, name), #job.steps, job.id)
+    end
     api.deliver(index, {seq='reminder', tick=game.tick, from='reminder #' .. job.id, text=text, fyi=job.quiet or nil})
   end
   local function fire(job)
@@ -249,6 +377,7 @@ return function(api)
       local pd = job.pending[name]
       if pd then pd.missed = pd.missed + 1
       elseif index[name] then
+        if job.steps then job.progress = job.progress or {}; job.progress[name] = {done={}, nudged=game.tick} end
         deliver(job, name, index[name])
         job.pending[name] = {tick=game.tick, missed=0}
         job.acked[name] = nil
@@ -256,7 +385,21 @@ return function(api)
     end
     job.last_fired = game.tick
     if job.every then job.next_due = next_after(job, game.tick)
-    else job.enabled = false; job.done = true end
+    else job.enabled = false; job.done = not job.steps or nil end
+  end
+  -- A checklist step's own cadence: its line again while it is a recipient's next step (not while left).
+  local function nudge(job)
+    local index
+    for name, pd in pairs(job.pending or {}) do
+      local pr = job.progress and job.progress[name]
+      local nx = pr and not pr.left and next_step(job, name)
+      local every = nx and job.steps[nx].every
+      if every and game.tick - (pr.nudged or pd.tick) >= every then
+        if not index then index = {}; for _, a in ipairs(api.agents()) do index[a.name] = a.index end end
+        if index[name] then deliver(job, name, index[name]) end
+        pr.nudged = game.tick
+      end
+    end
   end
   function M.tick()
     if game.tick % CHECK ~= 0 then return end
@@ -268,6 +411,7 @@ return function(api)
       if job.every and job.next_due and job.next_due > game.tick + job.every then job.next_due = next_after(job, game.tick) end
       if job.enabled and job.expires and game.tick >= job.expires then job.enabled = false; job.expired = game.tick end
       if job.enabled and job.next_due and game.tick >= job.next_due then fire(job) end
+      if job.steps and job.pending and next(job.pending) then nudge(job) end
     end
   end
   local WHEN = 'every_ticks (a cadence: ' .. MIN_EVERY .. '..' .. MAX_EVERY .. ', anchored now; 54000 is 15 min) or due_tick / due_in_ticks (once)'
@@ -276,15 +420,18 @@ return function(api)
       recipients='optional: names (sol, luna) or "team"; default yourself', name='optional 1..40 characters', board_item='optional board item number',
       surface='optional surface name', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
       wake='optional false: its line waits for the recipient\'s next reply and wakes no sleep or wait (a routine check; urgent alerts are apart and still wake)',
+      steps='optional checklist: 1..12 steps, each a name (1..80 characters) or {name, every_ticks? (1800..: its line again that often while it is a recipient\'s next step)}; a run goes out with the next unfinished step, each recipient records steps with reminder_ack (the run is done for them when every step is recorded; a one-time job is done when every recipient\'s is)',
       returns='added (its id), reminder {id, owner, recipients, message, cadence, next_due_tick, next_due_in_s, states, line}. A reminder only sends lines: when due, each recipient gets one private line in their next reply (a tell from "reminder #N", waking a sleep as a tell does); while one has not acknowledged it, later runs fold into it (missed). It never acts in the game; at most 12 a teammate, 48 in all'},
     reminder_edit = {id='reminder number', message='as reminder_add', every_ticks='as reminder_add (sets the anchor now)', due_tick='as reminder_add', due_in_ticks='as reminder_add', recipients='as reminder_add', name='as reminder_add; false clears it',
-      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', returns='edited, reminder; its owner only'},
+      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', steps='as reminder_add; false clears them; a change starts every recipient\'s progress again', returns='edited, reminder; its owner only'},
     reminder_remove = {id='reminder number', returns='removed, was; its owner only'},
     reminder_ack = {id='reminder number', result='optional 1..200 characters: what the review found (shown with the job and on the site)',
+      step='a checklist: the step number this records (default: your next unfinished step)', leave='a checklist: true sets it aside (an emergency): no step lines until resume; your progress kept',
+      resume='a checklist: true takes it up again at your next unfinished step (any step\'s ack does too)',
       next_in_ticks='optional 60..: the next run that many ticks from now (that run only), with the ack', every_ticks='optional, its owner: a new cadence from now (e.g. 18000, 5 min), with the ack',
-      returns='acknowledged, was_pending, missed (runs folded into the line), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is'},
+      returns='acknowledged, was_pending, missed (runs folded into the line), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
     reminder_snooze = {id='reminder number', ticks='60..: the next run that many ticks from now (the next run only)', returns='snoozed, next_due_tick, reminder; its owner or a recipient'},
-    reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged; runs missed), yours, line}], lines, count. Read only'},
+    reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed; steps done), yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
   }
   return M
 end
