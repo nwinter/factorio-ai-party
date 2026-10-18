@@ -150,3 +150,9 @@
   (353.5,95.5) stands where the belt's next tile should be (placed by sonnet); the belt runs 6 tiles from (359.5,95.5)
   to (354.5,95.5) and stops there, holding coal 42; the line goes on from (352.5,95.5)", after 30 s, until the entity
   or either belt is gone or a belt stands there. An inserter there is not counted.
+- Frozen entities on a planet that needs heating (Aquilo) are a team alert (`frozen`), a line per 64-tile area, to the
+  builder or claim owner: pipes and machines first with what they hold, a belt run as one line with what it carries,
+  how long the oldest has been frozen (since the alerts first saw it), and the nearest heater with its temperature and
+  how far it is from the nearest frozen one, e.g. "13 frozen near (-23,-8): pipe (-19.5,-5.5) holding ammonia 40; ...;
+  10 transport-belt from (-29.5,-8.5) to (-20.5,-8.5), empty; frozen at least 25m; nearest heater heat-pipe
+  (-12.5,-5.5) 12 C, 5 tiles from pipe (-17.5,-5.5) (under 30 C: it heats nothing); a heater warms only what touches it".
