@@ -142,9 +142,11 @@ do
   -- 1024 points a call: the next page reads on
   for i=1,1030 do net.requester_points[#net.requester_points+1]={owner=chest(100+i,{{name='coal',count=1,quality='normal'}}),mode=2,filters={}} end
   r=R.unrequested({name='nauvis'},force)
-  eq(r.next,2); has(r.lines[#r.lines],'requester points 1-1024 of 1034 read; stock {unrequested: true, page: 2} reads the next')
+  eq(r.next,2); has(r.lines[#r.lines],'requester points 1-512 of 1034 read; stock {unrequested: true, page: 2} reads the next')
   r=R.unrequested({name='nauvis'},force,nil,2)
-  eq(r.next,nil); eq(r.page,2); has(r.lines[1],'10 of 10 requester and buffer chests'); has(r.lines[#r.lines],'requester points 1025-1034 of 1034 read')
+  eq(r.next,3); eq(r.page,2); has(r.lines[1],'512 of 512 requester and buffer chests'); has(r.lines[#r.lines],'requester points 513-1024 of 1034 read; stock {unrequested: true, page: 3} reads the next')
+  r=R.unrequested({name='nauvis'},force,nil,3)
+  eq(r.next,nil); eq(r.page,3); has(r.lines[1],'10 of 10 requester and buffer chests'); has(r.lines[#r.lines],'requester points 1025-1034 of 1034 read')
   defines=nil
 end
 print('d17_batch32 B4 unrequested: ok')

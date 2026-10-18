@@ -117,8 +117,8 @@ return function(api)
   -- no find) holding items they do not request, with counts, where, and whether its trash-unrequested switch sends them
   -- to storage. item: only that item. The most held first; at most ROWS rows.
   -- Cost on world n (08:36, read only): about 14 us a requester point (3.7 ms for 256, 10.7 ms for 768; Nauvis has 1204):
-  -- POINTS a call, page for the next.
-  local ROWS, POINTS = 32, 1024
+  -- POINTS a call (about 7 ms), page for the next (operator 08:48).
+  local ROWS, POINTS = 32, 512
   function M.unrequested(surface, force, item, page)
     page = page or 1
     local first, last_point = (page - 1) * POINTS + 1, page * POINTS
