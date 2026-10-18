@@ -116,15 +116,18 @@ return function(api)
   -- starved): per surface, the requester and buffer chests in our logistic networks (each network's requester points,
   -- no find) holding items they do not request, with counts, where, and whether its trash-unrequested switch sends them
   -- to storage. item: only that item. The most held first; at most ROWS rows.
-  local ROWS, POINTS = 32, 4096
-  function M.unrequested(surface, force, item)
+  -- Cost on world n (08:36, read only): about 14 us a requester point (3.7 ms for 256, 10.7 ms for 768; Nauvis has 1204):
+  -- POINTS a call (about 7 ms), page for the next (operator 08:48).
+  local ROWS, POINTS = 32, 512
+  function M.unrequested(surface, force, item, page)
+    page = page or 1
+    local first, last_point = (page - 1) * POINTS + 1, page * POINTS
     local rows, by_item, read, chests = {}, {}, 0, 0
     local LM = defines.logistic_mode or {}
     for _, ln in ipairs(try(function() return force.logistic_networks[surface.name] end) or {}) do
       for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
         read = read + 1
-        if read > POINTS then break end
-        local c = pt.owner
+        local c = read >= first and read <= last_point and pt.owner
         if c and c.valid and c.type == 'logistic-container' and (pt.mode == nil or pt.mode == LM.requester or pt.mode == LM.buffer) then
           chests = chests + 1
           local asked = {}
@@ -167,8 +170,10 @@ return function(api)
       if i > ROWS then lines[#lines+1] = string.format('+%d more chests', #rows - ROWS); break end
       out_rows[i] = r.row; lines[#lines+1] = r.row.line
     end
-    if read > POINTS then lines[#lines+1] = string.format('the first %d requester points read', POINTS) end
-    return {lines=lines, chests=out_rows, items=#items > 0 and (function() local t = {} for i, x in ipairs(items) do t[i] = {item=x.n, count=x.v.count, chests=x.v.chests} end return t end)() or nil,
+    local more = read > last_point
+    if page > 1 or more then lines[#lines+1] = string.format('requester points %d-%d of %d read%s', first, math.min(read, last_point), read,
+      more and string.format('; stock {unrequested: true, page: %d} reads the next', page + 1) or '') end
+    return {lines=lines, chests=out_rows, page=(page > 1 or more) and page or nil, next=more and page + 1 or nil, items=#items > 0 and (function() local t = {} for i, x in ipairs(items) do t[i] = {item=x.n, count=x.v.count, chests=x.v.chests} end return t end)() or nil,
       note='chests in no logistic network are not read'}
   end
   M.schema = {requester_rate = {position='a requester or buffer chest {x,y}', area='or {left_top, right_bottom} up to 128x128: its requester and buffer chests (24 at most)',surface='optional planet name: the chest or area on that planet, by remote view (as inspect)',
