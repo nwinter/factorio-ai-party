@@ -1200,7 +1200,10 @@ local function active(index)
     awaiting_craft=action.awaiting_craft,got=action.got,
     silo_wait=action.await_silo and M.rocketload.wait_report(action) or action.silo_hold and M.rocketload.wait_report({await_silo=action.silo_hold}) or nil,
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
-    stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
+    -- (d17 batch34 A5, Astra 12:24: a load_silo tour holding at the silo for the rocket read stuck_s and "14 tiles to it"
+    -- for 40 s, and was stopped) a tour holding at a silo stands by design: no stuck_s, and holding says why
+    stuck_s=action.watch and not action.silo_hold and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
+    holding=action.kind=='gather' and action.silo_hold and M.rocketload.hold_line(action) or nil,
     -- Waiting short of rails a moving train will pass (M.train_guard).
     train_wait=M.train_wait_line(action.train_wait or (type(action.nav)=='table' and action.nav.train_wait) or nil),
     retreating=action.retreated and (action.retreated.why..(action.retreated.going and '; '..action.retreated.going or '')) or nil,
@@ -1210,7 +1213,7 @@ local function active(index)
     walking_for=action.then_call and action.then_call.action or nil,
     leg=action.kind=='move_to' and action.via and string.format('%d of %d',action.via.index,#action.via.points+1) or nil,
     -- A walking tour's or a courier's progress (Muse, Luna, shift19): leg N of M, the walk left, moved so far.
-    progress=action.kind=='gather' and not action.wait and M.tour_progress(index,action) or nil,
+    progress=action.kind=='gather' and not action.wait and not action.silo_hold and M.tour_progress(index,action) or nil,
     held_short=action.held_short,  -- a tour waiting short of a live attack at its stop (d17 batch17 B1)
     remote=action.kind=='drive' and action.remote and action.vehicle and action.vehicle.valid and
       string.format('%s at (%.1f,%.1f) by remote view',action.vehicle.name,action.vehicle.position.x,action.vehicle.position.y) or nil}
