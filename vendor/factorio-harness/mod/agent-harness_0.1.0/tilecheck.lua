@@ -421,5 +421,76 @@ return function()
       return 'nothing the foundation rules hold it back by'
     end
   end
+  -- platform_tiles (batch24 B3, Astra: learned by trial that a tile is deconstructed only beside empty space): each
+  -- tile's state and whether the hub takes it away now (foundation) or builds foundation there now (empty space), by
+  -- the rules above, with why. cells: {x, y} each (tile corners).
+  local QUERY = 64
+  function M.query(pl, cells)
+    local s, hub = pl.surface, pl.hub
+    local cache = {}
+    local thrusters = try(function() return s.find_entities_filtered{type='thruster', limit=64} end) or {}
+    local function one(f, x, y)
+      return try(function() return s.find_entities_filtered{area={{x + 0.1, y + 0.1}, {x + 0.9, y + 0.9}}, type=f, limit=1}[1] end)
+    end
+    local rows, lines = {}, {}
+    for i, c in ipairs(cells) do
+      if i > QUERY then break end
+      local x, y = math.floor(c[1]), math.floor(c[2])
+      local name = try(function() return s.get_tile(x, y).name end) or 'out-of-map'
+      local row = {position={x=x + 0.5, y=y + 0.5}, tile=name}
+      local empty = is_empty(s, x, y, cache)
+      local proxy, ghost = one('deconstructible-tile-proxy', x, y), one('tile-ghost', x, y)
+      row.marked = proxy and true or nil
+      row.ghost = ghost and try(function() return ghost.ghost_name end) or nil
+      local e = standing(s, x, y)
+      row.entity = e and string.format('%s %s', e.name, at(e.position.x - 0.5, e.position.y - 0.5)) or nil
+      local words = {empty and 'empty space' or name}
+      if row.marked then words[#words+1] = 'marked for removal' end
+      if row.ghost then words[#words+1] = 'ghost of ' .. row.ghost end
+      if row.entity then words[#words+1] = 'under ' .. row.entity end
+      if empty then
+        local why
+        if hub and hub.valid and y + 0.5 < hub.position.y - 200 then why = 'more than 200 tiles north of the hub' end
+        for _, t in ipairs(thrusters) do
+          local b = t.bounding_box
+          if not why and x + 0.5 > b.left_top.x and x + 0.5 < b.right_bottom.x and y + 0.5 > b.right_bottom.y and y + 0.5 < b.right_bottom.y + 82 then
+            why = string.format('in the 82 tiles south of the thruster at (%g,%g), where no foundation is built', t.position.x, t.position.y)
+          end
+        end
+        if not why then
+          local near = false
+          for _, d in ipairs(RING) do if not is_empty(s, x + d[1], y + d[2], cache) then near = true end end
+          if not near then why = 'no foundation among the 8 tiles round it' end
+        end
+        if not why then
+          local runs = M.runs(s, x, y, cache)
+          if #runs >= 2 then
+            local firsts = {}
+            for k, run in ipairs(runs) do firsts[k] = run[1] end
+            why = string.format('building it would split the empty space beside it: %s meet only through it', list(firsts, 4))
+          end
+        end
+        row.build = {now=why == nil, why=why or 'foundation among the 8 tiles round it and one run of empty space beside it: the hub builds it'}
+        words[#words+1] = why and ('foundation not built here now: ' .. why) or 'foundation can be built here now'
+      else
+        local why
+        if e then why = row.entity .. ' stands on it' end
+        why = why or M.removal_rule(s, x, y, cache)
+        if not why then
+          local item = product(s, x, y)
+          local r = room(hub, item)
+          if item and r == 0 then why = string.format('the hub has no room for %s', item) end
+        end
+        row.remove = {now=why == nil, why=why or 'empty space on one side run and nothing on it: the hub takes it away once marked'}
+        words[#words+1] = why and ('not removable now: ' .. why) or 'removable now'
+      end
+      row.line = at(x, y) .. ': ' .. table.concat(words, '; ')
+      rows[#rows+1] = row; lines[#lines+1] = row.line
+    end
+    return {platform=pl.name, tiles=rows, lines=lines, more=#cells > QUERY and #cells - QUERY or nil,
+      note='the hub changes one tile at a time and looks at its 8 neighbours: it removes a marked foundation tile with exactly one run of empty space beside it, nothing on it and room in the hub; it builds foundation with foundation among the 8 tiles round it and at most one run of empty space beside it, not in a thruster\'s exhaust or over 200 tiles north of the hub'}
+  end
+  M.schema = {platform_tiles = {platform='platform name', positions='1..64 tiles {x,y} (platform coordinates)', area='or {left_top, right_bottom}: its tiles, at most 64',
+    returns='tiles [{position, tile (its name), marked (for removal), ghost (a tile ghost\'s name), entity (what stands on it), remove {now, why} (foundation: whether the hub takes it away now, once marked), build {now, why} (empty space: whether the hub builds foundation there now)}], lines, note. Read only'}}
   return M
 end
