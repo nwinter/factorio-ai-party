@@ -98,6 +98,12 @@
   those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
+- `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
+  aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
+  already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
+  body. Rows: `held`, `on_the_way`, `requested`; `hub` (what the hub holds of each item asked), `refills` (requests and
+  rounds asked on this platform since). A step of the platform's lane; `queue_repeat` keeps topping up. Example:
+  `./fh call queue_repeat --args '{"lane":"platform:Swiftlet","interval_ticks":600,"steps":[{"action":"platform_rearm","args":{"platform":"Swiftlet","ammo_below":20,"target_count":100}}]}'`
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
@@ -142,7 +148,7 @@
   queued launch step.
   Example: `./fh call launch --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","wait_ready":true}' --wait`
 - `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
-  its feeders), the cargo's kg and slots, the last launch, `robots_bringing` (what logistic robots carry or have
+  its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
   `next_parts` counts parts for the rocket after it. `platform_requests` flags each request a platform above makes:
   matched (the planet's network holds it), below_min_payload, split_networks (another network holds it), hub_full,
@@ -170,7 +176,7 @@
   and the window); `wait_min: 15` waits through 15 minutes with no new part; `parts_short` and `last.why` name each
   rocket-part ingredient the silo lacks. `walk: true` with `from` (chests anywhere on the silo's surface, a landing
   pad too) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
-  `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
+  `launched`, `short`; `last.trips`, `last.stops`): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
   needs; without `from` (or with `chests: false`) it walks to the silo with what you hold. `all_or_nothing: true`
   (with `launch`): the launch goes only with every listed item aboard in full (the rocket read again); a short load
@@ -195,7 +201,11 @@
   on; nothing loads. The reply gives `freshness` at the top, `loaded` (per item `aboard_before`, `loaded`, `from`,
   `freshness`), `cargo` (everything in the rocket) and `switches` (the silo's automatic requests and send to orbit
   automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
-  and goes on.
+  and goes on. A walking load with `launch` that ends with none made and the list's items aboard (time ran out, a
+  paused queue, a refused launch) says so in `last.loaded_not_launched` (what, the rocket, why). The same load again with
+  `to_total: true` and `launch` loads none of what is aboard again: the list aboard already, it walks nowhere and
+  launches as it is when the rocket is ready and the platform here. A load_silo that runs over time returns when it ends, with or without `--wait`, its outcome the exit
+  status; `--no-wait` returns at the start (`until_tick`).
   Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
 - `silo_stage {position, items, from, launch?, platform?, to_total?, auto_requests?, dry_run?}`: one queue plan for a
   mixed load: reads the silo and the chests now, then takes what the rocket still needs (after what you carry) at each

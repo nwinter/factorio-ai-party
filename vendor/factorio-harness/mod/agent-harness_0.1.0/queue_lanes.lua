@@ -7,7 +7,7 @@ return function(api)
   local WAITS={platform_arrived=true,platform_left=true,researched=true,platform_built=true}
   -- place_ghosts and deconstruct on a platform (Astra, d15 06:23: ship conversions held the body queue): marks and
   -- ghosts the hub's robots build, no body needed; platform_built waits for the foundation.
-  local PLATFORM_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,flush=true,place_ghosts=true,deconstruct=true}
+  local PLATFORM_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,flush=true,place_ghosts=true,deconstruct=true,platform_rearm=true}
   local BODY_READS={inventory=true,craftable=true,sleep_check=true,dry_run=true,screenshot=true}
   local function check(action,a)
     a=a or {}
@@ -129,7 +129,7 @@ return function(api)
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform; drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts and deconstruct with explicit platform; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform; drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts, deconstruct and platform_rearm with explicit platform; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end

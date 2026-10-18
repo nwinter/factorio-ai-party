@@ -742,6 +742,38 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
     });
   }
 });
+test('a timed collect or a load_silo tour blocks without --wait, its outcome the exit status; --no-wait returns at acceptance',async()=>{
+  // batch24 A1 (Grok): both returned exit 0 at acceptance while the character worked on.
+  const cases=[
+    {action:'load_silo',args:'{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"from":{"x":14.5,"y":28.5},"walk":true,"launch":true}',last:{kind:'gather',outcome:'launched',moved:226},code:0,line:/outcome: launched/},
+    {action:'collect',args:'{"position":{"x":21.5,"y":33.5},"item":"rocket-fuel","count":20,"wait_ticks":7200}',last:{kind:'gather',outcome:'collected',moved:20},code:0,line:/outcome: collected/},
+    {action:'collect',args:'{"position":{"x":21.5,"y":33.5},"item":"rocket-fuel","count":20,"keep_taking":true}',last:{kind:'gather',outcome:'failed',error:'the machine stopped'},code:1,line:/Control ended: failed: the machine stopped/},
+  ];
+  for (const c of cases) for (const flags of [[],['--no-wait']]) {
+    let polls=0;
+    await engine(request=>{
+      if(request.action===c.action)return {ok:true,result:{until_tick:180}};
+      if(request.action==='observe')return {ok:true,result:{player:{position:{x:3,y:4},health:250,max_health:250,inventory:[]},clock:'c'}};
+      polls++;
+      return {ok:true,result:polls<2?{active:{kind:c.last.kind,until_tick:180}}:{active:false,last:c.last}};
+    },async port=>{
+      const {code,stdout}=await compact(port,['call',c.action,'--args',c.args,...flags]);
+      if (flags.length) { assert.equal(code,0,stdout); assert.equal(polls,0); assert.match(stdout,/until_tick: 180/); }
+      else { assert.equal(code,c.code,stdout); assert.ok(polls>=2,`${c.action} polled until it ended: ${stdout}`); assert.match(stdout,c.line); }
+    });
+  }
+  // A collect with no wait_ticks or keep_taking stays as it was (at once).
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='collect')return {ok:true,result:{until_tick:180,moved:3}};
+    polls++; return {ok:true,result:{active:false}};
+  },async port=>{
+    const {code}=await compact(port,['call','collect','--args','{"position":{"x":1,"y":1},"item":"coal"}']);
+    assert.equal(code,0); assert.equal(polls,0);
+  });
+  const both=await compact(1,['call','collect','--args','{}','--wait','--no-wait']);
+  assert.notEqual(both.code,0); assert.match(both.stdout,/--wait or --no-wait, not both/);
+});
 test('a build that waited for a hand craft and then failed keeps the blocker on the error line',async()=>{
   // Sol, shift09: the silo build hit trees after its craft and read "Control ended: failed".
   let polls=0;

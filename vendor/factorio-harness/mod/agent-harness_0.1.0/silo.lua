@@ -327,11 +327,13 @@ return function(api)
     local lift, slots = api.cargo.limits(e)
     if #loaded > 0 then
       local w = api.cargo.weigh(loaded, lift, slots)
-      row.cargo = {kg=w.total_kg, lift_kg=api.cargo.kg(lift), stacks=w.stacks, slots=slots, items=items_text(loaded, 8),
+      -- room_kg (batch24 A4, Gemini: what is aboard and the room left without a full inspect)
+      local room = math.max(0, math.floor((api.cargo.kg(lift) - w.total_kg) * 10 + 0.5) / 10)
+      row.cargo = {kg=w.total_kg, lift_kg=api.cargo.kg(lift), room_kg=room, stacks=w.stacks, slots=slots, items=items_text(loaded, 8),
         over_kg=w.total_kg > api.cargo.kg(lift) and math.floor((w.total_kg - api.cargo.kg(lift)) * 10 + 0.5) / 10 or nil}
-      words[#words+1] = string.format('cargo %g/%g kg, %d/%d slots: %s', w.total_kg, api.cargo.kg(lift), w.stacks, slots, row.cargo.items)
+      words[#words+1] = string.format('cargo %g/%g kg (%g kg free), %d/%d slots: %s', w.total_kg, api.cargo.kg(lift), room, w.stacks, slots, row.cargo.items)
     else
-      row.cargo = {kg=0, lift_kg=api.cargo.kg(lift), stacks=0, slots=slots}
+      row.cargo = {kg=0, lift_kg=api.cargo.kg(lift), room_kg=api.cargo.kg(lift), stacks=0, slots=slots}
       words[#words+1] = rocket_inv and 'no cargo loaded' or 'no rocket to load yet'
     end
     local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)
@@ -647,7 +649,7 @@ return function(api)
     returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), built_parts (ready or rising: the built rocket\'s, 50/50), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the rocket after it: a ready rocket with next_parts 6/50 is built and launches), rocket_ready (true only for a built rocket), rocket ("rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
-      .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, robots_bringing (what logistic robots carry or have reserved toward the silo now) and requesting_for (the platform its automatic requests fill for), auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
+      .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, room_kg (lift left), stacks, slots, items, over_kg}, trash, robots_bringing (what logistic robots carry or have reserved toward the silo now) and requesting_for (the platform its automatic requests fill for), auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
       .. 'platforms_above (ours in orbit of this planet), platform_requests [{platform, item, flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), line}] (each request a platform above makes of this planet that its hub lacks), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M
