@@ -424,6 +424,40 @@ return function(api)
     return string.format('boxed in at %s by %s within 2.5 tiles: the gaps between them are narrower than a path request starts in, but the area you can reach is not closed in: %s',
       at(here), table.concat(parts, ', '), ways)
   end
+  -- Why a walk ended blocked after its stalls (batch25 A1, Haiku ~4 times: a rearm tour ended "(-76,161): blocked" after a
+  -- dry run said the route was clear, a minute each): where it stopped, how far from the goal, and what stands within
+  -- 2.5 tiles of it that the character collides with (by the character's collision layers), by name; enemy units
+  -- within 6 tiles, which push it about.
+  local char_layers
+  local function blocks(e)
+    if not char_layers then
+      char_layers = try(function() return prototypes.entity.character.collision_mask.layers end) or {player=true}
+    end
+    local layers = try(function() return e.prototype.collision_mask.layers end)
+    if not layers then return false end
+    for k in pairs(layers) do if char_layers[k] then return true end end
+    return false
+  end
+  local SKIP = {character=true, ['item-entity']=true, resource=true, corpse=true, ['character-corpse']=true, ['entity-ghost']=true, ['tile-ghost']=true}
+  function M.stall_why(p, nav, goal)
+    local here = p.position
+    local list = try(function() return p.surface.find_entities_filtered{area={{here.x - 2.5, here.y - 2.5}, {here.x + 2.5, here.y + 2.5}}, limit=64} end) or {}
+    local by, order = {}, {}
+    for _, e in ipairs(list) do
+      if e.valid and not SKIP[e.type] and e ~= p.character and blocks(e) then
+        local name = e.type == 'cliff' and 'cliff' or e.name
+        if not by[name] then by[name] = {n=0, first=e.position}; order[#order+1] = name end
+        by[name].n = by[name].n + 1
+      end
+    end
+    table.sort(order, function(x, y) if by[x].n ~= by[y].n then return by[x].n > by[y].n end return x < y end)
+    local parts = {}
+    for i = 1, math.min(5, #order) do local b = by[order[i]]; parts[i] = string.format('%d %s (first at %s)', b.n, order[i], at(b.first)) end
+    local units = try(function() return p.surface.count_entities_filtered{position=here, radius=6, type='unit', force='enemy'} end) or 0
+    return string.format('stalled %d times at %s, %.1f tiles from %s; within 2.5 tiles: %s%s', nav.stalls or 0, at(here), dist(here, goal), at(goal),
+      #parts > 0 and table.concat(parts, ', ') or 'nothing the character collides with (units, a belt carrying it, or the tiles)',
+      units > 0 and string.format('; %d enemy unit%s within 6 tiles', units, units == 1 and '' or 's') or '')
+  end
   function M.probed(p, nav, event)
     nav.probe_id = nil
     local kind = nav.probe_kind or 'near'

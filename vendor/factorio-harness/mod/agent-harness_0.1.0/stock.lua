@@ -799,6 +799,10 @@ return function(api)
     if outcome and action.nav.foes and api.leg_done and api.leg_done(p,action.nav,outcome) then outcome=nil end
     if not outcome then return nil end
     local why=action.nav.why
+    if outcome=='blocked' and not why and api.stall_why then
+      local okw,w=pcall(api.stall_why,p,action.nav,v)
+      if okw then why=w end
+    end
     action.nav=nil; api.stop_walking(p)
     if outcome=='arrived' or outcome=='arrived_near' or api.distance(p.position,v)<=1.5 then walked(p,action,'via '..i); action.via_i=i+1; return nil end
     action.unreached=(action.unreached or 0)+1
@@ -984,6 +988,11 @@ return function(api)
             table.concat(names,' and '),#c.mine>6 and string.format(' (+%d more)',#c.mine-6) or '',c.from.x,c.from.y,c.to.x,c.to.y)
           action.mine_for_a_way=action.mine_for_a_way or names
         end
+      end
+      -- Blocked after its stalls (batch25 A1, Haiku): where it stopped and what stood in the way there.
+      if outcome=='blocked' and not action.nav.why and api.stall_why then
+        local okw,why=pcall(api.stall_why,p,action.nav,t.position)
+        if okw then action.nav.why=why end
       end
       action.first_unreached=action.first_unreached or string.format('(%g,%g): %s%s',t.position.x,t.position.y,outcome,
         action.nav.why and ': '..action.nav.why or '')

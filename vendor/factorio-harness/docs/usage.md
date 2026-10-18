@@ -7230,3 +7230,12 @@ fh watch    # deploy on every change
   checked with can_place_entity (manual) and against the spots planned before it; then one `build` batch with `all`
   of a requester chest (its request as an entry setting) and the inserter per turret, from the inventory. Rows: the
   spots, skipped (why), short (items ran out), not_built (build's refusal). tests/turretfeed.lua.
+
+## d17 batch25 Group A (the agents' 22:50 poll)
+- A1 (Haiku ~4 times: rearm's dry run said the route was clear, then the walk ended `(-76,161): blocked` after a
+  minute). The dry run checks pockets along straight lines (the game's path is asked for only as the character walks,
+  by request; no read can wait for one). A tour leg or via point that ends `blocked` after its stalls now says where
+  it stopped, how far from the stop, and what stands within 2.5 tiles that the character collides with (by the
+  character prototype's collision layers: trees, cliffs, buildings), with enemy units within 6 tiles (pathing.lua
+  `stall_why`). rearm's `turrets` rows (dry run and the real reply before the walk): each turret's ammunition held by
+  name and what it gets, or what it wants when you carry none. tests/pathing.lua.
