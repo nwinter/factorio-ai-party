@@ -163,7 +163,9 @@
   pad too) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
   `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
-  needs; without `from` it walks to the silo with what you hold. A walking load gives `loaded_items` (what you put
+  needs; without `from` (or with `chests: false`) it walks to the silo with what you hold. `all_or_nothing: true`
+  (with `launch`): the launch goes only with every listed item aboard in full (the rocket read again); a short load
+  stays in the silo and the refusal names what is missing (not with `up_to` or `launch_split`). A walking load gives `loaded_items` (what you put
   in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count). When the
   rocket it fills launches by another hand (outcome `rocket_launched`), the tour walks on to the chests it took from,
   latest first, and gives back what it took and did not load (`last.returned`: what, how many, where; `kept`: what did

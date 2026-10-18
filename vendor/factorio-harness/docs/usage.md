@@ -6926,3 +6926,12 @@ fh watch    # deploy on every change
     A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
   - A refused entity ghost over empty space on a platform says the dry run gives those fields.
   tests/dryrun.lua.
+- A2 (Astra): a partial load went up with two underground belts and a rocket was spent. `load_silo {launch,
+  all_or_nothing: true}`: before the launch the rocket is read again; every listed item must be aboard at its count
+  (to_total: the count; else what was aboard before and the count), else `not launched (all_or_nothing): the rocket
+  holds X of Y` and the load stays in the silo. A short row was already refused without up_to; all_or_nothing refuses
+  up_to and launch_split beside it (one rocket, the whole list) and says `every listed item aboard in full: launched`.
+  tests/rocketload.lua.
+- A3 (Gemini): `load_silo {walk: true, chests: false}` was refused; a walk without from already loaded from your own
+  inventory. chests: false now goes with walk (the same walk); with from it is refused; chests: true with walk is
+  refused as before. tests/rocketload.lua.
