@@ -148,8 +148,8 @@ return function(api)
       if ok and type(n) == 'number' then held = held + n end
     end
     if held > 0 then add('inserter_hands', held) end
-    local okr, flying, carriers, robots_read, capped = pcall(M.robot_cargo, p.force, surface, item)
-    if okr and flying > 0 then add('robot_cargo', flying) end
+    local okr, robot_n, carriers, robots_read, capped = pcall(M.robot_cargo, p.force, surface, item)
+    if okr and robot_n > 0 then add('robot_cargo', robot_n) end
     local robot_note = okr and capped and string.format('robot cargo: the first %d robots read', robots_read) or nil
     -- The team's characters on this surface, by agent name.
     for _, ag in ipairs(api.agents()) do
@@ -214,7 +214,7 @@ return function(api)
     end
     local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0, in_flight=#flying > 0 and flying or nil,
       spoils_within_2_min=soon, spoil_note=soon and string.format('%d of the %d spoil within 2 minutes (chests, machines and the like; belts, hands and robot cargo not read)', soon, total) or nil,
-      robot_cargo=okr and flying > 0 and string.format('%d carried by %d robot%s now', flying, carriers, carriers == 1 and '' or 's') or nil, robot_note=robot_note}
+      robot_cargo=okr and robot_n > 0 and string.format('%d carried by %d robot%s now', robot_n, carriers, carriers == 1 and '' or 's') or nil, robot_note=robot_note}
     for i, e in ipairs(places) do
       if i <= limit then out.places[i] = e else out.more = out.more + 1 end
     end
