@@ -7576,3 +7576,44 @@ fh watch    # deploy on every change
   - On world n (07:30, Kestrel II, saved first): 1,894 entities of ours lay within 55 tiles of its two railguns. Both
     face north at (-10.5,-30.5) and (5.5,-30.5) and hit none of ours. Reading both took 1.1 ms; the first call read
     the prototypes in 0.7 ms. Before the narrower find it took 13 ms.
+- B2 (Luna: whole schedules rebuilt when a stop's wait stalled): `platform_schedule {platform, next: true}` calls the
+  game's go to station on the record after the current one (LuaSchedule.go_to_station), keeping the records and their
+  waits. `sent_to` names the stop it was on and the next one, and where the platform was (waiting at a planet, or
+  flying to a stop): `from stop 1 (nauvis) to stop 2 (gleba): go to station called (it was waiting at nauvis)`. In
+  flight the next stop is the one after its destination. A one-stop schedule says the next stop is the same one.
+  `next` goes alone: stops, current and keep_leg are refused with it. The state is read after, with `state_note` for
+  no_schedule and paused.
+- B9 (Astra 07:33: Cinder waited at Gleba over 5 min on fluid_count thruster-fuel >= 22000 and thruster-oxidizer >=
+  22000 while platform_endurance read 26000 of each; Luna 07:50: Spindle's stop fluid_count ignored 25000 in each
+  storage tank on several departures):
+  - What was found (world n, read only, saved first; no private copy was reachable: the sandbox refuses the docker
+    socket and the copy's RCON port was closed):
+    - Luna's waits were written `{"type":"fluid_count","fluid":"thruster-fuel","count":24000}` (Luna's shift33-34
+      calls: count 67 times, item 37, fluid 26, name 8, at_least 4, seconds 3). platform_schedule took them without
+      a condition, and the game's records read back `{type = "fluid_count"}` with no condition (Spindle at Nauvis,
+      07:58): a wait that compares nothing. The schedule text showed `fluid_count` alone, so it was not visible.
+    - Astra's 14:23:04 UTC call passed real conditions (`"thruster-fuel >= 22000"`), and Cinder still waited over
+      5 min with 26000 of each in its tanks. So the game's platform fluid_count did not count the storage tanks.
+      The API's WaitCondition page says a condition is present for fluid_count, but not what a platform's
+      fluid_count reads; the hub holds no fluid.
+    - Cinder's schedule now uses circuit waits with both tanks wired to the hub. Its hub's red wire reads 25000
+      thruster-fuel and 25000 oxidizer, the tanks' sum.
+  - In platform_schedule:
+    - A count wait (item_count, fluid_count, circuit) needs its condition, and is refused without one.
+    - `{item|fluid|name, count|at_least}` reads as `"NAME >= N"`, and `seconds` reads as ticks; `read_as` lists each.
+      Any other wait field is refused, naming the fields a wait takes.
+    - `schedule` shows each count wait's condition (`with no condition` when the game holds none).
+    - A game fluid_count wait gets `fluid_count_note` (what world n showed, and the two ways that read the tanks), and
+      `waits_run` says which way each condition runs.
+  - `harness: true` on a fluid_count wait (platwait.lua):
+    - The game's record gets a circuit wait `signal-dot < -2147483648` (never holds) beside the stop's other waits,
+      and the schedule text shows it as `the harness sends it on`.
+    - Every 60 ticks, while the platform waits at that stop and is not paused, the harness reads each harness
+      condition against its storage tanks' sum (at most 64 tanks), each time wait from when it first saw the platform
+      waiting there, and each item_count against the hub. When all hold, it calls go to station on the next stop, as
+      `next: true` does.
+    - The stop's other waits may be only time and item_count joined by and; anything else is refused with harness.
+    - `harness_waits` in the reply and in `platforms {platform}` gives the conditions, what each reads now and the
+      last send.
+    - Another platform_schedule without harness waits clears the watch. So does a record that no longer holds the
+      never condition (the schedule changed elsewhere).
