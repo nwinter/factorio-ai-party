@@ -1,7 +1,8 @@
 - `build {item, position, direction?, recipe?, builds?, all?, check_inserters?, entity?, dry_run?}`: places from your
   inventory; `builds` is a batch of entries (up to 256; more than 64 are worked in batches of 64 in the same call, one
   reply, `batches` says how many). A direction is a compass name or the number `inspect` prints (0, 4, 8,
-  12); `recipe` sets an assembler's recipe. `"all": true` builds every entry it can and lists the rest in `failed`
+  12); `recipe` sets an assembler's recipe; a machine the game placed facing north without its recipe's fluid ports
+  is turned the way asked once the recipe is set (`direction_note`; place_ghosts: `directions_turned`). `"all": true` builds every entry it can and lists the rest in `failed`
   with why; a batch that fails part way says on the `warning:` line when what it placed closes you in. Errors name the
   blocker (tree, rock, the character, water); trees and rocks go with `place_ghosts` + `construct`, or `mine`.
   Standing on the footprint, the character steps aside first: the reply gives `not_yet`, `still_to_build` and

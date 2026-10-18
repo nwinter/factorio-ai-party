@@ -58,8 +58,10 @@ return function(api)
             local full = w and lift and w > 0 and math.floor(lift / w) or nil
             local held = try(function() return pl.hub.get_item_count(item) end) or 0
             local mp = f.minimum_delivery_count
-            lines[#lines+1] = string.format('%s: %s from %s, asks %d (holds %d); custom minimum payload %s; a full rocket by weight %s',
-              pl.name, item, from, f.min or 0, held, mp and tostring(mp) or 'none', full and tostring(full) or '?')
+            local grp = try(function() return sec.group end) or ''
+            lines[#lines+1] = string.format('%s: %s from %s, asks %d (holds %d); custom minimum payload %s; a full rocket by weight %s%s',
+              pl.name, item, from, f.min or 0, held, mp and tostring(mp) or 'none', full and tostring(full) or '?',
+              grp:find('^platform_bom: ') and ' (in platform_bom\'s section: its keeper takes a change made here as its own)' or '')
           end
         end
       end

@@ -57,9 +57,11 @@ else
   end
 end
 local home = game.surfaces.nauvis
+local connected = {}
+for _, pl in pairs(game.connected_players or {}) do connected[#connected + 1] = pl.name end
 rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, research = cur and cur.name or nil,
   progress = cur and f.research_progress or nil, top_done = top, electric_machines = machines, starved = starved,
-  darkness = home.darkness, daytime = home.daytime})
+  darkness = home.darkness, daytime = home.daytime, connected = connected})
 """
 
 # Production history for sparklines: item counts in the last hour, 30 two-minute buckets, oldest first, summed over
