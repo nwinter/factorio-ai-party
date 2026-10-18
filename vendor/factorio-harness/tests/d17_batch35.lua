@@ -317,3 +317,35 @@ do
   eq(runtime.silo_load_record(silo),nil); eq(loads[777],nil)
 end
 print('d17_batch35 A7 a stale hand-load record is dropped: ok')
+
+-- C1 (Astra: a one-egg export took a constant combinator and a stack size signal only to set hand size 1): the 2.0
+-- inserter GUI's stack size override ("Override hand size" from 2.1.22) as configure hand_size.
+do
+  local force=game.forces.player
+  force.inserter_stack_size_bonus=2; force.bulk_inserter_capacity_bonus=6
+  local cb={circuit_set_stack_size=false}
+  local ins={valid=true,name='inserter',type='inserter',force=force,surface=surface,position={x=1.5,y=0.5},unit_number=901,
+    prototype={inserter_stack_size_bonus=0,uses_inserter_stack_size_bonus=true},inserter_stack_size_override=0,
+    bounding_box={left_top={x=1.2,y=0.2},right_bottom={x=1.8,y=0.8}},get_control_behavior=function() return cb end}
+  local chest={valid=true,name='wooden-chest',type='container',force=force,surface=surface,position={x=3.5,y=0.5},unit_number=902,prototype={}}
+  surface.find_entities_filtered=function(f)
+    if f.type=='unit' or (type(f.type)=='table' and f.type[1]=='unit') then return {} end
+    local out={}
+    for _,e in ipairs({ins,chest}) do
+      local q=f.position
+      if (q and math.abs(q.x-e.position.x)<1 and math.abs(q.y-e.position.y)<1) or (f.area and not q) then out[#out+1]=e end
+    end
+    return out
+  end
+  body.position={x=0,y=0}
+  local r=grok('configure',{position={x=1.5,y=0.5},hand_size=1})
+  eq(r.hand_size,1); eq(r.hand_size_before,'none'); eq(r.hand_max,3); eq(ins.inserter_stack_size_override,1)
+  fails(function() grok('configure',{position={x=1.5,y=0.5},hand_size=4}) end,'hand_size (1..3, its hand size now; 0 or false for none)')
+  cb.circuit_set_stack_size=true; cb.circuit_stack_control_signal={type='virtual',name='signal-S'}
+  r=grok('configure',{position={x=1.5,y=0.5},hand_size=false})
+  eq(r.hand_size,'none: its own hand size, 3'); eq(r.hand_size_before,1); eq(ins.inserter_stack_size_override,0)
+  has(r.circuit_note,'circuit_set_stack_size is on (signal signal-S): the circuit sets the hand while that signal is on its wires')
+  fails(function() grok('configure',{position={x=3.5,y=0.5},hand_size=1}) end,'hand_size applies to inserters (built or ghost); wooden-chest is a container')
+  surface.find_entities_filtered=function() return {} end
+end
+print('d17_batch35 C1 configure hand_size: ok')

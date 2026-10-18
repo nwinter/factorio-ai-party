@@ -8084,3 +8084,11 @@ fh watch    # deploy on every change
     has none.
   - A platform stop's `save_as: NAME` keeps its wait list (as written) in the harness's storage, and `wait_from: NAME`
     takes it on another stop or platform; read_as says which and who saved it.
+- `configure {position, hand_size}` on an inserter, built or ghost (C1, Astra: a one-egg surplus export took a
+  constant combinator and a stack size signal only to set hand size 1). The 2.0 inserter GUI has the setting: a
+  forum thread asks to rename its "Stack size override", and Bilka renamed it "Override hand size" for 2.1.22
+  (forums.factorio.com/viewtopic.php?p=646961). hand_size sets LuaEntity.inserter_stack_size_override: 1 up to the
+  inserter's hand size now (1, its prototype's bonus and the force's inserter or bulk capacity bonus), 0 or false
+  for none. Returns hand_size, hand_size_before, hand_max, and circuit_note when the inserter's circuit set stack
+  size is on (that signal sets the hand while it is on the wires). It goes with filters and spoil_priority in the
+  same call. No combinator is placed.
