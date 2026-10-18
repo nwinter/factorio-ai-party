@@ -83,7 +83,10 @@
     reads them back with whether the condition holds now. It alerts while the condition holds: `game_alerts {kind:
     "speaker"}`, the team block and `fh wait --until "alert speaker"` tell it.
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
-    there by remote view where our force sees the chunk.
+    there by remote view where our force sees the chunk. Switching automatic requests on moves cargo loaded by hand
+    into the silo's trash slots, which never launch: `auto_requests: true` is refused while the rocket holds cargo no
+    platform stopped above asks this planet for, naming it (`force: true` switches them on anyway); `silo` lists the
+    trash slots.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
 - `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
   queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < 0`) and the

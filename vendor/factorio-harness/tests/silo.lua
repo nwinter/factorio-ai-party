@@ -166,7 +166,7 @@ ns.inv[12]=inv({{'processing-unit',7}})
 ns.use_transitional_requests=true
 n=S.read(p,{surface='nauvis'}).silos[1]
 eq(n.cargo.kg,1200); eq(n.cargo.over_kg,200); eq(n.cargo.room_kg,0); eq(n.trash,'processing-unit*7'); eq(n.auto_requests,true)
-assert(n.line:find('trash slots: processing-unit*7; automatic requests on',1,true),n.line)
+assert(n.line:find('trash slots: processing-unit*7 (never launched; transfer {position, direction: to_player, inventory: rocket_silo_trash} takes it back); automatic requests on',1,true),n.line)
 
 -- 6. position picks the nearest of several; no silo is an error.
 silo(fulgora,40.5,40.5,{rocket_parts=0,rocket_silo_status=0,status=36,crafting_progress=0,is_crafting=function() return false end,inv={[2]=inv({}),[11]=inv({},20),[12]=inv({})}})

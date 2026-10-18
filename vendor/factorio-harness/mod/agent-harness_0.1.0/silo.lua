@@ -366,7 +366,7 @@ return function(api)
     end
     local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)
     row.trash = items_text(contents(trash), 8)
-    if row.trash then words[#words+1] = 'trash slots: ' .. row.trash end
+    if row.trash then words[#words+1] = 'trash slots: ' .. row.trash .. ' (never launched; transfer {position, direction: to_player, inventory: rocket_silo_trash} takes it back)' end
     row.auto_requests = try(function() return e.use_transitional_requests end) and true or false
     -- each request a platform above makes of this planet, flagged (A8)
     local okr, reqs = pcall(M.request_rows, e, force)
@@ -572,6 +572,29 @@ return function(api)
       end
     end
     return rows
+  end
+  -- (d17 batch32 A1, Grok: 241 agricultural science packs went to rocket_silo_trash and never launched) switching a
+  -- silo's automatic requests on with cargo loaded by hand: the game moves cargo out of the rocket into the silo's trash
+  -- slots. What is aboard now, split into what a platform stopped above asks this planet for (request_rows: a request
+  -- its hub lacks) and the rest, which no request asks for and goes to the trash; nil when nothing is aboard.
+  function M.trash_risk(e, force)
+    local inv = defines.inventory.rocket_silo_rocket and try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
+    local aboard = contents(inv)
+    if #aboard == 0 then return nil end
+    local asked = {}
+    for _, r in ipairs(try(function() return M.request_rows(e, force) end) or {}) do asked[r.item] = r.platform end
+    local lost, kept, lost_n = {}, {}, 0
+    for _, st in ipairs(aboard) do
+      if asked[st.name] then kept[#kept+1] = {name=st.name, count=st.count, quality=st.quality}
+      else lost[#lost+1] = {name=st.name, count=st.count, quality=st.quality}; lost_n = lost_n + st.count end
+    end
+    local lost_text, kept_text = items_text(lost, 8), items_text(kept, 8)
+    return {lost=lost_text, lost_count=lost_n, asked=kept_text,
+      line=string.format('the rocket holds %s', table.concat((function()
+        local t = {}
+        if lost_text then t[#t+1] = lost_text .. ' that no platform stopped above asks this planet for: with automatic requests on the game moves it into the silo\'s trash slots, which never launch' end
+        if kept_text then t[#t+1] = kept_text .. ' that a platform above asks for' end
+        return t end)(), '; and '))}
   end
   -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
   function M.settings(e)
