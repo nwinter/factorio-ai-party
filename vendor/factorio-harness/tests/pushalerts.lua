@@ -517,14 +517,33 @@ do
   eq(r[1].line,'2 (1 biochamber, 1 heating-tower) out of fuel near (48,47): biochamber (49.5,44.5), heating-tower (46.5,48.5); refuel {alert: "no_fuel|nauvis|0,0"}; 3 biochamber around it burn spoiling fuel, 2 of them within 60s; '
     ..'the first: nutrients spoils in 4s at (43.5,34.5)')
   -- Heating towers (Gemini, d15 07:54): empty and under 500 C, their own group with the temperature; hotter, not said.
-  ent('nauvis','heating-tower','reactor',146.5,48.5,{status=3,temperature=320,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
-  ent('nauvis','heating-tower','reactor',246.5,48.5,{status=3,temperature=640,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
+  -- batch27 A4 (Astra board #975): the threshold is the heat network's: with a heat exchanger on it, its working
+  -- temperature from the prototype (500 C); heating only, 30 C, by the coldest part and how fast it cools.
+  local function exchanger(x,y) return {valid=true,unit_number=math.floor(x*1000+y),name='heat-exchanger',type='boiler',position={x=x,y=y},temperature=480,
+    prototype={heat_energy_source_prototype={min_working_temperature=500}}} end
+  local t1=ent('nauvis','heating-tower','reactor',146.5,48.5,{status=3,temperature=320,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
+  t1.unit_number=901; t1.heat_neighbours={exchanger(148.5,48.5)}
+  local t2=ent('nauvis','heating-tower','reactor',246.5,48.5,{status=3,temperature=640,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
+  t2.unit_number=902; t2.heat_neighbours={exchanger(248.5,48.5)}
+  -- heating only at 499 C, its coldest pipe 493 C: not said; cooling fast enough to reach 30 C within 10 min: said
+  local pipe={valid=true,unit_number=904,name='heat-pipe',type='heat-pipe',position={x=348.5,y=48.5},temperature=493}
+  local t3=ent('nauvis','heating-tower','reactor',346.5,48.5,{status=3,temperature=499,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
+  t3.unit_number=903; t3.heat_neighbours={pipe}
   game.tick=game.tick+600
   eq(R.read(sol,{kind='no_fuel'}).groups[1].line:match('the first: .*$'),'the first: nutrients spoiled at (43.5,34.5)', 'worked out when shown')
   game.tick=game.tick+1801
   local h=R.read(sol,{kind='heat_no_fuel'}).groups
   eq(#h,1)
-  eq(h[1].line,'1 heating-tower out of fuel and under 500 C near (146.5,48.5): heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel {alert: "heat_no_fuel|nauvis|2,0"}')
+  eq(h[1].line,'1 heating-tower out of fuel near (146.5,48.5): heating-tower (146.5,48.5): 320 C, fuel slot empty; its heat network feeds 1 heat exchanger, which work at 500 C and more; refuel {alert: "heat_no_fuel|nauvis|2,0"}')
+  -- the next read: the pipe cooled 2 C in 30 s (4 C a minute, about 116 min to 30 C): still not said
+  pipe.temperature=491; game.tick=game.tick+1801
+  eq(#R.read(sol,{kind='heat_no_fuel'}).groups,1)
+  -- then 300 C in 30 s: under a minute to 30 C, said with its coldest part
+  pipe.temperature=191; game.tick=game.tick+1801
+  h=R.read(sol,{kind='heat_no_fuel'}).groups
+  eq(#h,2)
+  local line=h[1].line:find('346.5',1,true) and h[1].line or h[2].line
+  assert(line:find('heating-tower (346.5,48.5): 499 C, fuel slot empty; its heat network (2 parts, no heat exchanger) coldest 191 C at heat-pipe (348.5,48.5), cooling 599.7 C a minute: about 0 min to 30 C; under 30 C a heater warms nothing',1,true),line)
   ents.nauvis={}
 end
 -- A burner its full burnt-result slot stopped (Sol, shift14 03:54: two agricultural science biochambers read working and
