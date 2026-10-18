@@ -320,7 +320,8 @@ return function(api)
     -- hundreds sat on a rear loop no turret's feed reached): the ammunition stranded on belts no turret's way reaches,
     -- or in a hub no inserter takes from toward a turret, is left out of the stock projected, and said.
     local ammo_feed
-    local tr = api.ammofeed and pl.surface and try(function() return api.ammofeed.trace(pl) end)
+    local tr_why
+    local tr = api.ammofeed and pl.surface and try(function() local t, w = (api.ammofeed.get or api.ammofeed.trace)(pl); tr_why = w; return t end)
     local stranded_of = {}
     if tr then
       for name, n in pairs(tr.stranded_by or {}) do stranded_of[name] = (stranded_of[name] or 0) + n end
@@ -353,8 +354,9 @@ return function(api)
       end
     end
     if tr then
-      ammo_feed = string.format('ammunition that can reach a turret %d, stranded %d (platform_defense {platform} traces each turret\'s way)', tr.reaches, tr.stranded)
-    end
+      ammo_feed = string.format('ammunition that can reach a turret %d, stranded %d%s (platform_defense {platform} traces each turret\'s way)', tr.reaches, tr.stranded,
+        tr.as_of and ', ' .. tr.as_of or '')
+    elseif tr_why then ammo_feed = tr_why .. '; until then stranded ammunition is not told apart' end
     -- Flying (Astra 12:20): the last 60 s apart from the window's average, which holds the leg's stalls and stops.
     if flying and P.one_minute then
       for _, row in ipairs(rows) do

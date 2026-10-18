@@ -377,9 +377,10 @@ return function(api)
         if api.ammofeed and sc.turrets > 0 and (sc.under or 0) > 0 then
           local fr = r.feed
           if not (fr and game.tick - fr.tick < FEED_TICKS) then
-            local okt, tr = pcall(api.ammofeed.trace, pl)
+            -- (A2) a large platform's trace comes from the background read; while it runs, the next scan asks again
+            local okt, tr = pcall(api.ammofeed.trace, pl, FEED_TICKS)
             fr = {tick=game.tick, tr=okt and tr or nil}
-            r.feed = fr
+            if fr.tr then r.feed = fr end
           end
           local tr = fr.tr
           local starving, x0, y0, x1, y1 = {}, math.huge, math.huge, -math.huge, -math.huge

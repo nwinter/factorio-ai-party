@@ -354,6 +354,8 @@ return function(api)
     local ready = try(function() return e.rocket_silo_status == defines.rocket_silo_status.rocket_ready end)
     local parts = try(function() return e.rocket_parts end) or 0
     if m.parts ~= parts then m.parts, m.since = parts, game.tick end
+    -- (d17 batch23 B3) rocket parts made, sampled for silo's rate
+    if api.silo_sample then pcall(api.silo_sample, e) end
     if ready then m.ready = m.ready or game.tick else m.ready = nil end
     if ready and game.tick - m.ready >= SILO_IDLE then
       local inv = try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
@@ -700,6 +702,7 @@ return function(api)
   -- carry, how long the oldest has been frozen, and the nearest heater (heat pipe, reactor, heating tower) within
   -- HEATER_R tiles with its temperature (30 C or more heats a neighbour: heating.lua).
   local FROZEN_SLICE, HEATER_R, FROZEN_SHOW = 400, 32, 4
+  local STRIKE_SLICE = 400  -- buildings a step for lightning protection (on the copy about 5 us each)
   local function needs_heating(surface)
     return try(function() return surface.planet and surface.planet.prototype.entities_require_heating end) == true
   end
@@ -1039,6 +1042,7 @@ return function(api)
         local stages = {}
         for _, surface in ipairs(planets()) do stages[#stages+1] = {surface=surface.name} end
         for _, surface in ipairs(planets()) do if needs_heating(surface) then stages[#stages+1] = {frozen=surface.name} end end
+        for _, surface in ipairs(planets()) do if api.strike_cursor then stages[#stages+1] = {strike=surface.name} end end
         stages[#stages+1] = {step='alerts'}
         stages[#stages+1] = {step='networks'}
         stages[#stages+1] = {step='merge'}
@@ -1055,12 +1059,24 @@ return function(api)
         local stage = job.stages[job.i]
         -- (each kind of step its own profile part, pushalerts.<kind>: operator 18:12, pushalerts.tick 487 ms in one
         -- game second at 17:53)
-        local kind = stage.surface and (job.list and 'slice' or 'band') or stage.frozen and 'frozen' or stage.step
+        local kind = stage.surface and (job.list and 'slice' or 'band') or stage.frozen and 'frozen' or stage.strike and 'strike' or stage.step
         timed('pushalerts.' .. kind, step_do, s, force, tick, job, stage)
       end
     end
   end
   step_do = function(s, force, tick, job, stage)
+    if stage.strike then
+      -- A lightning planet: our buildings outside every lightning attractor's protection, STRIKE_SLICE a step
+      -- (lightning.lua; the attractors' index and the find each a step); other planets pass at once.
+      local surface = game.get_surface(stage.strike)
+      job.strike = job.strike or {}
+      local cur = job.strike_cur or (surface and api.strike_cursor(surface, force))
+      if cur and not api.strike_step(cur, STRIKE_SLICE) then job.strike_cur = cur; return end
+      if cur then job.strike[stage.strike] = cur.result end
+      job.strike_cur = nil
+      job.i = job.i + 1
+      return
+    end
     if stage.frozen then
       -- A planet that freezes: its entities found once, then FROZEN_SLICE a step; the cells' groups when done.
       local surface = game.get_surface(stage.frozen)
@@ -1113,7 +1129,7 @@ return function(api)
     elseif stage.step=='merge' then
       local sight=job.mining.__sight
       if sight then s.push_vis=s.push_vis or {}; s.push_vis[force.name]=sight.vis end
-      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force),sight=sight and {cells=sight.cells,radars=sight.radars,unread=sight.unread,cover=sight.cover,chests=sight.chests} or {cells={},radars={}}}
+      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force),sight=sight and {cells=sight.cells,radars=sight.radars,unread=sight.unread,cover=sight.cover,chests=sight.chests,strike=job.strike} or {cells={},radars={},strike=job.strike}}
       job.i=job.i+1;job.site_index=1
       job.stages[job.i]=job.stages[job.i] or {step='drill_sites'}
     else
@@ -1708,8 +1724,7 @@ return function(api)
   -- there), and the requester and buffer chests outside every logistic area. From the last background read.
   function M.coverage_lines(force)
     local c = (api.state().push_alerts or {})[force.name]
-    local sight = c and c.sight
-    if not (sight and (sight.cover or sight.chests)) then return nil end
+    local sight = c and c.sight or {}
     local by = {}
     for _, cell in pairs(sight.cover or {}) do local list = by[cell.surface] or {}; by[cell.surface] = list; list[#list+1] = cell end
     local surfaces = {}
@@ -1745,6 +1760,9 @@ return function(api)
       end
       for _, t in ipairs(text) do lines[#lines+1] = t end
     end
+    -- Lightning (lightning.lua): our buildings outside every attractor's protection, and those lightning killed.
+    local ok, more = pcall(function() return api.strike_lines and api.strike_lines(sight.strike, force, SIGHT_AREAS) end)
+    for _, l in ipairs(ok and more or {}) do lines[#lines+1] = l end
     return #lines > 0 and lines or nil
   end
   -- The team line: at most once an hour (h.sight_tick), the same lines (sight, then coverage).

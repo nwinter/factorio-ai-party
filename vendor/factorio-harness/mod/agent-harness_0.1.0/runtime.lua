@@ -1984,6 +1984,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.spoil and M.spoil.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gates and M.gates.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
@@ -8515,20 +8516,26 @@ function M.rearm_now(p,a)
       error('not walked: '..magazines..'; partial: true tours anyway (it stops giving where you run out)',0)
     end
     -- the dry run's plan (d17 batch14 A4, Muse: auditing wall ammo without walking): the stops as the tour would take
-    -- them, each turret's rounds and the ammo it would get, and what is left out; nothing walks
+    -- them, each turret's rounds and the ammo it would get, and what is left out; nothing walks. (batch24->25 A1, Haiku:
+    -- each turret's ammunition by name, in the real call's reply too, before the walk.)
+    local function holds(e)
+      local parts={}
+      for _,c in ipairs(select(2,pcall(function() return e.get_inventory(defines.inventory.turret_ammo).get_contents() end)) or {}) do
+        if type(c)=='table' and c.name then parts[#parts+1]=c.name..'*'..c.count end
+      end
+      return #parts>0 and table.concat(parts,' ') or 'no ammo'
+    end
+    local rows={}
+    for i,e in ipairs(order) do
+      if i>64 then break end
+      rows[#rows+1]=string.format('%s (%g,%g): holds %s, gets %s',e.name,e.position.x,e.position.y,holds(e),(item_of[e.unit_number] or ammo))
+    end
+    -- (the turrets under below whose ammo you carry none of: listed too, for an audit)
+    for _,x in ipairs(none_ents or {}) do
+      if #rows>=64 then break end
+      rows[#rows+1]=string.format('%s (%g,%g): holds %s, wants %s: you carry none (not a stop)',x.e.name,x.e.position.x,x.e.position.y,holds(x.e),x.it or 'ammo')
+    end
     if a.dry_run_plan then
-      local rows={}
-      for i,e in ipairs(order) do
-        if i>64 then break end
-        local okn,have=pcall(function() return e.get_inventory(defines.inventory.turret_ammo).get_item_count() end)
-        rows[#rows+1]=string.format('%s (%g,%g): %d rounds, gets %s',e.name,e.position.x,e.position.y,okn and have or 0,(item_of[e.unit_number] or ammo))
-      end
-      -- (the turrets under below whose ammo you carry none of: listed too, for an audit)
-      for _,x in ipairs(none_ents or {}) do
-        if #rows>=64 then break end
-        local okn,have=pcall(function() return x.e.get_inventory(defines.inventory.turret_ammo).get_item_count() end)
-        rows[#rows+1]=string.format('%s (%g,%g): %d rounds, wants %s: you carry none (not a stop)',x.e.name,x.e.position.x,x.e.position.y,okn and have or 0,x.it or 'ammo')
-      end
       return {plan=order,turrets=rows,turrets_more=#order>64 and #order-64 or nil,below=below,count=target,left_out=unsafe and unsafe.lines or nil,
         none_held=#none_held>0 and none_held or nil,other_ammo=other,magazines=magazines,completes=done_stops}
     end
@@ -8547,6 +8554,7 @@ function M.rearm_now(p,a)
       out.item=nil
     end
     out.below=below; out.count=target; out.types_note=note
+    out.turrets=#rows>0 and rows or nil
     out.magazines=magazines; out.partial=lacking and string.format('partial: %d of %d stops get their full count with what you carry',done_stops,#order) or nil
     if ticks then
       out.ticks=ticks
@@ -11520,7 +11528,7 @@ M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=f
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofeed.trace(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -14252,7 +14260,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
-M.platalerts=require('platalerts'){state=state,ammofeed={trace=function(pl) return M.ammofeed.trace(pl) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+M.platalerts=require('platalerts'){state=state,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
@@ -14549,6 +14557,49 @@ function M.example_text(action,args)
     return "; e.g. fh call "..action.." --args '"..M.aliases.encode(ex).."'"
   end)
   return ok and text or ''
+end
+-- An unknown-argument refusal (batch25 A3, Luna: inspect area/surface and rates recipe refused again and again): the
+-- accepted arguments with the first words of each one's description, and the call itself corrected where that is plain:
+-- a near name renamed when the value's shape fits it (a list for a plural name, else not a list), any other unknown
+-- argument dropped, saying which; offered only when the corrected call passes the argument check. nil otherwise.
+function M.refusal_example(action,args,call)
+  if type(args)~='table' then return nil end
+  local ok,text=pcall(function()
+    if not allowed_args then pcall(check_args,'describe',{}) end
+    local set=allowed_args and allowed_args[action]
+    if not set then return nil end
+    local schema=(handlers.describe().actions or {})[action] or {}
+    local fixed,changes={},{}
+    for k,v in pairs(args) do
+      if set[k] or k=='scope' or k=='peek' or k=='helper' then fixed[k]=v
+      else
+        local near
+        -- a singular name where the plural is taken (a table: one entry of the list), or the plural where the
+        -- singular is (a list of one: its entry)
+        if set[k..'s'] and type(v)=='table' and #v==0 then near=k..'s'; v={v}
+        elseif k:sub(-1)=='s' and set[k:sub(1,-2)] and type(v)=='table' and #v==1 then near=k:sub(1,-2); v=v[1] end
+        if near and fixed[near]==nil and args[near]==nil then fixed[near]=v; changes[#changes+1]=k..' as '..near
+        else changes[#changes+1]=k..' dropped ('..action..' takes no '..k..')' end
+      end
+    end
+    local keys={}
+    for k in pairs(set) do keys[#keys+1]=k end
+    table.sort(keys)
+    local shapes={}
+    for n,k in ipairs(keys) do
+      if n>14 then shapes[#shapes+1]=string.format('+%d more',#keys-14); break end
+      local d=type(schema[k])=='string' and schema[k] or ''
+      d=(d:gsub('%s+',' '):match('^[^;:(]*') or ''):gsub('%s+$','')
+      if #d>40 then d=d:sub(1,40)..'...' end
+      shapes[#shapes+1]=#d>0 and string.format('%s (%s)',k,d) or k
+    end
+    local out='; accepted: '..table.concat(shapes,', ')
+    if #changes>0 and next(fixed) and pcall(check_args,action,fixed) then
+      out=out.."; for this call: fh call "..(call or action).." --args '"..M.aliases.encode(fixed).."' ("..table.concat(changes,'; ')..')'
+    end
+    return out
+  end)
+  return ok and text or nil
 end
 -- An argument refusal from inside a handler (a required argument missing, a wrong shape) ends with the example too.
 local ARG_WORDS={'is required','requires ','must be ','go with ','out of range','needs ','give ','takes '}
@@ -15168,7 +15219,8 @@ dispatch_request=function(request)
     local ok,hint=pcall(M.entity_args,request)
     -- and a call that works (Muse, Luna, shift11: M.example_text)
     local view=request.action=='observe' and type(request.args)=='table' and type(request.args.scope)=='string' and request.args.scope or request.action
-    error(tostring(args_err)..(ok and hint or '')..M.example_text(view,request.args),0)
+    local built=tostring(args_err):find('unknown argument',1,true) and M.refusal_example(view,request.args,request.action)
+    error(tostring(args_err)..(ok and hint or '')..(built and built:find('for this call',1,true) and built or (built or '')..M.example_text(view,request.args)),0)
   end
   if request.action=='describe' then return handler(nil,request.args) end
   if request.action=='profiles' or request.action=='cameras' then return handler() end
@@ -15576,7 +15628,7 @@ function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end
 -- A platform's turret cover of its collectors and hull (platdefense.lua; A4, Astra 01:50).
 -- A platform's ammunition by whether it can reach a turret (ammofeed.lua; d17 batch13 B1).
-M.ammofeed=require('ammofeed'){}
+M.ammofeed=require('ammofeed'){state=state}
 M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed}
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
@@ -15620,12 +15672,15 @@ function handlers.boilers(p,a) return M.networks.boilers(p,a) end
 M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.networks,status_name=function(e) return M.machine_status(e) end}
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
-M.lightning=require('lightning'){}
+M.lightning=require('lightning'){state=state}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
 M.linecut=require('linecut'){state=state}
 M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
 function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
 passive.robot_losses=true
+-- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
+function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
+passive.eggs=true
 M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
@@ -15633,7 +15688,7 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local okr,lost=pcall(M.robotloss.alert_groups,f)
     for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
     return out
-  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
+  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,silo_sample=function(e) return M.silo.sample_made(e) end,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
   negative_note=function(item,n) return M.circuits.negative_note(item,n) end,
@@ -15652,6 +15707,10 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
   end,
   -- The same in steps for the background read: max networks a step, then lightning, then science (networks.alert_step).
   network_cursor=function(force) return {nets=M.networks.alert_cursor(force),phase='nets'} end,
+  -- Our buildings outside every lightning attractor's protection, in steps (lightning.lua; d17 territory part 4).
+  strike_cursor=function(surface,force) return M.lightning.exposure_cursor(surface,force) end,
+  strike_step=function(cur,max) return M.lightning.exposure_step(cur,max) end,
+  strike_lines=function(strike,force,areas) return M.lightning.exposure_lines(strike,force,areas) end,
   network_step=function(cur,max)
     local out=cur.nets.out
     if cur.phase=='nets' then
@@ -15827,7 +15886,7 @@ function M.last_drop(index)
   return last and game.tick-last.tick<=3600 and last or nil
 end
 stock=stock_module{pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
-  corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
+  corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
   reserved=function(e,item) local ok,r=pcall(M.supply.reserved,e,item); return ok and r or 0 end,
@@ -16672,6 +16731,7 @@ function M.tick_body(event)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
+  if M.ammofeed then pcall(M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
   pcall(M.chronicle.tick,event.tick)  -- the chronicle's events: research, launches, platform stops and platforms made
   pcall(M.ground.watch_tick,event.tick)  -- items on the ground for status alerts and reply hints, a band or a pile a step
   pcall(M.scienceline.tick,event.tick)
@@ -16970,15 +17030,19 @@ function M.on_event(event)
     local cause=event.cause and event.cause.valid and event.cause or nil
     local own=e.force.name
     local friendly=(cause and cause.force and cause.force.name==own) or (not cause and event.force and event.force.name==own) or false
+    -- A strike (lightning.lua: no cause, the neutral force, electric damage on a lightning planet) is named lightning.
+    local okt,struck=pcall(M.lightning.struck,event)
+    struck=not cause and not friendly and okt and struck or nil
+    if struck then pcall(M.lightning.lost,e) end
     -- A pole of ours: whether its loss split its network or left machines with no pole (powercut.lua); a fault is counted.
     if e.type=='electric-pole' then
-      local ok,err=pcall(M.powercut.on_died,e,cause and cause.name or (friendly and 'friendly fire') or nil)
+      local ok,err=pcall(M.powercut.on_died,e,cause and cause.name or (friendly and 'friendly fire') or struck)
       if not ok then s.powercut_errors={count=((s.powercut_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
-    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly,friendly and cause and cause.position or nil)
+    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or struck,friendly,friendly and cause and cause.position or nil)
     -- One row a building (lostlog.lua); seen to die, the fog memory forgets it, else it stays remembered (fogmem.lua).
     local okl,errl=pcall(function()
-      M.lostlog.died(e,cause and cause.name or (friendly and 'unknown source') or nil)
+      M.lostlog.died(e,cause and cause.name or (friendly and 'unknown source') or struck)
       if e.force.is_chunk_visible(e.surface,chunk_of(e.position)) then M.fogmem.forget(e) end
     end)
     if not okl then s.lostlog_errors={count=((s.lostlog_errors or {}).count or 0)+1,last=tostring(errl),tick=game.tick} end
