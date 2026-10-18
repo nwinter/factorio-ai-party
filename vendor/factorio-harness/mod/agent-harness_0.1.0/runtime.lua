@@ -1751,7 +1751,8 @@ function handlers.describe(_,a)
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={unequip='true, with slot ammo or gun (index? item?): that slot\'s stacks back to your main inventory (what does not fit stays, in left); returns unequipped, left',slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
       danger={position='{x,y}: the destination (default where your character stands)',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now: sight and radar) by name and the nearest, and those more than 24 tiles from every spawner read in packs (units within 16 tiles of a pack\'s first: count, names, where, how far; packs: the first 6) apart from those by their nests; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
-      pipe_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
+      pipe_gaps={line='{x,y} of one pipe, pipe-to-ground, tank or pump of ours, instead of from and to: the pipe network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities; returns segments [{segment, entities, box, fluid, amount, capacity, flow, empty, line}] by the engine\'s segment id, empty (the empty ones), machines (what it joins, each box\'s fluid), not_in_sight, line',
+        from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={line='{x,y} of one belt of a line, instead of from and to: the whole line both ways (belt neighbours, underground pairs; a splitter: its first output or input, the others in branches) in chunks our force sees now, up to 4096 tiles each way; at each end the 16 tiles on in its direction: a belt of ours facing the same way there (built or ghost) is the line going on, the tiles between a gap; returns tiles, head and end (where and why it stops), gaps [{from, to, tiles, between, line: each missing tile and what stands on it}], branches, line',
         from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; a straight leg is read tile by tile; a leg that is not straight follows the remembered belt round its corners (each belt\'s direction, undergrounds to their exits; across a gap on the way the belt went while that nears the end, else toward it; from either end), refused when it does not lead there; at most 512 tiles',surface='optional surface name (default yours)',returns='followed (legs followed round corners); missing and ghosts with observed_tick (a missing tile in sight: blocked_by {name, position, force} and line, what stands on it); unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
@@ -1946,6 +1947,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -3902,31 +3904,44 @@ end
 -- build spot, else the nearest reachable point), and whether it takes squeeze.
 -- Other spots within reach of a target (D8): 16 round its box, just inside the reach, moved to the nearest spot the
 -- character's box fits within 1.5 tiles, still within reach, not within 2 tiles of one tried; the nearest to you.
-M.REACH_TRIES=4
+-- (d17 batch21 A5, Gemini: transfer and collect walks to a chest among machines stalled, closed_in_goal) the spots
+-- within reach on rings at several distances, nearest you first; each checked against a closed pocket (pathing.region,
+-- 16 tiles out, at most REACH_CHECKS of them): the first with a way out, else the nearest.
+M.REACH_TRIES,M.REACH_CHECKS=6,8
 function M.reach_ring(p,rt,tried)
   local e=rt.entity
   if rt.point or not (e and e.valid) then return nil end
   local b=rt.box
   local cx,cy=(b[1]+b[3])/2,(b[2]+b[4])/2
   local half=math.max(b[3]-b[1],b[4]-b[2])/2
-  local best,bd
-  for k=0,15 do
-    local ang=2*math.pi*k/16
-    local q={x=cx+math.cos(ang)*(half+rt.r-1.5),y=cy+math.sin(ang)*(half+rt.r-1.5)}
-    for _=1,3 do
-      if M.reach_dist(q,rt)<=rt.r-0.5 then break end
-      q={x=cx+(q.x-cx)*0.8,y=cy+(q.y-cy)*0.8}
-    end
-    local ok,free=pcall(function() return p.surface.find_non_colliding_position('character',q,1.5,0.25) end)
-    q=ok and free or nil
-    if q and M.reach_dist(q,rt)<=rt.r-0.25 then
-      local near=false
-      for _,t in ipairs(tried) do if distance(t,q)<2 then near=true; break end end
-      local d=distance(p.position,q)
-      if not near and (not bd or d<bd) then best,bd=q,d end
+  local cands={}
+  for _,f in ipairs({1,0.75,0.5,0.3}) do
+    for k=0,15 do
+      local ang=2*math.pi*(k+(f<1 and 0.5 or 0))/16
+      local q={x=cx+math.cos(ang)*(half+(rt.r-1.5)*f),y=cy+math.sin(ang)*(half+(rt.r-1.5)*f)}
+      for _=1,3 do
+        if M.reach_dist(q,rt)<=rt.r-0.5 then break end
+        q={x=cx+(q.x-cx)*0.8,y=cy+(q.y-cy)*0.8}
+      end
+      local ok,free=pcall(function() return p.surface.find_non_colliding_position('character',q,1.5,0.25) end)
+      q=ok and free or nil
+      if q and M.reach_dist(q,rt)<=rt.r-0.25 then
+        local near=false
+        for _,t in ipairs(tried) do if distance(t,q)<2 then near=true; break end end
+        for _,c in ipairs(cands) do if distance(c,q)<1 then near=true; break end end
+        if not near then q.d=distance(p.position,q); cands[#cands+1]=q end
+      end
     end
   end
-  return best
+  table.sort(cands,function(x,y) return x.d<y.d end)
+  local c=p.character
+  local okh,hf=pcall(function() return c and c.valid and M.pathing.half(c) end)
+  for i=1,math.min(#cands,M.REACH_CHECKS) do
+    local q=cands[i]
+    local okr,r=pcall(M.pathing.region,p.surface,q,okh and hf or 0.2,{window=16})
+    if not okr or not (r and r.closed) then return {x=q.x,y=q.y} end
+  end
+  return cands[1] and {x=cands[1].x,y=cands[1].y} or nil
 end
 function M.reach_spot(p,nav,rt)
   local e=rt.entity
@@ -5367,11 +5382,24 @@ function M.recipe_for(p,proto,name)
   return recipe
 end
 -- Sets it on what was just built, or its ghost, and reads it back.
-function M.set_built_recipe(e,name)
+-- want: the direction the build asked for. A machine whose fluid ports come with its recipe is placed without them, and
+-- the game kept it facing north (d17 batch20->21 A1, Sol: an electromagnetic plant built east read north once its
+-- quantum-processor recipe was set, its hot and cold ports swapped); with the recipe set, it is turned the way asked
+-- (as a player's rotate does), said in the second return.
+function M.set_built_recipe(e,name,want)
   e.set_recipe(name)
   local now=e.get_recipe()
   if not (now and now.name==name) then error('recipe incompatible with machine',0) end
-  return now.name
+  local note
+  if want and e.direction~=want then
+    local was=e.direction
+    local ok=pcall(function() e.direction=want end)
+    note=ok and e.direction==want
+      and string.format('placed facing %s (the game keeps a machine without its recipe\'s fluid ports facing north); turned %s once the recipe was set',
+        M.direction_name(was) or tostring(was),M.direction_name(want) or tostring(want))
+      or string.format('faces %s, not %s as asked: the game did not turn it with recipe %s',M.direction_name(e.direction) or tostring(e.direction),M.direction_name(want) or tostring(want),name)
+  end
+  return now.name,note
 end
 local function build_tile(p,a,stack,pos)
   assert(not in_map_view(p),'tiles are placed by the character; leave map view')
@@ -5525,8 +5553,9 @@ local function build_one(p,a)
       end
     end
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    local recipe=a.recipe~=nil and M.set_built_recipe(e,a.recipe) or nil
-    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,snapped=snapped},{e}
+    local recipe,turned
+    if a.recipe~=nil then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,direction_note=turned,snapped=snapped},{e}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -5547,18 +5576,18 @@ local function build_one(p,a)
   assert(restored,'build finished but could not restore cursor; items remain in cursor')
   assert(ok,err)
   local after=held()
-  local placed,joined,ents,recipe={},nil,{},nil
+  local placed,joined,ents,recipe,turned={},nil,{},nil,nil
   if before>after then
     for _,e in pairs(p.surface.find_entities_filtered(filter)) do
       if e.valid and not existing[e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)] then
-        if a.recipe~=nil and e.type=='assembling-machine' then recipe=M.set_built_recipe(e,a.recipe) end
+        if a.recipe~=nil and e.type=='assembling-machine' then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
         placed[#placed+1]=built_summary(e); ents[#ents+1]=e
         if e.type=='electric-pole' then joined=(joined or 0)+bridge_pole(e) end
       end
     end
   end
   return {consumed=before-after,snapped=snapped,entity=#placed==1 and placed[1] or nil,entities=#placed>1 and placed or nil,
-    networks_joined=joined and joined>0 and joined or nil,recipe=recipe},ents
+    networks_joined=joined and joined>0 and joined or nil,recipe=recipe,direction_note=turned},ents
 end
 -- After a hand build: what it just built closed the character in where it
 -- stands (Gemini, shift09: a placement trapped the character in a closed
@@ -6300,6 +6329,10 @@ do
       r.recipe=ok and recipe and recipe.name or nil
     end
     if not CHESTS[e.type] then r.status_name=entity_status_names[e.status] end
+    -- (d17 batch21 B1, Sonnet: pipes read empty in every area read) an entity with fluid boxes: each box's fluid and
+    -- amount over its capacity, its segment's capacity and extent (pipes.fluids, as scan fields=fluids reads them)
+    local okf,ft=pcall(function() local fb=e.fluidbox; return fb and #fb>0 and pipes.fluids(e,true) end)
+    if okf and ft then r.fluid=ft; if r.holds=='empty' then r.holds=nil end end
     return r
   end
   -- compact (Muse, shift13: ~10 inspects over positions read as tables or JSON): one line per entity: name,
@@ -6332,6 +6365,7 @@ do
       parts[#parts+1]=h
     end
     if r.requests and r.requests~='none' then parts[#parts+1]='requests '..r.requests end
+    if r.fluid then parts[#parts+1]='fluid '..r.fluid end
     if r.direction then table.insert(parts,1,'facing '..r.direction) end
     if r.pickup then parts[#parts+1]='picks at '..r.pickup..', drops at '..tostring(r.drop) end
     if e.type~='entity-ghost' then
@@ -11174,6 +11208,9 @@ M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofee
   -- there (partial: up to the request max, as a walking take).
   sight_entity=function(p,pos) local e=entity(p,{position=pos},true); friendly(p,e); return e end,
   take=function(p,e,item,quality,count,fresh_first) return transfer_one(p,{direction='to_player',item=item,quality=quality,count=count,partial=true,fresh_first=fresh_first},nil,e) end,
+  -- (d17 batch21 A3) a give back to the chest a load took from, in reach: what fits; what you hold of an item
+  give=function(p,e,item,quality,count) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,up_to=true},nil,e) end,
+  held=function(p,item,quality) local inv=p.get_main_inventory and p.get_main_inventory(); return inv and inv.get_item_count{name=item,quality=quality or 'normal'} or 0 end,
   -- What a player sees moving items by hand, and the hauls and hand share they count, as transfer does.
   moved=function(p,silo,stacks)
     local parts={}
@@ -11739,8 +11776,19 @@ function M.retreat_go(r)
   end
 end
 M.shore=require('shore'){placewhy=M.placewhy,one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
-  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end}
+  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
+  drillspots=function(p,a,proto) return M.drillspots.read(p,a,proto) end}
+M.drillspots=require('drillspots'){position=position,integer=integer,read_sight=M.read_sight,
+  seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
+  why=function(p,proto,pos,d) return placement_error(p,proto,pos,d,false) end}
 handlers.placements=M.shore.handlers.placements
+-- ingredient_gap: per crafting machine, the next craft's ingredients held, usable and short, and who can spare them
+-- (gap.lua; d17 batch21 B3, Luna).
+M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
+  seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or distance(p.position,pos)<=32 end,
+  scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
+  status=function(e) return M.machine_status(e) end}
+function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
 M.details=require('details'){}
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
@@ -11952,7 +12000,7 @@ local function place_ghost_list(p,list,ammo)
   local tile_marked={}
   local ammo_rows={}
   local cliffs,ncliffs={},0
-  local recipes={}
+  local recipes,turned_notes={},{}
   for i,spec in ipairs(list) do
     local oks,same=pcall(M.same_standing,p,spec)
     if oks and same then already[#already+1]={index=i,name=spec.name,position=spec.position,already=same}
@@ -11964,8 +12012,9 @@ local function place_ghost_list(p,list,ammo)
       if proto then M.recipe_for(p,proto,spec.recipe) end
       local ghost,n,laid,on,tm,cl=place_ghost(p,spec)
       if proto and ghost.type=='entity-ghost' then
-        local r=M.set_built_recipe(ghost,spec.recipe)
+        local r,turned=M.set_built_recipe(ghost,spec.recipe,spec.direction~=nil and M.direction_of(spec.direction) or nil)
         recipes[r]=(recipes[r] or 0)+1
+        if turned then turned_notes[#turned_notes+1]=string.format('%s (%g,%g): %s',spec.name,ghost.position.x,ghost.position.y,turned) end
       end
       for _,c in ipairs(cl or {}) do
         local k=c.unit_number or (c.position.x..','..c.position.y)
@@ -12069,7 +12118,7 @@ local function place_ghost_list(p,list,ammo)
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
     tiles_laid=tiles_laid,tiles_note=tile_note,outside_logistic_coverage=cover,tile_obstacles_marked=M.tile_marks_line(tile_marked),
     no_power_coverage=no_power,outside_construction_area=outside,
-    ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
+    ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,directions_turned=#turned_notes>0 and turned_notes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
 end
 -- Ghosts that, once built, close the character in where it stands, as the dry run's closes_in reads the plan
 -- (friction2: Gemini's dry runs named the last gap out; the real calls said nothing): their boxes flooded with the
@@ -13976,6 +14025,7 @@ reads.pods=true
 reads.logistics_audit=true
 reads.platform_gate=true
 reads.fleet=true
+reads.ingredient_gap=true
 reads.demolishers=true
 reads.dependency=true
 reads.shipment=true
@@ -15066,8 +15116,23 @@ function handlers.belt_gaps(p,a)
 end
 -- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
 M.pipegaps=require('pipegaps'){position=position,connections=function(e) return pipes.connections(e) end,
-  segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end}
-function handlers.pipe_gaps(p,a) return M.pipegaps.read(p,a) end
+  segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end,
+  fluids=function(e) return pipes.fluids(e,true) end}
+function handlers.pipe_gaps(p,a)
+  -- line: the pipe network through one of its pipes (pipegaps.lua M.network; d17 batch21 B1, Sonnet)
+  if a.line~=nil then
+    assert(a.from==nil and a.to==nil and a.via==nil,'give line (one pipe of it), or from and to')
+    local q=position(a.line)
+    M.read_sight(p,q,'line')
+    local e
+    for _,o in pairs(p.surface.find_entities_filtered{position=q,radius=0.6,force=p.force,type={'pipe','pipe-to-ground','storage-tank','pump','infinity-pipe'}}) do
+      if o.valid then e=o; break end
+    end
+    assert(e,string.format('no pipe, pipe-to-ground, tank or pump of ours at (%g,%g)',q.x,q.y))
+    return M.pipegaps.network(p,e)
+  end
+  return M.pipegaps.read(p,a)
+end
 -- danger: a destination's nests, enemies seen, recent attacks and deaths, and the character's health and armor
 -- (danger.lua; Opus, shift17 10:51), facts only.
 M.danger=require('danger'){state=state,position=position,avoid=M.avoid,
@@ -15164,6 +15229,7 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
+  negative_note=function(item,n) return M.circuits.negative_note(item,n) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
   status_name=function(e) return entity_status_names[e.status] end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
@@ -15216,7 +15282,8 @@ function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
-  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end}
+  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end,
+  requests_off=function(pl) return M.rocketload.requests_off(pl) end}
 function handlers.fleet(p,a) return M.fleet.read(p,a) end
 -- Progress on owned board items from the game, stalls, blocked items ranked (progress.lua; d17 batch15 Group C).
 M.progress=require('progress'){state=state,items=function() return M.board.items() end,agents=function() return M.board.agents() end,
@@ -15286,7 +15353,7 @@ M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.bo
 M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
-space=space_module{circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{requests_off=function(pl) return M.rocketload.requests_off(pl) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,

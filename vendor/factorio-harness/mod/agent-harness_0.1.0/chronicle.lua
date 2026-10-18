@@ -162,7 +162,14 @@ return function(api)
         M.event('platform_created', {platform=x.name, force=x.force, at=planet, where=w.text,
           by=c.creators and c.creators[index] or nil})
         c.seen[index] = {name=x.name, force=x.force}
-      else c.seen[index].name = x.name end
+      else
+        -- A rename (platform_rename, or the GUI): the stream follows the ship's history to its new name
+        -- (viewer Foobator d17 14:24: a new ship's maiden flight, which a renamed ship still has ahead of it).
+        if c.seen[index].name ~= x.name then
+          M.event('platform_renamed', {platform=x.name, from=c.seen[index].name, force=x.force})
+        end
+        c.seen[index].name = x.name
+      end
     end
     for index, x in pairs(c.seen) do
       if not now[index] then
@@ -188,6 +195,7 @@ return function(api)
     elseif k == 'platform_lost' then
       return 'platform ' .. tostring(ev.platform) .. ' lost ' .. tostring(ev.where) .. (ev.by and ' (' .. ev.by .. ')' or '') ..
         ((ev.cargo_items or 0) > 0 and string.format(', %d items in its hub', ev.cargo_items) or '')
+    elseif k == 'platform_renamed' then return 'platform ' .. tostring(ev.from) .. ' renamed ' .. tostring(ev.platform)
     elseif k == 'platform_deleted' then return 'platform ' .. tostring(ev.platform) .. ' deleted' end
     return k
   end

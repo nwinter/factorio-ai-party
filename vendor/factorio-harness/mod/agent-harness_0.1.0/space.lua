@@ -293,7 +293,8 @@ return function(api)
         local target=found or default_section()
         if #rest>0 then others[#others+1]=string.format('%s is requested in section%s %s too (the hub requests the sum; requests {section, clear} removes one)',
           name,#rest>1 and 's' or '',table.concat(rest,', ')) end
-        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI',name,target.index,target.group) end
+        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI%s',name,target.index,target.group,
+          target.group:find('^platform_bom: ') and '; platform_bom keeps this section to what the ghosts need: its keeper takes a min_payload changed here as its own, and sets min itself' or '') end
         return target
       end
       sec=(a.active~=nil or a.clear_all) and default_section() or nil
@@ -974,6 +975,8 @@ return function(api)
           for need,have in b:gmatch('ghosts need [^%d]*(%d+), hub has (%d+)') do missing=missing+math.max(0,tonumber(need)-tonumber(have)) end
         end
         parts[#parts+1]=missing>0 and string.format('ghosts lack %d items in all',missing) or 'ghosts lack nothing'
+        local off=api.requests_off and try(function() return api.requests_off(pl) end)
+        if off then parts[#parts+1]=off end
         local dep=api.departure and try(function() return api.departure(pl.name) end)
         if dep then parts[#parts+1]='also sent on by '..table.concat(dep,' | ') end
         local was=mine[pl.name] or {}
@@ -1019,6 +1022,7 @@ return function(api)
             row.requests=#req>0 and req or nil
             -- In a section switched off: not requested.
             row.requests_off=#off>0 and off or nil
+            row.requests_off_line=api.requests_off and try(function() return api.requests_off(pl) end) or nil
           end
           row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
           -- Hub health, turrets, turret ammo against the hub's, repair packs.

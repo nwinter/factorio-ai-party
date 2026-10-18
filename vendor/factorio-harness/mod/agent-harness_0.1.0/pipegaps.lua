@@ -166,5 +166,76 @@ return function(api)
     for _, g in ipairs(out.segments) do g.last = g.last ~= g.first and g.last or nil end
     return out
   end
+  -- pipe_gaps {line: {x,y}} (d17 batch21 B1, Sonnet: which segment starved the acid line, ~10 times): the pipe network
+  -- through one pipe, pipe-to-ground, tank or pump of ours, followed through its fluid neighbours (pumps too: each starts
+  -- a segment) in chunks our force sees now, up to NET_MAX entities. Per fluid segment (the engine's id): its fluid and
+  -- amount over its capacity (the game's segment reads), its entities and box, and empty (with the fluid it is locked
+  -- to); the machines it touches (not followed into), each box's fluid; flow where the game gives one. Read only.
+  local NET_MAX = 1024
+  local LINE = {pipe=true, ['pipe-to-ground']=true, ['storage-tank']=true, pump=true, ['infinity-pipe']=true}
+  local function at(q) return string.format('(%g,%g)', q.x, q.y) end
+  local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
+  function M.network(p, start)
+    local queue, seen, n = {start}, {}, 0
+    local segs, order, machines, mseen, dark = {}, {}, {}, {}, 0
+    local function k(e) return e.unit_number or (e.name .. at(e.position)) end
+    seen[k(start)] = true
+    while #queue > 0 and n < NET_MAX do
+      local e = table.remove(queue, 1)
+      n = n + 1
+      local fb = e.fluidbox
+      for i = 1, #fb do
+        local id = try(function() return fb.get_fluid_segment_id(i) end) or (k(e) .. '#' .. i)
+        local g = segs[id]
+        if not g then
+          g = {id=id, n=0, x0=e.position.x, y0=e.position.y, x1=e.position.x, y1=e.position.y}
+          segs[id] = g; order[#order+1] = g
+          local contents = try(function() return fb.get_fluid_segment_contents(i) end)
+          if type(contents) == 'table' then
+            for name, amount in pairs(contents) do if not g.fluid or amount > g.amount then g.fluid, g.amount = name, amount end end
+          end
+          if not g.fluid then local f = fb[i]; if f then g.fluid, g.amount = f.name, f.amount end end
+          g.capacity = try(function() return fb.get_capacity(i) end)
+          g.flow = try(function() return fb.get_flow(i) end)
+          if not g.fluid then g.locked = try(function() local lf = fb.get_locked_fluid(i); return type(lf) == 'string' and lf or lf and lf.name end) end
+        end
+        g.n = g.n + 1
+        g.x0, g.y0 = math.min(g.x0, e.position.x), math.min(g.y0, e.position.y)
+        g.x1, g.y1 = math.max(g.x1, e.position.x), math.max(g.y1, e.position.y)
+      end
+      for _, group in ipairs(try(function() return e.neighbours end) or {}) do
+        for _, o in ipairs(type(group) == 'table' and group or {}) do
+          if try(function() return o.valid end) and o.force == p.force and not seen[k(o)] then
+            seen[k(o)] = true
+            if not api.visible(p, o.position) then dark = dark + 1
+            elseif LINE[o.type] then queue[#queue+1] = o
+            elseif not mseen[k(o)] and #machines < 32 then
+              mseen[k(o)] = true
+              local heads = api.fluids and try(function() return api.fluids(o) end)
+              machines[#machines+1] = string.format('%s %s%s', o.name, at(o.position), heads and ': ' .. heads or '')
+            end
+          end
+        end
+      end
+    end
+    local rows, empty, lines = {}, {}, {}
+    for _, g in ipairs(order) do
+      local row = {segment=g.id, entities=g.n, box=string.format('%s-%s', at({x=g.x0, y=g.y0}), at({x=g.x1, y=g.y1})),
+        fluid=g.fluid, amount=g.amount and r1(g.amount) or nil, capacity=g.capacity and r1(g.capacity) or nil, flow=g.flow and r1(g.flow) or nil}
+      local amt = g.amount and g.amount >= 0.05
+      row.empty = not amt or nil
+      row.line = string.format('segment %s %s, %d entit%s: %s%s', tostring(g.id), row.box, g.n, g.n == 1 and 'y' or 'ies',
+        amt and string.format('%s %g/%g', g.fluid, row.amount, row.capacity or 0) or ('empty' .. (g.locked and ' (locked to ' .. g.locked .. ')' or g.fluid and ' (' .. g.fluid .. ' under 0.1)' or '') .. string.format(' /%g', row.capacity or 0)),
+        g.flow and string.format(', flow %g/tick', row.flow) or '')
+      rows[#rows+1] = row
+      if row.empty then empty[#empty+1] = row.line end
+      if #lines < 16 then lines[#lines+1] = row.line end
+    end
+    return {start=start.position, entities=n, segments=rows, empty=#empty > 0 and empty or nil, machines=#machines > 0 and machines or nil,
+      not_in_sight=dark > 0 and string.format('%d connected entit%s in chunks our force does not see now, not followed', dark, dark == 1 and 'y' or 'ies') or nil,
+      more=n >= NET_MAX and #queue > 0 and string.format('followed %d entities; the network goes on', NET_MAX) or nil,
+      line=string.format('the pipe network through %s: %d entities in %d segment%s; %d empty%s', at(start.position), n, #rows, #rows == 1 and '' or 's', #empty,
+        #lines > 0 and '; ' .. table.concat(lines, ' | ') or '')}
+  end
   return M
 end

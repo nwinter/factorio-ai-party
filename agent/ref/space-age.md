@@ -71,14 +71,16 @@
   (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
-- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?}`: per item, what the ghosts
+- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item, what the ghosts
   still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
   rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
   built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
   removes it; `import_from`,
-  `area`; `min_payload: {item: N}`; a min_payload set on its slots is kept). `surface: "gleba"` with no platform:
+  `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
+  and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
+  request less what the hub holds). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
@@ -107,7 +109,9 @@
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
   their cargo, thruster fuel and its 10-minute trend, and `waits on`: the first waiting request at the stop it is at
-  with the gate holding it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
+  with the gate holding it; a hub section that is off with requests in it (`hub section 2 is off: its 1 request
+  (rocket-fuel 100 from nauvis) is not made`), as `preflight`'s platform lines and `platforms` (compact too:
+  `requests_off_line`) say it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
@@ -159,7 +163,10 @@
   `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
   needs; without `from` it walks to the silo with what you hold. A walking load gives `loaded_items` (what you put
-  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count).
+  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count). When the
+  rocket it fills launches by another hand (outcome `rocket_launched`), the tour walks on to the chests it took from,
+  latest first, and gives back what it took and did not load (`last.returned`: what, how many, where; `kept`: what did
+  not go back; `in_next_rocket`: the list's items in the silo's rocket now).
   `up_to_stock_at_start: true` loads at most what you and the chests held when it began (`stock_at_start`), then ends
   (launches with `launch`). `up_to: true` loads what fits and is held and launches with that (`up_to_short`). A list
   over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`

@@ -844,14 +844,67 @@ return function(api)
     if action.leaving and r.tick <= action.started_tick + 600 then return nil end
     return r
   end
+  -- What this load took and did not load, still held, back to the chests it came from (d17 batch21 A3, Grok: 350 packs
+  -- went up with a launch mid-gather and 7 stayed with him): at a chest, the give of what was taken from it; the
+  -- other chests are added to the tour as its next stops, latest first. Returns the rows given back here.
+  local function give_back(p, action, e)
+    local back = {}
+    for _, src in ipairs(action.sources or {}) do
+      if src.entity == e and (src.left or 0) > 0 then
+        local held = api.held and api.held(p, src.name, src.quality) or src.left
+        local n = math.min(src.left, held)
+        if n > 0 and api.give then
+          local ok, out = pcall(api.give, p, e, src.name, src.quality, n)
+          local moved = ok and out and out.transferred or 0
+          src.left = src.left - moved
+          back[#back+1] = string.format('%s %d to %s %s%s', label({name=src.name, quality=src.quality}), moved, e.name, at(e.position),
+            moved < n and string.format(' (%d did not go: %s)', n - moved, ok and 'the chest took no more' or tostring(out)) or '')
+          action.returned = action.returned or {}
+          action.returned[#action.returned+1] = back[#back]
+        else src.left = 0 end
+      end
+    end
+    return back
+  end
   function M.walk_visit(p, action, e)
+    if action.returning then
+      local back = give_back(p, action, e)
+      action.rows[#action.rows+1] = {position=e.position, name=e.name, returned=#back > 0 and table.concat(back, '; ') or 'nothing to give back here'}
+      return {transferred=0}
+    end
     local gone = launched_since(action)
     if gone then
       action.final = 'rocket_launched'
-      action.why = string.format('the rocket this load was filling launched %d s ago%s (cargo: %s); the load ends: what you carry stays with you',
+      action.why = string.format('the rocket this load was filling launched %d s ago%s (cargo: %s); the load ends: what it took and did not load goes back to the chests it came from',
         math.floor((game.tick - gone.tick) / 60), gone.by and ' by ' .. gone.by or '', tostring(gone.cargo or 'empty'))
       action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, why=action.why}
-      return {transferred=0, stop='rocket_launched'}
+      -- what the tour took and has not loaded, per source (the loaded counted off the earliest takes first: what is still
+      -- held came from the latest)
+      local loaded = {}
+      for k, n in pairs(action.loaded_items or {}) do loaded[k] = n end
+      for i = 1, #(action.sources or {}) do
+        local src = action.sources[i]
+        local l = math.min(loaded[src.name] or 0, src.n)
+        loaded[src.name] = (loaded[src.name] or 0) - l
+        src.left = src.n - l
+      end
+      action.returning = true
+      local back = give_back(p, action, e)
+      if #back > 0 then action.rows[#action.rows].returned = table.concat(back, '; ') end
+      -- the rest of the tour: those chests, latest first, in place of what was left of it
+      if action.targets and action.index then
+        for i = #action.targets, action.index + 1, -1 do table.remove(action.targets, i) end
+      end
+      local seen = {[e] = true}
+      local added = 0
+      for i = #(action.sources or {}), 1, -1 do
+        local src = action.sources[i]
+        if (src.left or 0) > 0 and src.entity.valid and not seen[src.entity] then
+          seen[src.entity] = true; added = added + 1
+          if action.targets then action.targets[#action.targets+1] = {entity=src.entity, position=src.entity.position} end
+        end
+      end
+      return {transferred=0, stop=added == 0 and 'rocket_launched' or nil}
     end
     local rows = needs(p, action)
     if e ~= action.silo then
@@ -865,6 +918,9 @@ return function(api)
           if out.transferred and out.transferred > 0 then
             local k = label(r.goal)
             action.items[k] = (action.items[k] or 0) + out.transferred
+            -- where it came from (A3: given back there when the rocket goes without it)
+            action.sources = action.sources or {}
+            action.sources[#action.sources+1] = {entity=e, name=r.goal.name, quality=r.goal.quality, n=out.transferred}
           end
           if out.inventory_full then full = true end
           if out.left_at_max then notes[#notes+1] = out.left_at_max end
@@ -1033,7 +1089,23 @@ return function(api)
     end
     table.sort(before); table.sort(kept)
     last.aboard_before = #before > 0 and table.concat(before, ', ') or nil
+    last.returned = action.returned and table.concat(action.returned, '; ') or nil
+    -- (after a give back: what is still with you, by the chest it came from)
+    if action.returning then
+      kept = {}
+      for _, src in ipairs(action.sources or {}) do
+        if (src.left or 0) > 0 then kept[#kept+1] = string.format('%s %d (from %s %s)', label({name=src.name, quality=src.quality}), src.left,
+          src.entity.valid and src.entity.name or '?', src.entity.valid and at(src.entity.position) or '') end
+      end
+    end
     last.kept = #kept > 0 and ('taken, not loaded, still with you: ' .. table.concat(kept, ', ')) or nil
+    -- what of the list is in the silo's next rocket now (loaded under the launch, or by its automatic requests)
+    if action.final == 'rocket_launched' and action.silo and action.silo.valid then
+      local inv = M.rocket_inventory(action.silo)
+      local parts = {}
+      for _, g in ipairs(action.goals or {}) do local n = inv and aboard(inv, g) or 0; if n > 0 then parts[#parts+1] = label(g) .. ' ' .. n end end
+      last.in_next_rocket = #parts > 0 and ('in the silo\'s rocket now: ' .. table.concat(parts, ', ')) or nil
+    end
     last.cargo_note = last.cargo and 'cargo: everything in the rocket, what was aboard before your load included (aboard_before); loaded_items: what you put in' or nil
     last.freshness = action.freshness or last.freshness
     last.why = last.why or action.why
@@ -1140,6 +1212,33 @@ return function(api)
     if plat.freshness then plat.line = plat.line .. '; hub cargo: ' .. table.concat(plat.freshness, '; ') end
     return plat
   end
+  -- (d17 batch21 B4, Gemini) the hub's request sections that are off and hold requests: not requested while off.
+  function M.requests_off(pl)
+    local secs = try(function() return pl.hub.get_logistic_sections() end)
+    local parts = {}
+    for i = 1, secs and secs.sections_count or 0 do
+      local sec = secs.get_section(i)
+      if sec and sec.active == false then
+        local items, n = {}, 0
+        for _, f in ipairs(try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local name = type(v) == 'table' and v.name or v
+          if type(name) == 'table' then name = name.name end
+          if type(name) == 'string' and (f.min or 0) > 0 then
+            n = n + 1
+            local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+            if #items < 4 then items[#items+1] = string.format('%s %d%s', name, f.min, from and ' from ' .. from or '') end
+          end
+        end
+        if n > 0 then
+          local g = try(function() return sec.group end)
+          parts[#parts+1] = string.format('hub section %d%s is off: its %d request%s (%s%s) %s not made', i, g and g ~= '' and ' ("' .. g .. '")' or '', n, n == 1 and '' or 's',
+            table.concat(items, ', '), n > #items and ', ...' or '', n == 1 and 'is' or 'are')
+        end
+      end
+    end
+    return #parts > 0 and table.concat(parts, '; ') or nil
+  end
   local function platforms(p, a, here, inv, held, extra_cache)
     if a.platform ~= nil then
       local pl = api.platform(p, a.platform)
@@ -1168,13 +1267,20 @@ return function(api)
       for k, v in pairs(extra) do plat[k] = v end
       if plat.incoming_cargo then plat.line = one_line(plat.line .. '; ' .. plat.incoming_cargo) end
       if plat.empty_turrets then plat.line = one_line(plat.line .. '; ' .. table.concat(plat.empty_turrets, '; ')) end
+      plat.requests_off = try(function() return M.requests_off(pl) end)
+      if plat.requests_off then plat.line = one_line(plat.line .. '; ' .. plat.requests_off) end
       return {plat}
     end
     local out = {}
     for _, pl in pairs(p.force.platforms or {}) do
       if pl.valid then
         local v = platform_view(pl, here, inv, held, true, true)
-        if v.arrived or v.headed_here then out[#out+1] = platform_view(pl, here, inv, held, true) end
+        if v.arrived or v.headed_here then
+          local view = platform_view(pl, here, inv, held, true)
+          view.requests_off = try(function() return M.requests_off(pl) end)
+          if view.requests_off and view.line then view.line = one_line(view.line .. '; ' .. view.requests_off) end
+          out[#out+1] = view
+        end
       end
     end
     table.sort(out, function(x, y)
