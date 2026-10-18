@@ -39,7 +39,8 @@
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
     mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
-    first (`left_reach_first`). A goal inside one is refused (`unsafe_goal: true` goes anyway). No way round:
+    first (`left_reach_first`). A goal inside one is refused, naming each threat (`unsafe_goal: true` goes anyway;
+    `unsafe_goal: "moving"` only when every threat moves: units, a group, an attack on ours; also on rearm). No way round:
     `no_safe_route`, with `last.smaller_margins` (the largest smaller margin with a complete engine route, its closest
     nest pass, or why the check failed), `last.via_round`, and for a walk back `last.walked_back` (the way you walked
     out, as via points). When only enemies that move (units, a group, an attack) are in the way, it stands and plans

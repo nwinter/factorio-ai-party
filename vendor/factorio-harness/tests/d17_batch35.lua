@@ -145,3 +145,39 @@ do
   eq(ammo[1].count,12); has(plan.equipped,'loaded firearm-magazine*12 from your main inventory into ammo slot 1 for submachine-gun')
 end
 print('d17_batch35 A2 shoot loads from the main inventory: ok')
+
+-- A3 (Haiku, about 6 times a shift: move_to and rearm refused a goal near one passing enemy; rearm retried the tour).
+do
+  defines.command={attack=1,go_to_location=2,wander=5,stop=6,group=7,attack_area=8}
+  game.forces.player.players={{}}
+  local worm,unit
+  surface.find_entities_filtered=function(f)
+    local types={}
+    for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
+    local out={}
+    if worm and types.turret then out[#out+1]=worm end
+    if unit and types.unit then out[#out+1]=unit end
+    return out
+  end
+  body.position={x=0,y=0}; body.get_inventory=nil; body.get_main_inventory=nil
+  -- one passing unit attacking our turret: named with what it does; "moving" goes
+  local turret={valid=true,name='gun-turret',position={x=62,y=0}}
+  unit={valid=true,name='small-biter',type='unit',position={x=61,y=2},orientation=0.25,force=game.forces.enemy,
+    commandable={distraction_command={type=1,target=turret}}}
+  local ok,err=pcall(grok,'move_to',{position={x=60,y=0},pathfind=false})
+  assert(not ok)
+  has(err,'[1 threat holds it: 1 enemy unit (1 small-biter) at (61,2), 2.2 tiles from it: moving units (small-biter (61,2) attacking gun-turret (62,0) (distracted), facing east); every one moves (unsafe_goal: "moving" goes on)]: unsafe_goal: true to go anyway')
+  local r=grok('move_to',{position={x=60,y=0},pathfind=false,unsafe_goal='moving'})
+  has(r.unsafe_goal,'every one moves (unsafe_goal: "moving" goes on)] (unsafe_goal "moving")')
+  grok('stop',{})
+  -- a worm too: "moving" refuses, naming both
+  worm={valid=true,name='medium-worm-turret',type='turret',position={x=70,y=0},force=game.forces.enemy}
+  storage.agent_harness.enemy_chunks=nil
+  ok,err=pcall(grok,'move_to',{position={x=60,y=0},pathfind=false,unsafe_goal='moving'})
+  assert(not ok)
+  has(err,'[2 threats hold it: 1 enemy unit (1 small-biter) at (61,2), 2.2 tiles from it: moving units (small-biter (61,2) attacking gun-turret (62,0) (distracted), facing east); medium-worm-turret at (70,0), 10.0 tiles from it: standing (range 30)]')
+  has(err,': unsafe_goal "moving" goes only when every threat moves: unsafe_goal: true to go anyway')
+  fails(function() grok('move_to',{position={x=60,y=0},unsafe_goal='yes'}) end,'unsafe_goal must be true, false or "moving"')
+  worm=nil; unit=nil; storage.agent_harness.enemy_chunks=nil
+end
+print('d17_batch35 A3 every threat named; unsafe_goal "moving": ok')

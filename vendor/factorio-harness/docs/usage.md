@@ -1014,6 +1014,15 @@ fh call status
       goal, within 128 tiles. The chunks round the goal and the spot are read at the call.
     - Via points are checked the same way (`via point 1 (55,10) is inside ...`).
     - `unsafe_goal: true` goes anyway; the reply says `unsafe_goal: goal (60,0) is inside ...`.
+    - (batch35 A3, Haiku: refused near one passing biter, about 6 times a shift) With more than one threat, or one
+      that moves, the refusal lists every threat holding the goal: `[2 threats hold it: 1 enemy unit (1 small-biter) at
+      (61,2), 2.2 tiles from it: moving units (small-biter (61,2) attacking gun-turret (62,0) (distracted), facing
+      east); medium-worm-turret at (70,0), 10.0 tiles from it: standing (range 30)]`. Groups say where they head and
+      their state, an area under attack what of ours was hit and by what. `unsafe_goal: "moving"` goes only when every
+      threat moves (enemy units, a group, a demolisher, an area under attack now), never past a worm, spawner or
+      turret. rearm takes it too: those turrets stay in the tour (`through`), the rest are left out as before; and a
+      rearm stop that comes under attack on the way is skipped and named (`last.skipped_attack`), the tour going on
+      (other tours hold short of it).
     - `avoid_enemies: false` checks nothing.
   - With the default or `true` margin, a nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
     nest's margin only (outside the weapon's own range) keeps that worm's disc just short of it, so the way there still
