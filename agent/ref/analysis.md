@@ -149,6 +149,12 @@
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
+- `robot_losses {surface?, minutes?, cancel?, near?}`: our construction and logistic robots killed by enemies in the last
+  `minutes` (default 30), by killer: how many, the jobs that sent them (order and target, where), and how many of those
+  jobs stand; a killer with a death in the last 5 min is a team alert (`robots_lost`). `cancel: true, near: {x,y}` (a
+  killer's position) cancels those jobs as by hand: ghosts, tile ghosts and item request proxies removed,
+  deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled.
+  Example: `./fh call robot_losses --args '{"cancel":true,"near":{"x":200,"y":40}}'`
 - `ingredient_gap {position | positions | area, all?}`: per crafting machine (up to 32), each ingredient of its next
   craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the places
   within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer only

@@ -871,6 +871,7 @@ local function stop_combat(index,outcome)
   end
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
     gun_used=combat and combat.gun_used,why_none=why_none,held_blast=combat and combat.held_blast,held_blast_ticks=combat and combat.held_blast_n,
+    switched_gun=combat and combat.switched_gun,held_melee=combat and combat.held_melee,held_melee_ticks=combat and combat.held_melee_n,
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
@@ -1948,6 +1949,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -10771,6 +10773,37 @@ function M.blast_radius(ammo)
   M.BLAST[ammo]=best>0 and best or false
   return best>0 and best or nil
 end
+-- The character's own blast (d17 batch21 C1, Opus: killed by his own rocket's splash with biters touching him): with
+-- area ammunition in the gun, enemy units within MELEE tiles of the character, or the aim point inside the blast's
+-- radius of it: the gun slot switches to one holding ammunition without an area (said in last_combat.switched_gun), or,
+-- with none, fire holds (held_melee). Checked every 5 ticks; returns the target to fire at (nil: hold).
+M.MELEE=6
+function M.melee_guard(p,action,target,tick)
+  if not (action.blast and target) then return target end
+  local c=p.character
+  if not (c and c.valid) then return target end
+  local here=c.position or p.position
+  if tick%5==0 or action.melee_near==nil then
+    local okn,near=pcall(function() return p.surface.find_entities_filtered{position=here,radius=M.MELEE,force='enemy',type={'unit','spider-unit'},limit=1}[1] end)
+    action.melee_near=okn and near and near.valid and {name=near.name,d=distance(here,near.position)} or false
+  end
+  local self=distance(here,target)<=action.blast.radius
+  if not (action.melee_near or self) then return target end
+  local why=action.melee_near and string.format('%s %.1f tiles from you',action.melee_near.name,action.melee_near.d)
+    or string.format('the aim point is %.1f tiles from you, inside the %g-tile blast',distance(here,target),action.blast.radius)
+  local okg,guns=pcall(M.gun_rows,p)
+  for _,g in ipairs(okg and guns or {}) do
+    if g.count>0 and g.ammo and not M.blast_radius(g.ammo) then
+      c.selected_gun_index=g.index
+      action.switched_gun=string.format('%s: switched to gun slot %d %s with %s (%s would burst on you)',why,g.index,g.gun,g.ammo,action.blast.ammo)
+      action.blast=nil
+      return target
+    end
+  end
+  action.held_melee=string.format('held fire: %s, and no gun slot holds ammunition without an area (%s bursts %g tiles round where it hits)',why,action.blast.ammo,action.blast.radius)
+  action.held_melee_n=(action.held_melee_n or 0)+1
+  return nil
+end
 -- Our entities a blast of radius r at pos would reach (characters left out): {n, line} or nil.
 function M.blast_hits(p,pos,r)
   local by,order,n={},{},0
@@ -15187,7 +15220,12 @@ function handlers.platform_gate(p,a) return space.gate(p,a) end
 -- A turret ghost's targeting kept through its build (turretwatch.lua; backlog #569, Astra).
 M.turretwatch=require('turretwatch'){state=state,targets=function(e) return M.turret_targets(e) end,configure=function(e,a) return M.configure_turret(e,a) end}
 -- Demolisher territories and the heads our force sees (demolishers.lua; backlog #283, Sol).
-M.demolishers=require('demolishers'){state=state,position=function(v) return position(v) end}
+-- A character's agent or player name (as spoil.lua's character_name).
+function M.character_name(e)
+  for _,b in ipairs(M.bots.list()) do if b.character==e then return b.name end end
+  for _,pl in pairs(game.connected_players) do if pl.character==e then return M.board.who(pl) end end
+end
+M.demolishers=require('demolishers'){state=state,position=function(v) return position(v) end,character_name=function(e) return M.character_name(e) end}
 function handlers.demolishers(p,a) return M.demolishers.read(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
 M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end,circuit_short=function(e) return M.circuits.short(e) end}
@@ -15221,10 +15259,15 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 M.lightning=require('lightning'){}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
 M.linecut=require('linecut'){state=state}
+M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
+function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
+passive.robot_losses=true
 M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
     for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
+    local okr,lost=pcall(M.robotloss.alert_groups,f)
+    for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
     return out
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
@@ -16309,8 +16352,12 @@ function M.tick_body(event)
             action.held_blast=string.format('held fire at %s: %s',action.blast.ammo,hit.line); action.held_blast_n=(action.held_blast_n or 0)+1
           end
         end
-        if e then action.fired_tick=event.tick end
-      elseif target then action.fired_tick=event.tick end
+        target=M.melee_guard(p,action,target,event.tick)
+        if e and target then action.fired_tick=event.tick end
+      elseif target then
+        target=M.melee_guard(p,action,target,event.tick)
+        if target then action.fired_tick=event.tick end
+      end
       p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
     end
   end
@@ -16489,6 +16536,8 @@ function M.on_event(event)
     local s=state()
     -- A character's death and what killed it (recover names it: d17 batch12 A4).
     if e and e.valid and e.type=='character' then pcall(M.note_char_death,event) end
+    -- A demolisher's death: its territory, when, what killed it (demolishers.lua; d17 territory, Nick 17:08).
+    if e and e.valid and e.type=='segmented-unit' then pcall(M.demolishers.died,event) end
     -- A belt of ours carrying items destroyed (d17 batch13 C1): its claim's owner is told (M.belt_cut_tell).
     if e and e.valid and (e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter') and e.force and e.force.name~='enemy' and e.force.name~='neutral' then
       pcall(M.note_belt_cut,event)
@@ -16498,6 +16547,8 @@ function M.on_event(event)
       and e.force and e.force.name~='enemy' and e.force.name~='neutral' and M.linecut then
       pcall(M.linecut.note,event)
     end
+    -- a robot of ours an enemy killed, with the job that sent it (robotloss.lua, d17 batch21 C2)
+    if e and e.valid and (e.type=='construction-robot' or e.type=='logistic-robot') and M.robotloss then pcall(M.robotloss.note,event) end
     if e and e.valid and e.force and e.force.name=='enemy' and (e.type=='unit-spawner' or e.type=='turret') and event.force and event.force.name~='enemy' then
       s.kills=s.kills or {}
       table.insert(s.kills,{tick=event.tick,name=e.name,position=e.position})
@@ -16537,7 +16588,7 @@ function M.on_event(event)
 end
 -- A placement inside a demolisher territory says so (territory.lua; d17 batch14 B5, Sonnet): each building call's
 -- reply, dry runs too, gets demolisher_territory when its box's chunks lie in one.
-M.territory=require('territory'){}
+M.territory=require('territory'){state=function(surface,force,t) return M.demolishers.state(surface,force,t) end}
 ;(function()
   local function points(a,out)
     local q={}

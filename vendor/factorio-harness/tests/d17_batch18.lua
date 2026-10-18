@@ -247,6 +247,10 @@ do
   local p={force=our,surface={find_entities_filtered=function() return ents end}}
   local t=SF.threats(p,{x=270,y=320},16)
   eq(#t.units,1); eq(t.units[1].entity.name,'small-demolisher'); eq(math.floor(t.units[1].distance+0.5),10)
+  -- the territory state counts a body in sight with the head out of it (the head at x 300 in chunk 9, the body's end in 8)
+  local half={is_chunk_visible=function(_,c) return c.x<9 end}
+  local terr={get_segmented_units=function() return {unit} end,get_chunks=function() return {{x=7,y=10}} end}
+  eq(select(1,D.state({name='vulcanus'},half,terr)),'has a demolisher')
 end
 -- C6 (viewer Foobator): a starving captive spawner: where, health, minutes left at 1 HP a second, why; urgent under 2 min.
 do

@@ -29,7 +29,7 @@ return function(api)
     'pump', 'electric-turret', 'ammo-turret', 'fluid-turret', 'boiler', 'rocket-silo', 'agricultural-tower',
     'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle', 'reactor'}
   -- Kinds and how a line says them; game alert types not listed read as their name.
-  local LABEL = {line_cut='belt or pipe line cut',no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
+  local LABEL = {robots_lost='robots lost to enemies on their routes',line_cut='belt or pipe line cut',no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
     no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil', rebuilt_empty='rebuilt empty',
     burnt_full='stopped by a full burnt-result slot', off_by_condition='stopped by their own circuit or logistic condition', captive_starving='captive spawners losing health', captive_urgent='captive spawners dying within 2 min', captive_died='captive spawners died',
     no_material_for_construction='ghosts waiting for materials (no robot can bring them)',
