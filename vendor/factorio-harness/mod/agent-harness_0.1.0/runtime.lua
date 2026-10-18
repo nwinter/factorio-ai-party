@@ -911,7 +911,11 @@ end
 local passive_failed=false
 function M.stop_player(index,outcome)
   if passive_failed==game.tick and not outcome then passive_failed=false; return end
-  if scheduler then scheduler.pause(index,outcome and ('your action ended '..tostring(outcome)) or 'a call of yours failed while your queue ran') end
+  -- (d17 batch35 A5) the failed call M.dispatch named: its action in the pause record, for the team block's line
+  local fc=M.failed_call
+  local mine=not outcome and fc and fc.index==index and fc.tick==game.tick
+  M.failed_call=nil
+  if scheduler then scheduler.pause(index,outcome and ('your action ended '..tostring(outcome)) or 'a call of yours failed while your queue ran',mine and fc.action or nil,mine and fc.job or nil) end
   finish(index,outcome or 'interrupted')
   stop_combat(index,outcome or 'interrupted')
 end
@@ -15741,6 +15745,7 @@ function M.dispatch(request)
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   local called_as=M.resolve_alias(request)
+  M.direct_paused=nil
   local ok,result=pcall(M.dispatch_inner,request)
   M.caller_index=nil
   if called_as then
@@ -15748,9 +15753,33 @@ function M.dispatch(request)
     elseif not ok then result=called_as..'; '..tostring(result) end
   end
   if type(request)=='table' and type(request.player)=='number' and request.operator~=true then pcall(M.hauling.done,request.player) end
-  if not ok then pcall(M.selfview.dispatch_failed,request,result); error(result,0) end
+  if not ok then
+    -- (d17 batch35 A5, Muse 14:16: rocket launches stalled 5+ minutes) a failed call that pauses the running queue (the
+    -- bootstrap stops the player after any failure but a read's or a queue call's) says so first: job, step, the resume
+    if type(request)=='table' and type(request.player)=='number' and request.operator~=true and passive_failed~=game.tick
+      and type(request.action)=='string' and not M.CONTROL_READS[request.action] and not request.action:match('^queue_') then
+      -- paused at the call's start (a direct call that drives the character), else by the failure now
+      local dp=M.direct_paused
+      local note,job
+      if dp and dp.index==request.player and dp.tick==game.tick then note,job=dp.note,dp.job
+      else
+        local okn,n,j=pcall(scheduler.pause_note,request.player,request.action)
+        if okn then note,job=n,j end
+      end
+      if note then
+        result=note..'; the call: '..tostring(result)
+        M.failed_call={index=request.player,tick=game.tick,action=request.action,job=job}
+      end
+    end
+    M.direct_paused=nil
+    pcall(M.selfview.dispatch_failed,request,result); error(result,0)
+  end
   return result
 end
+-- control.lua's reads: a failure of one stops nobody (kept the same as its read_only list).
+M.CONTROL_READS={drill_sites=true,agriculture=true,chat=true,describe=true,observe=true,inspect=true,status=true,recipes=true,technologies=true,
+  queue_status=true,blueprint_export=true,blueprint_list=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,
+  bottleneck=true,profiles=true,cameras=true,players=true,votes=true,votes_pending=true,research_done=true}
 function M.dispatch_inner(request)
   M.carry.carry()
   -- Operator tools (RCON, never fh) read and answer the board as `operator`
@@ -15943,6 +15972,9 @@ function M.dispatch_inner(request)
       -- A repeating plan's rounds with short steps, when they changed (scheduler.lua).
       local rounds=scheduler.round_news(p.index)
       if rounds then result.team=result.team or {}; result.team.queue=rounds end
+      -- (A5) while a failed direct call keeps the queue paused
+      local held=scheduler.failed_pause_line(p.index)
+      if held then result.team=result.team or {}; result.team.queue_paused=held end
       -- The first reply of a shift: plan goals, open projects, research since the agent's last shift, researched and none built.
       local ok,shift=pcall(M.research.shift_block,p,last_call,function() return M.board.plan_for(M.board.who(p)) end)
       if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(shift),tick=game.tick}
@@ -16124,7 +16156,12 @@ dispatch_request=function(request)
     local q=state().queues and state().queues[p.index]
     -- A direct wait would pause a running queue (agent-minds study, fix 7: Sonnet's "queue resume, wait_ticks 20000"
     -- interrupted 22 queued walks): it runs as a sleep instead unless pause_queue (above, M.wait_as_sleep).
-    if q and not q.paused then M.stop_player(p.index) end
+    if q and not q.paused then
+      -- (d17 batch35 A5) what it pauses, for the reply should the call fail (M.dispatch)
+      local okn,note,job=pcall(scheduler.pause_note,p.index,request.action)
+      M.stop_player(p.index)
+      M.direct_paused={index=p.index,tick=game.tick,note=okn and note or nil,job=okn and job or nil}
+    end
   end
   -- The agent's own character work and queue calls: standing orders wait a while after it (orders.lua hold).
   if not reads[request.action] and not quiet and request.action~='queue_status' and not M.queue_dry_run(request) and not request.action:match('^queue_') then M.orders.on_drive(p.index) end

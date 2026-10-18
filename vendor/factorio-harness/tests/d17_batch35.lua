@@ -228,3 +228,38 @@ do
   has(P.boxed(p,{region={closed=false}}),'no open spot (room to turn, no belt or drill within 1 tile) within 8 tiles is reached in a straight line')
 end
 print('d17_batch35 A4 boxed in by belts: the open spot and unbox: ok')
+
+-- A5 (Muse 14:16: a failed direct call paused the queue without a word; rocket launches stalled 5+ minutes).
+do
+  surface.find_entities_filtered=function() return {} end
+  body.position={x=0,y=0}
+  grok('queue_submit',{steps={{action='move_to',args={position={x=200,y=0},pathfind=false}},{action='wait_ticks',args={ticks=10}}}})
+  advance(3)
+  -- (hand crafting keeps the queue: its failure pauses nothing)
+  local ok,err=pcall(grok,'craft',{recipe='no-such-recipe'})
+  assert(not ok and not tostring(err):find('paused your queue',1,true),err)
+  eq(grok('queue_status',{}).paused,false)
+  ok,err=pcall(grok,'move_to',{position={x=5,y=5},unsafe_goal='yes'})
+  assert(not ok)
+  eq(err:sub(1,100),'this failed move_to paused your queue (plan #1, step 1 of 2 #job-1 move_to): queue_resume resumes it')
+  has(err,'; the call: unsafe_goal must be true, false or "moving"')
+  local q=grok('queue_status',{})
+  eq(q.paused,true); has(q.paused_why,'your move_to call failed while your queue ran (')
+  -- the team block keeps a line while it stays paused that way
+  local st=grok('status',{})
+  has(st.team.queue_paused,'your queue is paused since your move_to failed 0s ago (')
+  has(st.team.queue_paused,'): queue_resume resumes it')
+  grok('queue_resume',{})
+  advance(2)
+  st=grok('status',{})
+  eq(st.team and st.team.queue_paused,nil)
+  -- a failed read pauses nothing and says nothing
+  ok,err=pcall(grok,'inspect',{position={x=999,y=999}})
+  if not ok then assert(not tostring(err):find('paused your queue',1,true),err) end
+  eq(grok('queue_status',{}).paused,false)
+  grok('queue_cancel',{}); grok('stop',{})
+  -- nothing queued: a failure says nothing of a queue
+  ok,err=pcall(grok,'move_to',{position={x=5,y=5},unsafe_goal='yes'})
+  assert(not tostring(err):find('paused your queue',1,true),err)
+end
+print('d17_batch35 A5 a failed call that pauses the queue says so: ok')

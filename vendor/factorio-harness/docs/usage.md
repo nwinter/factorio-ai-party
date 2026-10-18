@@ -7884,3 +7884,13 @@ fh watch    # deploy on every change
     give-up tick). It gives no `progress` and no `stuck_s`, so no stuck warning.
   - Test: tests/rocketload.lua, two sources: both taken (60 and 40), then the hold at the silo, nothing loaded, and
     the hold line.
+
+## d17 batch35 (the agents' 13:50 poll)
+
+- A failed direct call that pauses the queue says so first (A5, Muse 14:16: rocket launches stalled 5+ minutes until a
+  queue_status read showed `paused_by`). A direct call that drives the character pauses a running queue at its start;
+  when it then fails, the error opens with `this failed move_to paused your queue (plan #1, step 1 of 2 #job-1
+  move_to): queue_resume resumes it; the call: ...` (a standing order: `the standing order keeps its steps for
+  later`). `paused_by` reads `your move_to call failed while your queue ran (...)`, and while the queue stays paused
+  that way every reply's team block carries `queue_paused: your queue is paused since your move_to failed 40s ago
+  (...): queue_resume resumes it`. A failed read, a hand craft or a queue call pauses nothing and says nothing.
