@@ -24,6 +24,17 @@ return function(api)
     end
     return out
   end
+  -- (batch28 A3, Sol: a railgun turret min 4 silently stopped construction) a minimum payload heavier than a rocket lifts
+  -- (rocket_lift_weight, 1000 kg) is refused, naming the most that fits.
+  local function payload_fits(item, n, what)
+    if type(n) ~= 'number' or n <= 0 then return end
+    local w = try(function() return prototypes.item[item].weight end)
+    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    if w and w > 0 and n * w > lift then
+      error(string.format('%s %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (%s %d)', what, item, n, n, n * w / 1000, lift / 1000,
+        math.floor(lift / w), math.floor(lift / w) == 1 and 's' or '', what, math.floor(lift / w)), 0)
+    end
+  end
   function M.handler(p, a)
     local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
     local set = a.set
@@ -32,6 +43,7 @@ return function(api)
       for item, n in pairs(set) do
         assert(prototypes.item[item], 'unknown item ' .. tostring(item))
         assert(n == false or (type(n) == 'number' and n == math.floor(n) and n >= 0 and n <= 1000000), 'set ' .. item .. ': 1..1000000 items, or 0 or false to clear')
+        payload_fits(item, n, 'set')
       end
     end
     local lines, changed, untouched = {}, 0, {}

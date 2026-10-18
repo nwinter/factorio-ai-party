@@ -200,6 +200,15 @@ return function(api)
         assert(is_hub,'min_payload is a platform hub request setting (the GUI\'s custom minimum payload)')
         assert(mp==false or (type(mp)=='number' and mp==math.floor(mp) and mp>=0 and mp<=1000000),'min_payload must be 1..1000000 items, or false (or 0) to clear it')
         if mp==0 then mp=false end
+        -- (batch28 A3, Sol: a railgun turret min 4 silently stopped construction) heavier than a rocket lifts: refused
+        if type(mp)=='number' then
+          local w=try(function() return prototypes.item[name].weight end)
+          local lift=try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+          if w and w>0 and mp*w>lift then
+            error(string.format('min_payload %s %d: %d weigh %g kg, a rocket lifts %g kg: at most %d fit%s (min_payload %d)',name,mp,mp,mp*w/1000,lift/1000,
+              math.floor(lift/w),math.floor(lift/w)==1 and 's' or '',math.floor(lift/w)),0)
+          end
+        end
       end
       entries[k]={name=name,quality=quality,min=min,max=max,inf=inf,from=from,min_payload=mp}
     end

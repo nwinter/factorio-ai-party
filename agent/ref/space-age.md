@@ -174,7 +174,8 @@
   last arrivals' launch-to-arrival time. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
-  platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
+  platforms (0 or false clears it), nothing else changed. It runs in the remote lane too. A minimum payload heavier
+  than a rocket lifts (1000 kg) is refused here, in `requests` and in `platform_bom`, naming the most that fits.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
   hub_full?, surface?}`: launches the silo's rocket to `platform` in orbit of this planet. A cargo the platform's hub has
