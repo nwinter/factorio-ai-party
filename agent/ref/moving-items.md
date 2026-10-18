@@ -60,7 +60,7 @@
     (another machine, with `item`) gets each take the same tick by hand, into its recipe input when its recipe takes
     the item, else its fuel (`to_inventory` names one); it must be in reach from where the wait stands (else
     `unreached`); `last.gave`, `last.gave_short`. E.g. nutrients into a biochamber's fuel before robots take them:
-    `./fh call collect --args '{"position":{"x":2.5,"y":0.5},"wait_ticks":3600,"item":"nutrients","to":{"x":6.5,"y":0.5}}'`
+    `./fh call collect --args '{"positions":[{"x":2.5,"y":0.5}],"wait_ticks":3600,"item":"nutrients","to":{"x":6.5,"y":0.5}}'`
   - `wait_ticks` or `keep_taking`: the call returns when the collect ends, with or without `--wait`, its outcome the
     exit status; `--no-wait` returns at the start (`until_tick`).
   - A haul from several chests into one: a queue plan of a walking collect over the chests, then a walking transfer
