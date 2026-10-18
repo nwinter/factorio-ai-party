@@ -96,7 +96,7 @@
   var chatList = $('#vchat'), chatForm = $('#vchat-form'), chatNote = $('#vchat-note');
   // One pane, both chats in time order (Luna 13:54, a viewer's suggestion): the site's comments (/v1/chat, every 4 s)
   // and the YouTube lines the stream service passed (state.youtube_chat, push_live.py), each with its source.
-  var lastSeq = null, chatTimer = null, chatMsgs = [], ytLines = [], replyLines = [];
+  var lastSeq = null, chatTimer = null, chatMsgs = [], ytLines = [], replyLines = [], delivery = {};
   // Agents' and the Operator's lines that answer a viewer or speak to the viewers (state.viewer_replies: tools/stream/
   // viewer_replies.py; d15 08:07: what the models said back stays readable after it scrolled past live). Shown
   // unless the reader unticks them (remembered per browser).
@@ -117,7 +117,7 @@
     return -1;
   }
   function joinedChat() {
-    var all = chatMsgs.map(function (m) { return { src: m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq, host: m.host === true }; })
+    var all = chatMsgs.map(function (m) { return { src: m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq, seq: m.seq, host: m.host === true }; })
       .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id, host: m.host === true }; }));
     all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
     all = all.slice(-150);
@@ -151,9 +151,19 @@
       '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
       who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';
   }
+  // A site line's delivery: "to Sol", "held", "to the operator", "not relayed: why" (the viewers-only lines never go)
+  function deliveryHtml(m) {
+    var d = m.src === 'site' ? delivery[m.seq] : null;
+    if (!d || !d.s) return '';
+    var txt = d.s === 'relayed' ? (d.to ? 'to ' + (team[d.to] && team[d.to].display_name || d.to) : 'relayed') + (d.why ? ': ' + d.why : '')
+      : d.s === 'held' ? 'held' + (d.why ? ': ' + d.why : '')
+      : d.s === 'operator' ? 'to the operator'
+      : 'not relayed' + (d.why ? ': ' + d.why : '');
+    return ' <span class="c-delivery c-delivery-' + esc(d.s) + ' fx-muted">' + esc(txt) + '</span>';
+  }
   function renderChat() {
     if (!chatList) return;
-    var all = joinedChat(), sig = all.map(function (m) { return m.k; }).join(',');
+    var all = joinedChat(), sig = all.map(function (m) { return m.k + (m.src === 'site' && delivery[m.seq] ? ':' + delivery[m.seq].s : ''); }).join(',');
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
@@ -162,7 +172,8 @@
       if (m.src === 'agent') return replyHtml(m, t);
       var src = m.host ? 'host' : m.src;
       return '<li class="c-' + m.src + (m.host ? ' c-host' : '') + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + src + '">' +
-        (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
+        (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span>' +
+        deliveryHtml(m) + '</li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
     if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
     chatList.dataset.seen = '1';
@@ -503,6 +514,8 @@
     if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
     ytLines = Array.isArray(s.youtube_chat) ? s.youtube_chat.filter(function (m) { return m && m.text && isFinite(m.t); }) : [];
     replyLines = Array.isArray(s.viewer_replies) ? s.viewer_replies.filter(function (m) { return m && m.text && m.by && isFinite(m.t); }) : [];
+    // (d17 batch35 D1, viewer Aurora) each site line's delivery from the relay: relayed (to whom), held, operator, not relayed (why)
+    delivery = s.viewer_delivery && typeof s.viewer_delivery === 'object' ? s.viewer_delivery : {};
     team = {}; (s.agents || []).forEach(function (a) { team[a.name] = a; });
     renderChat();
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
