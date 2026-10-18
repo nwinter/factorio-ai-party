@@ -119,7 +119,7 @@ return function(api)
       if r.pad_after then after[#after+1] = string.format('%s %d', k, r.pad_after[k] or 0) end
     end
     return string.format('the pad held %s before it and %s when it landed; %s%s', table.concat(held, ', '), table.concat(landed, ', '),
-      #took > 0 and string.format('in the %d s after: %s', WATCH // 60, table.concat(took, '; ')) or string.format('none of it left the pad in the %d s after', WATCH // 60),
+      #took > 0 and string.format('in the %d s after: %s', math.floor(WATCH / 60), table.concat(took, '; ')) or string.format('none of it left the pad in the %d s after', math.floor(WATCH / 60)),
       #after > 0 and '; it held ' .. table.concat(after, ', ') .. ' then' or ' (still watched)')
   end
   -- What the drop's pad shows in one phrase: landed, then taken by construction robots (all of what was sent).
