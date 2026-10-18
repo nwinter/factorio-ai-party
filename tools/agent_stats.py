@@ -8,10 +8,14 @@ Sources, all read-only, in runs/RUN/:
                             actions, talk, reads), failures, what was built and mined, move targets, rockets launched,
                             chat (say), tells, confessions, the minutes with a game action, and the research queue's
                             queued_by (whose research the team ran)
-  stream-service.log        the director's "<- death: NAME died" lines (one death shows on two lines)
+  stream-service.log        the director's "<- death: NAME died" lines (one death shows on two lines): the time of a
+                            death the journals' counter saw; the count itself only for an agent whose journal shows
+                            no counter (each reply's own character record carries the game's deaths counter; a
+                            death before the shift's first such record is not seen)
   caster.log                "[voice:NAME/VOICE] (why) text": lines spoken on stream, and each agent's voice
   operator-inbox.jsonl      requests filed to the operator
-  scores.jsonl              wall clock to game tick, for death times
+  scores.jsonl              wall clock to game tick, for death times; finished technologies (research_done) and
+                            infinite research levels (infinite, apart)
   hauling.jsonl             the stream's reads of the harness's hand hauling counters (tools/stream/hauling.py): the
                             shift's items and calls moved by hand (direct, queue, standing order), carry distance and
                             top repeated haul, the last read less the first. A shift without it counts the journal's
@@ -38,7 +42,7 @@ sys.path.append(str(Path(__file__).resolve().parent / "stream"))
 import hauling as haul_file  # noqa: E402  (tools/stream/hauling.py: the stream's hauling.jsonl rows)
 import efficiency as eff_file  # noqa: E402  (tools/stream/efficiency.py: the stream's efficiency.jsonl rows)
 
-VERSION = 7
+VERSION = 8
 # Requests that only read (no change in the game) and talk; every other action counts as a game action. The
 # clock line's "+Ns since your last request" is no measure of busy time: an agent's tools send requests too.
 READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "board", "recipes", "placements",
@@ -237,12 +241,40 @@ def built_count(action, res):
     return 0
 
 
+def own_records(value, me, depth=0):
+    """The dicts in a reply naming this agent's character with its deaths counter (name == me, deaths an int)."""
+    if depth > 6:
+        return
+    if isinstance(value, dict):
+        if value.get("name") == me and isinstance(value.get("deaths"), int) and not isinstance(value.get("deaths"), bool):
+            yield value
+        for v in value.values():
+            if isinstance(v, (dict, list)):
+                yield from own_records(v, me, depth + 1)
+    elif isinstance(value, list):
+        for v in value:
+            if isinstance(v, (dict, list)):
+                yield from own_records(v, me, depth + 1)
+
+
+def counter_steps(seen):
+    """[[tick before, tick seen, deaths]] where the counter rose between two records; a drop starts it again."""
+    out, prev = [], None
+    for tick, n in seen:
+        if prev and n > prev[1] and tick >= prev[0]:
+            out.append([prev[0], tick, n - prev[1]])
+        if not prev or tick >= prev[0]:
+            prev = (tick, n)
+    return out
+
+
 def read_journal(path, names):
     """One pass over a journal: (stats, {technology: who queued it}). names: the team's keys and display names (an
     @mention of one is not a viewer)."""
     s = blank()
     acts, jobs, last_pos, minutes, queued = {}, set(), None, set(), {}
     hauls, surface = Hauls(), None
+    me, counter = path.parent.name, []
     op = gzip.open if path.suffix == ".gz" else open
     with op(path, "rt", errors="replace") as f:
         for line in f:
@@ -279,6 +311,11 @@ def read_journal(path, names):
                 continue
             if not isinstance(res, dict):
                 continue
+            if '"deaths":' in line:  # the game's deaths counter on this agent's own character record
+                for d in own_records(res, me):
+                    tick = d.get("tick") if isinstance(d.get("tick"), int) else resp.get("tick")
+                    if isinstance(tick, int):
+                        counter.append((tick, d["deaths"]))
             pl = res.get("player")
             if isinstance(pl, dict) and isinstance(pl.get("surface"), str):
                 surface = pl["surface"]  # where the character is, for hand moves' carry legs
@@ -337,6 +374,8 @@ def read_journal(path, names):
     s["walked"] = round(s["walked"])
     s.update(hauls.stats())
     s["active_min"] = len(minutes)
+    s["death_counter"] = counter_steps(counter)
+    s["counter_seen"] = bool(counter)
     if s["first"] and s["last"]:
         span = datetime.datetime.fromisoformat(s["last"].replace("Z", "+00:00")) - \
             datetime.datetime.fromisoformat(s["first"].replace("Z", "+00:00"))
@@ -381,6 +420,24 @@ def research_done(run_dir):
     return rows[-1] - rows[0] if rows else set()
 
 
+def research_infinite(run_dir):
+    """Infinite research levels the shift made: per technology, its last score's level less its first's."""
+    rows = []
+    p = run_dir / "scores.jsonl"
+    if p.exists():
+        for line in p.read_text().splitlines():
+            try:
+                d = json.loads(line)["score"].get("infinite")
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+            if isinstance(d, dict):
+                rows.append(d)
+    if not rows:
+        return {}
+    first, last = rows[0], rows[-1]
+    return {k: n - first.get(k, 0) for k, n in last.items() if isinstance(n, int) and n - first.get(k, 0) > 0}
+
+
 def tick_at(clock, t):
     """The game tick at wall time t (60 ticks a second from the nearest score before it)."""
     before = [c for c in clock if c[0] <= t]
@@ -417,6 +474,19 @@ def deaths(run_dir, keys, clock):
         if tick is not None:
             out[k].append(tick)
     return out
+
+
+def counter_ticks(steps, director):
+    """A tick for each death the counter saw: the director's time of a death of this agent between the two records (a
+    minute's slack either side), else the tick the counter was seen at."""
+    out, left = [], sorted(director)
+    for before, seen, n in steps:
+        for _ in range(n):
+            t = next((d for d in left if before - 3600 <= d <= seen + 3600), None)
+            if t is not None:
+                left.remove(t)
+            out.append(t if t is not None else seen)
+    return sorted(out)
 
 
 def wall(day, hms, prev):
@@ -501,21 +571,30 @@ def compute(run_dir, display_names=()):
     for k, e in machines.items():
         if k in agents:
             agents[k].update(e)
-    done = research_done(run_dir)
+    infinite = research_infinite(run_dir)
+    done = research_done(run_dir) - set(infinite)
     for tech, who in queued.items():
         k = key_of(str(who), keys)
         if k:
             agents[k]["research"] += 1
             agents[k]["research_done"] += tech in done
+            if infinite.get(tech):
+                agents[k]["research_infinite_levels"] = agents[k].get("research_infinite_levels", 0) + infinite[tech]
     for k, s in agents.items():
-        s["deaths"] = len(died.get(k, []))
-        s["death_ticks"] = died.get(k, [])
+        steps, seen = s.pop("death_counter", []), s.pop("counter_seen", False)
+        director = died.get(k, [])
+        s["deaths_director"] = len(director)
+        if steps or seen:
+            ticks = counter_ticks(steps, director)
+            s["deaths"], s["death_ticks"], s["deaths_from"] = len(ticks), ticks, "counter"
+        else:
+            s["deaths"], s["death_ticks"], s["deaths_from"] = len(director), director, "director"
         s["spoken_lines"] = spoken.get(k, [])
         s["voiced"] = len(s["spoken_lines"])
         s["voice"] = voice.get(k)
         s["operator_seqs"] = ops.get(k, [])
         s["operator"] = len(s["operator_seqs"])  # this file's; across shifts see site/agents.py
-    return {"version": VERSION, "run": run_dir.name, "tick0": clock[0][1] if clock else None,
+    return {"version": VERSION, "run": run_dir.name, "tick0": clock[0][1] if clock else None, "infinite_levels": infinite,
             "tick1": clock[-1][1] if clock else None, "agents": agents, "machines_team": machines_team,
             "sources": sources(run_dir, keys)}
 
