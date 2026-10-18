@@ -637,4 +637,56 @@ do
   eq(g[1].to[1],'grok (built)')
   ents.nauvis={}
 end
+-- Frozen (d17 frozen, Nick 17:18: "I see some frozen belts that have been frozen a long time on Aquilo"; on world n 70
+-- belts and 8 pipes): on a planet whose entities require heating, our frozen entities by 64-tile area; pipes and
+-- machines first with what they hold, the belts as one run, how long the oldest has been frozen (first seen frozen), and
+-- the nearest heater with its temperature. A planet that does not freeze is not read for it.
+do
+  local st={board={items={}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function() return {key='aquilo',position={x=-20,y=-10}} end}
+  ents.nauvis={}; ents.vulcanus={}; ents.aquilo={}
+  local aquilo=surface('aquilo',4)
+  aquilo.planet={prototype={entities_require_heating=true}}
+  game.surfaces[#game.surfaces+1]=aquilo
+  for i=1,3 do ent('aquilo','pipe','pipe',-20.5+i,-5.5,{frozen=true,unit_number=900+i,last_user=user('sol'),fluidbox={{name='ammonia',amount=40}}}) end
+  for x=-30,-21 do ent('aquilo','transport-belt','transport-belt',x+0.5,-8.5,{frozen=true,unit_number=1000+x,last_user=user('sol'),get_max_transport_line_index=function() return 2 end,
+    get_transport_line=function() return {get_contents=function() return {} end} end}) end
+  ent('aquilo','transport-belt','transport-belt',-35.5,-8.5,{frozen=false,unit_number=999})   -- warm: not said
+  ent('aquilo','heat-pipe','heat-pipe',-12.5,-5.5,{temperature=12.4})
+  ent('nauvis','transport-belt','transport-belt',0.5,0.5,{frozen=true,unit_number=1})       -- Nauvis does not freeze
+  local sol_aq={name='sol',force=force,surface=aquilo}
+  local g=R.read(sol_aq,{kind='frozen'}).groups
+  eq(#g,1)
+  eq(g[1].line,'13 frozen near (-23,-8): pipe (-19.5,-5.5) holding ammonia 40; pipe (-18.5,-5.5) holding ammonia 40; pipe (-17.5,-5.5) holding ammonia 40; '
+    ..'10 transport-belt from (-29.5,-8.5) to (-20.5,-8.5), empty; frozen at least 0m; nearest heater heat-pipe (-12.5,-5.5) 12 C, 5 tiles from pipe (-17.5,-5.5) (under 30 C: it heats nothing); a heater warms only what touches it (a side or a corner)')
+  assert(g[1].to and g[1].to[1]:match('^sol '),'its builder hears it: '..tostring(g[1].to and g[1].to[1]))
+  local pushed=R.lines(sol_aq,{})
+  local said=false
+  for _,l in ipairs(pushed or {}) do if l:find('13 frozen near (-23,-8)',1,true) then said=true end end
+  assert(said,'pushed to sol: '..table.concat(pushed or {},' | '))
+  -- 25 minutes on, still frozen: how long since first seen
+  game.tick=game.tick+25*3600
+  eq(R.read(sol_aq,{kind='frozen'}).groups[1].line:match('frozen at least [^;]*'),'frozen at least 25m')
+  -- the background read (a stage of its own, FROZEN_SLICE a step) gives the same
+  local stb={board={items={}}}
+  local BGF=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return stb end,
+    agents=function() return {{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function() return {key='aquilo',position={x=-20,y=-10}} end, network_groups=function() return {} end}
+  local players0,forces0=force.players,game.forces
+  force.players={{}}; game.forces={player=force}
+  local n=0
+  repeat game.tick=game.tick+1; finds={}; BGF.tick(game.tick); n=n+1 until (stb.push_jobs and not stb.push_jobs.player and n>1) or n>5000
+  local bg
+  for _,x in ipairs(BGF.read(sol_aq,{}).groups) do if x.kind=='frozen' then bg=x end end
+  assert(bg and bg.line:find('13 frozen near (-23,-8): pipe (-19.5,-5.5) holding ammonia 40;',1,true),tostring(bg and bg.line))
+  force.players,game.forces=players0,forces0
+  -- thawed: gone, and its first-seen forgotten
+  for _,e in ipairs(ents.aquilo) do e.frozen=false end
+  game.tick=game.tick+1801
+  eq(#R.read(sol_aq,{kind='frozen'}).groups,0)
+  eq(next(st.push_frozen.player),nil,'thawed ones forgotten')
+  table.remove(game.surfaces); ents.aquilo=nil; ents.nauvis={}
+end
 print('pushalerts: ok')

@@ -44,7 +44,8 @@ return function(api)
     requester_full='requester chests with every slot taken while a request is short',
     heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)',
     outpost_ammo_low='turrets no construction robots reach, under 20% of their ammo slots',
-    outpost_turret_lost='turrets no construction robots reached destroyed in the last 10 minutes'}
+    outpost_turret_lost='turrets no construction robots reached destroyed in the last 10 minutes',
+    frozen='frozen (no heat reaches them)'}
   local HINT = {no_power='fh call power', unconnected='fh call power', low_power='more power: fh call power', no_fuel='refuel', heat_no_fuel='refuel',
     no_ammo='rearm', flamer_dry='fh call flamers', no_material_for_construction='craft or bring the items for the ghosts',
     not_enough_construction_robots='more construction robots in the roboports', not_enough_repair_packs='repair packs into a roboport or storage chest',
@@ -503,6 +504,138 @@ return function(api)
     table.sort(out, function(a, b) return (a.index or 0) < (b.index or 0) end)
     return out
   end
+  -- Frozen entities (d17 frozen, Nick 17:18: "Do they easily see when buildings/transport belts are frozen? I see some
+  -- frozen belts that have been frozen a long time on Aquilo"; on world n 70 belts and 8 pipes): on a planet whose
+  -- entities require heating, a stage of the background read finds ours there once (Aquilo's 873: 1.2 ms on n) and
+  -- reads FROZEN_SLICE a step for LuaEntity.frozen. Each frozen entity goes into its CELL group of kind frozen; when it
+  -- was first seen frozen is kept (push_frozen, by unit number, dropped once it thaws or goes). The line: pipes and
+  -- machines first, each with what it holds (the fluid or items it carried), then the belts as one run with what they
+  -- carry, how long the oldest has been frozen, and the nearest heater (heat pipe, reactor, heating tower) within
+  -- HEATER_R tiles with its temperature (30 C or more heats a neighbour: heating.lua).
+  local FROZEN_SLICE, HEATER_R, FROZEN_SHOW = 400, 32, 4
+  local function needs_heating(surface)
+    return try(function() return surface.planet and surface.planet.prototype.entities_require_heating end) == true
+  end
+  local function frozen_memory(force)
+    local st = api.state()
+    st.push_frozen = st.push_frozen or {}
+    st.push_frozen[force.name] = st.push_frozen[force.name] or {}
+    return st.push_frozen[force.name]
+  end
+  local function ago_text(t)
+    local m = math.floor(t / 3600)
+    return m >= 60 and string.format('%dh%02dm', math.floor(m / 60), m % 60) or m .. 'm'
+  end
+  local function holds_of(e)
+    if e.type == 'pipe' or e.type == 'pipe-to-ground' or e.type == 'storage-tank' or e.type == 'pump' then
+      local f = try(function() return e.fluidbox[1] end)
+      return f and string.format('%s %d', f.name, math.floor(f.amount + 0.5)) or 'empty'
+    end
+    local items = {}
+    for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do
+      for _, c in ipairs(try(function() return e.get_transport_line(i).get_contents() end) or {}) do items[c.name] = (items[c.name] or 0) + c.count end
+    end
+    local parts = {}
+    for n, c in pairs(items) do parts[#parts+1] = n .. ' ' .. c end
+    table.sort(parts)
+    return #parts > 0 and table.concat(parts, ', ') or nil
+  end
+  local BELT_TYPES = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
+  -- What can freeze (the types a planet that requires heating stops: belts, pipes, machines, inserters, turrets, ...).
+  local FREEZE_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'pipe', 'pipe-to-ground', 'pump',
+    'storage-tank', 'inserter', 'assembling-machine', 'furnace', 'mining-drill', 'lab', 'boiler', 'generator', 'offshore-pump',
+    'ammo-turret', 'electric-turret', 'fluid-turret', 'radar', 'roboport', 'beacon', 'lamp', 'agricultural-tower', 'rocket-silo',
+    'cargo-landing-pad', 'fusion-reactor', 'fusion-generator', 'train-stop', 'locomotive', 'cargo-wagon', 'fluid-wagon', 'arithmetic-combinator',
+    'decider-combinator', 'constant-combinator', 'selector-combinator', 'power-switch', 'programmable-speaker'}
+  local function freezable(s, force)
+    return try(function() return s.find_entities_filtered{force=force, type=FREEZE_TYPES, limit=MAX_SCAN} end) or {}
+  end
+  -- A frozen entity read: into its cell's record (job.frozen[surface][cell]).
+  local function frozen_read(job, s, e, mem, seen, tick)
+    if not (e.valid and try(function() return e.frozen end)) then return end
+    local unit = e.unit_number
+    if unit then seen[unit] = true; mem[unit] = mem[unit] or tick end
+    local cx, cy = math.floor(e.position.x / CELL), math.floor(e.position.y / CELL)
+    local cells = job.frozen
+    local c = cells[cx .. ',' .. cy]
+    if not c then c = {others={}, belts={n=0, items={}}, first=tick}; cells[cx .. ',' .. cy] = c end
+    c.first = math.min(c.first, unit and mem[unit] or tick)
+    c.ents = (c.ents or 0) + 1
+    if BELT_TYPES[e.type] then
+      local b = c.belts
+      b.n = b.n + 1
+      b.x0, b.y0 = math.min(b.x0 or e.position.x, e.position.x), math.min(b.y0 or e.position.y, e.position.y)
+      b.x1, b.y1 = math.max(b.x1 or e.position.x, e.position.x), math.max(b.y1 or e.position.y, e.position.y)
+      b.name = b.name or e.name
+      local h = holds_of(e)
+      if h then b.items[#b.items+1] = h end
+    else
+      c.others[#c.others+1] = {name=e.name, position={x=e.position.x, y=e.position.y}, holds=holds_of(e)}
+    end
+    c.list = c.list or {}
+    if #c.list < 256 then c.list[#c.list+1] = e end
+  end
+  -- The cells read: groups with their lines.
+  local function frozen_groups(job, s, force, tick)
+    for _, c in pairs(job.frozen) do
+      local first
+      for _, e in ipairs(c.list or {}) do
+        if e.valid then
+          add(job.groups, 'frozen', s.name, e, e.position, e.name, builder(e), nil)
+          first = first or e
+        end
+      end
+      local g = first and job.groups['frozen|' .. s.name .. '|' .. math.floor(first.position.x / CELL) .. ',' .. math.floor(first.position.y / CELL)]
+      if g then
+        centred(g)
+        local parts = {}
+        table.sort(c.others, function(a, b) return a.name < b.name end)
+        for i, o in ipairs(c.others) do
+          if i <= FROZEN_SHOW then parts[#parts+1] = string.format('%s %s%s', o.name, at_text(o.position), o.holds and ' holding ' .. o.holds or '') end
+        end
+        if #c.others > FROZEN_SHOW then parts[#parts+1] = string.format('+%d more', #c.others - FROZEN_SHOW) end
+        local b = c.belts
+        if b.n > 0 then
+          parts[#parts+1] = string.format('%d %s from %s to %s, %s', b.n, b.name, at_text({x=b.x0, y=b.y0}), at_text({x=b.x1, y=b.y1}),
+            #b.items > 0 and 'carrying ' .. table.concat(b.items, ', ', 1, math.min(3, #b.items)) or 'empty')
+        end
+        -- (the nearest to any of the frozen ones: on world n hot heat pipes stood 2 tiles from frozen belts they did not
+        -- touch, and a heater warms only what touches it)
+        local heater, hd, by
+        for _, h in ipairs(try(function() return s.find_entities_filtered{position=g.center, radius=HEATER_R, type={'heat-pipe', 'reactor'}, force=force, limit=64} end) or {}) do
+          for _, e in ipairs(c.list or {}) do
+            if e.valid then
+              local d = (h.position.x - e.position.x) ^ 2 + (h.position.y - e.position.y) ^ 2
+              if not hd or d < hd then heater, hd, by = h, d, e end
+            end
+          end
+        end
+        local htext
+        if heater then
+          local temp = try(function() return heater.temperature end) or 0
+          htext = string.format('nearest heater %s %s %d C, %d tiles from %s %s%s; a heater warms only what touches it (a side or a corner)', heater.name,
+            at_text(heater.position), math.floor(temp), math.floor(math.sqrt(hd) + 0.5), by.name, at_text(by.position), temp < 30 and ' (under 30 C: it heats nothing)' or '')
+        else htext = string.format('no heater (heat pipe, reactor, heating tower) of ours within %d tiles', HEATER_R) end
+        g.line = string.format('%d frozen near %s: %s; frozen at least %s; %s', g.n, string.format('(%d,%d)', g.center.x, g.center.y),
+          table.concat(parts, '; '), ago_text(tick - c.first), htext)
+      end
+    end
+  end
+  -- Thawed ones forgotten (those of list not frozen now); a memory past 8192 drops what this read did not see.
+  local function frozen_forget(mem, list, seen)
+    for _, e in ipairs(list) do if e.valid and e.unit_number and not seen[e.unit_number] then mem[e.unit_number] = nil end end
+    local n = 0
+    for _ in pairs(mem) do n = n + 1 end
+    if n > 8192 then for unit in pairs(mem) do if not seen[unit] then mem[unit] = nil end end end
+  end
+  -- One planet at once (the synchronous scan).
+  local function frozen_all(groups, s, force, tick)
+    local job, mem = {groups=groups, frozen={}}, frozen_memory(force)
+    local seen, list = {}, freezable(s, force)
+    for _, e in ipairs(list) do pcall(frozen_read, job, s, e, mem, seen, tick) end
+    pcall(frozen_groups, job, s, force, tick)
+    frozen_forget(mem, list, seen)
+  end
   local function game_alerts(groups, force)
     -- The game's alert list, as an agent player's alert panel shows it.
     local reader = api.alert_reader and api.alert_reader(force)
@@ -581,6 +714,8 @@ return function(api)
     for key, g in pairs(groups) do cells[#cells+1] = key end
     table.sort(cells)
     for _, key in ipairs(cells) do
+      -- (frozen: a cell each, its own line)
+      if not done[key] and groups[key].kind == 'frozen' then done[key] = true; out[#out+1] = centred(groups[key]) end
       if not done[key] then
         local g = groups[key]
         local kind, surface, cx, cy = key:match('^(.-)|(.-)|(-?%d+),(-?%d+)$')
@@ -672,6 +807,7 @@ return function(api)
     local mining, dmem = {}, drill_memory(force)
     mem.gen, tmem.gen = mem.gen + 1, tmem.gen + 1
     for _, s in ipairs(planets()) do budget = budget - entities(groups, s, force, TYPES, budget, mem, tmem, mining, dmem) end
+    for _, s in ipairs(planets()) do if needs_heating(s) then frozen_all(groups, s, force, game.tick) end end
     forget_unseen(mem)
     turrets_read(tmem, budget > 0)
     game_alerts(groups, force)
@@ -713,6 +849,7 @@ return function(api)
       if not job and (not c or tick - c.tick >= SCAN_TICKS) then
         local stages = {}
         for _, surface in ipairs(planets()) do stages[#stages+1] = {surface=surface.name} end
+        for _, surface in ipairs(planets()) do if needs_heating(surface) then stages[#stages+1] = {frozen=surface.name} end end
         stages[#stages+1] = {step='alerts'}
         stages[#stages+1] = {step='networks'}
         stages[#stages+1] = {step='merge'}
@@ -729,12 +866,33 @@ return function(api)
         local stage = job.stages[job.i]
         -- (each kind of step its own profile part, pushalerts.<kind>: operator 18:12, pushalerts.tick 487 ms in one
         -- game second at 17:53)
-        local kind = stage.surface and (job.list and 'slice' or 'band') or stage.step
+        local kind = stage.surface and (job.list and 'slice' or 'band') or stage.frozen and 'frozen' or stage.step
         timed('pushalerts.' .. kind, step_do, s, force, tick, job, stage)
       end
     end
   end
   step_do = function(s, force, tick, job, stage)
+    if stage.frozen then
+      -- A planet that freezes: its entities found once, then FROZEN_SLICE a step; the cells' groups when done.
+      local surface = game.get_surface(stage.frozen)
+      if not surface then job.i = job.i + 1; return end
+      if not job.flist then
+        job.flist = freezable(surface, force)
+        job.fat, job.frozen, job.fseen = 1, {}, {}
+        return
+      end
+      local mem = frozen_memory(force)
+      local last = math.min(#job.flist, job.fat + FROZEN_SLICE - 1)
+      for i = job.fat, last do pcall(frozen_read, job, surface, job.flist[i], mem, job.fseen, tick) end
+      job.fat = last + 1
+      if job.fat > #job.flist then
+        pcall(frozen_groups, job, surface, force, tick)
+        frozen_forget(mem, job.flist, job.fseen)  -- (another planet's are kept by their own stage)
+        job.flist, job.frozen, job.fseen = nil, nil, nil
+        job.i = job.i + 1
+      end
+      return
+    end
     if stage.surface then
       -- A planet: a band found in one step (walk.lua), then read SLICE a step.
       local surface
@@ -1345,7 +1503,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; line_cut: a long belt or pipe line (8+ tiles) cut where ours died, naming the cut tiles (and what else stands on one), how far the line runs either side and what it carried, until a belt or pipe stands there again; also a belt line blocked: a build that leaves a belt facing into a tile with no belt but another entity (not an inserter) and a belt within 2 tiles past it facing the same way, naming that entity, after 30 s, until it or either belt is gone or a belt stands there; belt_cut names what stands on a missing tile in sight; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), off_by_condition (assemblers, furnaces, labs, drills and silos off by their own circuit or logistic condition, each with the condition and the value it reads; a condition on what its recipe makes, a stock cap, is not said), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots); output_chest_full (a full_output maker whose output inserter puts into a chest with no free slot: the maker, the inserter, the chest and what fills its slots); catalyst_gone (a starved machine whose recipe takes an item it also makes, with none of it in its input: the item, what its output holds, and each inserter taking from it with its hand size);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; frozen: on a planet whose entities need heating, our frozen entities per 64-tile area (pipes and machines with what they hold, belts as one run, how long frozen since first seen, the nearest heater with its temperature and distance from the nearest frozen one); line_cut: a long belt or pipe line (8+ tiles) cut where ours died, naming the cut tiles (and what else stands on one), how far the line runs either side and what it carried, until a belt or pipe stands there again; also a belt line blocked: a build that leaves a belt facing into a tile with no belt but another entity (not an inserter) and a belt within 2 tiles past it facing the same way, naming that entity, after 30 s, until it or either belt is gone or a belt stands there; belt_cut names what stands on a missing tile in sight; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), off_by_condition (assemblers, furnaces, labs, drills and silos off by their own circuit or logistic condition, each with the condition and the value it reads; a condition on what its recipe makes, a stock cap, is not said), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots); output_chest_full (a full_output maker whose output inserter puts into a chest with no free slot: the maker, the inserter, the chest and what fills its slots); catalyst_gone (a starved machine whose recipe takes an item it also makes, with none of it in its input: the item, what its output holds, and each inserter taking from it with its hand size);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

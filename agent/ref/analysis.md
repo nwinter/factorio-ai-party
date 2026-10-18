@@ -82,7 +82,8 @@
     holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
   - fluid connection tiles (`fluid_connections[].joins` is where a pipe must go); a ghost shows its fluid ports as
     `ports` does; a heat entity its heat connections and temperature; `inspect.heating` reports freezing, demand,
-    adjacent heat buffers and the heat connections there;
+    adjacent heat buffers and the heat connections there (what is frozen now across a planet: the `frozen` alert,
+    `game_alerts {kind: "frozen"}`);
   - a machine, solar panel or accumulator: its maximum under `electricity`; poles and machines their
     `electric_network_id`, wired entities `circuit.wires`;
   - a roboport or logistic chest: its network (the number `stock {network}` and `reservations` take) and, for a
