@@ -273,3 +273,20 @@ do
   defines,game=nil,nil
 end
 print('d17_batch23 A4 robot_losses cancel after a job ended: ok')
+
+-- B2 (Sonnet: 4000 copper cable read as ready twice; it sat in requester chests): stock splits a stock by what can be
+-- taken: provider and storage chests, requester and buffer chests, plain chests, machines.
+do
+  game={tick=0}
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){spoil={hatch=function() return nil end,secs=function(t) return t..'t' end}}
+  local function lc(mode,x,n) return {entity={valid=true,type='logistic-container',name=mode..'-chest',prototype={logistic_mode=mode}},name=mode..'-chest',position={x=x,y=0},count=n,distance=x} end
+  local places={lc('requester',3,4000),lc('passive-provider',5,100),lc('storage',6,50),lc('buffer',7,20),
+    {entity={valid=true,type='container',name='wooden-chest'},name='wooden-chest',position={x=8,y=0},count=7,distance=8}}
+  local t=S.split(places)
+  eq(t.free,150); eq(t.requested,4020); eq(t.chest,7); eq(t.machine,0)
+  eq(t.text,'provider and storage chests 150 (robots can take it), requester and buffer chests 4020 (held for their requests), plain chests 7')
+  local line=S.line({item='copper-cable',total=4177,places=places,groups={{name='requester-chest',count=4000,entities=1}}})
+  has(line,'4177 copper-cable held by our factory (4000 in 1 requester-chest; provider and storage chests 150 (robots can take it), requester and buffer chests 4020 (held for their requests), plain chests 7)')
+  game=nil
+end
+print('d17_batch23 B2 stock by holder: ok')

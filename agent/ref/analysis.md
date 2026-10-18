@@ -194,7 +194,9 @@
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
   `next`). `holders: ["provider", "storage"]`: only those kinds of place; each place says its `kind` and what robots
   have `reserved` there, and `reserved_for` where those robots deliver it (`5 to requester-chest (97.5,41.5)`, the 3
-  largest). With `surface`, `by_network`: each logistic network's hold in providers, storage and other
+  largest). `by_holder` splits the places read: provider and storage chests (robots can take it), requester and buffer
+  chests (held for their requests), plain chests, machine outputs, elsewhere; the summary says so when logistic chests
+  hold it. With `surface`, `by_network`: each logistic network's hold in providers, storage and other
   holders, and `on_ground`: stacks lying on the ground in chunks our force sees now. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. `network: 96` (the number `networks` and an `inspect` of a
   roboport give): what a logistic network holds, its robots, and `roboports`: the robots each roboport holds, most

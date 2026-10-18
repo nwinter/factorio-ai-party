@@ -7309,3 +7309,8 @@ fh watch    # deploy on every change
   within 5 min by 64-tile area and the sweep's age. The egg alert is one line a surface: the eggs and holders due
   within 5 min, the first holder, the areas; told to an agent again only when the set of holders due on that surface
   changes (the mark under 1 minute no longer repeats it; sleepers still wake on it). tests/spoil.lua.
+- B2 (Sonnet: 4000 copper cable read as ready twice; it sat in requester chests): `stock {item}` gives `by_holder`
+  over the places read: provider_storage (provider and storage chests: robots can take it), requester_buffer
+  (requester and buffer chests: held for their requests), chests (no logistics), machines (outputs), other (landing
+  pads, wagons, vehicles), and its line. The stock summary (stock's, craft's and construct's notes) carries that split
+  when a provider, storage, requester or buffer chest holds the item. tests/d17_batch23.lua.
