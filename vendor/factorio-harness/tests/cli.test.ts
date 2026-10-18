@@ -870,6 +870,26 @@ test('fh view platform=NAME writes a platform schematic PNG',async()=>{
   } finally {await rm(dir,{recursive:true,force:true});}
 });
 
+test('fh view draws round the position asked; an area is its centre and radius (batch26 A4, Opus)',async()=>{
+  const {readFile,rm}=await import('node:fs/promises');
+  const {join}=await import('node:path');
+  const dir=await tempDir('fh-view-');
+  try {
+    const seen:any[]=[];
+    await engine(request=>{
+      seen.push(request.args);
+      return {ok:true,result:{player:{position:{x:0,y:0}},entities:[{name:'gun-turret',position:{x:5,y:563}}],tiles:[]}};
+    },async port=>{
+      const path=join(dir,'v.png');
+      let r=JSON.parse((await cli(port,['view','--args','{"position":{"x":5,"y":563},"radius":26}','--out',path])).stdout).result;
+      assert.deepEqual(r.position,{x:5,y:563}); assert.deepEqual(seen[0].position,{x:5,y:563}); assert.equal(seen[0].radius,26);
+      r=JSON.parse((await cli(port,['view','--args','{"area":{"left_top":{"x":-20,"y":540},"right_bottom":{"x":30,"y":590}}}','--out',path])).stdout).result;
+      assert.deepEqual(seen[1].position,{x:5,y:565}); assert.equal(seen[1].radius,25); assert.equal(seen[1].area,undefined); assert.deepEqual(r.position,{x:5,y:565});
+      assert.equal((await readFile(path)).subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+      await assert.rejects(cli(port,['view','--args','{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":100,"y":100}}}','--out',path]),(e:any)=>/at most 64x64/.test(e.stdout));
+    });
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
 test('CLI waits follow a silo deadline extension; explicit timeouts still stop',async()=>{
   const dir=await tempDir('fh-silo-clock-');
   const preload=join(dir,'clock.cjs');

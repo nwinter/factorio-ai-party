@@ -7368,3 +7368,7 @@ fh watch    # deploy on every change
   boxes first (LuaFluidBox.flush, the GUI's flush: the whole connected segment) and says what went; `fluid: "keep"`
   changes it anyway and says what stays. The old guard (any fluid held: refused unless force=true, "a recipe change
   destroys it") is replaced; force=true reads as keep. runtime_test.
+- A4 (Opus: view with position and radius drew an empty map round the character): observe read round the position
+  asked, but the PNG was drawn round `result.position ?? player.position`, and observe's reply has no position, so the
+  character's. `fh view` now draws round the position asked (the reply's `position` says so); `area` (up to 64x64)
+  becomes its centre and the radius that covers it. tests/cli.test.ts.

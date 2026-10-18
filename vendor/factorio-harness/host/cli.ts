@@ -1917,10 +1917,27 @@ async function main() {
         if (args.platform !== undefined) throw new Error('view platform was given twice');
         args.platform=word.slice(9);
       }
+      // An area is its centre and the radius that covers it; the map is drawn round the position asked (batch26 A4,
+      // Opus: view {position, radius} drew an empty map round the character, the read's own centre unused).
+      if (args.area !== undefined) {
+        const area = args.area as any;
+        const lt = area?.left_top ?? area?.[0], rb = area?.right_bottom ?? area?.[1];
+        const xs = [lt?.x ?? lt?.[0], rb?.x ?? rb?.[0]], ys = [lt?.y ?? lt?.[1], rb?.y ?? rb?.[1]];
+        if (![...xs, ...ys].every(v => typeof v === 'number' && Number.isFinite(v))) throw new Error('view area is {left_top:{x,y}, right_bottom:{x,y}}');
+        const half = Math.ceil(Math.max(Math.abs(xs[1]-xs[0]), Math.abs(ys[1]-ys[0])) / 2);
+        if (half > 32) throw new Error(`view area is at most 64x64 tiles (radius 32); this one needs radius ${half}`);
+        if (args.position !== undefined) throw new Error('view takes area or position, not both');
+        args.position = {x:(xs[0]+xs[1])/2, y:(ys[0]+ys[1])/2};
+        args.radius = Math.max(1, half);
+        delete args.area;
+      }
       const reply = await execute('observe',{radius:24,...args,tiles:true,resources:'tiles'});
       if (reply.ok) {
         const path = resolve(values.out);
         await mkdir(dirname(path),{recursive:true});
+        const asked = args.position as any;
+        const centre = asked && !reply.result.platform ? {x:Number(asked.x ?? asked[0]), y:Number(asked.y ?? asked[1])} : undefined;
+        if (centre) reply.result = {...reply.result, position:centre};
         await writeFile(path,renderMap(reply.result,Number(args.radius ?? 24)));
         output({ok:true,tick:reply.tick,result:{path,kind:reply.result.platform ? 'platform-schematic' : 'local-schematic',platform:reply.result.platform,legend:reply.result.platform ? 'gray=foundation, dark=space/footprint edges, gold=belts/inserters, teal=machines, blue=solar/ghosts, purple=accumulators/thrusters, red=turrets, green=collectors, pale=hub, steel=pipes' : 'white=player, blue=iron/water, orange=copper, dark=coal, green=trees/uranium, red=enemies, tan=structures; out of sight (fog): dim tan=our buildings as last seen, blue=our ghosts there now, red outline=ours lost there',position:reply.result.position ?? reply.result.player?.position,entities:Object.keys(reply.result.entities ?? {}).length,fog:reply.result.fog?.line,tiles:reply.result.tile_count ?? Object.keys(reply.result.tiles ?? {}).length,truncated:reply.result.truncated ?? false,tiles_truncated:reply.result.tiles_truncated ?? false}});
       } else {output(reply);process.exitCode=1;}
