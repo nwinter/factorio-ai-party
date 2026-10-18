@@ -69,7 +69,14 @@ do
   local f={is_chunk_visible=function() return true end}
   local p={force=f,position={x=0,y=0},character={prototype={item_pickup_distance=1}},reach_distance=10}
   p.can_reach_entity=function(e) return distance(p.position,e.position)<=10 end
-  p.surface={find_entities_filtered=function() return sources end}
+  -- by type, as the engine
+  p.surface={find_entities_filtered=function(f)
+    if type(f.type)~='table' then return sources end
+    local want,out={},{}
+    for _,t in ipairs(f.type) do want[t]=true end
+    for _,e in ipairs(sources) do if want[e.type] then out[#out+1]=e end end
+    return out
+  end}
   local function inv(e) return {get_item_count=function() return e.n end} end
   local function entity(x,n,t) local e={valid=true,type=t or 'furnace',name=t or 'furnace',force=f,position={x=x,y=0},n=n,unit_number=x};e.get_inventory=function() return inv(e) end;return e end
   local danger={}
@@ -100,8 +107,11 @@ do
   carried=0;capacity=3;targets={entity(2,0)};sources={entity(0,30,'container')};start()
   for _=1,30 do result=step();if result then break end end
   eq(result,'topped_up');eq(targets[1].n,10);eq(action.got,10);eq(action.fuel_round.taken,10)
-  -- Belts require pickup reach, not transfer reach, and take six per six ticks.
-  carried=0;capacity=100;targets={entity(8,0)};sources={entity(6,20,'transport-belt')};start();step();step();eq(carried,0);assert(action.nav.tolerance<1.5)
+  -- Belts require pickup reach, not transfer reach, and take six per six ticks; a belt is a source only named by
+  -- position (batch27 A5, Haiku: coal taken off a belt cut its flow): nearest leaves it out.
+  carried=0;capacity=100;targets={entity(8,0)};sources={entity(6,20,'transport-belt')};start();eq(step(),'out_of_items')
+  assert(action.why:find('belts are left out (from names one by position)',1,true),action.why)
+  carried=0;targets={entity(8,0)};sources={entity(6,20,'transport-belt')};start({x=6,y=0});step();step();eq(carried,0);assert(action.nav.tolerance<1.5)
   p.position={x=5,y=0};step();eq(carried,6);step();eq(carried,6);step(5);step(5);eq(targets[1].n,10)
   -- Enemy source is skipped in favor of the safe one; all unsafe targets refuse.
   carried=0;targets={entity(8,0)};sources={entity(6,10,'container'),entity(12,10,'container')};danger[6]={};start();step();eq(action.fuel_round.source.targets[1].entity.position.x,12)

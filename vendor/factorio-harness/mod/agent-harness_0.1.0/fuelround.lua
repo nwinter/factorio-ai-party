@@ -1,9 +1,10 @@
--- One refuel action: use carried fuel, replenish from observed chests/belts,
+-- One refuel action: use carried fuel, replenish from observed chests (a belt only when from names it),
 -- then continue the same burner tour. All movement uses stock's enemy checks.
 return function(api)
   local M={}
   local CHEST={container=true,['logistic-container']=true}
-  local CHEST_TYPES,BELT_TYPES={'container','logistic-container'},{'transport-belt','underground-belt','splitter'}
+  local CHEST_TYPES={'container','logistic-container'}
+  local BELT={['transport-belt']=true,['underground-belt']=true,splitter=true}
   M.MAX_CHESTS,M.MAX_BELTS=2048,1024
   local function seen(p,e)
     return api.distance(p.position,e.position)<=32 or p.force.is_chunk_visible(p.surface,{x=math.floor(e.position.x/32),y=math.floor(e.position.y/32)})
@@ -24,7 +25,7 @@ return function(api)
   function M.start(p,a,fuel,count)
     assert(a.walk~=false,'from/area refuel walks; walk=false is not supported')
     assert(a.area~=nil or a.radius~=nil or a.positions~=nil,'from requires area, radius or positions')
-    assert(a.from==nil or a.from=='nearest' or type(a.from)=='table','from must be nearest or a chest position')
+    assert(a.from==nil or a.from=='nearest' or type(a.from)=='table','from must be nearest or a chest or belt position')
     local base={limit=1025}
     -- positions (D6, Opus 00:20: the same 25 burner coal drills refuelled by hand every 18 minutes): those burners, by
     -- position, as a standing order's step: refuel {positions, from: "nearest", fuel, count} (order_set ... interval).
@@ -95,7 +96,7 @@ return function(api)
     local from
     if type(a.from)=='table' then
       from=api.entity(p,{position=api.position(a.from)})
-      assert(CHEST[from.type] and from.force==p.force,'from must be our chest')
+      assert((CHEST[from.type] or BELT[from.type]) and from.force==p.force,'from must be our chest or belt')
     end
     local ticks=api.integer(a.ticks,36000,1,36000,'ticks')
     local action,out=api.start_tour(p,'refuel',targets,ticks,{item=fuel,quality=a.quality or 'normal',count=count,
@@ -168,18 +169,17 @@ return function(api)
   end
   local function source(p,action)
     local r=action.fuel_round
-    -- (d17 batch14 A8, Luna: 94 rocket fuel in a passive provider 32 tiles off went unfound behind 256 belts) chests and
-    -- belts read apart, MAX_CHESTS and MAX_BELTS each, and the logistic network's own pickup point for the fuel
+    -- (d17 batch14 A8, Luna: 94 rocket fuel in a passive provider 32 tiles off went unfound behind 256 belts) chests read
+    -- apart from anything else, MAX_CHESTS, and the logistic network's own pickup point for the fuel. No belt (batch27
+    -- A5, Haiku: coal taken off a transport belt cut the belt's flow): a belt is a source only when from names it.
     local list
     if r.from then list={r.from}
     elseif r.nearest then
       local radius=r.radius or 64
       local chests=p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=CHEST_TYPES,limit=M.MAX_CHESTS+1}
-      local belts=p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=BELT_TYPES,limit=M.MAX_BELTS+1}
-      r.source_read_capped=#chests>M.MAX_CHESTS or #belts>M.MAX_BELTS or r.source_read_capped
+      r.source_read_capped=#chests>M.MAX_CHESTS or r.source_read_capped
       list={}
       for i=1,math.min(M.MAX_CHESTS,#chests) do list[#list+1]=chests[i] end
-      for i=1,math.min(M.MAX_BELTS,#belts) do list[#list+1]=belts[i] end
       local ok,pt=pcall(function()
         local net=p.surface.find_logistic_network_by_position(p.position,p.force)
         return net and net.select_pickup_point{name={name=action.item,quality=action.quality},position=p.position}
@@ -228,7 +228,7 @@ return function(api)
     end
     if api.held(p,action.item,action.quality)==0 and need(action)>0 then
       if r.attempts>=64 or not source(p,action) then
-        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and string.format(' (source read capped at %d chests and %d belts)',M.MAX_CHESTS,M.MAX_BELTS) or ''))
+        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and string.format(' (source read capped at %d chests)',M.MAX_CHESTS) or '')..(r.nearest and '; belts are left out (from names one by position)' or ''))
         return 'out_of_items'
       end
       return nil

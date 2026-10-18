@@ -140,8 +140,8 @@
   furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its
   own fuel lasts, fewest first. `boilers: true`: each boiler group's burn against the fuel in reach and the drills
   supplying it, with the hours left, and each boiler under 5 fuel with its feeding inserters (burner fuel, no power,
-  not connected), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from: "nearest"}`
-  call.
+  not connected), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from}` call
+  (`from: "nearest"` for a chest, the belt's position for a belt).
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
