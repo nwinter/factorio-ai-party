@@ -7302,3 +7302,10 @@ fh watch    # deploy on every change
   2.4 ms and compute 2.2 ms. The Kestrel II compute tick is estimated at about 13 ms from Swiftlet's phases (turrets
   53 us each, about 3 us a belt in the graph, 2 us a belt for the loops); it is not measured whole on n, since its
   reads must come first in the same command.
+- B1 (Luna, Grok: the hatch alerts named one holder at a time while several hatched at once): `eggs {surface?,
+  limit?}` lists every holder the egg sweep found on a surface (the sweep keeps all it found, at most 512): count,
+  item, holder, position, who placed it, spoiled percent (mean and the first stack), the first hatch, how many within
+  5 min, turret cover (danger's coverage, the first `limit` holders, default 64); the head line gives the eggs due
+  within 5 min by 64-tile area and the sweep's age. The egg alert is one line a surface: the eggs and holders due
+  within 5 min, the first holder, the areas; told to an agent again only when the set of holders due on that surface
+  changes (the mark under 1 minute no longer repeats it; sleepers still wake on it). tests/spoil.lua.

@@ -1984,6 +1984,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.spoil and M.spoil.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gates and M.gates.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
@@ -15626,6 +15627,9 @@ M.linecut=require('linecut'){state=state}
 M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
 function handlers.robot_losses(p,a) return M.robotloss.read(p,a) end
 passive.robot_losses=true
+-- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
+function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
+passive.eggs=true
 M.pushalerts=require('pushalerts'){belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
