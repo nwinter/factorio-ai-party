@@ -2131,6 +2131,11 @@ return function(api)
       local ok, list = pcall(api.hatch_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A death of ours that left a corpse with items (runtime.lua M.death_lines; batch24 C2).
+    if api.death_lines then
+      local ok, list = pcall(api.death_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Landed cargo pods on the ground, once an hour (landed.lua; d17 pods).
     if api.pods_lines then
       local ok, list = pcall(api.pods_lines, p, h)

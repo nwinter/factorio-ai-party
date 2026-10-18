@@ -872,5 +872,41 @@ return function(api)
     out.attacked=#areas>0 and areas or nil
     return next(out) and out or nil
   end
+  -- Enemy groups our force sees now round a point (batch24 C2, Haiku: a 1,194-item corpse sat near a wave for minutes):
+  -- the live groups (gathered with a target) whose units stand in a chunk our force sees now, within radius of pos:
+  -- {size, kinds, position, distance, heading (compass, from where it gathered to where it is), closing (its distance to
+  -- pos now under where it gathered, or its target within 32 tiles of pos), target_distance}, nearest first; and a line.
+  function M.groups_near(force,surface,pos,radius)
+    local out={}
+    for _,r in ipairs(api.state().live_groups or {}) do
+      local g=r.group
+      local ok,valid=pcall(function() return g and g.valid end)
+      if ok and valid and r.surface==surface.name then
+        local members=g.members or {}
+        local at=g.position
+        local seen=#members>0 and force.is_chunk_visible(surface,{x=math.floor(at.x/32),y=math.floor(at.y/32)})
+        local d=api.distance(at,pos)
+        if seen and d<=radius then
+          local from=r.gathered or at
+          local dx,dy=at.x-from.x,at.y-from.y
+          local heading=(dx*dx+dy*dy)>=4 and compass(from,at) or 'still'
+          local target=command_target(g.command) or r.target
+          local closing=(target and api.distance(target,pos)<=32) or d<api.distance(from,pos)-2
+          out[#out+1]={size=#members,kinds=kinds_text(member_kinds(members)),position={x=round(at.x),y=round(at.y)},distance=round(d),
+            heading=heading,closing=closing or nil,target_distance=target and round(api.distance(at,target)) or nil}
+        end
+      end
+    end
+    table.sort(out,function(a,b) return a.distance<b.distance end)
+    return out
+  end
+  function M.groups_line(list)
+    if #list==0 then return 'no enemy group our force sees within reach of it' end
+    local parts={}
+    for i,g in ipairs(list) do
+      if i<=4 then parts[#parts+1]=string.format('a group of %d (%s) at (%d,%d), %d tiles off, moving %s%s',g.size,g.kinds,g.position.x,g.position.y,g.distance,g.heading,g.closing and ', closing on it' or '') end
+    end
+    return 'enemy groups our force sees: '..table.concat(parts,'; ')..(#list>4 and string.format('; +%d more',#list-4) or '')
+  end
   return M
 end

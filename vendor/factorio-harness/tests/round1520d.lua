@@ -314,6 +314,26 @@ eq(r.places,1); eq(r.unsafe_goal,'the corpse (30,0) is inside medium-worm-turret
 r=grok('recover',{avoid_enemies=false})
 eq(r.places,1); eq(r.avoid_enemies,nil)
 runtime.avoid.goal_check=check
+-- batch24 C2 (Haiku): an enemy group our force sees near the corpse is named; one within group_radius (48) keeps it out
+-- unless ignore_groups.
+local near_fn=runtime.threat.groups_near
+runtime.threat.groups_near=function(_,_,pos) return {{size=12,kinds='8 big-biter, 4 big-spitter',position={x=pos.x+30,y=pos.y},distance=30,heading='W',closing=true}} end
+ok,err=pcall(grok,'recover',{avoid_enemies=false})
+has(tostring(err),'enemy groups our force sees: a group of 12 (8 big-biter, 4 big-spitter) at (60,0), 30 tiles off, moving W, closing on it; a group of 12 is 30 tiles from it (group_radius 48): ignore_groups: true goes anyway')
+r=grok('recover',{avoid_enemies=false,ignore_groups=true})
+eq(r.places,1); has(r.corpses[1],'a group of 12 (8 big-biter, 4 big-spitter) at (60,0), 30 tiles off')
+r=grok('recover',{avoid_enemies=false,group_radius=20})
+eq(r.places,1)
+-- The team line for a death that left a corpse with items: who, where, the items, the killer, the groups near; once
+-- per agent; an empty corpse is not said.
+local kept_deaths=storage.agent_harness.char_deaths
+storage.agent_harness.char_deaths={{surface='nauvis',position={x=30,y=0},tick=k4.character_corpse_tick_of_death,who='grok',by='medium-worm-turret'}}
+local h={}
+local dl=runtime.death_lines({force={}},h)
+eq(#dl,1); has(dl[1],'grok died at (30,0) on nauvis '); has(dl[1],': the corpse holds 1 item; killed by medium-worm-turret; enemy groups our force sees: a group of 12')
+eq(runtime.death_lines({force={}},h),nil)
+storage.agent_harness.char_deaths=kept_deaths
+runtime.threat.groups_near=near_fn
 k4.valid=false
 
 -- 6. A tour's walk waits for a train too (status train_wait), and its waits come in the tour's last.train_waits.
