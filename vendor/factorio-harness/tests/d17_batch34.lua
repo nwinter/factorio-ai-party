@@ -232,4 +232,91 @@ do
   assert(not pcall(h.queue_submit,p,{steps={{action='wait_until',args={['until']='item_count',on_timeout='retry'}}}}),'on_timeout retry refused')
 end
 
+-- B1 (Sonnet): the fluid segments a plan joins or cuts, and a join of two fluids. ------------------------------------
+do
+  local STEPS={north={0,-1},east={1,0},south={0,1},west={-1,0}}
+  local DIRN={[0]='north',[4]='east',[8]='south',[12]='west'}
+  local function c(x,y) return {x=math.floor(x)+0.5,y=math.floor(y)+0.5} end
+  local protos={pipe={name='pipe',type='pipe',fluidbox_prototypes={{}}},pumpjack={name='pumpjack',type='mining-drill',mining_drill_radius=1.5,fluidbox_prototypes={{}}},
+    pump={name='pump',type='pump',fluidbox_prototypes={{}}},['iron-chest']={name='iron-chest',type='container',fluidbox_prototypes={}}}
+  local function rows(e)
+    local p,d=e.prototype,e.position
+    local out={}
+    local function add(dir,flow)
+      local st=STEPS[dir]
+      out[#out+1]={at=c(d.x,d.y),joins=c(d.x+st[1],d.y+st[2]),direction=dir,flow=flow,box=1}
+    end
+    if p.type=='pipe' then for _,dir in ipairs({'north','east','south','west'}) do add(dir,'input-output') end
+    elseif p.type=='mining-drill' then add(DIRN[e.direction],'output')
+    elseif p.type=='pump' then add(DIRN[e.direction],'output'); add(DIRN[(e.direction+8)%16],'input') end
+    return out
+  end
+  local built={}
+  local function pipe(x,y,fluid,seg,amount)
+    local e={valid=true,name='pipe',type='pipe',position={x=x,y=y},prototype=protos.pipe,unit_number=#built+900}
+    e.fluidbox={[1]=fluid and {name=fluid,amount=10} or nil,get_fluid_segment_id=function() return seg end,get_fluid_segment_contents=function() return {[fluid]=amount} end}
+    built[#built+1]=e; return e
+  end
+  -- built pipes join each neighbour pipe and whatever planned tile they face (the mock: every side)
+  local function conns(o)
+    local out={}
+    for _,dir in ipairs({'north','east','south','west'}) do
+      local st=STEPS[dir]
+      local tx,ty=math.floor(o.position.x)+st[1],math.floor(o.position.y)+st[2]
+      local target
+      for _,b in ipairs(built) do if math.floor(b.position.x)==tx and math.floor(b.position.y)==ty then target=b end end
+      out[#out+1]={box=1,kind='normal',x=math.floor(o.position.x),y=math.floor(o.position.y),tx=tx,ty=ty,target=target}
+    end
+    return out
+  end
+  local acid={valid=true,type='resource',name='sulfuric-acid-geyser',prototype={mineable_properties={products={{type='fluid',name='sulfuric-acid'}}}}}
+  local surf={}
+  surf.find_entities_filtered=function(f)
+    if f.type=='resource' then return {acid} end
+    local out={}
+    for _,b in ipairs(built) do
+      if f.area and b.position.x>f.area[1][1] and b.position.x<f.area[2][1] and b.position.y>f.area[1][2] and b.position.y<f.area[2][2] then out[#out+1]=b end
+      if f.position and math.abs(b.position.x-f.position.x)<0.2 and math.abs(b.position.y-f.position.y)<0.2 then out[#out+1]=b end
+    end
+    return out
+  end
+  prototypes={entity=protos,item={pipe={place_result=protos.pipe},pumpjack={place_result=protos.pumpjack}}}
+  local FJ=dofile('mod/agent-harness_0.1.0/fluidjoin.lua'){fluid_rows=function(e) return rows(e) end,fluid_connections=conns,
+    direction=function(v) return ({north=0,east=4,south=8,west=12})[v] or 0 end,position=function(v) return {x=v.x or v[1],y=v.y or v[2]} end,
+    snap=function(proto,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end}
+  pipe(2.5,90.5,'water',696,14351)
+  -- a pumpjack whose output faces the water pipe: a mix (Sonnet's acid jack)
+  local lines,mix=FJ.plan(surf,'player',{{index=1,name='pumpjack',proto=protos.pumpjack,pos={x=2.5,y=89.5},dir=8}})
+  eq(lines[1],'#1 pumpjack (2.5,89.5) joins segment 696 (water 14351) at pipe (2.5,90.5)')
+  eq(mix[1],'#1 pumpjack (2.5,89.5) would join sulfuric-acid (#1 pumpjack\'s output: the resource under it) and water (segment 696 at pipe (2.5,90.5))')
+  -- two planned pipes between two water segments: one segment, no mix
+  pipe(6.5,90.5,'water',700,500)
+  lines,mix=FJ.plan(surf,'player',{{index=1,name='pipe',proto=protos.pipe,pos={x=3.5,y=90.5}},{index=2,name='pipe',proto=protos.pipe,pos={x=4.5,y=90.5}},
+    {index=3,name='pipe',proto=protos.pipe,pos={x=5.5,y=90.5}}})
+  eq(#lines,1); has(lines[1],'#1 pipe (3.5,90.5), #2 pipe (4.5,90.5), #3 pipe (5.5,90.5) join segment 696 (water 14351) at pipe (2.5,90.5); segment 700 (water 500) at pipe (6.5,90.5): 2 segments into one')
+  eq(mix,nil)
+  -- steam on the far side: a mix
+  built[2].fluidbox[1]={name='steam',amount=10}
+  built[2].fluidbox.get_fluid_segment_contents=function() return {steam=300} end
+  lines,mix=FJ.plan(surf,'player',{{index=1,name='pipe',proto=protos.pipe,pos={x=3.5,y=90.5}},{index=2,name='pipe',proto=protos.pipe,pos={x=4.5,y=90.5}},
+    {index=3,name='pipe',proto=protos.pipe,pos={x=5.5,y=90.5}}})
+  has(mix[1],'would join steam (segment 700 at pipe (6.5,90.5)) and water (segment 696 at pipe (2.5,90.5))')
+  -- a pump's two sides stay apart: water behind, steam ahead is no mix
+  lines,mix=FJ.plan(surf,'player',{{index=1,name='pipe',proto=protos.pipe,pos={x=3.5,y=90.5}},{index=2,name='pump',proto=protos.pump,pos={x=4.5,y=90.5},dir=4},
+    {index=3,name='pipe',proto=protos.pipe,pos={x=5.5,y=90.5}}})
+  eq(mix,nil); eq(#lines,2)
+  -- a pump on a built pipe's centre cuts its joins
+  pipe(10.5,90.5,'water',800,100); pipe(11.5,90.5,'water',800,100); pipe(10.5,91.5,'water',800,100)
+  local _,_,cuts=FJ.plan(surf,'player',{{index=1,name='pump',proto=protos.pump,pos={x=11.5,y=90.5},dir=4}})
+  eq(cuts[1],'#1 pump replaces pipe (11.5,90.5) of segment 800 (water 100): a pump keeps its input and output sides as two segments')
+  _,_,cuts=FJ.plan(surf,'player',{{index=1,name='pump',proto=protos.pump,pos={x=10.5,y=90.5},dir=4}})
+  eq(cuts[1],'#1 pump replaces pipe (10.5,90.5) of segment 800 (water 100): no longer joined to pipe (10.5,91.5); a pump keeps its input and output sides as two segments')
+  -- the entries of a call: only those with fluid boxes, snapped
+  local en=FJ.entries({entities={{name='iron-chest',position={x=1,y=1}},{name='pipe',position={x=3.2,y=90.7}}}},'place_ghosts')
+  eq(#en,1); eq(en[1].index,2); eq(en[1].pos.x,3.5)
+  en=FJ.entries({item='pumpjack',position={x=2.5,y=89.5},direction='south'},'build')
+  eq(#en,1); eq(en[1].dir,8)
+  prototypes=nil
+end
+
 print('d17 batch34 ok')
