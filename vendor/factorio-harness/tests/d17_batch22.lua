@@ -35,3 +35,25 @@ do
   prototypes,defines=nil,nil
 end
 print('d17_batch22 A4 hub room: ok')
+
+-- B1 (Luna): danger near egg sites: each site's first hatch and the turrets covering it, in one read.
+do
+  game={tick=1000}
+  defines={inventory={turret_ammo=1}}
+  local function turret(name,typ,x,range,loaded) return {valid=true,name=name,type=typ,position={x=x,y=0},prototype={attack_parameters={range=range}},
+    get_inventory=function() return {is_empty=function() return not loaded end} end,energy=loaded and 100 or 0} end
+  local turrets={turret('gun-turret','ammo-turret',10,18,true),turret('gun-turret','ammo-turret',12,18,false),turret('laser-turret','electric-turret',30,24,true)}
+  local surface={name='gleba',find_entities_filtered=function(f)
+    if f.type and type(f.type)=='table' and f.type[1]=='ammo-turret' then return turrets end
+    return {} end}
+  local D=dofile('mod/agent-harness_0.1.0/danger.lua'){position=function(v) return v end,state=function() return {} end,
+    avoid={structures=function() return {list={},uncharted=0,unread=0} end,reach=function() return 0 end,chunks_near=function() return {} end,seg_dist=function() return 99 end},
+    eggs=function() return {{position={x=0,y=0},tick=1600,text='12 pentapod-egg in requester-chest at (0,0): the first hatches in 10s'}} end}
+  local cov=D.coverage(surface,{name='player'},{x=0,y=0})
+  eq(cov.ready,1); eq(cov.idle,1); eq(cov.line,'in range of 1 turret ready (1 gun-turret), 1 more in range without ammunition, power or fluid')
+  local r=D.read({surface=surface,force={name='player'},character=nil},{position={x=0,y=0},radius=32})
+  eq(r.eggs[1],'12 pentapod-egg in requester-chest at (0,0): the first hatches in 10s; in range of 1 turret ready (1 gun-turret), 1 more in range without ammunition, power or fluid')
+  has(r.line,'eggs: 1 site within 32 tiles')
+  defines=nil
+end
+print('d17_batch22 B1 eggs and turrets near a point: ok')

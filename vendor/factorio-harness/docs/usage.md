@@ -7004,3 +7004,12 @@ fh watch    # deploy on every change
   take 40): it does not fit`. launch (space.lua) refuses a cargo that does not fit unless `hub_full: true` (then said
   in `hub_full`); load_silo launches through it; load_silo's dry run gives `platform_hub_room` (the list and what is
   aboard); preflight's platform line and `hub_room` give it for the rocket's cargo. tests/d17_batch22.lua.
+
+### Group B
+- B1 (Luna): hatch timers ran out with the defense already gone. `danger {position, radius}` now has `eggs`: each egg
+  site the watch keeps within the radius that hatches (spoil.lua M.near: count, holder, the first hatch time, nearest
+  first, up to 8), with the turrets of ours whose range covers it (danger.lua M.coverage: gun and rocket turrets with
+  ammunition, laser turrets with power, flamethrowers with fluid as ready, the rest in range counted; one find within 40
+  tiles): `12 pentapod-egg in requester-chest at (0,0): the first hatches in 10s; in range of 1 turret ready (1
+  gun-turret), 1 more in range without ammunition, power or fluid`. The team block's egg alerts end with the same
+  coverage. tests/d17_batch22.lua.

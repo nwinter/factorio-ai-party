@@ -11891,6 +11891,7 @@ M.craftrate=require('craftrate'){}
 -- An inventory with every slot taken and what fills it; spoilage in a machine's input (slots.lua; Sol, 22:08).
 M.slots=require('slots')()
 M.spoil=require('spoil'){state=state,force=function() return game.forces.player end,
+  coverage=function(surface,pos) local s=game.get_surface(surface); return s and M.danger.coverage(s,game.forces.player,pos).line end,
   characters=function()
     local out={}
     for _,b in ipairs(M.bots.list()) do if b.character and b.character.valid then out[#out+1]=b.character end end
@@ -15215,7 +15216,7 @@ function handlers.pipe_gaps(p,a)
 end
 -- danger: a destination's nests, enemies seen, recent attacks and deaths, and the character's health and armor
 -- (danger.lua; Opus, shift17 10:51), facts only.
-M.danger=require('danger'){state=state,position=position,avoid=M.avoid,
+M.danger=require('danger'){state=state,position=position,avoid=M.avoid,eggs=function(surface,pos,r) return M.spoil.near(surface,pos,r) end,
   surface=function(p,name) local s=game.surfaces[name]; assert(s and (s.platform==nil or s.platform.force==p.force),'unknown surface '..tostring(name)); return s end}
 function handlers.danger(p,a) return M.danger.read(p,a) end
 function M.memory_visible(p,pos)

@@ -144,7 +144,9 @@
   spawners on the map round it with their reach, enemy units in sight or radar coverage by name, and those more than
   24 tiles from every spawner in packs (`packs`: count, names, where, how far), apart from those by their nests;
   attacks, losses, groups and deaths there; the nests the straight line from you passes; your health, armor and
-  shield. Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
+  shield; `eggs`: each egg site within the radius that hatches (count, holder, the first hatch time), with the turrets
+  of ours in range of it (ready: ammunition, power or fluid; in range without). The egg alerts name the same turrets.
+  Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
 - `drill_sites {position, resource?, radius?, limit?, surface?}`: for one depleted drill of ours, the nearest visible
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
