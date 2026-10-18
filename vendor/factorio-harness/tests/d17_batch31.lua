@@ -188,3 +188,74 @@ do
   eq(W.get('Spindle'),nil)
 end
 print('d17_batch31 B9 platform fluid_count: ok')
+
+-- B1 (Luna 06:20): shipment {platform, ready: true}: the platform's gate, the requests from the planet it stops at,
+-- each silo there with its rocket, why it waits and the conditions on its feed, and the landing pads' free slots
+-- against what the hub would send down. ---------------------------------------------------------------------------
+do
+  defines={inventory={rocket_silo_rocket=9,cargo_landing_pad_main=1,hub_main=1},wire_connector_id={circuit_red=1,circuit_green=2},
+    space_platform_state={waiting_at_station=4,on_the_path=3}}
+  prototypes={item={['iron-plate']={stack_size=100},['processing-unit']={stack_size=100},['space-platform-foundation']={stack_size=50}}}
+  local force={}
+  local silo={valid=true,force=force,name='rocket-silo',position={x=10.5,y=-20.5},bounding_box={left_top={x=6,y=-25},right_bottom={x=15,y=-16}},
+    use_transitional_requests=true,transitional_request_target={valid=true,name='Spindle'},get_inventory=function() return {get_contents=function() return {{name='space-platform-foundation',count=30}} end} end,
+    get_logistic_point=function() return nil end}
+  local ins={valid=true,name='bulk-inserter',position={x=5.5,y=-20.5}}
+  local padinv={count_empty_stacks=function() return 2 end,get_insertable_count=function(n) return n=='processing-unit' and 150 or 0 end,
+    get_contents=function() return {{name='processing-unit',count=100}} end}
+  setmetatable(padinv,{__len=function() return 80 end})
+  local padsec={active=true,filters={{value={name='processing-unit'},min=500},{value={name='iron-plate'},min=1000}}}
+  local pad={valid=true,type='cargo-landing-pad',force=force,name='cargo-landing-pad',position={x=0,y=0},get_inventory=function() return padinv end,
+    get_logistic_sections=function() return {sections_count=1,get_section=function() return padsec end} end}
+  silo.type='rocket-silo'
+  local finds=0
+  local nauvis_s={index=1,name='nauvis',find_entities_filtered=function(f)
+    if type(f.type)=='table' and f.type[1]=='rocket-silo' then finds=finds+1; return {silo,pad} end
+    return {ins}
+  end}
+  silo.surface=nauvis_s
+  game={tick=1000,planets={nauvis={surface=nauvis_s}}}
+  local sec={active=true,filters={{value={name='space-platform-foundation'},min=50,import_from='nauvis'},{value={name='iron-plate'},min=100,import_from='nauvis'}}}
+  local pl={valid=true,name='Spindle',index=3,force=force,hub={valid=true,get_logistic_sections=function() return {sections_count=1,get_section=function() return sec end} end},
+    schedule={current=1,records={{station='nauvis'},{station='gleba'}}}}
+  local p={force={platforms={pl}}}
+  local sst={}
+  local S=dofile('mod/agent-harness_0.1.0/shipment.lua'){state=function() return sst end,
+    hub_counts=function() return {['iron-plate']=100,['processing-unit']=400,['space-platform-foundation']=0} end,
+    where=function() return {at='nauvis',stopped=true,text='at nauvis'} end,
+    request_rows=function(e,f,only) eq(only,'Spindle'); return {{platform='Spindle',item='space-platform-foundation',line='below_min_payload: Spindle asks space-platform-foundation 50 (holds 0, lacks 50), min payload 50'}} end,
+    gate=function() return {lines={'Spindle: at station nauvis; stop 1 of 2: nauvis (waiting here): circuit thruster-fuel >= 24000: the hub\'s wires read thruster-fuel 25000 (met)'}} end,
+    gate_row=function(e) return {name=e.name,position=e.position,met=false,line='bulk-inserter (5.5,-20.5): circuit condition space-platform-foundation < 20 (space-platform-foundation 40 on its wires): false now'} end,
+    rocket=function() return {rocket_now='rocket built (50/50 parts) and ready to launch, not launched',rocket_ready=true} end}
+  local r=S.read(p,{platform='Spindle',ready=true})
+  eq(r.planet,'nauvis')
+  has(r.lines[1],"gate: Spindle: at station nauvis; stop 1 of 2: nauvis (waiting here): circuit thruster-fuel >= 24000: the hub's wires read thruster-fuel 25000 (met)")
+  eq(r.lines[2],'stopped at nauvis')
+  has(r.lines[3],'up from nauvis: space-platform-foundation 50 from nauvis: loading (rocket-silo at (11,-20): 30 in its rocket, automatic requests for this platform; the hub holds 0); 1 more delivered')
+  has(r.lines[4],'silo rocket-silo (11,-20): rocket built (50/50 parts) and ready to launch, not launched; automatic requests on, filling a rocket for Spindle; its rocket holds space-platform-foundation*30; Spindle asks nauvis for what it lacks: below_min_payload: Spindle asks space-platform-foundation 50 (holds 0, lacks 50), min payload 50; its rocket holds 30 of it')
+  has(r.lines[4],'conditions within 8 tiles: bulk-inserter (5.5,-20.5): circuit condition space-platform-foundation < 20 (space-platform-foundation 40 on its wires): false now')
+  -- the hub keeps its own 100 iron plates (its request); 400 processing units go down: 4 slots, 2 free, the pads take 150
+  eq(r.lines[5],'landing pads on nauvis: cargo-landing-pad (0,0) 2 free slots of 80; the hub would send down processing-unit 400 (pads ask 500, hold 100; 4 slots; the pads can take 150 of it now, 250 short): 4 slots in all, 2 free (fewer)')
+  eq(r.down[1].pads_take,150); eq(r.pad_free_slots,2); eq(r.silos[1].rocket_ready,true)
+  -- the silos and pads are searched for once a minute
+  S.read(p,{platform='Spindle',ready=true}); eq(finds,1)
+  local ok,err=pcall(S.read,p,{platform='Spindle',ready=true,item='iron-plate'})
+  assert(not ok and tostring(err):find('ready takes platform',1,true),tostring(err))
+end
+print('d17_batch31 B1 shipment ready: ok')
+-- B1: a circuit wait at the stop the platform waits at reads what the hub's wires hold
+do
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3},inventory={hub_main=1},wire_connector_id={circuit_red=1,circuit_green=2}}
+  game={tick=100}
+  local net={get_signal=function(s) return s.name=='thruster-fuel' and 25000 or 0 end}
+  local pl={valid=true,name='Cinder',index=2,state=4,space_location={name='gleba'},paused=false,
+    hub={valid=true,get_circuit_network=function(id) return id==1 and net or nil end},
+    schedule={current=1,records={{station='gleba',wait_conditions={{type='circuit',condition={first_signal={type='fluid',name='thruster-fuel'},comparator='≥',constant=22000}}}},{station='nauvis'}}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end,integer=function(v,d) return v==nil and d or v end,
+    freight={where=function() return {} end,leg=function() return nil end}}
+  local r=space.gate({force={platforms={pl}}},{platform='Cinder'})
+  has(r.lines[1],"stop 1 of 2: gleba (waiting here): circuit thruster-fuel >= 22000: the hub's wires read thruster-fuel 25000 (met)")
+  pl.hub.get_circuit_network=function() return nil end
+  has(space.gate({force={platforms={pl}}},{platform='Cinder'}).lines[1],'circuit thruster-fuel >= 22000: the hub has no circuit wire (the condition reads 0)')
+end
+print('d17_batch31 B1 circuit wait value: ok')

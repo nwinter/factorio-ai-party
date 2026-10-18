@@ -1015,6 +1015,25 @@ return function(api)
       local goal=c.constant or 0
       local met=compare(n,c.comparator or '<',goal)
       text=text..string.format(': the hub holds %d%s',n,met and ' (met)' or ((c.comparator=='>=' or c.comparator=='≥' or c.comparator=='>') and string.format(', %d to go',goal-n+((c.comparator=='>') and 1 or 0)) or ''))
+    elseif t=='circuit' and w.condition and w.condition.first_signal then
+      -- (d17 batch31 B1, Luna) what the hub's wires read of the condition's signals now
+      local c=w.condition
+      if c.first_signal.name=='signal-dot' and c.constant==-2147483648 then return 'the harness sends it on (platwait)' end
+      local function wires(sig)
+        local n,wired=0,false
+        for _,id in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+          local net=pl.hub and pl.hub.valid and try(function() return pl.hub.get_circuit_network(id) end)
+          if net then wired=true; n=n+(try(function() return net.get_signal(sig) end) or 0) end
+        end
+        return wired and n or nil
+      end
+      local a=wires(c.first_signal)
+      local b=c.second_signal and wires(c.second_signal) or c.constant or 0
+      if a==nil then text=text..': the hub has no circuit wire (the condition reads 0)'
+      else
+        local met=compare(a,c.comparator or '<',b)
+        text=text..string.format(': the hub\'s wires read %s %d%s (%s)',c.first_signal.name,a,c.second_signal and string.format(', %s %d',c.second_signal.name,b) or '',met and 'met' or 'not met')
+      end
     elseif t=='all_requests_satisfied' or t=='any_request_satisfied' or t=='any_request_not_satisfied' or t=='request_satisfied' or t=='request_not_satisfied' then
       local rows,total=unmet(pl)
       local parts={}

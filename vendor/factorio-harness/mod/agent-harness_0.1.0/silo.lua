@@ -478,7 +478,8 @@ return function(api)
   -- request's min payload, else a full rocket by weight, as seen on 2.0.77), what the silo's network holds of it, the hub
   -- slots that payload takes and the hub's free slots, and whether the silo is filling a rocket for it or another
   -- platform now. Facts only; the game's choice among eligible requests is not read.
-  function M.request_rows(e, force, ln)
+  -- only: one platform's name, the others skipped (shipment's readiness read)
+  function M.request_rows(e, force, ln, only)
     ln = ln or try(function() return e.surface.find_logistic_network_by_position(e.position, force) end)
     local planet = try(function() return e.surface.planet.name end)
     local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
@@ -486,7 +487,7 @@ return function(api)
     local rows = {}
     for _, pl in pairs(try(function() return force.platforms end) or {}) do
       local loc = pl.valid and try(function() return pl.space_location.name end)
-      if loc == planet and pl.hub and pl.hub.valid then
+      if loc == planet and pl.hub and pl.hub.valid and (only == nil or pl.name == only) then
         local main = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
         local free_slots = main and try(function() return main.count_empty_stacks() end)
         local secs = try(function() return pl.hub.get_logistic_sections() end)

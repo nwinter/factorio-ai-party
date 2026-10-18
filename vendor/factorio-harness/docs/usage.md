@@ -7617,3 +7617,22 @@ fh watch    # deploy on every change
       last send.
     - Another platform_schedule without harness waits clears the watch. So does a record that no longer holds the
       never condition (the schedule changed elsewhere).
+- B1 (Luna 06:20: one compact platform/silo freight readiness read): `shipment {platform, ready: true}` (shipment.lua
+  M.ready), for the planet the platform stops at, else the stop it flies to:
+  - `gate:` the platform_gate line. A circuit wait at the stop it waits at now says what the hub's red and green wires
+    read of its signals (space.lua wait_text; also in platform_gate, fleet and platforms), or that the hub has no wire.
+  - `up from PLANET:` each hub request importing from there that is not delivered, with shipment's state and gate.
+  - Each silo of ours there (up to 4): its rocket (silo's rocket line), automatic requests on or off and the platform
+    it fills a rocket for, what its rocket holds, and each request of this platform from silo's request_rows (flag,
+    the payload a rocket waits for, the network's stock, hub slots) with what the rocket holds of it. Then the circuit
+    and logistic conditions of inserters and loaders within 8 tiles of it (gates.lua's rows, up to 16), each with what
+    it reads now.
+  - The landing pads there (up to 8 named): free slots each, and per item the hub would send down (the pads' asks less
+    what they hold, less the hub's own requests, as the cargo conflict lines count it): the count, the slots it takes,
+    what the pads can take of it now (get_insertable_count) and how many short; the slots in all against the free ones.
+  - request_rows takes the one platform (`only`), so the other platforms above are not read. The silo and pad search
+    on a planet is one find a minute, kept in storage with shipment's silo list.
+  - Cost on world n (the module loaded into a throwaway env, the gate stubbed): Cinder at Gleba 4.9 ms with the
+    search, Swift's Nauvis 16.1 ms with the search (Nauvis is the largest surface), about 1 ms after it.
+  - Live on n, Cinder at Gleba: agricultural-science-pack 500 waits `below_min_payload`, the network holds 424 of the
+    500 min payload, the silo's rocket is built and holds none of it.

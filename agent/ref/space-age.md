@@ -160,7 +160,8 @@
   your character is aboard a platform too. Example:
   `./fh call queue_repeat --args '{"lane":"platform:Swiftlet","interval_ticks":600,"steps":[{"action":"platform_rearm","args":{"platform":"Swiftlet","ammo_below":20,"target_count":100}}]}'`
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
-  conditions with what the hub holds against each.
+  conditions with what the hub holds against each; a circuit condition with what the hub's wires read of its signals
+  (`the hub has no circuit wire` when none: it reads 0).
 - `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
   sight now (name, head, health, and its whole `body`: the line through its segments, length, tiles under it, box,
   which way the head moves and how fast), else where a read last saw it. Any segment in sight counts as in sight.
@@ -173,6 +174,13 @@
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
+  `shipment {platform, ready: true}`: freight readiness for the planet it stops at (else the stop it flies to): its
+  gate (as `platform_gate`), the requests from there not delivered, each silo of ours there (its rocket; automatic
+  requests on or off and for which platform it fills; each request of this platform with its flag, the payload a
+  rocket waits for, the network's stock and what the rocket holds of it; the circuit and logistic conditions of
+  inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
+  hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
+  minute.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and

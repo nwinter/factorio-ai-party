@@ -67,17 +67,24 @@ return function(api)
     -- the surface's silos, found once a minute (a whole-surface search: 5-8 ms on the copy of world n), kept in storage
     local sc = api.state(); sc.shipment_silos = sc.shipment_silos or {}
     local c = s and sc.shipment_silos[s.index]
-    if s and not (c and game.tick - c.tick < 3600) then
-      c = {tick=game.tick, list=try(function() return s.find_entities_filtered{type='rocket-silo'} end) or {}}
+    -- (batch31 B1) the landing pads too, in the same search
+    if s and not (c and game.tick - c.tick < 3600 and c.pads) then
+      c = {tick=game.tick, list={}, pads={}}
+      for _, e in ipairs(try(function() return s.find_entities_filtered{type={'rocket-silo', 'cargo-landing-pad'}} end) or {}) do
+        table.insert(e.type == 'rocket-silo' and c.list or c.pads, e)
+      end
       sc.shipment_silos[s.index] = c
     end
+    out.pads = {}
+    for _, e in ipairs(c and c.pads or {}) do if e.valid and e.force == force then out.pads[#out.pads+1] = e end end
     for _, e in ipairs(c and c.list or {}) do
       if e.valid and e.force == force then
       local x = {e=e, auto=try(function() return e.use_transitional_requests end) == true,
         target=try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end), cargo=rocket_cargo(e), coming=bringing(e)}
       out.list[#out.list+1] = x
       if x.auto and api.request_rows then
-        for _, r in ipairs(try(function() return api.request_rows(e, force) end) or {}) do
+        x.rows = try(function() return api.request_rows(e, force, platform) end) or {}
+        for _, r in ipairs(x.rows) do
           if r.platform == platform and not out.flags[r.item] then out.flags[r.item] = r end
         end
       end
@@ -128,8 +135,8 @@ return function(api)
     return row
   end
   -- Every row and line of one platform: {lines, rows}.
-  -- fast (the tick): the states alone, no stop texts or pad asks.
-  function M.platform(pl, cache, only, fast)
+  -- fast (the tick): the states alone, no stop texts or pad asks. at: that planet's stop alone.
+  function M.platform(pl, cache, only, fast, at_planet)
     local lines, rows = {}, {}
     local sch = try(function() return pl.schedule end)
     local records = sch and sch.records or {}
@@ -144,6 +151,7 @@ return function(api)
     for name in pairs(reqs) do if name ~= 'any' and not seen[name] then seen[name] = true; planets[#planets+1] = {name=name} end end
     for _, st in ipairs(planets) do
       local planet = st.name
+      if at_planet and planet ~= at_planet then goto next_planet end
       local here = w.stopped and w.at == planet
       local head = st.i and (stops[st.i] or (st.i .. ' ' .. planet)) or (planet .. ' (not in the schedule)')
       local parts = {}
@@ -195,6 +203,7 @@ return function(api)
       if #parts > 0 or not only then
         lines[#lines+1] = string.format('%s: %s%s', pl.name, head, #parts > 0 and '; ' .. table.concat(parts, '; ') or '; no request imports from ' .. planet)
       end
+      ::next_planet::
     end
     return lines, rows
   end
@@ -248,7 +257,147 @@ return function(api)
     table.sort(lines)
     return #lines > 0 and lines or nil
   end
+  -- shipment {platform, ready: true} (d17 batch31 B1, Luna 06:20: one compact platform/silo freight readiness read, with
+  -- circuit-gate actuals, cargo pad free slots at descent and the silo's minimum-payload waiting reason): for the planet
+  -- the platform stops at (else the stop it flies to, or planet): the platform's gate (platform_gate, a circuit wait with
+  -- what the hub's wires read); each hub request from there not delivered with its state (the rows above); each silo of
+  -- ours there (up to SILOS): its rocket, its automatic requests and why it waits (this platform's rows of silo's
+  -- request_rows: the flag, the payload a rocket waits for, the network's stock, with what the rocket holds of it), and the circuit and logistic
+  -- conditions of the inserters and loaders within FEED tiles (gates' rows, with what each reads now); the landing pads
+  -- there (up to PADS): free slots each, and per item the hub would send down (the pads' asks less what they hold, the
+  -- hub's own requests kept) what the pads can take of it now and the slots it takes. Read only.
+  local SILOS, PADS, FEED, GATED = 4, 8, 8, 16
+  local FEED_TYPES = {'inserter', 'loader', 'loader-1x1'}
+  function M.ready(p, pl)
+    local lines, out = {}, {platform=pl.name}
+    local g = api.gate and try(function() return api.gate(p, {platform=pl.name}) end)
+    lines[#lines+1] = 'gate: ' .. (g and g.lines and g.lines[1] or '?')
+    local w = api.where and try(function() return api.where(pl) end) or {}
+    local sch = try(function() return pl.schedule end)
+    local rec = sch and sch.records and sch.records[sch.current or 1]
+    local planet = w.stopped and w.at or (rec and rec.station)
+    if not (planet and game.planets[planet]) then
+      lines[#lines+1] = 'no planet: the platform is not stopped at one and its schedule names none'
+      return {lines=lines, platform=pl.name}
+    end
+    out.planet = planet
+    local here = w.stopped and w.at == planet
+    lines[#lines+1] = here and string.format('stopped at %s', planet) or string.format('not stopped at %s (%s): its silos load for it once it is, its pads take cargo then', planet, w.text or '?')
+    -- up: the requests from there not delivered
+    local cache = {}
+    local _, rows = M.platform(pl, cache, nil, true, planet)
+    local up, done = {}, 0
+    for _, r in ipairs(rows) do
+      if r.direction == 'up' and r.planet == planet then
+        if r.state == 'delivered' then done = done + 1 elseif #up < 12 then up[#up+1] = r.line end
+      end
+    end
+    lines[#lines+1] = string.format('up from %s: %s', planet, #up > 0 and table.concat(up, '; ') .. (done > 0 and string.format('; %d more delivered', done) or '')
+      or (done > 0 and string.format('all %d requests delivered', done) or 'no hub request imports from ' .. planet))
+    -- the silos there
+    local sil = silos_at(cache, pl.force, planet, pl.name)
+    out.silos = {}
+    for i, x in ipairs(sil.list) do
+      if i > SILOS then lines[#lines+1] = string.format('+%d more silos on %s', #sil.list - SILOS, planet); break end
+      local e = x.e
+      local parts = {}
+      local rk = api.rocket and try(function() return api.rocket(e) end)
+      parts[#parts+1] = rk and rk.rocket_now or '?'
+      if x.auto then
+        -- why it waits, this platform's requests alone: each with what the rocket holds of it
+        local why = {}
+        for _, r in ipairs(x.rows or {}) do
+          if r.platform == pl.name and #why < 8 then why[#why+1] = string.format('%s; its rocket holds %d of it', r.line or r.item, x.cargo[r.item] or 0) end
+        end
+        local held = items_text(x.cargo)
+        parts[#parts+1] = 'automatic requests on' .. (x.target and ', filling a rocket for ' .. x.target or ', no platform taken up now')
+          .. (held and '; its rocket holds ' .. held or '')
+          .. (#why > 0 and '; ' .. pl.name .. ' asks ' .. planet .. ' for what it lacks: ' .. table.concat(why, '; ')
+            or (here and '; ' .. pl.name .. ' lacks nothing it asks ' .. planet .. ' for' or ''))
+      else
+        local held = items_text(x.cargo)
+        parts[#parts+1] = 'automatic requests off (a load_silo or a launch by hand sends a rocket)' .. (held and '; its rocket holds ' .. held or '')
+      end
+      local gl, found = {}, {}
+      local bb = e.bounding_box
+      for _, f in ipairs(try(function() return e.surface.find_entities_filtered{area={{bb.left_top.x - FEED, bb.left_top.y - FEED}, {bb.right_bottom.x + FEED, bb.right_bottom.y + FEED}},
+        type=FEED_TYPES, force=pl.force, limit=64} end) or {}) do
+        if #found >= GATED then break end
+        local gr = api.gate_row and try(function() return api.gate_row(f) end)
+        if gr then found[#found+1] = gr; gl[#gl+1] = gr.line end
+      end
+      parts[#parts+1] = #gl > 0 and string.format('conditions within %d tiles: %s', FEED, table.concat(gl, '; ')) or string.format('no inserter or loader within %d tiles has a circuit or logistic condition', FEED)
+      lines[#lines+1] = string.format('silo %s %s: %s', e.name, at(e.position), table.concat(parts, '; '))
+      out.silos[#out.silos+1] = {position={x=e.position.x, y=e.position.y}, auto=x.auto, rocket_ready=rk and rk.rocket_ready or nil, gates=#found > 0 and found or nil}
+    end
+    if #sil.list == 0 then lines[#lines+1] = 'no rocket silo of ours on ' .. planet end
+    -- down: the landing pads there
+    local pads = sil.pads
+    local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
+    local keep = {}
+    for _, list in pairs(requests(pl)) do for item, min in pairs(list) do keep[item] = (keep[item] or 0) + min end end
+    -- what the pads ask (their active sections' minimums) and hold, as freight's pads reads them
+    local ask, hold, invs = {}, {}, {}
+    for i, pad in ipairs(pads) do
+      local ls = try(function() return pad.get_logistic_sections() end)
+      for k = 1, ls and ls.sections_count or 0 do
+        local sec = try(function() return ls.get_section(k) end)
+        for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local name = type(v) == 'table' and v.name or v
+          if type(name) == 'string' and (f.min or 0) > 0 then ask[name] = (ask[name] or 0) + f.min end
+        end
+      end
+      local inv = defines.inventory.cargo_landing_pad_main and try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
+      for _, x in ipairs(inv and try(function() return inv.get_contents() end) or {}) do hold[x.name] = (hold[x.name] or 0) + x.count end
+      invs[i] = inv or false
+    end
+    if #pads == 0 then lines[#lines+1] = 'no landing pad of ours on ' .. planet .. ': what the hub drops there lands with no pad'
+    else
+      local free, pl_parts = 0, {}
+      for i, pad in ipairs(pads) do
+        if i > PADS then break end
+        local inv = invs[i]
+        local f = inv and try(function() return inv.count_empty_stacks() end) or 0
+        free = free + f
+        pl_parts[#pl_parts+1] = string.format('%s %s %d free slots of %d', pad.name, at(pad.position), f, inv and #inv or 0)
+      end
+      local down, slots = {}, 0
+      local names = {}
+      for item in pairs(ask) do names[#names+1] = item end
+      table.sort(names)
+      out.down = {}
+      for _, item in ipairs(names) do
+        local want = ask[item] - (hold[item] or 0)
+        local spare = (counts[item] or 0) - (keep[item] or 0)
+        local n = math.min(want, spare)
+        if n > 0 then
+          local stack = try(function() return prototypes.item[item].stack_size end) or 1
+          local take = 0
+          for _, inv in ipairs(invs) do if inv then take = take + (try(function() return inv.get_insertable_count(item) end) or 0) end end
+          local need = math.ceil(n / stack)
+          slots = slots + need
+          down[#down+1] = string.format('%s %d (pads ask %d, hold %d; %d slots; the pads can take %d of it now%s)', item, n, ask[item], hold[item] or 0, need, take,
+            take < n and string.format(', %d short', n - take) or '')
+          out.down[#out.down+1] = {item=item, count=n, slots=need, pads_take=take}
+        end
+      end
+      lines[#lines+1] = string.format('landing pads on %s: %s%s; %s', planet, table.concat(pl_parts, ', '), #pads > PADS and ', ...' or '',
+        #down > 0 and string.format('the hub would send down %s: %d slots in all, %d free%s', table.concat(down, ', '), slots, free, slots > free and ' (fewer)' or '')
+        or 'the hub holds nothing the pads ask for beyond its own requests')
+      out.pad_free_slots = free
+    end
+    out.lines = lines
+    out.note = 'the platform\'s gate, the requests from that planet, its silos and landing pads as the game shows them now; a silo with automatic requests sends a rocket once it holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload); read only'
+    return out
+  end
   function M.read(p, a)
+    if a.ready ~= nil then
+      assert(a.ready == true, 'ready is true')
+      assert(type(a.platform) == 'string' and a.item == nil, 'ready takes platform (one platform name), not item')
+      for _, pl in pairs(p.force.platforms) do if pl.valid and pl.hub and pl.hub.valid and pl.name == a.platform then return M.ready(p, pl) end end
+      error('no platform of ours named ' .. a.platform, 0)
+    end
     assert(a.platform == nil or type(a.platform) == 'string', 'platform is a platform name')
     assert(a.item == nil or (type(a.item) == 'string' and prototypes.item[a.item]), 'item is an item name')
     assert(a.platform ~= nil or a.item ~= nil, 'shipment takes platform or item')
@@ -342,6 +491,7 @@ return function(api)
     return #out > 0 and out or nil
   end
   M.schema = {shipment = {platform='a platform name', item='or an item name: that item on every platform',
+    ready='optional true, with platform: the freight readiness read for the planet it stops at (else the stop it flies to): its gate (a circuit wait with what the hub\'s wires read), the requests from there not delivered, each silo there (its rocket, automatic requests and why it waits: what the rocket holds against the payload it waits for, the request flag; the circuit and logistic conditions of inserters and loaders within 8 tiles with what each reads now), the landing pads there (free slots each; per item the hub would send down: count, slots, what the pads can take of it now). Returns {lines, planet, silos, down, pad_free_slots}',
     returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where); cargo conflict lines: an item the hub holds that the landing pads of two or more coming stops ask, each stop in the order reached with what its pads ask and hold, what goes down there and what is left aboard after it. rows [{platform, planet, item, direction up|down, state, ...}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
   return M
 end
