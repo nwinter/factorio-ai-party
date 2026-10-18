@@ -103,6 +103,11 @@
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
+- `fleet {platform?}`: one line a platform: where it is and its current stop with each departure condition against the
+  hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
+  waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
+  their cargo, thruster fuel and its 10-minute trend, and `waits on`: the first waiting request at the stop it is at
+  with the gate holding it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.

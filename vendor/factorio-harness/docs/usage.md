@@ -6743,3 +6743,81 @@ fh watch    # deploy on every change
   steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 15 (foundation laid on it makes it
   buildable; foundation is not researched)`. An entity with tile rules (an asteroid collector) gives the broken rule.
   tests/d17_batch20.lua.
+
+### Group B
+- B1 (Luna): watching three Gleba breeders and egg belts took paged full inspects, cut off when long. `inspect
+  {positions: [...], compact: true}` (1..32 positions, one line each, as before) now adds to each line:
+  - `spoil:` each spoilable item in it (its inventories, a belt's lanes, an inserter's hand): count and count-weighted
+    spoiled share (up to 4 items), then `first:` where, and the first stack's time to spoil or hatch;
+  - `hatch:` the hatch warning (how many hatch into what, the first in, how many within 5 min);
+  - `circuit:` its circuit condition with each signal's value on its red and green wires now and whether it holds; its
+    logistic condition with the item's count in the logistic network there; `it is off by its condition` or `it is on`
+    (circuits.condition_parts, which inserter_line now uses too).
+  e.g. `biochamber (6.5,4.5): recipe pentapod-egg; in: bioflux*40; spoil: bioflux*40 35% spoiled; first: in
+  bioflux*40: the first spoils in 2m00s (...); circuit: enabled when bioflux > 200 (on its wires: item:bioflux 150):
+  false now, it is off by its condition`. runtime_test.lua.
+- B2 (Haiku): finding a depleted drill among the 45 on the south copper patch took a guessed position; scan's radius
+  stops at 64. `ores {patch: {x,y}}` (with `resource` to choose among overlapping kinds) keeps only the patch with ore at
+  or within 8 tiles of that position and adds `drill_list`: every mining drill of ours whose mining area meets the
+  patch and that mines its ore or nothing, one line each: `(59,3) electric-mining-drill no_minable_resources: 4,000
+  iron-ore under it (4 tiles)`. Stopped drills first, then the least ore under them, then reading order; up to 200
+  lines (`drill_list_note` gives the count past that). One find over the patch's box and one small resource find per
+  drill. A position with no patch within 8 tiles is refused with the nearest patch. tests/ores.lua.
+- B3 (Sonnet): finding a cut on a 500-tile belt line meant walking it. `belt_gaps {line: {x,y}}` (a belt,
+  underground or splitter of ours there, built or ghost) follows the line both ways (linecut.lua M.line, beside
+  batch17's line_cut code): belt neighbours, an underground to its pair, a splitter's first output or input (the
+  others in `branches`), in chunks our force sees now or within 32 tiles of you, up to 4096 tiles each way. At an end
+  it looks up to 16 tiles on in the belt's direction (upstream: behind it): a belt of ours facing the same way there
+  is the line going on; the tiles between are a gap, each `empty` or naming what stands on it (`medium-electric-pole
+  (20.5,0.5) stands on (20.5,0.5)`), and the walk goes on from that belt. Else the line stops there: `head` and `end`
+  say where and why (nothing within 16 tiles, what stands on the next tile, a chunk not seen now, a loop). `line`:
+  `the line through (30.5,0.5): 38 belt tiles from (0.5,0.5) to (40.5,0.5); 2 gaps: ...`. A gap that turns a corner
+  is not bridged (the probe is straight on). tests/d17_batch20.lua.
+- B4 (Sol): every port visit took silo, platform and queue reads, and a queue step done was once read as cargo aboard.
+  `fleet {platform?}` (fleet.lua; a read, also in the remote lane and `--then`) gives one line a platform from the
+  reads that exist, nothing new scanned:
+  - where it is and the current stop with each departure condition against what the hub holds (platform_gate);
+  - `hub holds`: the hub's 6 largest stacks now (what is aboard, read from the hub);
+  - `requests:` shipment.lua's rows by state (delivered, in flight, launched, loading, waiting), the ones on their way
+    named; `aboard for PLANET's pads`: what that stop's landing pads ask of the hub now;
+  - the rockets on the way to it now and their cargo (freight.incoming), thruster fuel and its 10-minute trend
+    (space.fuel_text, split out of platforms compact);
+  - `waits on`: the first waiting request at the stop it is at (else the first), with the gate holding it.
+  Its cost is shipment's for the same platforms plus the gate line (shipment measured 61-77 ms for all platforms on
+  the copy of world n). tests/d17_batch20.lua.
+
+### Group C
+- C1 (Grok): a gate on bioflux over 200 and agricultural science under 500 was flipped by hand about six times; an
+  inserter's logistic condition holds one test. The game's way is a decider combinator reading the logistic network
+  (a roboport set to read its items) with both tests joined by and, wired to the inserter's circuit condition. A
+  helper, `circuit_gate {position, all: [cond, ...], at?, source?}` (circgate.lua), does what a player does by hand
+  with the calls an agent has, in this order: `build` a decider-combinator from the character's inventory (a free tile
+  in build reach and within wire reach of the entity and the source, nearest the entity; or `at`); `circuit_set` the
+  roboport to read its network's items (when the source is a roboport); a red `wire` source -> decider input;
+  `circuit_set` the decider (every test, `and`, output signal-check 1); a green `wire` decider output -> entity;
+  `circuit_set` the entity enabled when signal-check > 0, its logistic condition off. It is survival-fair: the decider
+  comes from the agent's inventory and each step is an action the agent could call itself. A failed step stops it and
+  says what was done and the calls left; no decider held or no tile within reach of both: refused first, with the
+  calls. tests/d17_batch20.lua (the calls and their arguments, a failed step, the refusal).
+- C2 (Grok): spoilage filled yumako and nutrient chests and each clear was a walk (about 8 a shift). requests could
+  read the trash-unrequested switch (reqchest.lua, trash.lua) and not set it. `requests {position, trash_unrequested:
+  true|false}` sets it on a requester or buffer chest, a hub or your own logistics (`target: character`), read back from
+  the game; the reply's `trash_unrequested`: `on: robots take to storage what no request names: spoilage*34` (a chest:
+  what it holds now that no active section names), or `off`. Grok's spoilage clears in shift30 were 18 from passive
+  provider chests and 2 from requester chests. A passive provider, active provider or storage chest has no such
+  switch; the refusal says so with what the game does: robots take spoilage from it only to a requester or buffer
+  that requests spoilage, and an inserter filtered to spoilage moves it into the chest it drops into (an active
+  provider's contents go to storage). tests/d17_batch20.lua.
+- C3 (Opus): died at 111h33 when the walk to a firing spot clipped a big worm's range; shoot refused five times in
+  shift30 with `firing position must be locally visible`.
+  - "Locally visible" was: within 32 tiles of the character and in a chunk our force sees now. A player aims at what
+    the screen and map show; a rocket launcher reaches 36 tiles. shoot now takes a position in a chunk our force sees
+    now within 32 tiles or the selected gun's range, the larger (M.shoot_sight); the refusal says the distance, the
+    limit and whether the chunk is seen now.
+  - `move_to {stand_off: {target: {x,y}, reach: N}}` (standoff.lua): the spot within N tiles of the target outside
+    every worm's range, spawner's reach and area under attack the map shows plus the avoid_enemies margin (as move_to's
+    own goal check counts them: avoid.margin_discs), the one nearest the character (rings round the target every tile
+    from N - 0.5 in, every 5 degrees, on charted chunks). With none clear of the margin it takes their bare reach and
+    says so; with none (a 36-tile weapon against a 38-tile worm) it is refused naming them. Then a plain move_to there,
+    with its avoidance on the way. The reply's `stand_off` names the spot, its distance from the target and the
+    nearest reach edge. tests/d17_batch20.lua, runtime_test.lua.

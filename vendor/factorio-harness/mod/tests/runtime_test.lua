@@ -4379,6 +4379,32 @@ end)()
   -- One position: one line.
   short=call('inspect',{position=a.position,compact=true})
   eq(short.count,1); eq(short.lines[1],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  -- (d17 batch20 B1, Luna) what spoils in it and its circuit condition with the value on its wires now.
+  do
+    local stacks={{valid_for_read=true,name='bioflux',count=30,spoil_tick=game.tick+7200,spoil_percent=0.4},
+      {valid_for_read=true,name='bioflux',count=10,spoil_tick=game.tick+18000,spoil_percent=0.2}}
+    local sinv=inv({{name='bioflux',count=40,quality='normal'}},4)
+    setmetatable(sinv,{__len=function() return 2 end,__index=function(_,i) return stacks[i] end})
+    defines.wire_connector_id=defines.wire_connector_id or {}
+    defines.wire_connector_id.circuit_red=defines.wire_connector_id.circuit_red or 1
+    defines.wire_connector_id.circuit_green=defines.wire_connector_id.circuit_green or 2
+    defines.entity_status=defines.entity_status or {}
+    defines.entity_status.disabled_by_control_behavior=defines.entity_status.disabled_by_control_behavior or 9001
+    local net={get_signal=function(sig) return sig.name=='bioflux' and 150 or 0 end}
+    local bio={valid=true,name='biochamber',type='assembling-machine',position={x=6.5,y=4.5},force=p.force,status=defines.entity_status.disabled_by_control_behavior,
+      get_recipe=function() return {name='pentapod-egg'} end,
+      get_inventory=function(i) if i==902 then return sinv end end,
+      get_circuit_network=function(w) return w==defines.wire_connector_id.circuit_green and net or nil end,
+      get_control_behavior=function() return {circuit_condition={first_signal={type='item',name='bioflux'},comparator='>',constant=200}} end}
+    local read=runtime.circuits.read
+    runtime.circuits.read=function() return {enable='bioflux > 200',enable_met=false} end
+    list[#list+1]=bio
+    short=call('inspect',{positions={bio.position},compact=true})
+    runtime.circuits.read=read
+    list[#list]=nil
+    assert(short.lines[1]:find('spoil: bioflux*40 35% spoiled; first: in bioflux*40: the first spoils in 2m00s',1,true),short.lines[1])
+    assert(short.lines[1]:find('all within 5 min; circuit: enabled when bioflux > 200 (on its wires: item:bioflux 150): false now, it is off by its condition',1,true),short.lines[1])
+  end
   fails(function() call('inspect',{position=a.position,compact='yes'}) end,'compact must be true or false')
   p.surface.find_entities_filtered=function(f) if f.area and f.force then return list end return {} end
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
@@ -5456,5 +5482,16 @@ do
   eq(ok,false); assert(tostring(err):find('unknown argument step_options',1,true),'step_options is docs, not an argument: '..tostring(err))
   ok,err=pcall(call,'guards',{})
   eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
+end
+-- shoot aims within 32 tiles or the selected gun's range, the larger, in a chunk our force sees (d17 batch20 C3).
+do
+  local rows,where,vis=runtime.gun_rows,p.position,p.force.is_chunk_visible
+  runtime.gun_rows=function() return {{index=2,gun='rocket-launcher',range=36}} end
+  p.position={x=0,y=0}; p.force.is_chunk_visible=function() return true end
+  runtime.shoot_sight(p,{x=35,y=0},2)
+  fails(function() runtime.shoot_sight(p,{x=37,y=0},2) end,'firing position (37,0) is 37.0 tiles from you; shoot aims within 36 tiles (32, or the selected gun\'s range: 36, the larger)')
+  p.force.is_chunk_visible=function() return false end
+  fails(function() runtime.shoot_sight(p,{x=20,y=0},2) end,'20.0 tiles from you in a chunk our force does not see now')
+  runtime.gun_rows,p.position,p.force.is_chunk_visible=rows,where,vis
 end
 print('runtime: '..assertions..' assertions passed')

@@ -1,6 +1,10 @@
-- `move_to {position | target, reach?, via?, tolerance?, ticks?, avoid_enemies?, ...}`: walks your character there on
-  the engine's path, over shallow water, wetland and Fulgora's oil ocean, deep too. Without `ticks` the time limit
-  scales with the route's length (`limit`).
+- `move_to {position | target | stand_off, reach?, via?, tolerance?, ticks?, avoid_enemies?, ...}`: walks your character
+  there on the engine's path, over shallow water, wetland and Fulgora's oil ocean, deep too. Without `ticks` the time
+  limit scales with the route's length (`limit`).
+  - `{"stand_off":{"target":{"x":425,"y":-410},"reach":36}}` walks to the spot within `reach` tiles of the target outside
+    every worm's range, spawner's reach and area under attack the map shows plus the `avoid_enemies` margin, the one
+    nearest you; with none clear of the margin, at their bare reach (said); with none at all, refused naming them.
+    `stand_off` in the reply: where, how far from the target, the nearest reach edge.
   - `{"target":{"position":{"x":-75.5,"y":-86.5}},"reach":"transfer"}` (reach `build` or tiles; a vehicle by
     `{"unit_number":N}`) walks until you are within reach of that entity (`last.reach`; transfer reach to its box,
     build reach to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does
@@ -89,7 +93,8 @@
   statistics) and `fed_by` inserters (a piece one refills keeps its count after a shot). `configure {position,
   auto_targeting: false}` switches targeting off; `use_item {"item":"artillery-targeting-remote","position":{...}}`
   puts a flare there for the pieces in range.
-- `shoot {position | auto, gun?, ammo?, ticks?, fire_anyway?}`: fires at the position (`auto: true`: the nearest enemy); replies
+- `shoot {position | auto, gun?, ammo?, ticks?, fire_anyway?}`: fires at the position (`auto: true`: the nearest enemy); the
+  position is within 32 tiles of you or the selected gun's range, the larger, in a chunk our force sees now; replies
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
   `last_combat.why_none` when nothing fired. Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
   position whose blast reaches our own entities is refused, naming them; `auto` holds fire at such a target

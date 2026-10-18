@@ -604,6 +604,47 @@ return function(api)
     return table.concat(list, ', ')
   end
   local function fmt(n) return tostring(round(n)):reverse():gsub('(%d%d%d)', '%1,'):reverse():gsub('^,', '') end
+  -- Every drill of ours on the patch, one line each (d17 batch20 B2, Haiku: the 45 south copper drills, past the 64-tile
+  -- scan radius): position, name, status, what it mines, the patch's ore under its mining area; the stopped ones first,
+  -- then the least ore under them. At most MAX_LIST lines; the count of all.
+  M.MAX_LIST = 200
+  local function drill_list(surface, force, q)
+    local rows = {}
+    local found = surface.find_entities_filtered{area={{q.l-5, q.t-5}, {q.r+5, q.b+5}}, type='mining-drill', force=force}
+    for _, d in pairs(found) do
+      if d.valid then
+        local r = radius[d.name]
+        if not r then r = try(function() return d.prototype.mining_drill_radius end) or 1; radius[d.name] = r end
+        local x, y = d.position.x, d.position.y
+        local target = try(function() return d.mining_target end)
+        local mines = target and target.valid and target.name
+        if x+r > q.l and x-r < q.r and y+r > q.t and y-r < q.b and (not mines or mines == q.name) then
+          local amount, tiles = 0, 0
+          if #rows < M.MAX_LIST then
+            for _, o in pairs(surface.find_entities_filtered{area={{x-r, y-r}, {x+r, y+r}}, type='resource', name=q.name}) do
+              tiles, amount = tiles+1, amount+o.amount
+            end
+          end
+          local st = status_name(d.status)
+          rows[#rows+1] = {x=x, y=y, name=d.name, st=st, tiles=tiles, amount=amount}
+        end
+      end
+    end
+    table.sort(rows, function(u, v)
+      local uw, vw = u.st == 'working' and 1 or 0, v.st == 'working' and 1 or 0
+      if uw ~= vw then return uw < vw end
+      if u.amount ~= v.amount then return u.amount < v.amount end
+      if u.y ~= v.y then return u.y < v.y end
+      return u.x < v.x
+    end)
+    local lines = {}
+    for i = 1, math.min(#rows, M.MAX_LIST) do
+      local u = rows[i]
+      lines[i] = string.format('(%g,%g) %s %s: %s', u.x, u.y, u.name, u.st,
+        u.tiles == 0 and 'no ' .. q.name .. ' under it' or string.format('%s %s under it (%d tiles)', fmt(u.amount), q.name, u.tiles))
+    end
+    return lines, #rows
+  end
 
   function M.handlers.ores(p, a)
     a = a or {}
@@ -678,6 +719,21 @@ return function(api)
     end
     -- The rows' chunks read again (each row counts its own tiles and amount from them below).
     local rows, totals, torder = select()
+    -- patch: the one patch with ore at or within 8 tiles of that position, with every drill of ours on it (B2).
+    local only
+    if a.patch ~= nil then
+      local pp = api.position(a.patch)
+      local best, bd
+      for _, r in ipairs(rows) do
+        local d = to_patch(r.q, pp.x, pp.y, bd)
+        if not bd or d < bd then best, bd = r, d end
+      end
+      if not best or bd > 8 then
+        error(string.format('no %spatch with ore within 8 tiles of (%g,%g) in the %d charted chunks read so far%s', want and 'such ' or '', pp.x, pp.y, entry.count,
+          best and string.format('; the nearest is %s %s, %d tiles off', best.q.name, box_text(best.q), round(bd)) or ''), 0)
+      end
+      rows, only = {best}, best
+    end
     refresh(entry, surface, force, rows, limit)
     local out = {}
     local checks = {left=M.MAX_UNDER}
@@ -711,6 +767,11 @@ return function(api)
         end
         row.depleted_drills = table.concat(parts, '; ')
       end
+      if only then
+        local lines, n = drill_list(surface, force, q)
+        row.drill_list = lines
+        row.drill_list_note = n > #lines and string.format('%d drills; the first %d listed', n, #lines) or nil
+      end
       if d then row.distance = round(d); row.direction = d > 0 and compass(origin, q.centre) or nil end
       if q.building_d then
         row.from_building = round(q.building_d)
@@ -743,6 +804,7 @@ return function(api)
       survey_error=fault and 'a background read failed and ended its pass (this call began another): '..fault or nil}
   end
   M.schema.ores = {resource='optional resource name or array (iron-ore, crude-oil, ...; default every resource)',
+    patch='optional {x,y}: only the patch with ore at or within 8 tiles of it, with drill_list: every mining drill of ours on it, one line each (position, name, status, the patch\'s ore under its mining area), stopped ones first, then the least ore; at most '..M.MAX_LIST..' lines (drill_list_note gives the count past that)',
     surface='optional planet or surface name (default yours)', position='optional {x,y}: measure distance from here instead of the character',
     min_amount='optional: leave out patches with less left (oil and other infinite resources: their yield %)', limit='1..100 patches (default 20)',
     returns='read: patches [{resource, centre, box, tiles (fluids: wells), amount (left; oil and other infinite resources: yield, summed over the wells), distance and direction from you '

@@ -71,6 +71,12 @@ return function(api)
     end
     local e=api.remote_entity(p,a)
     local secs=e.get_logistic_sections and e.get_logistic_sections()
+    if not secs and a.trash_unrequested~=nil then
+      local mode=try(function() return e.prototype.logistic_mode end)
+      error(e.name..' has no trash-unrequested switch (a requester or buffer chest, a hub and your own logistics have one)'
+        ..((mode=='passive-provider' or mode=='storage' or mode=='active-provider') and ('; robots take spoilage from a '..mode..' chest only to a requester or buffer chest that requests spoilage, '
+          ..'and an inserter filtered to spoilage moves it into the chest it drops into (an active provider chest: robots take its contents to storage)') or ''),0)
+    end
     assert(secs,(e.type=='entity-ghost' and 'the ghost of '..e.ghost_name or e.name)..' has no logistic requests')
     -- By remote view on another surface (surface=, Astra 02:20): the reply names it.
     local remote=type(p)=='table' and rawget(p,'__remote')
@@ -221,6 +227,21 @@ return function(api)
       assert(ok,'the game refused from_buffers: '..tostring(err))
     end
     if chest then pcall(function() buffers=chest.request_from_buffers end) end
+    -- Trash unrequested (d17 batch20 C2, Grok: yumako and nutrient chests filled with spoilage, each clear a walk): the
+    -- GUI's checkbox on a requester or buffer chest, a hub and your own logistics; robots take to storage what it holds
+    -- that no request names, spoilage among it.
+    local owner=chest or (a.platform~=nil and M.platform(p,a.platform).hub) or (label=='character' and p.character) or nil
+    local tpoint=owner and try(function() return owner.get_requester_point() end)
+    if a.trash_unrequested~=nil then
+      assert(type(a.trash_unrequested)=='boolean','trash_unrequested must be true or false')
+      local mode=chest and try(function() return chest.prototype.logistic_mode end)
+      assert(tpoint,'trash_unrequested is the trash-unrequested switch of a requester or buffer chest, a hub or your own logistics; '..label..' has none'
+        ..((mode=='passive-provider' or mode=='storage') and ('; robots take spoilage from a '..mode..' chest only to a requester or buffer chest that requests spoilage, '
+          ..'and an inserter filtered to spoilage moves it into the chest it drops into (an active provider chest: robots take its contents to storage)') or ''))
+      local ok,err=pcall(function() tpoint.trash_not_requested=a.trash_unrequested end)
+      local now=try(function() return tpoint.trash_not_requested end)
+      assert(ok and now==a.trash_unrequested,'the game kept trash unrequested '..(now and 'on' or 'off')..(ok and '' or ': '..tostring(err)))
+    end
     -- A hub's Request missing construction materials (Astra, shift12 19:16: a paste switched Starling's off and its
     -- construction requests vanished): switched as the GUI's checkbox does (keep.lua).
     local hub=a.platform~=nil and M.platform(p,a.platform).hub or (chest and chest.type=='space-platform-hub' and chest) or nil
@@ -355,6 +376,27 @@ return function(api)
       if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
     end
     local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
+    -- trash unrequested, when set now or on: what robots take to storage (a chest's items no request names).
+    local ton=tpoint and try(function() return tpoint.trash_not_requested end)
+    if tpoint and (a.trash_unrequested~=nil or ton) then
+      local named={}
+      for i=1,secs.sections_count or 0 do
+        local s_=secs.get_section(i)
+        if s_ and s_.active~=false then
+          for _,f in pairs(try(function() return s_.filters end) or {}) do local n=f.value and (type(f.value.name)=='string' and f.value.name or try(function() return f.value.name.name end)); if n then named[n]=true end end
+        end
+      end
+      local away={}
+      if chest then
+        local inv=try(function() return chest.get_inventory(defines.inventory.chest) end)
+        for _,st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+          if not named[st.name] then away[#away+1]=st.name..'*'..st.count end
+        end
+        table.sort(away)
+      end
+      out.trash_unrequested=ton and ('on: robots take to storage what no request names'..(chest and (#away>0 and ': '..table.concat(away,' ',1,math.min(#away,8))..(#away>8 and ' ...' or '') or ' (it holds none now)') or ''))
+        or 'off: what no request names stays'
+    end
     -- The character's requests not filled, each with why (personal.lua; Haiku, d15: 10 repair packs never came).
     if label=='character' and api.personal then
       local rows=try(function() return api.personal().unfilled(p) end)
@@ -886,13 +928,27 @@ return function(api)
   -- platforms {compact: true} (Astra 13:50: the full read is long): a line a platform: where, ammunition aboard (hub
   -- and turrets), thruster fuel and its 10-minute trend, the ghosts' missing items in all, and only the blockers this
   -- agent was not shown in its last compact read.
+  -- 'thruster fuel 1200 units (+3/min over 10 min)': in its thrusters and tanks, and the platform's net over 10 minutes.
+  function M.fuel_text(pl)
+    local P=defines.flow_precision_index or {}
+    local fuel=0
+    for _,e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}) do
+      for i=1,try(function() return #e.fluidbox end) or 0 do
+        local f=try(function() return e.fluidbox[i] end)
+        if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
+      end
+    end
+    local fs=try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
+    local function per(cat) return fs and P.ten_minutes and (try(function() return fs.get_flow_count{name='thruster-fuel',category=cat,precision_index=P.ten_minutes,count=true} end) or 0)/10 or 0 end
+    local net=per('input')-per('output')
+    return string.format('thruster fuel %d units (%s%d/min over 10 min)',math.floor(fuel+0.5),net>=0 and '+' or '',math.floor(net+0.5))
+  end
   function M.platforms_compact(p,a)
     local st=api.state and api.state()
     local seen_all=st and st.platforms_compact_seen or {}
     if st then st.platforms_compact_seen=seen_all end
     local mine=seen_all[p.index] or {}
     seen_all[p.index]=mine
-    local P=defines.flow_precision_index or {}
     local lines={}
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) and pl.surface then
@@ -911,17 +967,7 @@ return function(api)
         for n,c in pairs(ammo) do al[#al+1]=n..' '..c end
         table.sort(al)
         parts[#parts+1]='ammo '..(#al>0 and table.concat(al,', ') or 'none')
-        local fuel=0
-        for _,e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}) do
-          for i=1,try(function() return #e.fluidbox end) or 0 do
-            local f=try(function() return e.fluidbox[i] end)
-            if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
-          end
-        end
-        local fs=try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
-        local function per(cat) return fs and P.ten_minutes and (try(function() return fs.get_flow_count{name='thruster-fuel',category=cat,precision_index=P.ten_minutes,count=true} end) or 0)/10 or 0 end
-        local net=per('input')-per('output')
-        parts[#parts+1]=string.format('thruster fuel %d units (%s%d/min over 10 min)',math.floor(fuel+0.5),net>=0 and '+' or '',math.floor(net+0.5))
+        parts[#parts+1]=M.fuel_text(pl)
         local blk=try(function() return M.blockers(pl) end) or {}
         local missing=0
         for _,b in ipairs(blk) do
@@ -1640,7 +1686,7 @@ return function(api)
   end
   M.schema={
     platform_gate={platform='optional platform name (default every one of ours)',returns='lines: a line a platform: at station X, moving (the leg as flown, from->to with the share flown) or stopped (paused, no schedule, no path), and the current stop of its schedule with each departure condition and what the hub holds against it (item counts: holds N, met or N to go; time left; unmet requests); note. Read only'},
-    requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
+    requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',trash_unrequested='boolean: the "trash unrequested" switch of a requester or buffer chest, a hub or your own logistics; on, robots take to storage what it holds that no request names (spoilage among it); the reply\'s trash_unrequested says on or off and, for a chest, what it holds that goes',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept),min_payload? (platform hubs: the GUI\'s custom minimum payload for the request, minimum_delivery_count; omitted: the slot\'s is kept; false clears it). Seen on 2.0.77 above Fulgora: with min_payload 10 and min 50, automatic silos sent rockets of 28, 10 and 12 stone, 50 in all; with none, one full rocket (100 concrete for a min of 50). min is how much the hub asks for; min_payload how little a rocket may carry for it} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',

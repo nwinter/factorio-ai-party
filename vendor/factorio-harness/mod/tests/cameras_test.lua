@@ -115,4 +115,13 @@ eq(cams.director(4),false); eq(st.directors[4],nil)
 cams.tick()
 for _,l in ipairs(log) do assert(l~='set_controller' or people[4].controller_type==defines.controllers.spectator) end
 eq(people[4].show_on_map~=false,true)
+-- d17 16:58: the alert reader is a person when one is connected, else a camera client, else none.
+do
+  local cam={index=1,valid=true,connected=true,name='pog-cam1'}
+  local nick={index=4,valid=true,connected=true,name='nick'}
+  local isdir=function(i) return i==1 end
+  eq(cams.alert_reader({players={cam}},isdir),cam)
+  eq(cams.alert_reader({players={cam,nick}},isdir),nick)
+  eq(cams.alert_reader({players={{index=9,valid=true,connected=false}}},isdir),nil)
+end
 print('cameras ok ('..assertions..' assertions)')
