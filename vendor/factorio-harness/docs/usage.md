@@ -7186,3 +7186,10 @@ fh watch    # deploy on every change
 - A4 (Gemini): load_silo `dry_run` already gives each item's weight, the rocket's lift (the game's rocket_lift_weight,
   1000 kg) and room, whether the list fits and the split; a transfer into rocket cargo moves only what fits
   (`weight_limited`). The silo read's `cargo` now adds `room_kg` (the lift left) and its line `(N kg free)`. tests/silo.lua.
+
+## d17 batch24 Group B
+- B1 (Luna: about 15 reads to diagnose Kestrel II): `platform_digest {platform}` runs `platforms`, `platform_supply`,
+  `platform_endurance` and `platform_defense` (their own code) and gives one reply: stopped or blocked first, route and
+  arrival, hub slots and chunks, chunks collected and where they go, crushers, makers, thrusters, tanks, ammunition,
+  turrets, power; `errors` for a read that failed. `platform_supply` now also returns `stops` (every entry not
+  working, in the chain's order; `first_stop` is the first). tests/platdigest.lua.

@@ -98,6 +98,12 @@
   those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
   ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
+- `platform_digest {platform}`: one read of a platform from `platforms`, `platform_supply`, `platform_endurance` and
+  `platform_defense`: first what is stopped or blocked (the supply chain's stops: collectors, crushers, fuel and
+  oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines
+  on no power), then the route and arrival, hub slots and the chunks in it, chunks collected and where each goes,
+  crushers and makers (state, in and out), thrusters, tanks and ammunition (stock, made and used, run-out, stranded),
+  turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
 - `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
   aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no

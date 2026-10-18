@@ -1921,6 +1921,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platplan and M.platplan.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platsupply and M.platsupply.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.platdigest and M.platdigest.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.reservations and M.reservations.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -14277,6 +14278,7 @@ reads.heat_budget=true
 reads.platform_bom=true
 reads.platform_production=true
 reads.platform_defense=true
+reads.platform_digest=true
 reads.circuit_audit=true
 reads.pods=true
 reads.logistics_audit=true
@@ -15632,6 +15634,11 @@ function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
+-- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
+M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,
+  reads={platforms=function(p,a) return handlers.platforms(p,a) end,platform_supply=function(p,a) return handlers.platform_supply(p,a) end,
+    platform_endurance=function(p,a) return handlers.platform_endurance(p,a) end,platform_defense=function(p,a) return handlers.platform_defense(p,a) end}}
+function handlers.platform_digest(p,a) return M.platdigest.read(p,a) end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}
 -- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
