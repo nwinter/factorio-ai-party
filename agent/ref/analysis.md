@@ -155,7 +155,8 @@
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
   placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
   chest they drop into (each drill, what it mines, the chest's slots used and what fills it); a backed-up belt is not
-  said. `kind: "off_by_condition"`: machines off by their own
+  said. `kind: "speaker"`: programmable speakers alerting now (message, icon, since when, who hears it: who built it
+  and agents on its surface; the team block tells each once while it is up). `kind: "off_by_condition"`: machines off by their own
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
   team alert line to its builders and claim owners. `captive_starving`: captive spawners not producing, with the same
