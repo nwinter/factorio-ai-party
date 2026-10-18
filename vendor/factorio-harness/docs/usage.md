@@ -6794,3 +6794,15 @@ fh watch    # deploy on every change
   nearest the character first; up to 8 of them are checked for a closed pocket (pathing.region, 16 tiles out, as the
   dry runs' closed_in check reads it) and the first with a way out is walked to (else the nearest); up to 6 tries.
   runtime_test.lua.
+
+### Group B
+- B1 (Sonnet): inspect's area rows read every pipe and pumpjack `holds: empty` (they read item inventories only), about
+  10 times while he looked for the segment that starved an acid line.
+  - Area rows and compact lines of an entity with fluid boxes now carry `fluid`: each box's fluid and amount over its
+    capacity, its segment's capacity and extent, or `empty` with the fluid it is locked to (pipes.fluids, as scan
+    fields=fluids reads them, without the connections).
+  - `pipe_gaps {line: {x,y}}` (pipegaps.lua M.network): the pipe network through that pipe, pipe-to-ground, tank or
+    pump, followed through fluid neighbours (through pumps too; each starts a segment) in chunks our force sees now, up
+    to 1024 entities. Per fluid segment (the engine's id): fluid and amount over capacity (get_fluid_segment_contents,
+    get_capacity), entities and box, `empty`; flow where the game gives one (get_flow); the machines it touches (not
+    followed into) with each box's fluid. tests/d17_batch21.lua.

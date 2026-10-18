@@ -80,3 +80,34 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch21 A3 a load cut by a launch gives back: ok')
+
+-- B1 (Sonnet): pipe_gaps {line}: the pipe network through one pipe, by fluid segment, empty ones named, machines it joins.
+do
+  local force={name='player'}
+  local function fb(seg,fluid,amount,cap,locked)
+    return setmetatable({get_fluid_segment_id=function() return seg end,
+      get_fluid_segment_contents=function() return fluid and {[fluid]=amount} or {} end,
+      get_capacity=function() return cap end,get_locked_fluid=function() return locked end},{__len=function() return 1 end,__index=function(_,i) return nil end})
+  end
+  local ents={}
+  local function pipe(name,typ,x,seg,fluid,amount,cap,locked)
+    local e={valid=true,name=name,type=typ,position={x=x+0.5,y=0.5},force=force,unit_number=100+x,fluidbox=fb(seg,fluid,amount,cap,locked)}
+    ents[x]=e; return e
+  end
+  for x=1,3 do pipe('pipe','pipe',x,11,'crude-oil',150,300) end
+  pipe('pump','pump',4,12,'crude-oil',20,200)
+  for x=5,6 do pipe('pipe','pipe',x,13,nil,0,200,'crude-oil') end
+  local jack={valid=true,name='pumpjack',type='mining-drill',position={x=0.5,y=1.5},force=force,unit_number=99}
+  for x=1,6 do
+    ents[x].neighbours={{ents[x-1] or jack,ents[x+1]}}
+  end
+  local G=dofile('mod/agent-harness_0.1.0/pipegaps.lua'){position=function(v) return v end,visible=function() return true end,
+    fluids=function(e) return 'crude-oil 10/100' end}
+  local r=G.network({force=force},ents[2])
+  eq(r.entities,6); eq(#r.segments,3)
+  eq(r.segments[1].line,'segment 11 (1.5,0.5)-(3.5,0.5), 3 entities: crude-oil 150/300')
+  eq(r.empty[1],'segment 13 (5.5,0.5)-(6.5,0.5), 2 entities: empty (locked to crude-oil) /200')
+  eq(r.machines[1],'pumpjack (0.5,1.5): crude-oil 10/100')
+  has(r.line,'the pipe network through (2.5,0.5): 6 entities in 3 segments; 1 empty')
+end
+print('d17_batch21 B1 pipe network: ok')

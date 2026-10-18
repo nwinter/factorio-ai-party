@@ -129,8 +129,12 @@
   line) follows the whole line both ways, in chunks our force sees now, up to 4096 tiles each way: at each end a belt of
   ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
   what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
-- `pipe_gaps {from, to, via?}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts where
-  neighbours do not join or the line stops. Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
+- `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
+  where neighbours do not join or the line stops. `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
+  network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities:
+  each fluid segment by the engine's id with its fluid, amount over capacity and box, `empty` (with the fluid it is
+  locked to), and the machines it joins with each box's fluid. inspect's rows and compact lines give an entity's
+  fluid boxes (`fluid`). Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
 - `danger {position?, radius?, surface?}`: a destination before a trip (no position: where you stand): worms and
   spawners on the map round it with their reach, enemy units in sight or radar coverage by name, and those more than
   24 tiles from every spawner in packs (`packs`: count, names, where, how far), apart from those by their nests;

@@ -127,7 +127,9 @@ return function(api)
       end
     end
   end
-  function M.fluids(e)
+  -- heads_only: each box's fluid, amount/capacity, segment and extent, without its connections (d17 batch21 B1, Sonnet:
+  -- inspect's area rows read pipes as empty); joined by ' | '.
+  function M.fluids(e,heads_only)
     local ghost=e.type=='entity-ghost'
     local proto=ghost and e.ghost_prototype or e.prototype
     local conns=engine(e)
@@ -166,7 +168,7 @@ return function(api)
         end
       end
       local words={}
-      for _,c in ipairs(conns or defined(e)) do
+      for _,c in ipairs(heads_only and {} or conns or defined(e)) do
         if c.box==i then
           fluid=fluid or c.fluid
           local flow=FLOW[c.flow] or c.flow
