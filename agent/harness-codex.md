@@ -1,6 +1,33 @@
 ## Your shell (Codex)
 
-`exec_command` returns after `yield_time_ms` (about 10 s by default) while the command keeps running. For a `--wait`
-action or a `wait_until` longer than that, set `yield_time_ms` above the wait, or the reply comes back before the
-result. The opposite also works: start a long action or queue plan with `yield_time_ms` 1000, plan your next step while
-your character works, and read the result before you act on it.
+Your `exec` tool runs JavaScript; in it `tools.exec_command` starts a command and `tools.write_stdin` reads a running
+one. Each `exec` return is a model turn that reads your whole context again (about 150,000 tokens late in a shift):
+a 300 s `./fh sleep` polled 30 s at a time is ten turns. Codex 0.162.1, measured 17 Oct:
+- `exec_command` `yield_time_ms`: 250 to 30000 ms. A command still running then gives `session_id` and
+  no `exit_code`; one that ended gives `exit_code` and no `session_id`.
+- `write_stdin` with `chars: ""` (a poll): `yield_time_ms` 5000 to 300000 ms. It returns when its
+  time is up or when the command exits (then with `exit_code`), not when output appears: a line printed at 20 s came
+  back at 300 s. A session that has ended is gone: polling it again fails `write_stdin failed: Unknown process id`.
+- The `exec` call itself: a first line `// @exec: {"yield_time_ms": 900000}` sets how long it runs before it returns
+  to you (default about 30 s); with 900000 one call ran 401 s. Past that it returns `Script running with cell ID N`,
+  and `wait {cell_id: "N"}` goes on with it.
+- A failed tool call ends the `exec` call at once (`Script failed` and the error).
+
+Example: one `exec` call for a whole sleep, returning within 15 s of the first output, at the exit, or on an error,
+with the session and exit code:
+
+```js
+// @exec: {"yield_time_ms": 900000}
+const t0 = Date.now();
+let r = await tools.exec_command({cmd: "./fh sleep 300", yield_time_ms: 15000});
+const session_id = r.session_id;
+let output = r.output ?? "";
+while (r.exit_code === undefined && output === "") {
+  r = await tools.write_stdin({session_id, chars: "", yield_time_ms: 15000});
+  output += r.output ?? "";
+}
+text(JSON.stringify({session_id, exit_code: r.exit_code, s: (Date.now() - t0) / 1000, output}));
+```
+
+With `exit_code` undefined it still runs (a `--wait` action prints its acceptance first): poll that `session_id` the
+same way.

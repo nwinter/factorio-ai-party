@@ -71,6 +71,14 @@ return function(api, H)
     end
     return m
   end
+  -- What a drill drops: its resource's products.
+  local function drill_items(d)
+    local m = {}
+    local res = try(function() return d.mining_target end)
+    local mp = res and try(function() return res.prototype.mineable_properties end)
+    for _, pr in ipairs(mp and mp.products or {}) do if pr.name then m[pr.name] = 1 end end
+    return m
+  end
   -- Whether a source an inserter reads can give item: it holds some, or a machine there makes it.
   local function gives(src, item, m)
     if not item or m[item] then return true end
@@ -81,14 +89,6 @@ return function(api, H)
     end
     if src.type == 'mining-drill' then return drill_items(src)[item] ~= nil end
     return false
-  end
-  -- What a drill drops: its resource's products.
-  local function drill_items(d)
-    local m = {}
-    local res = try(function() return d.mining_target end)
-    local mp = res and try(function() return res.prototype.mineable_properties end)
-    for _, pr in ipairs(mp and mp.products or {}) do if pr.name then m[pr.name] = 1 end end
-    return m
   end
 
   -- Per 32-tile cell: inserters (trace.lua's index) and mining drills by what they drop onto.

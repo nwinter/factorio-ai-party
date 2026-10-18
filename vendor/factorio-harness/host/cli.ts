@@ -960,6 +960,17 @@ async function main() {
     if (values.peek) args.peek = true;
     values.args = JSON.stringify(args);
   }
+  // fh call sleep SECONDS (d17 study P2: Luna 21 times, each refused for want of JSON seconds): seconds, through the
+  // same blocking sleep. More words, a word that is not a whole number, or JSON seconds that differ: refused.
+  if (command === 'call' && positionals[1] === 'sleep' && positionals.length > 2) {
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    const word = positionals[2]!;
+    if (positionals.length > 3 || !/^\d+$/.test(word)) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS or fh call sleep SECONDS');
+    const seconds = Number(word);
+    if (args.seconds !== undefined && args.seconds !== seconds) throw new Error(`sleep seconds given twice (${word} and --args seconds ${JSON.stringify(args.seconds)})`);
+    values.args = JSON.stringify({...args, seconds});
+    positionals.splice(2);
+  }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep','help']);
   if (!known.has(command) && /^[a-z][a-z0-9_]*$/.test(command)) {
     cliCorrected = `fh ${command} runs as fh call ${command}`;
