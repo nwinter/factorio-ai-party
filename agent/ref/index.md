@@ -8,7 +8,7 @@
   `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
   `belt_route`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `rebuild`, `blueprint_save`,
   `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`.
-- `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_gate`, `circuit_audit`, `configure`,
+- `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `configure`,
   `assembler_batch`, `requests`.
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
   `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.

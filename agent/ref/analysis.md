@@ -45,7 +45,9 @@
   `per_min: 30`: each step's rate for that target, what it makes now, its makers' rate each and the machines the target
   takes; an ingredient is counted net of what its recipe gives back (asteroid crushing). A fluid adds `shares`: each
   recipe's machines and share of the fluid at full speed. `all_stopped: true`: every maker not working, grouped by
-  cluster with every position. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
+  cluster with every position. A maker stopped by its own circuit or logistic condition carries the gate inline (the
+  condition and what it reads now), in bottleneck's groups (`gate`, with area or positions) and in supply's and
+  bottleneck item's maker lines. Example: `./fh call bottleneck --args '{"item":"processing-unit","per_min":30}'`
 - `trace {position | item, platform? | surface?, forward?, audit?, upstream?, throughput?, circuit?, all?, near?,
   radius?}`: on a machine or lab, per ingredient it lacks each feeding inserter, what that inserter reads and how much
   is there, and a container within 10 tiles holding it that nothing reads. `forward: true` follows its output inserters
@@ -152,7 +154,9 @@
   spawners on the map round it with their reach, enemy units in sight or radar coverage by name, and those more than
   24 tiles from every spawner in packs (`packs`: count, names, where, how far), apart from those by their nests;
   attacks, losses, groups and deaths there; the nests the straight line from you passes; your health, armor and
-  shield. Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
+  shield; `eggs`: each egg site within the radius that hatches (count, holder, the first hatch time), with the turrets
+  of ours in range of it (ready: ammunition, power or fluid; in range without). The egg alerts name the same turrets.
+  Example: `./fh call danger --args '{"position":{"x":-190,"y":-31}}'`
 - `drill_sites {position, resource?, radius?, limit?, surface?}`: for one depleted drill of ours, the nearest visible
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named

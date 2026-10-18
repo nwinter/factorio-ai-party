@@ -7024,3 +7024,79 @@ fh watch    # deploy on every change
   `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
   hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
   deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+
+## d17 batch22 (operator 18:30: the agents' 18:20 poll)
+- A1 (Sol and Astra): a sparse Kestrel II floor refused about 100 placements while footprint audits said clear, and a
+  bridge's dry run listed both void regions (hundreds of tiles for one gap).
+  - The rules are tilecheck.lua's, as the game showed them on a copy of world n (platformtiles2): the hub builds a
+    foundation ghost only with foundation among its 8 neighbours (a corner is enough) and its empty side neighbours in
+    one run. No copy was reachable this time (the sandbox refused the docker socket and SSH, and the dev worlds refused
+    RCON); one read-only check on world n (3.1 ms) played them over 64 of Kestrel II's 301 tile ghosts: 52 buildable
+    (the hub holds no foundation), 10 held because building them would split empty space, 2 with no foundation near.
+  - A dry run on a platform now plays those rules (tilecheck M.play) over the new tiles and the ghosts ordered:
+    `tiles.unbuilt` names each tile that stays unbuilt and why (up to 12; `unbuilt_count`). For tiles with no
+    foundation near, `tiles.connect` (and `connect_line`) gives the fewest tiles that join them to the built floor:
+    the shortest chain touching by sides or corners (M.connect, within 48 tiles), played again with them to say
+    whether every tile then builds.
+  - Holes: beside each new tile, an enclosed region needs filling when open space is beside that tile too; with only
+    enclosed regions round it, all but the largest. A region no new tile needs filled is left out (`holes_other`).
+    A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
+  - A refused entity ghost over empty space on a platform says the dry run gives those fields.
+  tests/dryrun.lua.
+- A2 (Astra): a partial load went up with two underground belts and a rocket was spent. `load_silo {launch,
+  all_or_nothing: true}`: before the launch the rocket is read again; every listed item must be aboard at its count
+  (to_total: the count; else what was aboard before and the count), else `not launched (all_or_nothing): the rocket
+  holds X of Y` and the load stays in the silo. A short row was already refused without up_to; all_or_nothing refuses
+  up_to and launch_split beside it (one rocket, the whole list) and says `every listed item aboard in full: launched`.
+  tests/rocketload.lua.
+- A3 (Gemini): `load_silo {walk: true, chests: false}` was refused; a walk without from already loaded from your own
+  inventory. chests: false now goes with walk (the same walk); with from it is refused; chests: true with walk is
+  refused as before. tests/rocketload.lua.
+- A4 (Gemini): a launch to a hub whose slots were taken (asteroid chunks among them) jams its pods. rocketload.hub_room
+  counts the hub slots a cargo takes after topping up the hub's part stacks of the same items, against the hub's free
+  slots, and the slots asteroid chunks take: `the cargo takes 2 hub slots; the hub has 1 of 99 free (asteroid chunks
+  take 40): it does not fit`. launch (space.lua) refuses a cargo that does not fit unless `hub_full: true` (then said
+  in `hub_full`); load_silo launches through it; load_silo's dry run gives `platform_hub_room` (the list and what is
+  aboard); preflight's platform line and `hub_room` give it for the rocket's cargo. tests/d17_batch22.lua.
+
+### Group B
+- B1 (Luna): hatch timers ran out with the defense already gone. `danger {position, radius}` now has `eggs`: each egg
+  site the watch keeps within the radius that hatches (spoil.lua M.near: count, holder, the first hatch time, nearest
+  first, up to 8), with the turrets of ours whose range covers it (danger.lua M.coverage: gun and rocket turrets with
+  ammunition, laser turrets with power, flamethrowers with fluid as ready, the rest in range counted; one find within 40
+  tiles): `12 pentapod-egg in requester-chest at (0,0): the first hatches in 10s; in range of 1 turret ready (1
+  gun-turret), 1 more in range without ammunition, power or fluid`. The team block's egg alerts end with the same
+  coverage. tests/d17_batch22.lua.
+- B2 (Muse): three times a stopped line read as a shortage and was stock-gated by design. A maker whose status is
+  disabled_by_control_behavior now carries its gate inline, from thrust.state_text (the circuit condition with its
+  signal on its wires, the logistic condition with the network's count, as supply's input lines since batch18 B1):
+  bottleneck {area | positions} groups get `gate` (the first such maker: `assembling-machine-1 (0.5,0.5): off by its
+  logistic condition stone-wall < 200 (network 5 ...: stone-wall 200)`); supply's and bottleneck {item}'s maker lines
+  add it to the disabled_by_control_behavior count and to each such worst row. tests/rates.lua.
+- B3 (Muse): backup boilers gated on coal > 8000 in a network holding 3609 never started, and a viewer found it.
+  `gates {surface? | area?, page?}` (gates.lua, a read): every circuit and logistic condition on our entities there,
+  256 entities a call in reading order. A surface reads the entities the census's last pass found with a control
+  behavior (census.lua now keeps them: inserters, pumps, machines, drills, lamps, power switches, belts, train stops,
+  signals, agricultural towers, collectors, loaders; up to 1024 a surface); an area (up to 128x128) finds them now.
+  Each line: the condition as its GUI shows it, what it reads now (circuit: its signal on its wires; logistic: the
+  network's count, with the reserved-beyond-stock note under 0), true or false now, `it is off by it`. A logistic
+  `item > N`, `>= N` or `= N` above what the network can hold, its count and what its storage and provider chests could
+  still take of the item (up to 256 chests looked at), is flagged `CANNOT BE MET:` and listed first; so is one with no
+  logistic network over it. tests/d17_batch22.lua.
+
+### Group C (Haiku 18:58)
+- C1 (Haiku): hand-fed turrets ran low about every 20 minutes and were found only by polling. The background read's
+  turret pass (pushalerts.lua) now gives an ammo turret holding 1 to 9 magazines that no inserter drops into (one find
+  of inserters within 4 tiles, made only for such a low turret) the kind `ammo_low`: one line a group of 32-tile
+  cells, to who built them and every agent within 64 tiles of it (not the claim or nearest rule), each turret with its
+  magazines, ending `rearm {alert: "ammo_low|nauvis|..."} tours exactly these`. The group is read again before it is
+  shown (a turret topped up to 10 or more drops out), and rearm {alert} takes those still under 10.
+  tests/pushalerts.lua.
+- C2 (Haiku): a rearm tour that ran out of magazines part way was found only at the end. rearm with radius, area,
+  surface or alert now counts, before it walks and in its dry run, per ammo type the magazines the stops need to reach
+  count against what the character holds and has in the hand-craft queue, walks the stops in the tour's order with
+  that stock, and names the turrets left short (first 8): `magazines: the 4 stops need firearm-magazine 40 (you carry
+  12) to reach 10 each; what you carry completes 1 of them in the tour's order; left short: ...`. A tour that cannot
+  finish is refused (`not walked: ...`) unless `partial: true`; a walked one gives `magazines`, and `partial: 1 of 4
+  stops get their full count with what you carry` when short. The dry run gives `magazines` and `completes`.
+  tests/round2120a.lua.

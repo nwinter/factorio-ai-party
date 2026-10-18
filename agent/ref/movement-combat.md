@@ -80,6 +80,9 @@
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
+  Before it walks (and in `dry_run`), `magazines` gives per ammo type what the stops need to reach `count` against
+  what you carry and craft, how many stops that completes in the tour's order, and the turrets left short; a tour
+  it cannot finish is refused unless `partial: true` (`partial` then says how many stops get their full count).
   When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
   then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over

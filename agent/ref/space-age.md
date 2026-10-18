@@ -120,7 +120,10 @@
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
-  surface?}`: launches the silo's rocket to `platform` in orbit of this planet. `wait_ready: true` waits for the
+  hub_full?, surface?}`: launches the silo's rocket to `platform` in orbit of this planet. A cargo the platform's hub has
+  no room for (the slots it takes after topping up part stacks, against the hub's free slots, asteroid chunks named)
+  is refused unless `hub_full: true`; load_silo (it launches through this), its dry run (`platform_hub_room`) and
+  preflight's platform line say the same. `wait_ready: true` waits for the
   rocket and launches in the tick it is ready (a queue step too; a queued one whose rocket goes records `launched`);
   with `platform` it also waits until the platform is in orbit of the silo's planet (`wait_platform`, the default
   then); a plain tell does not end these waits (one with `wake: true` or an urgent alert does), and a wait that ends
@@ -165,7 +168,9 @@
   pad too) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
   `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
   takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
-  needs; without `from` it walks to the silo with what you hold. A walking load gives `loaded_items` (what you put
+  needs; without `from` (or with `chests: false`) it walks to the silo with what you hold. `all_or_nothing: true`
+  (with `launch`): the launch goes only with every listed item aboard in full (the rocket read again); a short load
+  stays in the silo and the refusal names what is missing (not with `up_to` or `launch_split`). A walking load gives `loaded_items` (what you put
   in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count). When the
   rocket it fills launches by another hand (outcome `rocket_launched`), the tour walks on to the chests it took from,
   latest first, and gives back what it took and did not load (`last.returned`: what, how many, where; `kept`: what did
@@ -230,7 +235,13 @@
 - Platform foundation: the hub removes a marked foundation tile only beside empty space (a north, east, south or west
   neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
   time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
-  `"dry_run":true` marks nothing.
+  `"dry_run":true` marks nothing. The hub builds a foundation ghost only with foundation among the 8 tiles round it (a
+  corner is enough) and its empty side neighbours in one run (it never splits empty space, even when both sides stay
+  open). A dry run on a platform (place_ghosts, build, paste with `dry_run: true`) plays those rules over the new tiles
+  and the ghosts ordered: `tiles.unbuilt` names each tile that stays unbuilt and why; for one with no foundation near,
+  `tiles.connect` lists the fewest tiles that join it to the built floor (a chain touching by sides or corners,
+  `connect_line`); `holes` lists the enclosed tiles that need foundation (beside a new tile with only enclosed regions
+  round it, the largest may stay empty: `holes_other`).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
   to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
   a planet with no pad lands the same way, near its `near` spot.

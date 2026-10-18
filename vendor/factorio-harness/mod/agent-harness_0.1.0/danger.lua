@@ -43,6 +43,28 @@ return function(api)
     end
     return out
   end
+  -- The turrets of ours whose range covers pos (d17 batch22 B1, Luna: hatch timers ran out with the defense gone): gun
+  -- and rocket turrets with ammunition, laser turrets with power, flamethrowers with fluid, against those in range
+  -- without; one find within LOOK tiles. {ready, idle, by (name = n), line}.
+  local LOOK = 40
+  local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
+  function M.coverage(surface, force, pos)
+    local list = try(function() return surface.find_entities_filtered{position=pos, radius=LOOK, type=TURRETS, force=force, limit=64} end) or {}
+    local ready, idle, by = 0, 0, {}
+    for _, t in ipairs(list) do
+      local range = try(function() return t.prototype.attack_parameters.range end) or 18
+      if t.valid and dist(t.position, pos) <= range then
+        local ok
+        if t.type == 'ammo-turret' then ok = try(function() return not t.get_inventory(defines.inventory.turret_ammo).is_empty() end)
+        elseif t.type == 'electric-turret' then ok = (try(function() return t.energy end) or 0) > 0
+        else ok = (try(function() local f = t.fluidbox[1]; return f and f.amount end) or 0) > 0 end
+        if ok then ready = ready + 1; by[t.name] = (by[t.name] or 0) + 1 else idle = idle + 1 end
+      end
+    end
+    local line = ready > 0 and string.format('in range of %d turret%s ready (%s)', ready, ready == 1 and '' or 's', counts(by)) or 'in range of no turret ready'
+    if idle > 0 then line = line .. string.format(', %d more in range without ammunition, power or fluid', idle) end
+    return {ready=ready, idle=idle, by=by, line=line}
+  end
   function M.read(p, a)
     -- no position: where you stand (D3, Haiku: observe {scope: danger} alone was refused 3 times)
     local c0 = p.character
@@ -200,6 +222,18 @@ return function(api)
         smax and smax > 0 and string.format(', shield %d/%d', round(shield or 0), round(smax)) or '')
     else
       lines[#lines+1] = 'you: no character on a planet now'
+    end
+    -- (d17 batch22 B1, Luna) eggs within radius that hatch, each site's first hatch and the turrets covering it
+    local eggs = api.eggs and try(function() return api.eggs(s.name, pos, r) end) or {}
+    if #eggs > 0 then
+      out.eggs = {}
+      for i, e in ipairs(eggs) do
+        if i <= 8 then
+          local cov = M.coverage(s, f, e.position)
+          out.eggs[#out.eggs+1] = e.text .. '; ' .. cov.line
+        end
+      end
+      lines[#lines+1] = string.format('eggs: %d site%s within %d tiles; the nearest: %s', #eggs, #eggs == 1 and '' or 's', r, out.eggs[1])
     end
     out.line = table.concat(lines, '; ')
     return out

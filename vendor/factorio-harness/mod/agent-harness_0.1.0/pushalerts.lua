@@ -44,9 +44,10 @@ return function(api)
     requester_full='requester chests with every slot taken while a request is short',
     heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)',
     outpost_ammo_low='turrets no construction robots reach, under 20% of their ammo slots',
+    ammo_low='hand-fed turrets (no inserter drops into them) under 10 magazines',
     outpost_turret_lost='turrets no construction robots reached destroyed in the last 10 minutes'}
   local HINT = {no_power='fh call power', unconnected='fh call power', low_power='more power: fh call power', no_fuel='refuel', heat_no_fuel='refuel',
-    no_ammo='rearm', flamer_dry='fh call flamers', no_material_for_construction='craft or bring the items for the ghosts',
+    no_ammo='rearm', ammo_low='rearm', flamer_dry='fh call flamers', no_material_for_construction='craft or bring the items for the ghosts',
     not_enough_construction_robots='more construction robots in the roboports', not_enough_repair_packs='repair packs into a roboport or storage chest',
     no_storage='a storage chest in the network', train_out_of_fuel='refuel the locomotive'}
   -- Told elsewhere (attacks, losses, the turret scan).
@@ -95,7 +96,10 @@ return function(api)
   -- detail: a line for this entity (lost sources: the inserter, what it read, what it puts into), up to MAX_DETAIL a group.
   local MAX_DETAIL = 4
   -- Turret kinds read again when shown (Haiku, shift12 15:20: two empty-ammo alerts sent it to guns already full).
-  local RECHECK, MAX_UNITS = {no_ammo=true, rebuilt_empty=true, flamer_dry=true}, 512
+  local RECHECK, MAX_UNITS = {no_ammo=true, rebuilt_empty=true, flamer_dry=true, ammo_low=true}, 512
+  -- (d17 batch22 C1, Haiku: hand-fed turrets found low only by polling, about every 20 minutes) a hand-fed ammo turret
+  -- holding under AMMO_LOW magazines (rounds left in its stacks) is the kind ammo_low
+  local AMMO_LOW = 10
   local function add(groups, kind, surface, e, pos, name, by, detail)
     local cx, cy = math.floor(pos.x / CELL), math.floor(pos.y / CELL)
     local key = kind .. '|' .. surface .. '|' .. cx .. ',' .. cy
@@ -509,7 +513,15 @@ return function(api)
             -- Under 20% of its ammo slots where no construction robot reaches (Opus, d15 15:20: the south copper
             -- outpost 550 tiles out, cut 5+ times a shift).
             local low = M.outpost_low(e, inv)
-            if low then kind, detail = 'outpost_ammo_low', low end
+            if low then kind, detail = 'outpost_ammo_low', low
+            else
+              local n = inv and inv.get_item_count() or 0
+              if n > 0 and n < AMMO_LOW and not M.inserter_fed(e) then
+                local items = {}
+                for _, c in ipairs(try(function() return inv.get_contents() end) or {}) do items[#items+1] = c.name .. ' ' .. c.count end
+                kind, detail = 'ammo_low', string.format('%s %s: %s', e.name, at_text(e.position), table.concat(items, ', '))
+              end
+            end
           end
         elseif e.type == 'reactor' and e.burner then
           -- Heating towers (Gemini, d15 07:54: a dedicated warning when they run out of fuel): a burner reactor with an
@@ -950,6 +962,16 @@ return function(api)
   M.claims_over = claims_over
   local function owners(g, roster)
     local out = {}
+    -- ammo_low (C1): who built them, and every agent within 64 tiles of the group
+    if g.kind == 'ammo_low' then
+      for name in pairs(g.by or {}) do if roster[name] then out[name] = 'built' end end
+      for name, a in pairs(roster) do
+        local pl = a.place
+        if pl and pl.key == g.surface and pl.position and not pl.dead and g.center
+          and (pl.position.x - g.center.x) ^ 2 + (pl.position.y - g.center.y) ^ 2 <= 64 * 64 then out[name] = out[name] or 'near' end
+      end
+      return out
+    end
     for _, i in ipairs(claims_over(g, g.center)) do out[i.owner] = 'claim' end
     -- A boiler's feed chest in someone's claim (Haiku, shift17 10:50: "an alert that names the owner of a claimed boiler
     -- feed chest when it is empty, so the fuel owner is told directly"): that owner hears it too.
@@ -986,8 +1008,20 @@ return function(api)
   -- A turret group now (no_ammo, rebuilt_empty, flamer_dry): its turrets found again in its cells, only those still
   -- empty counted (a turret refilled since the read, by anyone, drops out; one gone too). nil when none is: the group is
   -- not shown, and its told count is cleared, so a turret that runs dry again is news. Other groups as they are.
-  local TURRET_TYPE = {no_ammo='ammo-turret', rebuilt_empty='ammo-turret', flamer_dry='fluid-turret'}
+  local TURRET_TYPE = {no_ammo='ammo-turret', rebuilt_empty='ammo-turret', flamer_dry='fluid-turret', ammo_low='ammo-turret'}
+  -- Whether an inserter of ours drops into e (one find round it: a long arm reaches 2 tiles past a 2x2 turret).
+  function M.inserter_fed(e)
+    local p0 = e.position
+    for _, i in ipairs(try(function() return e.surface.find_entities_filtered{area={{p0.x - 4, p0.y - 4}, {p0.x + 4, p0.y + 4}}, type='inserter', force=e.force, limit=32} end) or {}) do
+      if i.valid and try(function() return i.drop_target end) == e then return true end
+    end
+    return false
+  end
   local function still_empty(e, kind)
+    if kind == 'ammo_low' then
+      local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
+      return inv ~= nil and inv.get_item_count() < AMMO_LOW
+    end
     if kind == 'flamer_dry' then
       local amount = try(function() return (flameroil.read(e)) end)
       return amount ~= nil and amount < 1
@@ -1087,7 +1121,7 @@ return function(api)
     return list, g
   end
   -- The exact positions of a group's entities (C1): 'stone-furnace (24.5,-60.5), ...' (at most 8), and its key.
-  local ALERT_TAKES = {no_fuel='refuel', heat_no_fuel='refuel', no_ammo='rearm', rebuilt_empty='rearm'}
+  local ALERT_TAKES = {no_fuel='refuel', heat_no_fuel='refuel', no_ammo='rearm', rebuilt_empty='rearm', ammo_low='rearm'}
   local function where_text(g)
     local parts = {}
     if g.status_entities then
@@ -1251,6 +1285,13 @@ return function(api)
       return string.format('%s%s%s: %s%s', head, g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
+    if g.kind == 'ammo_low' then
+      -- '2 gun-turret hand-fed under 10 magazines near (-180,73): gun-turret (-186,72): firearm-magazine 4; ...; rearm {alert: "..."}'
+      return string.format('%s hand-fed (no inserter drops into %s) under 10 magazines near %s%s%s: %s%s%s', what(g), g.n == 1 and 'it' or 'them', near_text(g),
+        g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+        table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
+        not plain and g.key and string.format('; rearm {alert: "%s"} tours exactly these', g.key) or '')
+    end
     if g.kind == 'off_by_condition' then
       -- '1 biochamber stopped by its own circuit or logistic condition near (57,61): biochamber (45.5,72.5) (agricultural-science-pack): off by its logistic condition bioflux > 200 (...)'
       return string.format('%s stopped by %s own circuit or logistic condition near %s%s%s: %s%s', what(g), g.n == 1 and 'its' or 'their', near_text(g),
@@ -1272,7 +1313,7 @@ return function(api)
     end
     local hint = not plain and HINT[g.kind]
     -- (C1) a refuel or rearm takes this alert by its key
-    if hint and ALERT_TAKES[g.kind] and g.key and g.n > 1 then hint = string.format('%s {alert: "%s"}', ALERT_TAKES[g.kind], g.key) end
+    if hint and ALERT_TAKES[g.kind] and g.key and (g.n > 1 or g.kind == 'ammo_low') then hint = string.format('%s {alert: "%s"}', ALERT_TAKES[g.kind], g.key) end
     -- (B4) out of fuel: the nearest fuel, and refuel over the burners' area taking it from the nearest chest or belt
     if hint and g.kind == 'no_fuel' then
       local f = try(function() return fuel_near(g) end)

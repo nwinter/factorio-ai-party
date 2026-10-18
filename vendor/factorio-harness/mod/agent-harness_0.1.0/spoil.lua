@@ -545,7 +545,9 @@ return function(api)
     local out = {}
     for _, place in ipairs(w.places or {}) do
       if place.news and place.news > (h.eggs_seq or 0) and place.tick > game.tick and mine(p, name, place) and #out < 3 and live(place) then
-        out[#out+1] = 'eggs hatching: ' .. M.place_text(place, here)
+        -- (d17 batch22 B1) the turrets covering the site
+        local cov = api.coverage and try(function() return api.coverage(place.surface, place.position) end)
+        out[#out+1] = 'eggs hatching: ' .. M.place_text(place, here) .. (cov and '; ' .. cov or '')
       end
     end
     h.eggs_seq = w.seq or 0
@@ -570,6 +572,18 @@ return function(api)
     return nearby.read(p,sites)
   end
   function M.seq() return watch().seq or 0 end
+  -- The places on a surface within r of pos whose eggs hatch, nearest first (danger, d17 batch22 B1): {position, tick, text}.
+  function M.near(surface, pos, r)
+    local w, out = watch(), {}
+    for _, place in ipairs(w.places or {}) do
+      if place.surface == surface and place.tick > game.tick and M.hatch(place.item:match('^[^@]+')) and live(place) then
+        local d = ((place.position.x - pos.x)^2 + (place.position.y - pos.y)^2)^0.5
+        if d <= r then out[#out+1] = {position=place.position, tick=place.tick, d=d, text=M.place_text(place, surface)} end
+      end
+    end
+    table.sort(out, function(x, y) return x.d < y.d end)
+    return out
+  end
   -- The watch's last sweep, for a read: places, earliest first.
   function M.places(limit)
     local w = watch()

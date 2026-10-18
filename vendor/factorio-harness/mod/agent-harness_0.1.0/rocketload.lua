@@ -276,13 +276,21 @@ return function(api)
   local LAUNCH_ARGS = {platform=true, orbit=true, min_cargo=true, arrived=true}
   function M.check(a)
     M.items(a.items, 'items')
-    for _, k in ipairs({'to_total', 'launch', 'chests', 'walk', 'fresh_first', 'up_to'}) do
+    for _, k in ipairs({'to_total', 'launch', 'chests', 'walk', 'fresh_first', 'up_to', 'all_or_nothing'}) do
       assert(a[k] == nil or type(a[k]) == 'boolean', k .. ' must be true or false')
     end
     -- walk without from (Grok 13:51: a rescue rocket refused with the collectors in hand): the walk to the silo loads
-    -- what you hold.
+    -- what you hold; chests: false says the same (d17 batch22 A3, Gemini).
     if a.walk == true then
-      assert(a.chests == nil, 'walk takes from the chests in from (chests does not go with it)')
+      assert(a.chests == nil or a.chests == false, 'walk takes from the chests in from (chests: true does not go with it; chests: false loads what you hold)')
+      assert(not (a.chests == false and a.from ~= nil), 'chests: false loads what you hold: no from beside it')
+    end
+    -- all_or_nothing (d17 batch22 A2, Astra: a partial load launched two underground belts and a rocket was spent): the
+    -- launch goes only with every listed item aboard in full; a short load stays in the silo.
+    if a.all_or_nothing then
+      assert(a.launch, 'all_or_nothing goes with launch: true (it holds the launch back until every listed item is aboard in full)')
+      assert(not a.up_to, 'all_or_nothing launches only a full list; up_to launches what is aboard: give one of them')
+      assert(not a.launch_split, 'all_or_nothing is one rocket with the whole list; launch_split sends it as several')
     end
     for _, k in ipairs({'avoid_enemies', 'unsafe_goal'}) do assert(a[k] == nil or a.walk == true, k .. ' goes with walk=true') end
     if a.launch then
@@ -468,8 +476,23 @@ return function(api)
     end
     if a.launch then
       if #short > 0 and not a.up_to then
-        error(string.format('not launched: %s; what was loaded stays in the rocket (it holds %s, %s); %s, or load the rest (to_total=true counts what is aboard)',
-          table.concat(short, '; '), out.cargo, out.rocket_weight, M.as_is(silo, a)), 0)
+        error(string.format('not launched%s: %s; what was loaded stays in the rocket (it holds %s, %s); %s, or load the rest (to_total=true counts what is aboard)',
+          a.all_or_nothing and ' (all_or_nothing: every listed item aboard in full)' or '', table.concat(short, '; '), out.cargo, out.rocket_weight, M.as_is(silo, a)), 0)
+      end
+      if a.all_or_nothing then
+        -- the rocket read again: every listed item at its count (to_total: the count; else what was aboard before and it)
+        local lacking = {}
+        for i, r in ipairs(list) do
+          local row = rows[i]
+          local want = a.to_total and r.count or ((row and row.aboard_before or 0) + r.count)
+          local n = aboard(inv, r)
+          if n < want then lacking[#lacking+1] = string.format('%s %d of %d', label(r), n, want) end
+        end
+        if #lacking > 0 then
+          error(string.format('not launched (all_or_nothing): the rocket holds %s of the list; what was loaded stays in the silo (it holds %s, %s)',
+            table.concat(lacking, ', '), out.cargo, out.rocket_weight), 0)
+        end
+        out.all_or_nothing = 'every listed item aboard in full: launched'
       end
       local ok, launched = pcall(api.launch, p, {position=silo.position, platform=a.platform, orbit=a.orbit, min_cargo=a.min_cargo, arrived=a.arrived})
       if not ok then
@@ -481,6 +504,34 @@ return function(api)
       out.spoiled_percent, out.went_up = launched.spoiled_percent, launched.went_up
     end
     return out
+  end
+  -- A platform hub's room for a cargo (d17 batch22 A4, Gemini: a hub full of asteroid chunks): the slots the cargo takes
+  -- after topping up the hub's part stacks of the same items, against its free slots; the slots asteroid chunks take.
+  -- items: {name, quality, count} each. Returns {fits, need, free, chunks, line} or nil (no hub inventory).
+  function M.hub_room(hub, items)
+    local inv = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    if not inv then return nil end
+    local part, chunks, free = {}, 0, 0
+    for i = 1, #inv do
+      local st = inv[i]
+      if not st.valid_for_read then free = free + 1
+      else
+        if st.name:find('asteroid%-chunk$') then chunks = chunks + 1 end
+        local k = st.name .. '|' .. quality_of(st)
+        part[k] = (part[k] or 0) + math.max(0, stack_size(st.name) - st.count)
+      end
+    end
+    local need = 0
+    for _, r in ipairs(items) do
+      local k = r.name .. '|' .. (r.quality or 'normal')
+      local left = math.max(0, r.count - (part[k] or 0))
+      part[k] = math.max(0, (part[k] or 0) - r.count)
+      need = need + math.ceil(left / stack_size(r.name))
+    end
+    local fits = need <= free
+    return {fits=fits, need=need, free=free, chunks=chunks, size=#inv,
+      line=string.format('the cargo takes %d hub slot%s; the hub has %d of %d free%s%s', need, need == 1 and '' or 's', free, #inv,
+        chunks > 0 and string.format(' (asteroid chunks take %d)', chunks) or '', fits and '' or ': it does not fit')}
   end
   -- Ready to rerun a waiting load_silo: the rocket is there (and ready, for a launch), or the silo is gone.
   -- The waiting goes on while the silo makes parts (Sonnet, shift14 22:50: load_silo re-issued 3 times as its wait ran
@@ -656,11 +707,16 @@ return function(api)
         split[i] = string.format('rocket %d: %s (%g kg)', i, table.concat(t, ', '), kg(g))
       end
     end
-    local hub_free
+    local hub_free, hub_room
     if a.platform ~= nil then
       for _, pl in pairs(p.force.platforms) do
         if pl.valid and pl.name == a.platform and pl.hub and pl.hub.valid then
           hub_free = try(function() return pl.hub.get_inventory(defines.inventory.hub_main).count_empty_stacks() end)
+          -- (d17 batch22 A4) the list and what is aboard, against the hub's room
+          local all = {}
+          for _, r in ipairs(contents(inv)) do all[#all+1] = r end
+          for _, r in ipairs(list) do all[#all+1] = {name=r.name, quality=r.quality, count=a.to_total and math.max(0, r.count - aboard(inv, r)) or r.count} end
+          hub_room = try(function() return M.hub_room(pl.hub, all) end)
         end
       end
     end
@@ -670,7 +726,8 @@ return function(api)
         or string.format('over what this rocket takes now (%s aboard): to_total, a smaller list, or unload first', list_text(contents(inv)))))
     local up = M.goes_up_with(silo, list)
     if up.line then line = line .. '; ' .. up.line end
-    return {dry_run=true, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
+    if hub_room and not hub_room.fits then line = line .. '; ' .. hub_room.line end
+    return {dry_run=true, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
       free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
       platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, line=line}
   end
@@ -1269,6 +1326,9 @@ return function(api)
       if plat.empty_turrets then plat.line = one_line(plat.line .. '; ' .. table.concat(plat.empty_turrets, '; ')) end
       plat.requests_off = try(function() return M.requests_off(pl) end)
       if plat.requests_off then plat.line = one_line(plat.line .. '; ' .. plat.requests_off) end
+      -- (d17 batch22 A4) the hub's room for this rocket's cargo
+      local room = #held > 0 and try(function() return M.hub_room(pl.hub, held) end)
+      if room then plat.hub_room = room.line; if not room.fits then plat.line = one_line(plat.line .. '; ' .. room.line) end end
       return {plat}
     end
     local out = {}
@@ -1615,10 +1675,11 @@ return function(api)
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',
       chests='false: your inventory only',
       fresh_first='default true for an item that spoils (agricultural science, bioflux, ...): the stacks of you and the chests read, least spoiled first, each moved whole (its spoilage goes with it; the row says order: fresh first); false: you first, then the chests in order, slot by slot',
-      walk='true, with from or alone (alone: a walk to the silo that loads what you hold of the list; refused when you hold none of it): one timed call that walks between the chests in from and the silo, as many trips as it takes (at most 20): at each chest it takes what the rocket still needs less what you hold (up to your request max), at the silo it loads what you hold of the list; another trip while the rocket still needs some, a chest in from holds it and the trip loaded any. No rocket at the silo yet, or with launch a rocket not ready: the tour waits at the silo and loads nothing until it is (as without walk: the wait goes on while the silo makes parts; status and last silo_wait), then loads and launches in that tick. The silo and every chest in reach: the load at once, as without walk. Nothing in the chests and nothing held of what the rocket needs: refused, nothing walked. Outcomes loaded | launched | short (last.why: weight, slots, the chests empty, a trip that loaded none) | unreached | timed_out (also while waiting at the silo: last.why says for what; what you took stays with you); last: trips, taken, taken_items, loaded, stops [{position, name, trip, taken | loaded, full, note}], cargo, rocket_weight, launch',
+      walk='true, with from or alone (alone, or with chests: false: a walk to the silo that loads what you hold of the list; refused when you hold none of it): one timed call that walks between the chests in from and the silo, as many trips as it takes (at most 20): at each chest it takes what the rocket still needs less what you hold (up to your request max), at the silo it loads what you hold of the list; another trip while the rocket still needs some, a chest in from holds it and the trip loaded any. No rocket at the silo yet, or with launch a rocket not ready: the tour waits at the silo and loads nothing until it is (as without walk: the wait goes on while the silo makes parts; status and last silo_wait), then loads and launches in that tick. The silo and every chest in reach: the load at once, as without walk. Nothing in the chests and nothing held of what the rocket needs: refused, nothing walked. Outcomes loaded | launched | short (last.why: weight, slots, the chests empty, a trip that loaded none) | unreached | timed_out (also while waiting at the silo: last.why says for what; what you took stays with you); last: trips, taken, taken_items, loaded, stops [{position, name, trip, taken | loaded, full, note}], cargo, rocket_weight, launch',
       avoid_enemies='with walk: as move_to\'s; each leg goes round the worms, spawners and attacks the map shows, and a stop inside one is left out',
       unsafe_goal='with walk: true walks to such a stop anyway',
-      up_to='true: load what fits (weight, slots) and what you and the chests hold; a short row is listed in up_to_short and does not fail the call or stop a launch, which goes with what is aboard (none of the list aboard: refused); with walk the tour ends loaded (or launched) instead of short',
+all_or_nothing='with launch: true: the launch goes only when every listed item is aboard in full (the rocket read again before it); a short load stays in the silo and the refusal says what is missing; not with up_to or launch_split',
+            up_to='true: load what fits (weight, slots) and what you and the chests hold; a short row is listed in up_to_short and does not fail the call or stop a launch, which goes with what is aboard (none of the list aboard: refused); with walk the tour ends loaded (or launched) instead of short',
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short (up_to aside); min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to; without launch: the platform this cargo is for (recorded: a launch to another platform with it aboard is refused, naming both; cargo_for: "any" on launch sends it anyway)', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
