@@ -1691,33 +1691,47 @@ return function(api)
   -- network's robots serve it now (bringing, met, or why not: no network, none free, no idle robot); served first, then
   -- unmet, then met. Then requester and buffer chests whose inserters feed machines that use the item while they ask for
   -- none of it, each with what they ask. Read only.
-  local REQ_ROWS = 24
+  -- Cost on world n (06:52, read only, bounded): a whole-surface find costs 2.4-5.8 ms even at limit 1-64 (crafters 8.7
+  -- ms at 512), so the crafters come from the census's last pass (entity references, their recipes read now) and the
+  -- chests from each logistic network's requester points (about 4 us a point); a find only when no pass has them yet.
+  local REQ_ROWS, REQ_POINTS, REQ_USERS = 24, 4096, 1024
   function M.requesters(surface, force, item)
-    local crafters = try(function() return surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=force, limit=SPLIT_CRAFTERS} end) or {}
-    local uses, clusters = {}, {}
-    for _, e in ipairs(crafters) do
-      local r = e.valid and (try(function() return e.get_recipe() end) or (e.type == 'furnace' and try(function() return e.previous_recipe end)))
-      if r and not try(function() return r.ingredients end) then
-        local rn = type(r.name) == 'table' and r.name.name or try(function() return r.name end)
-        r = rn and prototypes.recipe[rn] or nil
+    local crafters, as_of = nil, nil
+    if api.census_crafters then crafters, as_of = api.census_crafters(force, surface) end
+    local found = crafters == nil
+    if found then as_of = nil; crafters = try(function() return surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=force, limit=SPLIT_CRAFTERS} end) or {} end
+    -- each recipe's use of the item read once, by name (on world n a recipe's ingredients read for each of 771
+    -- crafters took 3.9 ms)
+    local uses, users, per_recipe = {}, {}, {}
+    local function use_of(rn)
+      local v = per_recipe[rn]
+      if v == nil then
+        local pr, amount = prototypes.recipe[rn], 0
+        for _, ing in ipairs(pr and pr.ingredients or {}) do if ing.name == item then amount = amount + (ing.amount or 0) end end
+        v = amount > 0 and {amount=amount, energy=pr.energy > 0 and pr.energy or 1} or false
+        per_recipe[rn] = v
       end
-      local amount = 0
-      for _, ing in ipairs(r and try(function() return r.ingredients end) or {}) do if ing.name == item then amount = amount + (ing.amount or 0) end end
-      if amount > 0 and e.unit_number then
-        local rate = amount * 60 * (try(function() return e.crafting_speed end) or 1) / ((try(function() return r.energy end)) or 1)
-        uses[e.unit_number] = {e=e, recipe=r.name, rate=rate, working=api.status_name and api.status_name(e) == 'working' or false}
-        local q = e.position
-        local c
-        for _, h in ipairs(clusters) do if q.x >= h.x0 - GAP and q.x <= h.x1 + GAP and q.y >= h.y0 - GAP and q.y <= h.y1 + GAP then c = h; break end end
-        if not c then c = {x0=q.x, y0=q.y, x1=q.x, y1=q.y}; clusters[#clusters+1] = c end
-        c.x0, c.y0, c.x1, c.y1 = math.min(c.x0, q.x), math.min(c.y0, q.y), math.max(c.x1, q.x), math.max(c.y1, q.y)
+      return v
+    end
+    for _, e in ipairs(crafters) do
+      local r = e.valid and e.get_recipe()
+      if not r and e.valid and e.type == 'furnace' then r = e.previous_recipe end
+      local rn = r and r.name
+      if rn and type(rn) ~= 'string' then rn = rn.name end
+      local u = type(rn) == 'string' and use_of(rn)
+      if u and e.unit_number then
+        uses[e.unit_number] = {e=e, recipe=rn, rate=u.amount * 60 * e.crafting_speed / u.energy, working=api.status_name and api.status_name(e) == 'working' or false}
+        users[#users+1] = e
       end
     end
-    -- the requester and buffer chests whose inserters feed those machines
+    -- the requester and buffer chests whose inserters feed those machines: a small find round each one (its box and
+    -- 2.5 tiles, a long inserter's reach; a cluster's whole box returned thousands of inserters on world n)
     local feeds = {}
-    for i, c in ipairs(clusters) do
-      if i > SPLIT_GROUPS * 4 then break end
-      for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=force, area={{c.x0 - 6, c.y0 - 6}, {c.x1 + 6, c.y1 + 6}}, limit=MAX_INSERTERS} end) or {}) do
+    for i, m in ipairs(users) do
+      if i > REQ_USERS then break end
+      local bb = m.bounding_box
+      for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=force,
+          area={{bb.left_top.x - 2.5, bb.left_top.y - 2.5}, {bb.right_bottom.x + 2.5, bb.right_bottom.y + 2.5}}} end) or {}) do
         local d = try(function() return ins.drop_target end)
         local u = d and d.valid and d.unit_number and uses[d.unit_number]
         local t = u and try(function() return ins.pickup_target end)
@@ -1729,14 +1743,17 @@ return function(api)
         end
       end
     end
-    local function asks_of(c)
-      local pt = try(function() return c.get_logistic_point(defines.logistic_member_index.logistic_container) end)
-      local all, mine = {}, 0
-      for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
-        local n = type(f.name) == 'table' and f.name.name or f.name
-        if n and (f.count or 0) > 0 then
-          all[n] = (all[n] or 0) + f.count
-          if n == item then mine = mine + f.count end
+    -- what a chest asks of the item (and, with whole, of every item); the filters read is most of this read's cost
+    local function asks_of(c, pt, whole)
+      pt = pt or try(function() return c.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+      local all, mine = whole and {} or nil, 0
+      for _, f in ipairs(pt and pt.filters or {}) do
+        local n = f.name
+        if type(n) == 'table' then n = n.name end
+        local k = f.count or 0
+        if n and k > 0 then
+          if all then all[n] = (all[n] or 0) + k end
+          if n == item then mine = mine + k end
         end
       end
       return mine, all, pt
@@ -1756,12 +1773,30 @@ return function(api)
       return string.format('feeds %s, %d working, taking %g/min at full speed', table.concat(parts, ', '), working, math.floor(rate * 10 + 0.5) / 10), rate
     end
     local nets, rows, unasked = {}, {}, {}
-    local chests = try(function() return surface.find_entities_filtered{type='logistic-container', force=force, limit=MAX_CHESTS} end) or {}
+    -- the chests: every requester point of the surface's logistic networks whose owner is a requester or buffer chest,
+    -- and the chests feeding the machines (one in no network among them)
+    local chests, points, seen, read = {}, {}, {}, 0
+    local LM = defines.logistic_mode or {}
+    for _, ln in ipairs(try(function() return force.logistic_networks[surface.name] end) or {}) do
+      for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
+        read = read + 1
+        if read > REQ_POINTS then break end
+        local c = pt.owner
+        if c and c.valid and c.type == 'logistic-container' and (pt.mode == nil or pt.mode == LM.requester or pt.mode == LM.buffer) and c.unit_number and not seen[c.unit_number] then
+          seen[c.unit_number] = true; chests[#chests+1] = c; points[c.unit_number] = pt
+        end
+      end
+    end
+    for unit, f in pairs(feeds) do
+      if not seen[unit] then
+        local mode = try(function() return f.e.prototype.logistic_mode end)
+        if mode == 'requester' or mode == 'buffer' then seen[unit] = true; chests[#chests+1] = f.e end
+      end
+    end
     for _, c in ipairs(chests) do
-      local mode = try(function() return c.prototype.logistic_mode end)
-      if mode == 'requester' or mode == 'buffer' then
-        local want, all, pt = asks_of(c)
+      do
         local f = c.unit_number and feeds[c.unit_number]
+        local want, all, pt = asks_of(c, points[c.unit_number], f ~= nil)
         if want > 0 then
           local held = try(function() return c.get_item_count(item) end) or 0
           local coming = 0
@@ -1819,9 +1854,11 @@ return function(api)
       if i > REQ_ROWS then lines[#lines+1] = string.format('+%d more chests feeding its users without asking for it', #unasked - REQ_ROWS); break end
       lines[#lines+1] = u.line
     end
-    if #crafters >= SPLIT_CRAFTERS then lines[#lines+1] = string.format('the first %d crafters read', SPLIT_CRAFTERS) end
-    if #chests >= MAX_CHESTS then lines[#lines+1] = string.format('the first %d logistic chests read', MAX_CHESTS) end
-    return {lines=lines, requesters=out_rows, unasked=#unasked > 0 and unasked or nil}
+    if #users > REQ_USERS then lines[#lines+1] = string.format('the feeders of the first %d of %d machines using it read', REQ_USERS, #users) end
+    if found and #crafters >= SPLIT_CRAFTERS then lines[#lines+1] = string.format('the first %d crafters read', SPLIT_CRAFTERS) end
+    if read > REQ_POINTS then lines[#lines+1] = string.format('the first %d requester points read', REQ_POINTS) end
+    return {lines=lines, requesters=out_rows, unasked=#unasked > 0 and unasked or nil,
+      crafters_as_of=as_of and string.format('the census pass of %ds ago (a machine built since is not read)', math.floor((game.tick - as_of) / 60)) or 'found now'}
   end
   local function packs_of(force)
     local tech, packs = force.current_research, {}
@@ -1876,7 +1913,12 @@ return function(api)
     if a.requesters ~= nil then
       assert(a.requesters == true, 'requesters is true')
       assert(prototypes.item[item], 'requesters is for an item: chests ask for items')
-      local out = M.requesters(surface, p.force, item)
+      -- about 18 ms on Nauvis of world n (06:58: 775 crafters, 1204 requester points): reused for the same item and surface
+      local key = string.format('requesters|%s|%s|%s', tostring(surface.index or surface.name), p.force.name, item)
+      local out = M.reuse(key, function() return M.requesters(surface, p.force, item) end)
+      local copy = {}
+      for k, v in pairs(out) do copy[k] = v end
+      out = copy
       out.item, out.surface = item, surface.name
       out.note = 'take at full speed: each machine\'s recipe at its crafting speed; robots bringing: what the game has robots carrying to that chest now. Read only'
       return out
