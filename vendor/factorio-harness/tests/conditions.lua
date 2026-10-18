@@ -180,4 +180,35 @@ local ok,err=pcall(C.check,nobody,{['until']='item_count',platform='Nope',item='
 assert(not ok and tostring(err):find('no platform of ours named Nope',1,true))
 sunward.hub.valid=false
 assert(not pcall(C.check,nobody,hubwait),'missing hub is an error, not a zero count')
+-- batch27 A6 (Grok: the copper cultivator dies when copper ore stays over 300 longer than the bacteria last, ~40 s):
+-- spoil_within on a machine's input, and item_count of one logistic network.
+do
+  game=game or {}
+  game.tick=6000
+  defines.inventory.assembling_machine_input=2; defines.inventory.furnace_source=2
+  prototypes.item['copper-bacteria']={}; prototypes.item['pentapod-egg']={spoil_to_trigger_result={}}; prototypes.item['copper-ore']={}
+  local stacks={{valid_for_read=true,name='copper-ore',spoil_tick=0},{valid_for_read=true,name='copper-bacteria',spoil_tick=6000+40*60}}
+  local cult={valid=true,name='biochamber',type='assembling-machine',position={x=3.5,y=3.5},get_inventory=function() return stacks end}
+  local surf={find_entities_filtered=function(f) return f.position and {cult} or {} end,
+    find_logistic_network_by_position=function(pos) if pos.x==0 then return {get_item_count=function(n) return n=='copper-ore' and 340 or 0 end} end end}
+  local q={surface=surf,force=mine}
+  C.validate({['until']='spoil_within',position={x=3.5,y=3.5},seconds=60})
+  local met,saw=C.check(q,{['until']='spoil_within',position={x=3.5,y=3.5},seconds=60})
+  eq(met,true); eq(saw,"biochamber (3.5,3.5): its input's first copper-bacteria spoils in 40s")
+  met=C.check(q,{['until']='spoil_within',position={x=3.5,y=3.5},seconds=30}); eq(met,false)
+  met,saw=C.check(q,{['until']='spoil_within',position={x=3.5,y=3.5},seconds=60,item='copper-ore'}); eq(met,false)
+  eq(saw,'biochamber (3.5,3.5): no copper-ore in its input spoils')
+  stacks[3]={valid_for_read=true,name='pentapod-egg',spoil_tick=6000+600}
+  met,saw=C.check(q,{['until']='spoil_within',position={x=3.5,y=3.5},seconds=20}); eq(met,true)
+  eq(saw,"biochamber (3.5,3.5): its input's first pentapod-egg hatches in 10s")
+  assert(not pcall(C.validate,{['until']='spoil_within',seconds=10}),'position required')
+  assert(not pcall(C.validate,{['until']='spoil_within',position={x=0,y=0},seconds=0}),'seconds 1..3600')
+  -- item_count network: one logistic network
+  C.validate({['until']='item_count',item='copper-ore',network={x=0,y=0},below=300})
+  met,saw=C.check(q,{['until']='item_count',item='copper-ore',network={x=0,y=0},below=300})
+  eq(met,false); eq(saw,'copper-ore 340 in the logistic network at (0,0)')
+  local ok2,err2=pcall(C.check,q,{['until']='item_count',item='copper-ore',network={x=50,y=0},below=300})
+  assert(not ok2 and tostring(err2):find('no logistic network of ours covers (50,0)',1,true),tostring(err2))
+  assert(not pcall(C.validate,{['until']='item_count',item='copper-ore',network={x=0,y=0},positions={{x=1,y=1}},below=3}),'network excludes positions')
+end
 print('conditions: ok')

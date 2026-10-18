@@ -3,7 +3,10 @@
   (`technology`; without it the research running now); `crafting_done`; `item_count` (`item`, `at_least` or `below`;
   `positions`: chests or machines of ours, summed, a silo's rocket cargo too (the item `rocket` is ammunition);
   default your inventory; `"surface":"nauvis"`: with positions, those chests there, alone, our logistic networks
-  there, in the remote lane too; `platform`: the landed items in that hub, not incoming cargo or hub trash);
+  there (all of them summed), in the remote lane too; `network: {x,y}`: the one logistic network covering that spot;
+  `platform`: the landed items in that hub, not incoming cargo or hub trash); `spoil_within` (`position`: an assembler,
+  furnace or biochamber; `seconds` 1..3600; `item` optional: met when its input's first stack, of item or any,
+  spoils or hatches within seconds; saw names it and the seconds left);
   `rocket_ready` (`position`: the silo); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts`
   is the same name); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation

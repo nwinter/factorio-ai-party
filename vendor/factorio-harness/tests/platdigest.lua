@@ -15,7 +15,7 @@ local D=require('platdigest'){platform=function(_,name) eq(name,'Kestrel II'); r
       'crusher (6,4) carbonic-asteroid-crushing: working; in carbonic-asteroid-chunk*1, out carbon*3','1 fuel and oxidizer maker','chemical-plant (9,4) thruster-fuel: working; in carbon*2, out empty; fluids water 100',
       '2 thrusters: no thruster tank under half','8 guns, 1 empty; the hub holds firearm-magazine*55','ghosts: no entity ghosts'},
     chunks={'metallic-asteroid-chunk: 5 collectors; goes to the hub (over 101 belt tiles)'}} end,
-  platform_endurance=function() return {hub_slots='101 of 139 free',chunks_collected={'carbonic-asteroid-chunk 6.2/min','metallic-asteroid-chunk 6.5/min'},
+  platform_endurance=function() return {fuel_outlook='Kestrel II: stopped at aquilo: the thrusters burn only in flight; thruster-fuel 4000 held, made 120/min, used 0/min; thruster-oxidizer 3800 held, made 110/min, used 0/min',hub_slots='101 of 139 free',chunks_collected={'carbonic-asteroid-chunk 6.2/min','metallic-asteroid-chunk 6.5/min'},
     resources={{name='firearm-magazine',line='firearm-magazine: 1293 now (turrets 941, belts 419, hands 5); made 2.3/min, used 18.2/min'},
       {name='repair-pack',line='repair-pack: 133 now (hub 133)'},{name='thruster-fuel',line='thruster-fuel: 12000 now; runs out in 40 min at the flight rate'}},
     solar='18 solar panels: 1080 kW at full sun; 24 machines on low power, 0 on no power now',low_power=24,no_power=0} end,
@@ -38,7 +38,7 @@ has(r.power,'24 machines on low power'); eq(r.errors,nil)
 -- the lines in order: stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power
 local order={}
 for _,l in ipairs(r.lines) do order[#order+1]=l:match('^(%S+)') end
-eq(table.concat(order,','),'stopped,route:,hub,chunks:,chunks:,2,crusher,crusher,1,chemical-plant,2,tank:,ammo:,turrets:,power:')
+eq(table.concat(order,','),'stopped,route:,hub,chunks:,chunks:,2,crusher,crusher,1,chemical-plant,2,fuel,tank:,ammo:,turrets:,power:')
 -- a read that fails is named; the rest stand
 fail_defense=true
 r=D.read({},{platform='Kestrel II'})

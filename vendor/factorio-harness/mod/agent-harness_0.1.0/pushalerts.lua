@@ -46,6 +46,7 @@ return function(api)
     output_chest_full='stopped: the chest their output goes into has no free slot',
     catalyst_gone='short of an ingredient their own recipe makes (none left in the input to start the next craft)',
     requester_full='requester chests with every slot taken while a request is short',
+    mine_depleting='mines where half the drills stop within 30 min at the rate they take ore now',
     heat_no_fuel='heating towers out of fuel near their heat network\'s threshold (where it feeds heat exchangers, their working temperature from the prototype, 500 C; heating only, 30 C: under it a heater warms nothing)',
     outpost_ammo_low='turrets no construction robots reach, under 20% of their ammo slots',
     ammo_low='hand-fed turrets (no inserter drops into them) under 10 magazines',
@@ -1057,6 +1058,41 @@ return function(api)
     if not best then return nil end
     return {x=math.floor(best.centre.x + 0.5), y=math.floor(best.centre.y + 0.5), d=math.floor(bd + 0.5), amount=best.yield or best.amount}
   end
+  -- Mines running out (batch27 B5, Sonnet: coal fell to 3 of 56 drills working with no warning): the patches the ores
+  -- read's last survey has our drills on (a copy each, for the job), one forecast a background step (ores.forecast);
+  -- half the drills stopping within MINE_HORIZON minutes is a mine_depleting group to their builders.
+  local MINE_HORIZON, MINE_MAX, MINE_DRILLS = 30, 64, 32
+  local function mine_patches(force)
+    local out = {}
+    for _, entry in pairs(api.state().ores or {}) do
+      local s = entry.force == force.name and game.surfaces[entry.surface]
+      for _, q in ipairs(s and entry.patches or {}) do
+        if (q.miners or 0) > 0 and not q.yield and not q.fluid and q.l and #out < MINE_MAX then
+          out[#out+1] = {surface=s.name, name=q.name, l=q.l, t=q.t, r=q.r, b=q.b, centre=q.centre}
+        end
+      end
+    end
+    return out
+  end
+  local function mine_group(force, m)
+    local s = game.surfaces[m.surface]
+    local f = s and api.mine_forecast and api.mine_forecast(s, force, m, MINE_DRILLS)
+    if not (f and f.half_min and f.half_min <= MINE_HORIZON) then return nil end
+    local by, names = {}, {}
+    for _, e in ipairs(f.entities or {}) do
+      local b = builder(e)
+      if b then by[b] = (by[b] or 0) + 1 end
+      names[e.name] = (names[e.name] or 0) + 1
+    end
+    local u = try(function() return untapped(force.name, m.surface, m.name, m.centre) end)
+    local terr = u and api.territory and try(function() return api.territory(s, force, {x=u.x, y=u.y}) end)
+    local cx, cy = math.floor(m.centre.x / CELL), math.floor(m.centre.y / CELL)
+    return {key='mine_depleting|' .. m.surface .. '|' .. cx .. ',' .. cy, kind='mine_depleting', surface=m.surface, n=f.drills, names=names, by=by, at={},
+      center={x=math.floor(m.centre.x + 0.5), y=math.floor(m.centre.y + 0.5)}, observed_tick=game.tick,
+      line=string.format('mine running out near (%d,%d): %s%s', math.floor(m.centre.x + 0.5), math.floor(m.centre.y + 0.5), f.line,
+        u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %d%s', m.name, u.x, u.y, u.d, math.floor(u.amount or 0), terr and ', ' .. terr or '') or '; no untapped patch of it in the survey')}
+  end
+  M.mine_patches, M.mine_group = mine_patches, mine_group
   local function merge(groups, extra, mining, force)
     name_unknown_ore(groups, mining)
     -- Cells of one kind on one surface that touch (8 neighbours) are one area:
@@ -1304,6 +1340,14 @@ return function(api)
           g.drill_site=try(function() return api.drill_site(force,g) end)
           return
         end
+      end
+      -- (batch27 B5) one mine's forecast a step
+      if api.mine_forecast and not job.mines then job.mines=try(function() return mine_patches(force) end) or {}; job.mine_i=1 end
+      if job.mines and job.mine_i<=#job.mines then
+        local m=job.mines[job.mine_i]; job.mine_i=job.mine_i+1
+        local g=try(function() return mine_group(force,m) end)
+        if g then groups[#groups+1]=g end
+        return
       end
       s.push_alerts[force.name]=job.result
       s.push_steps[force.name] = job.steps

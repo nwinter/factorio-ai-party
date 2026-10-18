@@ -18,8 +18,9 @@
     nearest of our chests holding it now and says which; a `count` it lacks comes from the next ones (up to 16), and
     one holding it all, no farther, goes alone (chests holding less than the count ahead of it: `skipped_small`). A
     spoilable item comes from the freshest chests first, then the nearest. Chests that feed something (requester and
-    buffer chests, a chest an inserter takes from) only with `feeding: true`; walking, none in a worm's reach; each
-    left out is named. A walking take from chests holding none of it now is refused before the walk, naming the
+    buffer chests, a chest an inserter takes from) only with `feeding: true`; walking, none in a worm's reach; a chest
+    you put that item into by hand in the last 10 minutes neither (named by position it is taken from); each left out
+    is named. A walking take from chests holding none of it now is refused before the walk, naming the
     nearest holding it. With `to` (and `to_inventory`) it is a courier straight to that machine, freshest stacks
     first, and takes from a chest feeding `to` itself.
   - `pick: "first_with_stock" | "most_stock"` with `positions` and `item` or `items` (collect too) takes at one listed
@@ -89,7 +90,7 @@
   base-sized `area` is not refused for its belts. `legs` lists the stops, `last.route` the walk.
   - `from: "nearest"` (or a chest or belt position) collects the fuel on the way, from chests (2048 read) within
     `from_radius` (default 64, up to 128) of each stop, and the logistic network's pickup point; never a belt (taking
-    coal off one cuts its flow) unless `from` names it; `last.sources` and `fuel_taken` report the takes. `feed_chests: true` fills the chests inserters
+    coal off one cuts its flow) or a chest you put the fuel into in the last 10 minutes unless `from` names it; `last.sources` and `fuel_taken` report the takes. `feed_chests: true` fills the chests inserters
     feed boilers from instead.
   - `alert: "KEY"`: an out-of-fuel alert lists each burner's position and ends with `refuel {alert: "KEY"}`, a tour
     over exactly those with the fuel you carry (an alert's centre can lie far from them: it joins touching areas).

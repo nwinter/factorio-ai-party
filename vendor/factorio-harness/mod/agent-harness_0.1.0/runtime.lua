@@ -1840,7 +1840,7 @@ function handlers.describe(_,a)
         dry_run='an entity: mine nothing; name, position, in_reach and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither); the live reply carries heat_loss too when it is not none. With tiles: mine nothing; each tile: tile, restores, seconds, in_reach, distance; items, seconds, skipped (why), natural (natural tiles in the area)',
         radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='moved 0 and timed now; last.moved (how many more of its products you hold) and last.inv when it ends; target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
-      stock={network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest)',quality='default normal',
+      stock={items='optional 1..32 item names instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
@@ -3515,6 +3515,31 @@ function handlers.stock(p,a)
     tostring(row.as_of):match('^live') and 'live' or (tostring(row.as_of):match('^%d+s ago') or tostring(row.as_of)),
     out.summary or string.format('none in our machine outputs and chests'))
   return out
+end
+-- items (batch27 B3, Gemini: a platform's whole payload was a call an item): several items in one call, the same read
+-- for each with the call's other arguments, a row each: item, total, line; one that fails is a row with its error.
+M.stock_one=handlers.stock
+function handlers.stock(p,a)
+  if a.items==nil then return M.stock_one(p,a) end
+  assert(type(a.items)=='table' and #a.items>=1 and #a.items<=32,'items: 1..32 item names')
+  assert(a.item==nil and a.places==nil and a.network==nil,'items is one row an item: no item, places or network with it')
+  local rows,lines={},{}
+  for _,name in ipairs(a.items) do
+    assert(type(name)=='string' and prototypes.item[name],'items: unknown item '..tostring(name))
+    local args={}
+    for k,v in pairs(a) do if k~='items' then args[k]=v end end
+    args.item=name
+    local ok,out=pcall(M.stock_one,p,args)
+    if ok then
+      local line=out.summary or out.line or out.surface_line or string.format('%s: %s',name,tostring(out.total))
+      rows[#rows+1]={item=name,total=out.total,line=line}
+      lines[#lines+1]=line
+    else
+      rows[#rows+1]={item=name,error=reason(out)}
+      lines[#lines+1]=name..': '..reason(out)
+    end
+  end
+  return {rows=rows,lines=lines,note='each row the read stock {item} gives with the same other arguments; stock {item} has the places'}
 end
 -- (d17 batch14 A11, Gemini) Each logistic network's hold of an item on a surface, one line each: providers (active and
 -- passive provider chests), storage, other holders (buffer and requester chests, landing pads, roboports and the like).
@@ -7912,6 +7937,7 @@ local function transfer_one(p,a,pos,e)
     -- Takes and puts by hand, for the agent's repeated hauls (selfview.lua).
     pcall(M.selfview.moved,p,a.direction,e,stacks)
     pcall(M.hauling.moved,p.index,a.direction,e.position,e.surface and e.surface.name,stacks,e.name)
+    pcall(M.filled_mark,p,a.direction,e,stacks)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred or (named~=a.inventory and named or nil),none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
@@ -10084,6 +10110,31 @@ function M.reserved_text(r) return r and r>0 and string.format(', %d of it reser
 -- do (friction3: Opus's tour of 5 turret feeders walked into worm range and was killed). A count the nearest lacks
 -- comes from the next ones, nearest first; one chest that holds it all, no farther than those, is taken alone
 -- (Sonnet: a 600 take went 57 tiles west, then 107 east, past a chest holding 1000).
+-- Chests an agent just filled (batch27 A7, Grok: from: nearest took a spoilable seed, or a count being lowered, back out
+-- of the chest he had just put it in): each give by hand into a chest, by agent, chest and item, kept FILLED_TICKS;
+-- from: nearest leaves such a chest out for the same agent and item (named by position, it is taken from as asked).
+M.FILLED_TICKS=36000
+function M.filled_mark(p,direction,e,stacks)
+  if direction~='to_entity' or not (e.type=='container' or e.type=='logistic-container') or not e.unit_number then return end
+  local st=state()
+  st.filled=st.filled or {}
+  local mine=st.filled[p.index] or {}
+  st.filled[p.index]=mine
+  for u,rec in pairs(mine) do
+    local live=false
+    for item,t in pairs(rec) do if game.tick-t>M.FILLED_TICKS then rec[item]=nil else live=true end end
+    if not live then mine[u]=nil end
+  end
+  local rec=mine[e.unit_number] or {}
+  mine[e.unit_number]=rec
+  for _,s in ipairs(stacks or {}) do if s.name then rec[s.name]=game.tick end end
+end
+-- The tick p last put item into chest e by hand within FILLED_TICKS, or nil.
+function M.filled_recently(p,e,item)
+  local mine=(state().filled or {})[p.index]
+  local t=mine and e.unit_number and mine[e.unit_number] and mine[e.unit_number][item]
+  return t and game.tick-t<=M.FILLED_TICKS and t or nil
+end
 function M.from_nearest(p,a)
   assert(a.from=='nearest','from is "nearest" (the nearest chest holding the item)')
   assert(type(a.item)=='string' and prototypes.item[a.item],'from: "nearest" needs item')
@@ -10108,7 +10159,7 @@ function M.from_nearest(p,a)
     local okt,t=pcall(entity,p,{position=position(a.to.position or a.to)},true)
     target=okt and t or nil
   end
-  local pool,fed,unsafe={},{},{}
+  local pool,fed,unsafe,filled={},{},{},{}
   if target then
     for _,f in ipairs(found) do
       if f.fed and M.feeds_into(p,f.entity,target) then f.fed=nil; f.feeds=nil; f.feeds_target=string.format('it feeds %s (%g,%g), the target',target.name,target.position.x,target.position.y) end
@@ -10120,7 +10171,9 @@ function M.from_nearest(p,a)
     end)
   end
   for _,f in ipairs(found) do
-    if f.fed and not a.feeding then fed[#fed+1]=f
+    local ft=M.filled_recently(p,f.entity,a.item)
+    if ft then f.filled_ago=math.floor((game.tick-ft)/60); filled[#filled+1]=f
+    elseif f.fed and not a.feeding then fed[#fed+1]=f
     else
       local c=mode and not a.unsafe_goal and #pool<24 and not p.can_reach_entity(f.entity) and M.avoid.goal_check(p,p.position,f.entity.position,mode)
       if c then f.unsafe=M.avoid.goal_text(f.entity.name,f.entity.position,c); unsafe[#unsafe+1]=f
@@ -10136,6 +10189,11 @@ function M.from_nearest(p,a)
         table.concat(list,'; '),#fed>3 and '; ...' or '')
     end
     if #unsafe>0 then parts[#parts+1]=string.format('%d in enemy reach left out: %s',#unsafe,unsafe[1].unsafe) end
+    if #filled>0 then
+      local f=filled[1]
+      parts[#parts+1]=string.format('%d chest%s you put %s into in the last %d min left out (%s (%g,%g), %ds ago; name it by position to take from it)',
+        #filled,#filled==1 and '' or 's',a.item,M.FILLED_TICKS/3600,f.entity.name,f.entity.position.x,f.entity.position.y,f.filled_ago)
+    end
     return #parts>0 and table.concat(parts,'; ') or nil
   end
   -- A spoilable item (Luna 00:20: from nearest drew 75%-spoiled mash from a requester while fresher stock sat at a
@@ -10195,7 +10253,7 @@ function M.from_nearest(p,a)
     local far=M.nearest_holding(p,a.item,a.quality,32,nil)
     local where=far and string.format('; the nearest within 32 tiles: %s at (%g,%g), %.1f tiles away, holds %d%s (radius=%d walks there)',
       far.entity.name,far.entity.position.x,far.entity.position.y,far.distance,far.count,M.reserved_text(far.reserved),math.min(256,math.ceil(far.distance)+1)) or '; none within 32 tiles holds any'
-    if far and (#fed>0 or #unsafe>0) then where='' end
+    if far and (#fed>0 or #unsafe>0 or #filled>0) then where='' end
     local why=left_out()
     local text=string.format('no chest %s holds %s (%d checked)%s%s',radius and ('within '..radius..' tiles') or 'in reach',a.item,checked,where,
       why and '; '..why or '')
@@ -12309,7 +12367,15 @@ handlers.flamers=M.defense.handlers.flamers
 handlers.turrets=M.defense.handlers.turrets
 -- Every resource patch on the charted map (ores.lua, Opus: finding new iron in
 -- one call): amount left, distances, nests within 50 tiles, our drills on it.
+-- (batch27 B5) the demolisher territory at a spot, as the demolishers read tells it, or nil
+function M.territory_line(surface,force,pos)
+  local t=surface.get_territory_for_chunk({x=math.floor(pos.x/32),y=math.floor(pos.y/32)})
+  if not t then return nil end
+  local _,text=M.demolishers.state(surface,force,t)
+  return 'in a demolisher territory: '..text
+end
 M.ores=require('ores'){state=state,integer=integer,position=position,
+  territory=function(surface,force,pos) return M.territory_line(surface,force,pos) end,
   charted=function(force,surface,chunk) local pl=surface.platform if pl and pl.force==force then return true end return force.is_chunk_charted(surface,chunk) end}
 handlers.ores=M.ores.handlers.ores
 -- Ghosts at absolute positions, as a player places them from the cursor or
@@ -14381,7 +14447,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
-M.platalerts=require('platalerts'){state=state,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+M.platalerts=require('platalerts'){state=state,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
@@ -15821,7 +15887,8 @@ passive.robot_losses=true
 -- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
 function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
 passive.eggs=true
-M.pushalerts=require('pushalerts'){belt_groups=function(f)
+M.pushalerts=require('pushalerts'){mine_forecast=function(surface,force,q,cap) return M.ores.forecast(surface,force,q,cap) end,
+  territory=function(surface,force,pos) return M.territory_line(surface,force,pos) end,belt_groups=function(f)
     local out=M.beltgaps.alert_groups(f)
     local ok,cuts=pcall(M.linecut.alert_groups,f)
     for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
@@ -15886,7 +15953,7 @@ M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
-M.fleet=require('fleet'){gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
   where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end,
   requests_off=function(pl) return M.rocketload.requests_off(pl) end}
@@ -16153,7 +16220,7 @@ stock=stock_module{give=function(p,e,item,quality,count,inv) return transfer_one
   -- The call's check of every stop (round2120a), and the reply's avoid_enemies line.
   goal_inside=function(p,goal,mode) return M.avoid.inside(p,goal,mode) end,
   describe_avoid=function(mode) return M.avoid.describe(mode) end}
-M.fuelround=require('fuelround'){
+M.fuelround=require('fuelround'){filled=function(p,e,item) return M.filled_recently(p,e,item) end,
   distance=distance,position=position,integer=integer,find_kinds=M.find_kinds,fuel_inventory=fuel_inventory,
   legs=function(p,targets) return M.legs(p,targets) end,nearest_outside=function(...) return M.nearest_outside(...) end,
   accepts=function(e,item) return M.farm.accepts_fuel(e,item) end,entity=remote_entity,held=held,

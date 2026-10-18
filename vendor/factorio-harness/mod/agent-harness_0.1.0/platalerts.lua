@@ -262,6 +262,8 @@ return function(api)
       end
       r.slow_since = r.slow_since or game.tick
     else r.slow_since = nil end
+    -- The fuel outlook flying (batch27 B1): a fluid that runs out before the leg ends.
+    if moving and api.fuel_outlook then sc.fuel = try(function() return api.fuel_outlook(pl) end) end
     r.scan = sc
     return sc
   end
@@ -417,6 +419,14 @@ return function(api)
             seen.slow_key, seen.slow_tick = key, game.tick
           end
         else seen.slow_key = nil end
+        -- Thruster fuel or oxidizer running out before the leg ends (batch27 B1, Luna).
+        if sc.fuel and sc.fuel.short then
+          local key = table.concat(sc.fuel.short, '|')
+          if key ~= seen.fuel_key or game.tick - (seen.fuel_tick or -REPEAT) >= REPEAT then
+            lines[#lines+1] = string.format('platform %s: %s runs out before the leg ends: %s', name, table.concat(sc.fuel.short, ' and '), sc.fuel.line)
+            seen.fuel_key, seen.fuel_tick = key, game.tick
+          end
+        else seen.fuel_key = nil end
         -- No repair packs while it takes hits.
         local recent = r.last_hit and game.tick - r.last_hit <= KEEP_MINUTES * 3600
         if sc.packs == 0 and pl.hub and pl.hub.valid and (recent or (sc.health and sc.max and sc.health < sc.max)) then

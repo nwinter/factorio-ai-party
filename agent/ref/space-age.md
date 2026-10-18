@@ -54,7 +54,10 @@
   Example: `./fh call platform_rename --args '{"platform":"Sunward","name":"Kestrel"}'`
 - `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
-  hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute. `route`: the locations
+  hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
+  of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
+  whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
+  before the leg ends, again after 5 minutes). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an
@@ -130,7 +133,7 @@
   `platform_defense`: first what is stopped or blocked (the supply chain's stops: collectors, crushers, fuel and
   oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines
   on no power), then the route and arrival, hub slots and the chunks in it, chunks collected and where each goes,
-  crushers and makers (state, in and out), thrusters, tanks and ammunition (stock, made and used, run-out, stranded),
+  crushers and makers (state, in and out), thrusters, the fuel outlook, tanks and ammunition (stock, made and used, run-out, stranded),
   turrets and power; `errors` names a read that failed. Each of the four reads gives the detail.
 - `platform_tiles {platform, positions | area}`: up to 64 tiles at exact coordinates: the tile, marked for removal, a
   tile ghost, what stands on it; for foundation whether the hub takes it away now once marked (`remove {now, why}`: one
@@ -159,13 +162,16 @@
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
-- `fleet {platform?}`: one line a platform: where it is and its current stop with each departure condition against the
+- `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
   their cargo, thruster fuel and its 10-minute trend, and `waits on`: the first waiting request at the stop it is at
   with the gate holding it; a hub section that is off with requests in it (`hub section 2 is off: its 1 request
   (rocket-fuel 100 from nauvis) is not made`), as `preflight`'s platform lines and `platforms` (compact too:
-  `requests_off_line`) say it. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
+  `requests_off_line`) say it. `leg: true` (with `platform`): a courier leg in one read: that line, then each wait of
+  yours naming the platform (the action running and each lane's current step) read now (met or not yet, what the hub
+  holds), then each rocket on its way: from where, launched when, rising or coming down, and when it arrives at the
+  last arrivals' launch-to-arrival time. Example: `./fh call fleet --args '{"platform":"Swiftlet"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
   platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.

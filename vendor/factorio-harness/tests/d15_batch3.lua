@@ -385,6 +385,13 @@ do
   eq(by.rocket.used_per_min,12); eq(by.rocket.rate_from,'this leg so far, 3m00s')
   eq(by['thruster-fuel'].used_per_min,600); eq(by['thruster-fuel'].rate_from,'last 1 min, within this leg (3m00s so far)')
   eq(by['thruster-fuel'].lasts_min,10,'6000 at 600/min, not 180/min from a window that held the stop')
+  -- batch27 B1 (Luna): the fuel outlook: held, made and used a minute now, and whether each lasts the rest of the leg
+  eq(r.fuel_outlook,'Swift: leg nauvis->fulgora, 6000 km left, about 4m00s at 1500 km/min; thruster-fuel 6000 held, made 0/min, used 600/min: lasts 10m00s, the leg 4m00s; thruster-oxidizer 0 held, made 0/min, used 0/min: lasts the leg')
+  leg.left_km=30000
+  local o=E.fuel_outlook(pl)
+  eq(o.short[1],'thruster-fuel'); eq(o.rows[1].short_min,10)
+  has(o.line,'thruster-fuel 6000 held, made 0/min, used 600/min: runs out in 10m00s, 10m00s before the leg ends')
+  leg.left_km=6000
   -- two levels down: rockets from explosives (10 aboard) and explosives from coal (20, 2 a craft) and acid (50 in a tank and
   -- 30 in the maker, 10 a craft): 8 more explosives, so at most 18 more rockets
   made_now=15

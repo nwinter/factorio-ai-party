@@ -394,4 +394,20 @@ r=luna('transfer',{position=far_p.position,item='copper-cable',count=5,direction
 eq(r.reserved_note,'robots have 20 copper-cable reserved to take at it now: they may empty it before you arrive')
 luna('stop')
 
+-- batch27 A7 (Grok: from: nearest took a spoilable seed back out of the chest he had just put it in): a chest the same
+-- agent put the item into by hand in the last 10 min is left out of nearest, and said; named by position it is taken
+-- from; after 10 min it counts again.
+do
+  prototypes.item['copper-bacteria']={name='copper-bacteria',type='item',stack_size=50}
+  body.position={x=50,y=32}
+  local seedbox=chest({x=47.5,y=35.5},{})
+  main.insert{name='copper-bacteria',count=10}
+  luna('transfer',{position=seedbox.position,item='copper-bacteria',count=10,direction='to_entity'})
+  eq(seedbox.inv.get_item_count('copper-bacteria'),10)
+  local ok,err=pcall(luna,'transfer',{item='copper-bacteria',from='nearest'})
+  assert(not ok and tostring(err):find('1 chest you put copper-bacteria into in the last 10 min left out (wooden-chest (47.5,35.5)',1,true),tostring(err))
+  r=luna('transfer',{position=seedbox.position,item='copper-bacteria',count=4,direction='to_player'}); eq(r.moved,4)
+  advance(36001)
+  r=luna('transfer',{item='copper-bacteria',from='nearest',count=2}); eq(r.moved,2)
+end
 print('round1050b: ok')

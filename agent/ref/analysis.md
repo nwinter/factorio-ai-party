@@ -21,7 +21,10 @@
   a mined or pumped step names its drills or pumps, their states (working, output full, no resource left) and what
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
-- `supply {item, near?, radius?, surface?, compact?, all_stopped?}`: one item or fluid: where it sits (chests by kind,
+- `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?}`: `split: true` (an item): where it goes now:
+  each group of our machines whose recipe takes it (by recipe and place) with how many work, its take at full speed and
+  share, and what its feeding inserters pick from (belts, requester chests by network, chests, drills dropping in),
+  then requester chests asking for it that feed none of them. Otherwise one item or fluid: where it sits (chests by kind,
   belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs,
   inserter hands, robots, characters), each logistic network's stock of it (free and reserved, and which requesters the
   reserved stock is for), its robots, every unmet requester with the reason (`inventory full: all 48 slots taken
@@ -203,13 +206,19 @@
   within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer only
   over its request), with how many. `area` (up to 128x128) lists the machines short of something (`all: true`: every
   one). Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`
-- `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
+- `ores {resource?, surface?, min_amount?, limit?, position?, patch?, forecast?}`: `forecast: true` with `patch`: our
+  drills' depletion there: each working drill's share of the ore under it (a tile under several shared) at what it
+  takes a minute (speed with bonus, mining time, drain), the minutes until half and all of the working ones stop
+  (stopped drills counted apart), and the 3
+  nearest other patches of the ore (size, a demolisher territory one lies in); half stopping within 30 minutes is
+  also a team alert (`mine_depleting`) to their builders. Otherwise the patches on the charted map (one resource, or
   every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
   and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
   8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
   mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
   Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
-- `stock {item?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: where an item is. With
+- `stock {item?, items?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: `items: [...]`
+  (1..32) gives one row each (item, total, line) from the same read with the other arguments. Where an item is. With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,

@@ -189,6 +189,9 @@ return function(api)
     else list={} end
     local places,dup={},{}
     for _,e in ipairs(list) do
+      -- (batch27 A7) a chest this agent just put the fuel into stays, unless from names it
+      local mine=r.nearest and api.filled and api.filled(p,e,action.item)
+      if mine then r.left_filled=(r.left_filled or 0)+(dup[key(e)] and 0 or 1); dup[key(e)]=true end
       if e.valid and not dup[key(e)] and not r.tried[key(e)] and seen(p,e) and stock(e,action.item,action.quality)>0 then dup[key(e)]=true; places[#places+1]={entity=e,position=e.position} end
     end
     table.sort(places,function(x,y) return api.distance(p.position,x.position)<api.distance(p.position,y.position) end)
@@ -228,7 +231,7 @@ return function(api)
     end
     if api.held(p,action.item,action.quality)==0 and need(action)>0 then
       if r.attempts>=64 or not source(p,action) then
-        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and string.format(' (source read capped at %d chests)',M.MAX_CHESTS) or '')..(r.nearest and '; belts are left out (from names one by position)' or ''))
+        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and string.format(' (source read capped at %d chests)',M.MAX_CHESTS) or '')..(r.nearest and '; belts are left out (from names one by position)' or '')..(r.left_filled and string.format('; %d chest%s you put %s into in the last 10 min left out (from names one by position)',r.left_filled,r.left_filled==1 and '' or 's',action.item) or ''))
         return 'out_of_items'
       end
       return nil
