@@ -277,6 +277,11 @@ do
   has(r.lines[4],'short in the network; asks processing-unit 20 (has 0, short 2m00s, none free in the network)')
   has(r.summary,'logistic network #98 on gleba: 6 requesters looked at; 4 blocked: 1 full_unrequested, 1 waiting, 1 not_sent, 1 shortage; 1 under their count with deliveries on the way under 5 min; 1 filled; 1 more hold spoilage they do not request, with room left: (4.5,10.5) spoilage 100')
   eq(r.requesters[1].asks[2].from.distance,89)
+  -- (d17 batch34 B3) far: asks served from over that many tiles away
+  local rf=L.read(p,{far=50})
+  has(rf.far[1],'requester-chest (74.5,62.5) asks nutrients (0 on the way, 10 short): robots would take it from passive-provider-chest (10.5,0.5), 89 tiles away')
+  eq(#rf.far,1); has(rf.summary,'1 ask served from over 50 tiles away (far)')
+  eq(r.far,nil)
   -- by id, and a missing id names the ids there
   p.force={logistic_networks={gleba={ln}}}
   eq(L.read(p,{network=98}).network,98)

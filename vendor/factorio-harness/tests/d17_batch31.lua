@@ -465,3 +465,54 @@ do
   defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch31 B8 platform_schedule stop edit: ok')
+
+-- C4 (urgent, Astra and Sol 11:09: Kestrel II at Fulgora set to [nauvis] read no_schedule, the rebuild too, and the
+-- queue step said success): the state after no_schedule, no_path or paused (not asked) fails the call; one stop that
+-- is not where the platform is goes as [where it is, that stop], current 2. -----------------------------------------
+do
+  game={tick=100}
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,no_path=5,paused=7},inventory={hub_main=1,hub_trash=2},wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},fulgora={}},fluid={},item={}}
+  local pl={valid=true,name='Kestrel II',index=4,state=4,space_location={name='fulgora'},force={},paused=false}
+  local leaves=true
+  local sch={get_record_count=function() return #(pl.schedule and pl.schedule.records or {}) end}
+  sch.go_to_station=function(i) if leaves then pl.state=3 else pl.state=1 end end
+  sch.remove_record=function() end; sch.add_record=function() end
+  pl.get_schedule=function() return sch end
+  local p={force={platforms={pl}}}
+  local st={}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    freight={where=function() return {} end,leg=function() return nil end}}
+  local function fails(a,text) local ok,err=pcall(space.platform_schedule,p,a); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+  -- one stop, not where it is: [fulgora, nauvis], current 2, said
+  local r=space.platform_schedule(p,{platform='Kestrel II',stops={{station='nauvis',wait={{type='time',ticks=600}}}},paused=false})
+  eq(#pl.schedule.records,2); eq(pl.schedule.records[1].station,'fulgora'); eq(pl.schedule.records[2].station,'nauvis'); eq(pl.schedule.current,2)
+  eq(pl.schedule.records[2].wait_conditions[1].ticks,600); eq(pl.schedule.records[1].wait_conditions,nil)
+  has(r.one_stop,'one stop (nauvis) given while the platform is at fulgora: written as [fulgora, nauvis] with current 2')
+  eq(r.state,'on_the_path')
+  -- as given, and the game leaves it at no_schedule: the call fails with the rule, the schedule as set
+  pl.state,pl.space_location,leaves=4,{name='fulgora'},false
+  fails({platform='Kestrel II',stops={{station='nauvis'}},one_stop='as given'},
+    'Kestrel II reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule')
+  eq(#pl.schedule.records,1)
+  fails({platform='Kestrel II',stops={{station='nauvis'}},one_stop='alone'},'one_stop is "as given"')
+  -- a read changes nothing and is not failed
+  eq(space.platform_schedule(p,{platform='Kestrel II'}).state,'no_schedule')
+  -- clearing the schedule (stops []) is not failed
+  space.platform_schedule(p,{platform='Kestrel II',stops={}})
+  -- paused before, not asked: fails; asked: not
+  pl.state,leaves,pl.paused=4,true,true
+  fails({platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2},'paused: it goes nowhere until unpaused (paused: false); it was paused before this call')
+  r=space.platform_schedule(p,{platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2,paused=true})
+  eq(r.paused,true)
+  -- no_path after: fails
+  pl.paused=false
+  sch.go_to_station=function() pl.state=5 end
+  fails({platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2},'no_path: it has no way from where it is to its next stop')
+  -- next: true leaving it at no_schedule fails too
+  sch.go_to_station=function() pl.state=1 end
+  fails({platform='Kestrel II',next=true},'Kestrel II reads no_schedule')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d17_batch31 C4 platform_schedule fails when it goes nowhere: ok')

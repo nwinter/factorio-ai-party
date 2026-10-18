@@ -7719,3 +7719,132 @@ fh watch    # deploy on every change
     (inactivity, fluid_count, the other request waits) are named in `may_leave` when they could decide it.
   - Not run against the game: n is read-only and the dev world's RCON closed the connection. The mock follows the
     method names read on n.
+- C1 (Sol 06:22: 10 rockets stranded among 214 belts on Kestrel III, recovered by paging): `scan` with `item` or a
+  type naming a belt type:
+  - `belt_items`: the belts of ours among all the entities found (before `limit` cuts the rows) read line by line
+    (get_contents per transport line), summed by item, up to 1024 belts.
+  - With `item`, `belt_item`: the count, how many belts hold it, each belt's position, name and count (64; `more`),
+    and a line naming the first 12.
+  - Cost on world n (Kestrel II, read-only probe bounded by count): 64 belts 0.23 ms, 512 belts 3.1 ms (about 6 us a
+    belt), so 1024 is about 6 ms.
+- C2 (Opus twice: a personal request cleared after a sleep ended early, before its items arrived):
+  - A sleep that ends before its time (woke anything but elapsed) gives `personal_requests` in the reply that reads
+    the wake. A direct wait_ticks or wait_until ended told, mentioned, urgent or damaged puts it in `last`.
+  - Each line is personal.lua's unfilled row: what you hold of the min, what robots are bringing, and why it is not
+    filled (12 lines, then a count). Nothing is added when every request is filled.
+  - Cost: the character's own requester point only.
+- C4 (urgent, Astra and Sol 11:09: Kestrel II at Fulgora set to [nauvis], current 1, paused false, read no_schedule even
+  after the rebuild; Swiftlet the same; [fulgora, nauvis] current 2 left; and the queue step reported success, then
+  waited):
+  - The rule from the journals, as the task gives it: every one-stop schedule read no_schedule (Sol's lone gleba,
+    Luna's lone fulgora, these two), and so did schedules of two or more stops whose current is the stop it waits at
+    (batch23 A0b's 8 of 8). With current on another stop they left.
+  - platform_schedule fails (space.lua `stuck`; a failed queue step, on_fail as set) when the state after the call
+    reads no_schedule, no_path, or paused without `paused: true`. This covers stops (unless they are [], a clear),
+    next, stop edits and a paused-only call. The schedule stays as set; the error gives the schedule text, the rebuild
+    line and the rule (`M.STUCK_RULE`). A call that changes nothing is a read and is not failed.
+  - One stop that is not where the platform is (stopped at a planet, not flying; current omitted or 1; no keep_leg):
+    written as [where it is, that stop] with current 2. `one_stop` says so, including that after that stop's waits
+    the platform goes back to where it was (at once when the stop has no wait). `one_stop: "as given"` writes the
+    one stop alone (and fails as above if the game reads no_schedule).
+
+## d17 batch34 (the agents' 12:20 poll)
+
+- A1 (Astra: about 65 medium-pole ghosts stood over live small poles while `ghosts` read "robots can build it"; robots
+  held poles until the small poles were marked for upgrade):
+  - robots.lua `M.under(g)`: a live entity of ours on an entity ghost's spot (its box shrunk by 0.1, or a quarter of a
+    side), whose collision layers meet the ghost's, marked neither for upgrade nor for deconstruction. Characters,
+    vehicles, robots, ghosts and proxies are left out. It is of the ghost's kind when it is another name of the same
+    fast-replace group and size.
+  - `ghosts`: such a ghost's verdict reads `blocked: our live X (x,y) stands on its spot, not marked for upgrade (robots
+    do not build it until it is)` (or deconstruction), counted in the summary as `blocked: a live entity of ours on its
+    spot, ...`. `blocked` gives a line per ghost and entity name with the count and the call that marks them:
+    `upgrade {area, from, to}` for one of its kind (the area round them when it fits 128 tiles, else the first 16
+    positions), else `deconstruct {area, entity_names}`. Only the nearest 512 entity ghosts are checked
+    (`blocked_checked` says so past that).
+  - `construction_robots`: a robot whose order targets such a ghost is held up by it (its line says so), and
+    `ghosts_blocked` counts the ghosts in the orders of robots in the air (512 at most) as `ghosts` does.
+  - Cost on world n (read-only probe, the module loaded into a throwaway env): 14 ghosts 0.17 ms, 69 ghosts 0.81 ms,
+    about 12 us a ghost, so 512 is about 6 ms. Nauvis had no blocked ghost by then, so the hit path ran in tests only.
+- A2 (Astra, Luna: Petrel's drop 1376 of 3 underground belts and a chest landed in Gleba's pad and construction robots
+  spent them on unrelated ghosts within seconds; four reads found nothing):
+  - drops.lua: a drop sent to a landing pad records the pad's count of each sent item before (at the send) and when it
+    lands. Then for 20 s (sampled every 15 ticks, with drops.tick) each fall in the pad's count reads the construction
+    and logistic robots of ours within 8 tiles of the pad holding that item (each robot counted once) and the ghost or
+    entity its first order is on. What fell with no robot seen is said as such (an inserter, a player, or a robot
+    already gone). No on_robot_* event is used.
+  - The drop's landing line in the team block waits for those 20 s and carries the pad line. `drops` gives `pad`,
+    `pad_verdict` (`landed, then taken by construction robots`, `landed, then N of M taken by construction robots`,
+    `landed, then N of M left the pad`) and `pad_now`.
+  - `where_is {item}` adds `drops` (the last 4 drops of it into a pad on that surface) and `shipment` adds the
+    platform's last 2 drops into a pad at each stop's planet, each with the verdict. The game reserves nothing for the
+    sender; the docs say so.
+- A3 (Muse: Wayfarer's floor request read absent with 72 ghosts open; Muse nearly called the hull closed):
+  - Found in the journals: the platform_bom keeper (Sol's `request: true, tail: true` since 17:52) asked 72 foundation in
+    Sol's reads at ticks 28354138 and 28356049, and Muse's observe at 28355157 listed no foundation slot. An earlier
+    read (28234653) lacked it the same way between 972 and 891. Both times items sorted before it in the section had
+    just dropped out (solar-panel the first time; chemical-plant, efficiency-module-2 and pump the second). The old
+    rewrite put each item at its sorted place, so every later item was written into the slot another held. The vanish
+    was not reproduced (n is read-only and the dev world's RCON closes the connection).
+  - The keeper now keeps each item in the slot it has. An item no longer needed is cleared where it stands, and a new
+    one takes a free slot (or the next past the end). A slot as wanted is not written again. Duplicate slots of one
+    item are cleared.
+  - `platform_bom` (a read) gives `requests_check` with ghosts open (every item they still need has an active hub
+    request, or how many have none) and `unrequested`: each item the ghosts need, beyond the hub, pods in flight and
+    robots, that no active hub request asks for.
+- A4 (Sol: Swiftlet's LDS gate timed out twice; the failed step was removed, so a plain resume would have flown short):
+  - A queued `wait_until` takes `on_timeout: "hold"` (or `"fail"`, the default). On timing out, the step is recorded
+    `timed_out` with `held: true`, a copy goes back first in pending (same id, label and args), and the queue pauses.
+    `paused_why` names the condition still unmet with what it saw. `queue_resume` waits for it again with a fresh
+    timeout. Remote lanes run the same code.
+  - In a standing order's run it fails as before. A direct `wait_until` with `on_timeout` is refused.
+- B1 (Sonnet: steam piped into water, and a steam path cut; pipe_gaps saw both after the damage):
+  - fluidjoin.lua: for a plan's entries with fluid boxes, each box is a node (a pump's input side and output side are
+    two, as its one box joins two segments). Nodes joined to each other (a connection meeting one back, a
+    pipe-to-ground pair, the first on its line deciding) form a group. Each group's joins to our built fluid boxes give
+    the segment (get_fluid_segment_id and its contents, else a machine's box), the fluid it holds, is locked to or
+    filtered to, and the entity there.
+  - The fluids a group would hold: built segments', a planned machine's recipe fluid (ports.lua), the resource under a
+    planned pumpjack (its mining area) and the tile's fluid under a planned offshore pump. Two or more is a mix.
+  - An entry on the centre of a built fluid entity of ours of another name replaces it. `fluid_cuts` names the joins
+    that entity has now (engine connections with a target) that the entry's normal connections would not make; a pump
+    adds that its sides stay two segments.
+  - Dry runs of place_ghosts, build, paste and blueprint_place give `fluid_segments`, `fluid_mix` (with
+    `fluid_mix_note`) and `fluid_cuts`. Live place_ghosts and build refuse a mix ("nothing placed: ... would join
+    sulfuric-acid (...) and water (segment 696 at pipe (1.5,90.5)); ...; mix_fluids: true places it anyway").
+  - What the game does with such a placement was not tested (no writable world); the note states Sonnet's case: a
+    pumpjack whose output joined a water pipe put its acid into the water segment.
+  - On world n (read-only, the modules in a throwaway env): a pumpjack planned at Sonnet's old spot (2.5,88.5) on
+    Vulcanus facing south reads `would join sulfuric-acid (#3 pumpjack's output: the resource under it) and water
+    (segment 696 at pipe (1.5,90.5))`, 0.55 ms for 4 entries. A pipe-to-ground planned on the pipe at (1.5,90.5) reads
+    `no longer joined to pipe-to-ground (1.5,91.5), pipe (0.5,90.5)`.
+- B2 (Sol, twice on Wayfarer: a crusher took the calcite feed, the iron melter the oxidizer ore):
+  - trace.lua `M.competitors`: for each feeder of an ingredient a machine lacks, the other takers at its source. On a
+    belt it walks the lanes the feeder picks from upstream (prev_lane, 64 tiles) and lists the inserters picking from
+    those lanes into another machine whose recipe takes the item, or into a chest (the filter allowing it). At a chest
+    or a machine output it lists the other inserters taking from there.
+  - Each comes with its machine, recipe, state and what the recipe uses of the item a minute at its crafting speed now
+    (amount x crafting_speed x 60 / energy), 6 at most. trace gives the line among the ingredient's parts and
+    `competitors` on the row.
+  - On Wayfarer (world n, 50 inserters read, 18 calls): calcite for the long-handed inserter at (-6.5,50.5) passes two
+    foundries first (28 and 35 tiles upstream, 9.7 a minute each); 8.8 ms for the 18 calls (about 0.5 ms each).
+- B3 (Opus, 3 times: a deconstruct of two chests 450 tiles away sent about 300 robots, some lost; 20 old requesters
+  pulled ore 500 tiles for 20 hours):
+  - robottrips.lua `preview(surface, force, jobs)`: jobs grouped by kind, item and 32-tile cell (32 groups). Trips:
+    construct (the roboport of the network nearest the ghost with construction robots in it, to the chest
+    select_pickup_point picks, to the ghost); deconstruct (that roboport to the entity, then to select_drop_point's
+    chest; one trip for the entity and one per robot load of its contents, payload with the force's storage bonus);
+    deliver (the roboport nearest the pickup with logistic robots, to the pickup, to the requester; one trip a load).
+  - The lines: trips, robots at once (at most the network's idle ones of that kind), the roboports (3, by trips), the
+    longest and mean trip, trips over 200 tiles with the longest's legs, and each leg (16) passing within reach of a
+    worm or spawner the map shows. The map's structures are read once over the chunks near all legs (64 chunks a call;
+    the rest said unread).
+  - In the deconstruct dry run, the place_ghosts, paste and blueprint_place dry runs, and the requests dry run on a
+    requester, buffer chest or the character: `robot_dispatch`. The build action builds by hand and gives none.
+  - `logistics_audit {far?}` (default 200): `far` lists each ask, short or with a delivery on the way, whose pickup the
+    network would pick now (select_pickup_point) lies farther off (the first 128 asks, 16 lines), and the summary
+    counts them.
+  - Cost on world n: 4 provider chests near (-33,146) holding 4800 items: 1203 trips, about 289 robots, 3.2 ms. 36
+    construct jobs on the far east network: 5.4 ms with the enemy read, 0.9 ms for 24 without. A first version that
+    read enemies leg by leg and every roboport per group ran 88 ms for 36 jobs; the structures read once and the
+    roboports read once a network brought it down.

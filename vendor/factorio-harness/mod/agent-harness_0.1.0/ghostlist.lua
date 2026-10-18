@@ -6,7 +6,7 @@
 -- A summary counts them by name and by that verdict. Read only; bounded: 4000 ghosts, radius 256.
 return function(api)
   local M = {}
-  local MAX = 4000
+  local MAX, MAX_UNDER = 4000, 512
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function item_of(g)
@@ -86,7 +86,7 @@ return function(api)
     end
     local inv = s == p.surface and try(function() return p.get_main_inventory() end)
     local nets, held = {}, {}
-    local rows, by_name, by_verdict, held_n = {}, {}, {}, 0
+    local rows, by_name, by_verdict, held_n, blocked, ghost_of = {}, {}, {}, 0, {}, {}
     for _, g in ipairs(found) do
       if g.valid then
         local item, count = item_of(g)
@@ -114,6 +114,7 @@ return function(api)
         elseif best.has == 0 then verdict = 'its network holds no ' .. (item or 'item for it')
         else verdict = 'its network has no idle construction robot' end
         row.robots = verdict
+        if g.type == 'entity-ghost' then ghost_of[row] = g end
         if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
         for _, ln in ipairs(covering) do
           local hit = robot_for(ln, g)
@@ -137,6 +138,26 @@ return function(api)
       end
     end
     table.sort(rows, function(x, y) if x.distance ~= y.distance then return x.distance < y.distance end return x.name < y.name end)
+    -- (d17 batch34 A1, Astra: ~65 medium-pole ghosts over live small poles read "robots can build it") the nearest 512
+    -- entity ghosts (about 12 us each on world n): a live entity of ours on the spot, not marked, blocks it
+    local checked = 0
+    for _, r in ipairs(rows) do
+      local g = ghost_of[r]
+      if g and api.under then
+        checked = checked + 1
+        if checked > MAX_UNDER then break end
+        local under, kind = api.under(g)
+        if under then
+          by_verdict[r.robots] = by_verdict[r.robots] - 1
+          if by_verdict[r.robots] == 0 then by_verdict[r.robots] = nil end
+          r.robots = string.format('blocked: our live %s %s stands on its spot, not marked for %s (robots do not build it until it is)', under.name, at(under.position),
+            kind and 'upgrade' or 'deconstruction')
+          local key = 'blocked: a live entity of ours on its spot, not marked for upgrade or deconstruction'
+          by_verdict[key] = (by_verdict[key] or 0) + 1
+          blocked[#blocked+1] = {ghost=g, under=under, kind=kind}
+        end
+      end
+    end
     local limit = api.integer(a.limit, 24, 1, 64, 'limit')
     local pages = math.max(1, math.ceil(#rows / limit))
     local page = api.integer(a.page, 1, 1, pages, 'page')
@@ -166,13 +187,16 @@ return function(api)
       nextcmd = string.format('ghosts {%s%s%s, limit: %d, page: %d}', where, a.surface and string.format(', surface: "%s"', s.name) or '',
         a.name and string.format(', name: "%s"', a.name) or '', limit, page + 1)
     end
-    return {summary=summary, ghosts=list, lines=lines, total=#rows, page=pages > 1 and page or nil, pages=pages > 1 and pages or nil,
+    local where_s = ''
+    if s ~= p.surface then where_s = s.platform and string.format(', platform: "%s"', s.platform.name) or string.format(', surface: "%s"', s.name) end
+    return {summary=summary, ghosts=list, lines=lines, blocked=#blocked > 0 and api.under_lines(blocked, where_s) or nil,
+      blocked_checked=checked > MAX_UNDER and string.format('the nearest %d entity ghosts checked for a live entity on their spot', MAX_UNDER) or nil, total=#rows, page=pages > 1 and page or nil, pages=pages > 1 and pages or nil,
       more=#rows > page * limit and #rows - page * limit or nil, next=nextcmd, covered=covered,
       note='construct {position, radius} builds ghosts by hand (it takes the items); robots build those in a construction area with idle robots and the item in the network'}
   end
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
     area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',
     limit='1..64 ghosts a page (default 24)', page='1.. the next ghosts, nearest first',
-    returns='summary (how many, by name, by robots verdict); ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (robots can build it; no roboport\'s construction area covers it; its network holds no ITEM; its network has no idle construction robot), and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
+    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM; its network has no idle construction robot), and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
   return M
 end

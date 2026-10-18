@@ -139,12 +139,22 @@ return function(api)
     -- Each item's slot options as they stand (d17 batch12 A0, Sol: the rewrite every 10 s erased the custom minimum
     -- payload min_payload had set, so small hardware waited for a full rocket): its min_payload and max are kept, the
     -- request's own min_payload map wins, and a slot already as wanted is not written again.
-    local was = {}
+    -- (d17 batch34 A3, Muse: Wayfarer's floor request read absent with 72 ghosts open, between two rewrites that each
+    -- read it as 72; both times items sorted before it had just dropped out) each item keeps the slot it has: an item no
+    -- longer needed is cleared where it stands and a new one takes a free slot, so no rewrite writes one item into
+    -- another's slot.
+    local was, free, wanted = {}, {}, {}
+    for _, it in ipairs(items) do wanted[it.item] = true end
     for i = 1, n do
       local f = try(function() return sec.get_slot(i) end)
       local v = f and f.value
       local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
-      if name then was[name] = {slot=i, min=f.min, max=f.max, mp=f.minimum_delivery_count, from=f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))} end
+      if name and wanted[name] and not was[name] then
+        was[name] = {slot=i, min=f.min, max=f.max, mp=f.minimum_delivery_count, from=f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))}
+      else
+        if name then pcall(sec.clear_slot, i) end
+        free[#free+1] = i
+      end
     end
     -- A slot's minimum payload changed since the keeper last wrote it (d17 batch21 A2, Astra: crusher 10 -> 9 by
     -- min_payload, put back every 10 s) was changed by requests or min_payload: the keeper adopts it.
@@ -175,19 +185,21 @@ return function(api)
       it.full = full
       it.mp = mp
       rec.written[it.item] = mp or false
-      if not (w and w.slot == i and w.min == it.n and w.mp == mp and w.from == rec.import_from) then
-        sec.set_slot(i, {value={type='item', name=it.item, quality='normal', comparator='='}, min=it.n, max=w and w.max or nil,
+      local slot = w and w.slot or table.remove(free, 1)
+      if not slot then n = n + 1; slot = n end
+      it.slot = slot
+      if not (w and w.min == it.n and w.mp == mp and w.from == rec.import_from) then
+        sec.set_slot(slot, {value={type='item', name=it.item, quality='normal', comparator='='}, min=it.n, max=w and w.max or nil,
           import_from=rec.import_from, minimum_delivery_count=mp})
       end
     end
-    for i = #items + 1, n do pcall(sec.clear_slot, i) end
     local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     local lines = {}
     -- what was written and what the hub holds now, for the watch (A3)
     local spent = rec.spent
     rec.min, rec.held, rec.slot, rec.spent = {}, {}, {}, nil
-    for i, it in ipairs(items) do
-      rec.min[it.item] = it.n; rec.slot[it.item] = i
+    for _, it in ipairs(items) do
+      rec.min[it.item] = it.n; rec.slot[it.item] = it.slot
       rec.held[it.item] = inv and try(function() return inv.get_item_count(it.item) end) or 0
     end
     for _, it in ipairs(items) do
@@ -411,8 +423,18 @@ return function(api)
         r.remaining > 0 and string.format('%d to send', r.remaining) or 'covered',
         r.asks and string.format(' (the hub asks %d)', r.asks) or ' (the hub asks none)')
     end
+    -- (d17 batch34 A3, Muse nearly called Wayfarer's hull closed on a request line that had dropped) ghosts open whose
+    -- item no active hub request asks for, while the hub, cargo pods on their way and its robots hold less than they need
+    local unasked = {}
+    for _, r in ipairs(rows) do
+      if r.remaining > 0 and (r.asks or 0) == 0 then
+        unasked[#unasked+1] = string.format('%s: ghosts need %d, %d not in the hub, in flight or in robots; no active hub request asks for it', r.item, r.ghosts_need, r.remaining)
+      end
+    end
     local out = {platform=pl.name, entity_ghosts=entity_ghosts, tile_ghosts=tile_ghosts, pods_in_flight=pods, items=rows,
-      lines=#lines > 0 and lines or {'no ghost on ' .. pl.name .. ': nothing to build'}}
+      lines=#lines > 0 and lines or {'no ghost on ' .. pl.name .. ': nothing to build'}, unrequested=#unasked > 0 and unasked or nil,
+      requests_check=(entity_ghosts + tile_ghosts > 0) and (#unasked > 0 and string.format('%d item%s the ghosts still need %s no active hub request (unrequested)', #unasked, #unasked == 1 and '' or 's', #unasked == 1 and 'has' or 'have')
+        or 'every item the ghosts still need has an active hub request') or nil}
     if #rest > 0 then
       local lift, slots = api.cargo.limits(nil)
       local w = api.cargo.weigh(rest, lift, slots)
@@ -467,11 +489,11 @@ return function(api)
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, asks, holds, short, where}], lines (a line a platform with what it lacks)',
-    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
+    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
     tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; a slot with no custom minimum payload (the game\'s default, a full rocket by weight) is lowered the same way; kept until false. Each line says the minimum payload the slot has now',
     min_payload='with request: {item: N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
-    returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}
+    returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], requests_check (with ghosts open: whether every item they still need has an active hub request) and unrequested (each item the ghosts still need, beyond the hub, in flight and in robots, that no active hub request asks for), entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}
   return M
 end

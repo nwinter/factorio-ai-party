@@ -71,12 +71,18 @@
   robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
   it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
-  and by what.
+  and by what. A ghost over a live entity of ours whose collision meets it, not marked for upgrade or deconstruction,
+  reads `blocked: our live small-electric-pole (x,y) stands on its spot, not marked for upgrade (robots do not build it
+  until it is)` (the nearest 512 entity ghosts checked); `blocked` counts them per ghost and entity name with the call
+  that marks them (`upgrade {area, from, to}` for one of its kind, same fast-replace group and size, else
+  `deconstruct {area, entity_names}`).
 - `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut
   off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at
-  30 C or more.
+  30 C or more. The dry run's `robot_dispatch`: the robots' trips (one an entity, one a robot load of what it holds),
+  how many at once, from which roboports, the longest and mean trip, trips over 200 tiles, and legs passing within
+  reach of a worm or spawner the map shows.
   Example: `./fh call deconstruct --args '{"area":{"left_top":{"x":180,"y":50},"right_bottom":{"x":200,"y":70}},"tiles":["landfill"]}'`
 - `upgrade {area | position, to, from?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
   planner; a ghost changes in place (wires and settings kept), a built one is marked for robots.
@@ -186,7 +192,14 @@
   (`missing: no drop target`); `connections`: each planned boiler's, turbine's, reactor's, pump's or pipe's fluid and
   heat connection points and what joins each (`planned #5 pipe`, `nothing there`), a pump port's tile, and for each
   pipe-to-ground what its mouth joins and whether it pairs, with which (`inspect` of a heat entity shows its heat
-  connections and temperature). `closes_in` names the entry that fills the last gap out when the plan would close you
+  connections and temperature). `fluid_segments`: the built fluid segments each group of planned fluid boxes joins
+  (segment id, fluid and amount, at which entity; `2 segments into one`); `fluid_mix`: a group that would hold two
+  fluids (built segments, a planned machine's recipe fluid, the resource under a planned pumpjack, the tile under an
+  offshore pump); `fluid_cuts`: a planned entry on a built fluid entity's centre and the joins it would no longer
+  make (a pump keeps its input and output as two segments). `place_ghosts` and `build` refuse a plan with a
+  `fluid_mix` unless `mix_fluids: true`. `robot_dispatch` (place_ghosts, paste, blueprint_place): the construction
+  robots' trips to the ghosts, as the network would pick them: how many at once, from which roboports, the longest
+  and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows. `closes_in` names the entry that fills the last gap out when the plan would close you
   in where you stand; a build reply says `closed_in` after it. `build` dry runs name off-character `pockets`, their
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and

@@ -999,7 +999,7 @@ return function(api)
     -- (backlog #247, Astra 89h33: a dry run said would_mark 741 logistic robots, the live call changed 0) robots in flight
     -- are not marked by the game's order (a planner leaves them): counted apart, in the dry run as live
     local FLYING={['logistic-robot']=true,['construction-robot']=true,['combat-robot']=true,['capture-robot']=true}
-    local flying=0
+    local flying,jobs=0,{}
     for _, e in ipairs(list) do
       local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable end)
       if ok and t and FLYING[t] then
@@ -1012,7 +1012,11 @@ return function(api)
           if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1; by[n]=(by[n] or 0)+1 end
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
-          if not e.to_be_deconstructed(p.force) then changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end end
+          if not e.to_be_deconstructed(p.force) then
+            changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end
+            -- (d17 batch34 B3) the robots' trips for it
+            if t~='entity-ghost' and t~='tile-ghost' and api.deconstruct_job and #jobs<4096 then local j=api.deconstruct_job(e); if j then jobs[#jobs+1]=j end end
+          end
         elseif t~='entity-ghost' and t~='tile-ghost' and (pcall(e.to_be_deconstructed,p.force)) and e.to_be_deconstructed(p.force) then already=already+1
         else
           local ghost_name=(t=='entity-ghost' or t=='tile-ghost') and (select(2,pcall(function() return e.ghost_name end)) or n) or nil
@@ -1049,6 +1053,11 @@ return function(api)
       table.sort(names,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
       for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
       out.would_mark_by_name=#names>0 and table.concat(names,', ') or nil
+      -- (d17 batch34 B3, Opus: two ore chests 450 tiles away sent about 300 robots) the robots' trips
+      if api.dispatch and #jobs>0 then
+        local okd,lines=pcall(api.dispatch,p.surface,p.force,jobs)
+        if okd and lines then out.robot_dispatch=lines end
+      end
     end
     if #heat_parts>0 and api.heat_loss then
       local ok,loss=pcall(api.heat_loss,p.surface,p.force,heat_parts)

@@ -307,6 +307,7 @@ return function(api)
     if #lacking == 0 then out.note = 'it holds every ingredient for its next craft (all=true lists them all)' end
     -- Containers near it that hold an ingredient and that no inserter reads.
     local boxes = p.surface.find_entities_filtered{type=CONTAINERS, force=p.force, position=e.position, radius=r + NEAR}
+    local cell_of = cells(p.surface, p.force)
     for _, w in ipairs(lacking) do
       local row = {item=w.item, has=w.has, needs=w.amount}
       local parts = {string.format('%s: has %d of %d', w.item, w.has, w.amount)}
@@ -323,6 +324,9 @@ return function(api)
             local name, n = hand(f.e)
             parts[#parts+1] = string.format('%s %s %s takes from %s%s', f.e.name, at(f.e.position), status(f.e), text,
               name and string.format(', holding %d %s', n, name) or '')
+            -- (d17 batch34 B2) the other takers of the item before this feeder: upstream on its lane, or at its source
+            local okc, comp = pcall(M.competitors, p.surface, p.force, e, f, w.item, cell_of)
+            if okc and comp then parts[#parts+1] = comp.line; row.competitors = row.competitors or {}; row.competitors[#row.competitors+1] = comp end
             -- (B1) a belt lane it picks from that is full of another item
             if f.pick and f.pick.valid and BELT[f.pick.type] then
               for lane = 1, 2 do
@@ -569,6 +573,76 @@ return function(api)
     return {item=item, blocking=block, jam_tiles=jam, sources=sources, first_consumer=first_consumer,
       line=string.format('the %s lane at %s is full of %s (%d tile%s back to %s) and holds no %s; %s comes onto it from: %s%s', side(k), place(belt), block, jam, jam == 1 and '' or 's',
         at(last.position), item, block, table.concat(sources, '; '), first_consumer and '; the first consumer of ' .. item .. ' past it: ' .. first_consumer or '')}
+  end
+  -- (d17 batch34 B2, Sol, twice on Wayfarer: the basic oxide crusher took the calcite feed, the iron melter the
+  -- oxidizer ore) the machines that take the item before a starved machine's feeder does: on the belt lane the feeder
+  -- picks from, followed upstream (prev_lane, UPSTREAM_TILES tiles), the inserters picking from it into another
+  -- machine whose recipe takes the item, or into a chest (filters allowing it); on a chest or a machine's output it
+  -- picks from, the other inserters taking from there. Each with its machine's state and what its recipe uses of the
+  -- item a minute at its crafting speed now. {lines, rows} or nil.
+  M.UPSTREAM_TILES, M.COMPETITORS = 64, 6
+  local function use_a_minute(m, item)
+    local r = recipe_of(m)
+    if not r then return nil end
+    local amount
+    for _, ing in ipairs(r.ingredients or {}) do if ing.name == item then amount = (amount or 0) + (ing.amount or 1) end end
+    local speed = try(function() return m.crafting_speed end) or 1
+    local energy = try(function() return r.energy end) or 1
+    return amount and amount * speed * 60 / math.max(energy, 0.001) or nil, r.name
+  end
+  local function taker(row, item, starved)
+    local d = row.drop
+    if not (d and d.valid) or d == starved or not allows(filters_of(row.e), item) then return nil end
+    if CRAFTER[d.type] then
+      if not takes_item(d, item) then return nil end
+      local per, rname = use_a_minute(d, item)
+      return string.format('%s %s into %s (%s, %s%s)', row.e.name, at(row.e.position), place(d), rname or '?', status(d),
+        per and string.format(', its recipe uses %g %s a minute at its speed', math.floor(per * 10 + 0.5) / 10, item) or ''), per
+    end
+    if CONTAINER[d.type] then return string.format('%s %s into %s', row.e.name, at(row.e.position), place(d)) end
+  end
+  function M.competitors(surface, force, starved, feeder, item, cell_of)
+    local pick = feeder.pick
+    if not (pick and pick.valid) then return nil end
+    cell_of = cell_of or cells(surface, force)
+    local rows, lines, seen, total = {}, {}, {}, 0
+    local function add(text, per, where)
+      if #rows >= M.COMPETITORS or seen[text] then return end
+      seen[text] = true
+      rows[#rows+1] = {text=text, per_min=per, where=where}
+      if per then total = total + per end
+    end
+    if BELT[pick.type] then
+      for lane = 1, 2 do
+        if picks_lane(feeder.e, lane) then
+          local e, k = pick, lane
+          for n = 0, M.UPSTREAM_TILES do
+            if not e then break end
+            local c = cell_of(e)
+            for _, row in ipairs(c.by_pick[e.unit_number] or {}) do
+              if row.e ~= feeder.e and row.e.valid and picks_lane(row.e, k) then
+                local text, per = taker(row, item, starved)
+                if text then add(text, per, n == 0 and string.format('on the same belt (%s lane)', side(k)) or string.format('%d tile%s upstream on the %s lane', n, n == 1 and '' or 's', side(k))) end
+              end
+            end
+            e, k = prev_lane(e, k)
+          end
+        end
+      end
+    else
+      local c = cell_of(pick)
+      for _, row in ipairs(c.by_pick[pick.unit_number] or {}) do
+        if row.e ~= feeder.e and row.e.valid then
+          local text, per = taker(row, item, starved)
+          if text then add(text, per, 'from the same ' .. (CRAFTER[pick.type] and 'machine output' or 'chest')) end
+        end
+      end
+    end
+    if #rows == 0 then return nil end
+    for _, r in ipairs(rows) do lines[#lines+1] = r.where .. ': ' .. r.text end
+    return {rows=rows, lines=lines, per_min=total > 0 and math.floor(total * 10 + 0.5) / 10 or nil,
+      line=string.format('%d other taker%s of %s at the source of %s %s: %s%s', #rows, #rows == 1 and '' or 's', item, feeder.e.name, at(feeder.e.position),
+        table.concat(lines, '; '), total > 0 and #rows > 1 and string.format(' (their recipes use %g a minute in all)', math.floor(total * 10 + 0.5) / 10) or '')}
   end
   local function names(m, without)
     local list = {}
@@ -1231,7 +1305,7 @@ return function(api)
     surface='optional surface name for position or item (default yours); exclusive with platform',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
-    returns='position: a maker stopped by its full output adds downstream (the inserters taking from it, each with its destination; a chest with its free slots) and downstream_note; per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders; throughput (a crafting machine whose inserters in or out carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, and how many like its fastest it takes). forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
+    returns='position: a maker stopped by its full output adds downstream (the inserters taking from it, each with its destination; a chest with its free slots) and downstream_note; per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, the other takers of it at that source (competitors: on the belt lane it picks from, followed 64 tiles upstream, and beside it, the inserters picking from that lane into another machine whose recipe takes it, or into a chest; at a chest or a machine\'s output, the other inserters taking from there; each with its machine, recipe, state and what the recipe uses of it a minute at its crafting speed; the first 6), and the nearest container within 10 tiles holding it that no inserter reads; feeders; throughput (a crafting machine whose inserters in or out carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, and how many like its fastest it takes). forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
   }
   return M
 end

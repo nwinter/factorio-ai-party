@@ -65,7 +65,10 @@
   is there, and a container within 10 tiles holding it that nothing reads. A belt lane it picks from that is full of
   another item and holds none of the ingredient is followed upstream (256 tiles): the jam, the blocking item, the
   inserter putting it on (what it takes from, its circuit or logistic condition and whether it holds now; else the
-  belts feeding the line's start), and the first consumer of the ingredient past it (`blocked`). `forward: true` follows its output inserters
+  belts feeding the line's start), and the first consumer of the ingredient past it (`blocked`). `competitors`: the
+  other takers of it at the feeder's source (inserters on that lane, followed 64 tiles upstream, into another machine
+  whose recipe takes it or into a chest; at a chest or machine output the other inserters taking from there), each with
+  its machine, recipe, state and what the recipe uses of it a minute at its speed. `forward: true` follows its output inserters
   and belts lane by lane to where they end and what blocks them (on a belt tile, a drill or a chest: from there,
   forward), naming where other items join a lane (`joins transport-belt (12,5) carrying iron-plate on the left lane:
   your iron-ore mixes in`); with `audit: true` it adds `audit`: where the walked lanes lose capacity (a belt
@@ -272,10 +275,14 @@
   item with what it holds, what is on the way and for how long, the network's free count and the provider robots would
   take it from (position, distance, count). The summary counts each kind and names the chests holding spoilage with
   room left. `limit`: rows (default 12, up to 48); 256 requesters a call, `next_from` gives `from` for the rest.
-  Characters' requests are left out.
+  `far` (default 200): each ask short or with a delivery on the way whose pickup the network would pick now lies
+  farther off, with that chest and its distance. Characters' requests are left out.
 - `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
-  target out of the area, waiting to charge, no charge); `ghosts_waiting`: each ghost in a held-up robot's queue.
+  target out of the area, waiting to charge, no charge, its target ghost standing over a live entity of ours not marked
+  for upgrade or deconstruction); `ghosts_waiting`: each ghost in a held-up robot's queue; `ghosts_blocked`: the ghosts
+  in the orders of robots in the air that stand over such an entity, counted per ghost and entity name with the `upgrade` (or
+  `deconstruct`) call that marks them.
   `sources: true`: per group of waiting ghosts and item requests, the
   network's chests holding the item (nearest 3) and whether the straight line from each passes within a worm's or
   spawner's reach the map shows.
@@ -303,3 +310,7 @@
   hits what stands within 10 tiles of it (walls and rails never). And our buildings lightning killed: in the last hour,
   and the last one. The team block carries both once an hour.
 - `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.
+- `scan {type: "transport-belt"}` (any belt type) adds `belt_items`: what all the belts found carry by item, before
+  `limit` cuts the rows (up to 1024 belts). `item: "rocket"` adds `belt_item`: how many on how many belts, and each
+  belt holding it (`positions`, 64; `line` names the first 12). Example:
+  `./fh call scan --args '{"platform":"Kestrel III","area":{"left_top":{"x":-64,"y":-64},"right_bottom":{"x":64,"y":64}},"type":"transport-belt","item":"rocket"}'`

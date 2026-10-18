@@ -124,7 +124,9 @@
     gives `sends_down`: per item, what they would keep and kept by planet, and how many go down to which stop's pads
     (where it waits first, then its schedule's) or stay aboard. `keep: ["firearm-magazine"]` keeps
     those requested up to the count held (with the dropped request's import planet and min payload). `dry_run: true`
-    changes nothing and replies with the sections, `stored` and `sends_down` the change would make.
+    changes nothing and replies with the sections, `stored` and `sends_down` the change would make; on a requester,
+    a buffer chest or yourself, `robot_dispatch`: the logistic robots' trips for what it would ask beyond what it holds
+    (from the chest the network would take each from; how many at once, from where, how far, past which enemies).
   - Your own: `unfilled` lists the personal requests not filled, each with why (no network where you stand, no
     logistic robots, none free, none of the item in the network).
   Example: `./fh call requests --args '{"platform":"Starling","construction_requests":true}'`

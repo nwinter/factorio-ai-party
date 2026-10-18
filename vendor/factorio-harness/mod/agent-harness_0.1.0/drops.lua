@@ -25,6 +25,8 @@ return function(api)
   -- container was at (11.5,152.5), another at (13.5,153.5)).
   local function at_text(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local NEARBY, MAX_NEARBY = 8, 4
+  local function items(r) return table.concat(r.sent or {}, ' ') end
+  local pad_counts
   local function ago(ticks)
     local sec = math.floor(ticks / 60)
     if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
@@ -36,6 +38,118 @@ return function(api)
     local out = {}
     for _, s in ipairs(try(function() return inv.get_contents() end) or {}) do
       out[#out+1] = s.name .. (s.quality and s.quality ~= 'normal' and '@' .. s.quality or '') .. '*' .. s.count
+    end
+    return out
+  end
+
+  -- (d17 batch34 A2, Astra, Luna: Petrel's drop 1376 of 3 underground belts and a chest landed on Gleba's pad and
+  -- construction robots spent them on 20+ unrelated ghosts within seconds; four reads found nothing) A drop into a
+  -- landing pad: what of the sent items the pad held before, when it landed, and for WATCH ticks after, each sample
+  -- where the pad's count fell, the robots of ours within ROBOT_R tiles of the pad holding that item (each counted once)
+  -- and the ghost or entity each one's first order is on. The game reserves nothing for the sender: the pad's items are
+  -- the network's, as a player sees them leave in its GUI.
+  local WATCH, ROBOT_R = 1200, 8
+  local function label(w) return w.name .. (w.quality and w.quality ~= 'normal' and '@' .. w.quality or '') end
+  pad_counts = function(r)
+    local out = {}
+    for _, w in ipairs(r.items or {}) do
+      out[label(w)] = try(function() return r.pad_e.get_item_count({name=w.name, quality=w.quality or 'normal'}) end) or 0
+    end
+    return out
+  end
+  local function robots_with(r, w, seen)
+    local pad = r.pad_e
+    local got = {construction=0, logistic=0, targets={}}
+    local list = try(function() return pad.surface.find_entities_filtered{type={'construction-robot', 'logistic-robot'}, position=pad.position, radius=ROBOT_R, force=pad.force} end) or {}
+    for _, b in ipairs(list) do
+      local u = b.valid and b.unit_number
+      if u and not seen[u] then
+        local inv = try(function() return b.get_inventory(defines.inventory.robot_cargo) end)
+        local n = inv and try(function() return inv.get_item_count({name=w.name, quality=w.quality or 'normal'}) end) or 0
+        if n > 0 then
+          seen[u] = true
+          local kind = b.type == 'construction-robot' and 'construction' or 'logistic'
+          got[kind] = got[kind] + n
+          local o = (try(function() return b.robot_order_queue end) or {})[1]
+          local t = o and o.target and try(function() return o.target.valid and o.target end)
+          if t and #got.targets < 8 then
+            got.targets[#got.targets+1] = string.format('%s %s', t.type == 'entity-ghost' and t.ghost_name .. ' ghost' or t.name, at_text(t.position))
+          end
+        end
+      end
+    end
+    return got
+  end
+  local function watch_step(r, tick)
+    local now = pad_counts(r)
+    local w = r.watch
+    for _, it in ipairs(r.items) do
+      local k = label(it)
+      local fell = (w.last[k] or 0) - (now[k] or 0)
+      if fell > 0 then
+        local got = robots_with(r, it, w.seen)
+        local t = w.took[k] or {construction=0, logistic=0, other=0, targets={}}
+        w.took[k] = t
+        local c = math.min(fell, got.construction)
+        local l = math.min(fell - c, got.logistic)
+        t.construction, t.logistic, t.other = t.construction + c, t.logistic + l, t.other + fell - c - l
+        for _, x in ipairs(got.targets) do if #t.targets < 8 then t.targets[#t.targets+1] = x end end
+      end
+    end
+    w.last = now
+    if tick >= w.until_tick then r.watch_done, r.pad_after = true, now end
+  end
+  -- The pad's story for one drop: "the pad held underground-belt 0 before it and 3 when it landed; in the 20 s after,
+  -- construction robots took underground-belt*3 (for underground-belt ghost (54.5,8.5), ...); it holds 0 now".
+  function M.pad_text(r)
+    if not r.watch then return nil end
+    local held, landed, took, after = {}, {}, {}, {}
+    for _, it in ipairs(r.items) do
+      local k = label(it)
+      held[#held+1] = string.format('%s %d', k, (r.pad_before or {})[k] or 0)
+      landed[#landed+1] = string.format('%s %d', k, r.watch.landed[k] or 0)
+      local t = r.watch.took[k]
+      if t then
+        local by = {}
+        if t.construction > 0 then by[#by+1] = string.format('construction robots took %d', t.construction) end
+        if t.logistic > 0 then by[#by+1] = string.format('logistic robots took %d', t.logistic) end
+        if t.other > 0 then by[#by+1] = string.format('%d left with no robot of ours seen holding it within %d tiles (an inserter, a player, or a robot already off)', t.other, ROBOT_R) end
+        took[#took+1] = string.format('%s: %s%s', k, table.concat(by, ', '), #t.targets > 0 and ' (first orders: ' .. table.concat(t.targets, '; ') .. ')' or '')
+      end
+      if r.pad_after then after[#after+1] = string.format('%s %d', k, r.pad_after[k] or 0) end
+    end
+    return string.format('the pad held %s before it and %s when it landed; %s%s', table.concat(held, ', '), table.concat(landed, ', '),
+      #took > 0 and string.format('in the %d s after: %s', math.floor(WATCH / 60), table.concat(took, '; ')) or string.format('none of it left the pad in the %d s after', math.floor(WATCH / 60)),
+      #after > 0 and '; it held ' .. table.concat(after, ', ') .. ' then' or ' (still watched)')
+  end
+  -- What the drop's pad shows in one phrase: landed, then taken by construction robots (all of what was sent).
+  function M.pad_verdict(r)
+    if not (r.watch and r.watch_done) then return nil end
+    local sent, cons, gone = 0, 0, 0
+    for _, it in ipairs(r.items) do
+      local t = r.watch.took[label(it)]
+      sent = sent + it.count
+      if t then cons = cons + t.construction; gone = gone + t.construction + t.logistic + t.other end
+    end
+    if cons > 0 and cons >= sent then return 'landed, then taken by construction robots' end
+    if cons > 0 then return string.format('landed, then %d of %d taken by construction robots', cons, sent) end
+    if gone > 0 then return string.format('landed, then %d of %d left the pad', gone, sent) end
+  end
+  -- (d17 batch34 A2) recent drops into a pad that held the item, for where_is and shipment: {line, verdict} newest first
+  function M.taken(filter)
+    local out = {}
+    local s = api.state().drops
+    for i = #(s and s.list or {}), 1, -1 do
+      local r = s.list[i]
+      local hit = r.watch ~= nil and (not filter.surface or r.surface == filter.surface) and (not filter.platform or r.platform == filter.platform)
+      if hit and filter.item then
+        hit = false
+        for _, it in ipairs(r.items) do if it.name == filter.item then hit = true end end
+      end
+      if hit and #out < (filter.limit or 4) then
+        out[#out+1] = {id=r.id, verdict=M.pad_verdict(r), line=string.format('drop #%d from %s (%s ago) into the landing pad at %s on %s: %s; %s', r.id, r.platform,
+          ago(game.tick - r.tick), at_text(r.pad), r.surface, items(r), M.pad_text(r))}
+      end
     end
     return out
   end
@@ -55,6 +169,12 @@ return function(api)
     s.seq = s.seq + 1
     local r = {id=s.seq, by=api.who(p), to=d.to or {}, platform=d.platform, surface=d.surface, pad=d.pad and xy(d.pad) or nil,
       near=d.near and xy(d.near) or nil, sent=d.sent, tick=game.tick, pod=d.pod, state='descending'}
+    -- (d17 batch34 A2) the pad it is sent to, and what of the sent items the pad holds before it lands
+    if d.pad_e and try(function() return d.pad_e.valid end) and d.items then
+      r.pad_e, r.items = d.pad_e, {}
+      for i, w in ipairs(d.items) do r.items[i] = {name=w.name, quality=w.quality, count=w.count} end
+      r.pad_before = pad_counts(r)
+    end
     s.list[#s.list+1] = r
     while #s.list > KEEP do table.remove(s.list, 1) end
     return r.id
@@ -92,6 +212,10 @@ return function(api)
       end
       if not spilled then
         r.state, r.at, r.into = 'landed', r.pad, 'cargo-landing-pad'
+        if r.pad_e and try(function() return r.pad_e.valid end) then
+          local now = pad_counts(r)
+          r.watch = {landed=now, last=now, took={}, seen={}, until_tick=game.tick + WATCH}
+        end
         return
       end
       r.pad_full = r.pad
@@ -138,6 +262,9 @@ return function(api)
     local s = api.state().drops
     if not s or tick % SAMPLE ~= 0 then return end
     for _, r in ipairs(s.list) do
+      if r.watch and not r.watch_done then
+        if try(function() return r.pad_e.valid end) then watch_step(r, tick) else r.watch_done = true end
+      end
       if r.state == 'descending' then
         local pod = r.pod
         if pod and try(function() return pod.valid end) then
@@ -152,10 +279,11 @@ return function(api)
     end
   end
 
-  local function items(r) return table.concat(r.sent or {}, ' ') end
   local function landed_line(r)
     if r.into == 'cargo-landing-pad' then
-      return string.format('drop #%d from %s landed in the landing pad at %s on %s: %s', r.id, r.platform, at_text(r.at), r.surface, items(r))
+      local pad = M.pad_text(r)
+      return string.format('drop #%d from %s landed in the landing pad at %s on %s: %s%s', r.id, r.platform, at_text(r.at), r.surface, items(r),
+        pad and '; ' .. pad or '')
     end
     if r.note then return string.format('drop #%d from %s to %s: %s; it held %s', r.id, r.platform, r.surface, r.note, items(r)) end
     local held = r.landed_with and #r.landed_with > 0 and table.concat(r.landed_with, ' ') or items(r)
@@ -183,7 +311,7 @@ return function(api)
         keep[r.id] = told[r.id]
         if #lines >= MAX_LINES then
           -- the rest come in the next replies, untold until shown
-        elseif r.state == 'landed' and told[r.id] ~= 'landed' then
+        elseif r.state == 'landed' and told[r.id] ~= 'landed' and not (r.watch and not r.watch_done) then
           lines[#lines+1] = landed_line(r); keep[r.id] = 'landed'
         elseif r.state == 'descending' and not told[r.id] and (r.by ~= me or game.tick - r.tick >= QUIET) then
           lines[#lines+1] = string.format('drop #%d from %s to %s: still descending (%s ago, aimed near %s); pods scatter: the team block says where it lands (drops reads them all)',
@@ -206,7 +334,12 @@ return function(api)
       local r = s.list[i]
       local row = {id=r.id, by=r.by, to=#r.to > 0 and r.to or nil, platform=r.platform, surface=r.surface, items=r.sent,
         ago=ago(game.tick - r.tick), state=r.state, aimed_near=r.pad or r.near, at=r.at, landed_in=r.into, note=r.note,
-        nearby=r.nearby, nearby_more=r.nearby_more}
+        nearby=r.nearby, nearby_more=r.nearby_more, pad=M.pad_text(r), pad_verdict=M.pad_verdict(r)}
+      if r.watch and r.watch_done and try(function() return r.pad_e.valid end) then
+        local now, parts = pad_counts(r), {}
+        for _, it in ipairs(r.items) do parts[#parts+1] = string.format('%s %d', label(it), now[label(it)] or 0) end
+        row.pad_now = 'the pad holds ' .. table.concat(parts, ', ') .. ' now'
+      end
       if r.container then
         if try(function() return r.container.valid end) then
           row.container = {name=r.container.name, position=xy(r.container.position), holds=contents(r.container)}
@@ -219,7 +352,7 @@ return function(api)
     return {drops=rows, note=#rows == 0 and 'no drops yet' or nil}
   end
   M.schema = {
-    drops = {limit='1..20 (default 10)', returns='drops newest first: {id, by, to, platform, surface, items, ago, state (descending|landed), aimed_near, at, landed_in (cargo-pod-container or cargo-landing-pad), container {name, position, holds} or {gone}, nearby [{position, holds}] (other cargo pod containers within 8 tiles when it landed, nearest first, at most 4; nearby_more), note}. Positions as the entities stand (x.5 for a container). Read only'},
+    drops = {limit='1..20 (default 10)', returns='drops newest first: {id, by, to, platform, surface, items, ago, state (descending|landed), aimed_near, at, landed_in (cargo-pod-container or cargo-landing-pad), container {name, position, holds} or {gone}, pad (a drop into a landing pad: what of the sent items the pad held before it and when it landed, and in the 20 s after, how many construction robots and logistic robots of ours within 8 tiles took, with the first orders they flew to (ghosts or entities), and what left with no robot seen; what it held then), pad_verdict (landed, then taken by construction robots | landed, then N of M taken by construction robots | landed, then N of M left the pad), pad_now (the sent items in the pad now), nearby [{position, holds}] (other cargo pod containers within 8 tiles when it landed, nearest first, at most 4; nearby_more), note}. Positions as the entities stand (x.5 for a container). A drop into a landing pad comes to the team block 20 s after it lands, with the pad\'s line. The game reserves nothing for the sender: robots may take what lands in a pad. Read only'},
   }
   return M
 end
