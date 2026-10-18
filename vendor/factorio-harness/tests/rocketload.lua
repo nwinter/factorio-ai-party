@@ -620,6 +620,28 @@ fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']
   'nothing to load: the rocket holds the list already (agricultural-science-pack*800); not launched: building the rocket: parts 20/50; nothing walked')
 eq(launched,nil); silo.rocket_silo_status=7
 provinv.counts={}; provinv.order={}
+-- batch25 C1 (Grok: Spindle 48 s from Gleba): a walking load with launch and platform gathers from the chests, then
+-- holds at the silo, loading nothing, while the platform flies here; once it is in orbit, loads and launches.
+do
+  local kept_where=api.where
+  api.where=function(x)
+    if x.leg then return {leg=x.leg,text=string.format('flying %s->%s %d%%',x.leg.from,x.leg.to,math.floor(x.leg.flown*100+0.5))} end
+    return kept_where(x)
+  end
+  cargo.counts={}; cargo.order={}; main=Inv(4,{}); takes={}; launched=nil
+  provinv.add('agricultural-science-pack',300)
+  pl.leg={from='vulcanus',to='nauvis',flown=0.9,left_km=1000,length=10000}; pl.speed=1
+  w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=300},from={x=129.5,y=14.5},walk=true,launch=true,platform='Sunward'})
+  local held_why
+  outcome,act=tour(w,function(action,n)
+    if n==1 then held_why=action.why; eq(cargo.counts['agricultural-science-pack@normal'],nil,'nothing loaded while it flies here') end
+    if n==3 then pl.leg=nil end
+  end)
+  eq(outcome,'launched'); eq(launched.platform,'Sunward'); eq(cargo.counts['agricultural-science-pack@normal'],300)
+  assert(held_why and held_why:find('waiting at the silo: platform Sunward is flying vulcanus->nauvis 90%',1,true),tostring(held_why))
+  api.where=kept_where
+  provinv.counts={}; provinv.order={}
+end
 -- All in reach: nil (the load as without walk). The arguments.
 p.can_reach_entity=kept_can
 eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true}),nil)

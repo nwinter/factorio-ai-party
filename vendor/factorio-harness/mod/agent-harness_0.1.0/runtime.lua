@@ -6353,6 +6353,11 @@ function handlers.inspect(p,a)
   end
   -- Every slot taken (Sol, 22:08: a requester's 48 slots, 494 spoilage among them, and robots could not deliver
   -- bioflux): what fills them; a requester or buffer chest names the requests that cannot come in.
+  -- A cargo wagon's slots per item, free slots, filters and limit (batch25 C2, Muse).
+  if e.type=='cargo-wagon' and M.trains then
+    local okw,ws=pcall(M.trains.wagon_slots,e)
+    if okw and ws then out.wagon_slots=ws.line end
+  end
   if e.type=='container' or e.type=='logistic-container' or e.type=='cargo-wagon' or e.type=='car' or e.type=='spider-vehicle' then
     local okf,full=pcall(M.slots.full_of,e,nil)
     if okf and full then
@@ -11661,7 +11666,18 @@ function handlers.load_silo(p,a)
     for k,v in pairs(a) do if k~='wait_platform' then rest[k]=v end end
     if not a.wait_platform then return handlers.load_silo(p,rest) end
     assert(a.launch==true and type(a.platform)=='string','wait_platform goes with launch: true and platform (the platform the rocket goes to)')
-    assert(not a.walk and a.from==nil and a.rockets==nil,'wait_platform loads in reach (no walk, from or rockets): it waits for the platform, then loads and launches in one tick')
+    assert(a.rockets==nil,'wait_platform loads one rocket (no rockets)')
+    -- with walk (batch25 C1, Grok: Spindle 48 s from Gleba, a 60 s stop): the walking load, which gathers from the chests
+    -- in from, then holds at the silo, loading nothing, until the platform is stopped in orbit here and the rocket is
+    -- ready, then loads and launches in that tick (M.ready, walk_visit); it ends short when the platform goes elsewhere.
+    if a.walk then
+      local out=handlers.load_silo(p,rest)
+      if type(out)=='table' then
+        out.wait_platform=string.format('the walk gathers from the chests in from, then waits at the silo, loading nothing, until %s is stopped in orbit here and the rocket is ready; then it loads and launches in that tick; it ends short when %s goes elsewhere',a.platform,a.platform)
+      end
+      return out
+    end
+    assert(a.from==nil,'wait_platform without walk loads in reach (from goes with walk: true)')
     local out=handlers.load_silo(p,rest)
     if type(out)=='table' then
       out.wait_platform=string.format('nothing goes into the rocket until %s is stopped in orbit here: then the load goes in and launches in that tick, as one rocket (a rocket holding what a platform above asks for is launched by the game, one item type a rocket); this call ends when it launches, or when %s goes elsewhere (fh --wait follows it)',a.platform,a.platform)

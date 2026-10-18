@@ -224,7 +224,9 @@
   over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`
   queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
-  launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. A rocket
+  launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`
+  and `from` the walk gathers from the chests first, then waits at the silo the same way (a walking load with `launch`
+  and `platform` holds at the silo while the platform flies here). A rocket
   holding what a platform above asks for is launched by the game when it stops, one item type a rocket: the wait then
   ends `launched_by_game` (what went, and what stayed in the silo). A silo with automatic requests on is refused,
   naming what is aboard; `auto_requests: "pause"` (with `launch`) turns them off for this manifest and back on after

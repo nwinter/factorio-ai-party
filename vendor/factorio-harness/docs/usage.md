@@ -7400,3 +7400,15 @@ fh watch    # deploy on every change
   - `keep_leg: true`: the current stop is the stop for the leg's destination; refused with current, when it flies
     no leg, or when the stops hold no stop for the destination.
   tests/space.lua.
+
+## d17 batch25 Group C
+- C1 (Grok: Spindle 48 s from Gleba with a 60 s stop; wait_platform refused any walk): `load_silo {wait_platform:
+  true, walk: true, from, launch, platform}` is the walking load: it gathers from the chests in from, then holds at the
+  silo loading nothing while the platform is headed here (and until the rocket is ready), then loads and launches in
+  that tick; it ends short when the platform goes elsewhere. The walking load with launch and platform did this
+  already (M.ready holds for a headed platform); the refusal was the argument check. Without walk, from is refused
+  as before. tests/rocketload.lua.
+- C2 (Muse: a wagon full of one item blocked all other loading on the uranium route; an hour to find): trains.lua
+  `wagon_slots`: a cargo wagon's slots used per item (with the count), free slots (under the red-X limit), slot
+  filters and the limit, and `full: nothing else loads into it`. The train read gives `wagons` (each cargo wagon, 8 at
+  most); inspect of a cargo wagon gives `wagon_slots`. tests/wagonslots.lua.
