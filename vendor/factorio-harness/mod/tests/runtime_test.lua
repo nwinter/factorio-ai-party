@@ -386,6 +386,37 @@ do
   eq(#runtime.queue_fresh_lines(p,h),0,'told once')
   q.paused,q.plan,q.history=saved.paused,saved.plan,saved.history
 end
+-- batch29 B2 (Opus: about 10 minutes each on a new furnace row): a ghost an agent places of a requester chest or a
+-- powered machine is watched; built by robots in no logistic network or with no pole, it is one line to that agent.
+do
+  local kept_protos=prototypes
+  prototypes=prototypes or {}
+  local kept_s,kept_pe=game.surfaces,prototypes.entity
+  prototypes.entity=setmetatable({['requester-chest']={type='logistic-container',logistic_mode='requester'},
+    ['electric-furnace']={type='furnace',electric_energy_source_prototype={}},['iron-chest']={type='container'}},{__index=kept_pe or {}})
+  local built,ghosts={},{}
+  local fs={name='nauvis',find_entities_filtered=function(f)
+    local list=f.type=='entity-ghost' and ghosts or built
+    for _,e in ipairs(list) do if math.abs(e.position.x-f.position.x)<0.5 and math.abs(e.position.y-f.position.y)<0.5 and (e.name==f.name or e.ghost_name==f.ghost_name) then return {e} end end
+    return {}
+  end}
+  game.surfaces={nauvis=fs}
+  local function g(name,x) return {valid=true,name='entity-ghost',ghost_name=name,type='entity-ghost',position={x=x,y=0},surface=fs} end
+  local g1,g2,g3,g4=g('requester-chest',1.5),g('electric-furnace',5),g('iron-chest',9.5),g('electric-furnace',15)
+  for _,x in ipairs({g1,g2,g3,g4}) do runtime.built_watch(p,x.ghost_name,x) end
+  eq(#storage.agent_harness.built_watch[p.index],3,'the plain chest is not watched')
+  ghosts={g4}
+  built={{valid=true,name='requester-chest',position={x=1.5,y=0}},{valid=true,name='electric-furnace',position={x=5,y=0},status=1}}
+  runtime.built_tick()
+  local lines=runtime.built_lines(p,{})
+  eq(lines[1],'requester-chest (1.5,0) your robots built is in no logistic network: nothing delivers to it')
+  eq(lines[2],'electric-furnace (5,0) your robots built has no pole reaching it: no power')
+  eq(#storage.agent_harness.built_watch[p.index],1,'the furnace still a ghost stays watched')
+  eq(#runtime.built_lines(p,{}),0,'told once')
+  storage.agent_harness.built_watch=nil
+  game.surfaces,prototypes.entity=kept_s,kept_pe
+  prototypes=kept_protos
+end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
 advance(1)

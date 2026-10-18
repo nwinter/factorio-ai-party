@@ -38,7 +38,9 @@
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.
   Example: `./fh call build --args '{"item":"transport-belt","direction":"east","builds":[{"position":{"x":10.5,"y":6.5}},{"position":{"x":11.5,"y":6.5}}]}'`
-- `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, dry_run?}`: places ghosts, no items needed;
+- `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, dry_run?}`: places ghosts, no items needed
+  (a requester or buffer chest, or a machine on electricity, is watched: once robots build it in no logistic network,
+  or with no pole or no power, your team block says so at once);
   entries `{name, position, direction?, recipe?}` with entry settings as `build`'s. An entry already standing as asked
   (the same ghost or the built entity) is counted apart: `already_placed`, `already`; only real refusals are `failed`.
   A real call says on the `warning:` line when what it placed closes you in. Turret ghosts request ammo, so the robots

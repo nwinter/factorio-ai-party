@@ -4269,6 +4269,61 @@ function M.via_report(action)
   end
   return legs
 end
+-- New builds not working (batch29 B2, Opus: about 10 minutes each on a new furnace row): a ghost an agent places of a
+-- requester or buffer chest, or of a machine on electricity, is watched; once robots have built it, a requester or
+-- buffer in no logistic network, or a machine with no power or no pole, is one team line to that agent at once. A
+-- watch ends when it is checked, or after WATCH_TICKS still a ghost. At most WATCH_MAX an agent.
+M.BUILT_WATCH_TICKS,M.BUILT_WATCH_MAX=36000,256
+M.BUILT_POWERED={['assembling-machine']=true,furnace=true,['mining-drill']=true,lab=true,inserter=true,beacon=true,roboport=true,radar=true}
+function M.built_watch(p,name,ghost)
+  local proto=prototypes.entity[name]
+  if not proto then return end
+  local mode=proto.type=='logistic-container' and proto.logistic_mode
+  local kind=(mode=='requester' or mode=='buffer') and 'network' or (M.BUILT_POWERED[proto.type] and proto.electric_energy_source_prototype and 'power') or nil
+  if not kind then return end
+  local st=state()
+  st.built_watch=st.built_watch or {}
+  local list=st.built_watch[p.index] or {}
+  st.built_watch[p.index]=list
+  if #list>=M.BUILT_WATCH_MAX then return end
+  list[#list+1]={name=name,kind=kind,position={x=ghost.position.x,y=ghost.position.y},surface=ghost.surface.name,tick=game.tick}
+end
+function M.built_tick()
+  local st=state()
+  for index,list in pairs(st.built_watch or {}) do
+    local keep={}
+    for _,w in ipairs(list) do
+      local s=game.surfaces[w.surface]
+      local found=s and s.find_entities_filtered{position=w.position,radius=0.3,name=w.name,limit=1}[1]
+      if found and found.valid then
+        local why
+        if w.kind=='network' then
+          if not found.logistic_network then why='is in no logistic network: nothing delivers to it' end
+        else
+          local stn=M.machine_status(found)
+          if found.electric_network_id==nil then why='has no pole reaching it: no power'
+          elseif stn=='no_power' then why='has no power (its network makes none)' end
+        end
+        if why then
+          st.built_news=st.built_news or {}
+          local news=st.built_news[index] or {}
+          st.built_news[index]=news
+          if #news<16 then news[#news+1]=string.format('%s (%g,%g)%s your robots built %s',w.name,w.position.x,w.position.y,w.surface~='nauvis' and ' on '..w.surface or '',why) end
+        end
+      elseif s and game.tick-w.tick<M.BUILT_WATCH_TICKS and s.find_entities_filtered{position=w.position,radius=0.3,ghost_name=w.name,type='entity-ghost',limit=1}[1] then
+        keep[#keep+1]=w
+      end
+    end
+    st.built_watch[index]=#keep>0 and keep or nil
+  end
+end
+function M.built_lines(p,h)
+  local st=state()
+  local news=st.built_news and st.built_news[p.index]
+  if not news then return {} end
+  st.built_news[p.index]=nil
+  return news
+end
 -- A queue step checked against the game at submit (batch29 A1, Sol: Swiftlet's emergency freight asked for section 8
 -- on a hub with 7 sections; the queue paused on its first tick and nobody saw it for 3 minutes): only what a read
 -- shows now and no earlier step of the plan changes: the platform a step names (unless an earlier step creates it),
@@ -12669,6 +12724,7 @@ local function place_ghost(p,spec)
     laid[f.item]=(laid[f.item] or 0)+1
   end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type}
+  if ghost then pcall(M.built_watch,p,spec.name,ghost) end
   if not ghost then
     for _,t in ipairs(tiles) do if t.valid then t.destroy() end end
     for _,e in ipairs(tile_marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
@@ -14455,7 +14511,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  queue_lines=function(p,h) return M.queue_fresh_lines(p,h) end,platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
+  queue_lines=function(p,h) local out=M.queue_fresh_lines(p,h); for _,l in ipairs(M.built_lines(p,h)) do out[#out+1]=l end; return out end,platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   death_lines=function(p,h) return M.death_lines(p,h) end,
@@ -17170,6 +17226,7 @@ function M.tick_body(event)
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
+  if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
