@@ -166,7 +166,10 @@
   (`from: "nearest"` for a chest, the belt's position for a belt).
 - `game_alerts {kind?, surface?, compact?}`: the game's alerts and warnings in groups, worst first, after `counts`
   (groups per kind, the most first). `kind` takes several (`["no_storage","no_power"]` or `"no_storage,no_power"`);
-  `compact: true` gives `lines`, one a group (`KIND SURFACE: line`), in place of the groups. `kind: "no_power"` groups
+  `compact: true` gives `lines`, one a group (`KIND SURFACE: line`), in place of the groups. `claim: 7` (a board
+  claim id) or `mine: true` (your open claims): only the groups whose centre lies in it, compact; each such reply
+  gives a `cursor`, and `since: CURSOR` (with `mine`, `claim` or `cursor: true`) lists only the groups not in that
+  reply, with `new` and `gone_since`. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
   placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
@@ -183,7 +186,10 @@
   followed), cut into sections at each merge (a side-load, a splitter), sampled for `seconds` (2..30, default 10) by
   item at each section's last tile and each belt merging in: per lane items a minute that left the tile, by name, and
   `stopped` (`full` with 4 or more on the tile) for a lane whose items did not move; `merges` gives the line before
-  each merge and each belt merging in against the line after it. The call returns when the sampling ends;
+  each merge and each belt merging in against the line after it; `lane_mix`: each side-load, from which side of the
+  line and onto which lane (both its lanes go onto that one), or a splitter or end-on join lane to lane, with what
+  each lane carries after it; `limit`: a side-load stopped full while the line after it runs at its cap (the line's
+  own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap. The call returns when the sampling ends;
   `belt_flow {}` reads the last result. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
   ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
@@ -264,7 +270,10 @@
   storage chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no
   room when every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are
   idle, orders to a chest with no room for the item). Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
-- `logistics_audit {network? | position?, surface?, limit?, from?}` (read only; default: the network where you stand):
+- `logistics_audit {network? | position?, surface?, limit?, from?, storage?}` (read only; default: the network where you stand):
+  `storage: true` reads its storage room instead (the `no_storage` alert): storage chests, free slots, full and
+  filtered ones, robots holding cargo with no order to put it anywhere and their items, each with whether a storage
+  chest can take it now. Otherwise:
   every requester of that logistic network, worst first: `full_unrequested` (every slot taken while a short item has
   no room, by items it does not request, spoilage named), `full` (the same by its own items), `spoiled` (spoilage it
   does not request, 4 or fewer slots left), `waiting` (deliveries on the way 5+ min while under its count), `not_sent`

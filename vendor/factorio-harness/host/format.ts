@@ -124,6 +124,31 @@ export function formatCompact(value: unknown): string {
   } else render(value, '', 0);
   return lines.join('\n') + '\n';
 }
+/**
+ * The first line of a walk's --wait reply (d17 batch34 C3, Haiku: `fh call move_to ... --wait && next` stopped at exit 3
+ * and the next step ran only after a manual fh wait): whether it arrived. Exit 3 is a wait that ended while the walk goes
+ * on: a tell, a mention or an urgent alert ended it, or the wait's own time ran out.
+ */
+export function walkLine(action: string, value: unknown, exit: number): string | undefined {
+  if (action !== 'move_to' || !record(value)) return undefined;
+  const r: Json = record(value.result) ? value.result : {};
+  const completion: Json = record(r.completion) ? r.completion : {};
+  const last: Json = record(r.last) ? r.last : record(completion.last) ? completion.last : {};
+  const outcome = [r.outcome, last.outcome, completion.outcome].find(v => typeof v === 'string') as string | undefined;
+  if (exit === 3) {
+    const sr = r.still_running;
+    const what = typeof sr === 'string' ? sr : record(sr) && typeof sr.kind === 'string' ? sr.kind : 'move_to';
+    const by = outcome === 'mentioned' ? 'a mention' : outcome === 'urgent' ? 'an urgent alert' : 'a tell';
+    const why = r.timed_out === true ? 'the wait timed out' : typeof r.from === 'string' ? `${by} from ${r.from} ended the wait` : 'the wait ended';
+    const [kind, ...more] = what.split(', ');
+    return `walk: not arrived: ${kind} goes on${more.length ? ', ' + more.join(', ') : ''}; ${why} (exit 3: fh wait waits for it again; --wait-through-tells: a tell or mention does not end the wait)`;
+  }
+  const pos = [last.position, r.position, completion.position].find(isPosition);
+  const at = pos ? ` at (${number(pos.x)},${number(pos.y)})` : '';
+  if (value.ok === true) return `walk: arrived${outcome && outcome !== 'arrived' ? ` (${outcome})` : ''}${at}`;
+  const err = record(value.error) && typeof value.error.code === 'string' ? value.error.code : undefined;
+  return `walk: not arrived: ${outcome ?? err ?? 'failed'}${at}`;
+}
 /** The error: or warning: line compact output ends with (none for a clean success). */
 export function finalLine(value: unknown): string | undefined {
   if (!record(value) || typeof value.ok !== 'boolean') return undefined;

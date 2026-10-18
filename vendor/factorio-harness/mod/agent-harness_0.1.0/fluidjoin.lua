@@ -277,6 +277,144 @@ return function(api)
     end
     return out
   end
+  -- (d17 batch35 B3, Sol: moving a melter cut a chemical plant's shared water bridge) a removal of our pipes, pipe-to-grounds,
+  -- pumps and tanks: from each removed one's joined neighbours, a walk through the pipes, pipe-to-grounds and tanks left
+  -- (engine connections with a target; machines, pumps and other entities end the walk) finds the parts the fluid
+  -- would sit in after it. Two or more parts from one removal: a split. Per part, the machines at its edge that take the
+  -- fluid from it and those that put fluid into it (a connection's flow, as the machine sees it; a pump's output side;
+  -- an offshore pump), and the tanks in it. A part with takers and no source loses the fluid. WALK pipes a call (about
+  -- 24 us each on world n: 144 pipes in 3.4 ms); a walk cut short is not judged.
+  local WALK = 512
+  local RUNS = {pipe=true, ['pipe-to-ground']=true, ['storage-tank']=true}
+  local REMOVED = {pipe=true, ['pipe-to-ground']=true, ['storage-tank']=true, pump=true}
+  function M.removal(force, entities)
+    local gone, list = {}, {}
+    for _, e in ipairs(entities) do
+      if e.valid and REMOVED[e.type] and e.force == force and #list < 256 then gone[e.unit_number] = true; list[#list+1] = e end
+    end
+    if #list == 0 then return nil end
+    -- the engine's connections only (fluidbox.get_pipe_connections: a target and flow each), read once an entity; the
+    -- prototype's view (api.fluid_connections) costs about 90 us an entity on world n
+    local conns = {}
+    local function conns_of(o)
+      local u = o.unit_number or o
+      if not conns[u] then
+        local out = {}
+        local fb = try(function() return o.fluidbox end)
+        for i = 1, fb and #fb or 0 do
+          for _, c in ipairs(try(function() return fb.get_pipe_connections(i) end) or {}) do
+            local t = c.target
+            if t and t.object_name == 'LuaFluidBox' then t = t.owner end
+            out[#out+1] = {target=t, flow=c.flow_direction}
+          end
+        end
+        conns[u] = out
+      end
+      return conns[u]
+    end
+    local function neighbours(o)
+      local out = {}
+      for _, c in ipairs(conns_of(o)) do
+        local t = c.target
+        if t and try(function() return t.valid end) and t ~= o then out[#out+1] = t end
+      end
+      return out
+    end
+    -- the flow of o's connection that joins t, as o sees it
+    local function flow_toward(o, t)
+      for _, c in ipairs(conns_of(o)) do if c.target == t then return c.flow end end
+    end
+    local budget, lines, mixes = WALK, {}, {}
+    -- removed pieces that touch form one group (a run of pipes taken out together)
+    local up = {}
+    local function root(u) while up[u] and up[u] ~= u do u = up[u] end return u end
+    for _, r in ipairs(list) do up[r.unit_number] = up[r.unit_number] or r.unit_number end
+    for _, r in ipairs(list) do
+      for _, n in ipairs(neighbours(r)) do
+        if gone[n.unit_number] then local a, b = root(r.unit_number), root(n.unit_number); if a ~= b then up[a] = b end end
+      end
+    end
+    -- the parts the fluid would sit in: one walk from each removed piece's neighbours left, shared by all
+    local part_of, groups, order, cut_short = {}, {}, {}, false
+    local function walk(start, from)
+      local part = {takers={}, sources={}, tanks=0, nodes=0, first=start.unit_number, edges={}}
+      local queue, qi = {{e=start, from=from}}, 1
+      while queue[qi] do
+        if budget <= 0 then cut_short = true; break end
+        local node, prev = queue[qi].e, queue[qi].from
+        qi = qi + 1
+        local u = node.unit_number
+        if not part_of[u] and not gone[u] then
+          budget = budget - 1
+          if RUNS[node.type] then
+            part_of[u] = part
+            part.nodes = part.nodes + 1
+            if node.type == 'storage-tank' then part.tanks = part.tanks + 1 end
+            for _, n in ipairs(neighbours(node)) do if not part_of[n.unit_number] and not gone[n.unit_number] then queue[#queue+1] = {e=n, from=node} end end
+          elseif node == start then
+            part_of[u] = part
+          end
+          if not RUNS[node.type] then
+            part.edges[u] = true
+            -- an edge: what it does with the fluid from this part
+            local fl = flow_toward(node, prev)
+            local label = string.format('%s %s', node.name, at(node.position))
+            if node.type == 'offshore-pump' or fl == 'output' then part.sources[#part.sources+1] = label
+            else part.takers[#part.takers+1] = label end
+          end
+        end
+      end
+      return part
+    end
+    for _, r in ipairs(list) do
+      local g = root(r.unit_number)
+      if not groups[g] then groups[g] = {removed={}, parts={}, seen={}}; order[#order+1] = g end
+      local G = groups[g]
+      G.removed[#G.removed+1] = r
+      for _, n in ipairs(neighbours(r)) do
+        if not gone[n.unit_number] then
+          local part = part_of[n.unit_number] or walk(n, r)
+          if not G.seen[part] then G.seen[part] = true; G.parts[#G.parts+1] = part end
+        end
+      end
+    end
+    -- a machine beside the removal that another part of the group still reaches (another port of it on the line) is
+    -- no part of its own
+    for _, g in ipairs(order) do
+      local G, kept = groups[g], {}
+      for _, part in ipairs(G.parts) do
+        local other = false
+        if part.nodes == 0 then
+          for _, q in ipairs(G.parts) do if q ~= part and q.edges[part.first] then other = true end end
+        end
+        if not other then kept[#kept+1] = part end
+      end
+      G.parts = kept
+    end
+    local function names(t) local o = {}; for k = 1, math.min(4, #t) do o[k] = t[k] end; return table.concat(o, ', ') .. (#t > 4 and string.format(' (+%d more)', #t - 4) or '') end
+    for _, g in ipairs(order) do
+      local G = groups[g]
+      local r = G.removed[1]
+      local f = try(function() return r.fluidbox[1] end)
+      local fluid = f and f.name or (function() local lf = try(function() return r.fluidbox.get_locked_fluid(1) end); return lf and (type(lf) == 'string' and lf or lf.name) end)()
+      local what = #G.removed == 1 and string.format('%s %s', r.name, at(r.position)) or string.format('%d pieces from %s %s', #G.removed, r.name, at(r.position))
+      if cut_short then
+        lines[#lines+1] = string.format('removing %s: the segment walk stopped after %d pipes (not judged)', what, WALK)
+      elseif #G.parts >= 2 and #lines < 8 then
+        local texts, starved = {}, {}
+        for i, part in ipairs(G.parts) do
+          texts[#texts+1] = string.format('part %d: %d pipe%s%s; takes from it: %s; puts into it: %s', i, part.nodes, part.nodes == 1 and '' or 's',
+            part.tanks > 0 and string.format(' (%d tank%s)', part.tanks, part.tanks == 1 and '' or 's') or '', #part.takers > 0 and names(part.takers) or 'nothing',
+            #part.sources > 0 and names(part.sources) or 'nothing')
+          if #part.takers > 0 and #part.sources == 0 then starved[#starved+1] = string.format('part %d (%s)', i, names(part.takers)) end
+        end
+        local line = string.format('removing %s splits its %ssegment in %d: %s', what, fluid and fluid .. ' ' or '', #G.parts, table.concat(texts, '; '))
+        if #starved > 0 then line = line .. '; with no source left: ' .. table.concat(starved, ', '); mixes[#mixes+1] = line end
+        lines[#lines+1] = line
+      end
+    end
+    return #lines > 0 and lines or nil, #mixes > 0 and mixes or nil
+  end
   M.NOTE = 'a fluid segment holds one fluid; Sonnet, shift35: a pumpjack whose output joined a water pipe put its acid into the water segment'
   return M
 end

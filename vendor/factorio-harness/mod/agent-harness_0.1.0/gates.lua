@@ -42,6 +42,51 @@ return function(api)
     v.done = v.all or v.looked >= MAX_CHESTS
     return v
   end
+  -- (d17 batch35 B1, Opus: a steel-plate < 4000 gate held furnaces off while rail makers starved, 9 steel within 128
+  -- tiles in provider and storage chests and 2313 in requesters) where a network's count of an item sits. On world n
+  -- (network 243, steel): the count 1236-1240 was its provider chests' 1352 less 132 robots had reserved there for
+  -- pickup, plus 20 in buffer chests; the 508 the first 63 requester chests held were not in it. Per network and item a
+  -- call: get_supply_counts, the reserved pickups at the first SPLIT_POINTS provider points, and what the first
+  -- SPLIT_POINTS requester chests hold (not counted).
+  local SPLIT_POINTS = 1024
+  local split_cache = {}
+  local function item_of(t) local n = t and t.name; return type(n) == 'table' and n.name or n end
+  local function split(net, item)
+    if split_cache.tick ~= game.tick then split_cache = {tick=game.tick} end
+    local k = tostring(try(function() return net.network_id end)) .. '|' .. item
+    if split_cache[k] then return split_cache[k] end
+    local sc = try(function() return net.get_supply_counts(item) end)
+    if type(sc) ~= 'table' then return nil end
+    local reserved, pts = 0, 0
+    for i, pt in ipairs(try(function() return net.provider_points end) or {}) do
+      if i > SPLIT_POINTS then break end
+      pts = i
+      for _, t in pairs(try(function() return pt.targeted_items_pickup end) or {}) do
+        if item_of(t) == item then reserved = reserved + (t.count or 0) end
+      end
+    end
+    local rq, rqn = 0, 0
+    local req = defines.logistic_mode and defines.logistic_mode.requester
+    for i, pt in ipairs(try(function() return net.requester_points end) or {}) do
+      if i > SPLIT_POINTS then break end
+      local o = try(function() return pt.owner end)
+      if o and o.valid and o.type == 'logistic-container' and (req == nil or try(function() return pt.mode end) == req) then
+        rqn = rqn + 1
+        rq = rq + (try(function() return o.get_item_count(item) end) or 0)
+      end
+    end
+    local v = {storage=sc.storage or 0, passive=sc['passive-provider'] or 0, active=sc['active-provider'] or 0, buffer=sc.buffer or 0,
+      reserved=reserved, provider_points=pts, all_providers=pts == #(try(function() return net.provider_points end) or {}),
+      requesters=rq, requesters_read=rqn}
+    v.line = string.format('storage %d, passive providers %d, active providers %d, buffers %d; robots have reserved %d for pickup at %s provider points (not in the count); requester chests hold %d more (not in the count; %d read)',
+      v.storage, v.passive, v.active, v.buffer, reserved, v.all_providers and 'its' or 'the first ' .. pts, rq, rqn)
+    local total = v.storage + v.passive + v.active + v.buffer
+    if total > 0 and v.buffer * 2 > total then v.line = v.line .. string.format('; most of the count (%d of %d) is in buffer chests', v.buffer, total) end
+    if rq > total and rq > 0 then v.line = v.line .. string.format('; requester chests hold more of it (%d) than the count', rq) end
+    split_cache[k] = v
+    return v
+  end
+  M.split = split
   local GT = {['>']=true, ['>=']=true, ['≥']=true, ['=']=true}
   function M.row(e)
     local cb = try(function() return e.get_control_behavior() end)
@@ -63,8 +108,10 @@ return function(api)
         local constant = cond.constant
         local need = GT[cond.comparator or ''] and type(constant) == 'number' and not cond.second_signal and ((cond.comparator == '>' and constant + 1) or constant) or nil
         local m = most(net, sig.name, need)
-        text = text .. string.format(' (network %s: %s %d%s)', tostring(try(function() return net.network_id end)), sig.name, m.count,
-          api.negative_note and api.negative_note(sig.name, m.count) or '')
+        -- where the count sits, when the condition is false (it holds the entity off)
+        local sp = c.logistic_met == false and split(net, sig.name)
+        text = text .. string.format(' (network %s: %s %d%s%s)', tostring(try(function() return net.network_id end)), sig.name, m.count,
+          api.negative_note and api.negative_note(sig.name, m.count) or '', sp and '; the count: ' .. sp.line or '')
         if need then
           if need > m.most and m.all then
             flag = 'cannot be met'
@@ -130,6 +177,6 @@ return function(api)
   end
   M.schema = {gates={surface='optional surface name (default yours): every gate the census\'s last pass found there (entities with a control behavior, up to 1024), each read now',
     area='optional {left_top, right_bottom} up to 128x128: the gates there, read now', page='optional: 128 entities a call in reading order (pages, next)',
-    returns='gates, cannot_be_met, not_met, met (counts); lines: one an entity with a circuit or logistic condition: the condition as its GUI shows it, what it reads now (a circuit signal on its wires; the logistic network\'s count), true or false now, it is off by it; "CANNOT BE MET:" first for a logistic condition item > N, >= N or = N above what the network can hold (its count and what its storage and provider chests could still take of the item; up to 256 chests a network and item, 512 a call: a look cut short says what it saw, unflagged), or one with no logistic network over it; then the ones not met now; more; as_of, source; line. Read only'}}
+    returns='gates, cannot_be_met, not_met, met (counts); lines: one an entity with a circuit or logistic condition: the condition as its GUI shows it, what it reads now (a circuit signal on its wires; the logistic network\'s count), true or false now, it is off by it; a logistic condition false now adds where the count sits (the count: storage, passive and active providers, buffers as the network\'s supply counts give them; what robots have reserved for pickup at its provider points and what its requester chests hold, neither in the count; the first 1024 points each); "CANNOT BE MET:" first for a logistic condition item > N, >= N or = N above what the network can hold (its count and what its storage and provider chests could still take of the item; up to 256 chests a network and item, 512 a call: a look cut short says what it saw, unflagged), or one with no logistic network over it; then the ones not met now; more; as_of, source; line. Read only'}}
   return M
 end
