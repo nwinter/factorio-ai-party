@@ -307,3 +307,16 @@ do
   grok('queue_cancel',{lane='remote'}); grok('queue_cancel',{lane='platform:Wren'})
 end
 print('d18_batch36 C4 rotate in the remote and platform lanes: ok')
+
+-- C3 (Grok: a hand transfer over a requester's request went to trash and robots hauled it out): the request read.
+do
+  defines.logistic_member_index={logistic_container=0}; defines.logistic_mode={requester=1,buffer=2,passive_provider=3}
+  local pt={mode=1,filters={{name='iron-plate',quality='normal',count=100,max_count=200},{name='iron-plate',quality='normal',count=50,max_count=50},{name='coal',quality='normal',count=10}}}
+  local chest={valid=true,type='logistic-container',name='requester-chest',get_logistic_point=function() return pt end,get_requester_point=function() return {trash_not_requested=false} end}
+  local r=runtime.request_of(chest,'iron-plate','normal')
+  eq(r.min,150); eq(r.max,250); eq(r.trash_unrequested,false)
+  r=runtime.request_of(chest,'coal','normal'); eq(r.min,10); eq(r.max,nil)
+  eq(runtime.request_of(chest,'stone','normal'),nil)
+  pt.mode=3; eq(runtime.request_of(chest,'iron-plate','normal'),nil,'a provider asks nothing')
+end
+print('d18_batch36 C3 the request a transfer fills: ok')

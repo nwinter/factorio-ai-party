@@ -8110,3 +8110,7 @@ fh watch    # deploy on every change
 - rotate in the remote and platform queue lanes (C4, Astra: queue_submit refused steps[7] rotate in the remote lane though
   a direct rotate takes platform): a rotate step with platform (on that platform) or surface (by remote view on a
   planet) goes in lane remote or platform:NAME, as the direct call takes it; without either it is refused there.
+- transfer into a requester or buffer chest (C3, Grok: a hand transfer over the request went to trash and robots hauled
+  it out): every move into one says `request` (`requester-chest asks iron-plate 150..250; it holds 300 now: 50 over its
+  request max (trash unrequested off)`) and `over_request`; `up_to_request: true` moves only up to its request (its
+  max, else its min). The request is summed over the chest's active sections for that item and quality.
