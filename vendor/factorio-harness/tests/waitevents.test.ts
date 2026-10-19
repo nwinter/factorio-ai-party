@@ -727,3 +727,21 @@ test('d15 H3/H4: fh wait prints the cap and what is open for the agent last',asy
     assert.match(out,/^open: "?open for you: 1 board item of yours/m);
   });
 });
+test('fh call sleep sends its wake arguments to the runtime sleep (d19 batch46 item 5, Sol 16:45: they were dropped and tells woke it)',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{
+    seen.push(request);
+    if (isCheck(request)) return {ok:true,result:{woke:'elapsed',until_tick:2401,slept_s:40}};
+    return {ok:true,result:{until_tick:2401,while_asleep:'idle'}};
+  },async port=>{
+    const args={seconds:40,wake_on_messages:false,wake_from:['operator'],wake_on_board:false,wake_local:true};
+    const {stdout}=await cli(port,['call','sleep','--args',JSON.stringify(args),'--wake-from','astra']);
+    assert.equal(JSON.parse(stdout).result.woke,'elapsed');
+  });
+  const start=seen.find(r=>r.action==='sleep');
+  assert(start,'a sleep was started');
+  // every call argument reaches the runtime; the call's wake_from wins over the flag's
+  assert.deepEqual({seconds:start.args.seconds,wake_on_messages:start.args.wake_on_messages,wake_from:start.args.wake_from,
+    wake_on_board:start.args.wake_on_board,wake_local:start.args.wake_local},
+    {seconds:40,wake_on_messages:false,wake_from:['operator'],wake_on_board:false,wake_local:true});
+});

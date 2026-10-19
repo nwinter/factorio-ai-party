@@ -8953,3 +8953,11 @@ fh watch    # deploy on every change
 - batch40 B2 (Grok; silo 247 and load_silo 22 calls by Luna and Grok in shifts 39-41): the silo row's cargo.spoil and
   input_spoil, load_silo's aboard_spoil, and the launch record's spoil (last_launch.spoil) give each spoilable item
   with its spread (spoiled share by count, range, quarters, how many spoil within 10, 30 and 60 min).
+- Item 5 (Sol 16:45, operator-inbox seq 874: `fh call sleep {seconds: 40, wake_on_messages: false, wake_from:
+  [operator], wake_on_board: false, wake_local: true}` woke after 4 s on Luna's ordinary tell, and after 22 s on
+  Astra's): `fh call sleep` runs the host's sleep loop (it polls sleep_check), and that loop built the runtime's
+  `sleep` from the command-line flags only: the journal shows `sleep {seconds: 40}` sent, every wake argument dropped.
+  Now the call's arguments past `seconds` and `condition` go to the runtime's sleep, over what the flags say (a call's
+  `wake_from` wins over `--wake-from`). `fh sleep` with flags was not affected. Tells reach a sleep one way
+  (board.deliver): batch43's split tells (parts before the last fyi) and batch41's edit tells (from the editing agent)
+  take it like any tell, so the sleep's wake filters apply to them. Test tests/waitevents.test.ts.
