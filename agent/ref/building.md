@@ -70,7 +70,8 @@
   holds, then `construct {area, outside_robots: true}` per box of up to 256x256. `all: true`: every ghost.
   Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
-  robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
+  robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
+  covers it; its network holds none and no robot carries one; no idle robot); `page` for more.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
   it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
   and by what. A ghost over a live entity of ours whose collision meets it, not marked for upgrade or deconstruction,
@@ -201,7 +202,8 @@
   make (a pump keeps its input and output as two segments). `place_ghosts` and `build` refuse a plan with a
   `fluid_mix` unless `mix_fluids: true`. `robot_dispatch` (place_ghosts, paste, blueprint_place): the construction
   robots' trips to the ghosts, as the network would pick them: how many at once, from which roboports, the longest
-  and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows. `closes_in` names the entry that fills the last gap out when the plan would close you
+  and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows (each with its
+  read's age and whether its chunk is in sight now). `closes_in` names the entry that fills the last gap out when the plan would close you
   in where you stand; a build reply says `closed_in` after it. `build` dry runs name off-character `pockets`, their
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and

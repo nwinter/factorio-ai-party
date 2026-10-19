@@ -931,6 +931,21 @@ return function(api)
               elseif game.tick>=step.until_tick then result.outcome='timed_out'; fail(q,p,step,result)
               else q.current=step end
             end
+          elseif q.current and q.current.recheck and api.recheck_read then
+            -- (d18 batch38 A1) platform_schedule read no_schedule or no_path in its tick: the step waits for the
+            -- second read and fails only when the platform still reads it
+            local step=q.current
+            if game.tick%10==0 then
+              local ok,r=pcall(api.recheck_read,step.recheck)
+              if not ok then q.current=nil; fail(q,p,step,{reason=tostring(r)})
+              elseif r then
+                q.current=nil
+                local result=step.result or {}
+                result.recheck_read=r.line
+                step.recheck=nil
+                if r.ok then record(q,step,true,result) else result.reason=r.error; fail(q,p,step,result) end
+              end
+            end
           elseif q.current then
             local step=q.current
             local waiting=step.action=='wait_ticks' and game.tick<step.until_tick or
@@ -1024,6 +1039,9 @@ return function(api)
               if api.step_done then pcall(api.step_done,index) end
               if not ok then
                 fail(q,p,step,{reason=api.reason and api.reason(result) or tostring(result)})
+              elseif type(result)=='table' and type(result.recheck)=='table' and api.recheck_read then
+                result.recheck.queued=true
+                step.result=result; step.recheck=result.recheck; q.current=step
               elseif step.wait and api.busy(p,step.action) then
                 step.result=result; q.current=step
               elseif entries_failed(step,result) then

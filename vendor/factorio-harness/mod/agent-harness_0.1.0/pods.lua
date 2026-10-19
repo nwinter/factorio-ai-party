@@ -35,6 +35,17 @@ return function(api)
       or try(function() return type(d.surface) == 'string' and d.surface or d.surface.name end)
     return surface, station and {x=station.position.x, y=station.position.y} or nil
   end
+  -- (d18 batch38 A2, Grok 18:20, twice: copper from Petrel read "to the ground (no pad takes it)" in the air and
+  -- landed in the pad at (54,8); shift36 drops #1496 and #1498) a pod waiting to launch or rising names no station
+  -- yet, while the game lands a platform's pods for a planet in that planet's landing pad (every drop to Gleba this
+  -- shift landed in its pad, whatever the pad's requests). No station read: the force's landing pad on that surface,
+  -- marked guessed, read again while it flies; no pad there: the ground.
+  local function planet_pad(force, to)
+    local s = to and game.get_surface(to)
+    local pad = s and try(function() return s.find_entities_filtered{type='cargo-landing-pad', force=force, limit=1}[1] end)
+    return pad and pad.valid and {x=pad.position.x, y=pad.position.y} or nil
+  end
+  M.planet_pad = planet_pad
   function M.tick(tick)
     if tick % SAMPLE ~= 0 then return end
     local list = store()
@@ -53,10 +64,19 @@ return function(api)
               local to, pad = destination(pod)
               -- Going down: to another surface than the platform's own.
               if to and to ~= s.name then
-                list[unit] = {pod=pod, platform=pl.name, force=f.name, to=to, pad=pad, items=contents(pod), start=tick}
+                local guessed
+                if not pad then pad = planet_pad(f, to); guessed = pad and true or nil end
+                list[unit] = {pod=pod, platform=pl.name, force=f.name, to=to, pad=pad, guessed=guessed, items=contents(pod), start=tick}
                 n = n + 1
               end
-            elseif r and not r.items then r.items = contents(pod) end
+            elseif r then
+              if not r.items then r.items = contents(pod) end
+              -- the station named later: what the pod says from then on
+              if r.guessed or not r.pad then
+                local _, named = destination(pod)
+                if named then r.pad, r.guessed = named, nil end
+              end
+            end
           end
         end
       end
@@ -69,11 +89,20 @@ return function(api)
     for _, r in pairs(store()) do
       if r.pod and r.pod.valid and r.force == force and r.to == to and (not platform or r.platform == platform) then
         local items = contents(r.pod) or r.items
-        out[#out+1] = {platform=r.platform, state=try(function() return r.pod.cargo_pod_state end) or '?', pad=r.pad, items=items or {}, start=r.start}
+        out[#out+1] = {platform=r.platform, state=try(function() return r.pod.cargo_pod_state end) or '?', pad=r.pad, guessed=r.guessed, items=items or {}, start=r.start}
       end
     end
     table.sort(out, function(x, y) return x.start < y.start end)
     return out
+  end
+  -- Where a pod lands, as words: the pad it names; the planet's pad when it names none yet; the ground when the planet has
+  -- no landing pad of ours.
+  function M.lands(r, to)
+    if r.pad and r.guessed then
+      return string.format('the landing pad at (%g,%g) (%s\'s pad: pods from a platform land in it; this one names no station yet)', r.pad.x, r.pad.y, tostring(to))
+    end
+    if r.pad then return string.format('the landing pad at (%g,%g)', r.pad.x, r.pad.y) end
+    return string.format('the ground (no landing pad of ours on %s)', tostring(to))
   end
   local function items_text(t, limit)
     local list = {}
@@ -102,7 +131,7 @@ return function(api)
     for _, r in ipairs(list) do
       for k, v in pairs(r.items) do items[k] = (items[k] or 0) + v end
       states[r.state] = (states[r.state] or 0) + 1
-      pads[r.pad and string.format('the landing pad at (%g,%g)', r.pad.x, r.pad.y) or 'the ground (no pad takes them)'] = true
+      pads[M.lands(r, to)] = true
       from[r.platform] = true
     end
     local function keys(t) local out = {} for k in pairs(t) do out[#out+1] = k end table.sort(out) return out end

@@ -8304,3 +8304,186 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+
+## d18 batch36 (the agents' 15:20 poll)
+
+- `logistics_audit {network | position, backlog: true}` (A1, Luna and Grok, all of shift35: Gleba's science requester
+  at (15.5,28.5) lacked 10 nutrients for about 36 minutes with about 98 in a provider 9 tiles off; logistics_audit said
+  not_sent and "all 250 logistic bots occupied"). Per network: the oldest unfilled requests first (256 requester points
+  read, 12 rows, `limit` up to 48): chest, item, short, `short_s` (how long since the networks watch first saw it
+  short), the provider the game would take it from (select_pickup_point) with what it holds and what robots already
+  reserve there (its targeted_items_pickup), and `held_by`, the first of these that reads true now: the delivery on
+  the way covers it; no room in the chest; none in the network's providers or storage; no provider the game picks;
+  every unit there reserved; no idle logistic robot (with how many hold cargo with no order and what, the orders the
+  rest are on by type and what they carry, and the queue to charge); robots queued to charge with every charging slot
+  taken; else idle robots and an unreserved provider, not sent yet (the game's dispatch is not exposed). `robots`:
+  total, idle (available_logistic_robots), on orders by type (robot_order_queue), carrying (top 5), holding cargo
+  with no order, charging and queued to charge (each cell's charging_robot_count and to_charge_robot_count), charging
+  slots (each roboport's logistic_parameters.charging_station_count) and how many are free. Read from the game: those
+  fields. Not read: when the game will dispatch a robot, and any minimum the game sends for (a requester chest has
+  none the API shows). On world n (18 Oct, network #98 on Gleba, 122 requester points, 250 robots) it ran
+  3.1-3.4 ms; in three reads a few minutes apart the robots were 201 holding cargo with no order (firearm-magazine 396,
+  ice 348, agricultural-science-pack 36, cannon-shell 20) and 4 idle, then all 250 on orders (126 deliver, 124
+  pickup) with 25 queued to charge, and nutrients read none free in the network for 21 short requesters.
+- `launch_needs` (A2, viewer Aurora 15:36: Swiftlet waited at a stop for carbon fiber while the silo there could not
+  finish rockets for want of processing units Swiftlet's hub held). On platform_schedule's reply, the platforms read
+  of one platform, and each silo line of shipment's readiness read: for a stop that waits on items (an item_count or
+  request wait) at the planet the platform is stopped at (else the stop it flies to), each rocket silo of ours there
+  whose input holds less than one rocket part's worth of an ingredient while it has parts left to make, and what of
+  that ingredient the waiting platform's own hub holds: `Swiftlet holds 400 processing-unit; rocket-silo (5.5,10.5)
+  on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)`. The silos come from the census pass (no
+  search; a whole-surface find took 10.5 ms on Nauvis); 0.01-0.25 ms a platform on world n. Only rocket parts are
+  read: a payload is the platform's own requests, which its hub already holds and asks more of.
+- Stop waits as the game evaluates them (A3, Luna 15:58: an item-count OR time departure written without compare: "or"
+  ran as and, so the gate held past the time fallback; viewer Aurora 16:09: Spindle needed repeated fixes).
+  waitgroups.lua, for platform_schedule (stops and stop/wait) and train schedules:
+  - Waits of more than one kind with no compare past the first are refused, naming the default and the way to say
+    or: `stop 1: its waits mix item_count and time with no compare on wait 2; the game joins a wait with no compare by
+    and (the default), so every one must hold. Say each: compare: "and" or compare: "or" ...`. Waits of one kind keep
+    the default and. In shifts 33-36, 69 of 506 platform wait lists mixed kinds with no compare.
+  - `wait: {any_of: [...]}` or `{all_of: [...]}` is written as the game's chain (any_of may hold all_of groups; the
+    chain is ors of ands, so (a or b) and c is written as two all_of groups); read_as says so.
+  - The readback groups the waits as the game evaluates them (and binds before or): `nauvis (fluid_count
+    thruster-fuel >= 24000 or time 300s) [branch 2, time 300s, departs with no fuel condition]`. A branch is named when
+    another branch has a fuel (thruster-fuel, or an item with a fuel value), oxidizer or ammunition condition and it
+    has none.
+  - A platform stop's `save_as: NAME` keeps its wait list (as written) in the harness's storage, and `wait_from: NAME`
+    takes it on another stop or platform; read_as says which and who saved it.
+- `configure {position, hand_size}` on an inserter, built or ghost (C1, Astra: a one-egg surplus export took a
+  constant combinator and a stack size signal only to set hand size 1). The 2.0 inserter GUI has the setting: a
+  forum thread asks to rename its "Stack size override", and Bilka renamed it "Override hand size" for 2.1.22
+  (forums.factorio.com/viewtopic.php?p=646961). hand_size sets LuaEntity.inserter_stack_size_override: 1 up to the
+  inserter's hand size now (1, its prototype's bonus and the force's inserter or bulk capacity bonus), 0 or false
+  for none. Returns hand_size, hand_size_before, hand_max, and circuit_note when the inserter's circuit set stack
+  size is on (that signal sets the hand while it is on the wires). It goes with filters and spoil_priority in the
+  same call. No combinator is placed.
+- `wake: {near: N}` on sleep, wait_ticks and wait_until, `fh ... --wake-near N` (B1, Haiku: an urgent alert every 15-30
+  s on Nauvis woke each wait). Only an attack on our structures or buildings of ours destroyed within N tiles of the
+  character (1..200) wake it as urgent; every other urgent alert (enemy groups, platform hits, a teammate's death, power
+  cut or collapse, an outpost's output, a captive spawner) is held and given with the reply: `held_alerts` (up to 8
+  lines) and `held_alerts_count` (a direct wait's `last` has them). Damage to the character, tells and mentions wake as
+  before. The direct wait_until now takes `wake_on_urgent` too: the scheduler's schema lacked it, so `fh call
+  wait_until --no-urgent` and `--urgent-radius` were refused as an unknown argument.
+- Each leg re-checked before it starts (B2, Haiku: 8 hits from big spitters at (-112,240) on a rearm tour whose walk
+  started clear). A tour's next stop (rearm, feed, refuel, collect, recover, transfer tours) and a move_to's next via
+  leg are checked against enemy groups and enemy units seen now (and demolishers): one whose reach (24 tiles) the
+  straight leg passes through stops the walk where it stands, outcome `enemies_ahead`, and `last.why` /
+  `last.enemies_ahead` name it with what it does and where it stopped: `the leg from (-100,200) to (-120,280) passes 1
+  enemy unit (1 big-spitter) at (-110,238), 7.6 tiles from it: moving units (big-spitter (-110,238) wandering, facing
+  west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
+  avoid_enemies false checks nothing.
+- rotate in the remote and platform queue lanes (C4, Astra: queue_submit refused steps[7] rotate in the remote lane though
+  a direct rotate takes platform): a rotate step with platform (on that platform) or surface (by remote view on a
+  planet) goes in lane remote or platform:NAME, as the direct call takes it; without either it is refused there.
+- transfer into a requester or buffer chest (C3, Grok: a hand transfer over the request went to trash and robots hauled
+  it out): every move into one says `request` (`requester-chest asks iron-plate 150..250; it holds 300 now: 50 over its
+  request max (trash unrequested off)`) and `over_request`; `up_to_request: true` moves only up to its request (its
+  max, else its min). The request is summed over the chest's active sections for that item and quality.
+- Cargo bays in a dry run (C2, Astra twice: two placeable bays that joined nothing, mined and moved after inspect said
+  not_connected_to_hub_or_pad). place_ghosts, build and paste dry runs give `cargo_bays`: each planned bay joins the
+  platform hub or the landing pad (touching it edge to edge, or through a bay that does: built, a ghost, or one planned
+  before it) or joins nothing, with the nearest joined one and its distance; and per hub or pad its slots now, its own,
+  the built bays joined, and the slots after the planned bays join. A bay's slots are not in the API (cargo-bay has no
+  inventory_size_bonus on 2.0.77): they are read from the hub or pad, its slots now less its prototype's own over the
+  built bays joined to it (on world n a pad's own is 80, a hub's 59); with no built bay joined, the reply says so.
+- `clear_obstacles: true` on build and place_ghosts (C1, Opus, 3 times placing small cells: each tree in a footprint
+  stopped the batch). The trees and rocks (a simple entity the game counts as a rock) in the entries' footprints are
+  marked for deconstruction, as a player's planner marks them; those in reach are mined by hand (a timed construct
+  over them, as move_to's mine_out does), the rest are left to the construction robots. Once every one is gone the call
+  runs again, without clear_obstacles (watched 10 min; `last.cleared` says which). Returns cleared (what was marked),
+  mining, robots, then_runs; with none in the way the call runs at once and cleared says so. Dry runs give
+  `trees_rocks`: the trees and rocks in the planned footprints.
+- `silo {surface: "all"}` or `silo {all: true}` (D1, Gemini): every silo of ours on every planet (16 at most) in one
+  call, a line each: its rocket parts (as the silo read says them) and their rate, what is aboard, the platform its
+  automatic requests fill for with what of that request it holds, and next_auto_launch; `silos` keeps each silo's full
+  read. The silos come from the census pass (one search a planet before the first pass). On world n: 9 silos on 5
+  planets in 4.6 ms.
+- Train actions that omit coordinates (D2, Gemini: in shifts 33-36 `train {}` read "position requires x and y" 17
+  times, and `train {id}` / `{train}` were unknown arguments 16 times). The actions that take a position: train
+  (position or train_id; stops and all read every stop or train), train_stop (position, name) and rail_route (from,
+  to). Each names what is missing with its shape: `train needs which train or stop: position {x, y} (a locomotive,
+  wagon or train stop, as the map shows it; surface for another planet) or train_id N ...`, `train_stop needs position
+  {x, y}: a spot beside a straight rail ...`, `rail_route needs from: from {x, y} (where the rails start) and to {x,
+  y} ...`. train {id: N} and {train: N} run as train_id (corrected says so).
+- `shipment {ledger: true, surface?}` (D3, Luna 15:48: the silo chain inferred across cargo, shipment and inspect; an
+  LDS delivery that looked done did not reach the feeders): the surface's cargo ledger in time order. Each rocket
+  launched up, recorded as it goes (ledger.lua, on the game's launch-ordered event): `up #12, 4m10s ago: rocket-silo
+  (15.5,59.5) launched low-density-structure*50 to Wren; Wren asked low-density-structure 100 (holds 20) (its
+  automatic requests)`. Each drop down (drops.lua's records, now with what the pad asked for the items then): `down
+  drop #7, ...: from Wren, iron-plate*100; the pad asked iron-plate 200 (held 0); landed in ...; the pad held ... and
+  in the 20 s after: iron-plate: logistic robots took 100 (first orders: ...) (verdict)`. Ids follow an entry. What it
+  cannot know: launches before this runtime ran, more than 64 launches a surface, drops beyond the 20 drops.lua keeps,
+  and a drop's pad asks before this runtime (the note says so).
+- D1 fix (operator 16:03): after a stream service restart, a re-read backlog line in viewer-relayed.jsonl reads
+  relayed; one the verdict logs refused keeps that verdict; any other carries no delivery and logs nothing.
+- D3 (viewer Aurora, Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and 16 for Sonnet before a
+  viewer asked): reminders.lua tells the owner when a recipient has missed 2 runs. It is one tell from `reminder #N`
+  naming the recipient, the reminder and its cadence, how long it has waited, the last result (by whom, how long ago)
+  and the `reminder_edit {id, recipients: [...]}` call without that recipient. It goes once until that recipient
+  acknowledges or the recipients change, and never about the owner's own runs. The reminders read gives `missed`
+  ({name: runs}) and states says "the owner told"; the stream service's reminders snapshot passes `missed` to the site,
+  whose chips show the states.
+- D4 (Nick 14:10: route viewer lines that name no agent by what they are about; tools/stream/router.py, viewers.py):
+  - The rules that work are kept (named or @ agents, @operator, @viewer, staff, chatter). For the rest:
+    - A platform or planet the line names maps to its owners by the board (open claims, and the tasks, requests and
+      projects agents hold), when one or two hold it. This is deterministic and needs no Clef: "to Sol: about
+      Wayfarer".
+    - Else a second choice question in the same Clef batch call: each agent by its work (one line from live state:
+      where, its board doing line, what it holds), the agent this viewer was just talking to (`same`), the operator
+      (to the inbox) or other viewers (shown, never relayed; only at 0.8). Two agents when both are at 0.3 and
+      together at 0.5.
+    - Clef unavailable or under 0.5: today's rotation, which keeps a viewer's agent of the last 5 minutes. The
+      delivery says "in turn (Clef unsure)".
+  - Off by default: the switch is runs/RUN/viewers-route.on, beside viewers-relay.on. serve.py hands the relay the team
+    each snapshot (Relay.set_team). The verdict log keeps each line's route.
+  - The site's delivery shows the route and why: "to Sol: about Wayfarer", "to Muse: about its work (...)".
+  - About 1,800 characters a routed line with 9 agents, so about 1.7 cents per 1,000 routed lines. Only unaddressed
+    lines are asked: 52 of 199 passed today.
+  - tools/stream/route_replay.py replays verdict logs through it against the game chat's record of whom each line
+    went to (with the team as the live state shows it now).
+- D2 (viewer Aurora 12:5x: "Keep routine digests to changed blockers, failed checks and needed decisions, routed to
+  their owners. Keep full censuses on demand"): the scheduled digest (idle_nudge.py at deadline - 2 h,
+  tools/factory_digest.py) is a delta against the last digest, this run's or the run it resumed from.
+  - Its facts: per surface, the blockers (drills with no resources, input shortage and full output by machine type,
+    boilers and furnaces without fuel, labs not working); the failed checks (lessons whose check is not met); and
+    the decisions needed (items blocked, requests nobody owns). Each is said when it is new, has moved (by 2 and a
+    fifth) or has cleared.
+  - Each fact goes to its owner. A position goes to the claim holding it. A surface goes to every open claim on it,
+    else to the agents holding items whose title names it (at most 3). Otherwise it goes to the team, and so does a
+    request nobody owns.
+  - One tell list per recipient: "Factory digest, changed since the last one (tick T, N game min ago): blockers: ...;
+    failed checks: ...; decisions needed: ...". Nothing changed: no tell.
+  - The full census goes to the team on request (`idle_nudge.py --digest-now`).
+  - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
+    operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
+  - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.
+
+## d18 batch38 (the 18:20 poll; eng/d18-batch38)
+
+- A1 (Sol 18:21: platform_schedule refused for no_schedule while the platform began flying moments later; duplicate
+  edits and reversals followed):
+  - The state was read in the call's tick, but the game updates a platform in a later tick. On shift36, Cinder
+    (`next: true` at tick 29119760) was flying 39 ticks later, and Wayfarer (`stop 2, go: true` at 29611678) left
+    within 265 ticks. Calls whose platform still read no_schedule 175-334 ticks later stayed put.
+  - Now a no_schedule or no_path read starts a recheck (space.lua `M.recheck_read`): read every 10 ticks for up to 300,
+    ending as soon as it reads otherwise. paused is still read at once.
+  - A queue step (body or platform lane) waits for that read (scheduler.lua) and fails only when it still reads so,
+    with both reads in the reason. A direct call's reply has `recheck` and its line, and the second read comes as a
+    tell from `platform_schedule`.
+- A2 (Grok 18:20, twice: copper from Petrel read "to the ground (no pad takes it)" and landed in the pad at (54,8),
+  shift36 drops #1496 and #1498):
+  - A pod waiting to launch or rising names no station yet, and the game lands a platform's pods for a planet in that
+    planet's landing pad. Every shift36 drop to Gleba landed in its pad, whatever the pad's requests.
+  - pods.lua: with no station named, the force's landing pad on that surface (one bounded find), marked `guessed` and
+    read again while the pod flies. The ground only with no landing pad of ours there.
+  - The arrival alert, the team block and where_is say it: "the landing pad at (54,8) (gleba's pad: pods from a
+    platform land in it; this one names no station yet)".
+- A3 (Astra; withdrawn 18:22, the worm was alive): each worm or spawner robot_dispatch warns of carries its read's
+  age (avoid.lua's chunk cache, at most a minute old) and whether its chunk is in sight now ("read 10s ago, its chunk
+  charted, not in sight now").
+- A4 (Astra: "its network holds no big-electric-pole" while a robot carried one to it):
+  - ghosts reads the flying robot with an order on the ghost first. One holding the item reads "in transit: a
+    construction robot carries ITEM to it (N tiles away, its order K)" with `in_transit`. The shortage now says "its
+    network holds no ITEM and no robot carries one to it".
+  - construction_robots `sources` gives, per group, how many are in transit in robots' cargo (and the nearest), then
+    the chests (or "no chest in the network holds it") for the rest only.

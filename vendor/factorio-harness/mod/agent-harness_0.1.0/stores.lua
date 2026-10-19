@@ -178,7 +178,9 @@ return function(api)
       if n > 0 then
         add('in_flight', n)
         flying[#flying+1] = {platform=r.platform, state=r.state, count=n,
-          lands=r.pad and string.format('landing pad (%g,%g)', r.pad.x, r.pad.y) or 'the ground (no pad takes it)'}
+          lands=r.pad and string.format('landing pad (%g,%g)%s', r.pad.x, r.pad.y,
+            r.guessed and string.format(' (%s\'s pad: pods from a platform land in it; this one names no station yet)', surface.name) or '')
+            or string.format('the ground (no landing pad of ours on %s)', surface.name)}
       end
     end
     -- on the ground (B2): a place per 32-tile cell

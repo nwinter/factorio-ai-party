@@ -50,8 +50,11 @@
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
-  The call fails (a failed queue step too) when the platform reads `no_schedule`, `no_path`, or paused without
-  `paused: true`, after it; the schedule stays as set, and the reply says what the journals showed: every one-stop
+  The call fails (a failed queue step too) when the platform reads paused without `paused: true` after it. A
+  `no_schedule` or `no_path` read in the call's tick is read again every 10 ticks for up to 300 (the game updates a
+  platform later: Cinder flew 39 ticks after one). A queue step waits for that read and fails only if it still reads
+  so; a direct call's reply has `recheck`, and the second read comes as a tell from platform_schedule. On failure the
+  schedule stays as set, and the reply says what the journals showed: every one-stop
   schedule read no_schedule, and so did longer ones whose current is the stop it waits at; with current on another
   stop they left. One stop that is not where the platform is goes as `[where it is, that stop]`, current 2
   (`one_stop` says so; after that stop's waits it goes back): `one_stop: "as given"` writes the one stop alone.
@@ -364,7 +367,8 @@
 - `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
   (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
-  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert; inserter hands and
+  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert, each with where it
+  lands (a pod that names no station yet: the planet's landing pad, said so); inserter hands and
   what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).

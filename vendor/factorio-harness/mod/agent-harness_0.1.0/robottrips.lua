@@ -174,8 +174,14 @@ return function(api)
             if d <= reach and (not hit or d - reach < hit.d - hit.reach) then hit = {e=e, d=d, reach=reach} end
           end
           if hit then
-            lines[#lines+1] = string.format('the leg %s to %s (%d tiles, %d trips) passes %d tiles from %s %s (reach %d)', at(l.from), at(l.to), math.floor(l.len + 0.5), l.n,
-              math.floor(hit.d + 0.5), hit.e.name, at(hit.e), hit.reach)
+            -- (d18 batch38 A3, Astra: a warned worm read as dead; a live scan found it) the read's age and whether its
+            -- chunk is in sight now (radar or a character), so a right warning reads as one
+            local e = hit.e
+            local age = e.seen and math.floor((game.tick - e.seen) / 60 + 0.5)
+            local sight = e.cx and try(function() return force.is_chunk_visible(s, {x=e.cx, y=e.cy}) end)
+            lines[#lines+1] = string.format('the leg %s to %s (%d tiles, %d trips) passes %d tiles from %s %s (reach %d; %s%s)', at(l.from), at(l.to), math.floor(l.len + 0.5), l.n,
+              math.floor(hit.d + 0.5), e.name, at(e), hit.reach, age and string.format('read %ds ago', age) or 'read now',
+              sight == true and ', its chunk in sight now' or sight == false and ', its chunk charted, not in sight now' or '')
           end
         end
         if got and (got.unread or 0) > 0 then

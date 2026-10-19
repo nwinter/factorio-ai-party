@@ -368,7 +368,10 @@ return function(api)
     for _, ch in ipairs(chunks) do
       local rec = c[ch[3]]
       if rec and rec.uncharted then uncharted = uncharted + 1 end
-      for _, s in ipairs(rec and rec.list or {}) do out[#out+1] = s end
+      -- (d18 batch38 A3) each with when its chunk was read (seen) and the chunk, for its age and whether it is in sight now
+      for _, s in ipairs(rec and rec.list or {}) do
+        out[#out+1] = {x=s.x, y=s.y, name=s.name, spawner=s.spawner, seen=rec.t, cx=ch[1], cy=ch[2]}
+      end
     end
     return {list=out, uncharted=uncharted, unread=over}
   end
