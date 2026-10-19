@@ -77,3 +77,47 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d19_batch46 3 silo and platform setting edits: who, when, before and after; the latest of each in the reads: ok')
+
+-- todo (viewer Aurora 15:50): platform_defense cover by reach, and again by the turrets armed now (ammo, energy, fluid).
+do
+  defines={inventory={turret_ammo=1}}
+  local function gun(x,y,rounds)
+    return {valid=true,type='ammo-turret',name='gun-turret',position={x=x,y=y},bounding_box={left_top={x=x-1,y=y-1},right_bottom={x=x+1,y=y+1}},
+      get_inventory=function() return {get_contents=function() return rounds>0 and {{name='firearm-magazine',count=rounds}} or {} end} end,
+      prototype={attack_parameters={range=18,min_range=0}},ignore_unprioritised_targets=false,get_priority_target=function() return nil end}
+  end
+  local empty,full=gun(0,-5,0),gun(30,0,20)
+  local laser={valid=true,type='electric-turret',name='laser-turret',position={x=60,y=0},energy=0,bounding_box={left_top={x=59,y=-1},right_bottom={x=61,y=1}},
+    prototype={attack_parameters={range=24,min_range=0}},ignore_unprioritised_targets=false,get_priority_target=function() return nil end}
+  local collector={valid=true,position={x=2,y=2},direction=0,prototype={tile_buildability_rules={}}}
+  local tiles={}
+  for x=0,3 do tiles[#tiles+1]={position={x=x,y=0}} end
+  local s={find_entities_filtered=function(f) if f.type=='asteroid-collector' then return {collector} end if f.type=='inserter' then return {} end return {empty,full,laser} end,
+    find_tiles_filtered=function() return tiles end}
+  local D=dofile('mod/agent-harness_0.1.0/platdefense.lua'){platform=function() return {name='Bastion',surface=s,force='f'} end}
+  local r=D.read({},{platform='Bastion'})
+  -- the collector: the empty gun reaches it, nothing armed does
+  local c=r.collectors[1]
+  eq(c.covered_by,1); eq(c.by_size.small.covered,true); eq(c.armed_by,0); eq(c.by_size_armed.small.covered,false)
+  local line
+  for _,l in ipairs(r.lines) do if l:find('^asteroid%-collector') then line=l end end
+  has(line,'1 turret reach it (by size: small 1, medium 1, big 1, huge 1); armed now 0 of 1 (by size: small none, medium none, big none, huge none)')
+  -- the north edge: covered by reach, only by a turret not armed now
+  local north
+  for _,row in ipairs(r.sides) do if row.side=='north' then north=row end end
+  eq(north.uncovered,0); eq(north.by_size.big.uncovered,0); eq(north.by_size.big.unarmed_only,4)
+  for _,l in ipairs(r.lines) do if l:find('^north side') then line=l end end
+  has(line,'big all covered, 4 more covered only by turrets not armed now ((0,0)-(3,0) 4 tiles)')
+  for _,l in ipairs(r.lines) do if l:find(' turrets: ') then line=l end end
+  has(line,'3 turrets: 1 armed now, 1 empty (gun-turret (0,-5)), 2 fed by nothing (by hand); not armed: laser-turret (60,0) (no energy)')
+  eq(r.turrets[2].armed,true); eq(r.turrets[3].unarmed,'no energy')
+  -- all armed: no armed fields, the lines as before
+  empty.get_inventory=function() return {get_contents=function() return {{name='firearm-magazine',count=5}} end} end
+  laser.energy=1000
+  r=D.read({},{platform='Bastion'})
+  eq(r.collectors[1].armed_by,nil)
+  for _,row in ipairs(r.sides) do if row.side=='north' then north=row end end
+  eq(north.by_size.big.unarmed_only,nil)
+  defines=nil
+end
+print('d19_batch46 platform_defense cover by the turrets armed now: ok')

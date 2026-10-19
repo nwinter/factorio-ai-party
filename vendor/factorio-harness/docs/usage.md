@@ -8923,3 +8923,12 @@ fh watch    # deploy on every change
   and power-cut alert groups (4.6 ms) are kept 120 ticks per force, and the push alerts read the board's active claims
   once a tick (an agent shown no new alert group read every board item twice for each of about 170 groups, 10 ms):
   4.3-16 -> 0.7-1.5 ms a reply.
+- Todo (viewer Aurora d19 15:50: platform_defense cover by live weapon readiness, target filters and damage): the
+  target filters (cover per size by each turret's priority list, d17 batch23 A1) and the damage against the route's
+  asteroids (d17 batch35 B6) were already in. Now the cover is read again with only the turrets armed now (an ammo
+  turret holding ammo, an electric turret with energy, a fluid turret with fluid): a collector whose reaching turrets
+  are not all armed adds `armed now 0 of 1 (by size: small none, ...)` (rows `armed_by`, `by_size_armed`); a side's
+  size adds `4 more covered only by turrets not armed now ((0,0)-(3,0) 4 tiles)` (rows `unarmed_only`,
+  `unarmed_gaps`); the turrets line says how many are armed and names electric and fluid turrets that are not (`not
+  armed: laser-turret (60,0) (no energy)`); turret rows carry `armed` and `unarmed`. With every turret armed the read
+  is as before. The second pass over the hull edges runs only when a turret is not armed. Test tests/d19_batch46.lua.
