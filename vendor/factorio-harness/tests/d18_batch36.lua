@@ -444,3 +444,15 @@ do
   eq(args.train_id,5); has(table.concat(fix.notes,' '),'id is train_id')
 end
 print('d18_batch36 D2 train actions name what they lack: ok')
+
+-- D1 live 18:40: silo {surface: "all"} went to the generic surface resolution ("no surface named all") before silo
+-- read it; it now reaches silo, as {all: true} does.
+do
+  game.surfaces={surface}
+  local ok,err=pcall(grok,'silo',{surface='all'})
+  assert(not ok and not tostring(err):find('no surface named',1,true),tostring(err))
+  has(err,'no rocket silo of ours on any planet')
+  ok,err=pcall(grok,'silo',{all=true})
+  has(err,'no rocket silo of ours on any planet')
+end
+print('d18_batch36 D1 silo surface "all" through the runtime: ok')

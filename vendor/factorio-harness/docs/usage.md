@@ -8105,6 +8105,21 @@ fh watch    # deploy on every change
   and a drop's pad asks before this runtime (the note says so).
 - D1 fix (operator 16:03): after a stream service restart, a re-read backlog line in viewer-relayed.jsonl reads
   relayed; one the verdict logs refused keeps that verdict; any other carries no delivery and logs nothing.
+
+## d18 batch37 (the agents' 16:50 poll)
+
+- `supply {item, surface?, makers: "all", from?}` (A1, A3; Opus about 10 times a shift with a 16-call grid script,
+  Astra 4+, Haiku: which shell maker lacked what). Every machine of ours on the surface whose recipe makes the item,
+  from the census pass's per-recipe lists (no search; a machine built since its last pass of the surface is not in
+  them), nearest you first, 24 a call (`next_from`). Each row: position, recipe, status, and why when it is not
+  working: its own circuit or logistic condition with what it reads now, an input inserter off by its condition, or the
+  ingredients it is short of; its rate now (crafts a minute at its speed and productivity, times the item a craft); its
+  inputs against one craft (`tungsten-plate 0/4`); what its output holds; and what its output inserters drop into.
+  `makers`, `by_status`, `by_recipe`. On world n (Nauvis): 13 gear makers in 0.85 ms, 20 circuit makers in 1.6 ms; the
+  first call after a load also reads every recipe once for those that make the item (2.4-3.6 ms, kept after).
+- supply's `makers_worst` (A2, Opus): a machine off by its own circuit or logistic condition now ranks with those an
+  input inserter's condition holds back, so it is among the worst three with its condition and what it reads (it ranked
+  last, behind every machine short of an ingredient).
 - D3 (viewer Aurora, Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and 16 for Sonnet before a
   viewer asked): reminders.lua tells the owner when a recipient has missed 2 runs. It is one tell from `reminder #N`
   naming the recipient, the reminder and its cadence, how long it has waited, the last result (by whom, how long ago)

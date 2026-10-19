@@ -12220,6 +12220,8 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
+M.makersall=require('makersall'){status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
+  census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
 M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
@@ -14449,6 +14451,8 @@ do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
+      -- (d18 batch36 D1, live 18:40) silo {surface: "all"}: every planet, silo.lua reads it, no one surface
+      if name=='silo' and a.surface=='all' then return handler(p,a) end
       -- launch's and preflight's platform is where the rocket goes, not where the call acts (Astra, shift14 03:09 and
       -- 04:24: preflight {surface, position, platform} was refused, and she dropped the platform).
       assert(name=='launch' or name=='preflight' or a.platform==nil,'give platform or surface, not both')
@@ -16510,7 +16514,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
 -- the minutes only.
