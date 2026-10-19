@@ -318,6 +318,12 @@ return function(api)
     if a.all ~= nil then assert(a.all == true, 'all is true'); return M.list(p, a) end
     -- surface with position (Sol 15:22: from Aquilo a train at (120,-131) was looked for on Aquilo): that surface's
     -- train or stop by remote view.
+    -- (d18 batch36 D2, Gemini: train {} refused "position requires x and y" 17 times in shifts 33-36) which train or stop
+    if a.position == nil and a.train_id == nil then
+      error('train needs which train or stop: position {x, y} (a locomotive, wagon or train stop, as the map shows it; surface for '
+        .. 'another planet) or train_id N (train {stops: true} and train {all: true} name the ids); train {all: true} reads every train, '
+        .. 'train {stops: true} every stop', 0)
+    end
     if a.surface ~= nil and api.on_surface then p = api.on_surface(p, a.surface) end
     -- The target by position only: entity() reads `name` as an entity-name
     -- filter, which is why a stop's name is `station` (live check: name

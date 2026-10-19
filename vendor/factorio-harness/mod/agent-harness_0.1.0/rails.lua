@@ -219,7 +219,13 @@ return function(api)
   function M.plan(p,a)
     local s,force=p.surface,p.force
     assert(not (s.platform~=nil),'rails cannot be built on a space platform')
-    assert(a.from~=nil and a.to~=nil,'rail_route requires from and to')
+    -- (d18 batch36 D2) each missing end named, with its shape
+    if a.from==nil or a.to==nil then
+      local miss={}
+      if a.from==nil then miss[#miss+1]='from' end
+      if a.to==nil then miss[#miss+1]='to' end
+      error('rail_route needs '..table.concat(miss,' and ')..': from {x, y} (where the rails start) and to {x, y} (where they end); via [{x, y}, ...] optional',0)
+    end
     local points={api.position(a.from)}
     if a.via~=nil then
       assert(type(a.via)=='table' and #a.via>=1 and #a.via<=16,'via is 1..16 {x,y} points passed in order')

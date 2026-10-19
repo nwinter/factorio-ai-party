@@ -42,6 +42,8 @@ return function(api)
     -- pole_route and pipe_route call their points waypoints.
     rail_route = {waypoints='via', start='from', ['end']='to', dryrun='dry_run', ['dry-run']='dry_run'},
     train_stop = {station_name='name', target='position'},
+    -- (d18 batch36 D2, Gemini: train {id} 7 times and train {train} 9 times refused as unknown in shifts 33-36)
+    train = {id='train_id', train='train_id', target='position'},
   }
   -- A project's changes (board.lua board_update).
   local PROJECT_CHANGES = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}
