@@ -34,7 +34,7 @@ return function(api)
   -- Kinds and how a line says them; game alert types not listed read as their name.
   local LABEL = {robots_lost='robots lost to enemies on their routes',line_cut='belt or pipe line cut',power_cut='machines cut off from power by a lost pole',no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
     no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil', rebuilt_empty='rebuilt empty',
-    burnt_full='stopped by a full burnt-result slot', output_full='drills stopped by a full chest they drop into', off_by_condition='stopped by their own circuit or logistic condition', captive_starving='captive spawners losing health', captive_urgent='captive spawners dying within 2 min', captive_died='captive spawners died',
+    burnt_full='stopped by a full burnt-result slot', output_full='drills stopped by a full chest they drop into', off_by_condition='stopped by their own circuit or logistic condition', captive_starving='captive spawners losing health', silo_spoils='staged cargo spoiling before its platform is back', captive_urgent='captive spawners dying within 2 min', captive_died='captive spawners died',
     no_material_for_construction='ghosts waiting for materials (no robot can bring them)',
     not_enough_construction_robots='not enough construction robots', not_enough_repair_packs='robots out of repair packs',
     no_storage='robots have no storage for what they carry', no_roboport_storage='no roboport storage',
@@ -454,6 +454,87 @@ return function(api)
   -- follows the chain), or a built rocket not launched for SILO_IDLE ticks (silo_ready_idle, with its cargo and the
   -- platforms above). Per silo in storage (push_silos): when its part count last changed, when it became ready.
   local SILO_STALL, SILO_IDLE = 7200, 10800
+  -- (d18 batch38 C4, Grok 18:20: about 200 agricultural packs were inside 5 minutes of spoiling after Petrel left) a
+  -- spoilable item a platform's hub asks this planet for, staged in the silo's rocket or the chests of the silo's
+  -- logistic network, that spoils before that platform's next arrival here (its schedule's ETA, api.platform_eta): how
+  -- many, the first's time left, and where. Read at most every SPOIL_EVERY ticks a silo; bounded: 16 platforms, 32 chests
+  -- an item, every slot of each.
+  local SPOIL_EVERY, SPOIL_CHESTS = 1800, 32
+  function M.silo_spoils(e, s, m)
+    if not api.platform_eta then return nil end
+    local planet = try(function() return s.planet and s.planet.name end) or s.name
+    local wants = {}
+    for i, pl in pairs(e.force.platforms) do
+      if i > 16 then break end
+      local here = try(function() return pl.space_location and pl.space_location.name end) == planet
+      local secs = not here and pl.valid and pl.hub and try(function() return pl.hub.get_logistic_sections() end)
+      for k = 1, secs and secs.sections_count or 0 do
+        local sec = try(function() return secs.get_section(k) end)
+        for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
+          local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+          if name and from == planet and (try(function() return prototypes.item[name].get_spoil_ticks() end) or 0) > 0 then
+            wants[name] = wants[name] or {}
+            table.insert(wants[name], pl)
+          end
+        end
+      end
+    end
+    if not next(wants) then return nil end
+    local ln = try(function() return e.surface.find_logistic_network_by_position(e.position, e.force) end)
+    local lines = {}
+    for name, pls in pairs(wants) do
+      -- the soonest arrival of a platform that asks for it
+      local eta, who
+      for _, pl in ipairs(pls) do
+        local t = try(function() return api.platform_eta(pl, planet) end)
+        if t and (not eta or t < eta) then eta, who = t, pl.name end
+      end
+      if eta then
+        local places = {}
+        local invs = {}
+        local rocket = try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
+        if rocket then invs[#invs+1] = {inv=rocket, where='the silo\'s rocket'} end
+        local chests = 0
+        for _, list in ipairs({ln and try(function() return ln.storages end) or {}, ln and try(function() return ln.providers end) or {}}) do
+          for _, c in ipairs(list) do
+            if chests >= SPOIL_CHESTS then break end
+            if c.valid and c.type ~= 'roboport' and (try(function() return c.get_item_count(name) end) or 0) > 0 then
+              chests = chests + 1
+              local inv = try(function() return c.get_inventory(defines.inventory.chest) end) or try(function() return c.get_output_inventory() end)
+              if inv then invs[#invs+1] = {inv=inv, where=string.format('%s %s', c.name, at_text(c.position))} end
+            end
+          end
+        end
+        local n, first, at_first = 0, nil, nil
+        local soon = game.tick + eta * 60
+        for _, x in ipairs(invs) do
+          for i = 1, #x.inv do
+            local st = x.inv[i]
+            if st.valid_for_read and st.name == name then
+              local t = try(function() return st.spoil_tick end)
+              if t and t > 0 and t < soon then
+                n = n + st.count
+                places[x.where] = (places[x.where] or 0) + st.count
+                if not first or t < first then first, at_first = t, x.where end
+              end
+            end
+          end
+        end
+        if n > 0 then
+          local where = {}
+          for k, c in pairs(places) do where[#where+1] = k .. ' ' .. c end
+          table.sort(where)
+          lines[#lines+1] = string.format('%d %s staged for %s (its hub asks %s for it) spoil before its next arrival here in about %ds: the first in %ds (%s); in %s',
+            n, name, who, planet, math.floor(eta + 0.5), math.floor((first - game.tick) / 60), at_first, table.concat(where, ', ', 1, math.min(4, #where)))
+        end
+      end
+    end
+    if #lines == 0 then return nil end
+    table.sort(lines)
+    return 'silo_spoils', string.format('%s %s: %s', e.name, at_text(e.position), table.concat(lines, '; '))
+  end
   local function silo_state(e, s)
     local st = api.state()
     st.push_silos = st.push_silos or {}
@@ -466,6 +547,13 @@ return function(api)
     -- (d17 batch23 B3) rocket parts made, sampled for silo's rate
     if api.silo_sample then pcall(api.silo_sample, e) end
     if ready then m.ready = m.ready or game.tick else m.ready = nil end
+    -- (C4) staged cargo spoiling before its platform is back comes first, read at most every SPOIL_EVERY ticks
+    if not m.spoil_t or game.tick - m.spoil_t >= SPOIL_EVERY then
+      m.spoil_t = game.tick
+      local ok, k, d = pcall(M.silo_spoils, e, s, m)
+      m.spoil = ok and k and {k, d} or nil
+    end
+    if m.spoil then return m.spoil[1], m.spoil[2] end
     if ready and game.tick - m.ready >= SILO_IDLE then
       local inv = try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
       local held = {}
@@ -1751,6 +1839,10 @@ return function(api)
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
     -- silo kinds (A1): each silo's line
+    if g.kind == 'silo_spoils' then
+      return string.format('staged cargo spoils before its platform is back %s%s: %s', g.surface ~= here and 'on ' .. g.surface or 'here',
+        was and string.format(' (was %d)', was) or '', table.concat(g.lost or {}, '; '))
+    end
     local short_item = g.kind:match('^silo_short%.(.+)$')
     if short_item or g.kind == 'silo_ready_idle' then
       return string.format('%s %s%s: %s', short_item and ('rocket silo short of ' .. short_item) or 'rocket ready and not launched',

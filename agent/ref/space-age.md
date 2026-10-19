@@ -276,7 +276,9 @@
   take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk. A silo's
   transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part ingredients) and
   `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each. Silo
-  alerts: `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).
+  alerts: `silo_short.<item>` (parts stalled 2 min), `silo_ready_idle` (a rocket ready 3 min, not launched) and
+  `silo_spoils` (a spoilable item a platform asks this planet for, in the silo's rocket or its network's chests, that
+  spoils before that platform's next arrival here: how many, the first's time left, where).
   Example: `./fh call silo --args '{"position":{"x":65.5,"y":14.5},"why":true}'`
 - `cargo {items | position, silo?, to_platform?, incoming?}`: weighs a rocket cargo list (or a chest, silo or pad at
   `position`): each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets, and
