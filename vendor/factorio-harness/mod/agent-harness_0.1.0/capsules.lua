@@ -10,7 +10,7 @@ return function(api)
   local M = {handlers={}}
   local SUPPORTED = {throw=true, ['use-on-self']=true}
   M.schema = {
-    use_item = {surface='your surface only (named, it must be yours): the artillery remote is not used on another surface here (see its refusal)', item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives, artillery-targeting-remote (held, or by the shortcut once artillery is researched; not used up: an artillery flare at position, any charted tile, and our artillery with shells that reaches it fires there; the reply lists those pieces), ...',
+    use_item = {surface='your surface only (named, it must be yours): the artillery remote is not used on another surface here (see its refusal)', item='a capsule you hold (grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives), or artillery-targeting-remote, which needs none held once artillery is researched (the shortcut gives it; not used up: an artillery flare at position, any charted tile, and our artillery with shells that reaches it fires there; the reply lists those pieces), ...',
       position='{x,y} target for a thrown capsule: in sight, within its range (and beyond its minimum range); not for one used on yourself',
       quality='default normal',
       walk='cliff-explosives only: true walks into range first (as clear_cliffs)',
