@@ -516,6 +516,9 @@ return function(api)
     end
     row.send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false
     if row.send_to_orbit_automatically then words[#words+1] = 'send to orbit automatically on' end
+    -- (d19 batch46 3, viewer Aurora) who last changed each switch, when, before and after (editlog.lua)
+    row.setting_edits = M.setting_edits(e)
+    if row.setting_edits then words[#words+1] = 'changed: ' .. table.concat(row.setting_edits, '; ') end
     local planet_name = try(function() return e.surface.planet and e.surface.planet.name end)
     row.platforms_above = platforms_above(force, planet_name)
     if row.platforms_above then words[#words+1] = 'our platforms above: ' .. table.concat(row.platforms_above, ', ') end
@@ -729,12 +732,17 @@ return function(api)
         return t end)(), '; and '))}
   end
   -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
+  function M.setting_edits(e)
+    local log = api.editlog and api.editlog()
+    return log and e.unit_number and try(function() return log.lines('silo:' .. e.unit_number) end) or nil
+  end
   function M.settings(e)
     local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
     local rk = M.rocket(e)
     return {silo = string.format('%s at (%g,%g) on %s', e.name, e.position.x, e.position.y, e.surface.name),
       auto_requests = try(function() return e.use_transitional_requests end) and true or false,
       send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false,
+      setting_edits = M.setting_edits(e),
       requesting_for = target, parts = rk.parts, built_parts = rk.built_parts, next_parts = rk.next_parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
       state = try(function() return silo_states[e.rocket_silo_status] end)}
   end

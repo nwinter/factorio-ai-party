@@ -8021,7 +8021,11 @@ function handlers.configure(p,a)
       out=space.launch(p,{position=e.position,unit_number=e.unit_number,auto_requests=a.auto_requests,force=a.force})
       out.auto_requests=nil
     end
-    if a.send_to_orbit_automatically~=nil then e.send_to_orbit_automatically=a.send_to_orbit_automatically end
+    if a.send_to_orbit_automatically~=nil then
+      local was=e.send_to_orbit_automatically and 'on' or 'off'
+      e.send_to_orbit_automatically=a.send_to_orbit_automatically
+      if M.editlog and e.unit_number then pcall(M.editlog.setting,'silo:'..e.unit_number,'send to orbit automatically',p.name or '?',was,e.send_to_orbit_automatically and 'on' or 'off') end
+    end
     out.settings=M.silo.settings(e); out.remote=not near or nil
     return out
   end
@@ -12638,7 +12642,7 @@ function M.cargo_eta(p,a,rockets)
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
-M.silo=require('silo'){elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
+M.silo=require('silo'){editlog=function() return M.editlog end,elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
@@ -12716,7 +12720,11 @@ function M.silo_unpause(index,why,unit)
       if okr and risk and risk.lost then
         lines[#lines+1]=string.format('automatic requests of %s stay off (%s, but %s; configure {auto_requests: true, force: true} turns them on anyway)',rec.where or 'the silo',why,risk.line)
       else
-        if rec.silo and rec.silo.valid then rec.silo.use_transitional_requests=true end
+        if rec.silo and rec.silo.valid then
+          rec.silo.use_transitional_requests=true
+          -- (d19 batch46 3) the silo's reads say who switched it and why (editlog.lua)
+          if M.editlog then pcall(M.editlog.setting,'silo:'..rec.silo.unit_number,'automatic requests',rec.who or '?','off','on (load_silo: '..why..')') end
+        end
         lines[#lines+1]=string.format('automatic requests of %s back on (%s)',rec.where or 'the silo',why)
       end
       M.silo_pauses()[u]=nil
@@ -12782,6 +12790,7 @@ function M.silo_pause(p,a,rockets)
   local inv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
   for _,c in ipairs(inv and inv.get_contents() or {}) do aboard[#aboard+1]=c.name..'*'..c.count end
   silo.use_transitional_requests=false
+  if M.editlog then pcall(M.editlog.setting,'silo:'..silo.unit_number,'automatic requests',M.board.who(p) or p.name or '?','on','off (load_silo pause, back on after its last launch)') end
   M.silo_pauses()[silo.unit_number]={by=p.index,who=M.board.who(p),tick=game.tick,left=rockets or 1,silo=silo,where=string.format('%s (%g,%g)',silo.name,silo.position.x,silo.position.y)}
   return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch; a load that ends short or failed leaves them off%s',
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
@@ -12913,6 +12922,7 @@ function handlers.load_silo(p,a)
     assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
     local was=silo.use_transitional_requests
     silo.use_transitional_requests=false
+    if M.editlog and was then pcall(M.editlog.setting,'silo:'..silo.unit_number,'automatic requests',M.board.who(p) or p.name or '?','on','off (load_silo auto_requests: false)') end
     local rest={}
     for k,v in pairs(a) do if k~='auto_requests' then rest[k]=v end end
     local out=handlers.load_silo(p,rest)
@@ -17114,7 +17124,7 @@ M.platrename=require('platrename'){state=state,platform=function(p,name) return 
   name_of=function(i) local ok,r=pcall(M.bots.record,i); if ok and r and r.name then return r.name end local pl=game.get_player(i); return pl and pl.name or nil end}
 function handlers.platform_rename(p,a) return M.platrename.rename(p,a) end
 -- Hub requests' custom minimum payload, read and set over platforms (minpayload.lua; Gemini 19:50).
-M.minpayload=require('minpayload'){}
+M.minpayload=require('minpayload'){editlog=function() return M.editlog end}
 function handlers.min_payload(p,a) return M.minpayload.handler(p,a) end
 -- A platform's remaining bill of materials (platbom.lua; B3, Sol 22:50).
 M.platbom=require('platbom'){leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,

@@ -8886,3 +8886,24 @@ fh watch    # deploy on every change
   longer read. Private copy, iron-plate, before -> after: Nauvis 108 -> 7.2-8.6 ms, Gleba 24 -> 1.0-1.2, Fulgora 13 ->
   4.1-5.2, Vulcanus 75 -> 2.3-2.8, Aquilo 1.4 -> 0.2, a platform 0.8 -> 0.1 (yumako-mash on Gleba 74 -> 0.35). The
   same by_kind both ways (belts and hands differ by what moved between reads).
+
+## d19 batch46 (eng/d19-batch46)
+
+- Item 1, reminder checklists (Sol and viewer Foobator, d18 05:43): already in, from d17 batch30 B1 (reminder_add
+  `steps`, each named with its own `every_ticks`; reminder_ack records a step with its result; progress per recipient;
+  the steps in the reminder's row; done only when every step is recorded). Not changed.
+- Item 2, ownership audit (Sol and viewer Foobator, d18 08:09): already in, from d17 batch33 B2 (`board_review
+  {ownership: true, surface?}`). Not changed.
+- Item 3, setting edits on silos and platforms (viewer Aurora, d18 23:24; editlog.lua, as batch41 B1 for request
+  sections and departure gates). Recorded with the agent, the tick, before and after (the last 5 a setting):
+  a silo's automatic requests (`launch`/`configure {auto_requests}`, and load_silo's pause, its turning back on and
+  its `auto_requests: false`, which say so: `off (load_silo pause, back on after its last launch)`) and send to orbit
+  automatically (`configure`); a platform's schedule stops (`platform_schedule {stops}`: `1 nauvis, 2 fulgora -> 1
+  nauvis, 2 fulgora, 3 gleba`), paused (`platform_schedule {paused}`) and a request's custom minimum payload set by
+  `min_payload` (`minimum payload low-density-structure from nauvis: none -> 50`; set by `requests`, it is in that
+  section's batch41 record). Reads: the silo's row (`silo`, `silos`, the `settings` in `launch` and `configure`
+  replies) and `platform {platform}` carry `setting_edits`, the latest edit of each setting, oldest first:
+  `automatic requests: on -> off, by astra at game time 1h02m (tick 223200, 3m ago)`; a silo's line ends `changed: ...`.
+  The agent who made the previous edit of that setting, when someone else changes it, gets one tell a call (`changed
+  what you set last: automatic requests: on -> off`); a stops change is told once, with the departure gate's edit.
+  Records begin with this deploy. Test tests/d19_batch46.lua.

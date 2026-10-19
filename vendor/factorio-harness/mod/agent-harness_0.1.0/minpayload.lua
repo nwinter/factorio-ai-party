@@ -46,7 +46,7 @@ return function(api)
         payload_fits(item, n, 'set')
       end
     end
-    local lines, changed, untouched = {}, 0, {}
+    local lines, changed, untouched, told_all = {}, 0, {}, {}
     for item in pairs(set or {}) do untouched[item] = true end
     for _, pl in ipairs(platforms(p, a.platforms)) do
       local secs = try(function() return pl.hub.get_logistic_sections() end)
@@ -58,12 +58,20 @@ return function(api)
           if item and set and set[item] ~= nil then
             assert(sec.is_manual, string.format('%s: %s is in a section the game manages (construction requests); the custom minimum payload is set on manual sections', pl.name, item))
             local n = set[item]
+            local was = f.minimum_delivery_count
             local q = f.value.quality
             local nf = {value={type=f.value.type, name=item, quality=type(q) == 'table' and q.name or q, comparator=f.value.comparator}, min=f.min, max=f.max,
               import_from=from, minimum_delivery_count=(n ~= false and n > 0) and n or nil}
             sec.set_slot(slot, nf)
             f = try(function() return sec.get_slot(slot) end) or f
             changed = changed + 1; untouched[item] = nil
+            -- (d19 batch46 3) who set it, when, before and after: the platform's reads show the latest (editlog.lua)
+            local log = api.editlog and api.editlog()
+            if log then
+              local told = log.setting('plat:' .. pl.name, 'minimum payload ' .. item .. (from and ' from ' .. from or ''), p.name or '?',
+                was and tostring(was) or 'none', f.minimum_delivery_count and tostring(f.minimum_delivery_count) or 'none')
+              for _, n2 in ipairs(told or {}) do told_all[#told_all + 1] = n2 end
+            end
           end
           if item and from and (not set or set[item] ~= nil) then
             local w = try(function() return prototypes.item[item].weight end)
@@ -82,7 +90,7 @@ return function(api)
     for item in pairs(untouched) do missing[#missing+1] = item end
     table.sort(missing)
     return {lines=#lines > 0 and lines or {'no request imports an item from a planet on these platforms'}, changed=set and changed or nil,
-      not_requested=#missing > 0 and missing or nil,
+      not_requested=#missing > 0 and missing or nil, told_of_setting_edit=#told_all > 0 and told_all or nil,
       note=set and 'only the custom minimum payload changed: min, max, quality and import planet as they were' or nil}
   end
   M.schema = {min_payload = {platforms='optional "all" (default), a platform name, or a list of names',
