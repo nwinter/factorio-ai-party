@@ -174,12 +174,35 @@ return function(api)
       r.pad_e, r.items = d.pad_e, {}
       for i, w in ipairs(d.items) do r.items[i] = {name=w.name, quality=w.quality, count=w.count} end
       r.pad_before = pad_counts(r)
+      -- (d18 batch36 D3) what the pad asked for the sent items then: "low-density-structure 200 (held 40)"
+      local asks, want = {}, {}
+      for _, w in ipairs(r.items) do want[w.name] = true end
+      local secs = try(function() return d.pad_e.get_logistic_sections() end)
+      for i = 1, secs and secs.sections_count or 0 do
+        local sec = try(function() return secs.get_section(i) end)
+        for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local n = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
+          if n and want[n] then asks[#asks+1] = string.format('%s %d (held %d)', n, f.min or 0, (r.pad_before or {})[n] or 0) end
+        end
+      end
+      r.pad_asks = #asks > 0 and table.concat(asks, ', ') or 'none of these items'
     end
     s.list[#s.list+1] = r
     while #s.list > KEEP do table.remove(s.list, 1) end
     return r.id
   end
 
+  -- (d18 batch36 D3) the kept drops for the cargo ledger (ledger.lua): each with where it landed, the pad's story and
+  -- verdict, and what the pad asked then
+  function M.ledger_rows()
+    local out = {}
+    for _, r in ipairs((api.state().drops or {list={}}).list) do
+      out[#out+1] = {id=r.id, tick=r.tick, platform=r.platform, surface=r.surface, sent=r.sent, state=r.state, at=r.at, landed_in=r.into,
+        pad_text=M.pad_text(r), verdict=M.pad_verdict(r), pad_asks=r.pad_asks}
+    end
+    return out
+  end
   -- (d17 batch33 A4) a drop by id, and a platform's latest drop (its id), for pod_landed {drop_id | last_drop}
   function M.find(id)
     for _, r in ipairs(store().list) do if r.id == id then return r end end

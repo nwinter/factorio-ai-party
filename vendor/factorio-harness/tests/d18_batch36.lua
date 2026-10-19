@@ -70,7 +70,7 @@ do
     schedule={current=1,records={{station='fulgora',wait_conditions={{type='item_count'},{type='time',compare_type='or'}}}}}}
   local fulgora={index=4}
   game={planets={fulgora={surface=fulgora}}}
-  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){crafters=function(f,s) assert(s==fulgora); return {{valid=true,type='assembling-machine'},silo} end}
+  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){silos=function(f,s) assert(s==fulgora); return {silo} end}
   silo.type='rocket-silo'
   local lines=N.for_platform(pl)
   eq(#lines,1)
@@ -304,6 +304,50 @@ do
   game,prototypes=nil,nil
 end
 print('d18_batch36 C1 clear_obstacles: ok')
+
+-- D1 (Gemini): silo across every planet in one call: a line a silo.
+do
+  local nauvis,gleba={index=1,name='nauvis',planet={}},{index=3,name='gleba',planet={}}
+  local space={index=5,name='platform-1'}
+  game={surfaces={nauvis,gleba,space}}
+  local s1={valid=true,name='rocket-silo',position={x=15.5,y=59.5}}; local s2={valid=true,name='rocket-silo',position={x=65.5,y=14.5}}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return {} end,census_silos=function(f,sf) if sf==nauvis then return {s1} elseif sf==gleba then return {s2} end return {} end}
+  S.view=function(e) if e==s1 then return {parts_per_min=4.2,cargo={items='low-density-structure*50'},requesting_for='Wren',
+    platform_requests={{filling=true,item='low-density-structure',asks=100,holds=20}},next_auto_launch='Wren low-density-structure: full, 100'} end return {} end
+  S.rocket=function(e) return {rocket_now=e==s1 and 'building the rocket: parts 42/50' or 'rocket built (50/50 parts) and ready to launch, not launched'} end
+  local r=S.read({force={rockets_launched=7}},{surface='all'})
+  eq(#r.lines,2)
+  eq(r.lines[1],'rocket-silo (15.5,59.5) on nauvis: building the rocket: parts 42/50, 4.2 parts/min; aboard low-density-structure*50; filling for Wren: low-density-structure 100 asked (holds 20); next automatic launch: Wren low-density-structure: full, 100')
+  eq(r.lines[2],'rocket-silo (65.5,14.5) on gleba: rocket built (50/50 parts) and ready to launch, not launched; aboard nothing')
+  eq(S.read({force={}},{all=true}).all,true)
+  fails(function() S.read({force={}},{all=true,position={x=1,y=1}}) end,'all (surface "all") reads every silo')
+  game=nil
+end
+print('d18_batch36 D1 silo on every planet: ok')
+
+-- D3 (Luna 15:48: the silo chain inferred across cargo, shipment and inspect): the surface's cargo ledger.
+do
+  game={tick=1000}
+  defines={inventory={cargo_unit=1}}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/ledger.lua'){state=function() return st end}
+  local hub={get_item_count=function() return 20 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='low-density-structure'},min=100,import_from='nauvis'}}} end} end}
+  local pl={valid=true,name='Wren',hub=hub}
+  local silo={valid=true,position={x=15.5,y=59.5},surface={name='nauvis'},transitional_request_target=pl}
+  local pod={get_inventory=function() return {get_contents=function() return {{name='low-density-structure',count=50}} end} end,cargo_pod_destination={space_platform=pl}}
+  L.on_launch({rocket_silo=silo,rocket={attached_cargo_pod=pod}})
+  game.tick=4600
+  local drops={{id=7,tick=3000,platform='Wren',surface='nauvis',sent={'iron-plate*100'},state='landed',landed_in='cargo-landing-pad (0,0)',
+    pad_text='the pad held iron-plate 0 before it and 100 when it landed; in the 20 s after: iron-plate: logistic robots took 100',verdict='landed, then 100 of 100 left the pad',pad_asks='iron-plate 200 (held 0)'},
+    {id=8,tick=3500,platform='Wren',surface='gleba',sent={'nutrients*10'}}}
+  local lines=L.read('nauvis',drops)
+  eq(#lines,2)
+  eq(lines[1],'up #1, 1m00s ago: rocket-silo (15.5,59.5) launched low-density-structure*50 to Wren; Wren asked low-density-structure 100 (holds 20) (its automatic requests)')
+  eq(lines[2],'down drop #7, 26s ago: from Wren, iron-plate*100; the pad asked iron-plate 200 (held 0); landed in cargo-landing-pad (0,0); the pad held iron-plate 0 before it and 100 when it landed; in the 20 s after: iron-plate: logistic robots took 100 (landed, then 100 of 100 left the pad)')
+  eq(#L.read('gleba',drops),1)
+  game,defines=nil,nil
+end
+print('d18_batch36 D3 cargo ledger: ok')
 -- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
@@ -388,3 +432,15 @@ do
   pt.mode=3; eq(runtime.request_of(chest,'iron-plate','normal'),nil,'a provider asks nothing')
 end
 print('d18_batch36 C3 the request a transfer fills: ok')
+
+-- D2 (Gemini: train {} refused "position requires x and y" 17 times, train {id} and {train} as unknown 16 times in
+-- shifts 33-36): the train actions name a missing position and its shape; id and train run as train_id.
+do
+  fails(function() grok('train',{}) end,'train needs which train or stop: position {x, y}')
+  fails(function() grok('train',{surface='nauvis'}) end,'train needs which train or stop')
+  fails(function() grok('train_stop',{station='A'}) end,'train_stop needs position {x, y}')
+  fails(function() grok('rail_route',{to={x=1,y=1}}) end,'rail_route needs from: from {x, y}')
+  local ok,_,args,fix=pcall(runtime.aliases.fix,'train',{id=5},runtime.takes)
+  eq(args.train_id,5); has(table.concat(fix.notes,' '),'id is train_id')
+end
+print('d18_batch36 D2 train actions name what they lack: ok')

@@ -38,12 +38,12 @@ return function(api)
     return planet, items, loc ~= nil
   end
   -- The planet's silos without a search (a whole-surface find took 10.5 ms on Nauvis, world n): the census pass's
-  -- crafters, else the list shipment keeps (refreshed once a minute).
+  -- silos, else the list shipment keeps (refreshed once a minute).
   function M.silos(force, s)
     local out = {}
-    local list = api.crafters and try(function() return api.crafters(force, s) end)
+    local list = api.silos and try(function() return api.silos(force, s) end)
     if list then
-      for _, e in ipairs(list) do if e.valid and e.type == 'rocket-silo' and #out < M.SILOS then out[#out+1] = e end end
+      for _, e in ipairs(list) do if e.valid and #out < M.SILOS then out[#out+1] = e end end
       return out
     end
     local c = api.state and try(function() return api.state().shipment_silos[s.index] end)

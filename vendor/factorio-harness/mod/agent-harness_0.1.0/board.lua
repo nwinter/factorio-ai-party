@@ -1759,10 +1759,12 @@ return function(api)
     if action == 'board' then return read(OPERATOR, a) end
     if action == 'board_events' then return events(a) end
     if action == 'mention_counts' then return M.handlers.mention_counts() end
+    -- (d17 batch35 D2) the factory digest's failed checks: lessons whose check is not met (state), with their owners
+    if action == 'lessons' then return lessons_read(a) end
     if action == 'board_update' then return update(OPERATOR, a) end
     if action == 'board_post' then return post(OPERATOR, a) end
     if action == 'board_plan' then return plan_edit(OPERATOR, a) end
-    error('operator requests support board, board_events, board_update, board_post, board_plan and mention_counts', 0)
+    error('operator requests support board, board_events, board_update, board_post, board_plan, lessons and mention_counts', 0)
   end
 
   -- The `team` hint block: what is new for this agent since its previous
