@@ -108,14 +108,9 @@ return function(api)
           local score = (n.idle > 0 and 2 or 0) + (has > 0 and 1 or 0)
           if not best or score > best.score then best = {id=id, n=n, has=has, score=score} end
         end
-        local verdict
-        if not best then verdict = 'no roboport\'s construction area covers it'
-        elseif best.n.idle > 0 and best.has > 0 then verdict = 'robots can build it'
-        elseif best.has == 0 then verdict = 'its network holds no ' .. (item or 'item for it')
-        else verdict = 'its network has no idle construction robot' end
-        row.robots = verdict
-        if g.type == 'entity-ghost' then ghost_of[row] = g end
-        if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
+        -- the flying robot with an order on it, first: (d18 batch38 A4, Astra: "its network holds no big-electric-pole"
+        -- while a robot carried one to it, and restocking followed) a robot holding the item is it in transit
+        local carrier
         for _, ln in ipairs(covering) do
           local hit = robot_for(ln, g)
           if hit and hit.r.valid then
@@ -123,9 +118,24 @@ return function(api)
             if api.robot_row then line, stuck = api.robot_row(hit.r, ln, rcache) end
             row.robot = line and string.format('%s (its order %d in the queue)', line, hit.k) or hit.r.name
             row.robot_held = stuck or nil
+            local cargo = item and try(function() return hit.r.get_inventory(defines.inventory.robot_cargo).get_item_count(item) end) or 0
+            if cargo > 0 then
+              carrier = {position={x=hit.r.position.x, y=hit.r.position.y}, distance=math.floor(api.distance(hit.r.position, g.position) + 0.5), count=cargo, order=hit.k}
+            end
             break
           end
         end
+        local verdict
+        if carrier then
+          row.in_transit = carrier
+          verdict = string.format('in transit: a construction robot carries %s to it (%d tiles away, its order %d)', item, carrier.distance, carrier.order)
+        elseif not best then verdict = 'no roboport\'s construction area covers it'
+        elseif best.n.idle > 0 and best.has > 0 then verdict = 'robots can build it'
+        elseif best.has == 0 then verdict = 'its network holds no ' .. (item or 'item for it') .. ' and no robot carries one to it'
+        else verdict = 'its network has no idle construction robot' end
+        row.robots = verdict
+        if g.type == 'entity-ghost' then ghost_of[row] = g end
+        if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
         if not row.robot and best then
           row.robot = 'no robot has an order on it'
           if held_text[best.id] and not told[best.id] then told[best.id] = true; told[#told+1] = held_text[best.id] end
@@ -197,6 +207,6 @@ return function(api)
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
     area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',
     limit='1..64 ghosts a page (default 24)', page='1.. the next ghosts, nearest first',
-    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM; its network has no idle construction robot), and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
+    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (in transit: a construction robot with an order on it carries its item, how far off; robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM and no robot carries one to it; its network has no idle construction robot), in_transit {position, distance, count, order}, and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
   return M
 end

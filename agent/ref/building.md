@@ -70,7 +70,8 @@
   holds, then `construct {area, outside_robots: true}` per box of up to 256x256. `all: true`: every ghost.
   Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
-  robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
+  robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
+  covers it; its network holds none and no robot carries one; no idle robot); `page` for more.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
   it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
   and by what. A ghost over a live entity of ours whose collision meets it, not marked for upgrade or deconstruction,

@@ -101,4 +101,47 @@ do
   game,prototypes=nil,nil
 end
 print('d18_batch38 A3 a warned enemy\'s read age and sight: ok')
+
+-- A4 (Astra: "its network holds no big-electric-pole" while a robot carried one to it): ghosts and construction_robots
+-- count what construction robots with an order on the ghost carry first, and say the shortage only of the rest.
+do
+  defines={inventory={robot_cargo=9}}
+  prototypes={entity={}}
+  local big={name='big-electric-pole',collision_box={left_top={x=-0.9,y=-0.9},right_bottom={x=0.9,y=0.9}},items_to_place_this={{name='big-electric-pole',count=1}}}
+  local force={}
+  local surf={name='nauvis'}
+  local ghosts={}
+  for i=1,3 do ghosts[i]={valid=true,type='entity-ghost',name='entity-ghost',ghost_name='big-electric-pole',ghost_prototype=big,position={x=100+i*8,y=-400},
+    force=force,surface=surf,unit_number=700+i,bounding_box={left_top={x=99+i*8,y=-401},right_bottom={x=101+i*8,y=-399}}} end
+  local function bot(x,y,target,n)
+    return {valid=true,name='construction-robot',position={x=x,y=y},energy=1,prototype={max_energy=1},robot_order_queue={{type=3,target=target}},
+      get_inventory=function(i) eq(i,9); return {get_item_count=function(item) return item=='big-electric-pole' and n or 0 end,
+        get_contents=function() return n>0 and {{name='big-electric-pole',count=n,quality='normal'}} or {} end} end}
+  end
+  local net={valid=true,network_id=12,all_construction_robots=40,available_construction_robots=30,cells={{owner={valid=true,position={x=150,y=-380}},construction_radius=110}},
+    storages={},providers={},find_cell_closest_to=function() return true end,get_item_count=function() return 0 end,
+    construction_robots={bot(108,-420,ghosts[1],1),bot(116,-300,ghosts[2],0)}}
+  surf.find_entities_filtered=function(f) if f.type then return ghosts end return {} end
+  surf.find_logistic_networks_by_construction_area=function() return {net} end
+  local GL=dofile('mod/agent-harness_0.1.0/ghostlist.lua'){position=function(v) return v end,integer=function(v,d) return v or d end,
+    distance=function(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end}
+  local r=GL.read({surface=surf,position={x=100,y=-400},force=force,get_main_inventory=function() return nil end},{})
+  local by={}
+  for _,g in ipairs(r.ghosts) do by[g.position.x]=g end
+  eq(by[108].robots,'in transit: a construction robot carries big-electric-pole to it (20 tiles away, its order 1)')
+  eq(by[108].in_transit.count,1); eq(by[108].in_transit.distance,20)
+  eq(by[116].robots,'its network holds no big-electric-pole and no robot carries one to it','a robot with an order on it and an empty cargo')
+  eq(by[124].robots,'its network holds no big-electric-pole and no robot carries one to it')
+  has(r.summary,'1 in transit: a construction robot carries big-electric-pole to it')
+  -- construction_robots sources: in transit first, the shortage of the rest
+  local RB=dofile('mod/agent-harness_0.1.0/robots.lua'){position=function(v) return v end}
+  local lines=RB.sources({surface=surf,force=force},net)
+  has(lines[1],'3 ghosts for big-electric-pole near (116,-400): 1 in transit in construction robots\' cargo (1 big-electric-pole, the nearest 20 tiles off); for the other 2: no chest in the network holds it')
+  net.construction_robots={bot(108,-420,ghosts[1],1),bot(116,-395,ghosts[2],1),bot(124,-405,ghosts[3],1)}
+  lines=RB.sources({surface=surf,force=force},net)
+  has(lines[1],'3 ghosts for big-electric-pole near (116,-400): 3 in transit in construction robots\' cargo (3 big-electric-pole, the nearest 5 tiles off)')
+  assert(not lines[1]:find('no chest',1,true),lines[1])
+  defines,prototypes=nil,nil
+end
+print('d18_batch38 A4 a robot carrying the item reads in transit: ok')
 print('d18 batch38 ok')

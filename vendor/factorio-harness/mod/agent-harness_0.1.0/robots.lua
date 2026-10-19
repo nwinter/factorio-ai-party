@@ -238,13 +238,36 @@ return function(api)
         if item then
           local k = item .. '|' .. math.floor(g.position.x / 32) .. '|' .. math.floor(g.position.y / 32)
           local gr = groups[k]
-          if not gr then gr = {item=item, n=0, count=0, sx=0, sy=0, kind=g.type == 'entity-ghost' and 'ghost' or 'item request'}; groups[k] = gr; order[#order+1] = gr end
+          if not gr then gr = {item=item, key=k, n=0, count=0, sx=0, sy=0, kind=g.type == 'entity-ghost' and 'ghost' or 'item request'}; groups[k] = gr; order[#order+1] = gr end
           gr.n = gr.n + 1; gr.count = gr.count + n; gr.sx = gr.sx + g.position.x; gr.sy = gr.sy + g.position.y
         end
       end
     end
     if #order == 0 then return {'no ghost or item request waits in its construction area'} end
     table.sort(order, function(x, y) return x.n > y.n end)
+    -- (d18 batch38 A4, Astra: north big poles read short while robots carried them) per group, the robots in the air with
+    -- an order on one of its ghosts that hold its item: in transit, said first; the shortage only of the rest
+    local carried = {}
+    for i, r in ipairs(try(function() return net.construction_robots end) or {}) do
+      if i > 1000 then break end
+      local inv = r.valid and try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
+      for _, o in ipairs(inv and try(function() return r.robot_order_queue end) or {}) do
+        local t = o.target and try(function() return o.target.valid and o.target end)
+        if t and (t.type == 'entity-ghost' or t.type == 'item-request-proxy') then
+          local item = item_of_ghost(t)
+          local n = item and try(function() return inv.get_item_count(item) end) or 0
+          if n > 0 then
+            local k = item .. '|' .. math.floor(t.position.x / 32) .. '|' .. math.floor(t.position.y / 32)
+            local c = carried[k] or {robots=0, count=0}
+            c.robots, c.count = c.robots + 1, c.count + n
+            local d = ((r.position.x - t.position.x) ^ 2 + (r.position.y - t.position.y) ^ 2) ^ 0.5
+            if not c.near or d < c.near then c.near = d end
+            carried[k] = c
+            break
+          end
+        end
+      end
+    end
     local chests = {}
     for _, list in ipairs({try(function() return net.storages end) or {}, try(function() return net.providers end) or {}}) do
       for i, e in ipairs(list) do
@@ -288,8 +311,12 @@ return function(api)
           crossing == 'unread' and 'the line is too long to read' or crossing and string.format('the straight line passes %d tiles from %s %s (reach %d)',
             math.floor(crossing.d + 0.5), crossing.e.name, at(crossing.e), crossing.reach) or 'the straight line passes within reach of no worm or spawner the map shows')
       end
-      lines[#lines+1] = string.format('%d %s%s for %s near %s: %s', gr.n, gr.kind, gr.n == 1 and '' or 's', gr.item, at(c),
-        #parts > 0 and table.concat(parts, '; ') or 'no chest in the network holds it')
+      local cr = carried[gr.key]
+      local rest = gr.n - (cr and math.min(cr.robots, gr.n) or 0)
+      lines[#lines+1] = string.format('%d %s%s for %s near %s: %s%s', gr.n, gr.kind, gr.n == 1 and '' or 's', gr.item, at(c),
+        cr and string.format('%d in transit in construction robots\' cargo (%d %s, the nearest %d tiles off)%s', math.min(cr.robots, gr.n), cr.count, gr.item, math.floor(cr.near + 0.5),
+          rest > 0 and string.format('; for the other %d: ', rest) or '') or '',
+        rest == 0 and '' or (#parts > 0 and table.concat(parts, '; ') or 'no chest in the network holds it'))
     end
     return lines
   end
