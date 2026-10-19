@@ -514,9 +514,17 @@ return function(api)
                 end)
                 if broken then ok_place = false; info.tile_ghosts = (info.tile_ghosts or 0) + 1; info.tile_ghost_why = info.tile_ghost_why or broken end
               end
+              -- (d18 batch39 D1) a caller's own test of the spot the game takes (placements fluids: its ports' segments)
+              local extra
+              if ok_place and opts.accept then
+                local okk, good, more = pcall(opts.accept, position, dir)
+                if not (okk and good) then ok_place = false; info.rejected = (info.rejected or 0) + 1
+                  if okk and more and #(info.reject_lines or {}) < 3 then info.reject_lines = info.reject_lines or {}; table.insert(info.reject_lines, more) end
+                else extra = more end
+              end
               if ok_place then
                 done[at] = true
-                out[#out+1] = {position=position, direction=NAMES[dir], over_ghost=ghost and ghost or nil}
+                out[#out+1] = {position=position, direction=NAMES[dir], over_ghost=ghost and ghost or nil, ports=extra and extra.ports or nil, line=extra and extra.line or nil}
                 if ghost then info.ghosts = info.ghosts + 1 end
                 if taken then mark(taken, x1, y1, x2, y2) end
               end
@@ -586,7 +594,7 @@ return function(api)
   end
 
   M.schema = {
-    placements={resource='optional, with a mining drill or pumpjack: a resource name (or true: any it mines): its spots on that resource within radius 1..32 (default 16): a pumpjack every well, free with the directions it fits, or taken by our drill, or blocked; a drill every tile centre whose mining area holds the ore, the most ore first, free ones none overlapping; returns free [{position, amount, tiles or directions, line}], free_count, blocked (each with the build refusal\'s why), blocked_count, blocked_by (by kind, how many, one where), line',
+    placements={fluids='optional 1..6 fluid names, for a machine with fluid ports: only spots whose ports touch built segments of each (a port\'s join tile holds an entity of ours connected back), and none joining a segment of another fluid than that port takes (with recipe: the recipe\'s fluids); each placement gives ports [{flow, at, wants, touches, segment, via}] and line; rejected counts spots the game took that failed this, mixes up to 3 of the joins refused',recipe='optional, with fluids: the recipe the machine will run (its ports\' fluids)',resource='optional, with a mining drill or pumpjack: a resource name (or true: any it mines): its spots on that resource within radius 1..32 (default 16): a pumpjack every well, free with the directions it fits, or taken by our drill, or blocked; a drill every tile centre whose mining area holds the ore, the most ore first, free ones none overlapping; returns free [{position, amount, tiles or directions, line}], free_count, blocked (each with the build refusal\'s why), blocked_count, blocked_by (by kind, how many, one where), line',
       surface='optional planet name: spots there by remote view (a chunk our force sees), as the map lets a player plan them',platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
       radius='optional 1..24 (default 12 for an offshore-pump, else 10; past 24 searched at 24, said in note)',limit='optional 1..50 positions (default 10; past 50: 50)',
@@ -648,14 +656,38 @@ return function(api)
     end
     assert(a.separate == nil or type(a.separate) == 'boolean', 'separate must be true or false')
     assert(a.powered == nil or type(a.powered) == 'boolean', 'powered must be true or false')
-    local found, checked, info = M.find(p, proto, pos, radius, dirs, {limit=limit, seen=seen, separate=a.separate, powered=a.powered})
+    -- (d18 batch39 D1, Opus: ~15 min in a dense oil block) fluids: only spots whose ports touch built segments of each
+    -- of these fluids (a port's join tile, an entity of ours there with a connection back), none touching a segment of
+    -- another fluid than that port's recipe takes (fluidjoin.lua touches, the join check of batch34 B1)
+    local accept
+    if a.fluids ~= nil then
+      assert(type(a.fluids) == 'table' and #a.fluids >= 1 and #a.fluids <= 6, 'fluids: 1..6 fluid names its ports should touch')
+      for _, f in ipairs(a.fluids) do assert(type(f) == 'string' and prototypes.fluid[f], 'unknown fluid ' .. tostring(f)) end
+      assert(api.fluid_touches, 'fluids needs the fluid join reader')
+      if a.recipe ~= nil then assert(type(a.recipe) == 'string' and prototypes.recipe[a.recipe], 'unknown recipe ' .. tostring(a.recipe)) end
+      accept = function(position, dir)
+        local ports = api.fluid_touches(p.surface, p.force, proto, position, dir, a.recipe)
+        local got, parts, mix = {}, {}, nil
+        for _, pt in ipairs(ports) do
+          if pt.touches then got[pt.touches] = true end
+          parts[#parts+1] = string.format('%s port at (%g,%g)%s: %s', pt.flow or 'its', pt.at.x, pt.at.y, pt.wants and ' (' .. pt.wants .. ')' or '',
+            pt.touches and (pt.touches .. ' segment ' .. tostring(pt.segment) .. ' at ' .. pt.via) or 'nothing')
+          if pt.touches and pt.wants and pt.touches ~= pt.wants then mix = mix or string.format('(%g,%g) %s: its %s port would join %s to its %s', position.x, position.y, NAMES[dir] or '', pt.flow or '', pt.touches, pt.wants) end
+        end
+        if mix then return false, mix end
+        for _, f in ipairs(a.fluids) do if not got[f] then return false end end
+        return true, {ports=ports, line=table.concat(parts, '; ')}
+      end
+    end
+    local found, checked, info = M.find(p, proto, pos, radius, dirs, {limit=limit, seen=seen, separate=a.separate, powered=a.powered, accept=accept})
     local out = {name=proto.name, near=pos, radius=radius, placements=found, count=#found, checked=checked, by=by,
       blocked=info.blocked > 0 and info.blocked or nil, unseen=info.unseen > 0 and info.unseen or nil, more=info.more or nil,
       over_ghosts=info.ghosts > 0 and string.format('%d of these placements lie over a ghost (over_ghost names it): a build there replaces the ghost', info.ghosts) or nil,
       tile_ghosts=info.tile_ghosts and string.format('%d spot%s the game takes now left out: tile ghosts there break its tile rules once built (%s)', info.tile_ghosts, info.tile_ghosts == 1 and '' or 's', info.tile_ghost_why) or nil,
       separate=a.separate or nil, overlap=a.separate and info.overlap or nil,
       powered=a.powered or nil, unpowered=a.powered and info.unpowered or nil, poles=a.powered and info.poles or nil,
-      note=#notes > 0 and table.concat(notes, '; ') or nil}
+      note=#notes > 0 and table.concat(notes, '; ') or nil, fluids=a.fluids, recipe=a.recipe,
+      rejected=info.rejected, mixes=info.reject_lines}
     -- friction3 (Gemini: 17 placements calls, 12 of them count 0, its accumulators built from overlapping spots): what is
     -- in the way when nothing fits; spots of the list that overlap each other, and those no pole supplies.
     local pad = api.one_pad and try(function() return api.one_pad(p.surface, p.force, proto) end)
