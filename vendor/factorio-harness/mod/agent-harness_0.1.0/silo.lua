@@ -180,7 +180,7 @@ return function(api)
     local inv = pod and defines.inventory.cargo_unit and try(function() return pod.get_inventory(defines.inventory.cargo_unit) end)
     local cargo = items_text(contents(inv), 8)
     local by = event.player_index and try(function() return game.get_player(event.player_index).name end)
-    M.record(silo, {cargo=cargo or 'empty', to=destination_text(pod and try(function() return pod.cargo_pod_destination end)), by=by, ordered=true})
+    M.record(silo, {cargo=cargo or 'empty', to=destination_text(pod and try(function() return pod.cargo_pod_destination end)), by=by, ordered=true, up=event.harness_up})
   end
 
   -- The rocket in words (Astra 10:50: teammates read a ready rocket's 0/50 parts, and a rising one, as launched or as
@@ -220,11 +220,12 @@ return function(api)
       now = now .. '; parts for the rocket after it ' .. next_parts
     end
     local last = records()[try(function() return e.unit_number end) or -1]
-    local last_text = last and string.format('last launch %s ago%s', ago(game.tick - last.tick), last.to and ' to ' .. last.to or '')
-      or 'no launch seen'
+    -- (d18 batch39 B1) the launch's tick and ledger id, and the tick this was read: shipment names the same launch so
+    local last_text = (last and string.format('last launch %s ago (%stick %d)%s', ago(game.tick - last.tick), last.up and 'up #' .. last.up .. ', ' or '', last.tick, last.to and ' to ' .. last.to or '')
+      or 'no launch seen')
     return {rocket_ready=ready, parts=not next_parts and parts .. '/' .. required or nil, next_parts=next_parts, built_parts=built,
       rocket=now .. '; ' .. last_text, rocket_now=now, last=last_text,
-      last_launch=last and {ago=ago(game.tick - last.tick), tick=last.tick, to=last.to, cargo=last.cargo, by=last.by} or nil}
+      last_launch=last and {ago=ago(game.tick - last.tick), tick=last.tick, up=last.up, to=last.to, cargo=last.cargo, by=last.by} or nil, read_tick=game.tick}
   end
 
   -- The silo's inventories by their transfer names (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead of
@@ -523,12 +524,14 @@ return function(api)
     if row.platforms_coming then words[#words+1] = 'our platforms on their way here (their requests count once in orbit): ' .. table.concat(row.platforms_coming, ', ') end
     local last = records()[e.unit_number or -1]
     if last then
-      row.last_launch = {ago=ago(game.tick - last.tick), tick=last.tick, to=last.to, cargo=last.cargo, by=last.by}
-      words[#words+1] = string.format('last launch %s ago%s%s%s', ago(game.tick - last.tick), last.to and ' to ' .. last.to or '',
+      row.last_launch = {ago=ago(game.tick - last.tick), tick=last.tick, up=last.up, to=last.to, cargo=last.cargo, by=last.by}
+      words[#words+1] = string.format('last launch %s ago (%stick %d)%s%s%s', ago(game.tick - last.tick), last.up and 'up #' .. last.up .. ', ' or '', last.tick, last.to and ' to ' .. last.to or '',
         last.by and ' by ' .. last.by or '', last.cargo and ', cargo ' .. last.cargo or '')
     else
       words[#words+1] = 'no launch seen'
     end
+    row.read_tick = game.tick
+    words[#words+1] = string.format('read at tick %d', game.tick)
     row.line = table.concat(words, '; ')
     return row
   end
@@ -913,7 +916,7 @@ return function(api)
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, room_kg (lift left), stacks, slots, items, over_kg}, trash, robots_bringing (what logistic robots carry or have reserved toward the silo now) and requesting_for (the platform its automatic requests fill for), auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
-      .. 'platforms_above (ours in orbit of this planet), parts_made and parts_per_min (rocket parts made, products_finished; the rate over the last 10 min of samples taken at most every 10 s by reads and the alert scan), parts_rate (the rate, its window, and the time in it spent building parts, short of an ingredient or holding a built rocket: parts are made only while it builds), parts_per_min_building, next_auto_launch (with automatic requests on: the request filled now, else the first the network can give a rocket\'s payload for: platform, item, under min_payload N or full N by weight), platform_requests [{platform, item, network_can_give (provider and storage chests less robots\' reservations), providers, storage, next_launch (min_payload N | full N), flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named, each with the chest robots would take it from; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), load_silo (split_networks: the args that carry it over by hand: a walking load from those chests that launches for the platform), line}] (each request a platform in orbit of this planet makes of it that its hub lacks, in flag order: filling, matched, split_networks, hub_full, below_min_payload; the first 8, or every one with requests: true), platform_requests_count, platform_requests_flags (the count of each flag), platform_requests_more (the rows past the first 8), platforms_coming (ours flying here now: from where, share flown; a platform\'s requests count once it is in orbit), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
+      .. 'platforms_above (ours in orbit of this planet), parts_made and parts_per_min (rocket parts made, products_finished; the rate over the last 10 min of samples taken at most every 10 s by reads and the alert scan), parts_rate (the rate, its window, and the time in it spent building parts, short of an ingredient or holding a built rocket: parts are made only while it builds), parts_per_min_building, next_auto_launch (with automatic requests on: the request filled now, else the first the network can give a rocket\'s payload for: platform, item, under min_payload N or full N by weight), platform_requests [{platform, item, network_can_give (provider and storage chests less robots\' reservations), providers, storage, next_launch (min_payload N | full N), flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named, each with the chest robots would take it from; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), load_silo (split_networks: the args that carry it over by hand: a walking load from those chests that launches for the platform), line}] (each request a platform in orbit of this planet makes of it that its hub lacks, in flag order: filling, matched, split_networks, hub_full, below_min_payload; the first 8, or every one with requests: true), platform_requests_count, platform_requests_flags (the count of each flag), platform_requests_more (the rows past the first 8), platforms_coming (ours flying here now: from where, share flown; a platform\'s requests count once it is in orbit), last_launch {ago, tick, up (the cargo ledger\'s launch id: shipment and the platforms\' incoming lines name the same launch by it), to, cargo, by}, read_tick (the tick this was read: the line ends read at tick T), line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M
 end

@@ -1025,7 +1025,7 @@ return function(api)
         if held then held_n = held_n + 1 end
         -- (d18 batch37 A2, Opus: a machine off by its own condition was never among the worst, ranked last) its own gate
         -- ranks with an input arm's
-        local rank = (status == 'no_power' or status == 'burnt_result_full') and 1 or (held or status == 'disabled_by_control_behavior') and 1.5 or (SHORT[status] and lacks_it) and 2 or SHORT[status] and 3 or FULL[status] and 4 or status == 'low_power' and 5 or 6
+        local rank = (status == 'no_power' or status == 'burnt_result_full' or status == 'fuel_unusable') and 1 or (held or status == 'disabled_by_control_behavior') and 1.5 or (SHORT[status] and lacks_it) and 2 or SHORT[status] and 3 or FULL[status] and 4 or status == 'low_power' and 5 or 6
         ranked[#ranked+1] = {u=u, e=e, status=status, lacks=lacks, rank=rank, held=held}
       end
     end
@@ -1064,7 +1064,7 @@ return function(api)
       local w = ranked[i]
       local text = at(w.e.position) .. ' ' .. w.e.name .. ' ' .. (w.held and held_text(w.held, w.lacks) .. '; so ' or '') .. w.status
       if #w.lacks > 0 then text = text .. ' (missing ' .. table.concat(w.lacks, ', ') .. ')' end
-      if w.status == 'burnt_result_full' and api.burnt_line then text = text .. ' (' .. (try(api.burnt_line, w.e) or '') .. ')' end
+      if (w.status == 'burnt_result_full' or w.status == 'fuel_unusable') and api.burnt_line then text = text .. ' (' .. (try(api.burnt_line, w.e) or '') .. ')' end
       if w.status == 'disabled_by_control_behavior' and api.state_text then local g = try(api.state_text, w.e); if g then text = text .. ' (' .. g .. ')' end end
       if role ~= 'makers' then
         text = text .. '; holds ' .. (w.u.has or 0)
@@ -1473,7 +1473,7 @@ return function(api)
           local state = m.e.valid and (api.status_name(m.e) or 'unknown')
           if state and state ~= 'working' then
             local lack = (not m.miner) and missing(m.e, m, nil) or {}
-            local burnt = state == 'burnt_result_full' and api.burnt_line and try(api.burnt_line, m.e)
+            local burnt = (state == 'burnt_result_full' or state == 'fuel_unusable') and api.burnt_line and try(api.burnt_line, m.e)
             -- Its input holding spoilage its recipe does not take (Sol, 22:08).
             local sp = (not m.miner) and slots.input_spoilage(m.e)
             -- Its output waiting on a chest with every slot used (Astra, Luna, shift19).

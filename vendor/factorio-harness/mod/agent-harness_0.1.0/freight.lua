@@ -688,7 +688,7 @@ return function(api)
       rec.incoming = rec.incoming or {}
       if #rec.incoming < 32 then
         rec.incoming[#rec.incoming+1] = {pod=pod, tick=game.tick, cargo=add_contents({}, inv and try(function() return inv.get_contents() end)),
-          from=try(function() return event.rocket_silo.surface.name end)}
+          from=try(function() return event.rocket_silo.surface.name end), up=event.harness_up}
       end
     end
     local seg = rec and rec.segs[#rec.segs]
@@ -1033,7 +1033,7 @@ return function(api)
         table.sort(items)
         local age = game.tick - r.tick
         r.eta = up and math.max(0, up - age) or nil
-        lines[#lines+1] = string.format('a rocket from %s launched %s ago: %s (%s)%s', tostring(r.from or '?'), secs(age),
+        lines[#lines+1] = string.format('a rocket from %s launched %s ago (%stick %d): %s (%s)%s', tostring(r.from or '?'), secs(age), r.up and 'up #' .. r.up .. ', ' or '', r.tick,
           #items > 0 and table.concat(items, ' ') or 'empty', on == here and 'coming down onto the platform' or 'rising over ' .. tostring(on),
           up and (age < up and string.format('; arrives in about %s (the last %d arrival%s took about %s from launch)', secs(up - age), n_up, n_up == 1 and '' or 's', secs(up))
             or string.format('; past the usual %s from launch', secs(up))) or '')

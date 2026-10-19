@@ -96,7 +96,7 @@ assert(not has(s.warnings,'fuel:'):find('stone-furnace',1,true),'coal does not s
 -- slot): counted in the fuel part whatever its status reads.
 local S3=dofile('mod/agent-harness_0.1.0/survey.lua'){state=function() return {} end,status_name=function(e) return status_names[e.status] end,
   burnt_stuck=function(e) return e.name=='biochamber' and e.position.x==30 and {burnt='spoilage*200'} or nil end}
-has(S3.summary(p).warnings,'fuel: biochamber 0/2 no_fuel, 1 stopped by a full burnt-result slot (the first at (30,0): spoilage*200), fuel spoils within 60s in 1')
+has(S3.summary(p).warnings,'fuel: biochamber 0/2 no_fuel, 1 stopped by a full burnt-result slot or unusable fuel (the first at (30,0): spoilage*200), fuel spoils within 60s in 1')
 has(s.warnings,'power: 1 of 4 machines low_power: assembling-machine-1 (3,0) (fh call power lists them)')
 has(s.warnings,'ammo: gun-turret 1/3 empty at (11,0), 1 below 5 at (12,0); rearm radius=R')
 has(s.warnings,'flamer oil: flamethrower-turret 4 of 5 with oil (crude-oil 20 at (22,0), ...); 1/5 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')

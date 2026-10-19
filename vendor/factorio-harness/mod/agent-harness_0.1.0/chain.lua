@@ -36,7 +36,7 @@ return function(api)
   local CLASS = {working='working', item_ingredient_shortage='input', fluid_ingredient_shortage='input', no_ingredients='input',
     missing_required_fluid='input', no_minable_resources='input', waiting_for_source_items='input',
     full_output='output', output_full='output', waiting_for_space_in_destination='output', full_burnt_result_output='output',
-    burnt_result_full='output', no_power='power', low_power='power', no_fuel='power',
+    burnt_result_full='output', fuel_unusable='power', no_power='power', low_power='power', no_fuel='power',
     disabled_by_control_behavior='gated', disabled_by_script='gated', disabled='gated', marked_for_deconstruction='gated'}
   local CLASS_TEXT = {input='lack an input', output='have their output full', power='lack power or fuel', gated='are off by a circuit or logistic condition'}
 

@@ -266,7 +266,7 @@ return function(api)
           local stuck=api.burnt_stuck and api.burnt_stuck(e)
           if stuck then
             f.stuck=(f.stuck or 0)+1
-            f.stuck_at=f.stuck_at or {at=at(e),burnt=stuck.burnt}
+            f.stuck_at=f.stuck_at or {at=at(e),burnt=stuck.unusable and ('its fuel slot holds '..stuck.fuel..', which it does not burn') or stuck.burnt}
           end
           local tick,item=first_spoil(burner.inventory)
           if tick then
@@ -351,7 +351,7 @@ return function(api)
         fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)
           ..(f.empty_at and ' at '..table.concat(f.empty_at,' ')..(f.empty>#f.empty_at and ' ...' or '') or '')..(f.low>0 and ', '..f.low..' burning their last fuel'
           ..(f.last and ' ('..table.concat(f.last,', ')..(f.low>#f.last and ', ...' or '')..')' or '') or '')
-          ..((f.stuck or 0)>0 and string.format(', %d stopped by a full burnt-result slot (the first at %s: %s)',f.stuck,f.stuck_at.at,f.stuck_at.burnt) or '')
+          ..((f.stuck or 0)>0 and string.format(', %d stopped by a full burnt-result slot or unusable fuel (the first at %s: %s)',f.stuck,f.stuck_at.at,f.stuck_at.burnt) or '')
           ..(f.first and (f.rot or 0)>0 and string.format(', fuel spoils within %ds in %d (the first: %s in %s at %s)',ROT_SOON/60,f.rot,f.first.item,
             duration(math.max(0,f.first.tick-game.tick)),f.first.at) or '')
       end

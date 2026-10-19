@@ -77,6 +77,8 @@ return function(api)
     if status == 'disabled_by_control_behavior' then
       why = api.state_text and try(function() return api.state_text(e) end) or 'off by its circuit or logistic condition'
     end
+    -- (d18 batch39 B2) a burner stopped by its own spoilage or unusable fuel: what fills its slots
+    if (status == 'burnt_result_full' or status == 'fuel_unusable') and api.burnt_line then why = try(function() return api.burnt_line(e) end) or why end
     -- its inserters: those dropping into it (one off by its condition gates it) and those taking out (where they drop)
     local b = e.bounding_box
     local feeds, gated = {}, nil
