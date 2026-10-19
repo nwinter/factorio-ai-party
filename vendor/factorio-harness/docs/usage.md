@@ -8683,3 +8683,33 @@ fh watch    # deploy on every change
   right lane at (6.5,0.5) (4 coal)", "a side-load waits ...: belt (3.5,9.5) is stopped full of 4 carbon ..."). trace's
   belt-end lines already named each lane's contents; its audit's side-load lines now say what fills a full lane
   ("(that lane is full: 8 coal)").
+
+## d18 batch39, Groups A and D (the 19:50 poll; eng/d18-batch39-ad)
+
+- A1 (Luna and Grok: platform waits woke on board edits; Luna on Gleba woke on Nauvis attack groups):
+  - Found: `fh wait --until` and `fh sleep` run the runtime's `sleep`, which ends on board news (waits.lua: a board item
+    of yours assigned or changed by someone else, woke=board). Direct wait_ticks/wait_until never wake on board news.
+    The Nauvis groups are urgent alerts (attacks in your claims count anywhere), which batch36's `wake: {near: N}`
+    already holds.
+  - Now `sleep {wake_on_board: false}` (host `--no-board-wake`) holds board news: `board_held` (up to 4) and
+    `board_held_count` come with the wake. An @-mention of the agent in a board edit is a chat mention and still
+    wakes, unless `wake_on_messages: false`. A runtime from before this: the host says so on stderr.
+- A2 (Grok: woken by a board edit, missed that Cinder's launch had already happened):
+  - A sleep woken by anything but its condition gives `waited_now`: each condition as it reads now, met or not and its
+    value.
+  - For a platform condition, it adds where the platform is (freight.where) and its latest launch up from the cargo
+    ledger (ledger.lua `latest_to`): "#57 from gleba 12s ago (bioflux*400)".
+  - A direct wait_until that ends without being met (told, urgent, timed out) gives `last.waited_now` the same way.
+- A3 (Luna 20:25: railgun-damage-1 finished a level and the wait read "not researched" until its timeout):
+  - On world n railgun-damage-1 reads researched false, level 3, max_level 4294967295 (one technology read, 0.16 ms).
+    `level` is the level researching next.
+  - wait_until researched on a technology with levels is now met once its level reads past the level it read when
+    the wait began, or past `level: N` when given, or when every level is done. The line says it: "railgun-damage-1
+    level 3 (its level when the wait began): researched (levels to 3 researched, level 4 next, infinite)".
+  - research_done's entries give `level`, the level done by the same rule.
+  - The technologies read adds `levels_done` and `max_level`.
+  - Audit of the other "researched" reads: the shift block's "researched since your last shift" set and the
+    research_use and unlocks checks read named finite technologies or `researched` sets. An infinite technology's
+    levels never appear there, which is unchanged. researchtarget already used level > N.
+  - Not seen on n: whether on_research_finished's technology already reads the next level. The done log assumes it
+    does, as the 10-s poll path sees it.

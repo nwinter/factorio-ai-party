@@ -3,6 +3,7 @@
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
 return function(api)
   local M={}
+  local function try(fn) local ok,v=pcall(fn); if ok then return v end end
   local ENEMY_STRUCTURES={'unit-spawner','turret'}
   local OUR_TURRETS={'ammo-turret','electric-turret','fluid-turret','artillery-turret'}
   local BURNERS={'furnace','mining-drill','boiler','inserter','assembling-machine','reactor','burner-generator','car','locomotive'}
@@ -340,8 +341,22 @@ return function(api)
     crafting_done=function(p)
       local n=p.crafting_queue_size; return n==0,n..' crafts queued'
     end,
-    researched=function(p,c)
-      local t=p.force.technologies[c.technology]; return t.researched,c.technology..(t.researched and ' researched' or ' not researched')
+    -- (d18 batch39 A3, Luna 20:25: railgun-damage-1 finished a level and the wait read "not researched" until its timeout;
+    -- on world n it read researched false, level 3, max_level 4294967295) a technology with levels: level is the one
+    -- researching next, so level N is researched once level reads past N. Met when it rises past the level it read when
+    -- the wait began, or past `level: N` when given; researched (every level done) is met too.
+    researched=function(p,c,_,record)
+      local t=p.force.technologies[c.technology]
+      local max=try(function() return t.prototype.max_level end) or 1
+      local lv=try(function() return t.level end) or 1
+      if not (max>1 or c.level) then return t.researched,c.technology..(t.researched and ' researched' or ' not researched') end
+      local holder=record or seen_by(c)
+      holder.tech_start=holder.tech_start or lv
+      local want=c.level or holder.tech_start
+      local met=t.researched or lv>want
+      local infinite=max>=4294967295
+      return met,string.format('%s level %d%s: %s (levels to %d researched%s)',c.technology,want,c.level and '' or ' (its level when the wait began)',
+        met and 'researched' or 'not researched yet',t.researched and lv or lv-1,t.researched and ', every level' or string.format(', level %d next%s',lv,infinite and ', infinite' or string.format(' of %d',max)))
     end,
     -- Our ghosts (entities and tiles) waiting to be built.
     ghosts_waiting=function(p,c)
@@ -619,7 +634,7 @@ return function(api)
       end
       M.areas_of(c.area); M.areas_of(c.tiles)
     end
-    if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
+    if kind=='researched' then assert(type(c.technology)=='string','researched requires technology'); assert(c.level==nil or (type(c.level)=='number' and c.level>=1 and c.level==math.floor(c.level)),'level is a whole number from 1: the level of the technology the wait waits for') end
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end
     if kind=='rocket_parts' then
       assert(c.position~=nil,'rocket_parts requires position (a rocket silo\'s, any tile of it)')
