@@ -161,6 +161,16 @@ do
   has(d.lines[2],'the last full leg nauvis->gleba (10m00s, ticks 0-36000): thruster-fuel made 6000, used 9000'); has(d.lines[2],'firearm-magazine made 100, used 120 (10/12 a minute, net -2 a minute)')
   has(d.lines[2],'thruster-oxidizer made 5000, used 9000 (500/900 a minute, net -400 a minute)')
   eq(d.last_leg.loaded.bioflux,nil,'no cargo on the leg alone')
+  -- (live 23:09, Spindle after a drop) seg.pods holds last_tick, a number, beside its tallies; gone is not dropped
+  local stop=st.freight[4].segs[2]
+  stop.pods={received={n=1,cargo={['metallurgic-science-pack']=2000}},landed={n=1,cargo={calcite=1000}},gone={n=1,cargo={stone=7}},last_tick=53000}
+  d=F.leg_delta(pl)
+  has(d.lines[1],'dropped calcite 1000'); has(d.lines[1],'dropped metallurgic-science-pack 2000'); assert(not d.lines[1]:find('stone',1,true),d.lines[1])
+  has(d.lines[1],'thruster-fuel made 9000')
+  -- a cargo record past reading: fuel and ammunition still stand
+  stop.rockets=setmetatable({},{__index=function() error('bad cargo') end})
+  d=F.leg_delta(pl)
+  has(d.lines[1],'thruster-fuel made 9000'); has(d.lines[1],'firearm-magazine made 150'); has(d.lines[1],'cargo not read: ')
   game,prototypes=saved_game,saved_protos
 end
 print('d18_batch39 C2 a whole leg\'s production: ok')
