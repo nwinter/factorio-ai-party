@@ -185,7 +185,7 @@ return function(api)
         local inv = try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
         if inv and not try(function() return inv.is_empty() end) and #(try(function() return r.robot_order_queue end) or {}) == 0 then
           stuck = stuck + 1
-          for _, st in ipairs(try(function() return inv.get_contents() end) or {}) do items[st.name] = (items[st.name] or 0) + st.count end
+          for _, st in ipairs(try(function() return inv.get_contents() end) or {}) do local nm = name_of(st.name); items[nm] = (items[nm] or 0) + st.count end
         end
       end
     end

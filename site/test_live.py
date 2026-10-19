@@ -91,6 +91,15 @@ def payload_tests():
                                                  {"id": "site:2731", "status": "weird"}]})
     assert dv == {"2707": {"s": "relayed", "to": "astra"}, "2721": {"s": "not_relayed", "why": "clef:injection"},
                   "2730": {"s": "held", "why": "Clef unavailable"}}, dv
+    # (d17 batch35 D5) each agent's most repeated haul this shift and its destination's feed now
+    hl = push_live.public_haul({"rows": [{"name": "gemini", "top": {"item": "iron-plate", "surface": "fulgora", "to_name": "stone-furnace",
+                                                                     "times": 30, "items": 600, "from": {"x": 1, "y": 2}}},
+                                          {"name": "grok", "top": {"item": "coal", "times": 1}}, {"name": "haiku", "top": None}],
+                                 "feeds": {"gemini": {"agent": "gemini", "item": "iron-plate", "line": "stone-furnace (-60,71) on fulgora, fed iron-plate without hands now: none"}}})
+    assert hl == {"gemini": {"item": "iron-plate", "surface": "fulgora", "to_name": "stone-furnace", "times": 30, "items": 600,
+                             "feed": "stone-furnace (-60,71) on fulgora, fed iron-plate without hands now: none"}}, hl
+    assert push_live.public_haul(None) == {}
+    assert push_live.public_state(dict(s, hauling={"rows": [{"name": s["agents"][0]["name"], "top": {"item": "coal", "times": 3}}]}))["agents"][0]["haul"]["times"] == 3
     assert push_live.public_delivery(None) == {} and len(push_live.public_delivery(
         {"delivery": [{"id": f"site:{i}", "status": "held"} for i in range(200)]})) == 150
     assert push_live.public_state(dict(s, viewers=lane))["youtube_chat"][0]["name"] == "Joonazan"

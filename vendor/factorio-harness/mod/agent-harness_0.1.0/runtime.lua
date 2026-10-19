@@ -1842,7 +1842,7 @@ function handlers.describe(_,a)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling','loadout','clouds','efficiency','census','chronicle','artillery_live'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -12221,6 +12221,8 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
+M.makersall=require('makersall'){status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
+  census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
 M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
@@ -14450,6 +14452,8 @@ do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
+      -- (d18 batch36 D1, live 18:40) silo {surface: "all"}: every planet, silo.lua reads it, no one surface
+      if name=='silo' and a.surface=='all' then return handler(p,a) end
       -- launch's and preflight's platform is where the rocket goes, not where the call acts (Astra, shift14 03:09 and
       -- 04:24: preflight {surface, position, platform} was refused, and she dropped the platform).
       assert(name=='launch' or name=='preflight' or a.platform==nil,'give platform or surface, not both')
@@ -16512,7 +16516,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
 -- the minutes only.

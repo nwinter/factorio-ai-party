@@ -496,6 +496,7 @@ class LiveSource:
             self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
             self.has_big = "big_enemies_live" in (res.get("operator_reads") or [])
             self.has_hauling = "hauling" in (res.get("operator_reads") or [])
+            self.has_haul_feed = "haul_feed" in (res.get("operator_reads") or [])
             self.has_efficiency = "efficiency" in (res.get("operator_reads") or [])
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
@@ -544,14 +545,24 @@ class LiveSource:
             self.next_hauling = now + 60.0
             return
         self.next_hauling = now + hauling.READ_EVERY
-        row = hauling.append(self.hauling_path, res, now)
+        team = set(self.agents_cfg) or None
+        # (d17 batch35 D5) what feeds each agent's most repeated haul's destination now (haul_feed), kept in the row
+        feeds = None
+        probe = {"t": now, "agents": (res or {}).get("agents") or []}
+        args = hauling.feed_args(hauling.shift_rows(self.hauling_first or probe, probe, team))
+        if args and getattr(self, "has_haul_feed", False):
+            try:
+                fr, _ = self.h.operator_read("haul_feed", {"rows": args})
+                feeds = {f.get("agent"): f for f in (fr or {}).get("rows") or [] if f.get("agent")}
+            except Exception as e:
+                errors["haul_feed"] = str(e)
+        row = hauling.append(self.hauling_path, res, now, feeds)
         if row is None:
             return
         if self.hauling_first is None:
             self.hauling_first = row
-        team = set(self.agents_cfg) or None
         obs["hauling"] = {"rows": hauling.shift_rows(self.hauling_first, row, team), "since": self.hauling_first["t"],
-                          "t": row["t"]}
+                          "t": row["t"], "feeds": feeds}
 
     def observe_efficiency(self, obs, errors):
         """Production credited to who built the machine (operator read `efficiency`), every efficiency.READ_EVERY

@@ -133,6 +133,76 @@ return function(api)
     table.sort(out, function(x, y) return tostring(x.name) < tostring(y.name) end)
     return {agents=out, tick=game.tick}
   end
-  M.operator = {hauling=read}
+  -- (d17 batch35 D5, viewer Aurora 14:47) what feeds a haul's destination the item without hands now: inserters dropping
+  -- into it (from a belt, chest or machine, and whether that source holds the item now), its requester or buffer
+  -- request for the item, a silo's automatic requests, robots bringing it. rows: [{agent, item, surface, to={x,y},
+  -- to_name}], at most 16; one entity lookup and one inserter search of its box widened by 3 tiles each. Read only.
+  local function name_of(v) return type(v) == 'table' and v.name or v end
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local function feed_one(r)
+    local s = r.surface and game.get_surface(r.surface)
+    if not s or type(r.to) ~= 'table' then return {agent=r.agent, item=r.item, line='no surface ' .. tostring(r.surface)} end
+    local pos = {x=(r.to.x or 0), y=(r.to.y or 0)}
+    local found = s.find_entities_filtered{area={{pos.x - 1, pos.y - 1}, {pos.x + 1, pos.y + 1}}, name=r.to_name, limit=4}
+    local e = found[1]
+    if not (e and e.valid) then
+      return {agent=r.agent, item=r.item, line=string.format('no %s at (%g,%g) now', tostring(r.to_name or 'entity'), pos.x, pos.y)}
+    end
+    local feeds = {}
+    local box = e.bounding_box
+    for _, ins in ipairs(s.find_entities_filtered{type='inserter', area={{box.left_top.x - 3, box.left_top.y - 3}, {box.right_bottom.x + 3, box.right_bottom.y + 3}}, limit=48}) do
+      if ins.drop_target == e then
+        local src = ins.pickup_target
+        -- an inserter using filters that leave the item out does not feed it
+        local filt
+        if try(function() return ins.use_filters end) then
+          filt = try(function()
+            for i = 1, ins.filter_slot_count do local f = ins.get_filter(i); if f and name_of(f.name) == r.item then return true end end
+            return false end)
+        end
+        if filt ~= false then
+          local holds
+          if src and src.valid then
+            if src.type == 'transport-belt' or src.type == 'underground-belt' or src.type == 'splitter' then
+              holds = 0
+              for i = 1, try(function() return src.get_max_transport_line_index() end) or 0 do
+                holds = holds + (try(function() return src.get_transport_line(i).get_item_count(r.item) end) or 0)
+              end
+            else
+              holds = try(function() return src.get_item_count(r.item) end)
+            end
+          end
+          feeds[#feeds+1] = string.format('%s from %s%s', ins.name, src and src.valid and string.format('%s (%g,%g)', src.name, src.position.x, src.position.y) or 'the ground',
+            holds and string.format(' holding %d now', holds) or '')
+        end
+      end
+    end
+    local pt = try(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+    for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
+      if name_of(f.name) == r.item and (f.count or 0) > 0 then feeds[#feeds+1] = string.format('its %s request for %d', try(function() return e.prototype.logistic_mode end) or 'logistic', f.count) end
+    end
+    if e.type == 'rocket-silo' and try(function() return e.use_transitional_requests end) then feeds[#feeds+1] = 'the silo\'s automatic requests (on)' end
+    local coming = 0
+    for _, p in pairs(try(function() local x = e.get_logistic_point(); if x and x.object_name then return {x} end; return x end) or {}) do
+      for _, it in ipairs(try(function() return p.targeted_items_deliver end) or {}) do
+        if name_of(it.name) == r.item then coming = coming + (it.count or 0) end
+      end
+    end
+    if coming > 0 then feeds[#feeds+1] = string.format('robots bringing %d now', coming) end
+    return {agent=r.agent, item=r.item, entity=e.name, position={x=e.position.x, y=e.position.y}, feeds=feeds,
+      line=string.format('%s (%g,%g) on %s, fed %s without hands now: %s', e.name, e.position.x, e.position.y, s.name, r.item,
+        #feeds > 0 and table.concat(feeds, '; ') or 'none')}
+  end
+  local function feed_read(a)
+    a = a or {}
+    assert(type(a.rows) == 'table' and #a.rows <= 16, 'rows: 1..16 {agent, item, surface, to, to_name}')
+    local out = {}
+    for i, r in ipairs(a.rows) do
+      local ok, row = pcall(feed_one, r)
+      out[i] = ok and row or {agent=r.agent, item=r.item, line='not read: ' .. tostring(row)}
+    end
+    return {rows=out, tick=game.tick}
+  end
+  M.operator = {hauling=read, haul_feed=feed_read}
   return M
 end
