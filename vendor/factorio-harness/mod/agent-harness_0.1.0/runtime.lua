@@ -15151,7 +15151,7 @@ M.waits=require('waits'){state=state,personal_unfilled=function(p) return M.pers
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
   urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
   urgent_option=function(v) return M.urgent.option(v) end,wake_arg=function(a) return M.wake_arg(a) end,
-  alert_line=function(p,from,filter) return M.urgent.alert(p,from,filter) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
+  alert_line=function(p,from,filter,known) return M.urgent.alert(p,from,filter,known) end,alert_known=function(p) return M.urgent.alert_known(p) end,alert_held=function(k) return M.urgent.held_text(k) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
   open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position}) end}

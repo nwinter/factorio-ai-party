@@ -429,3 +429,55 @@ do
   game=saved
 end
 print('d18_batch37 U1 a tour waits for a leg enemies pass: ok')
+
+-- U2 (Haiku: wait --until alert woke 1 s apart, again and again, as one attack's hits grew): an attack known when the
+-- wait began wakes it only when it changed (more attackers, a loss near it); its repeats are held and said.
+do
+  local saved=game
+  game={tick=1000}
+  local st={damage={},attack_groups={},losses={},alert_seq=5,loss_seq=2}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return st end,who=function(p) return p.name end}
+  local p={index=7,name='haiku',surface={name='nauvis'},character={valid=true,position={x=0,y=0}},force={platforms={}}}
+  st.damage.a={id=8793,at={x=-48,y=396},damage=60,hits=1,size=7,seq=5,surface='nauvis'}
+  local known=U.alert_known(p)
+  eq(known.areas[8793],7)
+  -- more hits, the same attackers: held
+  st.damage.a.hits=6; st.damage.a.seq=6; st.alert_seq=6
+  eq(U.alert(p,5,nil,known),nil)
+  st.damage.a.hits=8; st.damage.a.seq=7; st.alert_seq=7
+  eq(U.alert(p,6,nil,known),nil); has(U.held_text(known),'held the repeats of attack #8793 hit 7 more times')
+  -- a new attack elsewhere: wakes, new
+  st.damage.b={id=8800,at={x=100,y=0},damage=30,hits=1,size=2,seq=8,surface='nauvis'}
+  has(U.alert(p,7,nil,known),'(new since your wait began)')
+  st.damage.b=nil
+  -- a loss near the known one: wakes, changed
+  st.losses[1]={seq=3,surface='nauvis',box={-50,390,-50,390},names={['gun-turret']=1}}
+  st.damage.a.seq=9
+  has(U.alert(p,8,nil,known),'(changed since your wait began: lost since: gun-turret x1)')
+  -- more attackers: changed
+  st.losses={}; st.damage.a.size=9; st.damage.a.seq=10
+  has(U.alert(p,9,nil,known),'2 more attackers seen')
+  eq(U.held_text(known),nil)
+  game=saved
+end
+do
+  -- through a sleep: the repeat keeps it asleep; a new attack wakes it, saying the repeats held
+  local st=storage.agent_harness
+  surface.find_entities_filtered=function() return {} end
+  st.damage={a={id=8793,at={x=-48,y=396},damage=60,hits=1,size=7,seq=(st.alert_seq or 0)+1,surface='nauvis',first=game.tick,last=game.tick,entities={['gun-turret']=1},units={},kinds={}}}
+  st.alert_seq=(st.alert_seq or 0)+1
+  local r=grok('sleep',{seconds=60,condition={['until']='alert'},wake_on_urgent=false})
+  for _=1,3 do
+    st.alert_seq=st.alert_seq+1; st.damage.a.seq=st.alert_seq; st.damage.a.hits=st.damage.a.hits+1; st.damage.a.last=game.tick
+    advance(70)
+  end
+  local s1=grok('sleep_check',{})
+  assert(not s1.woke,'held: '..tostring(s1.woke))
+  st.alert_seq=st.alert_seq+1
+  st.damage.b={id=8800,at={x=100,y=0},damage=30,hits=1,size=2,seq=st.alert_seq,surface='nauvis',first=game.tick,last=game.tick,entities={['gun-turret']=1},units={},kinds={}}
+  advance(70)
+  local s2=grok('sleep_check',{})
+  eq(s2.woke,'alert'); has(s2.alert,'new since your wait began'); has(s2.alert_held,'held the repeats of attack #8793 hit 3 more times')
+  st.damage={}
+end
+print('d18_batch37 U2 an attack\'s repeats do not wake an alert wait: ok')

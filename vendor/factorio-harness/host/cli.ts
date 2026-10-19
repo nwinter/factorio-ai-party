@@ -375,7 +375,7 @@ function wakeLine(reply: Reply): string {
     ?? (r.woke === 'elapsed' && r.capped ? r.capped : undefined);
   const more = r.full ? '' : ['told','mentioned','board','eggs','alert','urgent','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
   // What is open for the agent (open.lua; d15 H3), last.
-  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${more}${r.open ? `; ${said(r.open)}` : ''}`;
+  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${r.alert_held ? `; ${said(r.alert_held)}` : ''}${more}${r.open ? `; ${said(r.open)}` : ''}`;
 }
 /** --require-met (d17 study P2, Opus s31: a wait --until item_count woke on a tell and the script went on): whether the
  * condition held, as the first line and the exit status (0 met, 3 not met, 1 failed). */
