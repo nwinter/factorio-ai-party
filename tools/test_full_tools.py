@@ -175,6 +175,27 @@ def paragraphs():
     print("paragraphs: ok")
 
 
+def team_files():
+    """(d19 batch41 C1) the paragraph names team-tools/README.md and the newest knowledge-index*.md when they exist, with
+    each one's heading and the writer it names; nothing when neither is there."""
+    with tempfile.TemporaryDirectory() as shared:
+        assert full_tools.team_files(shared) == ""
+        assert "{{TEAM_FILES}}" not in full_tools.paragraph("codex", None, shared)
+        open(os.path.join(shared, "README.md"), "w").write("# Persistent team knowledge\n\nStart each shift with ...\n")
+        old, new = os.path.join(shared, "knowledge-index39.md"), os.path.join(shared, "knowledge-index41.md")
+        open(old, "w").write("# Team knowledge index\n")
+        open(new, "w").write("# Knowledge index, shift 41\nWritten by astra.\n")
+        os.utime(old, (1000, 1000))
+        line = full_tools.team_files(shared)
+        assert line == ('\n  It holds `README.md` ("Persistent team knowledge"; no writer named) and the newest knowledge index, '
+                        '`knowledge-index41.md` ("Knowledge index, shift 41"; by astra).'), line
+        p = full_tools.paragraph("claude", None, shared)
+        assert "`team-tools/` holds the team's shared files" in p and "knowledge-index41.md" in p, p
+        for word in (" should ", " must ", " read it", " start "):
+            assert word not in line.lower(), word
+    print("team files: ok")
+
+
 def claude():
     tmp = make_run()
     try:
@@ -326,6 +347,7 @@ if __name__ == "__main__":
     workspace()
     carry()
     paragraphs()
+    team_files()
     claude()
     codex_and_grok()
     grok_hooks()
