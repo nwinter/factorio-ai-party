@@ -276,7 +276,11 @@ return function(api)
       capped = string.format('capped at %d s: no queue, action or condition', IDLE_CAP)
       record.capped = capped
     end
-    if plain then record.alert_seq = api.state().alert_seq or 0; record.alert_filter = filter end
+    if plain then
+      record.alert_seq = api.state().alert_seq or 0; record.alert_filter = filter
+      -- (d18 batch37 U2) the attacks known now: their repeats do not wake it (urgent.lua alert_known)
+      record.alert_known = api.alert_known and api.alert_known(p) or nil
+    end
     -- Urgent alerts wake every sleep unless it opts out (Nick, d15 06:17; urgent.lua).
     if urgent_on and api.urgent_base then record.urgent = api.urgent_base(p, urgent_radius) end
     -- wake_local (C1): urgent news of your surface and claims only, and a plain alert condition on your surface only
@@ -456,11 +460,13 @@ return function(api)
     if eggs then out.eggs = eggs; return 'eggs' end
     if record.alert_seq and (api.state().alert_seq or 0) > record.alert_seq then
       -- Which alert woke it; with a filter only one that matches (the rest are skipped, the sleep goes on).
-      local line = api.alert_line and api.alert_line(p, record.alert_seq, record.alert_filter)
-      if line or not record.alert_filter then
+      -- With the attacks known at the start (U2), only a new or changed one; their repeats are held, said on the wake.
+      local line = api.alert_line and api.alert_line(p, record.alert_seq, record.alert_filter, record.alert_known)
+      if line or not (record.alert_filter or record.alert_known) then
         out.alert = line or 'a new attack, enemy group or enemy base alert (your next reply\'s team alerts)'
         return 'alert'
       end
+      if record.alert_known then record.alert_seq = api.state().alert_seq or 0 end
     end
     -- Chosen kinds: a group of them new or grown since the sleep began.
     if record.alert_kinds and api.alert_levels then
@@ -518,7 +524,11 @@ return function(api)
       out.remote_queue_steps=n
     end
     -- The first reason sticks, so the final (non-peek) read repeats it.
-    if out.woke then record.woke = out.woke; record.out = record.out or out end
+    if out.woke then
+      record.woke = out.woke; record.out = record.out or out
+      -- (U2) the repeats of known attacks it held, whatever woke it
+      if not record.out.alert_held and record.alert_known and api.alert_held then record.out.alert_held = api.alert_held(record.alert_known) end
+    end
     -- The agent has read the wake: a sleep right after it repeats it (repeat_of).
     if record.out and a.peek ~= true and not record.read_tick then
       record.read_tick = game.tick

@@ -369,3 +369,115 @@ do
   has(last.started_by,'on_fail "return" of a transfer chain that ended failed')
 end
 print('d18_batch37 C1 a chain of transfers in one call: ok')
+
+-- D4 (viewer Aurora 18:11: hidden unload plans read as missing automation): every agent's queued or running jobs that
+-- act on or wait on a platform, read only.
+do
+  local st=storage.agent_harness
+  local gi=runtime.bots.index_of('grok')
+  st.queues=st.queues or {}
+  st.queues[gi]={revision=1,sequence=3,paused=false,history={{action='drop',ok=true,args={platform='Kestrel II'},result={dropped={'carbon-fiber*100'}},finished_tick=game.tick}},
+    current={id=2,action='wait_until',args={['until']='item_count',platform='Kestrel II',item='carbon-fiber',at_least=500},started_tick=game.tick,saw={line='hub holds 120'}},
+    pending={{id=3,action='drop',args={platform='Kestrel II',items={{item='carbon-fiber',count=500}}}},{id=4,action='move_to',args={position={x=1,y=1}}}}}
+  st.platform_lanes={['Kestrel II']=true}
+  st['lane_queues|Kestrel II']={[gi]={revision=1,sequence=1,paused=true,history={},pending={{id=1,action='platform_schedule',args={platform='Kestrel II'}}}}}
+  local lines=runtime.platjobs.lines('Kestrel II')
+  eq(#lines,2)
+  has(lines[1],'grok, lane body: now: wait_until item_count carbon-fiber >= 500 on Kestrel II, running, waiting since 0s ago; saw hub holds 120')
+  has(lines[1],'pending #1: drop carbon-fiber*500'); assert(not lines[1]:find('move_to'),lines[1])
+  has(lines[1],'1 drop so far (1 ok, 0 failed); last carbon-fiber*100')
+  has(lines[2],'grok, lane platform:Kestrel II: pending #1: platform_schedule')
+  has(runtime.platjobs.lines('Petrel')[1],'no agent has a queued or running job that acts on or waits on Petrel')
+  st.queues[gi]=nil; st['lane_queues|Kestrel II']=nil; st.platform_lanes=nil
+end
+print('d18_batch37 D4 every agent\'s jobs on a platform: ok')
+
+-- U1 (Haiku: a 480-tile rearm leg cut at once with enemies_ahead, retry_when_clear or not): with ahead_wait the tour
+-- waits where it stands, rechecks, and walks on when the leg clears; enemies_ahead only when the wait runs out.
+do
+  local saved=game
+  game={tick=0}
+  local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
+  local f={}
+  local p={force=f,position={x=0,y=0},reach_distance=10}
+  local t1={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=5,y=0}}
+  local t2={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=60,y=0}}
+  local threat,checks=nil,0
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){distance=distance,integer=function(v,d) return v or d end,
+    goal_inside=function() return nil end,goal_check=function() return nil end,goal_text=function() return 'place' end,
+    leg_threat=function(_,from,to) if to.x==60 then checks=checks+1; if threat then return {line='the leg from (5,0) to (60,0) passes enemy group of 9'} end end end,
+    visit=function() return {transferred=10} end,can_reach=function() return true end,
+    request_path=function(_,nav) nav.requested=true end,navigate=function() p.position={x=60,y=0}; return 'arrived' end,stop_walking=function() end}
+  p.can_reach_entity=function(e) return distance(p.position,e.position)<=10 end
+  -- clears after 10 s: it waited and went on
+  local action=S.start_tour(p,'rearm',{t1,t2},3600,{avoid_mode={},ahead_wait=3600})
+  threat=true
+  local r
+  for _=1,600 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  eq(r,nil,'still waiting at 10 s'); assert(checks>=3 and checks<=5,'rechecked every 3 s: '..checks)
+  eq(action.until_tick,3600+3600+0,'the wait does not eat the tour time')
+  threat=nil
+  for _=1,400 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  assert(r~='enemies_ahead',tostring(r))
+  has(action.ahead_waited[1],'waited 1'); has(action.ahead_waited[1],'before stop 2 of 2, then went on: the leg from (5,0) to (60,0) passes enemy group of 9')
+  -- not clear within the wait: enemies_ahead, saying how long it waited
+  p.position={x=0,y=0}
+  action=S.start_tour(p,'rearm',{t1,t2},3600,{avoid_mode={},ahead_wait=600})
+  threat=true
+  for _=1,1200 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  eq(r,'enemies_ahead'); has(action.enemies_ahead,'1 of 2 stops done; waited 10 s for it to clear (the most: 10 s)')
+  game=saved
+end
+print('d18_batch37 U1 a tour waits for a leg enemies pass: ok')
+
+-- U2 (Haiku: wait --until alert woke 1 s apart, again and again, as one attack's hits grew): an attack known when the
+-- wait began wakes it only when it changed (more attackers, a loss near it); its repeats are held and said.
+do
+  local saved=game
+  game={tick=1000}
+  local st={damage={},attack_groups={},losses={},alert_seq=5,loss_seq=2}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return st end,who=function(p) return p.name end}
+  local p={index=7,name='haiku',surface={name='nauvis'},character={valid=true,position={x=0,y=0}},force={platforms={}}}
+  st.damage.a={id=8793,at={x=-48,y=396},damage=60,hits=1,size=7,seq=5,surface='nauvis'}
+  local known=U.alert_known(p)
+  eq(known.areas[8793],7)
+  -- more hits, the same attackers: held
+  st.damage.a.hits=6; st.damage.a.seq=6; st.alert_seq=6
+  eq(U.alert(p,5,nil,known),nil)
+  st.damage.a.hits=8; st.damage.a.seq=7; st.alert_seq=7
+  eq(U.alert(p,6,nil,known),nil); has(U.held_text(known),'held the repeats of attack #8793 hit 7 more times')
+  -- a new attack elsewhere: wakes, new
+  st.damage.b={id=8800,at={x=100,y=0},damage=30,hits=1,size=2,seq=8,surface='nauvis'}
+  has(U.alert(p,7,nil,known),'(new since your wait began)')
+  st.damage.b=nil
+  -- a loss near the known one: wakes, changed
+  st.losses[1]={seq=3,surface='nauvis',box={-50,390,-50,390},names={['gun-turret']=1}}
+  st.damage.a.seq=9
+  has(U.alert(p,8,nil,known),'(changed since your wait began: lost since: gun-turret x1)')
+  -- more attackers: changed
+  st.losses={}; st.damage.a.size=9; st.damage.a.seq=10
+  has(U.alert(p,9,nil,known),'2 more attackers seen')
+  eq(U.held_text(known),nil)
+  game=saved
+end
+do
+  -- through a sleep: the repeat keeps it asleep; a new attack wakes it, saying the repeats held
+  local st=storage.agent_harness
+  surface.find_entities_filtered=function() return {} end
+  st.damage={a={id=8793,at={x=-48,y=396},damage=60,hits=1,size=7,seq=(st.alert_seq or 0)+1,surface='nauvis',first=game.tick,last=game.tick,entities={['gun-turret']=1},units={},kinds={}}}
+  st.alert_seq=(st.alert_seq or 0)+1
+  local r=grok('sleep',{seconds=60,condition={['until']='alert'},wake_on_urgent=false})
+  for _=1,3 do
+    st.alert_seq=st.alert_seq+1; st.damage.a.seq=st.alert_seq; st.damage.a.hits=st.damage.a.hits+1; st.damage.a.last=game.tick
+    advance(70)
+  end
+  local s1=grok('sleep_check',{})
+  assert(not s1.woke,'held: '..tostring(s1.woke))
+  st.alert_seq=st.alert_seq+1
+  st.damage.b={id=8800,at={x=100,y=0},damage=30,hits=1,size=2,seq=st.alert_seq,surface='nauvis',first=game.tick,last=game.tick,entities={['gun-turret']=1},units={},kinds={}}
+  advance(70)
+  local s2=grok('sleep_check',{})
+  eq(s2.woke,'alert'); has(s2.alert,'new since your wait began'); has(s2.alert_held,'held the repeats of attack #8793 hit 3 more times')
+  st.damage={}
+end
+print('d18_batch37 U2 an attack\'s repeats do not wake an alert wait: ok')

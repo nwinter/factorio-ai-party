@@ -35,7 +35,8 @@
   list) waking on whichever holds first and naming it: `item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5` (those
   chests, summed; also `<`, `below`, `above`), `rocket_ready 65.5,14.5`, `rocket_parts>=40 at 65.5,14.5` (no count:
   every part), `produced iron-gear-wheel>=50 at 10.5,20.5`, `queue_done` (your queue finishing or stalling, a standing
-  order's round too; at once when none runs), `alert` (a new attack, enemy group or nest alert),
+  order's round too; at once when none runs), `alert` (a new attack, enemy group or nest alert; an attack known when the wait began wakes it only
+  with new attackers or a loss near it, and the wake says the repeats it held: `alert_held`),
   `alert low_power starved` (a new or grown alert group of those kinds addressed to you, as `game_alerts` names them;
   `starved`: an assembler or furnace in your own claims that lacks ingredients and did not when the wait began;
   `speaker`: a programmable speaker of yours or on your surface starting an alert),

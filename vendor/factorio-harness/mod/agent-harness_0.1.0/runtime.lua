@@ -702,7 +702,7 @@ local function finish(index, outcome)
     last.route=stock.route_text(action)
     last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
-    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead
+    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead; last.ahead_waited=action.ahead_waited
     -- (d18 batch37 C1) a chain: what of its items is held, the steps left, and on_fail "return"'s walk back
     if action.chain then
       local okc,call=pcall(M.transferchain.report,M.lookup(index),action,last,outcome)
@@ -2095,6 +2095,12 @@ function handlers.describe(_,a)
       b.retry_ticks='with retry_when_clear: 600..54000 (default 18000)'
       b.retries='(set by the retry: how many so far)'
     end
+  end
+  -- (d18 batch37 U1) a walking tour waits for a leg enemies pass
+  local LEGW=' On the walk (rearm by default; a walking transfer with retry_when_clear): a leg enemies pass (units or a group seen now in 24 tiles of it) is waited for where you stand, rechecked every 3 s, up to retry_ticks (default 60 s), then walked (last.ahead_waited says each wait); enemies_ahead only when the wait runs out (it says how long it waited). retry_when_clear: false on rearm: no wait'
+  for _,n in ipairs({'rearm','transfer'}) do
+    local d=description.actions[n]
+    if d and type(d.retry_when_clear)=='string' then d.retry_when_clear=d.retry_when_clear..LEGW end
   end
   -- (d18 batch37 C1) transfer {steps}
   if description.actions.transfer then
@@ -15145,7 +15151,7 @@ M.waits=require('waits'){state=state,personal_unfilled=function(p) return M.pers
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
   urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
   urgent_option=function(v) return M.urgent.option(v) end,wake_arg=function(a) return M.wake_arg(a) end,
-  alert_line=function(p,from,filter) return M.urgent.alert(p,from,filter) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
+  alert_line=function(p,from,filter,known) return M.urgent.alert(p,from,filter,known) end,alert_known=function(p) return M.urgent.alert_known(p) end,alert_held=function(k) return M.urgent.held_text(k) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
   open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position}) end}
@@ -16911,6 +16917,32 @@ do
       note='walks the legs in order; the first that fails or is not reached ends it (last: chain_held, chain_left'..(a.on_fail=='return' and ', and what it took goes back)' or ')')}
   end
 end
+-- (d18 batch37 U1, Haiku: a long rearm leg cut at once with enemies_ahead, retry_when_clear or not) a walking rearm, and
+-- a walking transfer with retry_when_clear, waits where it stands for a leg enemies pass (stock.lua ahead_wait):
+-- retry_ticks with retry_when_clear, else 60 s; rearm by default, retry_when_clear: false for none.
+M.AHEAD_WAIT=3600
+do
+  local function with_ahead(name,default)
+    local h=handlers[name]
+    handlers[name]=function(p,a)
+      local before=state().active[p.index]
+      local out=h(p,a)
+      local now=state().active[p.index]
+      if now and now~=before and now.kind=='gather' and now.avoid_mode and type(a)=='table' then
+        local w
+        if a.retry_when_clear==true then w=a.retry_ticks~=nil and integer(a.retry_ticks,M.AHEAD_WAIT,600,54000,'retry_ticks') or M.AHEAD_WAIT
+        elseif a.retry_when_clear==nil then w=default end
+        if w then
+          now.ahead_wait=w
+          if type(out)=='table' then out.leg_wait=string.format('a leg enemies pass is waited for where you stand, up to %d s (rechecked every 3 s), then walked',math.floor(w/60)) end
+        end
+      end
+      return out
+    end
+  end
+  with_ahead('rearm',M.AHEAD_WAIT)
+  with_ahead('transfer',nil)
+end
 -- clear_obstacles on build and place_ghosts (clearobs.lua; d18 batch36 C1, Opus): the trees and rocks in the footprints
 -- marked, those in reach mined by hand, the call run again once all are gone.
 M.clearobs=require('clearobs'){state=state,position=position,direction_of=function(d) return M.direction_of(d) end,
@@ -17112,10 +17144,26 @@ M.platsupply=require('platsupply'){platform=function(p,name) return space.platfo
 M.fuelstock=require('fuelstock'){}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
 -- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
-M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,
+M.platdigest=require('platdigest'){jobs=function(name) return M.platjobs.lines(name) end,platform=function(p,name) return space.platform(p,name) end,
   reads={platforms=function(p,a) return handlers.platforms(p,a) end,platform_supply=function(p,a) return handlers.platform_supply(p,a) end,
     platform_endurance=function(p,a) return handlers.platform_endurance(p,a) end,platform_defense=function(p,a) return handlers.platform_defense(p,a) end}}
 function handlers.platform_digest(p,a) return M.platdigest.read(p,a) end
+-- (d18 batch37 D4, viewer Aurora 18:11) every agent's queued or running jobs that act on or wait on a platform
+-- (platjobs.lua): on the platforms read (one platform, or each row with jobs) and platform_digest. Read only.
+M.platjobs=require('platjobs'){state=state,lookup=function(i) return M.lookup(i) end,remote_keys=function(s) return scheduler.remote_keys(s) end}
+do
+  local plain=handlers.platforms
+  handlers.platforms=function(p,a)
+    local out=plain(p,a)
+    local ok,by=pcall(M.platjobs.all)
+    if ok and type(out)=='table' and type(out.platforms)=='table' then
+      for _,row in ipairs(out.platforms) do
+        if type(row)=='table' and row.name and by[row.name] then row.jobs=M.platjobs.lines(row.name,by) end
+      end
+    end
+    return out
+  end
+end
 -- platform_tiles (tilecheck.lua, batch24 B3): tiles at exact coordinates, and whether the hub removes or builds them now.
 M.tilecheck=require('tilecheck')()
 function handlers.platform_tiles(p,a)

@@ -826,6 +826,7 @@ return function(api)
   end
   -- A courier's legs (runtime.lua M.pick_source): its places in the given order, never re-routed; a place without
   -- an entity (find) is resolved on arrival, when the character comes within reach of its position.
+  M.AHEAD_EVERY=180
   function M.start_legs(p,places,ticks,fields)
     local action={kind='gather',op='transfer',got=0,visited=0,want=math.huge,targets=places,index=1,until_tick=game.tick+ticks}
     for k,v in pairs(fields or {}) do action[k]=v end
@@ -1007,13 +1008,35 @@ return function(api)
     local t=action.targets[action.index]
     -- (d18 batch36 B2) the next leg against enemy groups and units seen now, before it starts: one in reach of it stops
     -- the tour short, naming it and where it stopped (unsafe_goal true or "moving" walks on)
+    -- (d18 batch37 U1, Haiku: a 480-tile rearm leg cut 5 times in 2 minutes by units passing it) ahead_wait ticks (rearm
+    -- by default, retry_when_clear): it waits where it stands, rechecking every AHEAD_EVERY ticks, and goes on once the
+    -- leg is clear, saying how long it waited; enemies_ahead only when the wait runs out.
     if not action.nav and action.avoid_mode and action.unsafe_goal==nil and api.leg_threat then
+      local h=action.ahead_hold
+      if h and game.tick<h.next then return nil end
       local okl,lt=pcall(api.leg_threat,p,p.position,t.position,action.avoid_mode)
       if okl and lt then
         api.stop_walking(p)
-        action.enemies_ahead=string.format('%s; stopped at (%.1f,%.1f) before it, %d of %d stops done',lt.line,p.position.x,p.position.y,action.index-1,#action.targets)
+        if (action.ahead_wait or 0)>0 and (not h or game.tick-h.since<action.ahead_wait) then
+          if not h then
+            h={since=game.tick}; action.ahead_hold=h
+            action.until_tick=action.until_tick+action.ahead_wait  -- the wait does not eat the tour's own time
+          end
+          h.next=math.min(game.tick+M.AHEAD_EVERY,h.since+action.ahead_wait); h.line=lt.line
+          return nil
+        end
+        action.enemies_ahead=string.format('%s; stopped at (%.1f,%.1f) before it, %d of %d stops done%s',lt.line,p.position.x,p.position.y,action.index-1,#action.targets,
+          h and string.format('; waited %d s for it to clear (the most: %d s)',math.floor((game.tick-h.since)/60),math.floor(action.ahead_wait/60)) or '')
         action.why=action.enemies_ahead
+        action.ahead_hold=nil
         return 'enemies_ahead'
+      elseif h then
+        action.ahead_hold=nil
+        action.ahead_waited=action.ahead_waited or {}
+        if #action.ahead_waited<8 then
+          action.ahead_waited[#action.ahead_waited+1]=string.format('waited %d s at (%.1f,%.1f) before stop %d of %d, then went on: %s',
+            math.floor((game.tick-h.since)/60),p.position.x,p.position.y,action.index,#action.targets,h.line)
+        end
       end
     end
     if not action.nav then

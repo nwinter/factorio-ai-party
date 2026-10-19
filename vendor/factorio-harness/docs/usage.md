@@ -8562,3 +8562,19 @@ fh watch    # deploy on every change
   - The drop's landing line: for the first 2 such items sent, from where it landed.
   - deconstruct (dry run and live) `contested`: for the items the marked entities free (the first 2).
   - ghosts read `contested`: per network and item, from the network's pickup point for it, at most 3 searches a read.
+- Waiting out a leg enemies pass (U1, Haiku shift37: a 480-tile rearm leg was cut 5 times in 2 minutes by units and
+  an attack group passing it, retry_when_clear or not). batch36 B2's leg check (stock.lua) now waits when the action
+  has `ahead_wait`. That is rearm by default, and a walking transfer (or a transfer chain) with `retry_when_clear: true`.
+  The character stands where it is and rechecks the leg every 3 s. Once the leg is clear it walks on, and
+  `last.ahead_waited` names each wait: seconds, where, before which stop, what held it. If the leg is still unclear
+  when the wait runs out (`retry_ticks` with retry_when_clear, else 60 s), the tour ends with `enemies_ahead`, saying
+  how long it waited. The wait is added to the tour's time. `retry_when_clear: false` on rearm keeps the old behavior,
+  which ends the tour at once.
+- Alert waits and repeats (U2, Haiku shift37: three `wait --until alert` in a row woke after 29 s, 1 s and 1 s on the
+  same attack #8793 as its hit count grew). A sleep or wait with `until: alert` records the attacks known when it
+  begins: each one's attackers seen, its hits, and the loss count (urgent.lua alert_known). Such an attack wakes the
+  wait only when it changed: more attackers seen (a group joined), or one of ours lost within 48 tiles of it since the
+  wait began. The line then says `(changed since your wait began: ...)`. A new attack, a new enemy group and nest news
+  wake it as before (`(new since your wait began)`). Hits alone are held. The reply's `alert_held`, also on fh wait's
+  line, gives each known attack's hits held ("held the repeats of attack #8793 hit 6 more times ..."), whatever woke
+  the wait. Urgent wakes (urgent.lua) are unchanged: they are told once each.
