@@ -113,3 +113,21 @@ do
   surface.find_entities_filtered=function() return {} end
 end
 print('d19_batch41_rt A1 donors: ground stacks, invalid holders, a failed search: ok')
+
+-- A5 (Sol and Astra d19 04:56: new harness requests refused at the limit of 10): the refusal says how the limit counts and
+-- lists the open requests counted, oldest first, with status, owner and age; the filer can drop one and file again.
+do
+  local ids={}
+  for k=1,10 do ids[k]=sol('harness_request',{title='ask '..k,problem='problem '..k}).item.id; jump(216000) end
+  sol('board_update',{id=ids[2],note='still wanted'})
+  local ok,err=pcall(sol,'harness_request',{title='ask 11',problem='problem 11'})
+  assert(not ok)
+  err=tostring(err)
+  assert(err:find('you already have 10 open harness requests (the limit, 10, counts your own harness requests that are open, claimed, doing or blocked, at any age',1,true),err)
+  assert(err:find('#'..ids[1]..' ask 1 (open, owner operator, filed 10h00m ago); #'..ids[2]..' ask 2 (open, owner operator, filed 9h00m ago, last note by sol 0s ago)',1,true),err)
+  -- another agent's count is its own
+  eq(astra('harness_request',{title='astra ask',problem='p'}).item.status,'open')
+  sol('board_update',{id=ids[1],status='dropped'})
+  eq(sol('harness_request',{title='ask 11',problem='problem 11'}).item.status,'open')
+end
+print('d19_batch41_rt A5 harness request limit lists what it counted: ok')

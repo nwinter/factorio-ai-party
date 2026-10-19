@@ -1180,12 +1180,25 @@ return function(api)
     return {events=out, cursor=#out > 0 and out[#out].seq or math.max(since, 0), latest=b.seq, tick=game.tick}
   end
 
+  -- (d19 batch41 A5, Sol and Astra d19 04:56: new requests refused at the limit of 10) the limit counts this agent's own
+  -- harness requests whose status is open, claimed, doing or blocked, at any age (the operator owns them; they stay
+  -- open until the operator or their filer closes them); the refusal lists those it counted, oldest first.
   local function harness_request(by, a)
-    local mine = 0
+    local open = {}
     for _, i in pairs(store().items) do
-      if i.kind == 'harness' and i.requested_by == by and ACTIVE[i.status] then mine = mine + 1 end
+      if i.kind == 'harness' and i.requested_by == by and ACTIVE[i.status] then open[#open+1] = i end
     end
-    assert(mine < MAX_HARNESS_OPEN, 'you already have ' .. mine .. ' open harness requests; add notes to those instead')
+    if #open >= MAX_HARNESS_OPEN then
+      table.sort(open, function(x, y) return x.created_tick < y.created_tick end)
+      local rows = {}
+      for _, i in ipairs(open) do
+        local last = i.notes and i.notes[#i.notes]
+        rows[#rows+1] = string.format('#%d %s (%s, owner %s, filed %s ago%s)', i.id, clip(i.title, 60), i.status, i.owner or 'none',
+          ago(game.tick - (i.created_tick or game.tick)), last and string.format(', last note by %s %s ago', last.by, ago(game.tick - last.tick)) or '')
+      end
+      error(string.format('you already have %d open harness requests (the limit, %d, counts your own harness requests that are open, claimed, doing or blocked, at any age; the operator or you as filer closes one with board_update {id, status: done or dropped}): %s',
+        #open, MAX_HARNESS_OPEN, table.concat(rows, '; ')), 0)
+    end
     local b = store()
     local item = {id=b.next_id, kind='harness', title=required_text(a.title, 'title', TITLE), owner=OPERATOR, requested_by=by,
       status='open', problem=required_text(a.problem, 'problem', LONG), proposal=optional_text(a.proposal, 'proposal', LONG),
