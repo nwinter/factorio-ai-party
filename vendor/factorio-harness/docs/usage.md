@@ -8116,3 +8116,10 @@ fh watch    # deploy on every change
     criteria say.
 - D1 fix (operator 16:03): after a stream service restart, a re-read backlog line in viewer-relayed.jsonl reads
   relayed; one the verdict logs refused keeps that verdict; any other carries no delivery and logs nothing.
+- D3 (viewer Aurora, Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and 16 for Sonnet before a
+  viewer asked): reminders.lua tells the owner when a recipient has missed 2 runs. It is one tell from `reminder #N`
+  naming the recipient, the reminder and its cadence, how long it has waited, the last result (by whom, how long ago)
+  and the `reminder_edit {id, recipients: [...]}` call without that recipient. It goes once until that recipient
+  acknowledges or the recipients change, and never about the owner's own runs. The reminders read gives `missed`
+  ({name: runs}) and states says "the owner told"; the stream service's reminders snapshot passes `missed` to the site,
+  whose chips show the states.

@@ -97,10 +97,17 @@ do
   local ack=R.handlers.reminder_ack(sol,{id=1,result='Petrel 900 magazines, 4 free slots'})
   eq(ack.missed,1); eq(R.handlers.reminders(sol,{}).reminders[1].next_due_tick,162960)
   run(54000)
-  eq(#boxes[2],2,'sol gets the next run'); eq(#boxes[1],1,'astra still pending: folded')
+  -- (d17 batch35 D3) astra's second missed run: sol, the owner, is told once, with the run
+  eq(#boxes[2],3,'sol gets the next run and the owner line'); eq(#boxes[1],1,'astra still pending: folded')
+  local told
+  for _,t in ipairs(boxes[2]) do if t.text:find('astra has missed 2 runs of your reminder #1',1,true) then told=t end end
+  assert(told,'the owner line'); eq(told.from,'reminder #1')
+  has(told.text,'last result: Petrel 900 magazines, 4 free slots (by sol, 900s ago); reminder_edit {id: 1, recipients: ["sol"]} changes its recipients')
+  has(R.handlers.reminders(sol,{}).reminders[1].states,'astra overdue (2 runs missed, the owner told)')
+  eq(R.handlers.reminders(sol,{}).reminders[1].missed.astra,2)
   -- A server paused for hours: one run, not one per missed interval.
   game.tick=game.tick+54000*5-1; run(1)
-  eq(#boxes[2],2,'still pending for sol: folded'); eq(R.handlers.reminders(sol,{}).reminders[1].next_due_tick,162960+54000*6)
+  eq(#boxes[2],3,'still pending for sol: folded (the owner line once)'); eq(R.handlers.reminders(sol,{}).reminders[1].next_due_tick,162960+54000*6)
   -- snooze: the next run only.
   local sn=R.handlers.reminder_snooze(astra,{id=1,ticks=600}); eq(sn.next_due_tick,game.tick+600)
   run(600); eq(#boxes[1],2,'astra\'s snoozed run came')
