@@ -85,7 +85,7 @@ return function(api)
       return u and assigned[id][u]
     end
     local inv = s == p.surface and try(function() return p.get_main_inventory() end)
-    local nets, held = {}, {}
+    local nets, held, contested, searches = {}, {}, {}, 0
     local rows, by_name, by_verdict, held_n, blocked, ghost_of = {}, {}, {}, 0, {}, {}
     for _, g in ipairs(found) do
       if g.valid then
@@ -108,14 +108,9 @@ return function(api)
           local score = (n.idle > 0 and 2 or 0) + (has > 0 and 1 or 0)
           if not best or score > best.score then best = {id=id, n=n, has=has, score=score} end
         end
-        local verdict
-        if not best then verdict = 'no roboport\'s construction area covers it'
-        elseif best.n.idle > 0 and best.has > 0 then verdict = 'robots can build it'
-        elseif best.has == 0 then verdict = 'its network holds no ' .. (item or 'item for it')
-        else verdict = 'its network has no idle construction robot' end
-        row.robots = verdict
-        if g.type == 'entity-ghost' then ghost_of[row] = g end
-        if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
+        -- the flying robot with an order on it, first: (d18 batch38 A4, Astra: "its network holds no big-electric-pole"
+        -- while a robot carried one to it, and restocking followed) a robot holding the item is it in transit
+        local carrier
         for _, ln in ipairs(covering) do
           local hit = robot_for(ln, g)
           if hit and hit.r.valid then
@@ -123,9 +118,35 @@ return function(api)
             if api.robot_row then line, stuck = api.robot_row(hit.r, ln, rcache) end
             row.robot = line and string.format('%s (its order %d in the queue)', line, hit.k) or hit.r.name
             row.robot_held = stuck or nil
+            local cargo = item and try(function() return hit.r.get_inventory(defines.inventory.robot_cargo).get_item_count(item) end) or 0
+            if cargo > 0 then
+              carrier = {position={x=hit.r.position.x, y=hit.r.position.y}, distance=math.floor(api.distance(hit.r.position, g.position) + 0.5), count=cargo, order=hit.k}
+            end
             break
           end
         end
+        local verdict
+        if carrier then
+          row.in_transit = carrier
+          verdict = string.format('in transit: a construction robot carries %s to it (%d tiles away, its order %d)', item, carrier.distance, carrier.order)
+        elseif not best then verdict = 'no roboport\'s construction area covers it'
+        elseif best.n.idle > 0 and best.has > 0 then verdict = 'robots can build it'
+        elseif best.has == 0 then verdict = 'its network holds no ' .. (item or 'item for it') .. ' and no robot carries one to it'
+        else verdict = 'its network has no idle construction robot' end
+        row.robots = verdict
+        -- (B3) more ghosts of ours in its network want its item than the network holds: each, from where the item is
+        if item and best and best.has > 0 and g.type == 'entity-ghost' then
+          local key = best.id .. '|' .. item
+          if contested[key] == nil and searches < 3 then
+            searches = searches + 1
+            local pk = try(function() return covering[1].select_pickup_point{name=item, position=g.position} end)
+            local o = pk and try(function() return pk.owner end)
+            contested[key] = M.contested(s, f, item, o and o.valid and o.position or g.position, best.has) or false
+          end
+          if contested[key] then row.contested = contested[key].line end
+        end
+        if g.type == 'entity-ghost' then ghost_of[row] = g end
+        if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
         if not row.robot and best then
           row.robot = 'no robot has an order on it'
           if held_text[best.id] and not told[best.id] then told[best.id] = true; told[#told+1] = held_text[best.id] end
@@ -194,9 +215,49 @@ return function(api)
       more=#rows > page * limit and #rows - page * limit or nil, next=nextcmd, covered=covered,
       note='construct {position, radius} builds ghosts by hand (it takes the items); robots build those in a construction area with idle robots and the item in the network'}
   end
+  -- (d18 batch38 B3, Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at
+  -- (204,69)) the game sets no build priority among ghosts. contested(surface, force, item, at): the entity ghosts of
+  -- ours in the construction area of the network covering `at` that the item places, when there are more of them than
+  -- the network holds: {wanted, holds, network, lines (each ghost: where, the claim holding it and its owner, the
+  -- distance from at), line}; nil otherwise. Bounded: only when the network holds MAX_HOLDS or fewer; one ghost search
+  -- (limit MAX_CONTESTED) of that network's box.
+  local MAX_CONTESTED, MAX_HOLDS = 64, 16
+  function M.contested(surface, force, item, from, holds)
+    local ip = try(function() return prototypes.item[item] end)
+    local place = ip and try(function() return ip.place_result and ip.place_result.name end)
+    if not place then return nil end
+    local net = (try(function() return surface.find_logistic_networks_by_construction_area(from, force) end) or {})[1]
+    if not net then return nil end
+    -- a few of it only (the search covers the network's box: 9 ms for Nauvis's on world n): MAX_HOLDS or fewer held
+    holds = holds or try(function() return net.get_item_count(item) end) or 0
+    if holds > MAX_HOLDS then return nil end
+    local box
+    for _, c in ipairs(try(function() return net.cells end) or {}) do
+      local o = c.owner
+      local r = try(function() return c.construction_radius end) or 0
+      if o and o.valid and r > 0 and not try(function() return c.mobile end) then
+        local x, y = o.position.x, o.position.y
+        box = box and {math.min(box[1], x - r), math.min(box[2], y - r), math.max(box[3], x + r), math.max(box[4], y + r)} or {x - r, y - r, x + r, y + r}
+      end
+    end
+    if not box then return nil end
+    local ghosts = try(function() return surface.find_entities_filtered{area={{box[1], box[2]}, {box[3], box[4]}}, type='entity-ghost', ghost_name=place, force=force, limit=MAX_CONTESTED} end) or {}
+    if #ghosts <= holds or #ghosts < 2 then return nil end
+    table.sort(ghosts, function(x, y) return api.distance(x.position, from) < api.distance(y.position, from) end)
+    local lines = {}
+    for i, g in ipairs(ghosts) do
+      if i > 8 then lines[#lines+1] = string.format('+%d more', #ghosts - 8); break end
+      local c = api.claim_at and api.claim_at(surface, g.position)
+      lines[#lines+1] = string.format('%s %s%s, %d tiles from %s', place, at(g.position),
+        c and string.format(' (claim #%d %s, %s)', c.id, c.title or '', tostring(c.owner)) or ' (no claim)', math.floor(api.distance(g.position, from) + 0.5), at(from))
+    end
+    return {wanted=#ghosts, holds=holds, network=net.network_id, lines=lines,
+      line=string.format('%d %s ghosts of ours in network %d want %s and it holds %d: %s; robots build whichever they take it to first (the game sets no order among ghosts; a ghost removed with deconstruct {area} is not built)',
+        #ghosts, place, net.network_id, item, holds, table.concat(lines, '; '))}
+  end
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
     area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',
     limit='1..64 ghosts a page (default 24)', page='1.. the next ghosts, nearest first',
-    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM; its network has no idle construction robot), and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
+    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (in transit: a construction robot with an order on it carries its item, how far off; robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM and no robot carries one to it; its network has no idle construction robot), in_transit {position, distance, count, order}, and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
   return M
 end

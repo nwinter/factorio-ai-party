@@ -167,7 +167,7 @@ return function(api)
   function M.record(p, d)
     local s = store()
     s.seq = s.seq + 1
-    local r = {id=s.seq, by=api.who(p), to=d.to or {}, platform=d.platform, surface=d.surface, pad=d.pad and xy(d.pad) or nil,
+    local r = {id=s.seq, by=api.who(p), force=p.force and p.force.name, to=d.to or {}, platform=d.platform, surface=d.surface, pad=d.pad and xy(d.pad) or nil,
       near=d.near and xy(d.near) or nil, sent=d.sent, tick=game.tick, pod=d.pod, state='descending'}
     -- (d17 batch34 A2) the pad it is sent to, and what of the sent items the pad holds before it lands
     if d.pad_e and try(function() return d.pad_e.valid end) and d.items then
@@ -220,6 +220,23 @@ return function(api)
     for _, r in ipairs(s.list) do if r.container_unit == unit then return true end end
     return false
   end
+  -- (d18 batch38 B3, Luna) the sent items that more ghosts of ours in the landing spot's network want than it holds:
+  -- each such ghost, with its claim and distance (ghostlist.contested), once when it lands
+  local function contest(r, surface)
+    if not (api.contested and surface and r.at) then return end
+    local force = r.force and game.forces[r.force]
+    if not force then return end
+    local out, seen = {}, {}
+    for _, t in ipairs(r.sent or {}) do
+      local name = t:match('^([^@*]+)')
+      if name and not seen[name] and #out < 2 then
+        seen[name] = true
+        local c = try(function() return api.contested(surface, force, name, r.at) end)
+        if c then out[#out+1] = c.line end
+      end
+    end
+    r.contested = #out > 0 and out or nil
+  end
   local function settle(s, r)
     local surface = game.surfaces[r.surface]
     -- (backlog #812, Aquilo drop 786: read "landed in the landing pad" while the pad was full and its cargo lay round it)
@@ -239,6 +256,7 @@ return function(api)
           local now = pad_counts(r)
           r.watch = {landed=now, last=now, took={}, seen={}, until_tick=game.tick + WATCH}
         end
+        contest(r, surface)
         return
       end
       r.pad_full = r.pad
@@ -261,6 +279,7 @@ return function(api)
     if best then
       r.state, r.at, r.into, r.container, r.container_unit = 'landed', xy(best.position), best.name, best, best.unit_number
       r.landed_with = contents(best)
+      contest(r, surface)
       -- The other cargo pod containers near it, each where it stands and what it holds (pods scatter: two a tile apart).
       local near = {}
       for _, e in pairs(surface.find_entities_filtered{name='cargo-pod-container', position=best.position, radius=NEARBY}) do
@@ -305,8 +324,8 @@ return function(api)
   local function landed_line(r)
     if r.into == 'cargo-landing-pad' then
       local pad = M.pad_text(r)
-      return string.format('drop #%d from %s landed in the landing pad at %s on %s: %s%s', r.id, r.platform, at_text(r.at), r.surface, items(r),
-        pad and '; ' .. pad or '')
+      return string.format('drop #%d from %s landed in the landing pad at %s on %s: %s%s%s', r.id, r.platform, at_text(r.at), r.surface, items(r),
+        pad and '; ' .. pad or '', r.contested and '; ' .. table.concat(r.contested, '; ') or '')
     end
     if r.note then return string.format('drop #%d from %s to %s: %s; it held %s', r.id, r.platform, r.surface, r.note, items(r)) end
     local held = r.landed_with and #r.landed_with > 0 and table.concat(r.landed_with, ' ') or items(r)
@@ -318,7 +337,7 @@ return function(api)
       r.id, r.pad_full and string.format('was sent to the landing pad at %s, which took none of it (full): it landed beside it', at_text(r.pad_full)) or 'landed',
       at_text(r.at), r.surface, r.into, held,
       #others > 0 and string.format('; other cargo pod containers within %d tiles: %s%s', NEARBY, table.concat(others, '; '),
-        r.nearby_more and string.format(' (+%d more)', r.nearby_more) or '') or '')
+        r.nearby_more and string.format(' (+%d more)', r.nearby_more) or '') or '') .. (r.contested and '; ' .. table.concat(r.contested, '; ') or '')
   end
   -- Team block lines for the sender and the teammates named in `to`.
   function M.lines(p, h)

@@ -295,9 +295,9 @@
   for upgrade or deconstruction); `ghosts_waiting`: each ghost in a held-up robot's queue; `ghosts_blocked`: the ghosts
   in the orders of robots in the air that stand over such an entity, counted per ghost and entity name with the `upgrade` (or
   `deconstruct`) call that marks them.
-  `sources: true`: per group of waiting ghosts and item requests, the
-  network's chests holding the item (nearest 3) and whether the straight line from each passes within a worm's or
-  spawner's reach the map shows.
+  `sources: true`: per group of waiting ghosts and item requests, first how many are in transit (construction robots
+  with an order on one holding its item, the nearest how far off), then for the rest the network's chests holding the
+  item (nearest 3) and whether the straight line from each passes within a worm's or spawner's reach the map shows.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines.
 - `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), each source's position

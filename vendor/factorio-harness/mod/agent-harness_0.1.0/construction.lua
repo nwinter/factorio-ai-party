@@ -188,7 +188,8 @@ return function(api)
         checked=checked+1
         local ok,c=pcall(api.goal_inside,p,e.position,mode)
         if ok and c then
-          danger=true; inside_n=inside_n+1
+          danger=true; inside_n=inside_n+1; local gn=e.ghost_name or e.name or '?'  -- (B1) by name, for the lines
+          action.left_names=action.left_names or {}; action.left_names[gn]=(action.left_names[gn] or 0)+1
           local k=string.format('%s (%g,%g) %s %g',c.m.name,math.floor(c.m.x+0.5),math.floor(c.m.y+0.5),c.m.spawner and 'sight' or 'range',c.m.range)
           inside_by[k]=(inside_by[k] or 0)+1
         end
@@ -248,6 +249,11 @@ return function(api)
     end
     assert(#pending<=MAX_GHOSTS,'more than '..MAX_GHOSTS..' ghosts; construct a smaller area')
     action.until_tick=game.tick+api.integer(a.ticks,36000,1,216000,'ticks')
+    -- the ghosts to build, by name (B1: what the result's line counts against)
+    action.to_build={}
+    for _,rec in ipairs(pending) do
+      if not rec.mine and rec.ghost.valid then local n=rec.ghost.ghost_name or rec.ghost.name or '?'; action.to_build[n]=(action.to_build[n] or 0)+1 end
+    end
     if inside_n>0 then
       local parts={}
       for k,n in pairs(inside_by) do parts[#parts+1]=n..' in '..k end
@@ -666,6 +672,44 @@ return function(api)
   -- area is not done, whatever else was built.
   local function finished(action)
     return (next(action.missing) or #action.failed>0) and 'incomplete' or 'constructed'
+  end
+  -- (d18 batch38 B1, Haiku, 3 times: "4 lasers and poles, lasers missing, 0 poles built"; on shift36 the poles were left
+  -- out inside a spitter spawner's sight and the 2 laser ghosts skipped for no lasers held) what came of each ghost:
+  -- built, skipped for its item missing (the count short), left out inside an enemy's reach, failed.
+  local function words(t)
+    local list={}
+    for k,n in pairs(t or {}) do list[#list+1]={k=k,n=n} end
+    table.sort(list,function(x,y) if x.n~=y.n then return x.n>y.n end return x.k<y.k end)
+    local out={}
+    for i,x in ipairs(list) do out[i]=x.n..' '..x.k end
+    return table.concat(out,', ')
+  end
+  function M.result_line(action)
+    local n=0
+    for _,c in pairs(action.to_build or {}) do n=n+c end
+    local parts={string.format('built %d of the %d ghost%s it took up',action.built or 0,n,n==1 and '' or 's')}
+    if next(action.missing or {}) then parts[#parts+1]='skipped, item missing (none held and none crafting; the rest built): '..words(action.missing)..' short' end
+    if action.left_names then parts[#parts+1]='left out inside an enemy\'s reach the map shows (unsafe_goal: true builds them): '..words(action.left_names) end
+    if #(action.failed or {})>0 then parts[#parts+1]=#action.failed..' failed (last.failed)' end
+    return table.concat(parts,'; ')
+  end
+  -- The reply's line: what it takes up, what the inventory lacks for it, what it leaves out.
+  function M.plan_line(p,action)
+    local inv=p.get_main_inventory and p.get_main_inventory()
+    local parts,short={},{}
+    for name,c in pairs(action.to_build or {}) do
+      local ok,proto=pcall(function() return prototypes.entity[name] end)
+      local it=ok and proto and proto.items_to_place_this and proto.items_to_place_this[1]
+      local item=it and (type(it.name)=='string' and it.name or it.name.name)
+      local held=item and inv and (inv.get_item_count(item) or 0)
+      if item and held and held<c then short[item]=c-held end
+    end
+    local n=0
+    for _,c in pairs(action.to_build or {}) do n=n+c end
+    parts[1]=string.format('%d ghost%s to build: %s',n,n==1 and '' or 's',words(action.to_build))
+    if next(short) then parts[#parts+1]='you hold too few for '..words(short)..' (those are skipped unless crafted in time; the rest are built)' end
+    if action.left_names then parts[#parts+1]='left out inside an enemy\'s reach: '..words(action.left_names) end
+    return table.concat(parts,'; ')
   end
   local function drop(action,i) action.pending[i].dropped=true; action.pending[i]=action.pending[#action.pending]; action.pending[#action.pending]=nil end
   -- Tile ghosts under this entity ghost still to be laid by this construct.

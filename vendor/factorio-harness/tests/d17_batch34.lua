@@ -391,7 +391,7 @@ do
   eq(c.trips,1202)
   eq(lines[1],'1202 robot trips: about 50 robots would go at once (the network\'s idle ones of that kind: 50), from roboport (0,0) (1202 trips); the longest trip 896 tiles, the mean 896')
   has(lines[2],'1202 trips over 200 tiles; the longest, 896 tiles, for steel-chest near (450.5,0): (0,0) to (450.5,0), then (450.5,0) to (5,0)')
-  has(lines[3],'passes 10 tiles from big-worm-turret (200,10) (reach 38)')
+  has(lines[3],'passes 10 tiles from big-worm-turret (200,10) (reach 38; read now)')
   -- a requester asking 20: 5 logistic loads from the storage chest
   lines,c=DP.preview(surf,force,{{kind='deliver',pos={x=60,y=0},item='iron-ore',count=20}})
   eq(c.trips,5); has(lines[1],'5 robot trips: about 5 robots would go at once (the network\'s idle ones of that kind: 20), from roboport (0,0) (5 trips); the longest trip 60 tiles')
@@ -399,7 +399,8 @@ do
   -- nothing covers it
   local bare={find_logistic_networks_by_construction_area=function() return {} end}
   lines=DP.preview(bare,force,{{kind='construct',pos={x=9,y=9},item='pipe',count=1}})
-  eq(lines[1],'1 job no logistic network covers')
+  eq(lines[1],"1 pipe ghost near (9,9): no roboport's construction area covers it; no roboport of ours with a construction area on this surface")
+  eq(lines[2],'1 job no logistic network covers')
   -- a deconstruction job: the entity's item and what it holds
   local j=DP.deconstruct_job({position={x=1,y=2},prototype={mineable_properties={products={{type='item',name='steel-chest'}}}},get_item_count=function() return 48 end})
   eq(j.item,'steel-chest'); eq(j.contents,48)

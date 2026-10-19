@@ -50,8 +50,11 @@
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
-  The call fails (a failed queue step too) when the platform reads `no_schedule`, `no_path`, or paused without
-  `paused: true`, after it; the schedule stays as set, and the reply says what the journals showed: every one-stop
+  The call fails (a failed queue step too) when the platform reads paused without `paused: true` after it. A
+  `no_schedule` or `no_path` read in the call's tick is read again every 10 ticks for up to 300 (the game updates a
+  platform later: Cinder flew 39 ticks after one). A queue step waits for that read and fails only if it still reads
+  so; a direct call's reply has `recheck`, and the second read comes as a tell from platform_schedule. On failure the
+  schedule stays as set, and the reply says what the journals showed: every one-stop
   schedule read no_schedule, and so did longer ones whose current is the stop it waits at; with current on another
   stop they left. One stop that is not where the platform is goes as `[where it is, that stop]`, current 2
   (`one_stop` says so; after that stop's waits it goes back): `one_stop: "as given"` writes the one stop alone.
@@ -352,7 +355,8 @@
   in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
   the rest; `spill`: what would land on the ground). A drop's landing line gives the container's exact position and
   the other cargo pod containers within 8 tiles with what each holds; one sent to a full landing pad says it landed
-  beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`. A drop into a
+  beside it, where, and what each container holds. A sent item that more of our ghosts in that network want than it
+  holds (16 or fewer) adds each such ghost, its claim and distance from where it landed (the game sets no order). `scan` lists a cargo pod container with `holds`. A drop into a
   landing pad: the pad's count of the sent items before and when it landed, then for 20 s each fall in it with the
   construction and logistic robots of ours within 8 tiles holding that item (and the first ghost or entity each flies
   to); its landing line comes 20 s after it lands with that line (the drops read: `pad`, `pad_verdict` such as `landed, then
@@ -364,7 +368,8 @@
 - `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
   (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
-  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert; inserter hands and
+  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert, each with where it
+  lands (a pod that names no station yet: the planet's landing pad, said so); inserter hands and
   what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).

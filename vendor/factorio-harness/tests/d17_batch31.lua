@@ -491,11 +491,31 @@ do
   eq(pl.schedule.records[2].wait_conditions[1].ticks,600); eq(pl.schedule.records[1].wait_conditions,nil)
   has(r.one_stop,'one stop (nauvis) given while the platform is at fulgora: written as [fulgora, nauvis] with current 2')
   eq(r.state,'on_the_path')
-  -- as given, and the game leaves it at no_schedule: the call fails with the rule, the schedule as set
+  -- as given, and the game leaves it at no_schedule: (d18 batch38 A1) read again; still no_schedule RECHECK_TICKS later,
+  -- the call fails with the rule, the schedule as set
+  p.force.name='player'; game.forces={player=p.force}
   pl.state,pl.space_location,leaves=4,{name='fulgora'},false
-  fails({platform='Kestrel II',stops={{station='nauvis'}},one_stop='as given'},
-    'Kestrel II reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule')
+  local function later(a, still)
+    local out=space.platform_schedule(p,a)
+    assert(out.recheck,'a recheck, no failure in the tick of the call')
+    has(out.state_note,'read no_schedule in the tick of this call (the game updates a platform in a later tick); read again every 10 ticks for up to 300')
+    local t0=game.tick
+    game.tick=t0+40
+    if not still then pl.state=3; local v=space.recheck_read(out.recheck); pl.state=1; game.tick=t0; return v end
+    eq(space.recheck_read(out.recheck),nil)
+    game.tick=t0+space.RECHECK_TICKS
+    local v=space.recheck_read(out.recheck)
+    game.tick=t0
+    return v
+  end
+  local v=later({platform='Kestrel II',stops={{station='nauvis'}},one_stop='as given'},true)
+  eq(v.ok,false)
+  has(v.error,'Kestrel II read no_schedule at tick 100 (the call\'s tick) and still no_schedule 300 ticks later; the call failed: it reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule')
   eq(#pl.schedule.records,1)
+  -- (A1, Cinder on shift36: next: true read no_schedule and it was flying 39 ticks later) a later read that goes on: both reads said
+  v=later({platform='Kestrel II',stops={{station='nauvis'}},one_stop='as given'},false)
+  eq(v.ok,true); eq(v.after_ticks,40)
+  has(v.line,'Kestrel II read no_schedule at tick 100 (the call\'s tick) and on_the_path 40 ticks later')
   fails({platform='Kestrel II',stops={{station='nauvis'}},one_stop='alone'},'one_stop is "as given"')
   -- a read changes nothing and is not failed
   eq(space.platform_schedule(p,{platform='Kestrel II'}).state,'no_schedule')
@@ -509,10 +529,26 @@ do
   -- no_path after: fails
   pl.paused=false
   sch.go_to_station=function() pl.state=5 end
-  fails({platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2},'no_path: it has no way from where it is to its next stop')
-  -- next: true leaving it at no_schedule fails too
+  local r5=space.platform_schedule(p,{platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2})
+  eq(r5.recheck.first,'no_path'); game.tick=game.tick+space.RECHECK_TICKS
+  has(space.recheck_read(r5.recheck).error,'no_path: it has no way from where it is to its next stop')
+  -- next: true leaving it at no_schedule: read again too
   sch.go_to_station=function() pl.state=1 end
-  fails({platform='Kestrel II',next=true},'Kestrel II reads no_schedule')
+  eq(space.platform_schedule(p,{platform='Kestrel II',next=true}).recheck.first,'no_schedule')
+  -- direct calls: the second read comes as a tell from platform_schedule
+  local told={}
+  local sp2=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,deliver=function(i,t) told[#told+1]={i,t} end,
+    integer=function(v,d) return v==nil and d or v end,freight={where=function() return {} end,leg=function() return nil end}}
+  p.index=7
+  st.schedule_rechecks=nil
+  sp2.platform_schedule(p,{platform='Kestrel II',next=true})
+  eq(#st.schedule_rechecks,1)
+  game.tick=math.ceil(game.tick/10)*10+10; pl.state=3; sp2.recheck_tick()
+  eq(#st.schedule_rechecks,0); eq(told[1][1],7); eq(told[1][2].from,'platform_schedule'); has(told[1][2].text,'and on_the_path')
+  -- a queue step's recheck is the queue's: no tell
+  pl.state=1
+  local q=sp2.platform_schedule(p,{platform='Kestrel II',next=true}); q.recheck.queued=true
+  game.tick=game.tick+10; sp2.recheck_tick(); eq(#told,1); eq(#st.schedule_rechecks,0)
   defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch31 C4 platform_schedule fails when it goes nowhere: ok')

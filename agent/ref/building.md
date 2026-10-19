@@ -63,14 +63,19 @@
   marked for deconstruction, tiles too, walking between them. Its walks go round worms and spawners (not areas under
   attack unless `avoid_enemies: true`) and stand no nearer a worm or spawner than its reach + the margin; a ghost
   inside an enemy's reach is left out (`left_out`; `unsafe_goal: true` builds it). It reports `materials` before
-  acting (need, held, missing, queued, hand_craftable); `dry_run: true` checks them without acting.
+  acting (need, held, missing, queued, hand_craftable, over every ghost in the area) and a `line`: the ghosts it builds
+  by name, those you hold too few for (skipped unless crafted in time; the rest are built) and those left out. Its
+  result's `line`: built N of the ghosts it took up, skipped with the count short, left out, failed. `dry_run: true`
+  checks the materials without acting.
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
 - `rebuild {area | position+radius, all?, from?, dry_run?}`: one queued plan for the ghosts there robots will not build:
   takes the items you do not carry (from `from`, else chests of ours within 96 tiles of you), hand-crafts what none
   holds, then `construct {area, outside_robots: true}` per box of up to 256x256. `all: true`: every ghost.
   Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
-  robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
+  robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
+  covers it; its network holds none and no robot carries one; no idle robot); `page` for more. `contested`: more of
+  our ghosts in its network want its item than the network holds (16 or fewer): each, its claim and distance.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
   it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
   and by what. A ghost over a live entity of ours whose collision meets it, not marked for upgrade or deconstruction,
@@ -84,7 +89,8 @@
   off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at
   30 C or more. The dry run's `robot_dispatch`: the robots' trips (one an entity, one a robot load of what it holds),
   how many at once, from which roboports, the longest and mean trip, trips over 200 tiles, and legs passing within
-  reach of a worm or spawner the map shows.
+  reach of a worm or spawner the map shows. `contested` (dry run and live): an item the marked entities free that more
+  of our ghosts in that network want than it holds (16 or fewer), each ghost with its claim and distance.
   Example: `./fh call deconstruct --args '{"area":{"left_top":{"x":180,"y":50},"right_bottom":{"x":200,"y":70}},"tiles":["landfill"]}'`
 - `upgrade {area | position, to, from?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
   planner; a ghost changes in place (wires and settings kept), a built one is marked for robots.
@@ -201,7 +207,9 @@
   make (a pump keeps its input and output as two segments). `place_ghosts` and `build` refuse a plan with a
   `fluid_mix` unless `mix_fluids: true`. `robot_dispatch` (place_ghosts, paste, blueprint_place): the construction
   robots' trips to the ghosts, as the network would pick them: how many at once, from which roboports, the longest
-  and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows. `closes_in` names the entry that fills the last gap out when the plan would close you
+  and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows (each with its
+  read's age and whether its chunk is in sight now); ghosts whose covering network holds none of their item, and
+  ghosts outside every construction area with the nearest roboport and how far outside its area. `closes_in` names the entry that fills the last gap out when the plan would close you
   in where you stand; a build reply says `closed_in` after it. `build` dry runs name off-character `pockets`, their
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and
