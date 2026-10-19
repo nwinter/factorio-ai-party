@@ -19,7 +19,8 @@ return function(api)
   for t in pairs(KIND) do TYPES[#TYPES+1] = t end
   table.sort(TYPES)
   local function count_in(e, item)
-    local ok, n = pcall(function() return e.get_item_count(item) end)
+    -- (d19 batch44 A1) no closure a call: 1987 holders a Nauvis call
+    local ok, n = pcall(e.get_item_count, item)
     return ok and type(n) == 'number' and n or 0
   end
   -- How many of a spoilable item in an entity's inventories spoil within `ticks` (d17 batch12 C7, Grok: yumako mash read
@@ -74,7 +75,8 @@ return function(api)
   -- read 0) what our logistic and construction robots on a surface carry of an item: each logistic network's robots'
   -- cargo, at most MAX_ROBOTS robots read a call. Returns count, robots carrying it, robots read, capped.
   -- (world n, 11:15: about 1 us a robot after the ~3 ms list build: 2048 read 4.7 ms)
-  M.MAX_ROBOTS = 4096
+  -- (d19 batch44 A1) 1024 a call: 2115 robots were 3.5 ms on the private copy's Nauvis
+  M.MAX_ROBOTS = 1024
   function M.robot_cargo(force, surface, item)
     local n, carrying, read, capped = 0, 0, 0, false
     local cargo = defines.inventory.robot_cargo
@@ -115,7 +117,15 @@ return function(api)
     local function add(kind, n)
       totals[kind] = (totals[kind] or 0) + n
     end
-    for _, e in ipairs(surface.find_entities_filtered{force=p.force, type=TYPES}) do
+    -- (d19 batch44 A1: 111 ms for one Nauvis call on the private copy: every holder, belt, inserter, cargo pod and ground
+    -- stack found and read each call) the holders, and what belts and inserter hands carry, from the census's last pass
+    -- (census.lua where_index, every 30 s), and the ground from the ground watch's last pass; a call reads the holders'
+    -- counts now. Before a pass, the reads as before.
+    local okx, idx = pcall(function() return api.where_index and api.where_index(p.force, surface) end)
+    idx = okx and idx or nil
+    local holders = idx and idx.holders or surface.find_entities_filtered{force=p.force, type=TYPES}
+    local ent_of = {}
+    for _, e in ipairs(holders) do
       local n = count_in(e, item)
       if n > 0 then
         local kind = KIND[e.type] or 'other'
@@ -127,13 +137,14 @@ return function(api)
         if type(in_mods) ~= 'number' then in_mods = 0 end
         places[#places+1] = {kind=kind, entity=e.name, position={x=e.position.x, y=e.position.y}, count=n,
           in_module_slots=in_mods > 0 and in_mods or nil, distance=dist(e.position)}
+        ent_of[places[#places]] = e
         if in_mods > 0 then totals.module_slots = (totals.module_slots or 0) + in_mods; totals[kind] = totals[kind] - in_mods end
       end
     end
     -- Landed cargo pods of any force (batch28 B3, Muse: unclaimed cargo with no positions), each once.
     local seen_pod = {}
     for _, pl in ipairs(places) do seen_pod[pl.entity .. '@' .. pl.position.x .. ',' .. pl.position.y] = true end
-    for _, e in ipairs(surface.find_entities_filtered{name='cargo-pod-container'}) do
+    for _, e in ipairs(idx and {} or surface.find_entities_filtered{name='cargo-pod-container'}) do
       local n = count_in(e, item)
       if n > 0 and not seen_pod[e.name .. '@' .. e.position.x .. ',' .. e.position.y] then
         add('pod', n)
@@ -141,8 +152,8 @@ return function(api)
       end
     end
     -- Belts and inserter hands: totals only (thousands of segments).
-    local on_belts = 0
-    for _, e in ipairs(surface.find_entities_filtered{force=p.force, type=BELTS}) do
+    local on_belts = idx and (idx.belts[item] or 0) or 0
+    for _, e in ipairs(idx and {} or surface.find_entities_filtered{force=p.force, type=BELTS}) do
       local ok, lines = pcall(function() return e.get_max_transport_line_index() end)
       for i = 1, ok and lines or 0 do
         local ok2, n = pcall(function() return e.get_transport_line(i).get_item_count(item) end)
@@ -150,8 +161,8 @@ return function(api)
       end
     end
     if on_belts > 0 then add('belts', on_belts) end
-    local held = 0
-    for _, e in ipairs(surface.find_entities_filtered{force=p.force, type='inserter'}) do
+    local held = idx and (idx.hands[item] or 0) or 0
+    for _, e in ipairs(idx and {} or surface.find_entities_filtered{force=p.force, type='inserter'}) do
       local ok, n = pcall(function()
         local s = e.held_stack
         return s and s.valid_for_read and s.name == item and s.count or 0
@@ -194,7 +205,10 @@ return function(api)
       end
     end
     -- on the ground (B2): a place per 32-tile cell
-    local okg, g = pcall(M.on_ground, p.force, surface, item)
+    local okgi, gi = pcall(function() return api.ground_index and api.ground_index(p.force, surface, item) end)
+    gi = okgi and gi or nil
+    local okg, g = true, gi
+    if not gi then okg, g = pcall(M.on_ground, p.force, surface, item) end
     if okg and g.count > 0 then
       add('on_ground', g.count)
       for _, c in ipairs(g.cells) do
@@ -217,11 +231,9 @@ return function(api)
       for _, e in ipairs(places) do order[#order+1] = e end
       table.sort(order, function(x, y) return x.count > y.count end)
       soon = 0
-      local ents = {}
-      for _, e in ipairs(surface.find_entities_filtered{force=p.force, type=TYPES}) do ents[e.position.x .. ',' .. e.position.y .. e.name] = e end
       for i, pl in ipairs(order) do
         if i > M.SOON_PLACES then break end
-        local e = pl.entity and ents[pl.position.x .. ',' .. pl.position.y .. pl.entity]
+        local e = ent_of[pl]
         if e then local n = M.spoils_soon(e, item, M.SOON_TICKS); soon = soon + n; if n > 0 then pl.spoils_within_2_min = n end end
       end
     end
@@ -267,12 +279,19 @@ return function(api)
     local went = api.deconstructed and api.deconstructed(item, surface.name) or {}
     if #went > 0 then out.deconstructed = went end
     if total == 0 then out.note = 'none on this surface (surface=NAME looks on another planet or platform)' end
+    -- (A1) what the call read from the passes, and how old they are
+    local function ago(t) return t and string.format('%ds ago, tick %d', math.floor((game.tick - t) / 60), t) or '?' end
+    if idx then
+      out.read_from = string.format('chests, machines and the other places as the census found them (%s; places built since are not in it, gone ones are left out), their counts now; belts and inserter hands as that pass read them; landed cargo pods of other forces not read%s',
+        ago(idx.as_of), idx.capped and '; the census keeps the first 30000 places of a surface' or '')
+    end
+    if gi then out.ground_read_from = 'the stacks on the ground as the ground watch last binned them (' .. ago(gi.as_of) .. ')' end
     return out
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places a page (default 15)', surface='optional surface name (default yours)',
       sort='optional "largest" (default: the most held first) or "nearest"', page='optional page of places (default 1; pages says how many)',
-      returns='deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, beacon, drill, module_slots (what sits in machines\', beacons\', drills\' and labs\' module slots), vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 4096 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); kinds_line (each kind\'s count and places, the most first); places: each chest, lab, machine, beacon, drill, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, in_module_slots, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), the most held first (sort: nearest), limit a page (belts and inserter hands as totals only); more: places past this page; page, pages; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+      returns='read_from and ground_read_from: what the call took from the census and ground watch passes (every 30 s) and how old they are; deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, beacon, drill, module_slots (what sits in machines\', beacons\', drills\' and labs\' module slots), vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 1024 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); kinds_line (each kind\'s count and places, the most first); places: each chest, lab, machine, beacon, drill, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, in_module_slots, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), the most held first (sort: nearest), limit a page (belts and inserter hands as totals only); more: places past this page; page, pages; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

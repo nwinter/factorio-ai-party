@@ -379,13 +379,15 @@
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
 - `where_is {item, surface?, limit?, sort?, page?}`: where an item is on a surface: the total by kind (`kinds_line`:
-  each kind's count and places) and each place holding it (landed cargo pods of any force as kind `pod`, stacks on the
+  each kind's count and places) and each place holding it (landed cargo pods as kind `pod`, stacks on the
   ground in sight as kind `ground`; beacons and drills too, and `in_module_slots` where it sits in module slots), the
   most held first (`sort: "nearest"`), `limit` a page (`page`, `pages`); `deconstructed`: robots' deconstructions of it, followed: the ghost it built, the storage chest and the next robot;
   stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert, each with where it
   lands (a pod that names no station yet: the planet's landing pad, said so); inserter hands and
-  what our logistic and construction robots carry now (`robot_cargo`, up to 4096 robots read) count in the total. A spoilable item adds
+  what our logistic and construction robots carry now (`robot_cargo`, up to 1024 robots read) count in the total. The
+  places come from the background census (every 30 s) with their counts read now; belts, inserter hands and the ground
+  as that pass read them (`read_from`, `ground_read_from` say how old). A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.

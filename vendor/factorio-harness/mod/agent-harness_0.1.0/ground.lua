@@ -197,6 +197,20 @@ return function(api)
           local k = math.floor(pos.x / PILE_CELL) .. ',' .. math.floor(pos.y / PILE_CELL)
           job.cells[k] = (job.cells[k] or 0) + 1
           job.items = (job.items or 0) + 1
+          -- (d19 batch44 A1) each item's stacks by 32-tile cell, for where_is (a whole-surface find of the ground's
+          -- stacks took 8 ms on the private copy's Nauvis)
+          local okst, st = pcall(function() return e.stack end)
+          if okst and st and st.valid_for_read then
+            job.w.items = job.w.items or {}
+            local by = job.w.items[surface.index]
+            if not by then by = {}; job.w.items[surface.index] = by end
+            local it = by[st.name]
+            if not it then it = {}; by[st.name] = it end
+            local ck = math.floor(pos.x / 32) .. ',' .. math.floor(pos.y / 32)
+            local c = it[ck]
+            if not c then c = {x=pos.x, y=pos.y, count=0, stacks=0}; it[ck] = c end
+            c.count, c.stacks = c.count + st.count, c.stacks + 1
+          end
         elseif e.valid and e.force == force then job.pads[#job.pads+1] = e end
       end
       return
@@ -334,6 +348,25 @@ return function(api)
   M.robot_orders = robot_orders
   local function freed_text(out)
     return out.robots_freed, out.robots_carrying and string.format(' (%d of them still %s a stack they picked up to storage)', out.robots_carrying, out.robots_carrying == 1 and 'carries' or 'carry') or ''
+  end
+
+  -- (d19 batch44 A1) an item's stacks on a surface as the last watch pass binned them, as stores.lua on_ground gives
+  -- them (cells in chunks our force sees now); nil before a pass that bins them. {count, stacks, cells, as_of}.
+  function M.on_ground_index(force, surface, item)
+    local w = (api.state().ground_watch or {})[force.name]
+    if not (w and w.items) then return nil end
+    local by = (w.items[surface.index] or {})[item] or {}
+    local cells, count, stacks = {}, 0, 0
+    for k, c in pairs(by) do
+      local cx, cy = k:match('^(-?%d+),(-?%d+)$')
+      local okv, v = pcall(function() return force.is_chunk_visible(surface, {x=tonumber(cx), y=tonumber(cy)}) end)
+      if okv and v == true then
+        cells[#cells+1] = {position={x=c.x, y=c.y}, count=c.count, stacks=c.stacks}
+        count, stacks = count + c.count, stacks + c.stacks
+      end
+    end
+    table.sort(cells, function(x, y) return x.count > y.count end)
+    return {count=count, stacks=stacks, cells=cells, as_of=w.tick}
   end
 
   -- deconstruct items_on_ground: mark (or cancel) every item stack in the
