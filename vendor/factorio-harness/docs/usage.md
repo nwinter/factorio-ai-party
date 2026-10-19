@@ -8292,3 +8292,11 @@ fh watch    # deploy on every change
   It is on silo's platform request rows (and so on shipment's readiness read) when the silo's network cannot give a
   rocket's payload (`elsewhere`, with the other networks left to the row's own words), on stock's item read
   (`elsewhere`), and on supply when users are short of the item.
+- Stop item waits against the planet (B2, Gemini 16:53: Kestrel II waiting for 500 carbon fiber at Fulgora, which made
+  none). platform_schedule's reply and the one-platform platforms read give `wait_facts`, and shipment's readiness read a
+  `wait:` line each. Per item_count wait of each stop: what the hub holds against it, the stop's planet's stock (its
+  logistic networks' count, and elsewhere.lua's count outside them), what that planet made of it a minute over the last
+  10 minutes (production statistics), and at that rate when the hub's count would be reached: `stop 1 (fulgora) waits
+  for carbon-fiber >= 250: the hub holds 0, 250 short; fulgora holds 100 (100 in its logistic networks, 0 outside them)
+  and made 0 a minute over the last 10 min: not met at this rate` (world n, Kestrel II). The rate is the planet's
+  making, not what reaches the hub. 0.01-2.5 ms a platform on world n.

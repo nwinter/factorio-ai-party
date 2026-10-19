@@ -93,3 +93,24 @@ do
   game=nil
 end
 print('d18_batch37 B1 where a surface holds what no network gives: ok')
+
+-- B2 (Gemini 16:53: Kestrel II waiting for 500 carbon fiber at Fulgora): each stop's item wait against the planet's stock
+-- and its production a minute over the last 10 minutes.
+do
+  defines={flow_precision_index={ten_minutes=3}}
+  prototypes={item={['carbon-fiber']={},['iron-plate']={}}}
+  local made={['carbon-fiber']=0,['iron-plate']=600}
+  local fulgora={index=4,name='fulgora'}
+  game={planets={fulgora={surface=fulgora},nauvis={surface={index=1,name='nauvis'}}}}
+  local force={logistic_networks={fulgora={{get_item_count=function(n) return n=='carbon-fiber' and 120 or 0 end}},nauvis={}},
+    get_item_production_statistics=function() return {get_flow_count=function(t) assert(t.category=='input' and t.count); return made[t.name] end} end}
+  local pl={force=force,hub={valid=true,get_item_count=function(n) return n=='carbon-fiber' and 80 or 0 end},
+    schedule={records={{station='fulgora',wait_conditions={{type='item_count',condition={first_signal={name='carbon-fiber'},comparator='≥',constant=500}}}},
+      {station='nauvis',wait_conditions={{type='item_count',condition={first_signal={name='iron-plate'},comparator='≥',constant=600}},{type='time',ticks=600,compare_type='or'}}}}}}
+  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){elsewhere=function(_,s,item) return 'x',item=='carbon-fiber' and 30 or 0 end}
+  local lines=N.wait_lines(pl)
+  eq(lines[1],'stop 1 (fulgora) waits for carbon-fiber >= 500: the hub holds 80, 420 short; fulgora holds 150 (120 in its logistic networks, 30 outside them) and made 0 a minute over the last 10 min: not met at this rate')
+  eq(lines[2],'stop 2 (nauvis) waits for iron-plate >= 600: the hub holds 0, 600 short; nauvis holds 0 (0 in its logistic networks, 0 outside them) and made 60 a minute over the last 10 min: about 10 min at this rate')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d18_batch37 B2 a stop item wait against stock and production: ok')

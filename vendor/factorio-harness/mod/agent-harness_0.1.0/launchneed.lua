@@ -75,5 +75,46 @@ return function(api)
     end
     return #lines > 0 and lines or nil
   end
+  -- (d18 batch37 B2, Gemini 16:53: Kestrel II waited for 500 carbon fiber at Fulgora, made nowhere there) each item_count
+  -- wait of the platform's stops: what the hub holds against it, the stop's planet's stock of the item (its networks'
+  -- count and what elsewhere.lua finds outside them), what that planet made of it a minute over the last 10 minutes,
+  -- and at that rate when the hub's count would be reached; "0 a minute: not met at this rate" when nothing made it.
+  local CMP = {['≥']='>=', ['>']='>', ['=']='='}
+  function M.wait_lines(pl)
+    local sch = try(function() return pl.schedule end)
+    local hub = try(function() return pl.hub end)
+    if not (sch and sch.records and hub and hub.valid) then return nil end
+    local lines = {}
+    for i, r in ipairs(sch.records) do
+      for _, w in ipairs(r.wait_conditions or {}) do
+        local c = w.type == 'item_count' and w.condition
+        local f = c and c.first_signal and c.first_signal.name
+        local cmp = c and CMP[c.comparator or '']
+        if f and cmp and c.constant and prototypes.item[f] and #lines < 6 then
+          local planet = r.station
+          local s = planet and try(function() return game.planets[planet].surface end)
+          local held = try(function() return hub.get_item_count(f) end) or 0
+          local need = math.max(0, c.constant - held + (cmp == '>' and 1 or 0))
+          local head = string.format('stop %d (%s) waits for %s %s %d: the hub holds %d', i, tostring(planet), f, cmp, c.constant, held)
+          if cmp == '=' and held ~= c.constant then
+            lines[#lines+1] = head .. (held > c.constant and string.format(': not met while it holds %d more than that', held - c.constant) or string.format(', %d short', c.constant - held))
+          elseif need == 0 then lines[#lines+1] = head .. ': met now'
+          elseif not s then lines[#lines+1] = head .. string.format('; %s has no surface (never visited)', tostring(planet))
+          else
+            local net = 0
+            for _, ln in ipairs(try(function() return pl.force.logistic_networks[s.name] end) or {}) do net = net + math.max(0, try(function() return ln.get_item_count(f) end) or 0) end
+            local outside = api.elsewhere and select(2, api.elsewhere(pl.force, s, f, nil, nil)) or 0
+            local stats = try(function() return pl.force.get_item_production_statistics(s) end)
+            local made = stats and try(function() return stats.get_flow_count{name=f, category='input', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
+            local per_min = math.floor(made / 10 + 0.5)
+            local eta = per_min > 0 and string.format('about %d min at this rate', math.ceil(need / per_min)) or 'not met at this rate'
+            lines[#lines+1] = string.format('%s, %d short; %s holds %d (%d in its logistic networks, %d outside them) and made %d a minute over the last 10 min: %s',
+              head, need, planet, net + (outside or 0), net, outside or 0, per_min, eta)
+          end
+        end
+      end
+    end
+    return #lines > 0 and lines or nil
+  end
   return M
 end
