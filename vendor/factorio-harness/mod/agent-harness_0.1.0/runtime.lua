@@ -1873,7 +1873,7 @@ function handlers.describe(_,a)
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (walked to with the pathfinder when out of reach; hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal), and blocked for one no path leads to'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival. Or {to: {x,y}, health_below, shield_below} (and the standing retreat_guard): the generic retreat, as move_to\'s (kite\'s own min_health stop then off unless given); false: none',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
-      belt_route={surface='optional planet or platform name: plan and place the ghosts there by remote view (charted chunks), as place_ghosts surface=; that surface\'s robots build them',avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
+      belt_route={platform='optional platform name: the same as surface= that platform (a remote lane of its hub\'s robots builds it; foundation only, underground pairs never under empty space)',eject='optional true or an inserter name (default inserter), with to near a hull edge: the line ends on the belt tile nearest to (within 6 tiles) where that inserter, on foundation, picks from it and drops onto empty space off the hull; the inserter\'s ghost is laid with the line (eject says where)',surface='optional planet or platform name: plan and place the ghosts there by remote view (charted chunks), as place_ghosts surface=; that surface\'s robots build them',avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing: each belt checked as a place_ghosts dry run checks it, belt_route holds the plan',details='list every entity',
         via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles); one on the from chain is passed (via_passed); one on another standing line of ours: the route feeds that line\'s head and goes on from its open end, the line kept (joined); to on it: the route ends at its head',
@@ -13754,8 +13754,53 @@ function M.route_repair(p,a,keyed)
     repair=string.format('the line you laid with these from, via and to %s ago (%d belts and undergrounds): %d stand, %d missing%s; replan: true plans a new line',
       ago(game.tick-mem.tick),#mem.entities,standing,#missing,#missing>0 and (a.dry_run and ', which a call without dry_run places as ghosts' or ', placed as ghosts') or '')}
 end
+-- (d18 batch39 C3, Sol: ~10 min and 6 dry runs on Wayfarer to end a line where an inserter throws overboard) eject: true
+-- (or an inserter name, default inserter) with to near a hull edge: the end is the free tile nearest to (within
+-- EJECT_R tiles) where an inserter on foundation picks from the last belt and drops onto empty space off the hull; the
+-- route ends on that belt tile and the inserter's ghost is laid with the line.
+M.EJECT_R=6
+function M.eject_end(p,a)
+  local ins=type(a.eject)=='string' and a.eject or 'inserter'
+  assert(a.eject==true or type(a.eject)=='string','eject is true or an inserter name')
+  local proto=prototypes.entity[ins]
+  assert(proto and proto.type=='inserter',ins..' is not an inserter')
+  assert(a.to~=nil,'eject needs to: a place near the hull edge the line ends at')
+  local belt=a.belt or 'transport-belt'
+  local to=position(a.to)
+  local tx,ty=math.floor(to.x),math.floor(to.y)
+  local function empty(x,y) local ok,t=pcall(function() return p.surface.get_tile(x,y) end); return ok and t and t.valid and t.name=='empty-space' end
+  local best,bd
+  local STEPS={[0]={0,-1},[4]={1,0},[8]={0,1},[12]={-1,0}}
+  for dy=-M.EJECT_R,M.EJECT_R do
+    for dx=-M.EJECT_R,M.EJECT_R do
+      local ix,iy=tx+dx,ty+dy
+      local d2=dx*dx+dy*dy
+      if (not bd or d2<bd) and not empty(ix,iy) then
+        for _,dir in ipairs({0,4,8,12}) do
+          local st=STEPS[dir]
+          local I={x=ix+0.5,y=iy+0.5}
+          local pick,drop=M.targets.points(proto,I,dir)
+          if pick and drop and empty(math.floor(drop.x),math.floor(drop.y)) and not empty(math.floor(pick.x),math.floor(pick.y)) then
+            local B={x=math.floor(pick.x)+0.5,y=math.floor(pick.y)+0.5}
+            if p.surface.can_place_entity{name=ins,position=I,direction=dir,force=p.force}
+              and p.surface.can_place_entity{name=belt,position=B,direction=0,force=p.force} then
+              best,bd={inserter=ins,position=I,direction=dir,belt=B,drop={x=math.floor(drop.x)+0.5,y=math.floor(drop.y)+0.5}},d2
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+  assert(best,string.format('eject: no spot within %d tiles of (%g,%g) where an inserter on foundation picks from a belt tile and drops onto empty space off the hull, both free to place',M.EJECT_R,to.x,to.y))
+  local b={}; for k,v in pairs(a) do b[k]=v end
+  b.to=best.belt; b.eject=nil
+  return b,best
+end
 function handlers.belt_route(p,a)
   a=M.belt_args(a)
+  local ej
+  if a.eject~=nil then a,ej=M.eject_end(p,a) end
   assert(a.replan==nil or type(a.replan)=='boolean','replan must be true or false')
   local keyed=M.route_key(p,a)
   local fix=not a.replan and M.route_repair(p,a,keyed)
@@ -13769,6 +13814,11 @@ function handlers.belt_route(p,a)
     return out
   end
   local plan=route.plan(p,a)
+  if ej then
+    local names={[0]='north',[4]='east',[8]='south',[12]='west'}
+    plan.entities[#plan.entities+1]={name=ej.inserter,position=ej.position,direction=names[ej.direction]}
+    plan.items[ej.inserter]=(plan.items[ej.inserter] or 0)+1
+  end
   local nests=M.belt_nests(p,a,plan)
   if nests and not a.dry_run then
     error(string.format('the line passes inside the reach of worms or spawners the map shows: %s; avoid_nests: true routes round them, avoid_nests: false lays it anyway',
@@ -13778,6 +13828,8 @@ function handlers.belt_route(p,a)
     legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost,
     via_passed=plan.via_passed,joined=plan.joined})
   out.obstacles_marked=out.obstacles_marked or nil
+  if ej then out.eject=string.format('the line ends on the belt at (%g,%g); %s at (%g,%g) facing %s picks from it and drops at (%g,%g), empty space off the hull',
+    ej.belt.x,ej.belt.y,ej.inserter,ej.position.x,ej.position.y,({[0]='north',[4]='east',[8]='south',[12]='west'})[ej.direction],ej.drop.x,ej.drop.y) end
   if not a.dry_run and (out.placed or 0)>0 then
     local st=state()
     st.belt_routes=st.belt_routes or {}

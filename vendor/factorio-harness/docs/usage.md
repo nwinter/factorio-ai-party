@@ -8657,3 +8657,13 @@ fh watch    # deploy on every change
   Each window has each fluid's and ammunition's made and used (totals, a minute, net a minute), cargo loaded (rockets
   launched to it) and cargo dropped (its cargo pods: received, landed or gone), with the window's ticks. A leg that
   began before this runtime has no fuel sample, and says so.
+- belt_route on a platform with an ejection end (batch39 C3, Sol: about 10 min and 6 dry runs on Wayfarer).
+  belt_route was already in SURFACE_ACTIONS (a platform's name as `surface`). It is now also in PLATFORM_ACTIONS, so
+  `platform: NAME` works. route.lua plans by can_place_entity, which keeps the line to foundation and to free
+  footprints, and an underground pair never passes under empty space (UNDER).
+  - `eject: true` (or an inserter name; default inserter) with `to` near the hull edge looks within 6 tiles of `to`
+    for the nearest tile where that inserter, on foundation, picks from a belt tile and drops onto empty space
+    (targets.lua's pickup and drop points by direction, both free to place).
+  - The route then ends on that belt tile, and the inserter's ghost goes with the line's ghosts.
+  - The reply's `eject` names the belt, the inserter and its facing, and the drop tile. No spot found is refused,
+    with the radius.

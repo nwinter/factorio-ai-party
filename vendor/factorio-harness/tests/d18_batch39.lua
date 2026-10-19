@@ -164,3 +164,19 @@ do
   game,prototypes=saved_game,saved_protos
 end
 print('d18_batch39 C2 a whole leg\'s production: ok')
+
+-- C3 (Sol: ~10 min and 6 dry runs on Wayfarer): belt_route's eject end: the belt tile where an inserter on foundation
+-- picks and drops onto empty space off the hull, nearest to `to`.
+do
+  prototypes.entity=prototypes.entity or {}
+  prototypes.entity.inserter={type='inserter',inserter_pickup_position={0,-1},inserter_drop_position={0,1.2}}
+  local hull={get_tile=function(x,y) return {valid=true,name=y>=3 and 'empty-space' or 'space-platform-foundation'} end,
+    can_place_entity=function(f) return math.floor(f.position.y)<3 end}
+  local pp={surface=hull,force=force}
+  local b,ej=runtime.eject_end(pp,{from={x=0,y=-10},to={x=4.5,y=1.5},eject=true})
+  -- the inserter on the edge row (y 2), picking from y 1, dropping at y 3 (empty space)
+  eq(ej.position.y,2.5); eq(ej.belt.y,1.5); eq(ej.drop.y,3.5); eq(b.to.x,ej.belt.x); eq(b.eject,nil)
+  fails(function() runtime.eject_end(pp,{to={x=4.5,y=-40},eject=true}) end,'eject: no spot within 6 tiles of (4.5,-40)')
+  fails(function() runtime.eject_end(pp,{to={x=0,y=0},eject='iron-chest'}) end,'is not an inserter')
+end
+print('d18_batch39 C3 belt_route ends where an inserter throws overboard: ok')

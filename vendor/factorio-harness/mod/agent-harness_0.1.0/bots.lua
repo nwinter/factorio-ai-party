@@ -220,7 +220,7 @@ return function(api)
   -- blueprint_save and blueprint_capture (Astra, d15 18:35: cloning platform Starling into a new platform Swift).
   -- rotate (Astra, Sol, d15 batch5 D4): ghosts and built belts and inserters by remote view.
   M.PLATFORM_ACTIONS = {'rotate', 'upgrade', 'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
-    'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements'}
+    'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements', 'belt_route'}
   M.SURFACE_ACTIONS = {'blueprint_save', 'blueprint_capture', 'rates', 'rotate', 'upgrade', 'placements', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace', 'deliver', 'belt_route', 'pole_route', 'map', 'grid', 'observe'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
