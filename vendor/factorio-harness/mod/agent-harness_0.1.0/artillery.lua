@@ -163,7 +163,10 @@ return function(api)
       rows[#rows+1], lines[#lines+1] = row, row.line
     end
     local used = #all > 0 and M.shells_used(surface, p.force) or nil
+    -- (C1) with position: what is already coming at it (an immediate re-read after a flare)
+    local coming = a.position and try(function() return M.incoming(surface, p.force, centre) end)
     return {surface=surface.name, artillery=rows, count=#all, more=#all > MAX and (#all - MAX) or nil, lines=lines, shells_used=used,
+      already_coming=coming and coming.line or nil,
       note=#all == 0 and 'no artillery of ours on ' .. surface.name .. (a.radius and ' within ' .. a.radius .. ' tiles' or '') or
         'with automatic targeting on, a piece with shells fires at enemy spawners and worms in its range by itself; the game does not say which it picks next'}
   end
@@ -185,6 +188,35 @@ return function(api)
     out.auto_targeting_before = before
     return out
   end
+  -- (d19 batch45, batch40 C1, Muse: about 6 times a second flare on a guarded spawner while shells were in the air)
+  -- what is already coming at pos, as a player sees it: our flares still waiting within FLARE_NEAR (each holds shots
+  -- not yet taken), artillery projectiles in the air within AIR_NEAR, and the team's flares within FLARE_NEAR in the last
+  -- RECENT ticks with the watched pieces that hold fewer shells since. A projectile names no target in 2.0.77 (read on
+  -- the private copy: no target or source, orientation 0 whatever its heading).
+  local FLARE_NEAR, AIR_NEAR, RECENT = 32, 64, 3600
+  function M.incoming(surface, force, pos)
+    local flares = try(function() return surface.find_entities_filtered{name={'artillery-flare'}, position=pos, radius=FLARE_NEAR, force=force} end) or {}
+    local air = try(function() return surface.find_entities_filtered{type='artillery-projectile', position=pos, radius=AIR_NEAR} end) or {}
+    local recent, fired, seen = {}, {}, {}
+    for _, c in ipairs(api.state and api.state().artillery_checks or {}) do
+      if c.surface == surface.index and game.tick - c.tick <= RECENT and dist(c.target, pos) <= FLARE_NEAR then
+        local taken = not (c.flare and try(function() return c.flare.valid end))
+        recent[#recent+1] = string.format('(%g,%g) %ds ago by %s, %s', c.target.x, c.target.y, math.floor((game.tick - c.tick) / 60), tostring(c.by or '?'),
+          taken and 'taken' or 'still waiting')
+        for _, w in ipairs(c.pieces or {}) do
+          local now = w.e.valid and shells(w.e) or nil
+          local key = w.e.valid and w.e.unit_number
+          if now and now < w.n and not seen[key] then seen[key] = true; fired[#fired+1] = string.format('%s (%g,%g) %d -> %d shells', w.e.name, w.e.position.x, w.e.position.y, w.n, now) end
+        end
+      end
+    end
+    local parts = {string.format('%d flare%s of ours still waiting within %d tiles', #flares, #flares == 1 and '' or 's', FLARE_NEAR),
+      string.format('%d artillery projectile%s in the air within %d tiles', #air, #air == 1 and '' or 's', AIR_NEAR)}
+    if #recent > 0 then parts[#parts+1] = string.format('team flares there in the last %ds: %s', RECENT / 60, table.concat(recent, '; ', 1, math.min(4, #recent))) end
+    if #fired > 0 then parts[#parts+1] = 'pieces holding fewer shells since: ' .. table.concat(fired, ', ', 1, math.min(6, #fired)) end
+    return {flares_waiting=#flares, in_the_air=#air, recent_flares=#recent > 0 and recent or nil, fired_since=#fired > 0 and fired or nil,
+      line='already coming at (' .. pos.x .. ',' .. pos.y .. '): ' .. table.concat(parts, '; ')}
+  end
   -- use_item {item: artillery-targeting-remote, position}: an artillery flare there, as the remote makes one; our
   -- pieces with shells that reach it fire at it.
   function M.remote(p, a, ca)
@@ -196,6 +228,8 @@ return function(api)
     assert(try(function() return p.force.is_chunk_charted(p.surface, chunk(pos)) end) ~= false,
       string.format('(%g,%g) is in a chunk our map has not charted; the remote marks charted ground', pos.x, pos.y))
     local flare = ca.flare or 'artillery-flare'
+    -- (C1) what was already coming there, read before this flare
+    local coming = try(function() return M.incoming(p.surface, p.force, pos) end)
     local made
     for _, spec in ipairs({{name=flare, position=pos, force=p.force, movement={0, 0}, height=0, vertical_speed=0, frame_speed=1},
         {name=flare, position=pos, force=p.force}}) do
@@ -227,10 +261,11 @@ return function(api)
     if api.state then
       local st = api.state()
       st.artillery_checks = st.artillery_checks or {}
-      st.artillery_checks[#st.artillery_checks+1] = {index=p.index, force=p.force, flare=made, target=pos, surface=p.surface.index, tick=game.tick, pieces=watch, m10=m10}
+      st.artillery_checks[#st.artillery_checks+1] = {index=p.index, by=api.who and try(function() return api.who(p) end) or p.name, force=p.force, flare=made, target=pos, surface=p.surface.index, tick=game.tick, pieces=watch, m10=m10}
     end
     return {used=a.item, kind='artillery_remote', target=pos, flare=flare, by=held > 0 and 'held' or 'shortcut (artillery researched)',
       shells_used=used_line .. '; read artillery again after the shot to see it counted',
+      already_coming=coming and coming.line or nil,
       in_range=reach, in_range_no_shells=#empty > 0 and empty or nil, out_of_range=out_of_reach,
       confirm=string.format('in %d s your team block says whether a shot followed: the flare taken, shells gone from these pieces, projectiles seen', M.CONFIRM / 60),
       line=string.format('flare at (%g,%g); %s', pos.x, pos.y, #reach > 0 and ('in range with shells: ' .. table.concat(reach, '; '))
@@ -267,6 +302,6 @@ return function(api)
   end
   M.schema = {artillery = {position='optional {x,y}: the centre (default you)', radius='optional 1..4096 tiles round the centre (default the whole surface)',
     surface='optional planet name (default yours)',
-    returns='artillery [{name, position, shells, held, auto_targeting, range, min_range (the cannon\'s, with the force\'s range bonus), in_range (enemy spawners and worms in its range on charted chunks), nearest (the 3 nearest: name, position, distance), units_near (enemy units within 64 tiles our force sees now: count, by_name, rows for the 5 nearest: distance, its attack range and how far outside it the piece stands, how many of our turrets reach it), line}], nearest the centre first, at most 8 (more: how many past them); count; lines; read only. Switch automatic targeting with configure {position, auto_targeting: false}; fire at one spot with use_item {item: "artillery-targeting-remote", position}'}}
+    returns='artillery [{name, position, shells, held, auto_targeting, range, min_range (the cannon\'s, with the force\'s range bonus), in_range (enemy spawners and worms in its range on charted chunks), nearest (the 3 nearest: name, position, distance), units_near (enemy units within 64 tiles our force sees now: count, by_name, rows for the 5 nearest: distance, its attack range and how far outside it the piece stands, how many of our turrets reach it), line}], nearest the centre first, at most 8 (more: how many past them); count; lines; already_coming (with position, as a flare\'s reply: our flares still waiting within 32 tiles, artillery projectiles in the air within 64 tiles, the team\'s flares there in the last 60 s and the pieces holding fewer shells since); read only. Switch automatic targeting with configure {position, auto_targeting: false}; fire at one spot with use_item {item: "artillery-targeting-remote", position}'}}
   return M
 end
