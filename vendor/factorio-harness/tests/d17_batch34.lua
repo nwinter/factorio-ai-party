@@ -399,7 +399,8 @@ do
   -- nothing covers it
   local bare={find_logistic_networks_by_construction_area=function() return {} end}
   lines=DP.preview(bare,force,{{kind='construct',pos={x=9,y=9},item='pipe',count=1}})
-  eq(lines[1],'1 job no logistic network covers')
+  eq(lines[1],"1 pipe ghost near (9,9): no roboport's construction area covers it; no roboport of ours with a construction area on this surface")
+  eq(lines[2],'1 job no logistic network covers')
   -- a deconstruction job: the entity's item and what it holds
   local j=DP.deconstruct_job({position={x=1,y=2},prototype={mineable_properties={products={{type='item',name='steel-chest'}}}},get_item_count=function() return 48 end})
   eq(j.item,'steel-chest'); eq(j.contents,48)

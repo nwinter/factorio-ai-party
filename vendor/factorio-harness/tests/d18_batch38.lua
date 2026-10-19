@@ -163,4 +163,25 @@ do
   prototypes=nil
 end
 print('d18_batch38 B1 construct says built, skipped and left out: ok')
+
+-- B2 (Haiku: big pole ghosts whose network held none, 3 times; a pole ghost outside every roboport's construction area):
+-- robot_dispatch names the covering network holding none of the item, and the nearest roboport and how far outside.
+do
+  prototypes={entity={['construction-robot']={max_payload_size=1},['logistic-robot']={max_payload_size=1}}}
+  local port={valid=true,name='roboport',position={x=0,y=0},unit_number=1}
+  local net={network_id=5,cells={{owner=port,construction_radius=55,stationed_construction_robot_count=10,stationed_logistic_robot_count=0}},
+    available_construction_robots=10,available_logistic_robots=0,get_item_count=function() return 0 end,
+    select_pickup_point=function() return nil end,select_drop_point=function() return nil end}
+  local force={worker_robots_storage_bonus=0,logistic_networks={nauvis={net}},find_logistic_network_by_position=function() return net end}
+  local surf={name='nauvis',find_logistic_networks_by_construction_area=function(pos) if math.abs(pos.x)<=55 and math.abs(pos.y)<=55 then return {net} end return {} end}
+  local DP=dofile('mod/agent-harness_0.1.0/robottrips.lua'){}
+  local lines=DP.preview(surf,force,{{kind='construct',pos={x=10,y=10},item='big-electric-pole',count=1},{kind='construct',pos={x=12,y=10},item='big-electric-pole',count=1},
+    {kind='construct',pos={x=67,y=3},item='big-electric-pole',count=1}})
+  local all=table.concat(lines,' | ')
+  has(all,'2 big-electric-pole ghosts near (11,10): network 5 covering them holds no big-electric-pole')
+  has(all,"1 big-electric-pole ghost near (67,3): no roboport's construction area covers it; the nearest roboport, roboport (0,0) (network 5), covers 55 tiles round it, and it is 12 tiles outside that")
+  assert(not all:find('no chest of the network',1,true),all)
+  prototypes=nil
+end
+print('d18_batch38 B2 robot_dispatch: none held, outside every construction area: ok')
 print('d18 batch38 ok')

@@ -206,7 +206,8 @@
   `fluid_mix` unless `mix_fluids: true`. `robot_dispatch` (place_ghosts, paste, blueprint_place): the construction
   robots' trips to the ghosts, as the network would pick them: how many at once, from which roboports, the longest
   and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows (each with its
-  read's age and whether its chunk is in sight now). `closes_in` names the entry that fills the last gap out when the plan would close you
+  read's age and whether its chunk is in sight now); ghosts whose covering network holds none of their item, and
+  ghosts outside every construction area with the nearest roboport and how far outside its area. `closes_in` names the entry that fills the last gap out when the plan would close you
   in where you stand; a build reply says `closed_in` after it. `build` dry runs name off-character `pockets`, their
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and

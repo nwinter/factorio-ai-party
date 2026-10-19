@@ -8306,3 +8306,10 @@ fh watch    # deploy on every change
   - Now the reply has a `line`: the ghosts it builds by name, those you hold too few for, and those left out inside
     an enemy's reach. The result's `last.line` says "built 0 of the 2 ghosts it took up; skipped, item missing ...:
     2 laser-turret short; left out inside an enemy's reach ... : 3 medium-electric-pole, 2 laser-turret".
+- B2 (Haiku: big pole ghosts whose network held none, 3 times; a pole ghost outside every roboport's construction
+  area): robot_dispatch (place_ghosts, paste and blueprint_place dry runs; robottrips.lua) says, per group of ghosts
+  (item and 32-tile cell):
+  - "2 big-electric-pole ghosts near (11,10): network 5 covering them holds no big-electric-pole";
+  - "1 big-electric-pole ghost near (67,3): no roboport's construction area covers it; the nearest roboport, roboport
+    (0,0) (network 5), covers 55 tiles round it, and it is 12 tiles outside that". The construction area is a
+    square, and the cells read are our networks' on the surface, the first 2048. On world n, 153 cells took 0.3 ms.
