@@ -8642,3 +8642,9 @@ fh watch    # deploy on every change
   - The robot-built event is not forwarded to the runtime (control.lua's fixed list, which only a mod reload changes),
     so a build is known by the entity standing at the ghost's place. An item taken from storage may be another of the
     same name in that chest.
+- Compact replies (batch39 C1, Astra, about 30 times a shift with a local JSON projection). `fields: [...]` (a list,
+  or one string joined by `|` or `,`, as scan's) on platform, platforms, inspect and status returns only those fields.
+  A field is matched as a top-level key, a key of each row, or one level down (`"hub.cargo"`). Rows are platforms'
+  rows and inspect's results or entities, and each row keeps its name and position. A name that matches nothing is
+  refused with the names the reply has. The read runs whole (M.project cuts the reply), so the game-side cost is the
+  same; the agent's context is what shrinks.
