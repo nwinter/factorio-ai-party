@@ -235,6 +235,10 @@
     }
     return null;
   }
+  // A map point as the game's tile: "x 123, y -45 · Nauvis" (the tile's corner, as the game's own positions floor it).
+  function coordsText(x, y, surface) {
+    return 'x ' + Math.floor(x) + ', y ' + Math.floor(y) + ' · ' + cap(surface || 'nauvis');
+  }
   // A capture's wall time as the reader's local date and time ("Oct 19, 07:47").
   function when(t) {
     var dt = new Date(t * 1000);
@@ -559,11 +563,12 @@
       '<button type="button" class="fx-btn" data-mv="reset">Reset</button>' +
       '<button type="button" class="fx-btn" data-mv="full" aria-pressed="false">Full screen</button></div>' +
       '<div class="mapview-follow" hidden><span></span> <button type="button" class="fx-btn small" data-mv="unfollow">Stop</button></div>' +
-      '<div class="mapview-tip" role="status" hidden></div></div>' +
+      '<div class="mapview-tip" role="status" hidden></div><div class="mapview-coords" hidden></div></div>' +
       '<div class="mapview-legend"></div><p class="mapview-scale small"></p>';
     host.appendChild(el);
     this.canvas = el.querySelector('canvas'); this.stage = el.querySelector('.mapview-stage');
     this.tip = el.querySelector('.mapview-tip'); this.followEl = el.querySelector('.mapview-follow');
+    this.coordsEl = el.querySelector('.mapview-coords');
     this.font = '"Titillium Web", system-ui, sans-serif';
     try { this.font = getComputedStyle(el).fontFamily || this.font; } catch (e) { /* default */ }
     el.addEventListener('click', function (ev) { self.onClick(ev); });
@@ -575,7 +580,7 @@
     this.canvas.addEventListener('pointerdown', function (ev) { self.down(ev); });
     window.addEventListener('pointermove', function (ev) { self.move(ev); }, { passive: false });
     ['pointerup', 'pointercancel'].forEach(function (t) { window.addEventListener(t, function (ev) { self.up(ev); }); });
-    this.canvas.addEventListener('pointerleave', function (ev) { if (ev.pointerType === 'mouse') self.showTip(null); });
+    this.canvas.addEventListener('pointerleave', function (ev) { if (ev.pointerType === 'mouse') { self.showTip(null); self.showCoords(null); } });
     document.addEventListener('fullscreenchange', function () { self.fullChanged(); });
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && el.classList.contains('mapview--full') && !document.fullscreenElement) self.setFull(false); });
     if (window.ResizeObserver) new ResizeObserver(function () { self.draw(); }).observe(this.stage);
@@ -733,15 +738,25 @@
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
     this.ptrs[ev.pointerId] = { x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: 0 };
   };
+  // (d19 batch43 A4, viewer Foobator: "how can i see coordinates of my mouse cursor on the maps") the game tile under
+  // the mouse, or under the last tap on a touch screen, and the surface shown, in the map's corner
+  Viewer.prototype.showCoords = function (q) {
+    if (!this.coordsEl) return;
+    if (!q || !this.sc) { this.coordsEl.hidden = true; return; }
+    this.coordsEl.textContent = coordsText(q.x, q.y, this.d.surface);
+    this.coordsEl.hidden = false;
+  };
   Viewer.prototype.move = function (ev) {
     var p = this.ptrs[ev.pointerId];
     if (!p) {
       if (ev.pointerType === 'mouse' && ev.target === this.canvas && this.sc) {
         var q = this.point(ev);
         this.showTip(hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q), q.cx, q.cy);
+        this.showCoords(q);
       }
       return;
     }
+    if (ev.pointerType === 'mouse' && this.sc) this.showCoords(this.point(ev));
     var ids = Object.keys(this.ptrs);
     if (ids.length === 1) {
       p.moved = Math.max(p.moved, Math.hypot(ev.clientX - p.x0, ev.clientY - p.y0));
@@ -763,12 +778,13 @@
     var q = this.point(ev), hit = hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q);
     if (hit && hit.agent) this.setFollow(hit.agent);
     this.showTip(hit, q.cx, q.cy);
+    this.showCoords(q);
   };
   Viewer.prototype.onClick = function (ev) {
     var b = ev.target.closest && ev.target.closest('[data-mv],[data-layer],[data-surface]');
     if (!b) return;
     if (b.dataset.surface) {  // another surface's cloud, or back to Nauvis: a fresh view framed on it
-      this.surface = b.dataset.surface; this.view = null; this.follow = null; this.followEl.hidden = true; this.showTip(null);
+      this.surface = b.dataset.surface; this.view = null; this.follow = null; this.followEl.hidden = true; this.showTip(null); this.showCoords(null);
       this.set(this.data);
       return;
     }
@@ -808,7 +824,7 @@
   root.PogMap = {
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
-    prepare: prepare, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs,
+    prepare: prepare, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);

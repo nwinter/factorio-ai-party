@@ -272,6 +272,8 @@ out.gleba.paintCells = calls2.filter((c) => c[0] === 'fillRect' && String(c[1]).
 const dv = M.prepare(Object.assign({}, data.full, { planets: data.planets, surface: 'vulcanus' }));
 out.vulcanus = Object.assign(summary(M.scene(dv, null, 400, 400)), { auto: dv.auto });
 out.planetsOnNauvis = M.prepare(Object.assign({}, data.full, { planets: data.planets })).planets;
+// (d19 batch43 A4) the cursor's tile and the surface shown
+out.coords = [M.coordsText(12.7, -40.2, 'nauvis'), M.coordsText(-0.5, 3, 'fulgora'), M.coordsText(5, 5)];
 // (d19 batch42 B3) when the terrain frames were captured: wall time when they have it, else the game tick
 out.terrainNotes = [M.prepare(data.full).terrainNote,
   M.prepare(Object.assign({}, data.full, { terrain: [Object.assign({}, data.full.terrain[0], { t: 1792433272 })] })).terrainNote];
@@ -401,6 +403,7 @@ def map_tests():
         assert "luna" in [a["name"] for a in v["agents"]] and not any(a[0].startswith("Luna") for a in v["away"]), v
         assert 4960 <= v["auto"]["cx"] <= 5040, v["auto"]
         assert o["planetsOnNauvis"] == ["fulgora", "vulcanus"], o["planetsOnNauvis"]
+        assert o["coords"] == ["x 12, y -41 · Nauvis", "x -1, y 3 · Fulgora", "x 5, y 5 · Nauvis"], o["coords"]
         assert o["terrainNotes"][0] == "captured at game tick 1" and o["terrainNotes"][1].startswith("captured ") \
             and "19" in o["terrainNotes"][1], o["terrainNotes"]
         assert o["turretNotes"] == ["all 1459 turrets, 238 within 2 tiles of another merged",
