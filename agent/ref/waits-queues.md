@@ -159,8 +159,13 @@
   default only the plan you submitted, finishing or stalling: `queue_done`, `queue_stalled`); `--urgent-radius N`
   (1..200): attacks, groups, losses and deaths count only within N tiles of you; `--wake-near N` (`wake: {near: N}` on
   sleep, wait_ticks, wait_until): only an attack on ours or a loss within N tiles wakes it, the other urgent alerts
-  come with the reply as `held_alerts`. Urgent alerts and the action ending
-  still end every wait. Each attack, group, loss or death wakes you once, however its counts grow (an attack after a
+  come with the reply as `held_alerts`: an attack group on Nauvis, or a loss in a claim of yours there, wakes nothing
+  while you wait on Gleba with it. `--no-board-wake` (`wake_on_board: false` on sleep, which `./fh sleep` and `./fh
+  wait --until` use): a board item of yours assigned or changed by someone else does not end it (`board_held` lists
+  them; an @-mention of you in it is a mention and still does); direct `wait_ticks`/`wait_until` never wake on board
+  news, only on tells and mentions. A wait ended by anything but its condition says the condition now (`waited_now`:
+  met or not, its value; for a platform, where it is and its latest launch up with its age). Urgent alerts and the
+  action ending still end every wait. Each attack, group, loss or death wakes you once, however its counts grow (an attack after a
   minute's quiet is a new one); a power collapse or captive spawner again only when it comes back after 2 minutes gone
   (`alerts_digest` keeps the counts). A platform's alert lines (turrets empty, slow, fuel short, no repair packs) are
   told once while they last, again when their state changes or after 2 minutes clear. A sleep on a platform's arrival or departure

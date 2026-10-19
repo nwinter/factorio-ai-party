@@ -67,6 +67,20 @@ return function(api)
     list[#list+1] = rec
     while #list > M.KEEP do table.remove(list, 1) end
   end
+  -- (d18 batch39 A2) the latest launch recorded to a platform, from any surface: the record and its surface, or nil
+  function M.latest_to(name)
+    local best, where
+    for surface, list in pairs(store().by) do
+      for i = #list, 1, -1 do
+        local r = list[i]
+        if r.to == name then
+          if not best or r.tick > best.tick then best, where = r, surface end
+          break
+        end
+      end
+    end
+    return best, where
+  end
   -- The surface's launches and drops, oldest first.
   function M.read(surface_name, drops)
     local entries = {}

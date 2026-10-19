@@ -603,11 +603,19 @@ local function finish(index, outcome)
   if action and action.kind=='wait_until' then
     local last=s.last[index]
     -- An interrupt/timeout can fall between predicate polls. Refresh once on ending, reusing a poll from this tick.
+    local met_now
     if M.waiteta and not (action.wait_estimates and action.wait_estimates[1] and action.wait_estimates[1].as_of_tick==game.tick) then
-      local ok,_,saw=pcall(function() return M.waiteta.check(M.lookup(index),action.condition,action) end)
-      if ok then action.saw=saw end
+      local ok,met,saw=pcall(function() return M.waiteta.check(M.lookup(index),action.condition,action) end)
+      if ok then action.saw=saw; met_now=met and true or false end
     end
     last.condition=action.condition['until']; last.saw=action.saw; last.error=action.error
+    -- (d18 batch39 A2) ended by anything but its condition: whether it holds now, and a platform's place and last launch
+    if outcome~='met' then
+      local c=action.condition
+      local extra=c.platform and select(2,pcall(M.platform_recent,c.platform)) or nil
+      last.waited_now=string.format('%s: %s now (%s)%s',tostring(c['until']),met_now==nil and 'not read again' or (met_now and 'met' or 'not met'),tostring(action.saw),
+        type(extra)=='string' and '; '..extra or '')
+    end
     if M.waiteta then M.waiteta.info(last,action) end
   end
   -- A direct wait ended by a tell or mention says from whom (the reply's team block has it in full).
@@ -15187,7 +15195,17 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
 -- Wakes a loop of sleeps throws away, shown again later (missed.lua; Opus, shift12 12:26).
 M.missed=require('missed'){state=state,clock_mode=function() return clock and clock.report().mode end}
-M.waits=require('waits'){state=state,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+-- (d18 batch39 A2) a platform as a wait woken early says it: where it is, and its latest launch up (the cargo ledger)
+function M.platform_recent(name)
+  local pl
+  for _,f in pairs(game.forces) do for _,x in pairs(f.platforms) do if x.valid and x.name==name then pl=x end end end
+  local parts={}
+  if pl then parts[#parts+1]=name..' '..M.freight.where(pl).text end
+  local r,surf=M.ledger.latest_to(name)
+  parts[#parts+1]=r and string.format('its latest launch up: #%d from %s %ds ago (%s)',r.id,surf,math.floor((game.tick-r.tick)/60),r.cargo) or 'no launch to it recorded since the harness was deployed'
+  return table.concat(parts,'; ')
+end
+M.waits=require('waits'){state=state,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,

@@ -8625,3 +8625,20 @@ fh watch    # deploy on every change
   - The robot-built event is not forwarded to the runtime (control.lua's fixed list, which only a mod reload changes),
     so a build is known by the entity standing at the ghost's place. An item taken from storage may be another of the
     same name in that chest.
+
+## d18 batch39, Groups A and D (the 19:50 poll; eng/d18-batch39-ad)
+
+- A1 (Luna and Grok: platform waits woke on board edits; Luna on Gleba woke on Nauvis attack groups):
+  - Found: `fh wait --until` and `fh sleep` run the runtime's `sleep`, which ends on board news (waits.lua: a board item
+    of yours assigned or changed by someone else, woke=board). Direct wait_ticks/wait_until never wake on board news.
+    The Nauvis groups are urgent alerts (attacks in your claims count anywhere), which batch36's `wake: {near: N}`
+    already holds.
+  - Now `sleep {wake_on_board: false}` (host `--no-board-wake`) holds board news: `board_held` (up to 4) and
+    `board_held_count` come with the wake. An @-mention of the agent in a board edit is a chat mention and still
+    wakes, unless `wake_on_messages: false`. A runtime from before this: the host says so on stderr.
+- A2 (Grok: woken by a board edit, missed that Cinder's launch had already happened):
+  - A sleep woken by anything but its condition gives `waited_now`: each condition as it reads now, met or not and its
+    value.
+  - For a platform condition, it adds where the platform is (freight.where) and its latest launch up from the cargo
+    ledger (ledger.lua `latest_to`): "#57 from gleba 12s ago (bioflux*400)".
+  - A direct wait_until that ends without being met (told, urgent, timed out) gives `last.waited_now` the same way.
