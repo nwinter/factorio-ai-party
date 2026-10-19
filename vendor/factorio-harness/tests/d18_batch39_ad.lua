@@ -40,4 +40,29 @@ do
 end
 print('d18_batch39_ad A1 board wakes held, A2 the waited condition on any wake: ok')
 
+
+-- A3 (Luna 20:25: railgun-damage-1, infinite, finished a level and the wait read "not researched" until its timeout):
+-- a technology with levels is met when its level passes the level at the wait's start, or `level: N`.
+do
+  local tech={name='railgun-damage-1',researched=false,level=3,prototype={max_level=4294967295}}
+  local p={force={technologies={['railgun-damage-1']=tech,automation={name='automation',researched=false,level=1,prototype={max_level=1}}}}}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){}
+  local c={['until']='researched',technology='railgun-damage-1'}
+  local record={}
+  local met,saw=C.check(p,c,nil,record)
+  eq(met,false); eq(saw,'railgun-damage-1 level 3 (its level when the wait began): not researched yet (levels to 2 researched, level 3 next, infinite)')
+  tech.level=4
+  met,saw=C.check(p,c,nil,record)
+  eq(met,true); eq(saw,'railgun-damage-1 level 3 (its level when the wait began): researched (levels to 3 researched, level 4 next, infinite)')
+  -- level: N
+  local c5={['until']='researched',technology='railgun-damage-1',level=5}
+  eq((C.check(p,c5,nil,{})),false); tech.level=6; eq((C.check(p,c5,nil,{})),true)
+  -- a plain technology as before
+  local ca={['until']='researched',technology='automation'}
+  met,saw=C.check(p,ca,nil,{}); eq(met,false); eq(saw,'automation not researched')
+  -- a finite leveled one, all levels done
+  tech.prototype.max_level=7; tech.researched=true; tech.level=7
+  met,saw=C.check(p,{['until']='researched',technology='railgun-damage-1',level=7},nil,{}); eq(met,true); has(saw,'levels to 7 researched, every level')
+end
+print('d18_batch39_ad A3 researched on a technology with levels: ok')
 print('d18 batch39 ad ok')
