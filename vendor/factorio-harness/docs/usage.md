@@ -8545,12 +8545,19 @@ fh watch    # deploy on every change
     change of segment length. Then what it holds now of the inserter's items, the belts of it past the inserter's
     pickup ("it cannot take what they hold", with the count there), and belts side-loading inside the count (marked
     when upstream of the pickup).
-  - `inserter: {x, y}` reads one feeder.
+  - `inserter: {x, y}` reads one feeder. Loaders count too, and the filter mode is said. The same lines come with
+    `area` or `positions` reads for the feeders among those entities. `feeder_rows` gives each as data: readers with
+    mode, belts, from, to, holds, past_pickup and joins.
+  - From pC0's handoff (eng/d18-batch37-d2-handoff, f0821cdc, not merged): at most 8 combinators and 8 readers a feeder,
+    since circuits.short costs about 0.4 ms an entity on world n, plus loaders, the filter mode and rows. Its trace
+    through combinator inputs and its side-load check match what this read already did; this read also follows the
+    straight input through a side-load, which ends batch34's whole() walk.
   - Bounded: the first 8 feeders, 96 connectors a network; a read walks at most 160 belts (400 for one inserter), and
     readers past that are named, not walked. Belt contents, walks and members are each read once a read.
-  - On world n (read-only, saved first), Wayfarer: 8 feeders in 12.2 ms. My first two versions took 57 ms and 26 ms for
-    10 feeders (a 138-belt and a 111-belt segment walked again per feeder), over the 20 ms bound for one command each;
-    that is why the budget exists.
+  - On world n (read-only, saved first), Wayfarer: 8 feeders in 12.2 ms; with the source caps, 2 feeders in 4.3 ms. My
+    first two versions took 57 ms and 26 ms for 10 feeders (a 138-belt and a 111-belt segment walked again per
+    feeder), over the 20 ms bound for one command each; that is why the budget exists. The dev world refused RCON, so
+    the timing was on n with these bounds.
 - D2 (Opus 18:23, 3 times about 20 min each: which machines or chests took the advanced circuits?): `supply {item,
   consumers: "all"}` (supply.lua `consumers`), beside batch37 A1's `makers: "all"`.
   - Every machine of ours on the surface whose recipe takes the item, from the census pass's crafters: its status and
@@ -8562,3 +8569,8 @@ fh watch    # deploy on every change
   - The largest use first, 24 a call (`from`, `next_from`), with the totals per recipe and now/full.
   - Cost on world n: the machine part reads 200 crafters in 0.7 ms (Nauvis has about 775). The requesters part is the
     existing read, about 18 ms on Nauvis.
+- D3 (Opus: a lane read "stopped, full" was coal, read as iron ore): belt_flow's lane states now name what stands on
+  the tile ("stopped, full (4 coal on the tile)", `on_tile`), and so do its limit lines ("the end is backed up on its
+  right lane at (6.5,0.5) (4 coal)", "a side-load waits ...: belt (3.5,9.5) is stopped full of 4 carbon ..."). trace's
+  belt-end lines already named each lane's contents; its audit's side-load lines now say what fills a full lane
+  ("(that lane is full: 8 coal)").

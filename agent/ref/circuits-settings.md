@@ -56,8 +56,9 @@
   (`entire_belt_hold`) on one network whose belts overlap (counted twice); each whole-belt reader whose read is shorter
   than the belt in line through it (the game reads the reader's belt segment), with the belts left out upstream and
   downstream, undergrounds crossed (`short_reads`); and each asteroid collector whose filter the circuit sets: the
-  filter it holds and the chunk signals there. `feeders`: each inserter whose filters the circuit sets or which it
-  turns on and off (the first 8; `inserter: {x, y}` reads one): what it takes now and its pickup, the signals on its
+  filter it holds and the chunk signals there. `feeders` (and `feeder_rows`): each inserter or loader whose filters the
+  circuit sets or which it turns on and off, on the platform or among the entities of `area` or `positions` (the first
+  8; `inserter: {x, y}` reads one): its filter mode, what it takes now and its pickup, the signals on its
   networks, the combinators putting out onto them and what their inputs read (3 deep), constant combinators, the hub's
   own read apart, and each belt reader there: its mode, the belts its count covers (whole belt: the game's segment,
   in flow order, from where to where), what it holds now of what the inserter takes, the belts of it past the

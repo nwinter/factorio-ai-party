@@ -316,8 +316,9 @@ do
   link(ins.wires[1],comb.wires[5]); link(ins.wires[1],hub.wires[1])
   comb.wires[4]=conn(comb,4,14); reader.wires[2]=conn(reader,2,14); link(comb.wires[4],reader.wires[2])
   local CA=dofile('mod/agent-harness_0.1.0/circaudit.lua'){circuit_short=function(e) return e==comb and 'each * -1 -> each' or nil end}
-  CA.feeders_begin(); local line=CA.feeder(ins); CA.feeders_end()
-  has(line,'inserter (4,1): its filters set by the circuit (now iron-plate); picks up from transport-belt (4,0)')
+  CA.feeders_begin(); local line,row=CA.feeder(ins); CA.feeders_end()
+  eq(row.readers[1].belts,6); eq(row.readers[1].past_pickup,2); eq(row.readers[1].holds,'iron-plate 60'); eq(row.set_filters,true)
+  has(line,'inserter (4,1): its filters set by the circuit (whitelist, now iron-plate); picks up from transport-belt (4,0)')
   has(line,'red #12: iron-plate 70')
   has(line,'put out by arithmetic-combinator (0,5) (each * -1 -> each)')
   has(line,'its green input #14: iron-plate 30')
@@ -353,4 +354,21 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d18_batch38 D2 supply consumers: ok')
+
+-- D3 (Opus: a lane read "stopped, full" was coal, read as iron ore): beltaudit's full lane says what fills it (belt_flow's
+-- states and limit lines: tests/beltsample.lua).
+do
+  local BA=dofile('mod/agent-harness_0.1.0/beltaudit.lua'){try=function(f) local ok,v=pcall(f) if ok then return v end end,place=function(e) return e.name..' ('..e.position.x..','..e.position.y..')' end,
+    at=function(q) return '('..q.x..','..q.y..')' end,side=function(k) return k==1 and 'left' or 'right' end,
+    lanes_of=function(e) return e.lanes end,lane_text=function(m) local t={} for n,c in pairs(m) do t[#t+1]=c..' '..n end return #t>0 and table.concat(t,', ') or 'empty' end,
+    lane_near=function() return 1 end,lane_full=function(e,k) return e.full and k==1 end}
+  local target={valid=true,type='transport-belt',belt_shape='straight',name='transport-belt',position={x=0,y=0},direction=4,unit_number=1,full=true,lanes={left={coal=8},right={}}}
+  local side={valid=true,type='transport-belt',name='transport-belt',position={x=0,y=-1},direction=8,unit_number=2,lanes={left={['iron-ore']=3},right={['iron-ore']=2}}}
+  target.belt_neighbours={inputs={side},outputs={}}
+  local out={}
+  BA.sideloads(target,out,{})
+  eq(#out,1)
+  has(out[1],'side-loads both its lanes (left 3 iron-ore, right 2 iron-ore) onto transport-belt (0,0) left lane only: at most half of what it carries gets on (that lane is full: 8 coal)')
+end
+print('d18_batch38 D3 full lanes say what fills them: ok')
 print('d18 batch38 ok')
