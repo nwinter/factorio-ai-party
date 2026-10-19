@@ -12220,6 +12220,9 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
+M.hubfull=require('hubfull'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,
+  request_rows=function(e,f,only) return M.silo.request_rows(e,f,nil,only) end,listeners=function(pl) return M.platalerts.listeners(pl) end,
+  deliver=function(index,t) return M.board.deliver(index,t) end}  -- a hub too full for its payload (d18 batch37 B3)
 M.elsewhere=require('elsewhere'){chests=function(f,s) if M.census then return M.census.chests_on(f,s) end end,
   crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- what no network gives (d18 batch37 B1)
 M.makersall=require('makersall'){status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
@@ -18024,6 +18027,7 @@ function M.tick_body(event)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
   if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
   if event.tick%60==13 and state().clear_jobs then pcall(M.clearobs.tick) end  -- clear_obstacles waits (clearobs.lua)
+  if event.tick%600==29 then pcall(M.timed,'hubfull.tick',M.hubfull.tick,event.tick) end  -- a hub too full for its payload (hubfull.lua)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do

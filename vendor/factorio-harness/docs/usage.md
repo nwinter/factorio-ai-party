@@ -8300,3 +8300,10 @@ fh watch    # deploy on every change
   for carbon-fiber >= 250: the hub holds 0, 250 short; fulgora holds 100 (100 in its logistic networks, 0 outside them)
   and made 0 a minute over the last 10 min: not met at this rate` (world n, Kestrel II). The rate is the planet's
   making, not what reaches the hub. 0.01-2.5 ms a platform on world n.
+- A hub too full for its payload (B3, Grok: Spindle's hub filled with ore twice and the science rocket could not board,
+  seen only in the silo line's hub_full): every 10 s one platform waiting at a stop, in turn (hubfull.lua); each silo
+  of ours on that planet (census list) whose request row for it reads hub_full is told once per wait, as a line that
+  wakes them, to those who hear about the platform (platalerts' rule: its creator, who worked on it lately, who is
+  aboard): `hub full: Spindle waits at gleba with 1 free hub slots; the agricultural-science-pack payload a rocket from
+  rocket-silo (65.5,14.5) waits for takes 5; the hub holds copper-ore 150 (3 slots), iron-ore 50 (1 slots)`. On world n
+  one check took up to 1.3 ms (Kestrel II waiting at Fulgora; no hub full then).

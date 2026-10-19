@@ -114,3 +114,29 @@ do
   defines,prototypes,game=nil,nil,nil
 end
 print('d18_batch37 B2 a stop item wait against stock and production: ok')
+
+-- B3 (Grok: Spindle's hub filled with ore twice; the science rocket could not board): a team alert once per wait.
+do
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3},inventory={hub_main=1}}
+  local inv={}
+  for i=1,3 do inv[i]={valid_for_read=true,name='copper-ore',count=50} end
+  inv[4]={valid_for_read=true,name='iron-ore',count=50}
+  inv[5]={valid_for_read=false}
+  local gleba={index=3}
+  game={tick=0,planets={gleba={surface=gleba}},forces={}}
+  local pl={valid=true,index=2,name='Spindle',state=4,space_location={name='gleba'},force={},hub={get_inventory=function() return inv end}}
+  game.forces.player={platforms={pl}}
+  local silo={valid=true,position={x=65.5,y=14.5}}
+  local told={}
+  local H=dofile('mod/agent-harness_0.1.0/hubfull.lua'){state=(function() local st={} return function() return st end end)(),
+    silos=function() return {silo} end,request_rows=function(e,f,only) assert(only=='Spindle'); return {{flag='hub_full',item='agricultural-science-pack',hub_free_slots=1,slots_for_payload=5}} end,
+    listeners=function() return {{name='grok',index=7}} end,deliver=function(i,t) told[#told+1]={i=i,t=t} end}
+  local line=H.check(pl)
+  eq(line,'hub full: Spindle waits at gleba with 1 free hub slots; the agricultural-science-pack payload a rocket from rocket-silo (65.5,14.5) waits for takes 5; the hub holds copper-ore 150 (3 slots), iron-ore 50 (1 slots)')
+  eq(#told,1); eq(told[1].i,7); eq(told[1].t.wake,true)
+  eq(H.check(pl),nil,'once per wait'); eq(#told,1)
+  pl.state=3; H.check(pl); pl.state=4
+  H.check(pl); eq(#told,2,'a new wait tells again')
+  defines,game=nil,nil
+end
+print('d18_batch37 B3 a hub too full for its payload: ok')

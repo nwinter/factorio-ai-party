@@ -332,6 +332,15 @@ return function(api)
     return #out > 0 and out or nil
   end
   -- Whether p hears about the platform named `name` (urgent.lua: hub damage and losses wake those it would tell).
+  -- (d18 batch37 B3) the agents who hear about platform pl, by name and index
+  function M.listeners(pl)
+    local out = {}
+    local r = rec(pl)
+    for _, a in ipairs(api.agents()) do
+      if addressed(pl, r, a.name) then out[#out+1] = {name=a.name, index=a.index} end
+    end
+    return out
+  end
   function M.hears(p, name)
     local me = api.who(p)
     for _, pl in pairs(p.force.platforms) do
