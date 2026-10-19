@@ -107,11 +107,10 @@ return function(api)
     local minutes = api.integer(a.minutes, 30, 1, 900, 'minutes')
     local surface = a.surface or p.surface.name
     local list = groups(p.force, surface, game.tick - minutes * 3600)
-    local out = {surface=surface, minutes=minutes, groups={}, lines={}}
-    for _, g in ipairs(list) do
-      out.groups[#out.groups+1] = {killer=g.killer, robots=g.n, line=text(g)}
-      out.lines[#out.lines+1] = text(g)
-    end
+    -- (d19 batch45, batch40 C2, Muse: the cancel's reply read as the groups table, the near filter unconfirmed) with
+    -- cancel the reply leads with what it did: cancel_line, the filter (cancel_filter: near, the group it took and how
+    -- far), what was cancelled by kind, and what stands after (left)
+    local out = {surface=surface, minutes=minutes}
     if a.cancel ~= nil then
       assert(a.cancel == true and a.near ~= nil, 'cancel: true takes near: the killer\'s position (a group\'s worm or nest)')
       local q = api.position(a.near)
@@ -125,9 +124,29 @@ return function(api)
       out.cancelled = #done > 0 and done or nil
       out.not_cancelled = #named > 0 and named or nil
       out.ended = #ended > 0 and ended or nil
-      out.cancel_line = string.format('%d job%s cancelled of the robots %s %s killed%s%s', #done, #done == 1 and '' or 's', best.killer.name, at(best.killer.position),
+      local kinds = {}
+      for _, d in ipairs(done) do
+        local k = d:find('^removed') and 'removed' or d:find('^deconstruction') and 'deconstruction cancelled' or d:find('^upgrade') and 'upgrade cancelled' or 'other'
+        kinds[k] = (kinds[k] or 0) + 1
+      end
+      local kl = {}
+      for k, n in pairs(kinds) do kl[#kl+1] = n .. ' ' .. k end
+      table.sort(kl)
+      out.cancel_line = string.format('%d job%s cancelled of the robots %s %s killed%s%s%s', #done, #done == 1 and '' or 's', best.killer.name, at(best.killer.position),
+        #kl > 0 and ' (' .. table.concat(kl, ', ') .. ')' or '',
         #named > 0 and string.format('; %d named, not cancelled', #named) or '',
         #ended > 0 and string.format('; %d ended before the cancel, skipped: %s', #ended, table.concat(ended, '; ', 1, math.min(4, #ended))) or '')
+      out.cancel_filter = string.format('near %s: the group of %s %s, %.1f tiles from it (within 16); %d other group%s not touched',
+        at(q), best.killer.name, at(best.killer.position), bd, #list - 1, #list - 1 == 1 and '' or 's')
+      local others = 0
+      for _, g in ipairs(list) do if g ~= best then others = others + g.n end end
+      out.left = string.format('%d job%s of that group still stand (not cancelled)%s', #named, #named == 1 and '' or 's',
+        #list > 1 and string.format('; the other groups (%d robots lost) as below, untouched', others) or '')
+    end
+    out.groups, out.lines = {}, {}
+    for _, g in ipairs(list) do
+      out.groups[#out.groups+1] = {killer=g.killer, robots=g.n, line=text(g)}
+      out.lines[#out.lines+1] = text(g)
     end
     if #out.lines == 0 then out.lines = {string.format('no robot of ours lost to enemies on %s in the last %d min', surface, minutes)} end
     return out
@@ -148,6 +167,6 @@ return function(api)
   M.schema = {robot_losses={surface='optional (default yours)', minutes='1..900 (default 30): deaths in that time',
     cancel='optional true, with near: cancel the jobs that sent the robots that killer killed, as by hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled',
     near='with cancel: {x,y} near a group\'s killer (within 16 tiles)',
-    returns='groups [{killer {name, position, type}, robots, line}]: our construction and logistic robots killed by enemies, by killer: how many of which, the jobs that sent them (order and target, where), how many of those jobs stand; lines; with cancel: cancelled, not_cancelled, ended (jobs gone before the cancel: built, removed or done; skipped), cancel_line. A group with a death in the last 5 min is a team alert (robots_lost)'}}
+    returns='groups [{killer {name, position, type}, robots, line}]: our construction and logistic robots killed by enemies, by killer: how many of which, the jobs that sent them (order and target, where), how many of those jobs stand; lines; with cancel: cancelled, not_cancelled, ended (jobs gone before the cancel: built, removed or done; skipped), cancel_line (with the kinds cancelled), cancel_filter (near, the group it took and how far), left (what still stands), all ahead of groups. A group with a death in the last 5 min is a team alert (robots_lost)'}}
   return M
 end

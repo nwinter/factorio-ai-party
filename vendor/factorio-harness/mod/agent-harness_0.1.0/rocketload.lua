@@ -462,6 +462,8 @@ return function(api)
     local fl = {}
     for _, row in ipairs(rows) do if row.freshness then fl[#fl+1] = row.freshness end end
     out.freshness = #fl > 0 and fl or nil
+    -- (d19 batch45, batch40 B2, Grok) every spoilable item aboard now, what was there before this load too
+    out.aboard_spoil = api.spoil_lines and try(function() return api.spoil_lines(inv) end) or nil
     -- up_to (Sonnet 07:50: a launch stayed unlaunched when weight ran short, about 5 retries a shift): what fits and
     -- what you and the chests hold is loaded; a short row does not stop the launch, which goes with what is aboard of
     -- the list (none of it aboard: refused). min_cargo still guards it.
