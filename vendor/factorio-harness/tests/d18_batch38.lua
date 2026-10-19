@@ -72,4 +72,33 @@ do
   game,defines=nil,nil
 end
 print('d18_batch38 A2 a pod with no station yet lands in the planet\'s pad: ok')
+
+-- A3 (Astra: the warned worm read as dead, and a live scan found it): each warned enemy with its read's age and whether
+-- its chunk is in sight now.
+do
+  game={tick=3600}
+  prototypes={entity={['construction-robot']={max_payload_size=1},['logistic-robot']={max_payload_size=1}}}
+  local function ent(name,x,y,u) return {valid=true,name=name,position={x=x,y=y},unit_number=u} end
+  local port=ent('roboport',0,0,1)
+  local net={network_id=7,cells={{owner=port,stationed_construction_robot_count=50,stationed_logistic_robot_count=0}},available_construction_robots=50,
+    available_logistic_robots=0,select_pickup_point=function() return {owner=ent('storage-chest',5,0,3)} end,select_drop_point=function() return {owner=ent('storage-chest',5,0,3)} end}
+  local visible={}
+  local force={worker_robots_storage_bonus=0,find_logistic_network_by_position=function() return net end,
+    is_chunk_visible=function(_,c) return visible[c.x..','..c.y]==true end}
+  local surf={find_logistic_networks_by_construction_area=function() return {net} end}
+  local worms={{name='medium-worm-turret',x=-65.59,y=-322.04,seen=3000,cx=-3,cy=-11}}
+  local av={chunks_near=function() return {{-3,-11,'-3,-11'}} end,structures=function() return {list=worms,unread=0} end,
+    reach=function() return 30 end,seg_dist=function() return 6 end}
+  local DP=dofile('mod/agent-harness_0.1.0/robottrips.lua'){avoid=function() return av end}
+  local lines=DP.preview(surf,force,{{kind='construct',pos={x=-60,y=-320},item='big-electric-pole',count=1}})
+  local warn
+  for _,l in ipairs(lines) do if l:find('medium-worm-turret',1,true) then warn=l end end
+  has(warn,'passes 6 tiles from medium-worm-turret (-65.6,-322) (reach 30; read 10s ago, its chunk charted, not in sight now)')
+  visible['-3,-11']=true
+  lines=DP.preview(surf,force,{{kind='construct',pos={x=-60,y=-320},item='big-electric-pole',count=1}})
+  for _,l in ipairs(lines) do if l:find('medium-worm-turret',1,true) then warn=l end end
+  has(warn,'(reach 30; read 10s ago, its chunk in sight now)')
+  game,prototypes=nil,nil
+end
+print('d18_batch38 A3 a warned enemy\'s read age and sight: ok')
 print('d18 batch38 ok')
