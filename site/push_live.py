@@ -130,6 +130,24 @@ def public_youtube(viewers, hidden=None):
     return rows[-YOUTUBE_MAX:]
 
 
+def public_haul(hauling):
+    """(d17 batch35 D5, viewer Aurora 14:47) per agent its most repeated haul this shift and what feeds that destination
+    without hands now (live.py's haul_feed read): {agent: {item, surface, to_name, times, items, feed}}."""
+    out = {}
+    feeds = (hauling or {}).get("feeds") or {}
+    for r in (hauling or {}).get("rows") or []:
+        top = r.get("top") or {}
+        if not r.get("name") or (top.get("times") or 0) < 2:
+            continue
+        f = feeds.get(r["name"]) or {}
+        row = {"item": top.get("item"), "surface": top.get("surface"), "to_name": top.get("to_name"),
+               "times": top.get("times"), "items": top.get("items")}
+        if f.get("item") == top.get("item") and f.get("line"):
+            row["feed"] = clean(str(f["line"]))[:240]
+        out[r["name"]] = row
+    return out
+
+
 def public_delivery(status, keep=150):
     """(d17 batch35 D1, viewer Aurora: four lines received and never relayed, no reason shown) each site line's delivery
     from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?}},
@@ -236,10 +254,13 @@ def public_state(s):
             a["attention"] = dict({k: t[k] for k in ATTENTION_KEYS if t.get(k) is not None},
                                   **({"position": {"x": round(p["x"], 1), "y": round(p["y"], 1)}} if "x" in p else {}))
     loadouts = s.get("loadouts") or {}
+    hauls = public_haul(s.get("hauling"))
     for a in out["agents"]:
         lo = loadouts.get(a.get("name"))
         if isinstance(lo, dict) and lo.get("alive"):
             a["loadout"] = {k: lo[k] for k in LOADOUT_KEYS if lo.get(k) is not None}
+        if hauls.get(a.get("name")):
+            a["haul"] = hauls[a["name"]]
     out["chat"] = [{k: c[k] for k in CHAT_KEYS if k in c} for c in s.get("chat", [])[-40:]]
     out["cameras"] = {slot: dict({"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")},
                                  **{k: c[k] for k in CAMERA_LABELS if c.get(k)})

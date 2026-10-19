@@ -7994,127 +7994,6 @@ fh watch    # deploy on every change
   west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
   avoid_enemies false checks nothing.
 
-## d17 batch35, Groups B and D (the 13:50 poll; eng/d17-batch35b)
-
-- B1 (Opus: a `steel-plate < 4000` logistic gate kept furnaces off while rail makers starved, with 9 steel free in
-  providers):
-  - Found:
-    - Opus's gate read 4473 at 20:18 (gates on network 243). The same stock read, within 128 tiles, gave provider and
-      storage chests 9 and requester chests 2313.
-    - On world n now (read-only, network 243, steel) the count a logistic condition reads (get_item_count, 1236-1287
-      over the reads) is the provider chests' steel less what robots have reserved there for pickup, plus buffer
-      chests. 1352 were held, 132 reserved and 20 in buffers; get_supply_counts gives the same split. The 2529 that
-      requester chests held (997 of 1252 read) were not in it.
-    - So requester chests are outside the count. Where the 4473 sat at 20:18 the journal does not show.
-  - gates.lua `split`: a logistic condition that is false now adds `the count:`. That is storage, passive and active
-    providers and buffers (get_supply_counts), the pickups reserved at the provider points (targeted_items_pickup, the
-    first 1024 points) and what the requester chests hold (the first 1024), neither of which the count includes.
-    Lines are added when most of the count is in buffers, or when requesters hold more than the count. Cached per
-    network, item and tick. 4.7 ms on world n for network 243 (923 provider points, 1252 requester points).
-  - bottleneck (chain.lua): a link held off by a condition adds its first gated maker's gates line.
-- B2 (Opus: name a line's limit; Sol: a saturated return side-loaded both its lanes onto one lane): belt_flow
-  (beltsample.lua) adds the following at the end of sampling:
-  - `lane_mix`: per merge, a side-load from which side of the line (the side belt facing the line's left turn sits on
-    its left) and onto that lane (both its lanes onto it), or a splitter or end-on join lane to lane. It also says what
-    each lane of the section after it carries.
-  - `limit`: a side-load stopped full while the section after it runs at its cap on a lane (the straight line's items
-    go first); else the end backed up (both lanes or one stopped full); else a lane at its cap. The cap is the belt's
-    speed x 4 items a tile x 3600 a minute (450 for a yellow belt). Moving at 90% of it or more counts.
-- B3 (Sol: moving a melter cut a chemical plant's shared water bridge): fluidjoin.lua `removal(force, entities)`.
-  - The removed pipes, pipe-to-grounds, tanks and pumps that touch each other form a group.
-  - From the neighbours left of a group, a walk through the pipes, pipe-to-grounds and tanks left finds the parts. It
-    reads the engine connections directly (fluidbox.get_pipe_connections), since the prototype's view cost about
-    90 us an entity on world n.
-  - Machines and pumps end the walk. Per part: its pipes and tanks, what takes from it, and what puts into it (the
-    machine's own connection flow: output is a source; an offshore pump).
-  - A machine beside the removal that the rest of the group still reaches (another port) is no part of its own.
-  - deconstruct (dry run and live) and mine give `fluid_split`. A part left with takers and no source refuses the
-    live call unless `cut_fluid: true`.
-  - The walk stops at 512 pipes, about 24 us each; a walk cut short is not judged.
-  - On world n: removing Vulcanus's water pipe at (1.5,90.5) splits its segment into 37 and 107 pipes; the second, with
-    9 chemical plants, keeps no source. 2.9 ms.
-- B4 (Luna: game_alerts ran 1,300+ lines, 82 KB, over all surfaces each review): game_alerts takes `claim` (a board
-  claim id) or `mine: true` (your open claims), and only gives the groups whose centre, or feed chest, lies in that
-  claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
-  with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
-  last one only). A cursor that is not the last one is said, and everything is listed.
-- B5 (Gemini 14:16: 8 platforms and 2 silos, the requests past 8 left out with no word): silo's `platform_requests`
-  come in flag order (filling, matched, split_networks, hub_full, below_min_payload; hub order within a flag). A silo's
-  row lists the first 8, with `platform_requests_count`, `platform_requests_flags` (each flag's count) and
-  `platform_requests_more`, and its line says so. `requests: true` lists every row, 48 a page (`page: N`; reads up to
-  192 rows, the rest counted). The automatic launch line's waiting rows also give the count of the rest. Only platforms
-  in orbit of the silo's planet count; one flying here is named in `platforms_coming` (from where, share of the leg
-  flown) and its requests count once it is in orbit. On world n: Fulgora's two silos with every row, 4 ms.
-- Record lists in args are checked field by field (A6, Muse: requests `set` with `{count}` for `{min}` read 0..inf and
-  fetched nothing; Sol 14:20: `import_from` for `from` defaulted to nauvis, and circuit_set `signals` as an object
-  was read as none). argshapes.lua, walked by the schema check every call and every queued step passes through:
-  requests `set`, circuit_set `signals`, drop `items`, load_silo and silo_stage `items`, deliver `items`, build
-  `builds`, craft `recipes`, place_ghosts `entities`, platform_schedule `stops`, train `schedule` (and its waits). A
-  field the record does not take is refused, naming the fields it takes and what was likely meant: `requests set[1]:
-  count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count:
-  min is how much it asks for, max caps it)`. An object where an array goes is refused with the shape: `circuit_set
-  signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
-  not read as one` (the map form `{name: count}` stays where the docs give it: requests set, load_silo, silo_stage,
-  deliver). The fields are those each action's parser reads (build and ghost entries also take configure, requests,
-  circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7
-  circuit_set calls with signals as an object, and 16 ghost entries with `network`, `role` or `flow`, each dropped
-  without a word then.
-- silo's `loading` line and launch's cargo_for check read a hand load's record only while the rocket holds an item
-  that load put aboard (A7, operator 14:45: Gleba's silo read `loading for Cinder (loaded by hand by grok, 6h58m
-  ago); aboard nothing` with the rocket empty and automatic requests on). load_silo now records the items it loaded;
-  a record without them (from before) holds while anything is aboard. A record that no longer holds is dropped.
-- B6 (viewer Aurora 14:48: guns can read as covering big asteroids): platform_defense's damage apart from reach
-  (platdefense.lua `M.damage`), for `route` or the schedule's next leg (the connection it flies):
-  - Each asteroid that spawns on the connection (asteroid_spawn_definitions of type entity; chunks left out), its
-    health and resistances.
-  - Per turret and the ammo it holds now: the damage a second. That is the ammo's damage effects times (1 + the
-    force's ammo damage modifier) times (1 + its turret attack modifier), each piece after the asteroid's resistance
-    (more than the flat decrease: less it; else 1 / (2 + decrease - damage); then less the percent), times 60 /
-    cooldown times (1 + gun speed). Against its listed damage, then together and the time to kill one.
-  - A projectile's damage (rockets) is not in the runtime's prototypes: rocket 200 and explosive-rocket 300 explosion,
-    from the base game's data, said so on the line.
-  - A size reached only under 10% of listed damage reads `reached, little damage`.
-  - On world n, Wayfarer against fulgora-aquilo: a gun turret with firearm rounds does 845/s listed and 0.0114/s to a
-    big metallic asteroid (physical 2000 flat and 10%); a railgun does 4384/s and a rocket turret 1703/s.
-    About 2 ms for 8 turrets.
-- D1 (viewer Aurora: site:2709, 2713, 2721 and 2726 received and never relayed; a Clef 401 in the stream service log):
-  - Found:
-    - 2721 and 2726 (Aurora) were Clef "injection" verdicts. Advice to agents read as an order: "Check the blocker
-      and run a useful stocked fallback". This was written only in the verdict log (tools/stream/logs/viewers-*.jsonl).
-    - 2709 and 2713 were Enginerd's lines on the viewers-only channel. The Worker's game read leaves them out, and
-      they never reach the relay, by design.
-    - The token did not expire: there was one 401 at 12:50:36, and all of the 62 lines after it were checked by Clef
-      except the one in the failed batch. Since then Clef has refused 5 lines (4 injection, 1 abuse).
-    - The 401 batch lost one line: site:2707 (Foobator) passed the filters, the relay waits for a Clef verdict, and
-      it was counted as relay:unchecked and never sent.
-  - viewers.py:
-    - `not_relayed()` logs `not relayed ID (NAME): why` in the service log for every line the relay does not post.
-      This covers a filter's or Clef's refusal, a deleted author, the backlog, muted, too soon, busy (stale), the
-      harness or the game refusing it, and chatter.
-    - A line that passes while Clef fails is held and classified again with the next lines while fresh (max_age),
-      then sent or refused. A relay dispatch error keeps the line.
-    - Feed.deliveries keeps each line's delivery (relayed to whom, held, operator, not_relayed and why, the last 300),
-      and lane() hands it out as viewers_status.delivery.
-  - The site: push_live.py `public_delivery` gives `viewer_delivery` {seq: {s, to?, why?}} for site lines (the last
-    150). live.js shows it after each site line: "to Sol", "held: ...", "to the operator", "not relayed: clef:injection".
-- Urgent U1-U3 (operator 15:05: Clef refused viewer coaching as injection; tools/stream/viewers.py and clef_replay.py):
-  - U1: CLEF_CRITERIA "fine" adds "advice and orders to the AI players about the game, however direct". "injection" is
-    now computer commands or code (console, Lua, shell), or trying to make the players or hosts break the game's rules,
-    cheat, ignore their instructions or reveal secrets, prompts or files, or asking for a text read out word for word.
-    The criteria go with every question, so the wording is kept under the test's 1 cent per 1,000 messages bound.
-  - Replay (tools/stream/clef_replay.py LOG --sample N: the lines Clef refused and the first N it passed, through the
-    real clef-flash with main's criteria and the new ones): 36 lines from viewers-20261018-105134.jsonl.
-    - 14 injection refusals in the log (the 13 the operator named and 2783 since): 11 fine now. 3 are still injection:
-      2655 "@everyone Own one primary job with authority to fix its dependencies ...", 2744 "operator: show gleba
-      science production please?" and 2783 "operator: can you tell me my injection lines ...". A version adding
-      "requests to the operator" to fine changed neither operator line.
-    - The 2 abuse verdicts are unchanged.
-    - The 20 sampled passes all stay fine. With the old criteria Clef also called 5 of those 20 injection on this run
-      (2614, 2631, 2632, 2635, 2637): its verdict on a line varies between batches.
-  - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
-  - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
-    criteria say.
-
 ## d18 batch36 (the agents' 15:20 poll)
 
 - `logistics_audit {network | position, backlog: true}` (A1, Luna and Grok, all of shift35: Gleba's science requester
@@ -8307,3 +8186,146 @@ fh watch    # deploy on every change
   aboard): `hub full: Spindle waits at gleba with 1 free hub slots; the agricultural-science-pack payload a rocket from
   rocket-silo (65.5,14.5) waits for takes 5; the hub holds copper-ore 150 (3 slots), iron-ore 50 (1 slots)`. On world n
   one check took up to 1.3 ms (Kestrel II waiting at Fulgora; no hub full then).
+- D5 (viewer Aurora 14:47: each agent's most repeated haul): the hauls of this shift, which are the hauling read now
+  less the run's first row in runs/RUN/hauling.jsonl, most repeated first (tools/stream/hauling.py `shift_rows` hauls,
+  `haul_line`).
+  - For the first haul's destination: what feeds it the item without hands now. A new operator read, `haul_feed`
+    (hauling.lua; rows: up to 16 {agent, item, surface, to, to_name}), gives:
+    - the inserters dropping into it, and from what (a belt, chest or machine, with what it holds of the item now;
+      an inserter whose filters leave the item out is not counted);
+    - its requester or buffer request for the item;
+    - a silo's automatic requests;
+    - robots bringing it;
+    - or none.
+  - Cost: one entity lookup and one inserter search of the entity's box widened by 3 tiles per row, 0.2 ms on world
+    n.
+  - The digest: one line in each agent's part of D2's delta (to that agent only): "your hauls: most repeated this
+    shift: ITEM on SURFACE from (x,y) to ENTITY (x,y), N times (M items); there now: ENTITY ... fed ITEM without hands
+    now: ...; next: ...".
+  - The site: live.py reads haul_feed with each hauling read (every 5 min) and keeps it in the row (`feeds`). The live
+    state's agents[].haul feeds the agents page's "Now": "Most repeated haul" and "Fed there now".
+- The routing switch at a shift change (operator 18:20): start-team.sh takes POG_VIEWER_ROUTE (default 0) and creates
+  or removes runs/RUN/viewers-route.on as it does viewers-relay.on, and it records the value in switches.env.
+  shift_change.py carries the previous run's file into the next run, the way it carries the relay's. The health line
+  says "relay on, route off".
+
+## d17 batch35, Groups B and D (the 13:50 poll; eng/d17-batch35b)
+
+- B1 (Opus: a `steel-plate < 4000` logistic gate kept furnaces off while rail makers starved, with 9 steel free in
+  providers):
+  - Found:
+    - Opus's gate read 4473 at 20:18 (gates on network 243). The same stock read, within 128 tiles, gave provider and
+      storage chests 9 and requester chests 2313.
+    - On world n now (read-only, network 243, steel) the count a logistic condition reads (get_item_count, 1236-1287
+      over the reads) is the provider chests' steel less what robots have reserved there for pickup, plus buffer
+      chests. 1352 were held, 132 reserved and 20 in buffers; get_supply_counts gives the same split. The 2529 that
+      requester chests held (997 of 1252 read) were not in it.
+    - So requester chests are outside the count. Where the 4473 sat at 20:18 the journal does not show.
+  - gates.lua `split`: a logistic condition that is false now adds `the count:`. That is storage, passive and active
+    providers and buffers (get_supply_counts), the pickups reserved at the provider points (targeted_items_pickup, the
+    first 1024 points) and what the requester chests hold (the first 1024), neither of which the count includes.
+    Lines are added when most of the count is in buffers, or when requesters hold more than the count. Cached per
+    network, item and tick. 4.7 ms on world n for network 243 (923 provider points, 1252 requester points).
+  - bottleneck (chain.lua): a link held off by a condition adds its first gated maker's gates line.
+- B2 (Opus: name a line's limit; Sol: a saturated return side-loaded both its lanes onto one lane): belt_flow
+  (beltsample.lua) adds the following at the end of sampling:
+  - `lane_mix`: per merge, a side-load from which side of the line (the side belt facing the line's left turn sits on
+    its left) and onto that lane (both its lanes onto it), or a splitter or end-on join lane to lane. It also says what
+    each lane of the section after it carries.
+  - `limit`: a side-load stopped full while the section after it runs at its cap on a lane (the straight line's items
+    go first); else the end backed up (both lanes or one stopped full); else a lane at its cap. The cap is the belt's
+    speed x 4 items a tile x 3600 a minute (450 for a yellow belt). Moving at 90% of it or more counts.
+- B3 (Sol: moving a melter cut a chemical plant's shared water bridge): fluidjoin.lua `removal(force, entities)`.
+  - The removed pipes, pipe-to-grounds, tanks and pumps that touch each other form a group.
+  - From the neighbours left of a group, a walk through the pipes, pipe-to-grounds and tanks left finds the parts. It
+    reads the engine connections directly (fluidbox.get_pipe_connections), since the prototype's view cost about
+    90 us an entity on world n.
+  - Machines and pumps end the walk. Per part: its pipes and tanks, what takes from it, and what puts into it (the
+    machine's own connection flow: output is a source; an offshore pump).
+  - A machine beside the removal that the rest of the group still reaches (another port) is no part of its own.
+  - deconstruct (dry run and live) and mine give `fluid_split`. A part left with takers and no source refuses the
+    live call unless `cut_fluid: true`.
+  - The walk stops at 512 pipes, about 24 us each; a walk cut short is not judged.
+  - On world n: removing Vulcanus's water pipe at (1.5,90.5) splits its segment into 37 and 107 pipes; the second, with
+    9 chemical plants, keeps no source. 2.9 ms.
+- B4 (Luna: game_alerts ran 1,300+ lines, 82 KB, over all surfaces each review): game_alerts takes `claim` (a board
+  claim id) or `mine: true` (your open claims), and only gives the groups whose centre, or feed chest, lies in that
+  claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
+  with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
+  last one only). A cursor that is not the last one is said, and everything is listed.
+- B5 (Gemini 14:16: 8 platforms and 2 silos, the requests past 8 left out with no word): silo's `platform_requests`
+  come in flag order (filling, matched, split_networks, hub_full, below_min_payload; hub order within a flag). A silo's
+  row lists the first 8, with `platform_requests_count`, `platform_requests_flags` (each flag's count) and
+  `platform_requests_more`, and its line says so. `requests: true` lists every row, 48 a page (`page: N`; reads up to
+  192 rows, the rest counted). The automatic launch line's waiting rows also give the count of the rest. Only platforms
+  in orbit of the silo's planet count; one flying here is named in `platforms_coming` (from where, share of the leg
+  flown) and its requests count once it is in orbit. On world n: Fulgora's two silos with every row, 4 ms.
+- Record lists in args are checked field by field (A6, Muse: requests `set` with `{count}` for `{min}` read 0..inf and
+  fetched nothing; Sol 14:20: `import_from` for `from` defaulted to nauvis, and circuit_set `signals` as an object
+  was read as none). argshapes.lua, walked by the schema check every call and every queued step passes through:
+  requests `set`, circuit_set `signals`, drop `items`, load_silo and silo_stage `items`, deliver `items`, build
+  `builds`, craft `recipes`, place_ghosts `entities`, platform_schedule `stops`, train `schedule` (and its waits). A
+  field the record does not take is refused, naming the fields it takes and what was likely meant: `requests set[1]:
+  count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count:
+  min is how much it asks for, max caps it)`. An object where an array goes is refused with the shape: `circuit_set
+  signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
+  not read as one` (the map form `{name: count}` stays where the docs give it: requests set, load_silo, silo_stage,
+  deliver). The fields are those each action's parser reads (build and ghost entries also take configure, requests,
+  circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7
+  circuit_set calls with signals as an object, and 16 ghost entries with `network`, `role` or `flow`, each dropped
+  without a word then.
+- silo's `loading` line and launch's cargo_for check read a hand load's record only while the rocket holds an item
+  that load put aboard (A7, operator 14:45: Gleba's silo read `loading for Cinder (loaded by hand by grok, 6h58m
+  ago); aboard nothing` with the rocket empty and automatic requests on). load_silo now records the items it loaded;
+  a record without them (from before) holds while anything is aboard. A record that no longer holds is dropped.
+- B6 (viewer Aurora 14:48: guns can read as covering big asteroids): platform_defense's damage apart from reach
+  (platdefense.lua `M.damage`), for `route` or the schedule's next leg (the connection it flies):
+  - Each asteroid that spawns on the connection (asteroid_spawn_definitions of type entity; chunks left out), its
+    health and resistances.
+  - Per turret and the ammo it holds now: the damage a second. That is the ammo's damage effects times (1 + the
+    force's ammo damage modifier) times (1 + its turret attack modifier), each piece after the asteroid's resistance
+    (more than the flat decrease: less it; else 1 / (2 + decrease - damage); then less the percent), times 60 /
+    cooldown times (1 + gun speed). Against its listed damage, then together and the time to kill one.
+  - A projectile's damage (rockets) is not in the runtime's prototypes: rocket 200 and explosive-rocket 300 explosion,
+    from the base game's data, said so on the line.
+  - A size reached only under 10% of listed damage reads `reached, little damage`.
+  - On world n, Wayfarer against fulgora-aquilo: a gun turret with firearm rounds does 845/s listed and 0.0114/s to a
+    big metallic asteroid (physical 2000 flat and 10%); a railgun does 4384/s and a rocket turret 1703/s.
+    About 2 ms for 8 turrets.
+- D1 (viewer Aurora: site:2709, 2713, 2721 and 2726 received and never relayed; a Clef 401 in the stream service log):
+  - Found:
+    - 2721 and 2726 (Aurora) were Clef "injection" verdicts. Advice to agents read as an order: "Check the blocker
+      and run a useful stocked fallback". This was written only in the verdict log (tools/stream/logs/viewers-*.jsonl).
+    - 2709 and 2713 were Enginerd's lines on the viewers-only channel. The Worker's game read leaves them out, and
+      they never reach the relay, by design.
+    - The token did not expire: there was one 401 at 12:50:36, and all of the 62 lines after it were checked by Clef
+      except the one in the failed batch. Since then Clef has refused 5 lines (4 injection, 1 abuse).
+    - The 401 batch lost one line: site:2707 (Foobator) passed the filters, the relay waits for a Clef verdict, and
+      it was counted as relay:unchecked and never sent.
+  - viewers.py:
+    - `not_relayed()` logs `not relayed ID (NAME): why` in the service log for every line the relay does not post.
+      This covers a filter's or Clef's refusal, a deleted author, the backlog, muted, too soon, busy (stale), the
+      harness or the game refusing it, and chatter.
+    - A line that passes while Clef fails is held and classified again with the next lines while fresh (max_age),
+      then sent or refused. A relay dispatch error keeps the line.
+    - Feed.deliveries keeps each line's delivery (relayed to whom, held, operator, not_relayed and why, the last 300),
+      and lane() hands it out as viewers_status.delivery.
+  - The site: push_live.py `public_delivery` gives `viewer_delivery` {seq: {s, to?, why?}} for site lines (the last
+    150). live.js shows it after each site line: "to Sol", "held: ...", "to the operator", "not relayed: clef:injection".
+- Urgent U1-U3 (operator 15:05: Clef refused viewer coaching as injection; tools/stream/viewers.py and clef_replay.py):
+  - U1: CLEF_CRITERIA "fine" adds "advice and orders to the AI players about the game, however direct". "injection" is
+    now computer commands or code (console, Lua, shell), or trying to make the players or hosts break the game's rules,
+    cheat, ignore their instructions or reveal secrets, prompts or files, or asking for a text read out word for word.
+    The criteria go with every question, so the wording is kept under the test's 1 cent per 1,000 messages bound.
+  - Replay (tools/stream/clef_replay.py LOG --sample N: the lines Clef refused and the first N it passed, through the
+    real clef-flash with main's criteria and the new ones): 36 lines from viewers-20261018-105134.jsonl.
+    - 14 injection refusals in the log (the 13 the operator named and 2783 since): 11 fine now. 3 are still injection:
+      2655 "@everyone Own one primary job with authority to fix its dependencies ...", 2744 "operator: show gleba
+      science production please?" and 2783 "operator: can you tell me my injection lines ...". A version adding
+      "requests to the operator" to fine changed neither operator line.
+    - The 2 abuse verdicts are unchanged.
+    - The 20 sampled passes all stay fine. With the old criteria Clef also called 5 of those 20 injection on this run
+      (2614, 2631, 2632, 2635, 2637): its verdict on a line varies between batches.
+  - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
+  - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
+    criteria say.

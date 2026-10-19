@@ -248,6 +248,34 @@ def board_reads(dispatch):
             read("board", {"status": ["claimed", "doing"], "limit": 100}, "items"))
 
 
+def haul_lines(run_dir, dispatch):
+    """(d17 batch35 D5, viewer Aurora 14:47) {agent: [line]}: each agent's most repeated haul this shift (the hauling read
+    now less the run's first row in hauling.jsonl) and what feeds its destination without hands now (haul_feed), for
+    that agent's part of the delta. An older runtime without haul_feed: the haul without the feed."""
+    import sys
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stream')
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import hauling  # tools/stream/hauling.py
+    res = dispatch('hauling', {'top': 10})
+    now = {'agents': (res or {}).get('agents') or []}
+    first = (hauling.read_rows(hauling.path_for(run_dir)) or [now])[0]
+    rows = hauling.shift_rows(first, now)
+    feeds = {}
+    args = hauling.feed_args(rows)
+    if args:
+        try:
+            feeds = {f.get('agent'): f for f in (dispatch('haul_feed', {'rows': args}) or {}).get('rows') or []}
+        except Exception:  # noqa: BLE001
+            feeds = {}
+    out = {}
+    for r in rows:
+        line = hauling.haul_line(r, feeds.get(r['name']))
+        if line:
+            out[r['name']] = [line]
+    return out
+
+
 def save(path, state):
     temp = path + '.tmp'
     with open(temp, 'w') as f:

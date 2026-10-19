@@ -107,6 +107,7 @@ def setup():
     open(os.path.join(prev, "caster.log"), "w").write("22:53:13 [caster] feed http://127.0.0.1:8788  writer=or:anthropic/claude-opus-5.5  tts=auto\n")
     json.dump({"space_age": True}, open(os.path.join(prev, "stream.json"), "w"))
     open(os.path.join(prev, "viewers-relay.on"), "w").close()
+    open(os.path.join(prev, "viewers-route.on"), "w").close()  # (d17 batch35, operator 18:20) carried like the relay's
     open(os.path.join(prev, "team.txt"), "w").write("".join(f"{n}|X (y)\n" for n in NAMES))
     open(os.path.join(prev, "panes.txt"), "w").write("".join(f"{n} w1:p{i} claude\n" for i, n in enumerate(NAMES)))
     json.dump({"ok": True, "tick": 9, "harness": 120, "other": 1, "entries": [
@@ -142,7 +143,7 @@ def switches():
         assert {k: v for k, (v, _) in got.items()} == {
             "POG_BROKER": "1", "POG_FULL_TOOLS": "1", "POG_SPACE_AGE": "1", "POG_CASTER_MODEL": "anthropic/claude-opus-5.5",
             "POG_CASTER": "1", "POG_ANALYST": "1", "POG_PLAYERS": "0", "POG_VIEWER_RELAY": "1",
-            "POG_TEAM_FILE": "agent/team-nine.tsv"}, got
+            "POG_VIEWER_ROUTE": "1", "POG_TEAM_FILE": "agent/team-nine.tsv"}, got
         assert "POG_YOUTUBE" not in got  # nothing tells: start-team's default
         # The helpers' arguments, while they run.
         open(os.path.join(prev, "stream-service.pid"), "w").write("11\n12\n13\n")
@@ -160,7 +161,9 @@ def switches():
         # switches.env first; the relay's live file beats it.
         open(os.path.join(prev, "switches.env"), "w").write("POG_BROKER=0\nPOG_YOUTUBE=@NickWinter\nPOG_VIEWER_RELAY=1\nPOG_BOGUS=1\n")
         os.remove(os.path.join(prev, "viewers-relay.on"))
+        os.remove(os.path.join(prev, "viewers-route.on"))
         got = sc.switches(prev, ps=argv.get)
+        assert got["POG_VIEWER_ROUTE"] == ("0", "viewers-route.on"), got
         assert got["POG_BROKER"] == ("0", "switches.env") and got["POG_YOUTUBE"][0] == "@NickWinter", got
         assert got["POG_VIEWER_RELAY"] == ("0", "viewers-relay.on") and "POG_BOGUS" not in got, got
         # NEXT's end, as an ISO time to the minute.
@@ -235,7 +238,7 @@ def change():
         assert stop.count("herdr pane close w1:p") == len(NAMES), stop
         assert rest.startswith(" shake12 240 --stream\n"), rest
         for line in ("POG_RESUME=shake11", "POG_BROKER=0", "POG_FULL_TOOLS=1", "POG_SPACE_AGE=1",
-                     "POG_CASTER_MODEL=anthropic/claude-opus-5.5", "POG_VIEWER_RELAY=1", "POG_PLAYERS=0"):
+                     "POG_CASTER_MODEL=anthropic/claude-opus-5.5", "POG_VIEWER_RELAY=1", "POG_VIEWER_ROUTE=1", "POG_PLAYERS=0"):
             assert "  " + line + "\n" in rest, (line, rest)
         nxt = [l for l in rest.splitlines() if l.startswith("  POG_NEXT_SHIFT=")][0]
         assert "T" in nxt and nxt[-6] in "+-", nxt
@@ -243,7 +246,7 @@ def change():
         out = r.stdout
         assert f"closed {len(NAMES)} agent panes of shake11" in out, out
         assert f"health: agents {len(NAMES)}/{len(NAMES)} up" in out, out
-        assert "broker off" in out and "OBS streaming, service ok" in out and "relay on" in out and "no harness Lua errors in the first" in out, out
+        assert "broker off" in out and "OBS streaming, service ok" in out and "relay on, route off" in out and "no harness Lua errors in the first" in out, out
         assert "console audit of shake11:" in out and "moderation: 1 shapes, 1 commands" in out, out
         assert not os.path.exists(os.path.join(runs, ".shift-change.lock"))
         # the site: refreshed for shake11 once it was stopped (in the background), its outcome reported at the end
