@@ -481,3 +481,38 @@ do
   st.damage={}
 end
 print('d18_batch37 U2 an attack\'s repeats do not wake an alert wait: ok')
+
+-- D1 (Sol on Aquilo could not survey Nauvis; Astra: lake-to-lake planning from Aquilo): map, grid and observe take
+-- surface by remote view, centred on a place there, within what our force has charted; observe gives tile_runs.
+do
+  local far={name='aquilo',index=2}
+  local tiles={}
+  for x=0,5 do tiles[#tiles+1]={name='ammoniacal-ocean',position={x=x+0.5,y=3.5}} end
+  for x=6,7 do tiles[#tiles+1]={name='ice-smooth',position={x=x+0.5,y=3.5}} end
+  tiles[#tiles+1]={name='ammoniacal-ocean',position={x=40.5,y=3.5}}  -- in an uncharted chunk
+  far.find_tiles_filtered=function(f)
+    if f.name then local out={}; for _,t in ipairs(tiles) do for _,n in ipairs(f.name) do if t.name==n then out[#out+1]=t end end end; return out end
+    return tiles
+  end
+  far.find_entities_filtered=function() return {} end
+  far.count_tiles_filtered=function() return 0 end
+  game.get_surface=function(n) if n=='aquilo' then return far end return surface end
+  local seen_charted=force.is_chunk_charted
+  force.is_chunk_charted=function(s,c) if s==far then return c.x==0 and c.y==0 end return true end
+  force.is_chunk_visible=function(s,c) if s==far then return false end return true end
+  force.platforms={}
+  fails(function() grok('map',{surface='aquilo'}) end,'map with surface needs position there')
+  fails(function() grok('observe',{surface='aquilo',tile_runs=true}) end,'observe with surface needs position there')
+  local o=grok('observe',{surface='aquilo',position={x=4,y=4},radius=32,tile_runs=true})
+  eq(#o.tile_runs,2); eq(o.tile_runs[1].name,'ammoniacal-ocean'); eq(o.tile_runs[1].count,6); eq(o.tile_runs[2].count,2); eq(o.tile_count,8)
+  o=grok('observe',{surface='aquilo',position={x=4,y=4},radius=32,tile_runs=true,tile_names={'ammoniacal-ocean'}})
+  eq(#o.tile_runs,1)
+  fails(function() grok('map',{surface='aquilo',position={x=40,y=4}}) end,'position must be in a charted chunk')
+  prototypes.tile=prototypes.tile or {}
+  local g=grok('grid',{surface='aquilo',position={x=4,y=4},radius=4})
+  local row3; for _,r in ipairs(g.rows) do if r.y==3 then row3=r.row end end
+  assert(row3 and row3:find('~',1,true),tostring(row3))
+  local m=grok('map',{surface='aquilo',position={x=4,y=4},radius=32}); assert(type(m)=='table')
+  force.is_chunk_charted=seen_charted
+end
+print('d18_batch37 D1 map, grid and observe of another planet: ok')

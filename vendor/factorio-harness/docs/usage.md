@@ -8578,3 +8578,14 @@ fh watch    # deploy on every change
   wake it as before (`(new since your wait began)`). Hits alone are held. The reply's `alert_held`, also on fh wait's
   line, gives each known attack's hits held ("held the repeats of attack #8793 hit 6 more times ..."), whatever woke
   the wait. Urgent wakes (urgent.lua) are unchanged: they are told once each.
+- Another planet's map (D1; Sol on Aquilo could not survey Nauvis; Astra 17:29 planned Nauvis defenses lake to lake from
+  Aquilo). `map`, `grid` and `observe` are in bots.lua's SURFACE_ACTIONS: `surface: NAME` reads that planet by remote
+  view.
+  - On another planet they need `position` there (grid takes `area` too), since your character stands elsewhere.
+    `position` must be in a charted chunk, as before.
+  - Only what our force has charted is read. map: charted chunks, as before. grid: its water now only in charted chunks.
+    observe: entities by the known rule (enemy units only where visible), as before.
+  - `observe {tile_runs: true, tile_names?, tiles_limit?}` gives the charted tiles in the radius (up to 32) as runs
+    along x, row by row: `[{x,y,count,name}]`, `tile_count`, with `tile_runs_truncated` past tiles_limit (1024 runs by
+    default). Pass tile_names to keep only some, e.g. a lake's water.
+  - `tiles_limit` is now in observe's schema (the code read it before, but the arg check refused it).
