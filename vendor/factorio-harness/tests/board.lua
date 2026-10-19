@@ -82,7 +82,9 @@ eq(r.item.id,1); eq(r.item.status,'open'); eq(r.item.owner,nil); eq(r.item.reque
 assert(has(r.warnings,'no owner'))
 r=sol('board_post',{kind='task',title='feed the labs',owner='Astra'})
 eq(r.item.owner,'astra'); eq(r.item.status,'claimed')
-r=astra('board_post',{kind='task',title=string.rep('x',300),owner='SOL'})
+-- (d19 batch41 A4) a title over its limit is refused with its size, not cut
+fails(function() astra('board_post',{kind='task',title=string.rep('x',300),owner='SOL'}) end,'title is 300 characters, over its limit of 120: nothing stored')
+r=astra('board_post',{kind='task',title=string.rep('x',120),owner='SOL'})
 eq(#r.item.title,120); eq(r.item.owner,'sol')
 fails(function() sol('board_post',{kind='task',title='x',owner='nobody'}) end,'unknown agent nobody; agents: astra, grok, nick, sol')
 fails(function() sol('board_post',{kind='bogus',title='x'}) end,'kind must be')
@@ -1014,5 +1016,16 @@ do
   eq(st.id,v2.id); eq(st.stale,true)
   -- board_post kind lesson goes the same way
   fails(function() sol('board_post',{kind='lesson',title='posted as a board item'}) end,'a lesson goes with lesson_add')
+end
+do
+  -- Sol's Bastion departure checklist (708 characters, kept as its first 200): stored whole now; a note over 1000, or a
+  -- board_update note over it, is refused with its size
+  local list='1 Inspect live topology and last completed leg totals. '..string.rep('2 Trace every failed supply chain to source. ',14)
+  local c=sol('board_post',{kind='note',title='Bastion shared departure checklist',note=list})
+  eq(c.item.notes[1].text,list)
+  fails(function() sol('board_post',{kind='note',title='too long',note=string.rep('n',1001)}) end,'note is 1001 characters, over its limit of 1000: nothing stored')
+  fails(function() sol('board_update',{id=c.item.id,note=string.rep('é',600)}) end,'note is 600 characters (1200 bytes), over its limit of 1000')
+  eq(#sol('board_update',{id=c.item.id,note=string.rep('m',1000)}).item.notes,2)
+  sol('board_update',{id=c.item.id,status='done'})
 end
 print('board: ok')

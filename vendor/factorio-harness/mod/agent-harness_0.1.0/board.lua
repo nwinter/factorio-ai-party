@@ -46,21 +46,34 @@ return function(api)
   end
   -- One line of text, cut to `max` bytes on a UTF-8 boundary; never fails.
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d19 batch41 A4) a text cut for a line ends in '...', so a reader sees it was cut.
   local function clip(text, max)
     text = tostring(text):gsub('[%c]+', ' ')
     if #text <= max then return text end
-    local cut = max
+    local cut = math.max(0, max - 3)
     while cut > 0 and (text:byte(cut + 1) or 0) >= 0x80 and text:byte(cut + 1) < 0xC0 do cut = cut - 1 end
-    return text:sub(1, cut)
+    return text:sub(1, cut) .. '...'
   end
+  -- (d19 batch41 A4, Aurora as viewer; Sol's Bastion departure checklist #1213: a 708-character note was kept as its
+  -- first 200 with no word of it) a text over its limit is refused with its size and the limit; nothing is cut.
+  local function fits(value, name, max)
+    local text = value:gsub('[%c]+', ' ')
+    if #text > max then
+      local chars = select(2, text:gsub('[^\128-\191]', ''))
+      error(string.format('%s is %d characters%s, over its limit of %d: nothing stored', name, chars,
+        chars ~= #text and string.format(' (%d bytes)', #text) or '', max), 0)
+    end
+    return text
+  end
+  M.fits = fits
   local function required_text(value, name, max)
     assert(type(value) == 'string' and value:find('%S'), name .. ' is required (1..' .. max .. ' characters)')
-    return clip(value, max)
+    return fits(value, name, max)
   end
   local function optional_text(value, name, max)
     if value == nil then return nil end
     assert(type(value) == 'string', name .. ' must be a string')
-    return clip(value, max)
+    return fits(value, name, max)
   end
   -- The name an agent goes by on the board (bot or player name).
   local function who(p)
@@ -282,7 +295,7 @@ return function(api)
   end
   local function needs_arg(v)
     if v == nil then return nil end
-    if type(v) == 'string' then return clip(v, NOTE) end
+    if type(v) == 'string' then return fits(v, 'needs', NOTE) end
     -- An object {item=count} (shake4: posts resent after that shape failed).
     if type(v) == 'table' and #v == 0 and next(v) ~= nil then
       local list = {}
@@ -317,7 +330,7 @@ return function(api)
     if v == nil then return nil end
     assert(type(v) == 'table' and #v <= 8, 'tags must be an array of up to 8 short strings')
     local out = {}
-    for _, t in ipairs(v) do assert(type(t) == 'string', 'tags must be strings'); out[#out+1] = clip(t, 24) end
+    for _, t in ipairs(v) do assert(type(t) == 'string', 'tags must be strings'); out[#out+1] = fits(t, 'a tag', 24) end
     return out
   end
   -- A project's areas: `area` (one) and/or `areas` (an array; [] clears).
@@ -639,7 +652,7 @@ return function(api)
     if a.parent ~= nil then item.parent = parent_arg(a.parent) or nil end
     local sup_post = a.supersedes ~= nil and supersedes_arg(a.supersedes) or nil
     -- A first note (shake4: agents carried update's note over to posts).
-    if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
+    if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', LONG)} end
     local warnings, over = {}, nil
     if kind == 'claim' then
       assert(item.area, 'a claim needs area {left_top, right_bottom}')
@@ -699,7 +712,7 @@ return function(api)
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
-    local text = a.note ~= nil and required_text(a.note, 'note', NOTE) or nil
+    local text = a.note ~= nil and required_text(a.note, 'note', LONG) or nil
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
     local changes, was = {}, item.owner
     assert(item.kind ~= 'plan' or (a.status == nil and a.owner == nil), 'the team plan changes with board_plan {goals} or {doing}; notes are fine')
