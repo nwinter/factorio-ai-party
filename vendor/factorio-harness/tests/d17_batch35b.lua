@@ -129,4 +129,43 @@ do
   prototypes,defines=nil,nil
 end
 
+
+-- D3 (viewer Aurora, Sol 14:07: reminder 59 reached 10 missed runs for Grok and 16 for Sonnet before a viewer asked): at 2
+-- runs missed, one line to the owner; once until that recipient acknowledges or the recipients change. -----------------
+do
+  game={tick=0}
+  local st,boxes={}, {}
+  local agents={{name='sol',index=2},{name='grok',index=1},{name='sonnet',index=3}}
+  local R=dofile('mod/agent-harness_0.1.0/reminders.lua'){state=function() return st end,
+    resolve=function(w) for _,a in ipairs(agents) do if a.name==w then return w end end error('no teammate '..w,0) end,
+    agents=function() return agents end,who=function(p) return p.name end,
+    deliver=function(index,t) boxes[index]=boxes[index] or {}; table.insert(boxes[index],t) end}
+  local sol,grok,sonnet={name='sol',index=2},{name='grok',index=1},{name='sonnet',index=3}
+  local function run(ticks) for _=1,ticks do game.tick=game.tick+1; R.tick() end end
+  local function told(name) local n=0 for _,t in ipairs(boxes[2] or {}) do if t.text:find(name..' has missed',1,true) then n=n+1 end end return n end
+  R.handlers.reminder_add(sol,{name='shared review',message='review the board',every_ticks=3600,recipients='sol,grok,sonnet'})
+  run(3600); R.handlers.reminder_ack(sol,{id=1})
+  run(3600); R.handlers.reminder_ack(sol,{id=1})
+  eq(told('grok'),0,'one run missed: no owner line')
+  run(3600); R.handlers.reminder_ack(sol,{id=1})
+  eq(told('grok'),1); eq(told('sonnet'),1); eq(told('sol'),0,'the owner is not told of their own runs')
+  local line
+  for _,t in ipairs(boxes[2]) do if t.text:find('grok has missed',1,true) then line=t.text end end
+  has(line,'grok has missed 2 runs of your reminder #1 (shared review, every 1m00s): not acknowledged for 120s; last result: none yet; reminder_edit {id: 1, recipients: ["sol", "sonnet"]} changes its recipients')
+  run(3600); R.handlers.reminder_ack(sol,{id=1})
+  eq(told('grok'),1,'once while grok has not acknowledged')
+  local r=R.handlers.reminders(sol,{}).reminders[1]
+  eq(r.missed.grok,3); has(r.states,'grok overdue (3 runs missed, the owner told)')
+  -- grok acknowledges: missing 2 runs again tells the owner again
+  R.handlers.reminder_ack(grok,{id=1,result='board fine'})
+  run(3600*3); R.handlers.reminder_ack(sol,{id=1})
+  eq(told('grok'),2)
+  has(boxes[2][#boxes[2]].text,'last result: board fine (by grok, ')
+  -- a change of recipients: told again at the next missed run
+  R.handlers.reminder_edit(sol,{id=1,recipients='sol,grok,sonnet'})
+  run(3600)
+  eq(told('grok'),3); eq(told('sonnet'),2)
+  game=nil
+end
+print('d17_batch35b D3 missed reminder runs to the owner: ok')
 print('d17 batch35b ok')

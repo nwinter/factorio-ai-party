@@ -8220,3 +8220,10 @@ fh watch    # deploy on every change
 - supply's `makers_worst` (A2, Opus): a machine off by its own circuit or logistic condition now ranks with those an
   input inserter's condition holds back, so it is among the worst three with its condition and what it reads (it ranked
   last, behind every machine short of an ingredient).
+- D3 (viewer Aurora, Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and 16 for Sonnet before a
+  viewer asked): reminders.lua tells the owner when a recipient has missed 2 runs. It is one tell from `reminder #N`
+  naming the recipient, the reminder and its cadence, how long it has waited, the last result (by whom, how long ago)
+  and the `reminder_edit {id, recipients: [...]}` call without that recipient. It goes once until that recipient
+  acknowledges or the recipients change, and never about the owner's own runs. The reminders read gives `missed`
+  ({name: runs}) and states says "the owner told"; the stream service's reminders snapshot passes `missed` to the site,
+  whose chips show the states.
