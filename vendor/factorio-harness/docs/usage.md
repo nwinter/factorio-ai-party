@@ -8562,3 +8562,11 @@ fh watch    # deploy on every change
   - The drop's landing line: for the first 2 such items sent, from where it landed.
   - deconstruct (dry run and live) `contested`: for the items the marked entities free (the first 2).
   - ghosts read `contested`: per network and item, from the network's pickup point for it, at most 3 searches a read.
+- Waiting out a leg enemies pass (U1, Haiku shift37: a 480-tile rearm leg was cut 5 times in 2 minutes by units and
+  an attack group passing it, retry_when_clear or not). batch36 B2's leg check (stock.lua) now waits when the action
+  has `ahead_wait`. That is rearm by default, and a walking transfer (or a transfer chain) with `retry_when_clear: true`.
+  The character stands where it is and rechecks the leg every 3 s. Once the leg is clear it walks on, and
+  `last.ahead_waited` names each wait: seconds, where, before which stop, what held it. If the leg is still unclear
+  when the wait runs out (`retry_ticks` with retry_when_clear, else 60 s), the tour ends with `enemies_ahead`, saying
+  how long it waited. The wait is added to the tour's time. `retry_when_clear: false` on rearm keeps the old behavior,
+  which ends the tour at once.

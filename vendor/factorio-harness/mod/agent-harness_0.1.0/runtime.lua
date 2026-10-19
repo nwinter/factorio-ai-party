@@ -702,7 +702,7 @@ local function finish(index, outcome)
     last.route=stock.route_text(action)
     last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
-    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead
+    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead; last.ahead_waited=action.ahead_waited
     -- (d18 batch37 C1) a chain: what of its items is held, the steps left, and on_fail "return"'s walk back
     if action.chain then
       local okc,call=pcall(M.transferchain.report,M.lookup(index),action,last,outcome)
@@ -2095,6 +2095,12 @@ function handlers.describe(_,a)
       b.retry_ticks='with retry_when_clear: 600..54000 (default 18000)'
       b.retries='(set by the retry: how many so far)'
     end
+  end
+  -- (d18 batch37 U1) a walking tour waits for a leg enemies pass
+  local LEGW=' On the walk (rearm by default; a walking transfer with retry_when_clear): a leg enemies pass (units or a group seen now in 24 tiles of it) is waited for where you stand, rechecked every 3 s, up to retry_ticks (default 60 s), then walked (last.ahead_waited says each wait); enemies_ahead only when the wait runs out (it says how long it waited). retry_when_clear: false on rearm: no wait'
+  for _,n in ipairs({'rearm','transfer'}) do
+    local d=description.actions[n]
+    if d and type(d.retry_when_clear)=='string' then d.retry_when_clear=d.retry_when_clear..LEGW end
   end
   -- (d18 batch37 C1) transfer {steps}
   if description.actions.transfer then
@@ -16910,6 +16916,32 @@ do
     return {chain=table.concat(parts,'; '),legs=#legs,on_fail=a.on_fail or 'keep',
       note='walks the legs in order; the first that fails or is not reached ends it (last: chain_held, chain_left'..(a.on_fail=='return' and ', and what it took goes back)' or ')')}
   end
+end
+-- (d18 batch37 U1, Haiku: a long rearm leg cut at once with enemies_ahead, retry_when_clear or not) a walking rearm, and
+-- a walking transfer with retry_when_clear, waits where it stands for a leg enemies pass (stock.lua ahead_wait):
+-- retry_ticks with retry_when_clear, else 60 s; rearm by default, retry_when_clear: false for none.
+M.AHEAD_WAIT=3600
+do
+  local function with_ahead(name,default)
+    local h=handlers[name]
+    handlers[name]=function(p,a)
+      local before=state().active[p.index]
+      local out=h(p,a)
+      local now=state().active[p.index]
+      if now and now~=before and now.kind=='gather' and now.avoid_mode and type(a)=='table' then
+        local w
+        if a.retry_when_clear==true then w=a.retry_ticks~=nil and integer(a.retry_ticks,M.AHEAD_WAIT,600,54000,'retry_ticks') or M.AHEAD_WAIT
+        elseif a.retry_when_clear==nil then w=default end
+        if w then
+          now.ahead_wait=w
+          if type(out)=='table' then out.leg_wait=string.format('a leg enemies pass is waited for where you stand, up to %d s (rechecked every 3 s), then walked',math.floor(w/60)) end
+        end
+      end
+      return out
+    end
+  end
+  with_ahead('rearm',M.AHEAD_WAIT)
+  with_ahead('transfer',nil)
 end
 -- clear_obstacles on build and place_ghosts (clearobs.lua; d18 batch36 C1, Opus): the trees and rocks in the footprints
 -- marked, those in reach mined by hand, the call run again once all are gone.

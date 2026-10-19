@@ -391,3 +391,41 @@ do
   st.queues[gi]=nil; st['lane_queues|Kestrel II']=nil; st.platform_lanes=nil
 end
 print('d18_batch37 D4 every agent\'s jobs on a platform: ok')
+
+-- U1 (Haiku: a 480-tile rearm leg cut at once with enemies_ahead, retry_when_clear or not): with ahead_wait the tour
+-- waits where it stands, rechecks, and walks on when the leg clears; enemies_ahead only when the wait runs out.
+do
+  local saved=game
+  game={tick=0}
+  local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
+  local f={}
+  local p={force=f,position={x=0,y=0},reach_distance=10}
+  local t1={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=5,y=0}}
+  local t2={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=60,y=0}}
+  local threat,checks=nil,0
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){distance=distance,integer=function(v,d) return v or d end,
+    goal_inside=function() return nil end,goal_check=function() return nil end,goal_text=function() return 'place' end,
+    leg_threat=function(_,from,to) if to.x==60 then checks=checks+1; if threat then return {line='the leg from (5,0) to (60,0) passes enemy group of 9'} end end end,
+    visit=function() return {transferred=10} end,can_reach=function() return true end,
+    request_path=function(_,nav) nav.requested=true end,navigate=function() p.position={x=60,y=0}; return 'arrived' end,stop_walking=function() end}
+  p.can_reach_entity=function(e) return distance(p.position,e.position)<=10 end
+  -- clears after 10 s: it waited and went on
+  local action=S.start_tour(p,'rearm',{t1,t2},3600,{avoid_mode={},ahead_wait=3600})
+  threat=true
+  local r
+  for _=1,600 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  eq(r,nil,'still waiting at 10 s'); assert(checks>=3 and checks<=5,'rechecked every 3 s: '..checks)
+  eq(action.until_tick,3600+3600+0,'the wait does not eat the tour time')
+  threat=nil
+  for _=1,400 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  assert(r~='enemies_ahead',tostring(r))
+  has(action.ahead_waited[1],'waited 1'); has(action.ahead_waited[1],'before stop 2 of 2, then went on: the leg from (5,0) to (60,0) passes enemy group of 9')
+  -- not clear within the wait: enemies_ahead, saying how long it waited
+  p.position={x=0,y=0}
+  action=S.start_tour(p,'rearm',{t1,t2},3600,{avoid_mode={},ahead_wait=600})
+  threat=true
+  for _=1,1200 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  eq(r,'enemies_ahead'); has(action.enemies_ahead,'1 of 2 stops done; waited 10 s for it to clear (the most: 10 s)')
+  game=saved
+end
+print('d18_batch37 U1 a tour waits for a leg enemies pass: ok')
