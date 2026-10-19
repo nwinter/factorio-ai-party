@@ -14961,6 +14961,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
+  recheck_read=function(rc) return space.recheck_read(rc) end,
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
@@ -17082,7 +17083,7 @@ M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=fu
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
 M.platwait=require('platwait'){state=state}
-space=space_module{launch_need=function(pl) return M.launchneed.for_platform(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -18109,6 +18110,9 @@ function M.tick_body(event)
     end
   end
   scheduler.tick()
+  -- (d18 batch38 A1) platform_schedule's second read of no_schedule or no_path, for direct calls
+  local okrc,errrc=pcall(space.recheck_tick)
+  if not okrc then local s=state(); s.recheck_error={tick=event.tick,error=tostring(errrc)} end
   if event.tick%15==0 then
     local okb,errb=pcall(M.beltgaps.tick,event.tick)
     if not okb then local s=state();s.belt_memory_error={tick=event.tick,error=tostring(errb)} end

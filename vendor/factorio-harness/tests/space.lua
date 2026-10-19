@@ -280,17 +280,24 @@ do
   rebuilt,sent=false,{}
   r=space.platform_schedule(p,{platform='alpha',stops=stops,current=1})
   eq(#sent,1); eq(r.rebuilt,nil); eq(r.state,'on_the_path')
-  -- still no_schedule after both: (d17 batch31 C4) the call fails, the schedule as set, the rebuild and the rule said
+  -- still no_schedule after both: (d17 batch31 C4) the call fails, the schedule as set, the rebuild and the rule said;
+  -- (d18 batch38 A1) once a second read RECHECK_TICKS later still reads it
+  game={tick=500,forces={player=p.force}}; p.force.name='player'
   platform.state,_G.stays,rebuilt,sent=4,true,false,{}
-  fails(function() space.platform_schedule(p,{platform='alpha',stops=stops,current=2}) end,
-    'alpha reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule')
-  local ok,err=pcall(space.platform_schedule,p,{platform='alpha',stops=stops,current=2})
-  assert(not ok and err:find('the schedule stays as set: nauvis (time 1s) | >vulcanus',1,true) and err:find('it was written again record by record',1,true),err)
+  local r1=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
+  eq(r1.recheck.first,'no_schedule'); eq(r1.recheck.force,'player'); eq(r1.recheck.ends_tick,500+space.RECHECK_TICKS)
+  eq(space.recheck_read(r1.recheck),nil,'time left: no verdict yet')
+  game.tick=500+space.RECHECK_TICKS
+  local v=space.recheck_read(r1.recheck)
+  eq(v.ok,false); eq(v.after_ticks,space.RECHECK_TICKS)
+  assert(v.error:find('alpha read no_schedule at tick 500 (the call\'s tick) and still no_schedule 300 ticks later; the call failed: it reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule',1,true),v.error)
+  assert(v.error:find('the schedule stays as set: nauvis (time 1s) | >vulcanus',1,true) and v.error:find('it was written again record by record',1,true),v.error)
   -- a rebuild refused part way: the records set back as given
   fail_add,rebuilt=true,false
-  ok,err=pcall(space.platform_schedule,p,{platform='alpha',stops=stops,current=2})
-  assert(not ok and err:find('was refused',1,true) and err:find('the records were set back as given',1,true),err)
+  local ok,err=pcall(space.platform_schedule,p,{platform='alpha',stops=stops,current=2})
+  assert(ok and err.recheck and err.recheck.rebuilt:find('was refused',1,true) and err.recheck.rebuilt:find('the records were set back as given',1,true),tostring(err))
   eq(#platform.schedule.records,2)
+  game=nil
   -- no_path and paused said too
   platform.state=5
   eq(space.platform_schedule(p,{platform='alpha'}).state_note,'state no_path: the platform has no way from where it is to its next stop and goes nowhere')

@@ -50,8 +50,11 @@
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
-  The call fails (a failed queue step too) when the platform reads `no_schedule`, `no_path`, or paused without
-  `paused: true`, after it; the schedule stays as set, and the reply says what the journals showed: every one-stop
+  The call fails (a failed queue step too) when the platform reads paused without `paused: true` after it. A
+  `no_schedule` or `no_path` read in the call's tick is read again every 10 ticks for up to 300 (the game updates a
+  platform later: Cinder flew 39 ticks after one). A queue step waits for that read and fails only if it still reads
+  so; a direct call's reply has `recheck`, and the second read comes as a tell from platform_schedule. On failure the
+  schedule stays as set, and the reply says what the journals showed: every one-stop
   schedule read no_schedule, and so did longer ones whose current is the stop it waits at; with current on another
   stop they left. One stop that is not where the platform is goes as `[where it is, that stop]`, current 2
   (`one_stop` says so; after that stop's waits it goes back): `one_stop: "as given"` writes the one stop alone.
