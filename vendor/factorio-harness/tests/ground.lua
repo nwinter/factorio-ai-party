@@ -228,7 +228,33 @@ eq(world[1].marked,nil)
 r=astra('deconstruct',{area=area,items_on_ground=true})
 eq(r.item_stacks,0); eq(r.item_stacks_already,250)
 r=astra('cancel_deconstruction',{area=area,items_on_ground=true})
-eq(r.item_stacks,250)
+eq(r.item_stacks_cancelled,250)
+-- (d19 batch41 A3, Sol seq 863: on Fulgora cancel with entity_types [item-entity] changed 0, and items_on_ground's cancel
+-- read cancelled 0 beside item_stacks 823) a filter naming items on the ground takes the stacks; cancelled counts them;
+-- the robots whose orders on them the cancel took off are counted (as the engine does: the orders go the same tick).
+do
+  r=astra('deconstruct',{area=area,items_on_ground=true})
+  local stacks={}
+  for _,e in ipairs(world) do if e.type=='item-entity' then stacks[#stacks+1]=e end end
+  local function robot(targets,carry)
+    local rb={valid=true}
+    rb.queue=function() local q={} if carry then q[1]={type=3,target={valid=true,type='storage-chest',position={x=1,y=1}}} end for _,t in ipairs(targets) do if t.marked then q[#q+1]={type=2,target=t} end end return q end
+    return setmetatable(rb,{__index=function(t,k) if k=='robot_order_queue' then return t.queue() end end})
+  end
+  -- 3 robots on 5 stacks; one carrying a stack (an order on no item on the ground) stays busy
+  local carrying=setmetatable({valid=true},{__index=function(_,k) if k=='robot_order_queue' then return {{type=3,target={valid=true,type='storage-chest',position={x=1,y=1}}}} end end})
+  networks={{network_id=7,valid=true,storages={},construction_robots={robot({stacks[1],stacks[2]}),robot({stacks[3]},true),robot({stacks[4],stacks[5]}),carrying}}}
+  r=astra('deconstruct',{surface=nil,area=area,cancel=true,entity_types={'item-entity'}})
+  eq(r.item_stacks_cancelled,250); eq(r.cancelled,250); eq(r.changed,0)
+  eq(r.robot_orders_cancelled,5); eq(r.robots_freed,3); eq(r.robots_still_on_stacks,nil); eq(r.robots_carrying,1)
+  eq(r.item_stacks_line,'250 item stacks on the ground unmarked; 5 robot orders on them cancelled; 3 construction robots had orders on them and have none now (1 of them still carries a stack they picked up to storage)')
+  -- marking by name: entity_names item-on-ground is items_on_ground
+  r=astra('deconstruct',{area=area,entity_names={'item-on-ground'}})
+  eq(r.item_stacks,250)
+  r=astra('deconstruct',{area=area,cancel=true,entity_names={'item-on-ground'}})
+  eq(r.cancelled,250)
+  networks={}
+end
 -- Inside a roboport's construction area: the network and its storage chests are counted.
 networks={{network_id=7,storages={{},{}}}}
 r=astra('deconstruct',{area=area,items_on_ground=true})
