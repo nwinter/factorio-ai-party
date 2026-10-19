@@ -37,3 +37,29 @@ do
   game=nil
 end
 print('d19_batch45 B2 silo spoil lines: ok')
+
+-- batch40 B1 (Luna: stock 66 just after a pod, supply 194 in circulation): where_is {census}: the count by holder, the
+-- spoil spread and research units of the places read, counted-only rows, made and used a minute
+do
+  game={tick=600}
+  defines={flow_precision_index={ten_minutes=2}}
+  local function inv(n) return {get_item_count=function() return n end,n=n} end
+  local spoil={spoils=function() return true end,
+    inventory=function(i,acc) local r=acc['agricultural-science-pack'] or {key='agricultural-science-pack',count=0}; acc['agricultural-science-pack']=r; acc[1]=r; r.count=r.count+i.n; return acc end,
+    spread=function(r) return {count=r.count,min=10,max=30,mean=20,within={['10min']=0}} end,
+    research_value=function(r) return {now=r.count*0.8} end}
+  local function ent(t,name,mode,n) return {type=t,name=name,prototype={logistic_mode=mode},get_max_inventory_index=function() return 1 end,get_inventory=function() return inv(n) end} end
+  local pad,prov,lab=ent('cargo-landing-pad','cargo-landing-pad',nil,66),ent('logistic-container','passive-provider-chest','passive-provider',100),ent('lab','lab',nil,28)
+  local places={{kind='pad',count=66},{kind='chest',count=100},{kind='lab',count=28}}
+  local ent_of={[places[1]]=pad,[places[2]]=prov,[places[3]]=lab}
+  local S=dofile('mod/agent-harness_0.1.0/stores.lua'){spoil=function() return spoil end,agents=function() return {} end}
+  local force={get_item_production_statistics=function() return {get_flow_count=function(f) return f.category=='input' and 600 or 300 end} end}
+  local c=S.census_of({force=force},{name='nauvis'},'agricultural-science-pack',places,ent_of,{inserter_hands=3})
+  eq(c.rows[1].holder,'provider chests'); eq(c.rows[1].count,100); eq(c.rows[1].research_units,80)
+  eq(c.rows[2].holder,'landing pads'); eq(c.rows[3].holder,'labs')
+  eq(c.made_per_min,60); eq(c.used_per_min,30); eq(c.research_units,155.2)
+  has(table.concat(c.lines,' | '),'inserter hands 3, spoil not read (counted only)')
+  has(c.spoil_read,'the largest 3 of 3 places read for spoil')
+  game,defines=nil,nil
+end
+print('d19_batch45 B1 where_is census: ok')

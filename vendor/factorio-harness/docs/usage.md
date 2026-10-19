@@ -8918,3 +8918,10 @@ fh watch    # deploy on every change
 - batch40 B2 (Grok; silo 247 and load_silo 22 calls by Luna and Grok in shifts 39-41): the silo row's cargo.spoil and
   input_spoil, load_silo's aboard_spoil, and the launch record's spoil (last_launch.spoil) give each spoilable item
   with its spread (spoiled share by count, range, quarters, how many spoil within 10, 30 and 60 min).
+- batch40 B1 (Luna: stock read 66 just after a pod while supply said 194 in circulation; Opus called where_is for
+  agricultural packs 114 times in shifts 39-41): `where_is {item, census: true}` adds census: the count by holder
+  (landing pads; provider, storage, requester, buffer and plain chests; labs; machines; characters; belts, inserter
+  hands, robots' cargo and pods in the air by count only), each held place's spoil spread and a science pack's
+  effective research units (the largest 120 places read for spoil; spoil_read says how many), made and used a minute
+  (production statistics, last 10 minutes) and the read's tick. On the private copy 4.9 ms (agricultural packs) and 7.9
+  ms (iron-plate) on Nauvis.

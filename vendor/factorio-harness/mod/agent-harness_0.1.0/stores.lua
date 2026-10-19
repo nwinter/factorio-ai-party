@@ -93,6 +93,74 @@ return function(api)
     end
     return n, carrying, read, capped
   end
+  M.CENSUS_PLACES = 120
+  local HOLDER = {pad='landing pads', lab='labs', machine='machines', pod='landed cargo pods', hub='platform hubs', vehicle='vehicles',
+    roboport='roboports', character='characters', ground='on the ground', beacon='beacons', drill='drills'}
+  local mode_of = {}
+  function M.census_of(p, surface, item, places, ent_of, totals)
+    local sp = api.spoil and api.spoil()
+    local spoils = sp and sp.spoils(item)
+    local by, order = {}, {}
+    local function row(name)
+      local r = by[name]
+      if not r then r = {holder=name, count=0, places=0, acc={}}; by[name] = r; order[#order+1] = r end
+      return r
+    end
+    local list = {}
+    for _, pl in ipairs(places) do list[#list+1] = pl end
+    table.sort(list, function(x, y) return x.count > y.count end)
+    local read = 0
+    for i, pl in ipairs(list) do
+      local e = ent_of[pl]
+      local name = HOLDER[pl.kind] or pl.kind
+      if pl.kind == 'chest' and e then
+        if e.type == 'logistic-container' then
+          local m = mode_of[e.name]
+          if m == nil then m = select(2, pcall(function() return e.prototype.logistic_mode end)) or 'logistic'; mode_of[e.name] = m end
+          name = (m == 'active-provider' or m == 'passive-provider') and 'provider chests' or m .. ' chests'
+        else name = 'plain chests' end
+      end
+      local r = row(name)
+      r.count, r.places = r.count + pl.count, r.places + 1
+      if spoils and e and i <= M.CENSUS_PLACES then
+        read = read + 1
+        local okm, max = pcall(function() return e.get_max_inventory_index() end)
+        for k = 1, okm and max or 0 do
+          local okv, inv = pcall(e.get_inventory, k)
+          if okv and inv and (select(2, pcall(inv.get_item_count, item)) or 0) > 0 then pcall(sp.inventory, inv, r.acc) end
+        end
+      end
+    end
+    for _, k in ipairs({'belts', 'inserter_hands', 'robot_cargo', 'in_flight'}) do
+      if (totals[k] or 0) > 0 then local r = row(k:gsub('_', ' ')); r.count = totals[k]; r.unread = true end
+    end
+    local rows, lines = {}, {}
+    local ru = 0
+    for _, r in ipairs(order) do
+      local x = r.acc[item] or r.acc[1]
+      local research = x and sp.research_value and select(2, pcall(sp.research_value, x, p.force))
+      if type(research) ~= 'table' then research = nil end
+      if research then ru = ru + research.now end
+      local spread = x and select(2, pcall(sp.spread, x))
+      if type(spread) ~= 'table' then spread = nil end
+      rows[#rows+1] = {holder=r.holder, count=r.count, places=r.places > 0 and r.places or nil, spread=spread,
+        research_units=research and math.floor(research.now * 100 + 0.5) / 100 or nil}
+      lines[#lines+1] = string.format('%s %d%s%s%s', r.holder, r.count, r.places > 0 and string.format(' in %d place%s', r.places, r.places == 1 and '' or 's') or '',
+        spread and string.format(', %d%% spoiled by count (%d-%d%%), %d spoil within 10 min', spread.mean, spread.min, spread.max, spread.within['10min']) or
+          (spoils and (r.unread and ', spoil not read (counted only)' or (x == nil and r.places > 0 and ', spoil not read (past the largest ' .. M.CENSUS_PLACES .. ' places)' or '')) or ''),
+        research and string.format(', %.1f research units', research.now) or '')
+    end
+    table.sort(rows, function(x, y) return x.count > y.count end)
+    local stats = select(2, pcall(function() return p.force.get_item_production_statistics(surface) end))
+    local function per_min(cat)
+      local ok, n = pcall(function() return stats.get_flow_count{name=item, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
+      return ok and type(n) == 'number' and math.floor(n / 10 + 0.5) or nil
+    end
+    return {rows=rows, lines=lines, research_units=ru > 0 and math.floor(ru * 100 + 0.5) / 100 or nil,
+      made_per_min=per_min('input'), used_per_min=per_min('output'), tick=game.tick,
+      spoil_read=spoils and string.format('the largest %d of %d places read for spoil', math.min(read, M.CENSUS_PLACES), #list) or nil,
+      note='made and used a minute: the production statistics over the last 10 minutes (used: what labs, machines and launches consumed)'}
+  end
   function M.where_is(p, a)
     local item = a.item
     assert(type(item) == 'string' and item ~= '', 'item is required (an item name, e.g. automation-science-pack)')
@@ -101,6 +169,7 @@ return function(api)
     local limit = a.limit or 15
     assert(type(limit) == 'number' and limit >= 1 and limit <= MAX_LIMIT, 'limit must be 1..' .. MAX_LIMIT)
     assert(a.sort == nil or a.sort == 'largest' or a.sort == 'nearest', 'sort is "largest" (default) or "nearest"')
+    assert(a.census == nil or type(a.census) == 'boolean', 'census must be true or false')
     assert(a.page == nil or (type(a.page) == 'number' and a.page >= 1 and a.page == math.floor(a.page)), 'page is a whole number from 1')
     local surface = p.surface
     if a.surface ~= nil then
@@ -182,6 +251,7 @@ return function(api)
           add('characters', n)
           places[#places+1] = {kind='character', agent=ag.name, position={x=c.position.x, y=c.position.y}, count=n,
             distance=dist(c.position)}
+          ent_of[places[#places]] = c
         end
       end
     end
@@ -279,6 +349,11 @@ return function(api)
     local went = api.deconstructed and api.deconstructed(item, surface.name) or {}
     if #went > 0 then out.deconstructed = went end
     if total == 0 then out.note = 'none on this surface (surface=NAME looks on another planet or platform)' end
+    -- (d19 batch45, batch40 B1, Luna: stock read 66 just after a pod while supply said 194 in circulation) census: the
+    -- count by holder, each with its spoil spread and, for a science pack, its effective research units (spoil.lua), the
+    -- largest CENSUS_PLACES places read for spoil; belts, inserter hands, robots' cargo and pods in the air by count;
+    -- made and used a minute over the last 10 minutes; the read's tick
+    if a.census then out.census = M.census_of(p, surface, item, places, ent_of, totals) end
     -- (A1) what the call read from the passes, and how old they are
     local function ago(t) return t and string.format('%ds ago, tick %d', math.floor((game.tick - t) / 60), t) or '?' end
     if idx then
@@ -290,7 +365,8 @@ return function(api)
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places a page (default 15)', surface='optional surface name (default yours)',
-      sort='optional "largest" (default: the most held first) or "nearest"', page='optional page of places (default 1; pages says how many)',
+      sort='optional "largest" (default: the most held first) or "nearest"',
+      census='optional true: census {rows [{holder (landing pads, provider, storage, requester, buffer and plain chests, labs, machines, characters, belts, inserter hands, robot cargo, in flight ...), count, places, spread (a spoilable item: spoiled share, range, quarters, within 10/30/60 min), research_units (a science pack: effective units now, before lab bonuses)}], lines, research_units, made_per_min, used_per_min (production statistics, last 10 min), tick, spoil_read (how many places were read for spoil: the largest 120)}', page='optional page of places (default 1; pages says how many)',
       returns='read_from and ground_read_from: what the call took from the census and ground watch passes (every 30 s) and how old they are; deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, beacon, drill, module_slots (what sits in machines\', beacons\', drills\' and labs\' module slots), vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 1024 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); kinds_line (each kind\'s count and places, the most first); places: each chest, lab, machine, beacon, drill, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, in_module_slots, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), the most held first (sort: nearest), limit a page (belts and inserter hands as totals only); more: places past this page; page, pages; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
