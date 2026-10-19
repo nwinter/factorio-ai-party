@@ -5285,7 +5285,7 @@ local function craft_stock(p,name,count,force,notes)
   if force=='check' and s.total>=wanted and (recipe.energy or 0.5)*count/hand_speed(p)>=STOCK_REFUSE_S then
     local chests={}
     for _,x in ipairs(s.places) do
-      local t=x.entity.type
+      local t=x.entity and x.entity.valid and x.entity.type
       if (t=='container' or t=='logistic-container' or t=='cargo-landing-pad') and #chests<4 then
         chests[#chests+1]=string.format('%s (%g,%g) holds %d',x.name,x.position.x,x.position.y,x.count)
       end
@@ -5317,22 +5317,25 @@ end
 -- tiles): the nearest places of scan (stock.scan within 128 tiles) that can spare the shortfall, up to 3 (a requester
 -- or buffer chest only what it holds over its request, robots' pickup reservations off); else the nearest that can
 -- spare some; else each logistic network on your surface holding it and where its robots would take it from.
+-- (d19 batch41 A1, Sonnet: ingredient_gap on an area failed "attempt to index local 'e'") a scan's ground stacks have no
+-- entity: they spare all they hold, under their own name; a place whose entity went invalid is passed over.
 function M.where_kept(p,item,need,scan)
   local good,some=({}),({})
   for _,x in ipairs(scan and scan.places or {}) do
     local e=x.entity
     local free=x.count
+    if e and not e.valid then free=0 end
     local okr,r=pcall(M.supply.reserved,e,item)
-    if okr and r then free=free-r end
+    if e and okr and r then free=free-r end
     local okm,mode=pcall(function() return e.prototype.logistic_mode end)
     local over=''
-    if okm and (mode=='requester' or mode=='buffer') then
+    if e and okm and (mode=='requester' or mode=='buffer') then
       local okp,pt=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
       local min=okp and pt and M.reqchest and M.reqchest.request(pt,item) or 0
       free=free-min; over=min>0 and ' over its request' or ''
     end
     if free>0 then
-      local t=string.format('%s (%g,%g) %d tiles, %d free%s',e.name,x.position.x,x.position.y,math.floor(x.distance+0.5),free,over)
+      local t=string.format('%s (%g,%g) %d tiles, %d free%s',x.name or (e and e.name),x.position.x,x.position.y,math.floor(x.distance+0.5),free,over)
       if free>=need and #good<3 then good[#good+1]=t elseif free<need and #some<3 then some[#some+1]=t end
     end
   end
