@@ -8203,6 +8203,27 @@ fh watch    # deploy on every change
   runs again, without clear_obstacles (watched 10 min; `last.cleared` says which). Returns cleared (what was marked),
   mining, robots, then_runs; with none in the way the call runs at once and cleared says so. Dry runs give
   `trees_rocks`: the trees and rocks in the planned footprints.
+- `silo {surface: "all"}` or `silo {all: true}` (D1, Gemini): every silo of ours on every planet (16 at most) in one
+  call, a line each: its rocket parts (as the silo read says them) and their rate, what is aboard, the platform its
+  automatic requests fill for with what of that request it holds, and next_auto_launch; `silos` keeps each silo's full
+  read. The silos come from the census pass (one search a planet before the first pass). On world n: 9 silos on 5
+  planets in 4.6 ms.
+- Train actions that omit coordinates (D2, Gemini: in shifts 33-36 `train {}` read "position requires x and y" 17
+  times, and `train {id}` / `{train}` were unknown arguments 16 times). The actions that take a position: train
+  (position or train_id; stops and all read every stop or train), train_stop (position, name) and rail_route (from,
+  to). Each names what is missing with its shape: `train needs which train or stop: position {x, y} (a locomotive,
+  wagon or train stop, as the map shows it; surface for another planet) or train_id N ...`, `train_stop needs position
+  {x, y}: a spot beside a straight rail ...`, `rail_route needs from: from {x, y} (where the rails start) and to {x,
+  y} ...`. train {id: N} and {train: N} run as train_id (corrected says so).
+- `shipment {ledger: true, surface?}` (D3, Luna 15:48: the silo chain inferred across cargo, shipment and inspect; an
+  LDS delivery that looked done did not reach the feeders): the surface's cargo ledger in time order. Each rocket
+  launched up, recorded as it goes (ledger.lua, on the game's launch-ordered event): `up #12, 4m10s ago: rocket-silo
+  (15.5,59.5) launched low-density-structure*50 to Wren; Wren asked low-density-structure 100 (holds 20) (its
+  automatic requests)`. Each drop down (drops.lua's records, now with what the pad asked for the items then): `down
+  drop #7, ...: from Wren, iron-plate*100; the pad asked iron-plate 200 (held 0); landed in ...; the pad held ... and
+  in the 20 s after: iron-plate: logistic robots took 100 (first orders: ...) (verdict)`. Ids follow an entry. What it
+  cannot know: launches before this runtime ran, more than 64 launches a surface, drops beyond the 20 drops.lua keeps,
+  and a drop's pad asks before this runtime (the note says so).
 - D1 fix (operator 16:03): after a stream service restart, a re-read backlog line in viewer-relayed.jsonl reads
   relayed; one the verdict logs refused keeps that verdict; any other carries no delivery and logs nothing.
 - D3 (viewer Aurora, Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and 16 for Sonnet before a

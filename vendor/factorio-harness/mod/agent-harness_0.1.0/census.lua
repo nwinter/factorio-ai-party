@@ -575,6 +575,14 @@ return function(api)
     return out, d and d.silos and (d.silos_as_of or d.start) or nil
   end
 
+  -- (d18 batch36 A2, D1) the silos of a force on any surface the last pass found (nil before a pass).
+  function M.silos_on(force, surface)
+    local d = (api.state().census or {}).done
+    if not (d and d.silos) then return nil end
+    local out = {}
+    for _, e in ipairs(d.silos[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
+    return out
+  end
   -- The entities of ours with a control behavior the last pass found on a surface (gates.lua), and its tick.
   function M.gated(force, surface)
     local d = (api.state().census or {}).done
