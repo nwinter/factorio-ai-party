@@ -8902,3 +8902,9 @@ fh watch    # deploy on every change
   and power-cut alert groups (4.6 ms) are kept 120 ticks per force, and the push alerts read the board's active claims
   once a tick (an agent shown no new alert group read every board item twice for each of about 170 groups, 10 ms):
   4.3-16 -> 0.7-1.5 ms a reply.
+## d19 batch45 (eng/d19-batch45)
+
+- 2: `inspect {positions}` reads the first 8 positions a call (12 with `compact`); `rest` lists the others and `left`
+  says how many (32 positions read 26-31 ms on the private copy, about 0.9 ms a full read, 0.65 compact). `recipes`
+  and `technologies` take `name` (one name or a list of up to 64): those entries only; an unknown or not enabled name
+  is refused with names like it. In shifts 39-41, 19 recipes calls with name each listed 64 recipes.
