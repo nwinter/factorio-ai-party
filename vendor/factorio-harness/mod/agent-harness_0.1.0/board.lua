@@ -612,6 +612,20 @@ return function(api)
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
+  -- (d19 batch41 B3) `name`'s active items (owned, or posted with no owner) whose newest evidence names a next check at a
+  -- game tick now past. Rows {age (ticks), line}.
+  function M.overdue_reviews(name)
+    local rows = {}
+    for _, i in pairs(store().items) do
+      local mine = i.owner == name or (not i.owner and i.requested_by == name)
+      local e = mine and ACTIVE[i.status] and i.evidence and i.evidence[#i.evidence]
+      if e and type(e.next_check) == 'number' and e.next_check < game.tick then
+        rows[#rows+1] = {age=game.tick - e.next_check, line=string.format('board #%d %s: next check at tick %d, %s ago (evidence by %s %s ago)', i.id, clip(i.title, 60),
+          e.next_check, ago(game.tick - e.next_check), tostring(e.by), ago(game.tick - (e.at or game.tick)))}
+      end
+    end
+    return rows
+  end
   local function open_unowned()
     local n, oldest = 0, nil
     for _, i in pairs(store().items) do

@@ -341,6 +341,29 @@ return function(api)
     return {acknowledged=job.id, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil, missed_runs=missed_text(was),
       note=note, reminder=row(job, me)}
   end
+  -- (d19 batch41 B3, Astra seq 862 and 864: reminder misses piled up while notes kept hour-old results) what is past its
+  -- review time for `name`: runs addressed to them waiting past their cadence (overdue), and recipients of their own
+  -- reminders overdue. Rows {age (ticks), line}.
+  function M.overdue(name)
+    local rows = {}
+    for _, job in pairs(store().jobs) do
+      local st, pd = status_of(job, name)
+      if pd and st:find('^overdue') then
+        rows[#rows+1] = {age=game.tick - pd.tick, line=string.format('reminder #%d %s (by %s, %s): waiting for your ack %s%s', job.id, job.name or 'review', job.owner,
+          cadence(job), ago(game.tick - pd.tick), pd.missed > 0 and '; ' .. missed_text(pd) or '')}
+      end
+      if job.owner == name then
+        for _, n in ipairs(targets(job)) do
+          local st2, pd2 = status_of(job, n)
+          if n ~= name and pd2 and st2:find('^overdue') then
+            rows[#rows+1] = {age=game.tick - pd2.tick, line=string.format('your reminder #%d %s: %s has not acknowledged it for %s%s', job.id, job.name or 'review', n,
+              ago(game.tick - pd2.tick), pd2.missed > 0 and '; ' .. missed_text(pd2) or '')}
+          end
+        end
+      end
+    end
+    return rows
+  end
   function M.handlers.reminders(p, a)
     local me = api.who(p)
     assert(a.all == nil or type(a.all) == 'boolean', 'all must be true or false')

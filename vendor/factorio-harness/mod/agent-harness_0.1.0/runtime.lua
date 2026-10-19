@@ -2491,6 +2491,22 @@ local function queue_warning(index)
   return string.format('queue: paused with %d pending step%s (first: %s %s%s)%s; queue resume runs them, queue cancel drops them',
     #q.pending,#q.pending==1 and '' or 's',first.id or '?',first.action,first.label and ' ['..first.label..']' or '',cause)
 end
+-- (d19 batch41 B3, Astra seq 862 and 864, Sol seq 865) status: the reminders and board items of this agent past their
+-- review time, oldest first, with ages (reminders.lua overdue, board.lua overdue_reviews).
+function M.overdue_reviews(p)
+  local name=M.board.who(p)
+  local rows={}
+  local okr,r=pcall(M.reminders.overdue,name)
+  for _,x in ipairs(okr and r or {}) do rows[#rows+1]=x end
+  local okb,b=pcall(M.board.overdue_reviews,name)
+  for _,x in ipairs(okb and b or {}) do rows[#rows+1]=x end
+  if #rows==0 then return nil end
+  table.sort(rows,function(x,y) return x.age>y.age end)
+  local lines={}
+  for i=1,math.min(8,#rows) do lines[i]=rows[i].line end
+  if #rows>8 then lines[#lines+1]=string.format('+%d more (reminders {pending: true}; board_review)',#rows-8) end
+  return lines
+end
 function handlers.status(p,a)
   a=a or {}
   local controllable,control_error=pcall(player,p.index)
@@ -2580,7 +2596,8 @@ function handlers.status(p,a)
   local okb,boiler_line=pcall(M.networks.boiler_line,p.force,p.surface.name)
   -- robots per planet from the kept network view (D4, Haiku 16:50)
   local okr,robots=pcall(M.networks.robot_lines,p.force)
-  return {robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
+  local okv,overdue=pcall(M.overdue_reviews,p)
+  return {overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),

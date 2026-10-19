@@ -131,3 +131,25 @@ do
   eq(sol('harness_request',{title='ask 11',problem='problem 11'}).item.status,'open')
 end
 print('d19_batch41_rt A5 harness request limit lists what it counted: ok')
+
+-- B3 (Astra seq 862, 864: reminder misses piled up; Sol seq 865): status names the agent's reminders and board items
+-- past their review time, oldest first, with ages.
+do
+  local c=sol('board_post',{kind='task',title='Swiftlet PU route',owner='sol',evidence={metric='PU 600',next_check=tick+600}})
+  astra('reminder_add',{name='freight review',message='check the PU route',every_ticks=3600,recipients='sol'})
+  advance(3600*3+700)
+  local lines=runtime.overdue_reviews({name='sol',index=runtime.bots.index_of('sol')})
+  assert(lines and #lines==2,'two overdue: '..tostring(lines and #lines))
+  -- oldest first: the board item's check passed 3m ago, the reminder has waited 2m
+  assert(lines[1]:find('board #'..c.item.id..' Swiftlet PU route: next check at tick',1,true) and lines[1]:find(', 3m01s ago (evidence by sol',1,true),lines[1])
+  assert(lines[2]:find('reminder #',1,true) and lines[2]:find('(by astra, every 1m00s): waiting for your ack 2m',1,true),lines[2])
+  assert(lines[2]:find('2 runs missed (the first at tick',1,true),lines[2])
+  -- the reminder's owner sees sol overdue on it
+  local la=runtime.overdue_reviews({name='astra',index=runtime.bots.index_of('astra')})
+  assert(la and la[1]:find('your reminder #',1,true) and la[1]:find('sol has not acknowledged it for 2m',1,true),la and la[1])
+  local ok,st=pcall(sol,'status')
+  if ok then eq(st.overdue_reviews[1],lines[1]) end
+  sol('reminder_ack',{id=1}); sol('board_update',{id=c.item.id,status='done'})
+  eq(runtime.overdue_reviews({name='sol'}),nil)
+end
+print('d19_batch41_rt B3 overdue reviews: ok')
