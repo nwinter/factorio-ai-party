@@ -20,7 +20,7 @@ import argparse, ast, json, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Modules whose module-level *_LUA / Lua string constants the operator sends one-lined (placeholders blanked).
 OPERATOR_SOURCES = ["tools/pog.py", "tools/stream/harness.py", "tools/stream/viewers.py", "tools/analyst/game.py",
-                    "tools/sa_travel.py", "tools/sa_flight.py", "tools/sa_smoke.py"]
+                    "tools/sa_travel.py", "tools/sa_flight.py", "tools/sa_smoke.py", "tools/stream/turretsweep.py"]
 KNOWN_LINES = [
     "rcon.print(remote.call(\"agent_harness\",\"bots\"))",
     "rcon.print(remote.call(\"agent_harness\",\"bot_create\",\"x\"))",

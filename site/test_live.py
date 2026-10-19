@@ -258,6 +258,17 @@ out.gleba.paintCells = calls2.filter((c) => c[0] === 'fillRect' && String(c[1]).
 const dv = M.prepare(Object.assign({}, data.full, { planets: data.planets, surface: 'vulcanus' }));
 out.vulcanus = Object.assign(summary(M.scene(dv, null, 400, 400)), { auto: dv.auto });
 out.planetsOnNauvis = M.prepare(Object.assign({}, data.full, { planets: data.planets })).planets;
+// (d19 batch42 B3) when the terrain frames were captured: wall time when they have it, else the game tick
+out.terrainNotes = [M.prepare(data.full).terrainNote,
+  M.prepare(Object.assign({}, data.full, { terrain: [Object.assign({}, data.full.terrain[0], { t: 1792433272 })] })).terrainNote];
+// (d19 batch42 B2) the turret layer says what it holds: every turret the sweep read, or the capped first 600
+const many = Array.from({ length: 600 }, (_, i) => [i, 0, 18]);
+out.turretNotes = [M.prepare(Object.assign({}, data.full, { turrets_read: { turrets: 1459, drawn: 1221, complete: true } })).turretNote,
+  M.prepare(Object.assign({}, data.full, { turrets: many, turrets_read: { turrets: 600, capped: true } })).turretNote,
+  M.prepare(Object.assign({}, data.full, { turrets: many })).turretsCapped, M.prepare(data.full).turretNote];
+// (d19 batch42 B1, viewer Aurora) Fulgora's 32-tile grid: scattered single cells, no block dense; it frames its cells
+const df = M.prepare(Object.assign({}, data.full, { planets: data.planets, surface: 'fulgora' }));
+out.fulgora = Object.assign(summary(M.scene(df, null, 400, 400)), { auto: df.auto, box: [df.box.x0, df.box.y0, df.box.x1, df.box.y1] });
 process.stdout.write(JSON.stringify(out));
 """
 
@@ -318,7 +329,11 @@ def map_tests():
         gleba["agents"] = [dict(a) for a in gleba["agents"]]
         gleba["agents"][4].update(surface="gleba", where="Gleba", position={"x": -190, "y": -120})
         planets = {"vulcanus": {"surface": "vulcanus", "tick": 3, "cell": 8, "x0": 4960, "y0": -3040, "w": 10, "h": 10,
-                                "rows": ["SSAAEE" for _ in range(10)], "buildings": 120}}
+                                "rows": ["SSAAEE" for _ in range(10)], "buildings": 120},
+                   # 25 building cells, each alone in its 32-tile block: none of the old blocks was dense
+                   "fulgora": {"surface": "fulgora", "tick": 3, "cell": 32, "x0": -320, "y0": -320, "w": 20, "h": 20,
+                               "rows": ["A...A...A...A...A..." if i % 4 == 0 else "" for i in range(20)],
+                               "buildings": 25}}
         json.dump({"full": viewer_data(map_state(True)), "old": viewer_data(map_state(False)), "gleba": gleba,
                    "clouds": CLOUDS, "planets": planets}, open(path, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "mapview.js"), path], capture_output=True, text=True, timeout=30)
@@ -371,7 +386,14 @@ def map_tests():
         assert v["base"] and v["nests"] == 0 and v["fights"] == 0, v
         assert "luna" in [a["name"] for a in v["agents"]] and not any(a[0].startswith("Luna") for a in v["away"]), v
         assert 4960 <= v["auto"]["cx"] <= 5040, v["auto"]
-        assert o["planetsOnNauvis"] == ["vulcanus"], o["planetsOnNauvis"]
+        assert o["planetsOnNauvis"] == ["fulgora", "vulcanus"], o["planetsOnNauvis"]
+        assert o["terrainNotes"][0] == "captured at game tick 1" and o["terrainNotes"][1].startswith("captured ") \
+            and "19" in o["terrainNotes"][1], o["terrainNotes"]
+        assert o["turretNotes"] == ["all 1459 turrets, 238 within 2 tiles of another merged",
+                                    "incomplete: the first 600 turrets read; the rest are not drawn yet", True, ""], o["turretNotes"]
+        f = o["fulgora"]
+        assert f["base"] and f["nests"] == 0 and f["box"] == [-328, -328, 232, 232], f  # every cell, plus 8 tiles
+        assert -100 <= f["auto"]["cx"] <= 100, f["auto"]
         assert g["hit"]["text"].startswith("Spores 14.7 in chunk (-7, -5)") and g["paintCells"] == 3, g
 
         js = os.path.join(d, "live.js")

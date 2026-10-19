@@ -8,6 +8,7 @@ worlds (e.g. the paused co-op save in world c).
 import math, os, re, time
 
 import basemap_log
+import turretsweep
 import efficiency
 import hauling
 import chronicle_log
@@ -149,6 +150,9 @@ class LiveSource:
         self.next_platforms = 0
         self.basemap_every = 60.0  # the site's live map (300 s for an hour on 2026-10-14 while the read cost 0.6 s; the census made it ~12 ms)
         self.next_basemap = 0
+        # (d19 batch42 B2) the turrets past the basemap's 600, read in its defence cells, a command an observe (1.4 ms
+        # for 40 areas on world n, 2026-10-19 13:30; a pass of 6 read 1459 turrets)
+        self.turrets = turretsweep.TurretSweep()
         self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
         self.next_ore = 0
         # the other planets' coarse maps (census.lua): one planet a minute, in turn (each a census read from storage)
@@ -274,6 +278,8 @@ class LiveSource:
             ore = time.time() >= self.next_ore
             try:
                 obs["basemap"] = self.h.basemap(ore=ore)
+                self.turrets.seen(obs["basemap"])
+                obs["basemap"] = self.turrets.apply(obs["basemap"])
                 if ore and obs["basemap"].get("ore") is not None:  # (the harness census reads ore on its next pass)
                     self.next_ore = time.time() + self.ore_every
                 try:  # the site's time-lapse: a snapshot per 10 game minutes in runs/RUN/basemap/
@@ -282,6 +288,11 @@ class LiveSource:
                     errors["basemap_log"] = str(e)
             except Exception as e:
                 errors["basemap"] = str(e)
+        elif self.turrets.todo:
+            try:
+                self.turrets.step(self.h)
+            except Exception as e:
+                errors["turrets"] = str(e)
         if time.time() >= self.next_planet:
             self.next_planet = time.time() + self.planet_every
             try:

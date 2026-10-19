@@ -585,6 +585,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 0 1px #000; }
 .mm-legend i.nest { background: #ff3b30; }
 .mm-legend li.ore i { opacity: .55; }
+.mm-legend i.mv-terrain { background: linear-gradient(135deg, #20384a 0 45%, #5b4a36 45% 60%, #3b4a32 60%); }
 .mm-legend i.mv-range { background: rgba(120, 200, 255, .35); border-radius: 50%; box-shadow: 0 0 0 1px rgba(120, 200, 255, .8); }
 .mm-legend i.mv-cloud { width: 22px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
 .mm-legend i.mv-reached { background: transparent; border-radius: 50%; box-shadow: 0 0 0 2px #ff5a44; }

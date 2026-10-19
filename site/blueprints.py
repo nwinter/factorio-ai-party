@@ -111,8 +111,40 @@ PIC_JS = """<script>
 </script>""".replace("@FPSR@", FPSR)
 
 
-def build_page(lib, agent, avatar, esc, game_time, known=()):
-    """The Blueprints page: (body, extra_head)."""
+# (d19 batch42 B4, seq 870: lab-belt-four41 was in the team library and not on the page) The page is built at each
+# shift change from the newest shift's copy; the live state's `library` (tools/stream/library.py: the newest 15 entries,
+# no strings) adds the ones saved since, with author and time. Nothing shows without a live shift.
+LIVE_JS = """<script>
+(function () {
+  var sec = document.getElementById('bp-live');
+  if (!sec || !window.fetch) return;
+  var api = (sec.getAttribute('data-api') || '').replace(/[/]$/, '');
+  if (!api) return;
+  var have = {};
+  document.querySelectorAll('.bp-entry[data-saved]').forEach(function (li) { have[li.id] = +li.getAttribute('data-saved') || 0; });
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+  fetch(api + '/v1/state', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    var s = d && d.state, lib = s && s.library;
+    if (!lib || !Array.isArray(lib.entries) || !isFinite(s.tick) || !isFinite(s.now)) return;
+    var rows = lib.entries.filter(function (e) { return e && e.name && (!(e.name in have) || (e.saved_tick || 0) > have[e.name]); });
+    if (!rows.length) return;
+    sec.querySelector('ul').innerHTML = rows.map(function (e) {
+      var at = isFinite(e.saved_tick) ? new Date((s.now - (s.tick - e.saved_tick) / 60) * 1000) : null;
+      var when = at ? at.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'time unknown';
+      var facts = [e.author ? 'by ' + e.author : '', 'saved ' + when, e.entities != null ? e.entities + ' entities' : '',
+        e.footprint ? e.footprint + ' tiles' : '', e.surface ? 'on ' + String(e.surface).replace('platform-', 'platform ') : ''].filter(Boolean);
+      return '<li class="bp-entry"><h2>' + esc(e.name) + (e.name in have ? ' <span class="chip">saved again</span>' : '') + '</h2>' +
+        (e.description ? '<p>' + esc(e.description) + '</p>' : '') + '<p class="muted small">' + esc(facts.join(' · ')) + '</p></li>';
+    }).join('');
+    sec.hidden = false;
+  }).catch(function () {});
+})();
+</script>"""
+
+
+def build_page(lib, agent, avatar, esc, game_time, known=(), api=""):
+    """The Blueprints page: (body, extra_head). api: the live API (site/config.json live_api_url): the entries saved
+    since the page was built come from its state."""
     known = set(known)
     if not lib or not lib["entries"]:
         body = ('<h1>Blueprints</h1><p class="lede">The team\'s shared blueprint library.</p>'
@@ -154,13 +186,18 @@ def build_page(lib, agent, avatar, esc, game_time, known=()):
                       f'<button type="button" class="fx-btn fx-btn--small bp-copy" data-for="{box}">Copy the blueprint string</button></details>')
         else:
             string = '<p class="muted small">The string is not in this copy.</p>'
-        items.append(f'<li class="bp-entry" id="{esc(e["name"])}" style="--fx-agent:{esc(color)}"><h2>{esc(e["name"])}</h2>'
+        items.append(f'<li class="bp-entry" id="{esc(e["name"])}" data-saved="{int(e.get("saved_tick") or 0)}" style="--fx-agent:{esc(color)}"><h2>{esc(e["name"])}</h2>'
                      f'{desc}<dl>{dl}</dl>{string}</li>')
     when = f' (shift {lib["shift"]}, copied {esc(str(lib["written"]).replace("T", " "))})' if lib.get("written") else f' (shift {lib["shift"]})'
+    live = (f'<section id="bp-live" data-api="{esc(api)}" hidden><h2>Saved since this page was built</h2>'
+            '<p class="muted small">From the live game: the team\'s newest library entries that are not below, or were '
+            'saved again, with author and time. Their blueprint strings and pictures come with the next site build, at '
+            'the shift change.</p><ul class="bp-list"></ul></section>') if api else ""
     body = ('<h1>Blueprints</h1><p class="lede">The team\'s shared blueprint library: what the agents saved for each other '
             f'with blueprint_save, as the last copy holds it{when}. Each string imports into your own game '
             '(Import string in the blueprint library). "Show the picture" draws it with FPSR, a blueprint renderer on '
             'another site, which the string is sent to.</p>'
-            f'<p class="muted small">{len(lib["entries"])} blueprints; times are the copy\'s.</p>'
-            f'<ul class="bp-list">{"".join(items)}</ul>')
-    return body, STYLE + "\n" + COPY_JS + "\n" + PIC_JS
+            f'<p class="muted small">{len(lib["entries"])} blueprints; times are the copy\'s. This page is built at each '
+            'shift change from the library as that shift left it.</p>'
+            f'{live}<ul class="bp-list">{"".join(items)}</ul>')
+    return body, STYLE + "\n" + COPY_JS + "\n" + PIC_JS + ("\n" + LIVE_JS if api else "")

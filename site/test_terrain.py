@@ -34,6 +34,12 @@ def main():
                 {"src": "/live/terrain/s2--1_-1-9000.webp", "x0": -641.5, "y0": -544.5, "x1": 928.6, "y1": 553.4, "tick": 9000,
                  "w": 2048, "h": 1432}]
         assert terrain.terrain_frames(runs, long) == want, terrain.terrain_frames(runs, long)
+        # (d19 batch42 B3) a frame's capture time (mapframes.py writes t) goes with it: the map's legend shows it
+        c = runs / "s4"
+        frame(c, "5_5", 20000, [0, 0, 64, 36])
+        meta = json.loads((c / "mapframes" / "5_5.json").read_text())
+        (c / "mapframes" / "5_5.json").write_text(json.dumps(dict(meta, t=1792433272.4)))
+        assert terrain.terrain_frames(runs, {"shifts": [{"id": "s4", "n": 4}]})[0]["t"] == 1792433272
         assert terrain.publish(out, runs, long) == want
         assert json.loads((out / "live" / "terrain" / "index.json").read_text()) == {"terrain": want}
         assert (out / "live" / "terrain" / "s2--1_-1-9000.webp").read_bytes().endswith(b"-1_-19000")
@@ -43,8 +49,10 @@ def main():
         index = json.dumps({"terrain": want + [{"src": "https://elsewhere/x.webp", "x0": 0, "y0": 0, "x1": 1, "y1": 1, "w": 1, "h": 1}]})
         calls = []
 
-        def opener(url, timeout):
-            calls.append(url)
+        def opener(req, timeout):
+            calls.append(req.full_url)
+            # (d19 batch42 B3) the site's host refuses urllib's own User-Agent (403): the read names itself
+            assert req.get_header("User-agent") == "pog-push-live/1", req.header_items()
             if len(calls) > 1:
                 raise OSError("site down")
             return io.BytesIO(index.encode())
@@ -52,6 +60,7 @@ def main():
         assert calls == ["https://factorio.example/live/terrain/index.json"] and rows == want, (calls, rows)
         assert push_live.site_terrain("https://factorio.example", now=1100, opener=opener) == want and len(calls) == 1
         assert push_live.site_terrain("https://factorio.example", now=1400, opener=opener) == want and len(calls) == 2
+        assert push_live._terrain["error"] == "OSError: site down", push_live._terrain
         state = push_live.with_terrain({"basemap": {"cell": 8, "rows": ["A"]}, "tick": 5}, rows)
         assert state["basemap"]["terrain"] == want and state["basemap"]["rows"] == ["A"]
         assert "basemap" not in push_live.with_terrain({"tick": 5}, rows)

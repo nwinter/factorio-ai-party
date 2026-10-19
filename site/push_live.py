@@ -26,7 +26,8 @@ AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profil
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift",
             "reminders",  # the team's reminder jobs (d15 batch5 group I): owner, message, next due, last result, states
-            "chronicle")  # the agents' newest chronicle entries and the harness's events (fh chronicle; viewer Alex 22:24)
+            "chronicle",  # the agents' newest chronicle entries and the harness's events (fh chronicle; viewer Alex 22:24)
+            "library")  # (d19 batch42 B4) the team's newest library entries, no strings (tools/stream/library.py): /blueprints/
 ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
 # What each agent carries, wears and builds (the harness's loadout read via serve.py; the agents page shows it)
 LOADOUT_KEYS = ("health", "vehicle", "guns", "ammo", "selected_gun", "armor", "items", "item_kinds", "slots", "crafting",
@@ -303,20 +304,23 @@ def public_state(s):
 
 
 TERRAIN_EVERY = 300.0  # seconds between reads of the site's terrain index
-_terrain = {"t": None, "rows": []}
+_terrain = {"t": None, "rows": [], "error": None}
 
 
 def site_terrain(site_url, now=None, opener=urllib.request.urlopen):
     """basemap.terrain: the map frames the deployed site has (its /live/terrain/index.json, site/terrain.py), read at
-    most every 5 minutes; the last list stays when a read fails (a 404: none published yet)."""
+    most every 5 minutes; the last list stays when a read fails (a 404: none published yet), and the push log's ok
+    line says why. (d19 batch42 B3, viewer Aurora) The site's host answers urllib's own User-Agent with 403, so every
+    read failed and the live map never had the frames: the read names itself, as the state push does."""
     now = time.time() if now is None else now
     if site_url and (_terrain["t"] is None or now - _terrain["t"] >= TERRAIN_EVERY):
         _terrain["t"] = now
+        req = urllib.request.Request(site_url.rstrip("/") + terrain.URL + "index.json", headers={"User-Agent": "pog-push-live/1"})
         try:
-            with opener(site_url.rstrip("/") + terrain.URL + "index.json", timeout=5) as r:
-                _terrain["rows"] = terrain.live(json.load(r))
-        except (urllib.error.URLError, OSError, ValueError):
-            pass
+            with opener(req, timeout=5) as r:
+                _terrain["rows"], _terrain["error"] = terrain.live(json.load(r)), None
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            _terrain["error"] = f"{type(e).__name__}: {e}"[:120]
     return _terrain["rows"]
 
 
@@ -386,7 +390,8 @@ def main():
             next_report = time.time() + a.report
             print(f"[push] {time.strftime('%H:%M:%S')} {'ok' if window['ok'] else 'NO PUSHES'}: {window['ok']} pushed, "
                   f"{window['failed']} failed in the last {a.report:g} s, {window['bytes'] // max(1, window['ok'])} bytes each, "
-                  f"tick {window['tick']}, {window['agents']} agents", flush=True)
+                  f"tick {window['tick']}, {window['agents']} agents, terrain frames {len(_terrain['rows'])}"
+                  + (f" (index read failed: {_terrain['error']})" if _terrain["error"] else ""), flush=True)
             window = dict(window, ok=0, failed=0, bytes=0)
         time.sleep(max(1.0, a.interval - (time.time() - t0)))
 
