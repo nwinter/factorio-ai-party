@@ -279,8 +279,19 @@ return function(api)
     return out
   end
   M.ammo_counts = ammo_counts
+  -- (d18 batch39 C2) thruster fuel and oxidizer made and used on the platform (its fluid statistics, totals)
+  M.FLUIDS = {'thruster-fuel', 'thruster-oxidizer'}
+  local function fluid_counts(pl)
+    local stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
+    if not stats then return nil end
+    local out = {}
+    for _, name in ipairs(M.FLUIDS) do
+      out[name] = {made=try(function() return stats.get_input_count(name) end) or 0, used=try(function() return stats.get_output_count(name) end) or 0}
+    end
+    return out
+  end
   local function open(rec, pl, w, counts, tick, first)
-    local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), places0=M.places_snapshot(pl)}
+    local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), fuel0=fluid_counts(pl), places0=M.places_snapshot(pl)}
     if w.stopped then
       seg.kind, seg.at = 'stop', w.at
       local ask, hold = pads(w.at, pl.force)
@@ -385,7 +396,7 @@ return function(api)
     local seg = rec.segs[#rec.segs]
     if key and key ~= rec.key then
       local was = seg and not seg['end'] and seg or nil
-      if was then was['end'], was.last, was.ammo1, was.places1, was.built1 = tick, copy(rec.prev or counts), ammo_counts(pl), M.places_snapshot(pl), M.built_now(pl, was) end
+      if was then was['end'], was.last, was.ammo1, was.places1, was.built1, was.fuel1 = tick, copy(rec.prev or counts), ammo_counts(pl), M.places_snapshot(pl), M.built_now(pl, was), fluid_counts(pl) end
       -- (d17 batch23 A3, Sol: Swift dropped tungsten at Nauvis and left within the second; the stop and its pod's
       -- receipt were never recorded) a leg to X followed by a leg from X, the location last visited become X during the
       -- leg (a turn back in flight leaves it): a stop at X between two looks a second apart, recorded as a 0 s stop
@@ -919,6 +930,72 @@ return function(api)
     return table.concat(bits, ', '), {sent=sent.n, sent_items=sent.cargo, received=d.received and d.received.n or 0,
       received_items=d.received and d.received.cargo or nil, landed=d.landed and d.landed.n or nil, gone=d.gone and d.gone.n or nil,
       in_flight=fly.n, in_flight_items=fly.n > 0 and fly.cargo or nil, in_flight_pods=fly.n > 0 and fly.units or nil}
+  end
+  -- (d18 batch39 C2, Sol: a wrapper sampled every 1-2 min and dock bursts looked sustainable) platform_production {leg}:
+  -- the window from the platform's last departure to now (the leg flown and the stop after it so far), and while it is
+  -- stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, from the totals
+  -- freight keeps at each segment's start and end (fuel0/fuel1, ammo0/ammo1); cargo loaded (rockets launched to it)
+  -- and dropped (its cargo pods, as received, landed or gone), from the segments in the window; totals and a minute.
+  local function delta(a0, a1, names)
+    local out = {}
+    for name, v in pairs(a1 or {}) do
+      local b = (a0 or {})[name] or {made=0, used=0}
+      local made, used = v.made - b.made, v.used - b.used
+      if made > 0 or used > 0 then out[name] = {made=math.floor(made + 0.5), used=math.floor(used + 0.5)} end
+    end
+    return out
+  end
+  local function window(rec, pl, from_i, to_i, now_end)
+    local s0, s1 = rec.segs[from_i], rec.segs[to_i]
+    local t0, t1 = s0.start, now_end and game.tick or s1['end']
+    local mins = math.max(1 / 60, (t1 - t0) / 3600)
+    if not (s0.fuel0 and s0.ammo0) then return {from=t0, to=t1, minutes=mins, no_sample='the leg began before this runtime kept fuel samples'} end
+    local fuel = delta(s0.fuel0, now_end and fluid_counts(pl) or s1.fuel1)
+    local ammo = delta(s0.ammo0, now_end and ammo_counts(pl) or s1.ammo1)
+    local loaded, dropped = {}, {}
+    for i = from_i, to_i do
+      local sg = rec.segs[i]
+      for name, n in pairs(sg.rockets and sg.rockets.cargo or {}) do loaded[name] = (loaded[name] or 0) + n end
+      for _, r in pairs(sg.pods or {}) do for name, n in pairs(r.cargo or {}) do dropped[name] = (dropped[name] or 0) + n end end
+    end
+    return {from=t0, to=t1, minutes=mins, fuel=fuel, ammo=ammo, loaded=loaded, dropped=dropped}
+  end
+  local function window_line(label, w)
+    if w.no_sample then return string.format('%s (%s): %s', label, secs(w.to - w.from), w.no_sample) end
+    local parts = {}
+    local function each(t, what)
+      local names = {}
+      for name in pairs(t) do names[#names+1] = name end
+      table.sort(names)
+      for _, name in ipairs(names) do
+        local v = t[name]
+        if type(v) == 'table' then
+          parts[#parts+1] = string.format('%s made %d, used %d (%g/%g a minute, net %+g a minute)', name, v.made, v.used,
+            math.floor(v.made / w.minutes * 10 + 0.5) / 10, math.floor(v.used / w.minutes * 10 + 0.5) / 10, math.floor((v.made - v.used) / w.minutes * 10 + 0.5) / 10)
+        else
+          parts[#parts+1] = string.format('%s %s %d (%g a minute)', what, name, v, math.floor(v / w.minutes * 10 + 0.5) / 10)
+        end
+      end
+    end
+    each(w.fuel); each(w.ammo); each(w.loaded, 'loaded'); each(w.dropped, 'dropped')
+    return string.format('%s (%s, ticks %d-%d): %s', label, secs(w.to - w.from), w.from, w.to, #parts > 0 and table.concat(parts, '; ') or 'no fuel, oxidizer or ammunition made or used, no cargo')
+  end
+  function M.leg_delta(pl)
+    local rec = store()[pl.index]
+    local segs = rec and rec.segs or {}
+    local last_leg
+    for i = #segs, 1, -1 do if segs[i].kind == 'leg' then last_leg = i; break end end
+    if not last_leg then return {lines={'no leg of ' .. pl.name .. ' recorded since this runtime began (freight keeps its last ' .. M.KEEP .. ' segments)'}} end
+    local out, lines = {}, {}
+    out.since_departure = window(rec, pl, last_leg, #segs, true)
+    local cur = segs[#segs]
+    lines[#lines+1] = window_line(string.format('since it left %s', tostring(segs[last_leg].from)), out.since_departure)
+    if cur.kind == 'stop' and segs[last_leg]['end'] then
+      out.last_leg = window(rec, pl, last_leg, last_leg, false)
+      lines[#lines+1] = window_line(string.format('the last full leg %s->%s', tostring(segs[last_leg].from), tostring(segs[last_leg].to)), out.last_leg)
+    end
+    out.lines = lines
+    return out
   end
   function M.segment(seg, now, counts_now, flying, pl)
     local last = seg.last or counts_now or {}

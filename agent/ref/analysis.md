@@ -112,6 +112,8 @@
   when, the cause (`lightning` for a strike on Fulgora), whether its ghost stands now and whether robots can build it (the covering network, its idle
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).
   Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
+- `fields: [...]` on `inspect`, `status`, `platform` and `platforms`: only those fields of the reply (a row's, or
+  `"hub.cargo"` one level down); an unknown name is refused with the names there are.
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity

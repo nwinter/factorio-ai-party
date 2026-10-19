@@ -8642,6 +8642,31 @@ fh watch    # deploy on every change
   - The robot-built event is not forwarded to the runtime (control.lua's fixed list, which only a mod reload changes),
     so a build is known by the entity standing at the ghost's place. An item taken from storage may be another of the
     same name in that chest.
+- Compact replies (batch39 C1, Astra, about 30 times a shift with a local JSON projection). `fields: [...]` (a list,
+  or one string joined by `|` or `,`, as scan's) on platform, platforms, inspect and status returns only those fields.
+  A field is matched as a top-level key, a key of each row, or one level down (`"hub.cargo"`). Rows are platforms'
+  rows and inspect's results or entities, and each row keeps its name and position. A name that matches nothing is
+  refused with the names the reply has. The read runs whole (M.project cuts the reply), so the game-side cost is the
+  same; the agent's context is what shrinks.
+- A whole leg's production (batch39 C2, Sol: a wrapper sampled every 1-2 min, and dock bursts looked sustainable).
+  freight.lua's segments (each stop and each leg) now keep thruster fuel and oxidizer made and used (fluid statistics
+  totals) at their start and end, beside the ammunition counts they kept already. `platform_production {platform,
+  leg: true}` gives two windows:
+  - Since the platform last departed: the leg and the stop after it so far.
+  - While it is stopped, the last full leg alone.
+  Each window has each fluid's and ammunition's made and used (totals, a minute, net a minute), cargo loaded (rockets
+  launched to it) and cargo dropped (its cargo pods: received, landed or gone), with the window's ticks. A leg that
+  began before this runtime has no fuel sample, and says so.
+- belt_route on a platform with an ejection end (batch39 C3, Sol: about 10 min and 6 dry runs on Wayfarer).
+  belt_route was already in SURFACE_ACTIONS (a platform's name as `surface`). It is now also in PLATFORM_ACTIONS, so
+  `platform: NAME` works. route.lua plans by can_place_entity, which keeps the line to foundation and to free
+  footprints, and an underground pair never passes under empty space (UNDER).
+  - `eject: true` (or an inserter name; default inserter) with `to` near the hull edge looks within 6 tiles of `to`
+    for the nearest tile where that inserter, on foundation, picks from a belt tile and drops onto empty space
+    (targets.lua's pickup and drop points by direction, both free to place).
+  - The route then ends on that belt tile, and the inserter's ghost goes with the line's ghosts.
+  - The reply's `eject` names the belt, the inserter and its facing, and the drop tile. No spot found is refused,
+    with the radius.
 - D1 with batch37 D2 (Sol: hub stock against each belt reader; a filter set from a constant minus a whole-belt reader
   starved the crusher feed): circuit_audit {platform} gives `feeders` (circaudit.lua `feeder`).
   - Each inserter of ours whose filters the circuit sets or which the circuit turns on and off gets one line: what it

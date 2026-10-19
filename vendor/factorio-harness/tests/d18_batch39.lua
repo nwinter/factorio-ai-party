@@ -63,3 +63,120 @@ do
   game=nil
 end
 print('d18_batch39 B2 a burner stopped by its own spoilage: ok')
+-- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
+storage={agent_harness={active={}}}
+defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
+  shooting={not_shooting=0,shooting_enemies=1},controllers={character=1,remote=27,spectator=2},direction={north=0},
+  inventory={chest=1,character_main=1,character_guns=3,character_ammo=4},
+  build_mode={normal=1},build_check_type={manual=1},flow_precision_index={five_seconds=0,one_minute=1}}
+prototypes={item={['submachine-gun']={type='gun',attack_parameters={ammo_categories={'bullet'},range=18}},
+  ['rocket-launcher']={type='gun',attack_parameters={ammo_categories={'rocket'},range=36}},
+  ['firearm-magazine']={type='ammo',ammo_category={name='bullet'}},rocket={type='ammo',ammo_category={name='rocket'}},
+  ['iron-plate']={type='item'}}}
+local drawn={}
+rendering={draw_text=function() local obj={valid=true}; obj.destroy=function() obj.valid=false end; drawn[#drawn+1]=obj; return obj end,
+  get_object_by_id=function(id) return drawn[id] end}
+remote={interfaces={}}
+helpers={json_to_table=function(t) return t end}
+local force={name='player',get_friend=function() return false end,get_cease_fire=function() return false end,chart=function() end,
+  is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
+local surface={name='nauvis',index=1}
+local units=0
+local function character(pos)
+  units=units+1
+  local c={valid=true,name='character',type='character',force=force,surface=surface,position=pos,unit_number=500+units,health=250,max_health=250,
+    prototype={collision_box={left_top={x=-0.2,y=-0.2},right_bottom={x=0.2,y=0.2}},collision_mask={layers={player=true}}},
+    driving=false,build_distance=10,reach_distance=10,character_running_speed=0.15,walking_state={walking=false},selected_gun_index=1}
+  c.insert=function(s) return s.count end
+  c.get_item_count=function() return 0 end
+  c.can_reach_entity=function() return true end
+  c.destroy=function() c.valid=false end
+  return c
+end
+surface.find_non_colliding_position=function(_,origin) return origin end
+surface.create_entity=function(args) if args.name=='character' then return character(args.position) end return {valid=true,name=args.name,position=args.position} end
+surface.can_place_entity=function() return true end
+surface.find_entities_filtered=function() return {} end
+surface.get_total_pollution=function() return 0 end; surface.get_chunks=function() return function() end end; surface.get_pollution=function() return 0 end
+surface.request_path=function() return 1 end
+local players={}
+local tick=0
+game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolution_factor=function() return 0 end,get_evolution_factor_by_time=function() return 0 end,
+  get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
+  get_player=function(i) if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
+  get_surface=function() return surface end,print=function() end,connected_players=players,
+  get_pollution_statistics=function() return {input_counts={},output_counts={},get_flow_count=function() return 0 end} end}
+local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
+local function advance(n) for _=1,n do tick=tick+1; game.tick=tick; runtime.tick{tick=tick} end end
+local function request(req)
+  local ok,result=pcall(runtime.dispatch,req)
+  if not ok then
+    if req.bot then pcall(runtime.stop_player,runtime.bots.index_of(req.bot)) end
+    error(result,0)
+  end
+  return result
+end
+local function as(name) return function(action,args) return request{action=action,args=args or {},bot=name} end end
+local grok=as('grok')
+runtime.operator.bot_create('grok')
+local body=runtime.lookup(runtime.bots.index_of('grok')).character
+
+-- C1 (Astra, about 30 times a shift with a local JSON projection): fields on platform, inspect and status.
+do
+  local full=grok('status',{})
+  local r=grok('status',{fields={'surface','tick'}})
+  eq(r.surface,full.surface); eq(r.fields,'surface, tick'); eq(r.last,nil)
+  fails(function() grok('status',{fields='surface|bogus'}) end,'fields: bogus is not in this reply; its fields: ')
+  -- rows: each keeps name and position; one level down
+  local out=runtime.project({platforms={{name='Petrel',position={x=0,y=0},hub={cargo='iron-plate*5',slots=3},speed_kms=1},{name='Swiftlet',hub={cargo='none'}}},planet='gleba'},{'hub.cargo','planet'})
+  eq(out.platforms[1].name,'Petrel'); eq(out.platforms[1].hub.cargo,'iron-plate*5'); eq(out.platforms[1].hub.slots,nil); eq(out.platforms[1].speed_kms,nil)
+  eq(out.platforms[2].hub.cargo,'none'); eq(out.planet,'gleba')
+  fails(function() runtime.project({platforms={{name='P',hub={}}}},{'circuits'}) end,'its fields and its platforms rows\' fields: hub, name, platforms')
+end
+print('d18_batch39 C1 fields on platform, inspect and status: ok')
+
+-- C2 (Sol: a wrapper sampled every 1-2 min; dock bursts looked sustainable): platform_production {leg}: since the last
+-- departure and the last full leg, from freight's samples at each segment's start and end.
+do
+  local saved_game,saved_protos=game,prototypes
+  prototypes={item={['firearm-magazine']={type='ammo'}}}
+  local fl={['thruster-fuel']={1000,0},['thruster-oxidizer']={1000,0}}
+  local am={['firearm-magazine']={50,0}}
+  local function stats(t) return {get_input_count=function(n) return (t[n] or {0,0})[1] end,get_output_count=function(n) return (t[n] or {0,0})[2] end} end
+  local pl={index=4,name='Wayfarer',surface={},force={get_fluid_production_statistics=function() return stats(fl) end,get_item_production_statistics=function() return stats(am) end}}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  game={tick=0}
+  -- a leg from nauvis to gleba of 10 min with its samples, then a stop at gleba 5 min so far
+  st.freight={[4]={segs={
+    {kind='leg',from='nauvis',to='gleba',start=0,['end']=36000,fuel0={['thruster-fuel']={made=1000,used=0},['thruster-oxidizer']={made=1000,used=0}},ammo0={['firearm-magazine']={made=50,used=0}},
+      fuel1={['thruster-fuel']={made=7000,used=9000},['thruster-oxidizer']={made=6000,used=9000}},ammo1={['firearm-magazine']={made=150,used=120}}},
+    {kind='stop',at='gleba',start=36000,rockets={n=1,cargo={bioflux=500}},pods={received={n=1,cargo={['copper-ore']=500}}}}}}}
+  game.tick=54000
+  fl={['thruster-fuel']={10000,9000},['thruster-oxidizer']={9000,9000}}; am={['firearm-magazine']={200,120}}
+  local d=F.leg_delta(pl)
+  has(d.lines[1],'since it left nauvis (15m00s, ticks 0-54000): thruster-fuel made 9000, used 9000 (600/600 a minute, net +0 a minute)')
+  has(d.lines[1],'firearm-magazine made 150, used 120 (10/8 a minute, net +2 a minute)')
+  has(d.lines[1],'loaded bioflux 500'); has(d.lines[1],'dropped copper-ore 500')
+  has(d.lines[2],'the last full leg nauvis->gleba (10m00s, ticks 0-36000): thruster-fuel made 6000, used 9000'); has(d.lines[2],'firearm-magazine made 100, used 120 (10/12 a minute, net -2 a minute)')
+  has(d.lines[2],'thruster-oxidizer made 5000, used 9000 (500/900 a minute, net -400 a minute)')
+  eq(d.last_leg.loaded.bioflux,nil,'no cargo on the leg alone')
+  game,prototypes=saved_game,saved_protos
+end
+print('d18_batch39 C2 a whole leg\'s production: ok')
+
+-- C3 (Sol: ~10 min and 6 dry runs on Wayfarer): belt_route's eject end: the belt tile where an inserter on foundation
+-- picks and drops onto empty space off the hull, nearest to `to`.
+do
+  prototypes.entity=prototypes.entity or {}
+  prototypes.entity.inserter={type='inserter',inserter_pickup_position={0,-1},inserter_drop_position={0,1.2}}
+  local hull={get_tile=function(x,y) return {valid=true,name=y>=3 and 'empty-space' or 'space-platform-foundation'} end,
+    can_place_entity=function(f) return math.floor(f.position.y)<3 end}
+  local pp={surface=hull,force=force}
+  local b,ej=runtime.eject_end(pp,{from={x=0,y=-10},to={x=4.5,y=1.5},eject=true})
+  -- the inserter on the edge row (y 2), picking from y 1, dropping at y 3 (empty space)
+  eq(ej.position.y,2.5); eq(ej.belt.y,1.5); eq(ej.drop.y,3.5); eq(b.to.x,ej.belt.x); eq(b.eject,nil)
+  fails(function() runtime.eject_end(pp,{to={x=4.5,y=-40},eject=true}) end,'eject: no spot within 6 tiles of (4.5,-40)')
+  fails(function() runtime.eject_end(pp,{to={x=0,y=0},eject='iron-chest'}) end,'is not an inserter')
+end
+print('d18_batch39 C3 belt_route ends where an inserter throws overboard: ok')
