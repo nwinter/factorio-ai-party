@@ -54,6 +54,15 @@ eq(#r.empty,1); eq(r.empty[1].from,'(6.5,0.5)'); eq(r.empty[1].to,'(8.5,0.5)'); 
 eq(#r.ghosts,1); eq(r.ghosts[1].position,'(14.5,0.5)')
 eq(#r.unknown,1); eq(r.unknown[1].from,'(15.5,0.5)'); eq(r.unknown[1].tiles,2)
 eq(r.line,'17 tiles: 3 segments ((0.5,0.5)..(3.5,0.5) crude-oil 1000; (4.5,0.5)..(5.5,0.5) crude-oil 1000; (9.5,0.5)..(13.5,0.5) water 1000); 3 cuts; 1 empty run; 1 ghost; 1 unknown run')
+-- (d18 batch39 D1, finished in d19 batch41 D3) with pipe_fluid, each cut names each side's fluid
+do
+  local G2=dofile('mod/agent-harness_0.1.0/pipegaps.lua'){position=function(v) return {x=v.x,y=v.y} end,
+    connections=function(e) return e.conns end,segment_box=function(e) return e.fluidbox.get_fluid_segment_id()==7 and {0,0,3,0} or nil end,
+    visible=function(_,pos) return pos.x<15 end,pipe_fluid=function(e) return e.position.x<4 and 'crude-oil' or 'heavy-oil' end}
+  local r2=G2.read(p,{from={x=0.5,y=0.5},to={x=16.5,y=0.5}})
+  eq(r2.cuts[1].line,'pipe (3.5,0.5) (crude-oil) and pipe (4.5,0.5) (heavy-oil) do not join'); eq(r2.cuts[1].fluids[2],'heavy-oil')
+  eq(r2.cuts[2].line,'pipe (5.5,0.5) (heavy-oil): nothing of ours with a fluidbox at (6.5,0.5)')
+end
 fails(function() G.read(p,{from={x=0,y=0},to={x=3,y=3}}) end,'horizontal or vertical')
 fails(function() G.read(p,{from={x=0,y=0},to={x=600,y=0}}) end,'512 tiles')
 print('pipegaps: ok')

@@ -594,7 +594,7 @@ return function(api)
   end
 
   M.schema = {
-    placements={fluids='optional 1..6 fluid names, for a machine with fluid ports: only spots whose ports touch built segments of each (a port\'s join tile holds an entity of ours connected back), and none joining a segment of another fluid than that port takes (with recipe: the recipe\'s fluids); each placement gives ports [{flow, at, wants, touches, segment, via}] and line; rejected counts spots the game took that failed this, mixes up to 3 of the joins refused',recipe='optional, with fluids: the recipe the machine will run (its ports\' fluids)',resource='optional, with a mining drill or pumpjack: a resource name (or true: any it mines): its spots on that resource within radius 1..32 (default 16): a pumpjack every well, free with the directions it fits, or taken by our drill, or blocked; a drill every tile centre whose mining area holds the ore, the most ore first, free ones none overlapping; returns free [{position, amount, tiles or directions, line}], free_count, blocked (each with the build refusal\'s why), blocked_count, blocked_by (by kind, how many, one where), line',
+    placements={fluids='optional 1..6 fluid names, for a machine with fluid ports: only spots whose ports touch built segments of each (a port\'s join tile holds an entity of ours connected back), and none joining a segment of another fluid than that port takes (with recipe: the recipe\'s fluids); each placement gives ports [{flow, at, wants, touches (the segment\'s fluid, or empty), segment, via}] and line; rejected counts spots the game took that failed this, mixes up to 3 of the joins refused, fluids_line when none passed',recipe='optional, with fluids: the recipe the machine will run (its ports\' fluids)',resource='optional, with a mining drill or pumpjack: a resource name (or true: any it mines): its spots on that resource within radius 1..32 (default 16): a pumpjack every well, free with the directions it fits, or taken by our drill, or blocked; a drill every tile centre whose mining area holds the ore, the most ore first, free ones none overlapping; returns free [{position, amount, tiles or directions, line}], free_count, blocked (each with the build refusal\'s why), blocked_count, blocked_by (by kind, how many, one where), line',
       surface='optional planet name: spots there by remote view (a chunk our force sees), as the map lets a player plan them',platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
       radius='optional 1..24 (default 12 for an offshore-pump, else 10; past 24 searched at 24, said in note)',limit='optional 1..50 positions (default 10; past 50: 50)',
@@ -669,10 +669,11 @@ return function(api)
         local ports = api.fluid_touches(p.surface, p.force, proto, position, dir, a.recipe)
         local got, parts, mix = {}, {}, nil
         for _, pt in ipairs(ports) do
-          if pt.touches then got[pt.touches] = true end
+          -- an empty segment holds no fluid to mix
+          if pt.touches and pt.touches ~= 'empty' then got[pt.touches] = true end
           parts[#parts+1] = string.format('%s port at (%g,%g)%s: %s', pt.flow or 'its', pt.at.x, pt.at.y, pt.wants and ' (' .. pt.wants .. ')' or '',
             pt.touches and (pt.touches .. ' segment ' .. tostring(pt.segment) .. ' at ' .. pt.via) or 'nothing')
-          if pt.touches and pt.wants and pt.touches ~= pt.wants then mix = mix or string.format('(%g,%g) %s: its %s port would join %s to its %s', position.x, position.y, NAMES[dir] or '', pt.flow or '', pt.touches, pt.wants) end
+          if pt.touches and pt.touches ~= 'empty' and pt.wants and pt.touches ~= pt.wants then mix = mix or string.format('(%g,%g) %s: its %s port would join %s to its %s', position.x, position.y, NAMES[dir] or '', pt.flow or '', pt.touches, pt.wants) end
         end
         if mix then return false, mix end
         for _, f in ipairs(a.fluids) do if not got[f] then return false end end
@@ -692,10 +693,14 @@ return function(api)
     -- in the way when nothing fits; spots of the list that overlap each other, and those no pole supplies.
     local pad = api.one_pad and try(function() return api.one_pad(p.surface, p.force, proto) end)
     if pad then out.one_per_planet = pad end
-    if #found == 0 then out.in_the_way = pad or M.in_the_way(p, proto, pos, radius) end
+    -- (d19 batch41 D3) spots the game takes, all failing the fluids test: said so, not "nothing fits"
+    if #found == 0 and info.rejected and info.rejected > 0 then
+      out.fluids_line = string.format('the game takes %d spot%s here; none has ports touching %s without joining another fluid%s', info.rejected, info.rejected == 1 and '' or 's',
+        table.concat(a.fluids, ' and '), a.recipe and ' (recipe ' .. a.recipe .. ')' or '')
+    elseif #found == 0 then out.in_the_way = pad or M.in_the_way(p, proto, pos, radius) end
     -- None fits: the spots that need the fewest of our entities (or trees and rocks) mined first (Astra 06:22, 4 times on
     -- Fulgora: a roboport in a full accumulator field), as a player would clear a site.
-    if #found == 0 and not pad then
+    if #found == 0 and not pad and not (info.rejected and info.rejected > 0) then
       local ok, sites = pcall(M.fewest_to_clear, p, proto, pos, radius, seen)
       if ok and sites and #sites > 0 then out.fewest_to_clear = sites end
     end

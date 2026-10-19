@@ -8853,3 +8853,19 @@ fh watch    # deploy on every change
   - Cost: where_is already reads every holding entity of the surface in one find, so it was not probed on n (21:05
     rule). The Lua part over fake entities in a counted loop is about 3.5 us a place holding the item (1000: 3.4 ms,
     2000: 7.1 ms, 4000: 14.0 ms), plus one module-inventory read a machine, beacon or drill holding it.
+## d19 batch41, Group D (eng/d19-batch41)
+
+- D1 (Sol 23:10): use_item's help: artillery-targeting-remote needs none held once artillery is researched.
+- D2 (operator d18 19:02: construction_robots sources 24 ms on network 243): on the private copy, network 243 (299
+  ghosts, 491 chests) read 17.7 ms whole. Now a call reads up to 4 squares of 128 tiles of the construction area,
+  stopping after the square that brings 60 ghosts, and the first line names `sources_from` for the next square. An
+  entity ghost's item is read once a ghost name. Each group names the chest the network's robots would take its item
+  from (select_pickup_point from the group's centre), with what it holds and the network's total, in place of the 3
+  nearest of every chest. The worm checks share one budget of 64 map chunks a call; a line past it says it was not
+  read. Each call on network 243: 1.3-7.8 ms (cold), 6 calls for the whole area.
+- D3 (batch39 D1-D2 from eng/d18-batch39-ad): where_is (batch39 D2, as it was there: the most held first, paged,
+  beacons and drills, module slots, kinds_line). Scan rows of our pipes, pipe-to-grounds, tanks and pumps give
+  `fluid` (the segment's: the most of it in the segment, else the box's, its locked fluid or filter, else empty); 716
+  pipes read in 1.1 ms on the private copy. pipe_gaps cut lines name each side's fluid. `placements {name, fluids,
+  recipe?}` keeps spots whose ports touch built segments of each fluid and join none of another (an empty segment
+  holds none); none passing gives `fluids_line` in place of `in_the_way`.

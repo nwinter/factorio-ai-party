@@ -205,7 +205,8 @@
   ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
   what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
 - `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
-  where neighbours do not join or the line stops. `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
+  where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
+  tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
   network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities:
   each fluid segment by the engine's id with its fluid, amount over capacity and box, `empty` (with the fluid it is
   locked to), and the machines it joins with each box's fluid. inspect's rows and compact lines give an entity's

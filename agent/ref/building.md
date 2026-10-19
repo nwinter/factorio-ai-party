@@ -103,11 +103,13 @@
   `preserve_existing_settings_and_wires: true` adds only what is missing. A paste leaves the requests of a hub or
   requester chest it lands on, a hub's construction requests too (`requests_kept`).
   Example: `./fh call paste --args '{"name":"smelter-row","position":{"x":40,"y":12},"dry_run":true}'`
-- `placements {name, near?, radius?, limit?, separate?, powered?, surface?, resource?}`: up to 10 (`limit` up to 50) positions
+- `placements {name, near?, radius?, limit?, separate?, powered?, surface?, resource?, fluids?, recipe?}`: up to 10 (`limit` up to 50) positions
   where it fits now, nearest first, by the game's build check, without building (`blocked`: positions something stands
   in). `"separate": true` lists spots that do not overlap each other, `"powered": true` only spots in one of our poles'
   supply areas; without them `overlapping` and `no_supply` count such spots, and count 0 names what is in the way
-  (`in_the_way`). With no spot it adds `fewest_to_clear`: up to 3 spots (within 12 tiles) whose blockers are all ours
+  (`in_the_way`). `fluids: ["light-oil", "water"]` (with `recipe`: its ports' fluids) keeps only spots whose ports touch
+  built segments of each and join none of another fluid (`ports` and `line` per spot; `mixes`, `rejected`,
+  `fluids_line`). With no spot it adds `fewest_to_clear`: up to 3 spots (within 12 tiles) whose blockers are all ours
   and minable, or trees and rocks, with how many to mine first and which (`(47,187): mine 2 first (accumulator 2):
   ...`). `surface` reads another planet; each spot gives `network`. A cargo bay keeps to its 2-tile grid: the position
   offered is where it lands. A refused build of an offshore pump, or of anything onto water, lists the nearest valid

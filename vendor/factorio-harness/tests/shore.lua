@@ -386,4 +386,39 @@ assert(none.in_the_way and none.in_the_way:find('^nothing fits within 2 tiles of
 assert(p.blocked and p.blocked>0)
 for _,a in ipairs(asked) do assert(a.position.x+1<=10,'over the lake: '..a.position.x) end
 surface.count_tiles_filtered=nil; surface.find_tiles_filtered=find_tiles
+-- (d18 batch39 D1, finished in d19 batch41 D3; Opus: ~15 min in a dense oil block) placements {fluids, recipe?}: only
+-- spots whose ports touch built segments of each fluid and join none of another fluid than the port takes.
+do
+  prototypes.fluid={water={},steam={}}
+  local touches=runtime.fluidjoin.touches
+  runtime.fluidjoin.touches=function(s,f,proto,pos,dir)
+    if pos.x==8.5 then return {{flow='input',at={x=7,y=pos.y},wants='water',touches='water',segment=4,via='pipe (6.5,'..pos.y..')'},{flow='output',at={x=10,y=pos.y},touches='empty',segment=9,via='pipe (10.5,0.5)'}} end
+    if pos.x==7.5 then return {{flow='input',at={x=6,y=pos.y},wants='water',touches='steam',segment=5,via='pipe (5.5,'..pos.y..')'}} end
+    return {{flow='input',at={x=0,y=0},wants='water'}}
+  end
+  local q=bot('placements',{name='boiler',near={x=8,y=0},radius=4,fluids={'water'},limit=3})
+  assert(#q.placements>0,'spots touching water')
+  for _,pl in ipairs(q.placements) do
+    eq(pl.position.x,8.5)
+    assert(pl.line:find('input port at (7,'..pl.position.y..') (water): water segment 4 at pipe (6.5,',1,true),pl.line)
+  end
+  assert(q.rejected and q.rejected>0)
+  -- only steam at the spots near: the mix named, and no "nothing fits"
+  q=bot('placements',{name='boiler',near={x=7.5,y=0},radius=1,fluids={'steam'}})
+  eq(#q.placements,0); eq(q.in_the_way,nil)
+  eq(q.fluids_line,'the game takes '..q.rejected..' spot'..(q.rejected==1 and '' or 's')..' here; none has ports touching steam without joining another fluid')
+  fails(function() bot('placements',{name='boiler',fluids={'lava-water'}}) end,'unknown fluid lava-water')
+  runtime.fluidjoin.touches=touches
+end
+-- scan rows name a pipe's fluid: the most of it in its segment, else its box's, its locked fluid or filter
+do
+  local fb={get_fluid_segment_contents=function() return {water=10,['petroleum-gas']=90} end}
+  eq(runtime.pipe_fluid({fluidbox=fb}),'petroleum-gas')
+  fb.get_fluid_segment_contents=function() return {} end
+  fb.get_locked_fluid=function() return 'crude-oil' end
+  eq(runtime.pipe_fluid({fluidbox=fb}),'crude-oil (locked, empty)')
+  fb.get_locked_fluid=function() return nil end
+  eq(runtime.pipe_fluid({fluidbox=fb}),'empty')
+end
+
 print('shore: ok')
