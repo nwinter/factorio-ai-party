@@ -70,7 +70,10 @@ return function(api)
     -- (batch31 B1) the landing pads too, in the same search
     if s and not (c and game.tick - c.tick < 3600 and c.pads) then
       c = {tick=game.tick, list={}, pads={}}
-      for _, e in ipairs(try(function() return s.find_entities_filtered{type={'rocket-silo', 'cargo-landing-pad'}} end) or {}) do
+      -- (d19 batch44 A2) the census pass's silos and pads of ours when it has them (the find was 10.6 ms on the private
+      -- copy's Nauvis)
+      local known = api.census_typed and try(function() return api.census_typed(force, s, {'rocket-silo', 'cargo-landing-pad'}) end)
+      for _, e in ipairs(known or try(function() return s.find_entities_filtered{type={'rocket-silo', 'cargo-landing-pad'}} end) or {}) do
         table.insert(e.type == 'rocket-silo' and c.list or c.pads, e)
       end
       sc.shipment_silos[s.index] = c

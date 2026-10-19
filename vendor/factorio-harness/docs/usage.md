@@ -8907,3 +8907,19 @@ fh watch    # deploy on every change
   The agent who made the previous edit of that setting, when someone else changes it, gets one tell a call (`changed
   what you set last: automatic requests: on -> off`); a stops change is told once, with the departure gate's edit.
   Records begin with this deploy. Test tests/d19_batch46.lua.
+- A2 (the actions agents call on n, audited for whole-surface reads; shifts 39-41: 11.1 hours, journals of 9 agents):
+  each read action replayed with up to 15 of its journal calls on the private copy, as the bot that made it, timing the
+  handler alone and then the reply around it. A whole-surface find costs about 10.5 ms on the copy's Nauvis whatever
+  the type. The census pass (A1) now also keeps our turrets, artillery and radars by type (census.lua typed; it walks
+  them already), and these use it when it has a surface: silo (54 calls an hour; 17 -> 1.4 ms; the reply's read_from
+  says so; silo {position} reads 10 tiles round it live as well), platform (228/h; its silos on the caller's surface;
+  27 -> 3.8 ms), shipment (25/h; each stop's landing pads in freight.lua pads; 46 -> 1.5 ms), artillery (5/h; 19 ->
+  9 ms), trace {item} with no near (21/h; the crafters and drills; 24 -> 12.9 ms, the rest is its route reading),
+  freight_audit (4.6/h; its pads, silos, labs and chests; it also read every slot of every network chest for an item
+  that never spoils: 36-250 -> 9-12 ms), turrets with no area (3.4/h; the find, 15.5 ms; the per-turret rows remain).
+  losses (6/h; 30-66 -> 10 ms): the loss log keeps each position's newest row by force and surface (rows_in read all
+  6000 slots), and the per-row checks (ghost, robots, rebuilt) cover the newest 100 rows a call, the rest counted by
+  name and said unchecked (`unchecked`). The reply around every call (the team block): the belt, line-cut, robot-loss
+  and power-cut alert groups (4.6 ms) are kept 120 ticks per force, and the push alerts read the board's active claims
+  once a tick (an agent shown no new alert group read every board item twice for each of about 170 groups, 10 ms):
+  4.3-16 -> 0.7-1.5 ms a reply.

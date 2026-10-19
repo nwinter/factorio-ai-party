@@ -110,7 +110,8 @@
   `--urgent-radius N`, `--until "alert near=X,Y radius=R min_size=N"`).
 - `losses {surface?, area? | position+radius?, since?, name?}`: each building of ours that died, newest first: where,
   when, the cause (`lightning` for a strike on Fulgora), whether its ghost stands now and whether robots can build it (the covering network, its idle
-  robots and the item), and the items a rebuild needs (to carry, held, in the covering networks).
+  robots and the item), and the items a rebuild needs (to carry, held, in the covering networks). A call checks the
+  newest 100; older ones are counted by name and marked not checked (`unchecked`).
   Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
 - `fields: [...]` on `inspect`, `status`, `platform` and `platforms`: only those fields of the reply (a row's, or
   `"hub.cargo"` one level down); an unknown name is refused with the names there are.
