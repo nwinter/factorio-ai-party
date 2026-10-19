@@ -32,8 +32,9 @@ return function(api)
         local text = string.format('%s %d/%d', ing.name, usable, ing.amount) .. (soon > 0 and string.format(' (%d held, %d of them spoil within 5 min)', held, soon) or '')
         if gap > 0 then
           short = true
-          local scan = api.scan(p, ing.name, {position=e.position, radius=NEAR})
-          row.donors = api.where_kept(p, ing.name, gap, scan)
+          -- (d19 batch41 A1) a donor search that fails says so on its row; the other machines still read
+          local okd, donors = pcall(function() return api.where_kept(p, ing.name, gap, api.scan(p, ing.name, {position=e.position, radius=NEAR})) end)
+          row.donors = okd and donors or 'donors not read: ' .. tostring(donors)
           text = text .. string.format(': %d short; %s', gap, row.donors)
         end
         rows[#rows+1] = row; parts[#parts+1] = text

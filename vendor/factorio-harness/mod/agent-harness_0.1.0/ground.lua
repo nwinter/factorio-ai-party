@@ -287,10 +287,60 @@ return function(api)
     return lines
   end
 
+  -- (d19 batch41 A3, Sol seq 863: a cancel over 823 stacks on Fulgora read cancelled 0 beside item_stacks 823, and 163
+  -- construction robots seemed queued there still) the construction robots of the networks whose construction area
+  -- covers the box (sampled every 32 tiles) with an order on an item stack in it: robots and orders, the first MAX_ROBOTS
+  -- robots read (50 robots read in 0.29 ms on the private copy). On 2.0.77 (a private copy of world n) a cancel takes the orders off at once: 84 orders on 200 marked
+  -- stacks went to 0 the same tick; robots already carrying a stack take it on to storage.
+  local MAX_ROBOTS = 1000
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local function robot_orders(surface, force, box)
+    local nets, seen = {}, {}
+    local lt, rb = box.left_top or box[1], box.right_bottom or box[2]
+    local x = lt.x
+    while true do
+      local y = lt.y
+      while true do
+        for _, n in ipairs(try(function() return surface.find_logistic_networks_by_construction_area({x=x, y=y}, force) end) or {}) do
+          if n.valid and not seen[n.network_id] then seen[n.network_id] = true; nets[#nets+1] = n end
+        end
+        if y >= rb.y then break end
+        y = math.min(rb.y, y + 32)
+      end
+      if x >= rb.x then break end
+      x = math.min(rb.x, x + 32)
+    end
+    local robots, orders, read, capped, on, busy = 0, 0, 0, false, {}, {}
+    for _, n in ipairs(nets) do
+      for _, r in ipairs(try(function() return n.construction_robots end) or {}) do
+        read = read + 1
+        if read > MAX_ROBOTS then capped = true; break end
+        local mine = false
+        local q = try(function() return r.robot_order_queue end) or {}
+        for _, o in ipairs(q) do
+          local t = o.target
+          if t and t.valid and t.type == 'item-entity' then
+            local at = t.position
+            if at.x >= lt.x and at.x <= rb.x and at.y >= lt.y and at.y <= rb.y then orders = orders + 1; mine = true end
+          end
+        end
+        if mine then robots = robots + 1; on[r] = true end
+        if #q > 0 then busy[r] = true end
+      end
+      if capped then break end
+    end
+    return {robots=robots, orders=orders, networks=#nets, capped=capped, on=on, busy=busy}
+  end
+  M.robot_orders = robot_orders
+  local function freed_text(out)
+    return out.robots_freed, out.robots_carrying and string.format(' (%d of them still %s a stack they picked up to storage)', out.robots_carrying, out.robots_carrying == 1 and 'carries' or 'carry') or ''
+  end
+
   -- deconstruct items_on_ground: mark (or cancel) every item stack in the
   -- area, as a deconstruction planner over items on the ground does.
   function M.mark(p, box, cancel, out)
     local list = p.surface.find_entities_filtered{area=box, type='item-entity', limit=MAX_MARK + 1}
+    local before = cancel and robot_orders(p.surface, p.force, box)
     local n, already, marked = 0, 0, {}
     local nets, net_seen, outside, cover = 0, {}, 0, {}
     local storages = 0
@@ -323,7 +373,23 @@ return function(api)
         end
       end
     end
-    out.item_stacks = n
+    if cancel then
+      out.item_stacks_cancelled = n
+      local after = before and robot_orders(p.surface, p.force, box)
+      if before then
+        local freed, carrying = 0, 0
+        for r in pairs(before.on) do
+          if not after.on[r] then freed = freed + 1; if after.busy[r] then carrying = carrying + 1 end end
+        end
+        out.robot_orders_cancelled = math.max(0, before.orders - after.orders)
+        out.robots_freed = freed
+        out.robots_carrying = carrying > 0 and carrying or nil
+        out.robots_still_on_stacks = after.robots > 0 and after.robots or nil
+        out.robots_read = before.capped and string.format('the first %d construction robots of %d networks read', MAX_ROBOTS, before.networks) or nil
+      end
+      out.item_stacks_line = string.format('%d item stack%s on the ground unmarked%s', n, n == 1 and '' or 's',
+        before and string.format('; %d robot orders on them cancelled; %d construction robots had orders on them and have none now%s', out.robot_orders_cancelled, freed_text(out)) or '')
+    else out.item_stacks = n end
     if not cancel then
       out.item_stacks_already = already > 0 and already or nil
       local sum = M.summary(marked, 12)

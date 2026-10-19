@@ -92,7 +92,7 @@ do
   eq(l.yours,'pending'); eq(l.next_due_tick,108960)
   -- Not acknowledged: the next run folds into the pending line (no second line), and it reads overdue.
   run(54000)
-  eq(#boxes[1],1,'no backlog'); has(R.handlers.reminders(astra,{}).reminders[1].states,'astra pending (1 run missed)')
+  eq(#boxes[1],1,'no backlog'); has(R.handlers.reminders(astra,{}).reminders[1].states,'astra pending (1 run missed (tick 108960, 0s ago))')
   -- sol acknowledges: the result is kept, the cadence stays anchored.
   local ack=R.handlers.reminder_ack(sol,{id=1,result='Petrel 900 magazines, 4 free slots'})
   eq(ack.missed,1); eq(R.handlers.reminders(sol,{}).reminders[1].next_due_tick,162960)
@@ -103,7 +103,7 @@ do
   for _,t in ipairs(boxes[2]) do if t.text:find('astra has missed 2 runs of your reminder #1',1,true) then told=t end end
   assert(told,'the owner line'); eq(told.from,'reminder #1')
   has(told.text,'last result: Petrel 900 magazines, 4 free slots (by sol, 900s ago); reminder_edit {id: 1, recipients: ["sol"]} changes its recipients')
-  has(R.handlers.reminders(sol,{}).reminders[1].states,'astra overdue (2 runs missed, the owner told)')
+  has(R.handlers.reminders(sol,{}).reminders[1].states,'astra overdue (2 runs missed (the first at tick 108960, 15m00s ago; the last at tick 162960, 0s ago), the owner told)')
   eq(R.handlers.reminders(sol,{}).reminders[1].missed.astra,2)
   -- A server paused for hours: one run, not one per missed interval.
   game.tick=game.tick+54000*5-1; run(1)

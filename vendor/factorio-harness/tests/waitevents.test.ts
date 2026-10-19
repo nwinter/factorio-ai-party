@@ -115,6 +115,25 @@ test('open projects from the shift block, board reads and project items are file
     assert.match(filed.at,/^\d{4}-\d\d-\d\dT/);
   });
 });
+test('the ground rules from the shift block and ground rule replies are filed for the post-compaction brief',async()=>{
+  const dir=await tempDir('fh-rules-');
+  const rules=['rule 1 (by astra): a ship leaves with full ammo; from lessons #40 (evidence tick 100, verified 1h ago)'];
+  const replies:Record<string,any>={
+    status:{team:{shift:{shift:'shift 3, started 0s ago',ground_rules:rules}}},
+    ground_rule_add:{rule:{id:2},rules:[...rules,'rule 2 (by sol): one checklist per ship; from lessons #41 (evidence tick 200, verified 0h ago)']},
+    inventory:{rules:['not a rule list']},
+  };
+  await engine(request=>({ok:true,result:{clock:'game 1s',...(replies[request.action]??{})}}),async port=>{
+    const journal=['--journal',join(dir,'journal.jsonl')];
+    const read=async()=>JSON.parse(await readFile(join(dir,'.ground_rules.json'),'utf8'));
+    await cli(port,['call','status',...journal]);
+    assert.deepEqual((await read()).lines,rules);
+    await cli(port,['call','ground_rule_add','--args','{"text":"one checklist per ship","lessons":[41]}',...journal]);
+    assert.equal((await read()).lines.length,2);
+    await cli(port,['call','inventory',...journal]);
+    assert.equal((await read()).lines.length,2,'another rules key is not the ground rules');
+  });
+});
 test('fh board projects reads the open projects',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{items:[]}};},async port=>{

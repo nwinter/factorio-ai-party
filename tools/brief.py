@@ -167,7 +167,11 @@ def sample(kind, d=None):
             team = team_text(f.name, me[0], me[5])
         text = core(me[0], open(os.path.join(AGENT, "time-realtime.md")).read().rstrip("\n"), team)
         text = harness_note(text, kind)
-        add = full_tools.paragraph(kind, me[0]).rstrip("\n") + "\n\n"
+        # (d19 batch41 C1) a team-tools with its README and a knowledge index, as shift41's
+        with tempfile.TemporaryDirectory(dir=d) as shared:
+            open(os.path.join(shared, "README.md"), "w").write("# Persistent team knowledge\n")
+            open(os.path.join(shared, "knowledge-index39.md"), "w").write("# Team knowledge index\n")
+            add = full_tools.paragraph(kind, me[0], shared).rstrip("\n") + "\n\n"
         i = text.find("## Compact instructions")
         return text[:i] + add + text[i:]
     finally:

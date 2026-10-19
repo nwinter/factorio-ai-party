@@ -100,7 +100,8 @@ return function(api)
     if hub and f.minimum_delivery_count then text=text..' min payload '..f.minimum_delivery_count end
     return text
   end
-  local function list_sections(secs,hub)
+  -- (d19 batch41 B1) uid: the requester's unit number: each section's last edit (editlog.lua), who, when, old and new.
+  local function list_sections(secs,hub,uid)
     local out={}
     for i=1,secs.sections_count do
       local sec=secs.get_section(i)
@@ -110,7 +111,19 @@ return function(api)
       -- as off=true: false values drop out of the compact reply. active says on or off for every section (batch29 A3,
       -- Luna 04:45 read sections 5-6 as unchanged), a word so it shows there too.
       out[#out+1]={index=i,group=sec.group~='' and sec.group or nil,active=sec.active==false and 'off' or 'on',off=sec.active==false or nil,
-        controlled=not sec.is_manual or nil,requests=rows}
+        controlled=not sec.is_manual or nil,requests=rows,
+        last_edit=uid and api.editlog and api.editlog.text(api.editlog.last('req:'..uid,i)) or nil}
+    end
+    return out
+  end
+  -- (d19 batch41 B1) each section as one text, for the edit log: on or off, its group, its requests.
+  local function section_texts(secs,hub)
+    local out={}
+    for i=1,secs.sections_count do
+      local sec=secs.get_section(i)
+      local rows={}
+      for _,f in ipairs(try(function() return sec.filters end) or {}) do local t=filter_text(f,hub); if t then rows[#rows+1]=t end end
+      out[i]=(sec.active==false and 'off' or 'on')..(sec.group~='' and ' "'..sec.group..'"' or '')..': '..(#rows>0 and table.concat(rows,', ') or 'no request')
     end
     return out
   end
@@ -385,6 +398,10 @@ return function(api)
     -- (d17 batch29 C4) on a hub: what it keeps before the change (sends_down), and for dry_run every manual section's
     -- slots and switch and the hub's kept minimum payloads, put back after the read
     local before=hub and hub.valid and changing and M.hub_keep_at(secs) or nil
+    -- (d19 batch41 B1) the sections before the edit, for the edit log
+    local is_hub_target=a.platform~=nil or (chest and chest.type=='space-platform-hub') or false
+    local logged=changing and not a.dry_run and api.editlog and (chest or hub) or nil
+    local texts_before=logged and section_texts(secs,is_hub_target)
     local snap
     if a.dry_run then
       snap={count=secs.sections_count,secs={}}
@@ -398,7 +415,7 @@ return function(api)
     end
     -- changed: a slot set or cleared, or the section switched (friction2: a set the call read as nothing still said
     -- changed_section).
-    local touched,stored,changed
+    local touched,stored,changed,told
     local others={}
     -- keep: the import planet and minimum payload of each request the change drops
     local gone={}
@@ -558,7 +575,18 @@ return function(api)
       if not touched then touch(default_section()) end
       if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
     end
-    local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
+    -- (B1) each section the call changed: recorded with the editor and the tick; whoever set it last before, if someone
+    -- else, is told once
+    if logged and logged.valid and logged.unit_number then
+      local changes=api.editlog.diff(texts_before,section_texts(secs,is_hub_target))
+      if #changes>0 then
+        local pl=a.platform~=nil and M.platform(p,a.platform) or try(function() return logged.surface.platform end)
+        local name=pl and pl.name..' hub' or string.format('%s (%g,%g) on %s',logged.name,logged.position.x,logged.position.y,logged.surface.name)
+        local owed=api.editlog.record('req:'..logged.unit_number,p.name or '?',changes,function(k) return name..' request section '..k end)
+        told=api.editlog.tell(owed,p.name or '?')
+      end
+    end
+    local out={target=label,sections=list_sections(secs,is_hub_target,logged and logged.unit_number or (chest or hub) and (chest or hub).unit_number),from_buffers=buffers,told_of_edit=told}
     if before then
       out.sends_down=M.sends_down(hub,a.platform~=nil and M.platform(p,a.platform) or try(function() return hub.surface.platform end),before,M.hub_keep_at(secs))
       if out.sends_down then out.sends_down_rule=M.KEEP_RULE end
@@ -1164,7 +1192,7 @@ return function(api)
   -- per platform: where it is (at a station, moving, stopped) and the current stop's departure conditions with what
   -- the hub holds against each, as the schedule GUI shows them.
   function M.gate(p,a)
-    local lines={}
+    local lines,edits={},{}
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) then
         local st=platform_states[pl.state] or '?'
@@ -1183,11 +1211,17 @@ return function(api)
           local ls=M.stops(pl) or {}
           gate=string.format('stop %d of %d: %s',cur,#records,(ls[cur] or '?'):gsub('^%d+ ',''))
         end
-        lines[#lines+1]=string.format('%s: %s; %s',pl.name,state,gate)
+        -- (d19 batch41 B1) the current stop's last edit, and every stop's in edits
+        local last=api.editlog and api.editlog.text(api.editlog.last('gate:'..pl.name,cur))
+        lines[#lines+1]=string.format('%s: %s; %s%s',pl.name,state,gate,last and '; stop '..cur..' '..last or '')
+        for i=1,#records do
+          local e=api.editlog and api.editlog.text(api.editlog.last('gate:'..pl.name,i))
+          if e then edits[#edits+1]=string.format('%s stop %d: %s',pl.name,i,e) end
+        end
       end
     end
     if a.platform~=nil and #lines==0 then error('no platform of ours named '..tostring(a.platform),0) end
-    return {lines=lines,note='the schedule\'s wait conditions at the current stop, each with what the hub holds now; read only'}
+    return {lines=lines,edits=#edits>0 and edits or nil,note='the schedule\'s wait conditions at the current stop, each with what the hub holds now; edits: each stop\'s last edit (who, when, old -> new); read only'}
   end
   -- platforms {compact: true} (Astra 13:50: the full read is long): a line a platform: where, ammunition aboard (hub
   -- and turrets), thruster fuel and its 10-minute trend, the ghosts' missing items in all, and only the blockers this
@@ -1279,9 +1313,13 @@ return function(api)
           local secs=hub.get_logistic_sections()
           if secs then
             local req,off={},{}
-            for _,s in ipairs(list_sections(secs,true)) do
+            local edits={}
+            for _,s in ipairs(list_sections(secs,true,hub.unit_number)) do
               for _,r in ipairs(s.requests) do if s.off then off[#off+1]=r else req[#req+1]=r end end
+              if s.last_edit then edits[#edits+1]='section '..s.index..': '..s.last_edit end
             end
+            -- (d19 batch41 B1) the last edit of each section edited since the edit log began
+            row.request_edits=#edits>0 and edits or nil
             row.requests=#req>0 and req or nil
             -- In a section switched off: not requested.
             row.requests_off=#off>0 and off or nil
@@ -1557,7 +1595,7 @@ return function(api)
       end
     end
   end
-  function M.platform_schedule(p,a)
+  function M.schedule_call(p,a)
     local pl=M.platform(p,a.platform)
     local runs,read_as
     -- next: true (d17 batch31 B2, Luna: whole schedules rebuilt when a stop's wait stalled): the GUI's go to station on
@@ -1823,6 +1861,38 @@ return function(api)
       harness_waits=api.platwait and api.platwait().line(pl.name) or nil,
       launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil,
       wait_facts=api.wait_need and try(function() return api.wait_need(pl) end) or nil}
+  end
+  -- (d19 batch41 B1, Sol seq 861) each stop's departure conditions as one text, for the edit log: the station and its
+  -- waits as the schedule GUI lists them (and/or, type, time or condition).
+  local function gate_texts(pl)
+    local out={}
+    local sch=try(function() return pl.schedule end)
+    for i,rec in ipairs(sch and sch.records or {}) do
+      local ws={}
+      for k,w in ipairs(rec.wait_conditions or {}) do
+        local t=w.type..(w.ticks and ' '..secs(w.ticks) or '')..(w.condition and ' '..cond_text(w.condition) or '')
+        ws[#ws+1]=(k>1 and (w.compare_type=='or' and 'or ' or 'and ') or '')..t
+      end
+      out[i]=(rec.station or '?')..': '..(#ws>0 and table.concat(ws,' ') or 'no wait condition')
+    end
+    return out
+  end
+  M.gate_texts=gate_texts
+  -- platform_schedule: the call (schedule_call), with each stop it changed recorded (who, when, old and new) and whoever
+  -- set that stop last before, if someone else, told once.
+  function M.platform_schedule(p,a)
+    local pl=api.editlog and (a.stops~=nil or a.stop~=nil) and select(2,pcall(M.platform,p,a.platform)) or nil
+    if type(pl)~='table' then pl=nil end
+    local before=pl and api.editlog and gate_texts(pl)
+    local out=M.schedule_call(p,a)
+    if before and pl.valid and not a.dry_run then
+      local changes=api.editlog.diff(before,gate_texts(pl))
+      if #changes>0 then
+        local owed=api.editlog.record('gate:'..pl.name,p.name or '?',changes,function(k) return pl.name..' stop '..k end)
+        out.told_of_edit=api.editlog.tell(owed,p.name or '?')
+      end
+    end
+    return out
   end
   -- Rocket cargo weight against the lift, in grams as the game counts them
   -- (item prototype weight; rocket_lift_weight 1000000 = 1000 kg). The game

@@ -173,7 +173,73 @@ def brief():
         shutil.rmtree(d)
 
 
+def brief_trim():
+    """(d19 batch41 C2, viewer Aurora: the 3 KB cut fell on the later sections while older notes stayed) over 3 KB, the
+    ground rules, open commitments and live checks stay whole; the measured lines, projects and other tells go first,
+    then Now from its end; the brief says what it trimmed."""
+    d = tempfile.mkdtemp()
+    try:
+        ws = os.path.join(d, "sol")
+        os.makedirs(ws)
+        journal(os.path.join(ws, "journal.jsonl"), time.time() - 1000, [
+            (0, "status", {}, True, {"clock": clock(0), "team": {"tells": ["astra, 9s ago: " + "t" * 170,
+                                                                           "reminder #97, 5s ago: freight review (sol, every 15m): check Swiftlet PU"]}}),
+            (10, "transfer", {"item": "coal"}, True, {"transferred": 0, "clock": clock(10)}),
+            (20, "board_post", {"kind": "task", "title": "x"}, True, {"item": {"id": 1213, "title": "Bastion departure checklist", "owner": "sol", "status": "doing"}}),
+        ])
+        rules = [f"rule {i} (by astra): ship rule {i} " + "r" * 120 + f"; from lessons #{40 + i}" for i in range(1, 4)]
+        open(os.path.join(ws, context.RULES_FILE), "w").write(json.dumps({"at": "2026-10-19T13:00:00.000Z", "lines": rules}))
+        now = "\n".join(f"- older state line {i} " + "n" * 60 for i in range(30))
+        open(os.path.join(ws, "notes.md"), "w").write(
+            "# Notes\n\n## Now\n" + now + "\n\n## Commitments\n- Swiftlet PU 600 to Aquilo each leg (Sol owns)\n\n"
+            "## Next check\n- Swiftlet section 5 on at 14:00\n")
+        b = context.brief(ws, "Your context was just compacted.")
+        assert len(b) <= context.BRIEF_MAX, len(b)
+        for r in rules:
+            assert r in b, r
+        assert "Swiftlet PU 600 to Aquilo each leg (Sol owns)" in b and "#1213 Bastion departure checklist (doing)" in b, b
+        live = b.split("## Your live checks\n", 1)[1]
+        assert "Swiftlet section 5 on at 14:00" in live and "reminder #97" in live and live.rstrip().endswith("./fh call chat."), live
+        assert "older state line 0" in b and "older state line 29" not in b, b
+        trimmed = b.split("Trimmed to fit 3 KB (notes.md and your journal have them): ", 1)[1].split("\n", 1)[0]
+        assert "Your last 30 minutes, measured (your journal) (all 4 lines); Last tells to you (all 1 line)" in trimmed and "lines of Now (notes.md)" in trimmed, trimmed
+        print(f"brief trim: ok ({len(b)} characters)")
+    finally:
+        shutil.rmtree(d)
+
+
+def carry_keep():
+    """(d19 batch41 C3, viewer Aurora: a shortened handoff keeps current decisions, open commitments and the next live
+    check) over the cap: Log first, then the older sections in file order; the first Now, agreements, open board items
+    and next check stay whole; the head says what was trimmed."""
+    d = tempfile.mkdtemp()
+    try:
+        prev, new = os.path.join(d, "prev"), os.path.join(d, "new")
+        os.makedirs(prev); os.makedirs(new)
+        now = "## Now\nSwiftlet waits at Aquilo for PU 600.\n\n"
+        keep = ("## Team agreements\n- Sol owns Swiftlet section 5.\n\n## Open board items\n- #1213 Bastion checklist (doing)\n\n"
+                "## Next check\n- section 5 on at 14:00\n\n")
+        old_now = "## Now (shift39)\n" + "o" * 3000 + "\n\n"
+        lessons = "## Lessons\n" + "l" * 9000 + "\n\n"
+        newest = "## Shift41\n" + "s" * 4000 + "\n\n"
+        log = "## Log\n" + "".join(f"- {i} event\n" for i in range(400)) + "\n"
+        open(os.path.join(prev, "notes.md"), "w").write("# Notes\n\n" + now + keep + old_now + lessons + newest + log)
+        assert handover.carry(os.path.join(prev, "notes.md"), os.path.join(prev, "journal.jsonl"), os.path.join(new, "notes.md"),
+                              "shift41", "sol")
+        out = open(os.path.join(new, "notes.md")).read()
+        for part in (now, keep, newest, lessons):
+            assert part.strip() in out, part[:40]
+        assert "o" * 3000 not in out and "## Now (shift39)\n" + "o" * 100 in out, "the older Now is cut from its end, first"
+        head = out.split("\n")[1]
+        assert head.startswith("(Trimmed: Log: 390 older lines; Now (shift39): ") and "Kept whole: the sections on now" in head, head
+        print("carry keep: ok")
+    finally:
+        shutil.rmtree(d)
+
+
 if __name__ == "__main__":
     stats()
     carry()
     brief()
+    brief_trim()
+    carry_keep()

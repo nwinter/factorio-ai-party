@@ -966,6 +966,19 @@ return function(api)
         for _,value in ipairs(a[key]) do assert(type(value)=='string',key..' requires strings'); filters[key][value]=true end
       end
     end
+    -- (d19 batch41 A3, Sol seq 863: cancel with entity_types [item-entity] on Fulgora changed 0) an entity filter naming
+    -- items on the ground (type item-entity, name item-on-ground) takes the stacks as items_on_ground does; with no other
+    -- name the call is about them alone
+    local ground_named=(filters.entity_types and filters.entity_types['item-entity']) or (filters.entity_names and filters.entity_names['item-on-ground'])
+    local others=false
+    for _,key in ipairs({'entity_types','entity_names'}) do
+      for v in pairs(filters[key] or {}) do if v~='item-entity' and v~='item-on-ground' then others=true end end
+    end
+    if ground_named and a.items_on_ground==nil and not dry then
+      local b={}
+      for k,v in pairs(a) do b[k]=v end
+      b.items_on_ground=true; a=b
+    end
     local box=area(p,a)
     local out={changed=0,mode=cancel and 'cancel' or (dry and 'dry_run' or 'mark'),tiles=a.tiles~=nil and a.tiles~=false,dry_run=dry or nil}
     -- Items on the ground, as a planner marks them (robots take them to
@@ -978,7 +991,7 @@ return function(api)
     if out.tiles and not cancel then spans_cut(p,a,box,dry,out) end
     if a.items_on_ground then
       api.ground_mark(p,box,cancel,out)
-      if not (filters.entity_types or filters.entity_names) then return out end
+      if not others then return out end
     end
     -- With tiles, entities are taken only when entity filters name them;
     -- they go first, so a tile under one marked now is not counted blocked.
@@ -1111,7 +1124,8 @@ return function(api)
         for k,v in pairs(a) do if k~='cancel' then rest[k]=v end end
         assert(not rest.dry_run,'cancel and dry_run: one or the other')
         local out=deconstruct(p,rest,true)
-        out.cancelled=out.changed
+        -- (A3) the stacks on the ground unmarked count with the entities
+        out.cancelled=(out.changed or 0)+(out.item_stacks_cancelled or 0)
         return out
       end
     end

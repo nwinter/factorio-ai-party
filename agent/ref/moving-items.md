@@ -119,7 +119,8 @@
 - `pickup {area | position, radius?, items?} | {belt: true, item, count, to?}`: picks up items by hand (timed),
   walking to them. Items on the ground show in `scan` and `observe` (`ground_items`); `status` `alerts.ground_items`
   names full landing pads that spill and piles near buildings; `deconstruct {area, items_on_ground: true}` marks them
-  for construction robots. `belt: true` takes items off belt lanes (belts within 1 tile, walking to them; areas on the
+  for construction robots (`entity_types: ["item-entity"]` is the same; with `cancel: true` the reply counts the
+  stacks unmarked, the robot orders cancelled and the robots freed). `belt: true` takes items off belt lanes (belts within 1 tile, walking to them; areas on the
   map too); `"to":{x,y}` puts them in that chest at the end of the same walk; `spoiled_first: true` takes the most
   spoiled stacks first, `min_spoiled: N` only stacks at least N% spoiled (`last.picked_spoil`: each stack and its
   spoilage).
