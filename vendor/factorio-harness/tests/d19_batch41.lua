@@ -67,3 +67,64 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d19_batch41 A2 platform_rearm ammunition by turret kind, requests cleared: ok')
+
+-- B1 (Sol seq 861: another agent switched off Swiftlet's required section while Sol's queue waited): each edit of a
+-- request section and of a stop's departure conditions keeps the editor, the tick, old and new; the reads show the last
+-- edit; the agent whose values an edit changes is told once when someone else edits.
+do
+  game={tick=1000}
+  defines={space_platform_state={paused=7,waiting_at_station=4,on_the_path=3,no_schedule=1},rocket_silo_status={},inventory={hub_main=1,hub_trash=2},cargo_destination={},
+    wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={item={['firearm-magazine']={},['iron-plate']={}},space_location={nauvis={},fulgora={},gleba={}},quality={normal={}},fluid={['thruster-fuel']={}}}
+  local slots={}
+  local sec={index=1,is_manual=true,group='',active=true,filters_count=0}
+  local function recount() local n=0; for i in pairs(slots) do n=math.max(n,i) end; sec.filters_count=n end
+  sec.get_slot=function(i) return slots[i] or {} end
+  sec.set_slot=function(i,f) local c={} for k,v in pairs(f) do c[k]=v end; c.import_from=c.import_from or 'nauvis'; slots[i]=c; recount() end
+  sec.clear_slot=function(i) slots[i]=nil; recount() end
+  setmetatable(sec,{__index=function(_,k) if k=='filters' then local out={}; for i=1,sec.filters_count do out[i]=slots[i] or {} end; return out end end,
+    __newindex=function(t,k,v) if k=='filters' then slots={}; for i,f in ipairs(v) do slots[i]=f end; recount() else rawset(t,k,v) end end})
+  local secs=setmetatable({get_section=function(i) return i==1 and sec or nil end,add_section=function() return sec end},{__index=function(_,k) if k=='sections_count' then return 1 end end})
+  local main={get_item_count=function() return 0 end,get_contents=function() return {} end}
+  local pl={valid=true,name='Swiftlet',index=1,state=4,space_location={name='nauvis'},force='player',paused=false,
+    schedule={current=1,records={{station='nauvis'},{station='fulgora'}}},
+    hub={valid=true,unit_number=78,type='space-platform-hub',position={x=0,y=0},get_logistic_sections=function() return secs end,get_inventory=function() return main end,
+      get_item_count=function() return 0 end,get_circuit_network=function() return nil end}}
+  local sch=setmetatable({},{__index=function(_,k) if k=='current' then return pl.schedule and pl.schedule.current end end})
+  sch.get_record_count=function() return #pl.schedule.records end
+  sch.go_to_station=function(i) pl.schedule.current=i end
+  pl.get_schedule=function() return sch end
+  local force={platforms={pl}}
+  local sol,astra={index=11,name='sol',force=force},{index=12,name='astra',force=force}
+  local st,told={},{}
+  local E=dofile('mod/agent-harness_0.1.0/editlog.lua'){state=function() return st end,deliver=function(i,t) told[#told+1]={i=i,t=t} end,
+    index_of=function(n) return ({sol=11,astra=12})[n] end}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,editlog=E,
+    integer=function(v,d,lo,hi) v=v==nil and d or v; return v end,
+    keep=function() return {set_construction=function(_,on) return on end,construction=function() return nil end} end,
+    circuit_condition=function(c) return c end,
+    freight={where=function() return {stopped=true,at='nauvis'} end,pads=function() return {},{} end,leg=function() return nil end}}
+  space.requests(sol,{platform='Swiftlet',set={{item='iron-plate',min=600}}})
+  eq(#told,0,'a first edit tells nobody')
+  game.tick=4600
+  local r=space.requests(astra,{platform='Swiftlet',section=1,active=false})
+  eq(r.sections[1].last_edit,'last edit by astra 0s ago (tick 4600): on: iron-plate 600..inf from nauvis -> off: iron-plate 600..inf from nauvis')
+  eq(#told,1); eq(told[1].i,11); eq(r.told_of_edit[1],'sol')
+  eq(told[1].t.text,'changed what you set last: Swiftlet hub request section 1: on: iron-plate 600..inf from nauvis -> off: iron-plate 600..inf from nauvis')
+  -- astra edits her own change: nobody told
+  space.requests(astra,{platform='Swiftlet',section=1,active=true})
+  eq(#told,1)
+  -- a dry run records nothing
+  space.requests(sol,{platform='Swiftlet',set={{item='iron-plate',min=10}},dry_run=true})
+  eq(#told,1)
+  -- the departure gate: sol sets the stops, astra edits stop 1's waits; sol is told and the gate read shows it
+  space.platform_schedule(sol,{platform='Swiftlet',stops={{station='nauvis',wait={{type='time',ticks=600}}},{station='fulgora'}}})
+  game.tick=8200
+  r=space.platform_schedule(astra,{platform='Swiftlet',stops={{station='nauvis',wait={{type='time',ticks=1200}}},{station='fulgora'}}})
+  eq(r.told_of_edit[1],'sol')
+  eq(told[2].t.text,'changed what you set last: Swiftlet stop 1: nauvis: time 10s -> nauvis: time 20s')
+  local g=space.gate(sol,{platform='Swiftlet'})
+  eq(g.edits[1],'Swiftlet stop 1: last edit by astra 0s ago (tick 8200): nauvis: time 10s -> nauvis: time 20s')
+  game,defines,prototypes=nil,nil,nil
+end
+print('d19_batch41 B1 request section and departure gate edits: who, when, old and new; the earlier editor told: ok')
