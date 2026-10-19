@@ -997,6 +997,8 @@ do
   local key=astra('lesson_add',{rule='the north requester overflows past 200 copper cable',item='copper-cable',position={x=10,y=10},surface='nauvis'}).lesson
   local out=astra('lessons',{near={x=12,y=11}})
   eq(out.count,1); eq(out.lessons[1].id,key.id)
+  -- (d17 batch35 D2) the operator reads them too (the factory digest's failed checks)
+  eq(runtime.board.operator('lessons',{}).count,2); eq(runtime.board.operator('lessons',{near={x=12,y=11}}).lessons[1].owner,'astra')
   local me=runtime.lookup(runtime.bots.index_of('astra'))
   local m=runtime.board.lessons_for(me,'transfer',{item='copper-cable',position={x=11,y=9}})
   assert(m and m[1]:find('north requester overflows',1,true),'a transfer of its item at its place')

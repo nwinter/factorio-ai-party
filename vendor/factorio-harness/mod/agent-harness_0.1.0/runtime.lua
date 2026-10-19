@@ -12222,7 +12222,8 @@ M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
 M.makersall=require('makersall'){status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
-M.launchneed=require('launchneed'){state=state,crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
+M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
+M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
@@ -12421,7 +12422,7 @@ function M.cargo_eta(p,a,rockets)
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
-M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end,
+M.silo=require('silo'){state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
@@ -13767,6 +13768,8 @@ function handlers.rail_route(p,a)
   return out
 end
 function handlers.train_stop(p,a)
+  -- (d18 batch36 D2) where it goes, named when missing
+  assert(a.position~=nil,'train_stop needs position {x, y}: a spot beside a straight rail (the stop stands on the right of the way trains run there), and name: the station name')
   local name=a.name or a.station
   assert(type(name)=='string' and #name>=1 and #name<=100,'name (the station name) is 1..100 characters')
   assert(a.name==nil or a.station==nil or a.name==a.station,'name and station differ; give one of them')
@@ -14448,6 +14451,8 @@ do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
+      -- (d18 batch36 D1, live 18:40) silo {surface: "all"}: every planet, silo.lua reads it, no one surface
+      if name=='silo' and a.surface=='all' then return handler(p,a) end
       -- launch's and preflight's platform is where the rocket goes, not where the call acts (Astra, shift14 03:09 and
       -- 04:24: preflight {surface, position, platform} was refused, and she dropped the platform).
       assert(name=='launch' or name=='preflight' or a.platform==nil,'give platform or surface, not both')
@@ -16982,7 +16987,8 @@ M.shipment=require('shipment'){state=state,drops_taken=function(f) return M.drop
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
-  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end}
+  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,
+  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -18176,6 +18182,7 @@ function M.on_event(event)
   -- Rocket launches for the silo read (silo.lua): like research news, faults are counted.
   if event.name==defines.events.on_rocket_launch_ordered then
     if M.freight then pcall(M.freight.on_launch,event) end
+    pcall(M.ledger.on_launch,event)  -- the cargo ledger (d18 batch36 D3)
     local ok,err=pcall(M.silo.on_launch_ordered,event)
     if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     return

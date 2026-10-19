@@ -28,6 +28,7 @@ from onecam import OneCam, onair_doing, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
 from model import Model  # noqa: E402
+import router  # noqa: E402
 
 STATIC = os.path.join(HERE, "static")
 
@@ -741,6 +742,8 @@ def main():
                 if feed and feed.relay:  # viewers' questions go to agents in team order, by their chosen names too
                     feed.relay.set_roster([(ag["name"], ag.get("display_name")) for ag in snap["agents"]
                                            if ag.get("activity") != "offline"] or roster)
+                    # (d17 batch35 D4) what each agent does and which places its claims hold, for routing by content
+                    feed.relay.set_team(router.Team.from_snapshot(snap, list(model.board["items"].values())))
                 snap["analyst"] = analyst.public(now)
                 snap["poll"] = polls.step(now) if polls else None
                 if highlights:
