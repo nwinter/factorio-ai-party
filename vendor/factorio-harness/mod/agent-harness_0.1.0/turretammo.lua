@@ -116,7 +116,7 @@ return function(api)
   -- requests: its plans into the ammo slots go, the rest of its requests (modules) stay, and what (as for request:
   -- a name, {name?, count?}) takes their place; false clears them. Returns {before, after} as item*count text.
   function M.set(ghost, what)
-    assert(ghost and ghost.valid and try(function() return ghost.type end) == 'entity-ghost', 'ammo here is a turret ghost\'s request (a built turret takes ammo by rearm or transfer)')
+    assert(ghost and ghost.valid and try(function() return ghost.type end) == 'entity-ghost', 'ammo with an item names a turret ghost\'s request (a built turret takes ammo by platform_rearm, deliver or transfer; ammo: false or item_requests: false removes a built entity\'s item requests)')
     local t = M.takes(try(function() return ghost.ghost_prototype end))
     assert(t, ghost.ghost_name .. ' is no turret that takes ammo items')
     local keep, before = {}, {}
@@ -208,6 +208,59 @@ return function(api)
       end
     end
     s.turret_deaths = #later > 0 and later or nil
+  end
+  -- (d19 batch41 A2, Sol seq 868-869: platform_rearm put 10 firearm-magazine requests on 5 railgun and 6 rocket turrets,
+  -- and Sol rebuilt all 11 to clear them) a built entity's item requests: each plan as item*count, into or out of it.
+  local function name_of(id)
+    if type(id) ~= 'table' then return tostring(id) end
+    local n = type(id.name) == 'string' and id.name or (id.name and try(function() return id.name.name end)) or '?'
+    local q = type(id.quality) == 'string' and id.quality or (id.quality and try(function() return id.quality.name end))
+    return n .. ((q and q ~= 'normal') and '@' .. q or '')
+  end
+  function M.requests(e)
+    local proxy = try(function() return e.item_request_proxy end)
+    if not (proxy and proxy.valid) then return nil end
+    local into, out = {}, {}
+    for _, key in ipairs({'insert_plan', 'removal_plan'}) do
+      for _, pl in ipairs(try(function() return proxy[key] end) or {}) do
+        local n = 0
+        for _, at in ipairs(pl.items and pl.items.in_inventory or {}) do n = n + (at.count or 1) end
+        local list = key == 'insert_plan' and into or out
+        list[#list+1] = {item=name_of(pl.id), count=n, inventories=pl.items and pl.items.in_inventory}
+      end
+    end
+    return {proxy=proxy, into=into, out=out}
+  end
+  local function text(list)
+    local parts = {}
+    for _, r in ipairs(list) do parts[#parts+1] = r.item .. '*' .. r.count end
+    return table.concat(parts, ' ')
+  end
+  -- What of a built turret's requests into its ammo slots names ammunition it does not take: item*count text, or nil.
+  function M.unusable(e)
+    local t = M.takes(try(function() return e.prototype end))
+    local r = t and M.requests(e)
+    if not r then return nil end
+    local fits, bad = {}, {}
+    for _, n in ipairs(t.items) do fits[n] = true end
+    for _, x in ipairs(r.into) do
+      local slots = false
+      for _, at in ipairs(x.inventories or {}) do if at.inventory == t.inventory then slots = true end end
+      if slots and not fits[x.item] then bad[#bad+1] = x end
+    end
+    return #bad > 0 and text(bad) or nil
+  end
+  -- A built entity's item requests removed, as a player does on 2.0.77 (a private copy of world n, d19): a
+  -- deconstruction planner over the entity removes its item-request-proxy at once and marks the entity, and cancelling
+  -- that deconstruction unmarks it, leaving it with no request; order_deconstruction on the proxy alone does both in
+  -- one step and never marks the entity. Every request on it goes (ammunition, modules, removals alike), as with the
+  -- planner. Returns {into, out} as item*count text, or nil when it had none.
+  function M.clear(e, force)
+    local r = M.requests(e)
+    if not r then return nil end
+    local ok, err = pcall(function() return r.proxy.order_deconstruction(force) end)
+    assert(ok and not r.proxy.valid, 'the game kept the item request: ' .. tostring(err))
+    return {into=#r.into > 0 and text(r.into) or nil, out=#r.out > 0 and text(r.out) or nil}
   end
   return M
 end

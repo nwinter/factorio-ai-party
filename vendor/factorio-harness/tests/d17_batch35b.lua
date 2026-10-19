@@ -151,11 +151,11 @@ do
   eq(told('grok'),1); eq(told('sonnet'),1); eq(told('sol'),0,'the owner is not told of their own runs')
   local line
   for _,t in ipairs(boxes[2]) do if t.text:find('grok has missed',1,true) then line=t.text end end
-  has(line,'grok has missed 2 runs of your reminder #1 (shared review, every 1m00s): not acknowledged for 120s; last result: none yet; reminder_edit {id: 1, recipients: ["sol", "sonnet"]} changes its recipients')
+  has(line,'grok has missed 2 runs of your reminder #1 (shared review, every 1m00s): not acknowledged for 120s (2 runs missed (the first at tick 7200, 1m00s ago; the last at tick 10800, 0s ago)); last result: none yet; reminder_edit {id: 1, recipients: ["sol", "sonnet"]} changes its recipients')
   run(3600); R.handlers.reminder_ack(sol,{id=1})
   eq(told('grok'),1,'once while grok has not acknowledged')
   local r=R.handlers.reminders(sol,{}).reminders[1]
-  eq(r.missed.grok,3); has(r.states,'grok overdue (3 runs missed, the owner told)')
+  eq(r.missed.grok,3); has(r.states,'grok overdue (3 runs missed (the first at tick 7200, 2m00s ago; the last at tick 14400, 0s ago), the owner told)')
   -- grok acknowledges: missing 2 runs again tells the owner again
   R.handlers.reminder_ack(grok,{id=1,result='board fine'})
   run(3600*3); R.handlers.reminder_ack(sol,{id=1})

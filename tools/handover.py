@@ -134,22 +134,78 @@ def measured_lines(st, what="last shift"):
     return lines
 
 
-def cap_notes(notes, cap=NOTES_MAX):
-    """-> (notes no longer than cap, whether it was cut): the Log trimmed to its last 10 lines first, then each
-    section cut from its end in proportion."""
+# (d19 batch41 C3, viewer Aurora: a shortened handoff should keep the team's current decisions, open commitments and
+# the next live check) sections kept whole when the notes are cut, by words in their headings
+KEEP_WORDS = ("now", "agreement", "decision", "commitment", "open board", "claim", "next check", "live check")
+
+
+def cap_notes(notes, cap=NOTES_MAX, trimmed=None):
+    """-> (notes no longer than cap, whether it was cut). The Log is trimmed to its last 10 lines first; then the
+    sections whose headings name current state, decisions, commitments, claims or the next check stay whole, and the
+    others (lessons, milestones, narrative) are cut oldest first: in file order, each from its end down to its heading,
+    until it fits; only when those alone do not fit are the kept ones cut too, in proportion. `trimmed` (a list) gets a
+    phrase for each part cut."""
+    trimmed = [] if trimmed is None else trimmed
     if len(notes) <= cap:
         return notes, False
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from context import trim_log
+    before = notes
     notes = trim_log(notes)
+    if notes != before:
+        m = re.search(r"\[(\d+) older Log lines left out", notes)
+        trimmed.append(f"Log: {m.group(1) if m else 'older'} older lines")
     if len(notes) <= cap:
         return notes, True
     parts = re.split(r"(?m)^(?=## )", notes)
-    budget = cap - 200
-    total = sum(len(p) for p in parts)
-    kept = [p if len(p) * budget // total >= len(p) else p[:max(200, len(p) * budget // total)].rstrip() + "\n[... cut]\n"
-            for p in parts]
-    return "".join(kept)[:cap], True
+
+    def name(p):
+        return p.split("\n", 1)[0][3:].strip() if p.startswith("## ") else "the top"
+
+    # the first section of each kind (Muse's notes held three Now sections, the current one first): later ones of the
+    # same kind are older material
+    first = {}
+    for k, p in enumerate(parts):
+        w = p.startswith("## ") and next((w for w in KEEP_WORDS if w in name(p).lower()), None)
+        if w and w not in first:
+            first[w] = k
+    keep_at = set(first.values())
+
+    def kept(p):
+        return parts.index(p) in keep_at
+
+    budget = cap - 300
+    excess = len("".join(parts)) - budget
+    out = list(parts)
+    # the others, oldest (first in the file) first: each cut from its end down to its heading line
+    for k, p in enumerate(parts):
+        if excess <= 0:
+            break
+        if kept(p) or (not p.startswith("## ") and len(p) < 500):
+            continue
+        head = p.split("\n", 1)[0] + "\n"
+        mark = len(f"\n[... {len(p)} characters cut]\n")
+        n = min(excess + mark + 2, len(p) - len(head))
+        if n <= mark:
+            continue
+        cut_text = p[:len(p) - n].rstrip() + f"\n[... {n} characters cut]\n"
+        out[k] = cut_text
+        excess -= len(p) - len(cut_text)
+        trimmed.append(f"{name(p)}: {n} of {len(p)} characters" + (" (all but its heading)" if len(p) - n <= len(head) else " from its end"))
+    if excess <= 0:
+        return "".join(out)[:cap], True
+    # the kept sections alone are over: those cut too, in proportion
+    total = sum(len(p) for p in out)
+    final = []
+    for p in out:
+        n = len(p) * budget // total
+        if n >= len(p):
+            final.append(p)
+        else:
+            n = max(200, n)
+            final.append(p[:n].rstrip() + "\n[... cut]\n")
+            trimmed.append(f"{name(p)}: {len(p) - n} of {len(p)} characters from its end")
+    return "".join(final)[:cap], True
 
 
 def strip_measured(notes):
@@ -162,7 +218,8 @@ def carry(prev_notes, prev_journal, out_notes, run, player):
     notes = strip_measured(notes)
     # the previous carry-over line goes too: this one says where it comes from
     notes = re.sub(r"\A\(Carried over from the previous shift[^\n]*\)\n+", "", notes)
-    capped, cut = cap_notes(notes)
+    trimmed = []
+    capped, cut = cap_notes(notes, trimmed=trimmed)
     archive = os.path.join(os.path.dirname(out_notes), "notes-archive.md")
     if cut:
         with open(archive, "a") as f:
@@ -170,7 +227,10 @@ def carry(prev_notes, prev_journal, out_notes, run, player):
     st = journal_stats(prev_journal)
     head = [f"(Carried over from the previous shift, run {run}: its notes.md for {player}, as that shift left it"
             + (f"; it was {len(notes) // 1000} KB, cut to {NOTES_MAX // 1000} KB, the full text is in notes-archive.md"
-               if cut else "") + ".)", "",
+               if cut else "") + ".)",
+            *([f"(Trimmed: {'; '.join(trimmed[:5])}" + (f"; and {len(trimmed) - 5} more older sections cut" if len(trimmed) > 5 else "")
+               + ". Kept whole: the sections on now, claims, agreements and decisions, commitments and open board items,"
+               " and the next check.)"] if trimmed else []), "",
             f"{MEASURED} (from your journal, replaced each shift)", *measured_lines(st), ""]
     with open(out_notes, "w") as f:
         f.write("\n".join(head) + "\n" + capped)

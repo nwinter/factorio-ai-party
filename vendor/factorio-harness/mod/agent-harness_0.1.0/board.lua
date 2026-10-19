@@ -33,6 +33,17 @@ return function(api)
   -- Step changes by others reach a project's owner as news: they wake nobody.
   local STEP_CHANGES = {step_added=true, step_done=true, step_undone=true, step_removed=true}
 
+  -- (d19 batch41 B2) evidence on an item: evidence.lua's fields, the newest 5 kept
+  local Ev_
+  local function Ev() Ev_ = Ev_ or require('evidence')(); return Ev_ end
+  local function evidence_view(i, full)
+    if not i.evidence or #i.evidence == 0 then return nil end
+    if not full then return {Ev().line(i.evidence[#i.evidence])} end
+    local out = {}
+    for k, e in ipairs(i.evidence) do out[k] = Ev().line(e) end
+    return out
+  end
+  M.evidence_view = evidence_view
   local function store()
     local s = api.state()
     s.board = s.board or {next_id=1, count=0, items={}, seq=0, events={}}
@@ -46,21 +57,34 @@ return function(api)
   end
   -- One line of text, cut to `max` bytes on a UTF-8 boundary; never fails.
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d19 batch41 A4) a text cut for a line ends in '...', so a reader sees it was cut.
   local function clip(text, max)
     text = tostring(text):gsub('[%c]+', ' ')
     if #text <= max then return text end
-    local cut = max
+    local cut = math.max(0, max - 3)
     while cut > 0 and (text:byte(cut + 1) or 0) >= 0x80 and text:byte(cut + 1) < 0xC0 do cut = cut - 1 end
-    return text:sub(1, cut)
+    return text:sub(1, cut) .. '...'
   end
+  -- (d19 batch41 A4, Aurora as viewer; Sol's Bastion departure checklist #1213: a 708-character note was kept as its
+  -- first 200 with no word of it) a text over its limit is refused with its size and the limit; nothing is cut.
+  local function fits(value, name, max)
+    local text = value:gsub('[%c]+', ' ')
+    if #text > max then
+      local chars = select(2, text:gsub('[^\128-\191]', ''))
+      error(string.format('%s is %d characters%s, over its limit of %d: nothing stored', name, chars,
+        chars ~= #text and string.format(' (%d bytes)', #text) or '', max), 0)
+    end
+    return text
+  end
+  M.fits = fits
   local function required_text(value, name, max)
     assert(type(value) == 'string' and value:find('%S'), name .. ' is required (1..' .. max .. ' characters)')
-    return clip(value, max)
+    return fits(value, name, max)
   end
   local function optional_text(value, name, max)
     if value == nil then return nil end
     assert(type(value) == 'string', name .. ' must be a string')
-    return clip(value, max)
+    return fits(value, name, max)
   end
   -- The name an agent goes by on the board (bot or player name).
   local function who(p)
@@ -282,7 +306,7 @@ return function(api)
   end
   local function needs_arg(v)
     if v == nil then return nil end
-    if type(v) == 'string' then return clip(v, NOTE) end
+    if type(v) == 'string' then return fits(v, 'needs', NOTE) end
     -- An object {item=count} (shake4: posts resent after that shape failed).
     if type(v) == 'table' and #v == 0 and next(v) ~= nil then
       local list = {}
@@ -317,7 +341,7 @@ return function(api)
     if v == nil then return nil end
     assert(type(v) == 'table' and #v <= 8, 'tags must be an array of up to 8 short strings')
     local out = {}
-    for _, t in ipairs(v) do assert(type(t) == 'string', 'tags must be strings'); out[#out+1] = clip(t, 24) end
+    for _, t in ipairs(v) do assert(type(t) == 'string', 'tags must be strings'); out[#out+1] = fits(t, 'a tag', 24) end
     return out
   end
   -- A project's areas: `area` (one) and/or `areas` (an array; [] clears).
@@ -443,7 +467,7 @@ return function(api)
       steps=full and #steps > 0 and steps or nil, next_steps=not full and #steps > 0 and steps or nil,
       areas=#i.areas > 0 and i.areas or nil,
       handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
-      needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
+      needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
       blocked_by=i.blocked_by, parent=i.parent, open_steps=i.open_steps, supersedes=i.supersedes, superseded_by=i.superseded_by,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
@@ -585,8 +609,22 @@ return function(api)
       allow=i.kind == 'claim' and i.allow or nil,
       requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent, supersedes=i.supersedes, superseded_by=i.superseded_by,
-      notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
+      notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
+  end
+  -- (d19 batch41 B3) `name`'s active items (owned, or posted with no owner) whose newest evidence names a next check at a
+  -- game tick now past. Rows {age (ticks), line}.
+  function M.overdue_reviews(name)
+    local rows = {}
+    for _, i in pairs(store().items) do
+      local mine = i.owner == name or (not i.owner and i.requested_by == name)
+      local e = mine and ACTIVE[i.status] and i.evidence and i.evidence[#i.evidence]
+      if e and type(e.next_check) == 'number' and e.next_check < game.tick then
+        rows[#rows+1] = {age=game.tick - e.next_check, line=string.format('board #%d %s: next check at tick %d, %s ago (evidence by %s %s ago)', i.id, clip(i.title, 60),
+          e.next_check, ago(game.tick - e.next_check), tostring(e.by), ago(game.tick - (e.at or game.tick)))}
+      end
+    end
+    return rows
   end
   local function open_unowned()
     local n, oldest = 0, nil
@@ -639,7 +677,8 @@ return function(api)
     if a.parent ~= nil then item.parent = parent_arg(a.parent) or nil end
     local sup_post = a.supersedes ~= nil and supersedes_arg(a.supersedes) or nil
     -- A first note (shake4: agents carried update's note over to posts).
-    if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
+    if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', LONG)} end
+    if a.evidence ~= nil then item.evidence = Ev().add(nil, Ev().check(a.evidence, by)) end
     local warnings, over = {}, nil
     if kind == 'claim' then
       assert(item.area, 'a claim needs area {left_top, right_bottom}')
@@ -685,7 +724,8 @@ return function(api)
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     local project = item.kind == 'project'
     local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
-      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil
+      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil or a.evidence ~= nil
+    local evidence = a.evidence ~= nil and Ev().check(a.evidence, by) or nil
     assert((a.blocked_by == nil and a.parent == nil and a.supersedes == nil) or LINK_KINDS[item.kind], 'blocked_by, parent and supersedes are for a task, request or project')
     local links = a.blocked_by ~= nil and links_arg(a.blocked_by, item.id) or nil
     local sup = a.supersedes ~= nil and supersedes_arg(a.supersedes, item.id) or nil
@@ -695,11 +735,11 @@ return function(api)
         .. (k == 'done' and '; status "done" finishes an item' or ''))
       given = given or a[k] ~= nil
     end
-    assert(given, 'give status, owner, note, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
+    assert(given, 'give status, owner, note, evidence, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
-    local text = a.note ~= nil and required_text(a.note, 'note', NOTE) or nil
+    local text = a.note ~= nil and required_text(a.note, 'note', LONG) or nil
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
     local changes, was = {}, item.owner
     assert(item.kind ~= 'plan' or (a.status == nil and a.owner == nil), 'the team plan changes with board_plan {goals} or {doing}; notes are fine')
@@ -946,6 +986,7 @@ return function(api)
       item.notes[#item.notes+1] = {tick=game.tick, by=by, text=text}
       while #item.notes > (project and MAX_PROJECT_NOTES or MAX_NOTES) do table.remove(item.notes, 1) end
     end
+    if evidence then item.evidence = Ev().add(item.evidence, evidence); changed('evidence', Ev().line(evidence)) end
     item.updated_tick = game.tick
     local extra = was and was ~= item.owner and {prev_owner=was} or nil
     for _, change in ipairs(changes) do event(by, item, change, text, extra) end
@@ -1167,12 +1208,25 @@ return function(api)
     return {events=out, cursor=#out > 0 and out[#out].seq or math.max(since, 0), latest=b.seq, tick=game.tick}
   end
 
+  -- (d19 batch41 A5, Sol and Astra d19 04:56: new requests refused at the limit of 10) the limit counts this agent's own
+  -- harness requests whose status is open, claimed, doing or blocked, at any age (the operator owns them; they stay
+  -- open until the operator or their filer closes them); the refusal lists those it counted, oldest first.
   local function harness_request(by, a)
-    local mine = 0
+    local open = {}
     for _, i in pairs(store().items) do
-      if i.kind == 'harness' and i.requested_by == by and ACTIVE[i.status] then mine = mine + 1 end
+      if i.kind == 'harness' and i.requested_by == by and ACTIVE[i.status] then open[#open+1] = i end
     end
-    assert(mine < MAX_HARNESS_OPEN, 'you already have ' .. mine .. ' open harness requests; add notes to those instead')
+    if #open >= MAX_HARNESS_OPEN then
+      table.sort(open, function(x, y) return x.created_tick < y.created_tick end)
+      local rows = {}
+      for _, i in ipairs(open) do
+        local last = i.notes and i.notes[#i.notes]
+        rows[#rows+1] = string.format('#%d %s (%s, owner %s, filed %s ago%s)', i.id, clip(i.title, 60), i.status, i.owner or 'none',
+          ago(game.tick - (i.created_tick or game.tick)), last and string.format(', last note by %s %s ago', last.by, ago(game.tick - last.tick)) or '')
+      end
+      error(string.format('you already have %d open harness requests (the limit, %d, counts your own harness requests that are open, claimed, doing or blocked, at any age; the operator or you as filer closes one with board_update {id, status: done or dropped}): %s',
+        #open, MAX_HARNESS_OPEN, table.concat(rows, '; ')), 0)
+    end
     local b = store()
     local item = {id=b.next_id, kind='harness', title=required_text(a.title, 'title', TITLE), owner=OPERATOR, requested_by=by,
       status='open', problem=required_text(a.problem, 'problem', LONG), proposal=optional_text(a.proposal, 'proposal', LONG),
@@ -1257,11 +1311,12 @@ return function(api)
       clear='boolean: true clears the goals (fh board plan goals "")',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
-    board_post = {kind='task|request|claim|note|project', title='1..120 characters (longer is cut)',
+    board_post = {kind='task|request|claim|note|project', title='1..120 characters (longer is refused)',
       owner='agent name or display name (task/request/project; a request without owner is shown to everyone until taken; a project may have none)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
       surface='claim only: the surface its area is on (default yours; nauvis, gleba, platform-1, ...); positions on other surfaces are never in it',
-      tags='up to 8 short strings', note='optional first note, 1..200 characters',
+      tags='up to 8 short strings', note='optional first note, 1..1000 characters (longer is refused)',
+      evidence='optional {metric?, tick?, decision?, result?, owner?, next_check?}: what was measured (with tick, default now), the decision it changed, the downstream result, who owns what is open and the next check (text, or a game tick: past it, status lists the item as overdue for review); shown with the item (the newest 5 kept)',
       allow='claim only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (array or "luna,sol"), or "everyone"; the harness enforces nothing else',
       goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40), or of {text, owner? (that step\'s own owner), parallel? (true: no order between it and the parallel steps next to it)}',
       blocked_by='task, request or project: item numbers it waits for (1..8); the compact project line shows them and what blocks those', parent='task, request or project: the project it serves (a long-term goal such as "Aquilo landing")',
@@ -1271,7 +1326,8 @@ return function(api)
       returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus), its age, owner activity and state, stale) or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
       owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min (a project: 30 min); another name reassigns (owner or requester only); "" releases it',
-      note='1..200 characters, anyone may add (last 10 kept; 20 on a project)',
+      note='1..1000 characters (longer is refused), anyone may add (last 10 kept; 20 on a project)',
+      evidence='as board_post evidence, anyone may add (the newest 5 kept)',
       allow='claim owner only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (names or "everyone"; [] or "" clears it)',
       surface='claim owner only: the surface its area is on',
       step='project: add steps, a text or an array of texts or {text, owner?, parallel?} (anyone)', done='project: mark steps done by number, a number or an array (anyone; done_by is you)',

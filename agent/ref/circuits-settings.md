@@ -68,6 +68,8 @@
   use_filters?, spoil_priority?, hand_size?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?}`: a machine's or building's
   settings, as its GUI sets them; `inspect` reads each back.
+  - `item_requests: false` (or `ammo: false` on a built turret): a built entity's item requests removed, every one on
+    it, as a deconstruction planner over it and a cancel of that deconstruction do (`removed` per entity).
   - `recipe` (with `quality`): out of reach (or with `platform` or `surface`) by remote view in any visible chunk,
     where it changes an empty idle machine only; a machine holding items or mid-craft is walked into reach first, and
     what it held comes to your inventory (the reply says `moved` and ends with `inv`). A remote refusal never walks the body. Aboard,

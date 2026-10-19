@@ -8772,3 +8772,75 @@ fh watch    # deploy on every change
   said `surface=`, but its schema had no surface key, so the argument check refused it. rates now takes `surface`. A
   test over describe checks that every action listed as taking surface= or platform= has that key, and that no
   action's help names `surface=` or `platform=` without it (0 found).
+## d19 batch41, Group A (eng/d19-batch41)
+
+- A1 (Sonnet, shift40 07:51: `ingredient_gap {all, area}` on Nauvis failed "attempt to index local 'e' (a nil value)"):
+  a short ingredient's donors come from stock.scan, whose places include stacks on the ground (no entity). where_kept
+  read `e.name` on them. It now names a ground place by its row (`2 stacks on the ground (3,4) 2 tiles, 40 free`),
+  passes over a holder gone invalid, and a donor search that fails stays on its row (`donors not read: ...`) while the
+  other machines read. craft's check_stock read `x.entity.type` on the same rows and is fixed too.
+- A2 (Sol, seq 868-869, Bastion): `platform_rearm` checks each turret kind's ammunition (its ammo categories against
+  the item's). With `positions`, an item a named turret does not take is refused: `item firearm-magazine: not taken by
+  railgun-turret (5) takes railgun-ammo; rocket-turret (6) takes rocket, explosive-rocket`. With no positions, the
+  turrets aboard that do not take it are left out (`left_out` names each kind and its items); none taking it is
+  refused. Each row shows `unusable_request`: a request already on the turret for ammunition it does not take.
+  `configure {position | positions, item_requests: false}` (and `ammo: false` on a built turret) removes a built
+  entity's item requests. On 2.0.77 (a private copy of world n) a player does this with a deconstruction planner over
+  the entity, which removes its item-request-proxy at once and marks the entity, then a cancel of that deconstruction,
+  which unmarks it; the entity keeps no request. Every request on it goes (ammunition, modules, removals). The reply
+  gives `removed` (`bring firearm-magazine*10`) per entity.
+- A3 (Sol, seq 863, Fulgora): `deconstruct {area, cancel: true, entity_types: ["item-entity"]}` (or entity_names
+  `item-on-ground`) is `items_on_ground: true`. A cancel's `cancelled` counts the stacks with the entities, and the
+  reply gives `item_stacks_cancelled`, `robot_orders_cancelled`, `robots_freed` (construction robots that had orders
+  on those stacks and have none now), `robots_carrying` (of those, still carrying a stack they picked up) and
+  `item_stacks_line`. Sol's first cancel (shift39 10:46) did unmark 1622 stacks: the reply put that under
+  `item_stacks` beside `cancelled: 0` (the entity count). On the private copy the engine takes robots' orders off at
+  once (84 orders on 200 marked stacks to 0 the same tick).
+- A4 (Aurora as viewer; Sol's Bastion departure checklist, board #1213): the board's own limit cut it. board_post
+  stored the 708-character note as its first 200 with no error. Board texts over their limit are now refused with
+  their size and the limit (`note is 708 characters, over its limit of 1000: nothing stored`); notes take up to 1000
+  characters; a text a read shortens for a line ends in `...`.
+- A5 (Sol and Astra d19 04:56): the open-request limit (10) counts the agent's own `harness_request` items whose status
+  is open, claimed, doing or blocked, at any age (the operator owns them; the operator or the filer closes one with
+  `board_update {id, status}`). The refusal lists them, oldest first, with status, owner, age and the last note.
+## d19 batch41, Group B (eng/d19-batch41)
+
+- B1 (Sol seq 861: another agent switched off Swiftlet's required section while Sol's queue waited; the reads showed
+  no name): editlog.lua. Each `requests` edit of a section (a hub's, a requester or buffer chest's, a landing pad's) and
+  each `platform_schedule` change of a stop's departure conditions (`stops`, or `stop` with `wait`) records the
+  editor, the tick, and the old and new text of each section or stop it changed (the last 5 kept). A section reads
+  `on: iron-plate 600..inf from nauvis`, a stop `nauvis: time 10s and item_count iron-plate >= 600`. A dry run records
+  nothing. Reads: `requests` sections `last_edit`; `platform {platform}` `request_edits`; `platform_gate` lines end
+  with the current stop's last edit, and `edits` lists each stop's. Whoever made the previous edit of that section or
+  stop, when someone else changes it, gets one tell a call (`changed what you set last: Swift hub request section 6:
+  off: ... -> on: ...`), and the reply says `told_of_edit`. Records begin with this deploy: a section nobody edited
+  since has no editor and tells nobody. Checked on the private copy (Swift section 6, sol then astra): sol's next
+  reply carried the tell.
+- B2 (Sol seq 865): `evidence {metric?, tick?, decision?, result?, owner?, next_check?}` (evidence.lua) on
+  `board_post`, `board_update` and `reminder_ack`: each field up to 500 characters, `tick` a game tick up to now,
+  `next_check` text or a game tick. The newest 5 are kept; a board item's compact view shows the newest, its full view
+  all; a reminder's row and line show them. `reminder_ack` `result` takes up to 1000 characters (was 200) and is kept
+  whole. Folded runs say how many and when: `2 runs missed (the first at tick 7200, 1m00s ago; the last at tick
+  10800, 0s ago)` in states, the owner's line, and `missed_runs` on the ack.
+- B3 (Astra seq 862, 864): `status` `overdue_reviews`: this agent's reminder runs waiting past their cadence (with how
+  long and the runs missed), recipients of its own reminders that are overdue, and its active board items whose newest
+  evidence has a `next_check` tick now past; oldest first, 8 lines and a count of the rest. On the private copy of the
+  d17 save sol's read listed 4 reminders, the oldest waiting 12h32m.
+## d19 batch41, Group C (eng/d19-batch41)
+
+- C1 (Astra seq 866, Sol seq 867): with full tools, AGENTS.md's "Your tools" says `team-tools/` holds the team's shared
+  files and, when they exist at launch, names `team-tools/README.md` and the newest `knowledge-index*.md` (by last
+  change), each with its first heading and the writer it names in its first lines ("Written by X", "Author: X"), else
+  "no writer named": the harness records no writer of team-tools files (tools/full_tools.py team_files). The paragraph
+  was shortened by the same bytes (the Codex core: 21990, was 21992).
+- C2 (viewer Aurora): fh files the team's ground rules beside the journal (`.ground_rules.json`, `FH_RULES_FILE`) from
+  the shift block's `ground_rules` and the `rules` of ground_rules, ground_rule_add and ground_rule_retire replies. The
+  post-compaction brief (tools/context.py) keeps whole the ground rules, the open commitments (notes.md's
+  Commitments, Agreements and Claims sections, the agent's own open board items) and the live checks (notes.md's Next
+  check or Live check section, the reminder lines last told to it, the reads before acting, last). Over 3 KB it trims
+  what the last 30 minutes measured, the projects, the other tells, then Now from its end, and says what it trimmed.
+- C3 (viewer Aurora, the operator 13:50): the shift handoff of notes.md (tools/handover.py carry, 16 KB): the Log
+  first, then the other sections oldest first (in file order; a second section of a kind, such as an older Now, counts
+  as older), each cut from its end down to its heading; the first Now, Claims, Agreements or Decisions, Commitments
+  or Open board items, and Next check sections stay whole. The carried head names what was trimmed (five parts and a
+  count of the rest).

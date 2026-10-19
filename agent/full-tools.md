@@ -1,17 +1,17 @@
 ## Your tools
 
-Besides `./fh` and `./shot` you have a full engineering setup:
+Besides `./fh` and `./shot` you have:
 - `tools/` in this directory is yours: scripts, calculators, simulations, blueprint planners, anything you write.
-- `team-tools/` is shared with your teammates: what you put there they can read and run, and theirs is there for you.
-- A later shift of the same world starts with `tools/` and `team-tools/` as the previous shift left them, apart from
-  files over 5 MB, caches such as `__pycache__`, dotfiles and symlinks.
-- `gamedata/` holds the game's own prototype data for this version ({{KB}}): `recipes.json`, `items.json`,
-  `entities.json`, `fluids.json`, `technologies.json` and `locations.json`, the same facts the wiki has, and in Space
-  Age `asteroids.json` (each route's and orbit's asteroid spawns, and the asteroids' health and resistances). Read-only.
+- `team-tools/` holds the team's shared files: you and your teammates read, write and run them.{{TEAM_FILES}}
+- A later shift starts with `tools/` and `team-tools/` as this one leaves them (not files over 5 MB, caches such as
+  `__pycache__`, dotfiles or symlinks).
+- `gamedata/` (read-only) holds the game's prototype data for this version ({{KB}}): recipes, items, entities, fluids,
+  technologies and locations (`NAME.json`, as the wiki has them), and in Space Age `asteroids.json` (spawns per route
+  and orbit; health and resistances).
 - Python 3 with its standard library, and the usual shell programs.
 - {{HARNESS}}
 
-Only `./fh` acts in the game: your tools can compute and plan, and they reach the game through `./fh` as you do.
+Only `./fh` acts in the game; your tools compute and plan, and reach the game through `./fh`.
 Designs come from the team: blueprint strings made by viewers or found on the web are not imported, placed or used
 as a source (Nick, after the viewers' poll #1). Ideas people describe in words are welcome, and the web is open for facts.
 Aethera and Peregrine, built earlier from viewer designs, stay: fly, maintain and study them as they are built in the game.

@@ -22,6 +22,7 @@ No tool here reads or writes the game: only ./fh acts in it.
 import glob
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -197,15 +198,56 @@ def kb_version():
     return os.environ.get("POG_KB") or ("space-age-2.0.77" if os.environ.get("POG_SPACE_AGE") == "1" else "base-2.0.77")
 
 
-def paragraph(kind, name=None):
-    """The "Your tools" text for AGENTS.md: what the agent has, not what to do with it."""
+def heading(path):
+    """A file's first Markdown heading, else its first line, at most 80 characters."""
+    try:
+        lines = [l.strip() for l in open(path, errors="replace").read(4000).splitlines() if l.strip()]
+    except OSError:
+        return ""
+    first = next((l for l in lines if l.startswith("#")), lines[0] if lines else "")
+    return first.lstrip("#").strip()[:80]
+
+
+def writer(path):
+    """The writer a file names in its first 5 lines ("Written by X", "Author: X", "By X"), else None."""
+    try:
+        head = "\n".join(open(path, errors="replace").read(4000).splitlines()[:5])
+    except OSError:
+        return None
+    m = re.search(r"(?i)\b(?:written by|author:|authors?:|by)\s+([A-Za-z][\w-]*)", head)
+    return m.group(1) if m else None
+
+
+def team_files(shared):
+    """(d19 batch41 C1, Astra seq 866, Sol seq 867: handoff links to the team's knowledge files were forgotten) the facts
+    AGENTS.md gives on team-tools/README.md and the newest knowledge-index*.md (by last change) when they exist: what each
+    is (its heading) and who wrote it (as the file says; the harness records no writer)."""
+    if not shared or not os.path.isdir(shared):
+        return ""
+    names = ["README.md"] if os.path.isfile(os.path.join(shared, "README.md")) else []
+    idx = sorted(glob.glob(os.path.join(shared, "knowledge-index*.md")), key=lambda p: (os.path.getmtime(p), p))
+    if idx:
+        names.append(os.path.basename(idx[-1]))
+    parts = []
+    for n in names:
+        p = os.path.join(shared, n)
+        h, w = heading(p), writer(p)
+        what = "; ".join(x for x in (f'"{h}"' if h else "", f"by {w}" if w else "no writer named") if x)
+        parts.append(("the newest knowledge index, " if n != "README.md" else "") + f"`{n}` ({what})")
+    if not parts:
+        return ""
+    return "\n  It holds " + " and ".join(parts) + "."
+
+
+def paragraph(kind, name=None, shared=None):
+    """The "Your tools" text for AGENTS.md: what the agent has, not what to do with it. shared: the run's team-tools."""
     text = open(os.path.join(ROOT, "agent", "full-tools.md")).read()
     lines = {}
     for line in text.split("<!-- harness -->", 1)[1].strip().splitlines():
         k, _, v = line.partition(":")
         lines[k.strip()] = v.strip()
     line = lines.get(kind + "-nosub", lines.get(kind, "")) if name in subagents_off() else lines.get(kind, "")
-    return text.split("<!-- harness -->", 1)[0].replace("{{HARNESS}}", line).replace(
+    return text.split("<!-- harness -->", 1)[0].replace("{{HARNESS}}", line).replace("{{TEAM_FILES}}", team_files(shared)).replace(
         "{{KB}}", kb_version()).rstrip("\n").replace("\n\n\n", "\n\n") + "\n"
 
 
@@ -238,7 +280,7 @@ def workspace(d, kind):
     path = os.path.join(d, "AGENTS.md")
     text = open(path).read()
     if "## Your tools" not in text:
-        add = paragraph(kind, os.path.basename(os.path.abspath(d))).rstrip("\n") + "\n\n"
+        add = paragraph(kind, os.path.basename(os.path.abspath(d)), shared).rstrip("\n") + "\n\n"
         i = text.find("## Compact instructions")
         text = text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add
         open(path, "w").write(text)

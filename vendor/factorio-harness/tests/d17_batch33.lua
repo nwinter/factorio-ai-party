@@ -139,7 +139,7 @@ do
   eq(#ghost.insert_plan,2); eq(ghost.insert_plan[1].id.name,'speed-module','the module request stays'); eq(ghost.insert_plan[2].items.in_inventory[1].count,2)
   r=T.set(ghost,false)
   eq(r.before,'railgun-ammo*2'); eq(r.after,'none'); eq(#ghost.insert_plan,1)
-  fails(function() T.set({valid=true,type='ammo-turret'},false) end,'a built turret takes ammo by rearm or transfer')
+  fails(function() T.set({valid=true,type='ammo-turret'},false) end,'a built turret takes ammo by platform_rearm, deliver or transfer')
   local rows={}
   T.add(rows,{name='railgun-ammo',count=10,default=true}); for _=1,6 do T.add(rows,{name='railgun-ammo',count=10,default=true}) end
   eq(T.default_note(rows),'by default 7 turret ghosts each request 10 railgun-ammo (the entry\'s ammo: false for none, or {name, count}; configure {position, ammo} changes it on a ghost)')

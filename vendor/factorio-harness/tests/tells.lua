@@ -320,7 +320,7 @@ do
   local u=grok('status').team.tells
   eq(u[1],'2 unread tells (chat_ack {seq} or "all", or a tells read, marks them read):'); eq(#u,3)
   eq(u[2],'unread #'..a1..' astra, waiting 2s: silo 2 waits for rocket fuel only Nauvis East holds')
-  eq(u[3],'unread #'..(a1+3)..' sol, waiting 2s: '..string.rep('y',100))
+  eq(u[3],'unread #'..(a1+3)..' sol, waiting 2s: '..string.rep('y',97)..'...')
   grok('tell',{to='astra',text='on it',reply_to=a1})
   u=grok('status').team.tells; eq(#u,2); assert(u[2]:find('sol, waiting',1,true))
   local ack=grok('chat_ack',{seq='all'}); eq(ack.read,1)
