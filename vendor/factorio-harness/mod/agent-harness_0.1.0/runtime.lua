@@ -14451,6 +14451,8 @@ do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
+      -- (d18 batch36 D1, live 18:40) silo {surface: "all"}: every planet, silo.lua reads it, no one surface
+      if name=='silo' and a.surface=='all' then return handler(p,a) end
       -- launch's and preflight's platform is where the rocket goes, not where the call acts (Astra, shift14 03:09 and
       -- 04:24: preflight {surface, position, platform} was refused, and she dropped the platform).
       assert(name=='launch' or name=='preflight' or a.platform==nil,'give platform or surface, not both')
