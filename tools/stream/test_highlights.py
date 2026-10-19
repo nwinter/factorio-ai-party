@@ -116,6 +116,12 @@ voiced = {"agents": [], "voiced": [{"id": "c1", "channel": "agent", "agent": "so
 b = hl.bubbles(voiced, 5002.0)
 check(b == [{"agent": "sol", "text": "I will take the north wall", "ttl": 240, "id": "c1"}], b)
 check(hl.bubbles(voiced, 5005.8) == [], "a clip nearly done gets none")
+# (d19 batch43 A3) a long line: its first words and "…", never cut mid-word
+longv = {"agents": [], "voiced": [dict(voiced["voiced"][0], text="The north wall holds twelve gun turrets and the "
+                                       "ammunition belt reaches all of them now, so the next attack should stop at the wall.")]}
+bt = hl.bubbles(longv, 5002.0)[0]["text"]
+check(len(bt) <= hl.BUBBLE_MAX and bt.endswith("…") and bt[:-1] in longv["voiced"][0]["text"]
+      and longv["voiced"][0]["text"][len(bt) - 1] == " ", bt)
 sent4 = []
 h4 = hl.Highlights(lambda body: (sent4.append(body), {"ok": True})[1])
 body = h4.step(voiced, 5002.0)
