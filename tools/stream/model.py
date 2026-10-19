@@ -1322,7 +1322,9 @@ class Model:
                          "message": clean_text(j.get("message") or ""), "cadence": j.get("cadence"),
                          "enabled": bool(j.get("enabled")), "done": bool(j.get("done")),
                          "next_due_in_s": j.get("next_due_in_s"), "last_result": clean_text(j.get("last_result") or "") or None,
-                         "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states")})
+                         "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states"),
+                         # (d17 batch35 D3) runs each recipient missed ({name: runs}); states says when the owner was told
+                         "missed": {str(k): v for k, v in (j.get("missed") or {}).items() if isinstance(v, int)} or None})
         return {"jobs": rows, "total": len(r.get("jobs") or [])}
 
     def board_snapshot(self):

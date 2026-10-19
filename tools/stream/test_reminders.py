@@ -24,7 +24,16 @@ def main():
     j = s["jobs"][0]
     assert j["owner"] == "sol" and j["agent"] == "sol" and j["message"] == "Petrel ammo and fuel", j
     assert j["next_due_in_s"] == 420 and j["last_result"] == "900 magazines" and j["states"] == "astra pending; sol acknowledged", j
-    assert "line" not in j
+    assert "line" not in j and j["missed"] is None
+    # (d17 batch35 D3) the runs each recipient missed, and the owner told, reach the site
+    m.ingest({"reminders": {"tick": 200, "jobs": [{"id": 59, "owner": "sol", "message": "review", "enabled": True,
+              "states": "grok overdue (10 runs missed, the owner told); sol acknowledged", "missed": {"grok": 10}}]}})
+    j = m.reminders_snapshot()["jobs"][0]
+    assert j["missed"] == {"grok": 10} and "the owner told" in j["states"], j
+    m.ingest({"reminders": {"tick": 100, "jobs": [
+        {"id": 1, "name": "ship review", "owner": "sol", "recipients": "astra, sol", "message": "Petrel ammo and fuel",
+         "cadence": "every 15m00s", "enabled": True, "next_due_in_s": 420, "last_result": "900 magazines", "result_age_s": 480,
+         "result_by": "sol", "states": "astra pending; sol acknowledged", "line": "not passed on"}]}})
     import time
     assert m.snapshot(time.time())["reminders"]["total"] == 1
     many = [{"id": i, "owner": "sol", "message": f"job {i}", "enabled": True} for i in range(20)]

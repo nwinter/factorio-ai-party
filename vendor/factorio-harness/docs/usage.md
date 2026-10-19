@@ -7926,6 +7926,74 @@ fh watch    # deploy on every change
   percent. An item with spoil_to_trigger_result reads `hatches in` (pentapod-egg on world n; nutrients spoil to
   spoilage).
 
+## d18 batch36 (the agents' 15:20 poll)
+
+- `logistics_audit {network | position, backlog: true}` (A1, Luna and Grok, all of shift35: Gleba's science requester
+  at (15.5,28.5) lacked 10 nutrients for about 36 minutes with about 98 in a provider 9 tiles off; logistics_audit said
+  not_sent and "all 250 logistic bots occupied"). Per network: the oldest unfilled requests first (256 requester points
+  read, 12 rows, `limit` up to 48): chest, item, short, `short_s` (how long since the networks watch first saw it
+  short), the provider the game would take it from (select_pickup_point) with what it holds and what robots already
+  reserve there (its targeted_items_pickup), and `held_by`, the first of these that reads true now: the delivery on
+  the way covers it; no room in the chest; none in the network's providers or storage; no provider the game picks;
+  every unit there reserved; no idle logistic robot (with how many hold cargo with no order and what, the orders the
+  rest are on by type and what they carry, and the queue to charge); robots queued to charge with every charging slot
+  taken; else idle robots and an unreserved provider, not sent yet (the game's dispatch is not exposed). `robots`:
+  total, idle (available_logistic_robots), on orders by type (robot_order_queue), carrying (top 5), holding cargo
+  with no order, charging and queued to charge (each cell's charging_robot_count and to_charge_robot_count), charging
+  slots (each roboport's logistic_parameters.charging_station_count) and how many are free. Read from the game: those
+  fields. Not read: when the game will dispatch a robot, and any minimum the game sends for (a requester chest has
+  none the API shows). On world n (18 Oct, network #98 on Gleba, 122 requester points, 250 robots) it ran
+  3.1-3.4 ms; in three reads a few minutes apart the robots were 201 holding cargo with no order (firearm-magazine 396,
+  ice 348, agricultural-science-pack 36, cannon-shell 20) and 4 idle, then all 250 on orders (126 deliver, 124
+  pickup) with 25 queued to charge, and nutrients read none free in the network for 21 short requesters.
+- `launch_needs` (A2, viewer Aurora 15:36: Swiftlet waited at a stop for carbon fiber while the silo there could not
+  finish rockets for want of processing units Swiftlet's hub held). On platform_schedule's reply, the platforms read
+  of one platform, and each silo line of shipment's readiness read: for a stop that waits on items (an item_count or
+  request wait) at the planet the platform is stopped at (else the stop it flies to), each rocket silo of ours there
+  whose input holds less than one rocket part's worth of an ingredient while it has parts left to make, and what of
+  that ingredient the waiting platform's own hub holds: `Swiftlet holds 400 processing-unit; rocket-silo (5.5,10.5)
+  on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)`. The silos come from the census pass (no
+  search; a whole-surface find took 10.5 ms on Nauvis); 0.01-0.25 ms a platform on world n. Only rocket parts are
+  read: a payload is the platform's own requests, which its hub already holds and asks more of.
+- Stop waits as the game evaluates them (A3, Luna 15:58: an item-count OR time departure written without compare: "or"
+  ran as and, so the gate held past the time fallback; viewer Aurora 16:09: Spindle needed repeated fixes).
+  waitgroups.lua, for platform_schedule (stops and stop/wait) and train schedules:
+  - Waits of more than one kind with no compare past the first are refused, naming the default and the way to say
+    or: `stop 1: its waits mix item_count and time with no compare on wait 2; the game joins a wait with no compare by
+    and (the default), so every one must hold. Say each: compare: "and" or compare: "or" ...`. Waits of one kind keep
+    the default and. In shifts 33-36, 69 of 506 platform wait lists mixed kinds with no compare.
+  - `wait: {any_of: [...]}` or `{all_of: [...]}` is written as the game's chain (any_of may hold all_of groups; the
+    chain is ors of ands, so (a or b) and c is written as two all_of groups); read_as says so.
+  - The readback groups the waits as the game evaluates them (and binds before or): `nauvis (fluid_count
+    thruster-fuel >= 24000 or time 300s) [branch 2, time 300s, departs with no fuel condition]`. A branch is named when
+    another branch has a fuel (thruster-fuel, or an item with a fuel value), oxidizer or ammunition condition and it
+    has none.
+  - A platform stop's `save_as: NAME` keeps its wait list (as written) in the harness's storage, and `wait_from: NAME`
+    takes it on another stop or platform; read_as says which and who saved it.
+- `configure {position, hand_size}` on an inserter, built or ghost (C1, Astra: a one-egg surplus export took a
+  constant combinator and a stack size signal only to set hand size 1). The 2.0 inserter GUI has the setting: a
+  forum thread asks to rename its "Stack size override", and Bilka renamed it "Override hand size" for 2.1.22
+  (forums.factorio.com/viewtopic.php?p=646961). hand_size sets LuaEntity.inserter_stack_size_override: 1 up to the
+  inserter's hand size now (1, its prototype's bonus and the force's inserter or bulk capacity bonus), 0 or false
+  for none. Returns hand_size, hand_size_before, hand_max, and circuit_note when the inserter's circuit set stack
+  size is on (that signal sets the hand while it is on the wires). It goes with filters and spoil_priority in the
+  same call. No combinator is placed.
+- `wake: {near: N}` on sleep, wait_ticks and wait_until, `fh ... --wake-near N` (B1, Haiku: an urgent alert every 15-30
+  s on Nauvis woke each wait). Only an attack on our structures or buildings of ours destroyed within N tiles of the
+  character (1..200) wake it as urgent; every other urgent alert (enemy groups, platform hits, a teammate's death, power
+  cut or collapse, an outpost's output, a captive spawner) is held and given with the reply: `held_alerts` (up to 8
+  lines) and `held_alerts_count` (a direct wait's `last` has them). Damage to the character, tells and mentions wake as
+  before. The direct wait_until now takes `wake_on_urgent` too: the scheduler's schema lacked it, so `fh call
+  wait_until --no-urgent` and `--urgent-radius` were refused as an unknown argument.
+- Each leg re-checked before it starts (B2, Haiku: 8 hits from big spitters at (-112,240) on a rearm tour whose walk
+  started clear). A tour's next stop (rearm, feed, refuel, collect, recover, transfer tours) and a move_to's next via
+  leg are checked against enemy groups and enemy units seen now (and demolishers): one whose reach (24 tiles) the
+  straight leg passes through stops the walk where it stands, outcome `enemies_ahead`, and `last.why` /
+  `last.enemies_ahead` name it with what it does and where it stopped: `the leg from (-100,200) to (-120,280) passes 1
+  enemy unit (1 big-spitter) at (-110,238), 7.6 tiles from it: moving units (big-spitter (-110,238) wandering, facing
+  west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
+  avoid_enemies false checks nothing.
+
 ## d17 batch35, Groups B and D (the 13:50 poll; eng/d17-batch35b)
 
 - B1 (Opus: a `steel-plate < 4000` logistic gate kept furnaces off while rail makers starved, with 9 steel free in
@@ -7970,6 +8038,13 @@ fh watch    # deploy on every change
   claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
   with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
   last one only). A cursor that is not the last one is said, and everything is listed.
+- B5 (Gemini 14:16: 8 platforms and 2 silos, the requests past 8 left out with no word): silo's `platform_requests`
+  come in flag order (filling, matched, split_networks, hub_full, below_min_payload; hub order within a flag). A silo's
+  row lists the first 8, with `platform_requests_count`, `platform_requests_flags` (each flag's count) and
+  `platform_requests_more`, and its line says so. `requests: true` lists every row, 48 a page (`page: N`; reads up to
+  192 rows, the rest counted). The automatic launch line's waiting rows also give the count of the rest. Only platforms
+  in orbit of the silo's planet count; one flying here is named in `platforms_coming` (from where, share of the leg
+  flown) and its requests count once it is in orbit. On world n: Fulgora's two silos with every row, 4 ms.
 - Record lists in args are checked field by field (A6, Muse: requests `set` with `{count}` for `{min}` read 0..inf and
   fetched nothing; Sol 14:20: `import_from` for `from` defaulted to nauvis, and circuit_set `signals` as an object
   was read as none). argshapes.lua, walked by the schema check every call and every queued step passes through:
@@ -8149,3 +8224,12 @@ fh watch    # deploy on every change
   in the 20 s after: iron-plate: logistic robots took 100 (first orders: ...) (verdict)`. Ids follow an entry. What it
   cannot know: launches before this runtime ran, more than 64 launches a surface, drops beyond the 20 drops.lua keeps,
   and a drop's pad asks before this runtime (the note says so).
+- D1 fix (operator 16:03): after a stream service restart, a re-read backlog line in viewer-relayed.jsonl reads
+  relayed; one the verdict logs refused keeps that verdict; any other carries no delivery and logs nothing.
+- D3 (viewer Aurora, Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and 16 for Sonnet before a
+  viewer asked): reminders.lua tells the owner when a recipient has missed 2 runs. It is one tell from `reminder #N`
+  naming the recipient, the reminder and its cadence, how long it has waited, the last result (by whom, how long ago)
+  and the `reminder_edit {id, recipients: [...]}` call without that recipient. It goes once until that recipient
+  acknowledges or the recipients change, and never about the owner's own runs. The reminders read gives `missed`
+  ({name: runs}) and states says "the owner told"; the stream service's reminders snapshot passes `missed` to the site,
+  whose chips show the states.

@@ -133,6 +133,9 @@
   when due, as a tell; `wake: false`: the line comes with the next reply and wakes no wait. Reminders never act in the
   game. `steps` makes a checklist: up to 12 names, or `{name, every_ticks}` for a step whose line comes again that
   often while it is your next one; each run goes out with your next unfinished step, and progress is per recipient.
+  A run not acknowledged folds into the next; at 2 runs missed the owner gets one line naming who, the last result and
+  the reminder_edit call that changes the recipients (again only after that recipient acknowledges or the recipients
+  change).
   Example: `./fh call reminder_add --args '{"message":"check the boiler feed chests","every_ticks":54000}'`
 - `reminder_ack {id, result, next_in_ticks?, every_ticks?, step?, leave?, resume?}`: records what the review found;
   `next_in_ticks` puts the next run off; its owner's `every_ticks` there sets a new cadence. On a checklist it records
@@ -140,7 +143,8 @@
   recorded (a one-time checklist is done when everyone's is). `leave: true` sets it aside in an emergency (no step
   lines); `resume: true` or any step's ack picks it up at the next unfinished step. Example:
   `./fh call reminder_ack --args '{"id":3,"result":"all boilers fed","next_in_ticks":36000}'`
-- `reminders {pending?}`: lists them; `pending: true` lists only what waits for you, each at its next step.
+- `reminders {pending?}`: lists them, with each recipient's runs missed (`missed`); `pending: true` lists only what
+  waits for you, each at its next step.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
   `--wait` and `./fh wait` on an action too; on an action alone it waits as `--wait` does), a tell sent with `--wake`
