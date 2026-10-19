@@ -805,7 +805,11 @@ html { scroll-padding-top: 76px; }
 
 /* (d19 batch43 A2) a long text whole: one line with an ellipsis, open for all of it; evidence lines under an item */
 .lt { display: block; min-width: 0; }
-.lt > summary { cursor: pointer; display: flex; gap: .3em; min-width: 0; list-style: none; }
+.lt > summary { cursor: pointer; display: flex; gap: .3em; min-width: 0; list-style: none; font-weight: normal; }
+.lt > summary > .fx-muted { flex: none; white-space: nowrap; }
+/* (d19 batch46 item 0, on the live state) a list row's text column may shrink below its one-line texts, so they end in
+   an ellipsis instead of widening the card */
+.board-claims li > span, .board-jobs li { min-width: 0; }
 .lt > summary::-webkit-details-marker { display: none; }
 .lt > summary::after { content: "▸"; color: var(--fx-muted, #999); flex: none; }
 .lt[open] > summary::after { content: "▾"; }
@@ -814,3 +818,5 @@ html { scroll-padding-top: 76px; }
 .lt .lt-full { white-space: pre-wrap; overflow-wrap: anywhere; }
 .lt-short { display: block; }
 .evidence { display: grid; gap: 2px; font-size: .85em; margin-top: 2px; }
+/* (d19 batch46 item 0) a reminder's state chip with batch41's missed-runs text is longer than the card: it wraps */
+.board-reminders .fx-chip { white-space: normal; overflow-wrap: anywhere; max-width: 100%; height: auto; }

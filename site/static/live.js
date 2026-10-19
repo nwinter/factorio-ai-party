@@ -749,6 +749,22 @@
       return longText(key + ':ev' + (ev.length - 1 - i), line, i ? 'earlier evidence:' : 'evidence:');
     }).join('') + (row.evidence_more ? '<span class="fx-muted small">+' + esc(row.evidence_more) + ' earlier</span>' : '') + '</div>';
   }
+  // A reminder's states, "astra overdue (2 runs missed (the first at tick 7200, 1m00s ago; the last at ...)); sol
+  // acknowledged", one per recipient: split on "; " outside parentheses (d19 batch46 item 0: batch41's missed-runs text
+  // has its own "; ", and the chip broke in two on the live page).
+  function splitStates(text) {
+    var out = [], depth = 0, cur = '';
+    text = String(text || '');
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      if (ch === '(') depth++;
+      else if (ch === ')') depth = Math.max(0, depth - 1);
+      if (depth === 0 && ch === ';' && text.charAt(i + 1) === ' ') { if (cur) out.push(cur); cur = ''; i++; continue; }
+      cur += ch;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
   // The team's reminder jobs (d15 batch5 group I; viewer Foobator's idea, Astra and Sol's design): who set each, its
   // message, when it is next due, the last result and its age, and each recipient's state (pending, acknowledged,
   // overdue). Reminders only send the agents a line; they never act in the game.
@@ -758,7 +774,7 @@
     var rows = rem.jobs.map(function (j) {
       var o = byName[j.agent] || {};
       var due = j.done ? 'done' : !j.enabled ? 'off' : j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : '';
-      var states = String(j.states || '').split('; ').filter(Boolean).map(function (st) {
+      var states = splitStates(j.states).map(function (st) {
         var m = /^(\S+) (\S+)(.*)$/.exec(st) || [];
         var who = byName[m[1]] || {};
         return '<span class="fx-chip ' + (STATE[m[2]] || 'fx-chip--grey') + '">' + esc((who.display_name || m[1] || '') + ' ' + (m[2] || '') + (m[3] || '')) + '</span>';
