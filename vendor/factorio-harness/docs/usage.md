@@ -8212,3 +8212,37 @@ fh watch    # deploy on every change
   acknowledges or the recipients change, and never about the owner's own runs. The reminders read gives `missed`
   ({name: runs}) and states says "the owner told"; the stream service's reminders snapshot passes `missed` to the site,
   whose chips show the states.
+- D4 (Nick 14:10: route viewer lines that name no agent by what they are about; tools/stream/router.py, viewers.py):
+  - The rules that work are kept (named or @ agents, @operator, @viewer, staff, chatter). For the rest:
+    - A platform or planet the line names maps to its owners by the board (open claims, and the tasks, requests and
+      projects agents hold), when one or two hold it. This is deterministic and needs no Clef: "to Sol: about
+      Wayfarer".
+    - Else a second choice question in the same Clef batch call: each agent by its work (one line from live state:
+      where, its board doing line, what it holds), the agent this viewer was just talking to (`same`), the operator
+      (to the inbox) or other viewers (shown, never relayed; only at 0.8). Two agents when both are at 0.3 and
+      together at 0.5.
+    - Clef unavailable or under 0.5: today's rotation, which keeps a viewer's agent of the last 5 minutes. The
+      delivery says "in turn (Clef unsure)".
+  - Off by default: the switch is runs/RUN/viewers-route.on, beside viewers-relay.on. serve.py hands the relay the team
+    each snapshot (Relay.set_team). The verdict log keeps each line's route.
+  - The site's delivery shows the route and why: "to Sol: about Wayfarer", "to Muse: about its work (...)".
+  - About 1,800 characters a routed line with 9 agents, so about 1.7 cents per 1,000 routed lines. Only unaddressed
+    lines are asked: 52 of 199 passed today.
+  - tools/stream/route_replay.py replays verdict logs through it against the game chat's record of whom each line
+    went to (with the team as the live state shows it now).
+- D2 (viewer Aurora 12:5x: "Keep routine digests to changed blockers, failed checks and needed decisions, routed to
+  their owners. Keep full censuses on demand"): the scheduled digest (idle_nudge.py at deadline - 2 h,
+  tools/factory_digest.py) is a delta against the last digest, this run's or the run it resumed from.
+  - Its facts: per surface, the blockers (drills with no resources, input shortage and full output by machine type,
+    boilers and furnaces without fuel, labs not working); the failed checks (lessons whose check is not met); and
+    the decisions needed (items blocked, requests nobody owns). Each is said when it is new, has moved (by 2 and a
+    fifth) or has cleared.
+  - Each fact goes to its owner. A position goes to the claim holding it. A surface goes to every open claim on it,
+    else to the agents holding items whose title names it (at most 3). Otherwise it goes to the team, and so does a
+    request nobody owns.
+  - One tell list per recipient: "Factory digest, changed since the last one (tick T, N game min ago): blockers: ...;
+    failed checks: ...; decisions needed: ...". Nothing changed: no tell.
+  - The full census goes to the team on request (`idle_nudge.py --digest-now`).
+  - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
+    operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
+  - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.
