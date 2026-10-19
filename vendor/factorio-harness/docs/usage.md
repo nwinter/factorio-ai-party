@@ -8599,3 +8599,29 @@ fh watch    # deploy on every change
   - "250 agricultural-science-pack staged for Petrel (its hub asks gleba for it) spoil before its next arrival here
     in about 600s: the first in 300s (the silo's rocket); in storage-chest (24.5,47.5) 50, the silo's rocket 200".
   - Read at most every 30 s a silo, ahead of the silo's other alerts. 0.09 ms for Gleba's silo on world n.
+- Another planet's map (D1; Sol on Aquilo could not survey Nauvis; Astra 17:29 planned Nauvis defenses lake to lake from
+  Aquilo). `map`, `grid` and `observe` are in bots.lua's SURFACE_ACTIONS: `surface: NAME` reads that planet by remote
+  view.
+  - On another planet they need `position` there (grid takes `area` too), since your character stands elsewhere.
+    `position` must be in a charted chunk, as before.
+  - Only what our force has charted is read. map: charted chunks, as before. grid: its water now only in charted chunks.
+    observe: entities by the known rule (enemy units only where visible), as before.
+  - `observe {tile_runs: true, tile_names?, tiles_limit?}` gives the charted tiles in the radius (up to 32) as runs
+    along x, row by row: `[{x,y,count,name}]`, `tile_count`, with `tile_runs_truncated` past tiles_limit (1024 runs by
+    default). Pass tile_names to keep only some, e.g. a lake's water.
+  - `tiles_limit` is now in observe's schema (the code read it before, but the arg check refused it).
+- Where a deconstructed item went (D3, Astra: recovered artillery silently built an older ghost elsewhere). A robot's
+  mining of one of our entities, or of an item on the ground (on_robot_mined_entity; trees, rocks and other neutral
+  clearing are skipped), is followed by deconwent.lua every second.
+  - While the robot holds the item: the order it flies. When it carries the item to a ghost, the ghost and who placed
+    it.
+  - When the robot no longer holds it, one of: it built that ghost (an entity of the ghost's name now stands there);
+    it put the item into a storage chest within 3 tiles; or neither was seen.
+  - A storage chest is then watched. A construction robot within 8 tiles holding the item when the chest's count
+    falls is followed the same way (3 robots a record).
+  - Limits: 16 followed at once, 2 minutes a robot, 5 minutes a chest, 32 records kept.
+  - `where_is {item}` gives `deconstructed`: the last 6 for that item or entity name on the surface, each step with
+    its time after the mining.
+  - The robot-built event is not forwarded to the runtime (control.lua's fixed list, which only a mod reload changes),
+    so a build is known by the entity standing at the ghost's place. An item taken from storage may be another of the
+    same name in that chest.
