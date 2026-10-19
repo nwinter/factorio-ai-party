@@ -269,7 +269,9 @@ do
   r=R.read({force=force,surface={name='nauvis'}},{cancel=true,near={x=-224,y=-30}})
   eq(destroyed,true); eq(#r.cancelled,1); eq(#r.ended,1)
   has(r.ended[1],'construct gun-turret ghost (-224.5,-30.5): ended before the cancel (built, removed or done), skipped')
-  has(r.cancel_line,'1 job cancelled of the robots medium-worm-turret (-230,-30) killed; 1 ended before the cancel, skipped')
+  has(r.cancel_line,'1 job cancelled of the robots medium-worm-turret (-230,-30) killed (1 removed); 1 ended before the cancel, skipped')
+  -- (d19 batch45, batch40 C2) the filter and what is left
+  assert(r.cancel_filter:find('the group of medium-worm-turret (-230,-30)',1,true),r.cancel_filter); assert(r.left,'left')
   defines,game=nil,nil
 end
 print('d17_batch23 A4 robot_losses cancel after a job ended: ok')

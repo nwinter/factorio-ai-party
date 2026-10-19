@@ -8902,3 +8902,19 @@ fh watch    # deploy on every change
   and power-cut alert groups (4.6 ms) are kept 120 ticks per force, and the push alerts read the board's active claims
   once a tick (an agent shown no new alert group read every board item twice for each of about 170 groups, 10 ms):
   4.3-16 -> 0.7-1.5 ms a reply.
+## d19 batch45 (eng/d19-batch45)
+
+- 2: `inspect {positions}` reads the first 8 positions a call (12 with `compact`); `rest` lists the others and `left`
+  says how many (32 positions read 26-31 ms on the private copy, about 0.9 ms a full read, 0.65 compact). `recipes`
+  and `technologies` take `name` (one name or a list of up to 64): those entries only; an unknown or not enabled name
+  is refused with names like it. In shifts 39-41, 19 recipes calls with name each listed 64 recipes.
+- batch40 C2 (Muse): `robot_losses {cancel: true, near}` leads with cancel_line (the kinds cancelled), cancel_filter
+  (near, the group it took, how far, the other groups untouched) and left (what stands), ahead of the groups.
+- batch40 C1 (Muse: second flares on a guarded spawner while shells flew; 153 artillery-remote calls in shifts
+  39-41): a flare's reply and `artillery {position}` give already_coming: our flares still waiting within 32 tiles,
+  artillery projectiles in the air within 64 tiles, the team's flares there in the last 60 s (who, taken or waiting)
+  and the pieces holding fewer shells since. A projectile names no target in 2.0.77 (read on the private copy: no
+  target or source key, orientation 0 whatever its heading).
+- batch40 B2 (Grok; silo 247 and load_silo 22 calls by Luna and Grok in shifts 39-41): the silo row's cargo.spoil and
+  input_spoil, load_silo's aboard_spoil, and the launch record's spoil (last_launch.spoil) give each spoilable item
+  with its spread (spoiled share by count, range, quarters, how many spoil within 10, 30 and 60 min).
