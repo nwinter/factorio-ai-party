@@ -8267,3 +8267,33 @@ fh watch    # deploy on every change
   - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
     operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
   - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.
+
+## d18 batch38 (the 18:20 poll; eng/d18-batch38)
+
+- A1 (Sol 18:21: platform_schedule refused for no_schedule while the platform began flying moments later; duplicate
+  edits and reversals followed):
+  - The state was read in the call's tick, but the game updates a platform in a later tick. On shift36, Cinder
+    (`next: true` at tick 29119760) was flying 39 ticks later, and Wayfarer (`stop 2, go: true` at 29611678) left
+    within 265 ticks. Calls whose platform still read no_schedule 175-334 ticks later stayed put.
+  - Now a no_schedule or no_path read starts a recheck (space.lua `M.recheck_read`): read every 10 ticks for up to 300,
+    ending as soon as it reads otherwise. paused is still read at once.
+  - A queue step (body or platform lane) waits for that read (scheduler.lua) and fails only when it still reads so,
+    with both reads in the reason. A direct call's reply has `recheck` and its line, and the second read comes as a
+    tell from `platform_schedule`.
+- A2 (Grok 18:20, twice: copper from Petrel read "to the ground (no pad takes it)" and landed in the pad at (54,8),
+  shift36 drops #1496 and #1498):
+  - A pod waiting to launch or rising names no station yet, and the game lands a platform's pods for a planet in that
+    planet's landing pad. Every shift36 drop to Gleba landed in its pad, whatever the pad's requests.
+  - pods.lua: with no station named, the force's landing pad on that surface (one bounded find), marked `guessed` and
+    read again while the pod flies. The ground only with no landing pad of ours there.
+  - The arrival alert, the team block and where_is say it: "the landing pad at (54,8) (gleba's pad: pods from a
+    platform land in it; this one names no station yet)".
+- A3 (Astra; withdrawn 18:22, the worm was alive): each worm or spawner robot_dispatch warns of carries its read's
+  age (avoid.lua's chunk cache, at most a minute old) and whether its chunk is in sight now ("read 10s ago, its chunk
+  charted, not in sight now").
+- A4 (Astra: "its network holds no big-electric-pole" while a robot carried one to it):
+  - ghosts reads the flying robot with an order on the ghost first. One holding the item reads "in transit: a
+    construction robot carries ITEM to it (N tiles away, its order K)" with `in_transit`. The shortage now says "its
+    network holds no ITEM and no robot carries one to it".
+  - construction_robots `sources` gives, per group, how many are in transit in robots' cargo (and the nearest), then
+    the chests (or "no chest in the network holds it") for the rest only.
