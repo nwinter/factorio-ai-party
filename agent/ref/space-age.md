@@ -195,7 +195,9 @@
   aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
   body. Rows: `held`, `on_the_way`, `requested`; `hub` (what the hub holds of each item asked), `refills` (requests and
-  rounds asked on this platform since). A step of the platform's lane; `queue_repeat` keeps topping up; it works while
+  rounds asked on this platform since). An `item` a named turret does not take is refused with each kind and the
+  items it takes; with no positions those turrets are left out (`left_out`). `unusable_request` on a row: a request
+  on it for ammunition it does not take. A step of the platform's lane; `queue_repeat` keeps topping up; it works while
   your character is aboard a platform too. Example:
   `./fh call queue_repeat --args '{"lane":"platform:Swiftlet","interval_ticks":600,"steps":[{"action":"platform_rearm","args":{"platform":"Swiftlet","ammo_below":20,"target_count":100}}]}'`
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure

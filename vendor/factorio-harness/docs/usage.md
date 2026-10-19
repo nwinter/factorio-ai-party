@@ -8762,3 +8762,34 @@ fh watch    # deploy on every change
   said `surface=`, but its schema had no surface key, so the argument check refused it. rates now takes `surface`. A
   test over describe checks that every action listed as taking surface= or platform= has that key, and that no
   action's help names `surface=` or `platform=` without it (0 found).
+## d19 batch41, Group A (eng/d19-batch41)
+
+- A1 (Sonnet, shift40 07:51: `ingredient_gap {all, area}` on Nauvis failed "attempt to index local 'e' (a nil value)"):
+  a short ingredient's donors come from stock.scan, whose places include stacks on the ground (no entity). where_kept
+  read `e.name` on them. It now names a ground place by its row (`2 stacks on the ground (3,4) 2 tiles, 40 free`),
+  passes over a holder gone invalid, and a donor search that fails stays on its row (`donors not read: ...`) while the
+  other machines read. craft's check_stock read `x.entity.type` on the same rows and is fixed too.
+- A2 (Sol, seq 868-869, Bastion): `platform_rearm` checks each turret kind's ammunition (its ammo categories against
+  the item's). With `positions`, an item a named turret does not take is refused: `item firearm-magazine: not taken by
+  railgun-turret (5) takes railgun-ammo; rocket-turret (6) takes rocket, explosive-rocket`. With no positions, the
+  turrets aboard that do not take it are left out (`left_out` names each kind and its items); none taking it is
+  refused. Each row shows `unusable_request`: a request already on the turret for ammunition it does not take.
+  `configure {position | positions, item_requests: false}` (and `ammo: false` on a built turret) removes a built
+  entity's item requests. On 2.0.77 (a private copy of world n) a player does this with a deconstruction planner over
+  the entity, which removes its item-request-proxy at once and marks the entity, then a cancel of that deconstruction,
+  which unmarks it; the entity keeps no request. Every request on it goes (ammunition, modules, removals). The reply
+  gives `removed` (`bring firearm-magazine*10`) per entity.
+- A3 (Sol, seq 863, Fulgora): `deconstruct {area, cancel: true, entity_types: ["item-entity"]}` (or entity_names
+  `item-on-ground`) is `items_on_ground: true`. A cancel's `cancelled` counts the stacks with the entities, and the
+  reply gives `item_stacks_cancelled`, `robot_orders_cancelled`, `robots_freed` (construction robots that had orders
+  on those stacks and have none now), `robots_carrying` (of those, still carrying a stack they picked up) and
+  `item_stacks_line`. Sol's first cancel (shift39 10:46) did unmark 1622 stacks: the reply put that under
+  `item_stacks` beside `cancelled: 0` (the entity count). On the private copy the engine takes robots' orders off at
+  once (84 orders on 200 marked stacks to 0 the same tick).
+- A4 (Aurora as viewer; Sol's Bastion departure checklist, board #1213): the board's own limit cut it. board_post
+  stored the 708-character note as its first 200 with no error. Board texts over their limit are now refused with
+  their size and the limit (`note is 708 characters, over its limit of 1000: nothing stored`); notes take up to 1000
+  characters; a text a read shortens for a line ends in `...`.
+- A5 (Sol and Astra d19 04:56): the open-request limit (10) counts the agent's own `harness_request` items whose status
+  is open, claimed, doing or blocked, at any age (the operator owns them; the operator or the filer closes one with
+  `board_update {id, status}`). The refusal lists them, oldest first, with status, owner, age and the last note.
