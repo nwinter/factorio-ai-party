@@ -8625,3 +8625,44 @@ fh watch    # deploy on every change
   - The robot-built event is not forwarded to the runtime (control.lua's fixed list, which only a mod reload changes),
     so a build is known by the entity standing at the ghost's place. An item taken from storage may be another of the
     same name in that chest.
+- D1 with batch37 D2 (Sol: hub stock against each belt reader; a filter set from a constant minus a whole-belt reader
+  starved the crusher feed): circuit_audit {platform} gives `feeders` (circaudit.lua `feeder`).
+  - Each inserter of ours whose filters the circuit sets or which the circuit turns on and off gets one line: what it
+    takes now, its pickup and the signals on its red and green networks.
+  - The line follows the combinators putting out onto those networks and what their inputs read, 3 deep, wire by wire
+    (player wires only), and names constant combinators.
+  - The hub's read is said apart ("its own signal").
+  - Each belt reader there: its mode and the belts its count covers. Hold is its own belt. Whole belt is the game's
+    segment, in flow order: the straight input at a side-load, undergrounds to their pair, stopping at a splitter or a
+    change of segment length. Then what it holds now of the inserter's items, the belts of it past the inserter's
+    pickup ("it cannot take what they hold", with the count there), and belts side-loading inside the count (marked
+    when upstream of the pickup).
+  - `inserter: {x, y}` reads one feeder. Loaders count too, and the filter mode is said. The same lines come with
+    `area` or `positions` reads for the feeders among those entities. `feeder_rows` gives each as data: readers with
+    mode, belts, from, to, holds, past_pickup and joins.
+  - From pC0's handoff (eng/d18-batch37-d2-handoff, f0821cdc, not merged): at most 8 combinators and 8 readers a feeder,
+    since circuits.short costs about 0.4 ms an entity on world n, plus loaders, the filter mode and rows. Its trace
+    through combinator inputs and its side-load check match what this read already did; this read also follows the
+    straight input through a side-load, which ends batch34's whole() walk.
+  - Bounded: the first 8 feeders, 96 connectors a network; a read walks at most 160 belts (400 for one inserter), and
+    readers past that are named, not walked. Belt contents, walks and members are each read once a read.
+  - On world n (read-only, saved first), Wayfarer: 8 feeders in 12.2 ms; with the source caps, 2 feeders in 4.3 ms. My
+    first two versions took 57 ms and 26 ms for 10 feeders (a 138-belt and a 111-belt segment walked again per
+    feeder), over the 20 ms bound for one command each; that is why the budget exists. The dev world refused RCON, so
+    the timing was on n with these bounds.
+- D2 (Opus 18:23, 3 times about 20 min each: which machines or chests took the advanced circuits?): `supply {item,
+  consumers: "all"}` (supply.lua `consumers`), beside batch37 A1's `makers: "all"`.
+  - Every machine of ours on the surface whose recipe takes the item, from the census pass's crafters: its status and
+    its take a minute now (working: crafts a minute at its speed times the recipe's amount; productivity does not
+    change what a craft takes) and at full speed.
+  - Every requester or buffer chest asking for it, from the requesters read (reused for the same item and surface):
+    asks, holds, robots bringing it now, and what the machines its inserters feed take at full speed. Robot deliveries
+    are not kept over time, so a chest's use is its machines' take.
+  - The largest use first, 24 a call (`from`, `next_from`), with the totals per recipe and now/full.
+  - Cost on world n: the machine part reads 200 crafters in 0.7 ms (Nauvis has about 775). The requesters part is the
+    existing read, about 18 ms on Nauvis.
+- D3 (Opus: a lane read "stopped, full" was coal, read as iron ore): belt_flow's lane states now name what stands on
+  the tile ("stopped, full (4 coal on the tile)", `on_tile`), and so do its limit lines ("the end is backed up on its
+  right lane at (6.5,0.5) (4 coal)", "a side-load waits ...: belt (3.5,9.5) is stopped full of 4 carbon ..."). trace's
+  belt-end lines already named each lane's contents; its audit's side-load lines now say what fills a full lane
+  ("(that lane is full: 8 coal)").

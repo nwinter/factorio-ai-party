@@ -146,7 +146,272 @@ return function(api)
         #r.members > LISTED and string.format('; +%d more', #r.members - LISTED) or '')
     end
     if #order == 0 then lines[1] = 'no entity there is on a red or green network' end
-    return {where=where, entities=#list, networks=rows, lines=lines}
+    -- (D1, D2) the feeders among them the circuit sets or gates, as the platform read gives them
+    local feeders = {}
+    M.feeders_begin()
+    for _, e in ipairs(list) do
+      if (e.type == 'inserter' or e.type == 'loader' or e.type == 'loader-1x1') and #feeders < M.FEEDERS then
+        local ok, line, row = pcall(M.feeder, e)
+        if ok and line then feeders[#feeders+1] = row; lines[#lines+1] = line end
+      end
+    end
+    M.feeders_end()
+    return {where=where, entities=#list, networks=rows, lines=lines, feeder_rows=#feeders > 0 and feeders or nil}
+  end
+  -- Feeders the circuit gates (d18 batch38 D1 with batch37 D2; Sol 18:21, more than 10 reads: whole-belt counts took in
+  -- output branches the feeders could not reach, and a filter set from a constant minus a belt reader starved the
+  -- crusher feed): each inserter of ours whose filters the circuit sets, or which the circuit turns on and off, with the
+  -- signals on its networks, the combinators putting out onto them (and the networks those read, FEED_DEPTH deep), and
+  -- each belt reader among them: its read mode, exactly which belts its count covers (hold: its own belt; whole belt:
+  -- the game's segment, as left_out reads it), what that count holds now of the items the inserter takes, the belts of
+  -- it past the inserter's pickup (it cannot take what they hold), and side-loads joining inside the count. The hub's
+  -- read is said apart. Bounded: FEEDERS inserters, NET_CONNS connectors a network.
+  local FEEDERS, NET_CONNS, FEED_DEPTH, SOURCES = 8, 96, 3, 8
+  M.FEEDERS = FEEDERS
+  local BELT_BUDGET, ONE_BUDGET = 160, 400  -- belts a read walks: all feeders, one feeder (inserter)
+  local READ_MODE
+  local function mode_name(m)
+    READ_MODE = READ_MODE or (defines.control_behavior and defines.control_behavior.transport_belt and defines.control_behavior.transport_belt.content_read_mode) or {}
+    for k, v in pairs(READ_MODE) do if v == m then return k end end
+    return tostring(m)
+  end
+  -- one read's memo (M.feeders_memo): each belt's contents, each reader's belts, each network's members
+  local memo = {}
+  local function lane_count(b, item)
+    local k = key(b)
+    local c = memo.contents and memo.contents[k]
+    if not c then
+      c = {}
+      for i = 1, try(function() return b.get_max_transport_line_index() end) or 0 do
+        for _, it in ipairs(try(function() return b.get_transport_line(i).get_contents() end) or {}) do
+          local n = type(it.name) == 'string' and it.name or try(function() return it.name.name end)
+          if n then c[n] = (c[n] or 0) + (it.count or 0) end
+        end
+      end
+      if memo.contents then memo.contents[k] = c end
+    end
+    return c[item] or 0
+  end
+  -- the belts a reader's count covers, in flow order, and the reader's index in it
+  -- (the walk follows the straight input at a side-load, as the game's segment does, an underground to its pair, and
+  -- stops at a splitter or where the segment length changes)
+  local covered_walk
+  local function covered(b, mode)
+    if mode ~= 'entire_belt_hold' then return {b}, 1 end
+    local m = memo.cover and memo.cover[key(b)]
+    if m then return m[1], m[2] end
+    -- (a read walks at most BELT_BUDGET belts: about 20 us a belt on world n)
+    if memo.walked and memo.walked >= (memo.budget or BELT_BUDGET) then return nil end
+    local list, at_i = covered_walk(b)
+    if memo.walked then memo.walked = memo.walked + #list end
+    if memo.cover then memo.cover[key(b)] = {list, at_i} end
+    return list, at_i
+  end
+  covered_walk = function(b)
+    local mine = seglen(b)
+    local seen = {[key(b)]=true}
+    local function step(cur, way)
+      local list = try(function() return cur.belt_neighbours[way] end) or {}
+      local nxt
+      if #list == 1 then nxt = list[1]
+      elseif way == 'inputs' then
+        for _, x in ipairs(list) do if x.direction ~= nil and x.direction == cur.direction then nxt = x end end
+      end
+      if not nxt and cur.type == 'underground-belt' then
+        local pair = try(function() return cur.neighbours end)
+        local t = try(function() return cur.belt_to_ground_type end)
+        if pair and pair.valid and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
+      end
+      if not nxt or nxt.type == 'splitter' or seen[key(nxt)] then return nil end
+      if mine and math.abs((seglen(nxt) or -1) - mine) > 0.001 then return nil end
+      seen[key(nxt)] = true
+      return nxt
+    end
+    local up, cur = {}, b
+    for _ = 1, SEG do cur = step(cur, 'inputs'); if not cur then break end; up[#up+1] = cur end
+    local list = {}
+    for i = #up, 1, -1 do list[#list+1] = up[i] end
+    list[#list+1] = b
+    local at_i = #list
+    cur = b
+    for _ = 1, SEG do cur = step(cur, 'outputs'); if not cur then break end; list[#list+1] = cur end
+    return list, at_i
+  end
+  local function connectors(e)
+    local W = defines.wire_connector_id
+    local out = {}
+    for _, id in ipairs({W.circuit_red, W.circuit_green, W.combinator_input_red, W.combinator_input_green, W.combinator_output_red, W.combinator_output_green}) do
+      local c = id and try(function() return e.get_wire_connector(id, false) end)
+      if c then out[#out+1] = {c=c, id=id} end
+    end
+    return out
+  end
+  local function side(e, id)
+    local W = defines.wire_connector_id
+    if id == W.combinator_output_red or id == W.combinator_output_green then return 'output' end
+    if id == W.combinator_input_red or id == W.combinator_input_green then return 'input' end
+  end
+  -- every entity connector on the network a connector is on (wires of players only)
+  local function members(conn)
+    local net = try(function() return conn.owner.get_circuit_network(conn.wire_connector_id) end)
+    local id = net and try(function() return net.network_id end)
+    if id and memo.members and memo.members[id] then return memo.members[id] end
+    local seen, queue, out, i = {}, {conn}, {}, 1
+    local origin = defines.wire_origin and defines.wire_origin.player
+    while i <= #queue and #out < NET_CONNS do
+      local c = queue[i]; i = i + 1
+      local k = tostring(try(function() return c.owner.unit_number end)) .. ':' .. tostring(c.wire_connector_id)
+      if not seen[k] then
+        seen[k] = true
+        out[#out+1] = c
+        for _, w in pairs(try(function() return c.connections end) or {}) do
+          if w.target and (w.origin == nil or w.origin == origin) then queue[#queue+1] = w.target end
+        end
+      end
+    end
+    if id and memo.members then memo.members[id] = out end
+    return out
+  end
+  -- a memo for the feeders of one read (cleared after)
+  function M.feeders_begin(budget) memo = {contents={}, cover={}, members={}, walked=0, budget=budget} end
+  function M.feeders_end() memo = {} end
+  local function net_of(c) return try(function() return c.owner.get_circuit_network(c.wire_connector_id) end) end
+  local function signals_text(net, limit)
+    local sigs = try(function() return net.signals end) or {}
+    table.sort(sigs, function(x, y) return math.abs(x.count) > math.abs(y.count) end)
+    local parts = {}
+    for i, sg in ipairs(sigs) do if i <= (limit or 6) and sg.signal then parts[#parts+1] = sg.signal.name .. ' ' .. sg.count end end
+    return #parts > 0 and table.concat(parts, ', ') .. (#sigs > #parts and ', ...' or '') or 'no signal'
+  end
+  function M.feeder(ins)
+    local cb = try(function() return ins.get_control_behavior() end)
+    local sets = cb and try(function() return cb.circuit_set_filters end)
+    local gate = cb and try(function() return cb.circuit_enable_disable end)
+    if not (sets or gate) then return nil end
+    -- what it takes: its filters now and its condition's signal
+    local items, names = {}, {}
+    for i = 1, try(function() return ins.filter_slot_count end) or 0 do
+      local f = try(function() return ins.get_filter(i) end)
+      local n = f and (type(f) == 'string' and f or type(f.name) == 'string' and f.name or try(function() return f.name.name end))
+      if n and not items[n] then items[n] = true; names[#names+1] = n end
+    end
+    local cond = gate and try(function() return cb.circuit_condition end)
+    local cs = cond and cond.first_signal and cond.first_signal.name
+    if cs and prototypes and prototypes.item and prototypes.item[cs] and not items[cs] then items[cs] = true; names[#names+1] = cs end
+    local pick = try(function() return ins.pickup_target end)
+    local fmode = sets and try(function() return ins.inserter_filter_mode end)
+    local head = string.format('%s %s: %s%s; picks up from %s', ins.name, at(ins.position),
+      sets and 'its filters set by the circuit (' .. tostring(fmode or 'whitelist') .. ', now ' .. (#names > 0 and table.concat(names, ', ') or 'none') .. ')' or '',
+      gate and ((sets and ', ' or '') .. 'on while ' .. (api.condition_text and cond and try(function() return api.condition_text(cond) end) or 'its circuit condition holds')) or '',
+      pick and pick.valid and string.format('%s %s', pick.name, at(pick.position)) or 'nothing')
+    local parts, readers, seen_net = {}, {}, {}
+    -- at most SOURCES combinators and SOURCES readers a feeder (circuits.short is about 0.4 ms an entity on world n: a
+    -- hub network's 25 members ran 70 ms for one inserter in batch37's first version)
+    local ncomb, nread = 0, 0
+    local row = {name=ins.name, position={x=ins.position.x, y=ins.position.y}, filters=names, set_filters=sets or nil, gated=gate or nil,
+      mode=sets and try(function() return ins.inserter_filter_mode end) or nil, pickup=pick and pick.valid and {name=pick.name, position=pick.position} or nil, readers={}}
+    local function walk(conn, label, depth)
+      local net = net_of(conn)
+      local id = net and try(function() return net.network_id end)
+      if not id or seen_net[id] then return end
+      seen_net[id] = true
+      parts[#parts+1] = string.format('%s #%d: %s', label, id, signals_text(net))
+      for _, c in ipairs(members(conn)) do
+        local o = c.owner
+        if o and o.valid and o ~= ins then
+          local sd = side(o, c.wire_connector_id)
+          if (o.type == 'arithmetic-combinator' or o.type == 'decider-combinator' or o.type == 'selector-combinator') and sd == 'output' and depth < FEED_DEPTH and ncomb < SOURCES then
+            ncomb = ncomb + 1
+            local set = api.circuit_short and try(function() return api.circuit_short(o) end)
+            parts[#parts+1] = string.format('  put out by %s %s%s', o.name, at(o.position), set and ' (' .. set .. ')' or '')
+            local W = defines.wire_connector_id
+            for _, w in ipairs({W.combinator_input_red, W.combinator_input_green}) do
+              local ic = try(function() return o.get_wire_connector(w, false) end)
+              if ic then walk(ic, '    its ' .. (w == W.combinator_input_red and 'red' or 'green') .. ' input', depth + 1) end
+            end
+          elseif o.type == 'constant-combinator' and ncomb < SOURCES then
+            ncomb = ncomb + 1
+            local set = api.circuit_short and try(function() return api.circuit_short(o) end)
+            parts[#parts+1] = string.format('  constant-combinator %s%s', at(o.position), set and ' (' .. set .. ')' or '')
+          elseif o.type == 'space-platform-hub' then
+            local ocb = try(function() return o.get_control_behavior() end)
+            if ocb and try(function() return ocb.read_contents end) then
+              local held = {}
+              for _, n in ipairs(names) do held[#held+1] = n .. ' ' .. (try(function() return o.get_item_count(n) end) or 0) end
+              parts[#parts+1] = string.format('  the hub %s reads its contents onto it%s (its own signal, apart from any belt read)', at(o.position),
+                #held > 0 and ': ' .. table.concat(held, ', ') or '')
+            end
+          elseif o.type == 'transport-belt' or o.type == 'underground-belt' or o.type == 'splitter' then
+            local ocb = try(function() return o.get_control_behavior() end)
+            if ocb and try(function() return ocb.read_contents end) and not readers[key(o)] and nread < SOURCES then
+              readers[key(o)] = true; nread = nread + 1
+              local m = mode_name(try(function() return ocb.read_contents_mode end))
+              local line, r = M.reader_line(o, m, names, pick)
+              parts[#parts+1] = '  ' .. line
+              row.readers[#row.readers+1] = r
+            end
+          end
+        end
+      end
+    end
+    local W = defines.wire_connector_id
+    for _, w in ipairs({W.circuit_red, W.circuit_green}) do
+      local c = try(function() return ins.get_wire_connector(w, false) end)
+      if c then walk(c, w == W.circuit_red and 'red' or 'green', 1) end
+    end
+    row.line = head .. '; ' .. table.concat(parts, '; ')
+    return row.line, row
+  end
+  -- One belt reader: its mode, the belts its count covers, what that count holds of the items, the belts past the
+  -- feeder's pickup, and side-loads joining inside the count.
+  function M.reader_line(b, mode, names, pick)
+    local list, at_i = covered(b, mode)
+    if not list then
+      return string.format('%s %s reads %s (not walked: this read walked %d belts already; circuit_audit {platform, inserter: {x, y}} reads one feeder)', b.name, at(b.position),
+        mode == 'entire_belt_hold' and 'its whole belt' or mode, memo.walked or 0), {position=b.position, mode=mode, walked=false}
+    end
+    local r = {position={x=b.position.x, y=b.position.y}, mode=mode}
+    local idx = {}
+    for i, x in ipairs(list) do idx[key(x)] = i end
+    local what = {}
+    for _, n in ipairs(#names > 0 and names or {}) do
+      local c = 0
+      for _, x in ipairs(list) do c = c + lane_count(x, n) end
+      what[#what+1] = n .. ' ' .. c
+    end
+    local text = string.format('%s %s reads %s: its count covers %d belt%s%s%s', b.name, at(b.position),
+      mode == 'entire_belt_hold' and 'its whole belt' or mode == 'hold' and 'its own belt (hold)' or mode == 'pulse' and 'its own belt as pulses' or mode,
+      #list, #list == 1 and '' or 's', #list > 1 and string.format(' from %s to %s (the game\'s segment, in flow order)', at(list[1].position), at(list[#list].position)) or '',
+      #what > 0 and ', holding ' .. table.concat(what, ', ') .. ' now' or '')
+    -- past the pickup: belts of the count downstream of the feeder's pickup belt
+    local pk = pick and pick.valid and idx[key(pick)]
+    if pk and pk < #list then
+      local past = {}
+      for _, n in ipairs(names) do
+        local c = 0
+        for i = pk + 1, #list do c = c + lane_count(list[i], n) end
+        past[#past+1] = n .. ' ' .. c
+      end
+      text = text .. string.format('; %d of those belts lie past the inserter\'s pickup %s, from %s to %s: it cannot take what they hold%s', #list - pk, at(pick.position),
+        at(list[pk + 1].position), at(list[#list].position), #past > 0 and ' (' .. table.concat(past, ', ') .. ' now)' or '')
+    elseif pick and pick.valid and not pk then
+      text = text .. string.format('; the inserter\'s pickup %s is not among them', at(pick.position))
+    end
+    -- side-loads into belts of the count from belts outside it
+    local joins = {}
+    for _, x in ipairs(list) do
+      for _, inb in ipairs(try(function() return x.belt_neighbours.inputs end) or {}) do
+        if not idx[key(inb)] and #joins < 3 then
+          joins[#joins+1] = string.format('%s %s into %s%s', inb.name, at(inb.position), at(x.position), pk and idx[key(x)] <= pk and ' (upstream of the pickup)' or '')
+        end
+      end
+    end
+    if #joins > 0 then text = text .. '; belts joining inside the count (their items count in it): ' .. table.concat(joins, ', ') end
+    r.belts, r.from, r.to = #list, list[1].position, list[#list].position
+    r.holds = #what > 0 and table.concat(what, ', ') or nil
+    r.past_pickup = pk and pk < #list and #list - pk or nil
+    r.joins = #joins > 0 and joins or nil
+    return text, r
   end
   function M.read(p, a)
     if a.area ~= nil or a.positions ~= nil then return M.networks_read(p, a) end
@@ -229,10 +494,31 @@ return function(api)
           #pos == 0 and ' (none positive: only a positive chunk signal sets a filter)' or '')
       end
     end
+    -- the feeders the circuit gates (D1, D2)
+    local feeders = {}
+    M.feeders_begin(a.inserter ~= nil and ONE_BUDGET or nil)
+    local ins_list
+    if a.inserter ~= nil then
+      local q = a.inserter
+      local x, y = type(q) == 'table' and tonumber(q.x or q[1]), type(q) == 'table' and tonumber(q.y or q[2])
+      assert(x and y, 'inserter is {x, y}: the feeder to read')
+      ins_list = s.find_entities_filtered{type='inserter', force=pl.force, position={x, y}, radius=0.6, limit=1}
+      assert(#ins_list > 0, string.format('no inserter of ours at (%g,%g) on %s', x, y, pl.name))
+    end
+    local feeder_rows = {}
+    for _, ins in ipairs(ins_list or s.find_entities_filtered{type={'inserter', 'loader', 'loader-1x1'}, force=pl.force, limit=1024}) do
+      if #feeders >= FEEDERS then break end
+      local ok, line, row = pcall(M.feeder, ins)
+      if ok and line then feeders[#feeders+1] = line; feeder_rows[#feeder_rows+1] = row; lines[#lines+1] = line end
+    end
+    if #feeders >= FEEDERS and a.inserter == nil then
+      lines[#lines+1] = string.format('the first %d inserters the circuit sets are read; circuit_audit {platform, inserter: {x, y}} reads any one', FEEDERS)
+    end
+    M.feeders_end()
     return {platform=pl.name, lines=lines, belt_readers=#readers, double_counts=#doubles > 0 and doubles or nil, short_reads=#short > 0 and short or nil,
-      collectors=#cols > 0 and cols or nil}
+      collectors=#cols > 0 and cols or nil, feeders=#feeders > 0 and feeders or nil, feeder_rows=#feeder_rows > 0 and feeder_rows or nil}
   end
-  M.schema = {circuit_audit = {platform='platform name (with area or positions: optional, else your surface)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
-    returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose whole belts share tiles (those items reach the network twice); each such reader whose belt segment (what the game reads) is shorter than the belt in line through it, across undergrounds: the belts left out of the read, upstream and downstream (short_reads [{position, segment_tiles, physical_belts, left_out [{side, from, to, belts}]}]); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]. With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
+  M.schema = {circuit_audit = {platform='platform name (with area or positions: optional, else your surface)',inserter='optional {x, y}, with platform: that one feeder\'s circuit read (feeders)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
+    returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose whole belts share tiles (those items reach the network twice); each such reader whose belt segment (what the game reads) is shorter than the belt in line through it, across undergrounds: the belts left out of the read, upstream and downstream (short_reads [{position, segment_tiles, physical_belts, left_out [{side, from, to, belts}]}]); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]; feeders (lines) and feeder_rows [{name, position, filters, set_filters, gated, mode, pickup, readers [{position, mode, belts, from, to, holds, past_pickup, joins}], line}]: each inserter or loader whose filters the circuit sets or which it turns on and off, on the platform or among the entities of area or positions (the first 8; inserter: one): what it takes now, its pickup, the signals on its networks, the combinators putting out onto them and the networks those read (3 deep), constant combinators, the hub\'s own read apart, and each belt reader on them: its read mode, the belts its count covers (whole belt: the game\'s segment, in flow order), what it holds now of what the inserter takes, the belts of it past the inserter\'s pickup (it cannot take those) and side-loads joining inside the count (a read walks at most 160 belts, 400 for one inserter; a reader past that is named, not walked). With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
   return M
 end

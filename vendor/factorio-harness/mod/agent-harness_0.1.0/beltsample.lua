@@ -140,12 +140,19 @@ return function(api)
     table.sort(names)
     local rate = math.floor(n / minutes * 10 + 0.5) / 10
     local held = pt.count and pt.count[k] or 0
+    -- (d18 batch38 D3, Opus: a lane read "stopped, full" was coal, read as iron ore) what stands on the tile now, by name
+    local on, on_names = {}, {}
+    for _, it in pairs(pt.lanes[k] or {}) do if it.name then on[it.name] = (on[it.name] or 0) + 1 end end
+    for name, c in pairs(on) do on_names[#on_names+1] = {name=name, c=c} end
+    table.sort(on_names, function(x, y) if x.c ~= y.c then return x.c > y.c end return x.name < y.name end)
+    for i, x in ipairs(on_names) do on_names[i] = x.c .. ' ' .. x.name end
+    local on_text = #on_names > 0 and table.concat(on_names, ', ') or nil
     local state
     if n > 0 then state = string.format('%g/min', rate)
     elseif held == 0 then state = 'empty'
-    elseif not pt.moved[k] then state = held >= FULL and string.format('stopped, full (%d on the tile)', held) or string.format('stopped (%d on the tile)', held)
+    elseif not pt.moved[k] then state = held >= FULL and string.format('stopped, full (%s on the tile)', on_text or held) or string.format('stopped (%s on the tile)', on_text or held)
     else state = '0/min' end
-    return {rate=rate, passed=n, items=#names > 0 and table.concat(names, ', ') or nil, held=held, state=state}
+    return {rate=rate, passed=n, items=#names > 0 and table.concat(names, ', ') or nil, held=held, on_tile=on_text, state=state}
   end
   function M.finish(job)
     local minutes = math.max(1, game.tick - job.start) / 3600
@@ -222,8 +229,9 @@ return function(api)
           if q2.kind == 'section' and q2.index - q2.tiles + 1 == q.index then
             local lane = (q.into_type ~= 'splitter' and ((q.line_dir or 0) + 4) % 16 == (q.dir or 0)) and 1 or 2
             if at_cap(rows[k2], lane, q2.cap) or at_cap(rows[k2], 1, q2.cap) or at_cap(rows[k2], 2, q2.cap) then
-              limit = string.format('a side-load waits at %s: belt %s is stopped full while the line after it runs at its cap (%g/min a lane): the line\'s own items go first',
-                at(q.into), at(rows[j].position or q.into), q2.cap)
+              local held = stopped_full(rows[j].left) and rows[j].left.on_tile or rows[j].right.on_tile
+              limit = string.format('a side-load waits at %s: belt %s is stopped full%s while the line after it runs at its cap (%g/min a lane): the line\'s own items go first',
+                at(q.into), at(rows[j].position or q.into), held and ' of ' .. held or '', q2.cap)
             end
           end
         end
@@ -232,9 +240,11 @@ return function(api)
     if not limit and last then
       local r = rows[last]
       if stopped_full(r.left) and stopped_full(r.right) then
-        limit = string.format('the end is backed up: both lanes stopped full at %s: whatever takes from the end takes less than the line carries', at(r.to))
+        limit = string.format('the end is backed up: both lanes stopped full at %s (left %s, right %s): whatever takes from the end takes less than the line carries', at(r.to),
+          r.left.on_tile or '?', r.right.on_tile or '?')
       elseif stopped_full(r.left) or stopped_full(r.right) then
-        limit = string.format('the end is backed up on its %s lane at %s', stopped_full(r.left) and 'left' or 'right', at(r.to))
+        local l = stopped_full(r.left) and r.left or r.right
+        limit = string.format('the end is backed up on its %s lane at %s (%s)', stopped_full(r.left) and 'left' or 'right', at(r.to), l.on_tile or '?')
       end
     end
     if not limit then
@@ -281,6 +291,6 @@ return function(api)
   end
   M.schema = {belt_flow = {position='a belt, underground or splitter tile {x,y}', seconds='optional 2..30 (default 10): how long to sample',
     platform='optional platform name (platform coordinates)',
-    returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile))}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). Read only'}}
+    returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile), with what stands on the tile by name), on_tile}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). Read only'}}
   return M
 end

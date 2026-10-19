@@ -1862,6 +1862,77 @@ return function(api)
     return {lines=lines, requesters=out_rows, unasked=#unasked > 0 and unasked or nil,
       crafters_as_of=as_of and string.format('the census pass of %ds ago (a machine built since is not read)', math.floor((game.tick - as_of) / 60)) or 'found now'}
   end
+  -- (d18 batch38 D2, Opus 18:23, 3 times about 20 min each: advanced circuits made and used at 216 a minute, and which
+  -- machines or chests took them?) supply {item, consumers: "all"}: every machine of ours on the surface whose recipe
+  -- takes the item (the census pass's crafters, no search), with its use a minute now (working: crafts a minute at its
+  -- speed times the recipe's amount; productivity does not change what a craft takes) and at full speed, and every
+  -- requester or buffer chest asking for it (supply requesters' rows: asks, holds, robots bringing it now, and what the
+  -- machines its inserters feed take at full speed), the largest use first, CONSUMER_PAGE a call (from).
+  local CONSUMER_PAGE = 24
+  function M.consumers(p, surface, item, a)
+    assert(a.consumers == 'all', 'consumers is "all": every machine whose recipe takes the item and every chest asking for it')
+    assert(prototypes.item[item], 'consumers is for an item')
+    local force = p.force
+    local crafters, as_of = nil, nil
+    if api.census_crafters then crafters, as_of = api.census_crafters(force, surface) end
+    assert(crafters, 'the census pass has not read ' .. surface.name .. ' yet (it reads every surface in turn); try again in a minute')
+    local per_recipe, rows, by_recipe, now_sum, full_sum, machines, working = {}, {}, {}, 0, 0, 0, 0
+    for _, e in ipairs(crafters) do
+      local r = e.valid and try(function() return e.get_recipe() end)
+      if not r and e.valid and e.type == 'furnace' then r = try(function() return e.previous_recipe end) end
+      local rn = r and (type(r.name) == 'string' and r.name or try(function() return r.name.name end))
+      local u = rn and per_recipe[rn]
+      if rn and u == nil then
+        local pr, amount = prototypes.recipe[rn], 0
+        for _, ing in ipairs(pr and pr.ingredients or {}) do if ing.name == item then amount = amount + (ing.amount or 0) end end
+        u = amount > 0 and {amount=amount, energy=pr.energy > 0 and pr.energy or 1} or false
+        per_recipe[rn] = u
+      end
+      if u then
+        local status = api.status_name and api.status_name(e) or 'unknown'
+        local full = u.amount * 60 * (try(function() return e.crafting_speed end) or 0) / u.energy
+        local now = status == 'working' and full or 0
+        machines = machines + 1
+        if status == 'working' then working = working + 1 end
+        now_sum, full_sum = now_sum + now, full_sum + full
+        by_recipe[rn] = (by_recipe[rn] or 0) + 1
+        rows[#rows+1] = {per_min=now, full=full, kind='machine', row={kind='machine', name=e.name, position={x=e.position.x, y=e.position.y}, recipe=rn, status=status,
+          per_min=math.floor(now * 10 + 0.5) / 10, full_per_min=math.floor(full * 10 + 0.5) / 10,
+          line=string.format('%s %s %s: %s; takes %g a minute now (%g at full speed)', e.name, at(e.position), rn, (status:gsub('_', ' ')),
+            math.floor(now * 10 + 0.5) / 10, math.floor(full * 10 + 0.5) / 10)}}
+      end
+    end
+    -- the chests asking for it (the requesters read, reused for the same item and surface)
+    local key = string.format('requesters|%s|%s|%s', tostring(surface.index or surface.name), force.name, item)
+    local req = M.reuse(key, function() return M.requesters(surface, force, item) end)
+    local chests = 0
+    for _, r in ipairs(req.requesters or {}) do
+      chests = chests + 1
+      local use = r.use_per_min or 0
+      rows[#rows+1] = {per_min=use, full=use, kind='chest', row={kind='chest', name=r.chest, position=r.position, network=r.network, asks=r.asks, holds=r.holds,
+        coming=r.coming, per_min=use, line=r.line}}
+    end
+    table.sort(rows, function(x, y)
+      if x.per_min ~= y.per_min then return x.per_min > y.per_min end
+      if x.full ~= y.full then return x.full > y.full end
+      return x.row.line < y.row.line
+    end)
+    local from = math.max(1, math.floor(tonumber(a.from) or 1))
+    local out_rows, lines = {}, {}
+    for i = from, math.min(#rows, from + CONSUMER_PAGE - 1) do out_rows[#out_rows+1] = rows[i].row; lines[#lines+1] = rows[i].row.line end
+    local rc = {}
+    for k, n in pairs(by_recipe) do rc[#rc+1] = n .. ' ' .. k end
+    table.sort(rc)
+    local last = from + #out_rows - 1
+    local head = string.format('%s on %s: %d machine%s take it (%s), %d working, %g a minute now (%g at full speed); %d requester or buffer chest%s ask for it%s',
+      item, surface.name, machines, machines == 1 and '' or 's', #rc > 0 and table.concat(rc, ', ') or 'no recipe of ours', working,
+      math.floor(now_sum * 10 + 0.5) / 10, math.floor(full_sum * 10 + 0.5) / 10, chests, chests == 1 and '' or 's',
+      last < #rows and string.format('; %d-%d of %d shown, the largest use first; from %d for the next', from, last, #rows, last + 1) or '')
+    table.insert(lines, 1, head)
+    return {item=item, surface=surface.name, machines=machines, working=working, per_min=math.floor(now_sum * 10 + 0.5) / 10, full_per_min=math.floor(full_sum * 10 + 0.5) / 10,
+      chests=chests, rows=out_rows, lines=lines, line=head, from=from, next_from=last < #rows and last + 1 or nil,
+      note='machines from the census pass (' .. (as_of and string.format('%ds ago', math.floor((game.tick - as_of) / 60)) or 'now') .. '; one built since is not in it); a chest\'s use is what the machines its inserters feed take at full speed (robot deliveries are not kept over time); labs, rocket silos and hand crafting not counted. Read only'}
+  end
   local function packs_of(force)
     local tech, packs = force.current_research, {}
     for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do packs[ing.name] = true end
@@ -1899,7 +1970,7 @@ return function(api)
   M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
     main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
-  M.schema = {supply = {makers='"all", with an item: every machine of ours on the surface whose recipe makes it, nearest you first, 24 a call (from: next_from), from the census pass\'s lists: each with position, recipe, status and why when it stops (its own circuit or logistic condition and what it reads now; an input inserter off by its condition; the ingredients short), its rate now (a minute), its inputs against one craft (name have/needed), what its output holds, and what its output inserters drop into; makers, by_status, by_recipe, rows, lines, next_from',from='with makers: the first row (next_from of the last call)',requesters='true, with an item (Sonnet: a row starved while its requesters asked for none): who gets it: every requester or buffer chest in our logistic networks on the surface asking for it (one in no network only when it feeds the machines; the machines from the census pass, crafters_as_of says when), with asks, holds, coming (robots bringing it now), the machines its inserters feed that use it (how many work, their take a minute at full speed) and state (served now, met, or unmet and why: no network, none free, no idle robot, none on the way yet); served first, then unmet, then met; per network its free stock and idle robots; then unasked: requester and buffer chests whose inserters feed machines that use it while they ask for none of it, with what they ask. lines, requesters [{chest, position, network, asks, holds, coming, use_per_min, state, line}], unasked [{chest, position, asks, line}]. Read only',split='true, with an item or a fluid (a fluid: each group fed from the pipe segments its input boxes are on, each with the machines making it there): where it goes now: every crafter of ours on the surface whose recipe takes it, grouped by recipe and place (within 12 tiles), each group with machines, how many work, its take at full speed and share of the take, and what its feeding inserters pick from (belts, requester or buffer chests by logistic network, chests, drills dropping straight in); then the requester and buffer chests asking for it that feed none of them; against the surface\'s use and make in the last 10 min: lines, groups [{recipe, box, machines, working, per_min, from}], lone_requesters. Read only',all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
+  M.schema = {supply = {consumers='"all", with an item (d18 batch38 D2): every machine of ours on the surface whose recipe takes it and every requester or buffer chest asking for it, the largest use first, 24 a call (from: next_from): a machine with recipe, status, its take a minute now (working: at its speed) and at full speed; a chest with asks, holds, coming, and what the machines its inserters feed take; machines, working, per_min, full_per_min, chests, rows, lines, next_from',makers='"all", with an item: every machine of ours on the surface whose recipe makes it, nearest you first, 24 a call (from: next_from), from the census pass\'s lists: each with position, recipe, status and why when it stops (its own circuit or logistic condition and what it reads now; an input inserter off by its condition; the ingredients short), its rate now (a minute), its inputs against one craft (name have/needed), what its output holds, and what its output inserters drop into; makers, by_status, by_recipe, rows, lines, next_from',from='with makers or consumers: the first row (next_from of the last call)',requesters='true, with an item (Sonnet: a row starved while its requesters asked for none): who gets it: every requester or buffer chest in our logistic networks on the surface asking for it (one in no network only when it feeds the machines; the machines from the census pass, crafters_as_of says when), with asks, holds, coming (robots bringing it now), the machines its inserters feed that use it (how many work, their take a minute at full speed) and state (served now, met, or unmet and why: no network, none free, no idle robot, none on the way yet); served first, then unmet, then met; per network its free stock and idle robots; then unasked: requester and buffer chests whose inserters feed machines that use it while they ask for none of it, with what they ask. lines, requesters [{chest, position, network, asks, holds, coming, use_per_min, state, line}], unasked [{chest, position, asks, line}]. Read only',split='true, with an item or a fluid (a fluid: each group fed from the pipe segments its input boxes are on, each with the machines making it there): where it goes now: every crafter of ours on the surface whose recipe takes it, grouped by recipe and place (within 12 tiles), each group with machines, how many work, its take at full speed and share of the take, and what its feeding inserters pick from (belts, requester or buffer chests by logistic network, chests, drills dropping straight in); then the requester and buffer chests asking for it that feed none of them; against the surface\'s use and make in the last 10 min: lines, groups [{recipe, box, machines, working, per_min, from}], lone_requesters. Read only',all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
     returns='one read, the same for everyone: flow (made/used in 10 min); made_by_spoiling (an item others spoil into: each source, how many are held in the places read and how many spoil within 5 min; the production statistics do not count spoiling); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a short one whose input inserter is off by its circuit or logistic condition, or whose requester asks for less than one craft, first: the condition and what its source holds; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
@@ -1914,6 +1985,7 @@ return function(api)
     end
     -- (d18 batch37 A1) every maker of the item on the surface, a row each (makersall.lua)
     if a.makers ~= nil then return api.makers_all(p, item, surface, a) end
+    if a.consumers ~= nil then return M.consumers(p, surface, item, a) end
     if a.requesters ~= nil then
       assert(a.requesters == true, 'requesters is true')
       assert(prototypes.item[item], 'requesters is for an item: chests ask for items')

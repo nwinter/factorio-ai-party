@@ -50,13 +50,20 @@
   its provider chests' steel less the reserved pickups, plus its buffers. `bottleneck` gives the same for a link held
   off by a condition (its first gated maker).
   Example: `./fh call gates --args '{"surface":"nauvis"}'`
-- `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
+- `circuit_audit {area | positions | platform, inserter?}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
   (`entire_belt_hold`) on one network whose belts overlap (counted twice); each whole-belt reader whose read is shorter
   than the belt in line through it (the game reads the reader's belt segment), with the belts left out upstream and
   downstream, undergrounds crossed (`short_reads`); and each asteroid collector whose filter the circuit sets: the
-  filter it holds and the chunk signals there.
+  filter it holds and the chunk signals there. `feeders` (and `feeder_rows`): each inserter or loader whose filters the
+  circuit sets or which it turns on and off, on the platform or among the entities of `area` or `positions` (the first
+  8; `inserter: {x, y}` reads one): its filter mode, what it takes now and its pickup, the signals on its
+  networks, the combinators putting out onto them and what their inputs read (3 deep), constant combinators, the hub's
+  own read apart, and each belt reader there: its mode, the belts its count covers (whole belt: the game's segment,
+  in flow order, from where to where), what it holds now of what the inserter takes, the belts of it past the
+  inserter's pickup (it cannot take what they hold), and belts side-loading inside the count (upstream of the pickup
+  said).
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, hand_size?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?}`: a machine's or building's
