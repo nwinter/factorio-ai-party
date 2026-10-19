@@ -92,6 +92,20 @@ def payload_tests():
     assert dv == {"2707": {"s": "relayed", "to": "astra"}, "2721": {"s": "not_relayed", "why": "clef:injection"},
                   "2730": {"s": "held", "why": "Clef unavailable"}}, dv
     # (d19 batch42 A3, A4) every recipient of a group line, and the operator's inbox receipt beside the agents' copy
+    # (d19 batch43 A3) a long delivery reason: cut at a word end with "…" past 240
+    why = "about its work (" + "Sol on Gleba doing the agricultural science line, " * 8 + ")"
+    w = push_live.public_delivery({"delivery": [{"id": "site:1", "status": "relayed", "why": why}]})["1"]["why"]
+    assert len(w) <= 240 and w.endswith("…") and why.startswith(w[:-1]) and why[len(w) - 1] == " ", w
+    # (d19 batch43 A2) evidence and long results within the reminders' share: over it, the newest evidence line each
+    rem = {"total": 1, "jobs": [{"id": 1, "last_result": "r" * 1000, "evidence": ["e%d " % i + "x" * 500 for i in range(5)]} for _ in range(12)]}
+    pr = push_live.public_reminders(rem)
+    assert all(j["evidence"] == [rem["jobs"][0]["evidence"][-1]] and j["evidence_more"] == 4 and len(j["last_result"]) == 1000
+               for j in pr["jobs"]), pr["jobs"][0]
+    small = {"total": 1, "jobs": [{"id": 1, "evidence": ["a", "b"]}]}
+    assert push_live.public_reminders(small) == small
+    big = {"projects": [{"id": i, "title": "p", "evidence": ["x" * 3000] * 5} for i in range(5)], "claims": [{"id": 1, "evidence": ["c1", "c2"]}]}
+    pb = push_live.public_board(big)
+    assert all(len(p["evidence"]) == 1 and p["evidence_more"] == 4 for p in pb["projects"]) and pb["claims"][0]["evidence"] == ["c2"], pb["claims"]
     dv = push_live.public_delivery({"delivery": [{"id": "site:3200", "status": "relayed", "to": "sol", "to_all": ["sol", "luna"]},
                                                  {"id": "site:3201", "status": "relayed", "to": "muse", "to_all": ["muse"], "inbox": True},
                                                  {"id": "site:3202", "status": "not_relayed", "why": "impersonation:text", "inbox": True}]})
@@ -258,6 +272,8 @@ out.gleba.paintCells = calls2.filter((c) => c[0] === 'fillRect' && String(c[1]).
 const dv = M.prepare(Object.assign({}, data.full, { planets: data.planets, surface: 'vulcanus' }));
 out.vulcanus = Object.assign(summary(M.scene(dv, null, 400, 400)), { auto: dv.auto });
 out.planetsOnNauvis = M.prepare(Object.assign({}, data.full, { planets: data.planets })).planets;
+// (d19 batch43 A4) the cursor's tile and the surface shown
+out.coords = [M.coordsText(12.7, -40.2, 'nauvis'), M.coordsText(-0.5, 3, 'fulgora'), M.coordsText(5, 5)];
 // (d19 batch42 B3) when the terrain frames were captured: wall time when they have it, else the game tick
 out.terrainNotes = [M.prepare(data.full).terrainNote,
   M.prepare(Object.assign({}, data.full, { terrain: [Object.assign({}, data.full.terrain[0], { t: 1792433272 })] })).terrainNote];
@@ -387,6 +403,7 @@ def map_tests():
         assert "luna" in [a["name"] for a in v["agents"]] and not any(a[0].startswith("Luna") for a in v["away"]), v
         assert 4960 <= v["auto"]["cx"] <= 5040, v["auto"]
         assert o["planetsOnNauvis"] == ["fulgora", "vulcanus"], o["planetsOnNauvis"]
+        assert o["coords"] == ["x 12, y -41 · Nauvis", "x -1, y 3 · Fulgora", "x 5, y 5 · Nauvis"], o["coords"]
         assert o["terrainNotes"][0] == "captured at game tick 1" and o["terrainNotes"][1].startswith("captured ") \
             and "19" in o["terrainNotes"][1], o["terrainNotes"]
         assert o["turretNotes"] == ["all 1459 turrets, 238 within 2 tiles of another merged",
@@ -403,7 +420,14 @@ def map_tests():
         yt = [{"id": "yt:2", "name": "Joonazan", "text": "no biters on Gleba", "t": 1792015200.0},
               {"id": "yt:1", "name": "Enginerd", "text": "<b>hi</b>", "t": 1792015100.0}]
         pm = {"surface": "vulcanus", "tick": 3, "cell": 8, "x0": 4960, "y0": -3040, "w": 6, "h": 2, "rows": ["SSAAEE", "SS"], "buildings": 9}
-        json.dump(dict(map_state(True), youtube_chat=yt, planets=[{"surface": "vulcanus", "tick": 3, "buildings": 9}], planet_map=pm),
+        st = map_state(True)
+        # (d19 batch43 A2, batch41 B2) a 1000-character reminder result and evidence lines on a reminder and a claim
+        long_result = ("Quality review: legendary yield 3.1% over the last hour, rare 9.8%, the recycler loop fed at 92%; " * 11)[:1000]
+        st["reminders"]["jobs"][1].update(last_result=long_result, result_age_s=60,
+                                          evidence=["by sol 30m ago: metric PU 540/min (tick 100)", "by astra 2m ago: metric PU 600/min "
+                                                    "(tick 200); decision keep the second line; next check tick 300 " + "x" * 300])
+        st["board"]["claims"][0]["evidence"] = ["by haiku 5m ago: metric 12 drills on the south-west patch"]
+        json.dump(dict(st, youtube_chat=yt, planets=[{"surface": "vulcanus", "tick": 3, "buildings": 9}], planet_map=pm),
                   open(spath, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), spath], capture_output=True, text=True, timeout=30)
         assert r.returncode == 0, r.stderr
@@ -436,6 +460,10 @@ def map_tests():
         assert '<h4>Reminders</h4><ul class="board-claims board-reminders">' in bd and "ship review: Petrel ammo, fuel and hub room" in bd, bd
         assert "every 15m00s, next in 7 min" in bd and "last result 8 min ago:</span> Petrel 900 magazines" in bd, bd
         assert 'fx-chip--red">Astra overdue (2 runs missed)' in bd and 'fx-chip--green">Sol acknowledged' in bd, bd
+        # (d19 batch43 A2) the long result whole, collapsed to a line that opens; evidence newest first, the older after
+        assert '<details class="lt" data-lt="rem2:result">' in bd and bd.count(long_result) == 2, bd  # the line and the opened text
+        assert bd.index("PU 600/min") < bd.index("PU 540/min") and "earlier evidence:" in bd and "x" * 300 in bd, bd
+        assert "evidence:</span> by haiku 5m ago: metric 12 drills" in bd, bd
         # the Team plan (viewer Alex, 22:12): the goals with when they were set, each agent's line with when it was set
         # and by whom when not itself, the agents with no line, open projects with their next step, the request counts
         pl = lv["plan"]

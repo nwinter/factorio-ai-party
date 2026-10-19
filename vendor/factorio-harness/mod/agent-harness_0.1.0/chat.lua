@@ -80,7 +80,7 @@ return function(api)
     return append('viewer ' .. name, text, nil, nil, true, nil, nil, source)
   end
   M.schema = {
-    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too)',text='1..500 characters (longer is cut to 500; the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
+    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too)',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
       aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do',
       look='optional: what the stream camera might show while the line is read out, a hint the director may take: {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',

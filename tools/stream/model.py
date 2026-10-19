@@ -202,6 +202,22 @@ def clean_text(s):
     return re.sub(r"\[/?[a-z-]+(=[^\]]*)?\]", "", s or "")
 
 
+def evidence_lines(v):
+    """(d19 batch42-43 A2; batch41 B2's evidence.lua) a board item's or reminder's evidence as the runtime gives it, one
+    line each ("by sol 12m ago: metric PU 600/min (tick ...); decision ...; next check ..."), oldest first, whole; None
+    without any."""
+    if not isinstance(v, list):
+        return None
+    out = [clean_text(str(x)).strip() for x in v if isinstance(x, (str, int, float)) and str(x).strip()]
+    return out or None
+
+
+def with_evidence(row):
+    """{"evidence": lines} for a row that has any, else {} (no key)."""
+    ev = evidence_lines((row or {}).get("evidence"))
+    return {"evidence": ev} if ev else {}
+
+
 try:  # eng/audio's local classifier, so the overlay and the casters agree on what is conversation
     from caster import heuristic_kind
 except Exception:  # caster.py missing or failing to import: everything from agents counts as talk
@@ -1373,7 +1389,9 @@ class Model:
                          "next_due_in_s": j.get("next_due_in_s"), "last_result": clean_text(j.get("last_result") or "") or None,
                          "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states"),
                          # (d17 batch35 D3) runs each recipient missed ({name: runs}); states says when the owner was told
-                         "missed": {str(k): v for k, v in (j.get("missed") or {}).items() if isinstance(v, int)} or None})
+                         "missed": {str(k): v for k, v in (j.get("missed") or {}).items() if isinstance(v, int)} or None,
+                         # (d19 batch43 A2) the evidence given with its acknowledgments (batch41 B2), whole
+                         **with_evidence(j)})
         return {"jobs": rows, "total": len(r.get("jobs") or [])}
 
     def board_snapshot(self):
@@ -1394,7 +1412,7 @@ class Model:
             "open_unowned": unowned,
             "in_progress": doing,
             "claims": [{"id": it.get("id"), "title": clean_text(it.get("title") or ""), "owner": it.get("owner"),
-                        "agent": self._who(it.get("owner"))} for it in claims[:6]],
+                        "agent": self._who(it.get("owner")), **with_evidence(it)} for it in claims[:6]],
             "claims_total": len(claims),
             "changelog": list(b["changelog"])[-2:],
             "plan": self.plan_snapshot(),
@@ -1424,7 +1442,7 @@ class Model:
         def row(it):
             return {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "kind": it.get("kind"),
                     "owner": it.get("owner"), "agent": self._who(it.get("owner")), "status": it.get("status"),
-                    "requested_by": it.get("requested_by")}
+                    "requested_by": it.get("requested_by"), **with_evidence(it)}
         open_ = [row(it) for it in rows if it.get("status") == "open" and not it.get("owner")]
         doing = [row(it) for it in rows if it.get("status") in ("claimed", "doing")]
         return open_, doing
@@ -1464,8 +1482,11 @@ class Model:
         needs = it.get("needs")
         if isinstance(needs, dict) and needs:
             row["needs"] = {str(k): v for k, v in needs.items() if isinstance(v, (int, float))}
-        if it.get("handoff"):
-            row["handoff"] = clean_text(str(it["handoff"]))[:300]
+        if it.get("handoff"):  # (d19 batch43 A3) whole: up to 1000 characters (it was cut at 300 here, mid-word)
+            row["handoff"] = clean_text(str(it["handoff"]))
+        ev = evidence_lines(it.get("evidence"))
+        if ev:
+            row["evidence"] = ev
         if it.get("requested_by") and it.get("requested_by") != it.get("owner"):
             row["requested_by"] = it["requested_by"]
         return row

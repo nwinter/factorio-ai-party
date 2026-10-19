@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitSay, SAY_BYTES } from '../host/saysplit.js';
+import { splitSay, overLimit, SAY_BYTES } from '../host/saysplit.js';
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 // Muse's reply to a viewer, shift39 (cut at 500 bytes mid-word: "After that, prod")
@@ -53,4 +53,12 @@ test('a sentence longer than a part splits at word ends; multibyte text stays wh
   const accents = splitSay('é'.repeat(400));
   assert(accents.length === 2 && accents.every(p => bytes(p) <= SAY_BYTES && !p.includes('�')));
   assert.equal(accents.map(p => p.replace(/^\(\d\/\d\) /, '')).join(''), 'é'.repeat(400));
+});
+
+test('overLimit: a confession or chronicle text past what the runtime keeps, counted as the runtime counts it', () => {
+  assert.equal(overLimit('confess', {text: 'x'.repeat(300)}), undefined);
+  assert.equal(overLimit('confess', {text: '  ' + 'x'.repeat(300) + '\n'}), undefined);
+  assert.match(overLimit('confess', {text: 'é'.repeat(151)}) ?? '', /confess text is 302 bytes; the limit is 300/);
+  assert.match(overLimit('chronicle', {text: 'ok', title: 't'.repeat(81)}) ?? '', /chronicle title is 81 bytes; the limit is 80/);
+  assert.equal(overLimit('say', {text: 'x'.repeat(900)}), undefined);
 });

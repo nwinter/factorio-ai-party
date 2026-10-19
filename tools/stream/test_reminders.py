@@ -40,7 +40,24 @@ def main():
     m.ingest({"reminders": {"jobs": many}})
     s = m.reminders_snapshot()
     assert len(s["jobs"]) == model.Model.REMINDERS_MAX and s["total"] == 20, (len(s["jobs"]), s["total"])
-    print("reminders: ok")
+    # (d19 batch43 A2, batch41 B2) a result up to 1000 characters and the evidence lines reach the site whole
+    long = "the recycler loop fed at 92% and the legendary yield held at 3.1% " * 15
+    m.ingest({"reminders": {"jobs": [{"id": 97, "owner": "sol", "message": "quality review", "enabled": True,
+              "last_result": long[:1000], "evidence": ["by sol 30m ago: metric PU 540/min (tick 100)", "", 5]}]}})
+    j = m.reminders_snapshot()["jobs"][0]
+    assert j["last_result"] == long[:1000] and j["evidence"] == ["by sol 30m ago: metric PU 540/min (tick 100)", "5"], j
+    # board items: a claim's, a job's and a project's evidence; a project's handoff whole (it was cut at 300)
+    m.ingest({"board": {"items": [
+        {"id": 5, "kind": "claim", "status": "open", "owner": "sol", "title": "Gleba farm", "updated_tick": 3,
+         "evidence": ["by sol 1m ago: metric 40 towers"]},
+        {"id": 6, "kind": "project", "status": "doing", "owner": "astra", "title": "Bastion", "progress": "1 of 4 steps",
+         "handoff": "h" * 900, "evidence": ["by astra 3m ago: result hull sealed", "by astra 1m ago: next check tick 9"], "updated_tick": 2}],
+        "active_ids": [5, 6]}})
+    b = m.board_snapshot()
+    assert b["claims"][0]["evidence"] == ["by sol 1m ago: metric 40 towers"], b["claims"]
+    p = b["projects"][0]
+    assert p["handoff"] == "h" * 900 and p["evidence"][-1] == "by astra 1m ago: next check tick 9", p
+    print("reminders: ok (results and evidence whole, board items' evidence, a project's handoff whole)")
 
 
 if __name__ == "__main__":

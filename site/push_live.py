@@ -167,8 +167,9 @@ def public_delivery(status, keep=150):
             row["to_all"] = [str(n)[:40] for n in r["to_all"][:9]]
         if r.get("inbox"):
             row["op"] = 1
-        if r.get("why"):
-            row["why"] = str(r["why"])[:120]
+        if r.get("why"):  # (d19 batch43 A3) cut at a word end with "…" past 240 (it was cut mid-word at 120)
+            why = str(r["why"])
+            row["why"] = why if len(why) <= 240 else why[:239].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
         out[i[5:]] = row
     return dict(list(out.items())[-keep:])
 
@@ -225,7 +226,34 @@ def public_board(board):
             rows.append(p)
         if key in b:
             b[key] = rows
+    # (d19 batch43 A2) still over: each item keeps its newest evidence line (whole) and says how many older it had
+    if size() > BOARD_BYTES:
+        for key in ("projects_done", "projects_more", "projects", "claims", "open_items", "doing_items"):
+            if isinstance(b.get(key), list):
+                b[key] = [newest_evidence(r) for r in b[key]]
     return b
+
+
+def newest_evidence(row):
+    """A row with only its newest evidence line, and evidence_more: how many older ones were left out."""
+    ev = row.get("evidence") if isinstance(row, dict) else None
+    if not isinstance(ev, list) or len(ev) <= 1:
+        return row
+    return dict(row, evidence=ev[-1:], evidence_more=len(ev) - 1)
+
+
+REMINDER_BYTES = 24 * 1024  # the reminders' share of the state: results up to 1000 characters, evidence lines
+
+
+def public_reminders(rem):
+    """(d19 batch43 A2) the reminder jobs with their results and evidence whole, within REMINDER_BYTES: over it, each
+    job keeps its newest evidence line (evidence_more says how many older)."""
+    if not isinstance(rem, dict) or not isinstance(rem.get("jobs"), list):
+        return rem
+    out = dict(rem)
+    if len(json.dumps(out, ensure_ascii=False)) > REMINDER_BYTES:
+        out["jobs"] = [newest_evidence(j) for j in out["jobs"]]
+    return out
 
 
 PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings")
@@ -255,6 +283,8 @@ def public_state(s):
         out["planets"], out["planet_map"] = planets, planet_map
     if "board" in out:
         out["board"] = public_board(out["board"])
+    if "reminders" in out:
+        out["reminders"] = public_reminders(out["reminders"])
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
     for a in out["agents"]:  # the map's line from the character to where it last looked or worked
         t = a.get("attention")

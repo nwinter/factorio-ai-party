@@ -84,6 +84,17 @@ def items(snapshot):
     return [it for _, it in rows[:MAX_ITEMS]]
 
 
+BUBBLE_MAX = 120  # characters in a speech bubble over the character (the whole line is in the voice and the chat)
+
+
+def words_clip(text, n):
+    """text, or its first words within n characters and "…" (d19 batch43 A3: bubbles were cut mid-word at 120)."""
+    if len(text) <= n:
+        return text
+    head = text[:n].rsplit(" ", 1)[0] if " " in text[:n] else text[:n - 1]
+    return head.rstrip(" ,;:") + "…"
+
+
 def bubbles(snapshot, now):
     """Agent lines being voiced now (snapshot `voiced`, serve.py: the page's start reports) -> speech bubbles over the
     agent's character for the rest of the clip: [{agent, text, ttl (ticks), id}]."""
@@ -94,7 +105,7 @@ def bubbles(snapshot, now):
         left = float(v.get("duration") or 8.0) - (now - float(v.get("started") or now))
         if left < 0.5:
             continue
-        out.append({"agent": v["agent"], "text": " ".join(str(v["text"]).split())[:120],
+        out.append({"agent": v["agent"], "text": words_clip(" ".join(str(v["text"]).split()), BUBBLE_MAX),
                     "ttl": int(max(0.5, min(30.0, left)) * 60), "id": v.get("id")})
     return out[:MAX_ITEMS]
 

@@ -6,8 +6,22 @@
 
 export const SAY_BYTES = 500;
 export const SAY_PARTS = 6;
+// (d19 batch43 A1, A3) the runtime cuts these without a word past their limit (audience.lua confess, chronicle.lua) or
+// with one (tells.lua tell): a tell goes in parts like a say; a confession or a chronicle entry, rate-limited, is refused
+export const KEEP: Record<string, Record<string, number>> = {confess:{text:300}, chronicle:{text:600, title:80}};
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
+/** The bytes the runtime counts: control characters as spaces, trimmed. */
+export const flatBytes = (s: string) => bytes(s.replace(/[\x00-\x1f\x7f]+/g, ' ').trim());
+
+/** Why a confess or chronicle text would be cut (the field, its bytes and the limit), or undefined. */
+export function overLimit(action: string, args: Record<string, unknown>): string | undefined {
+  for (const [field, max] of Object.entries(KEEP[action] ?? {})) {
+    const v = args[field];
+    if (typeof v === 'string' && flatBytes(v) > max) return `${action} ${field} is ${flatBytes(v)} bytes; the limit is ${max}: shorten it; nothing was sent`;
+  }
+  return undefined;
+}
 
 /** The longest prefix of `s` within `max` bytes, never inside a character. */
 function headBytes(s: string, max: number): string {
