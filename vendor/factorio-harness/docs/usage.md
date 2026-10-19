@@ -8313,3 +8313,12 @@ fh watch    # deploy on every change
   - "1 big-electric-pole ghost near (67,3): no roboport's construction area covers it; the nearest roboport, roboport
     (0,0) (network 5), covers 55 tiles round it, and it is 12 tiles outside that". The construction area is a
     square, and the cells read are our networks' on the surface, the first 2048. On world n, 153 cells took 0.3 ms.
+- B3 (Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at (204,69)):
+  the game sets no build priority among ghosts. ghostlist.lua `contested(surface, force, item, from)` gives the entity
+  ghosts of ours in the construction area of the network covering `from` that the item places, when there are more
+  than the network holds. Each ghost has where it is, the claim holding it and its owner, and its distance from
+  `from`. It runs only when the network holds 16 or fewer: the search covers the network's box, 9 ms for Nauvis's on
+  world n, 0.9 ms for Gleba's.
+  - The drop's landing line: for the first 2 such items sent, from where it landed.
+  - deconstruct (dry run and live) `contested`: for the items the marked entities free (the first 2).
+  - ghosts read `contested`: per network and item, from the network's pickup point for it, at most 3 searches a read.

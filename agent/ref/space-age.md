@@ -355,7 +355,8 @@
   in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
   the rest; `spill`: what would land on the ground). A drop's landing line gives the container's exact position and
   the other cargo pod containers within 8 tiles with what each holds; one sent to a full landing pad says it landed
-  beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`. A drop into a
+  beside it, where, and what each container holds. A sent item that more of our ghosts in that network want than it
+  holds (16 or fewer) adds each such ghost, its claim and distance from where it landed (the game sets no order). `scan` lists a cargo pod container with `holds`. A drop into a
   landing pad: the pad's count of the sent items before and when it landed, then for 20 s each fall in it with the
   construction and logistic robots of ours within 8 tiles holding that item (and the first ghost or entity each flies
   to); its landing line comes 20 s after it lands with that line (the drops read: `pad`, `pad_verdict` such as `landed, then

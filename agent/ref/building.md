@@ -74,7 +74,8 @@
   Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
-  covers it; its network holds none and no robot carries one; no idle robot); `page` for more.
+  covers it; its network holds none and no robot carries one; no idle robot); `page` for more. `contested`: more of
+  our ghosts in its network want its item than the network holds (16 or fewer): each, its claim and distance.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
   it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
   and by what. A ghost over a live entity of ours whose collision meets it, not marked for upgrade or deconstruction,
@@ -88,7 +89,8 @@
   off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at
   30 C or more. The dry run's `robot_dispatch`: the robots' trips (one an entity, one a robot load of what it holds),
   how many at once, from which roboports, the longest and mean trip, trips over 200 tiles, and legs passing within
-  reach of a worm or spawner the map shows.
+  reach of a worm or spawner the map shows. `contested` (dry run and live): an item the marked entities free that more
+  of our ghosts in that network want than it holds (16 or fewer), each ghost with its claim and distance.
   Example: `./fh call deconstruct --args '{"area":{"left_top":{"x":180,"y":50},"right_bottom":{"x":200,"y":70}},"tiles":["landfill"]}'`
 - `upgrade {area | position, to, from?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
   planner; a ghost changes in place (wires and settings kept), a built one is marked for robots.

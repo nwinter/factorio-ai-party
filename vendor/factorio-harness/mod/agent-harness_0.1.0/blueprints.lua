@@ -1045,6 +1045,8 @@ return function(api)
             changed=changed+1; by[ghost_name and ('ghost of '..ghost_name) or n]=(by[ghost_name and ('ghost of '..ghost_name) or n] or 0)+1
             if ghost_name then removed=removed+1; ghost_names[ghost_name]=(ghost_names[ghost_name] or 0)+1
             elseif HEAT_PART[t] and e.valid then heat_parts[#heat_parts+1]=e end
+            -- (B3) what it frees, for the contested ghosts (one job an item is enough)
+            if not ghost_name and e.valid and api.deconstruct_job and api.contested and #jobs<64 then local j=api.deconstruct_job(e); if j then jobs[#jobs+1]=j end end
           elseif not e.valid then gone=gone+1 end
         end
       end
@@ -1078,6 +1080,19 @@ return function(api)
         local okd,lines=pcall(api.dispatch,p.surface,p.force,jobs)
         if okd and lines then out.robot_dispatch=lines end
       end
+    end
+    -- (d18 batch38 B3, Luna) an item the marked entities free that more ghosts of ours in that network want than it
+    -- holds: each such ghost (ghostlist.contested), dry run and live
+    if api.contested and #jobs>0 then
+      local seen,lines={},{}
+      for _,j in ipairs(jobs) do
+        if j.item and not seen[j.item] and #lines<2 then
+          seen[j.item]=true
+          local okc,c=pcall(api.contested,p.surface,p.force,j.item,j.pos)
+          if okc and c then lines[#lines+1]=c.line end
+        end
+      end
+      if #lines>0 then out.contested=lines end
     end
     if #heat_parts>0 and api.heat_loss then
       local ok,loss=pcall(api.heat_loss,p.surface,p.force,heat_parts)

@@ -85,7 +85,7 @@ return function(api)
       return u and assigned[id][u]
     end
     local inv = s == p.surface and try(function() return p.get_main_inventory() end)
-    local nets, held = {}, {}
+    local nets, held, contested, searches = {}, {}, {}, 0
     local rows, by_name, by_verdict, held_n, blocked, ghost_of = {}, {}, {}, 0, {}, {}
     for _, g in ipairs(found) do
       if g.valid then
@@ -134,6 +134,17 @@ return function(api)
         elseif best.has == 0 then verdict = 'its network holds no ' .. (item or 'item for it') .. ' and no robot carries one to it'
         else verdict = 'its network has no idle construction robot' end
         row.robots = verdict
+        -- (B3) more ghosts of ours in its network want its item than the network holds: each, from where the item is
+        if item and best and best.has > 0 and g.type == 'entity-ghost' then
+          local key = best.id .. '|' .. item
+          if contested[key] == nil and searches < 3 then
+            searches = searches + 1
+            local pk = try(function() return covering[1].select_pickup_point{name=item, position=g.position} end)
+            local o = pk and try(function() return pk.owner end)
+            contested[key] = M.contested(s, f, item, o and o.valid and o.position or g.position, best.has) or false
+          end
+          if contested[key] then row.contested = contested[key].line end
+        end
         if g.type == 'entity-ghost' then ghost_of[row] = g end
         if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
         if not row.robot and best then
@@ -203,6 +214,46 @@ return function(api)
       blocked_checked=checked > MAX_UNDER and string.format('the nearest %d entity ghosts checked for a live entity on their spot', MAX_UNDER) or nil, total=#rows, page=pages > 1 and page or nil, pages=pages > 1 and pages or nil,
       more=#rows > page * limit and #rows - page * limit or nil, next=nextcmd, covered=covered,
       note='construct {position, radius} builds ghosts by hand (it takes the items); robots build those in a construction area with idle robots and the item in the network'}
+  end
+  -- (d18 batch38 B3, Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at
+  -- (204,69)) the game sets no build priority among ghosts. contested(surface, force, item, at): the entity ghosts of
+  -- ours in the construction area of the network covering `at` that the item places, when there are more of them than
+  -- the network holds: {wanted, holds, network, lines (each ghost: where, the claim holding it and its owner, the
+  -- distance from at), line}; nil otherwise. Bounded: only when the network holds MAX_HOLDS or fewer; one ghost search
+  -- (limit MAX_CONTESTED) of that network's box.
+  local MAX_CONTESTED, MAX_HOLDS = 64, 16
+  function M.contested(surface, force, item, from, holds)
+    local ip = try(function() return prototypes.item[item] end)
+    local place = ip and try(function() return ip.place_result and ip.place_result.name end)
+    if not place then return nil end
+    local net = (try(function() return surface.find_logistic_networks_by_construction_area(from, force) end) or {})[1]
+    if not net then return nil end
+    -- a few of it only (the search covers the network's box: 9 ms for Nauvis's on world n): MAX_HOLDS or fewer held
+    holds = holds or try(function() return net.get_item_count(item) end) or 0
+    if holds > MAX_HOLDS then return nil end
+    local box
+    for _, c in ipairs(try(function() return net.cells end) or {}) do
+      local o = c.owner
+      local r = try(function() return c.construction_radius end) or 0
+      if o and o.valid and r > 0 and not try(function() return c.mobile end) then
+        local x, y = o.position.x, o.position.y
+        box = box and {math.min(box[1], x - r), math.min(box[2], y - r), math.max(box[3], x + r), math.max(box[4], y + r)} or {x - r, y - r, x + r, y + r}
+      end
+    end
+    if not box then return nil end
+    local ghosts = try(function() return surface.find_entities_filtered{area={{box[1], box[2]}, {box[3], box[4]}}, type='entity-ghost', ghost_name=place, force=force, limit=MAX_CONTESTED} end) or {}
+    if #ghosts <= holds or #ghosts < 2 then return nil end
+    table.sort(ghosts, function(x, y) return api.distance(x.position, from) < api.distance(y.position, from) end)
+    local lines = {}
+    for i, g in ipairs(ghosts) do
+      if i > 8 then lines[#lines+1] = string.format('+%d more', #ghosts - 8); break end
+      local c = api.claim_at and api.claim_at(surface, g.position)
+      lines[#lines+1] = string.format('%s %s%s, %d tiles from %s', place, at(g.position),
+        c and string.format(' (claim #%d %s, %s)', c.id, c.title or '', tostring(c.owner)) or ' (no claim)', math.floor(api.distance(g.position, from) + 0.5), at(from))
+    end
+    return {wanted=#ghosts, holds=holds, network=net.network_id, lines=lines,
+      line=string.format('%d %s ghosts of ours in network %d want %s and it holds %d: %s; robots build whichever they take it to first (the game sets no order among ghosts; a ghost removed with deconstruct {area} is not built)',
+        #ghosts, place, net.network_id, item, holds, table.concat(lines, '; '))}
   end
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
     area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',

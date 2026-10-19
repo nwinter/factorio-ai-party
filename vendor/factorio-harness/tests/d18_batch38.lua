@@ -184,4 +184,43 @@ do
   prototypes=nil
 end
 print('d18_batch38 B2 robot_dispatch: none held, outside every construction area: ok')
+
+-- B3 (Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at (204,69)): more
+-- ghosts of ours in the network want the item than it holds: each named, its claim and distance, in the drop's receipt
+-- and the ghosts read.
+do
+  prototypes={item={roboport={place_result={name='roboport'}},['iron-plate']={}},entity={roboport={items_to_place_this={{name='roboport',count=1}}}}}
+  local g1={valid=true,type='entity-ghost',ghost_name='roboport',position={x=204,y=69}}
+  local g2={valid=true,type='entity-ghost',ghost_name='roboport',position={x=67,y=44}}
+  local net={network_id=98,cells={{owner={valid=true,position={x=100,y=50}},construction_radius=110}},get_item_count=function() return 0 end}
+  local surf={name='gleba',find_logistic_networks_by_construction_area=function() return {net} end,
+    find_entities_filtered=function(f) eq(f.ghost_name,'roboport'); eq(f.type,'entity-ghost'); assert(f.limit,'bounded'); return {g1,g2} end}
+  local GL=dofile('mod/agent-harness_0.1.0/ghostlist.lua'){position=function(v) return v end,integer=function(v,d) return v or d end,
+    distance=function(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end,
+    claim_at=function(s,pos) if pos.x==204 then return {id=1112,owner='luna',title='Gleba east farm defense'} end end}
+  local c=GL.contested(surf,{},'roboport',{x=54,y=8})
+  eq(c.wanted,2); eq(c.holds,0); eq(c.network,98)
+  eq(c.lines[1],'roboport (67,44) (no claim), 38 tiles from (54,8)')
+  eq(c.lines[2],'roboport (204,69) (claim #1112 Gleba east farm defense, luna), 162 tiles from (54,8)')
+  has(c.line,'2 roboport ghosts of ours in network 98 want roboport and it holds 0: ')
+  has(c.line,'robots build whichever they take it to first (the game sets no order among ghosts')
+  eq(GL.contested(surf,{},'iron-plate',{x=54,y=8}),nil,'an item that places nothing')
+  net.get_item_count=function() return 2 end
+  eq(GL.contested(surf,{},'roboport',{x=54,y=8}),nil,'the network holds enough')
+  -- the drop's receipt: once when it lands
+  net.get_item_count=function() return 0 end
+  local st={}
+  game={tick=100,surfaces={gleba={name='gleba',find_entities_filtered=function() return {} end}},forces={player={name='player'}}}
+  defines={inventory={cargo_unit=1}}
+  local D=dofile('mod/agent-harness_0.1.0/drops.lua'){state=function() return st end,who=function(p) return p.name end,
+    contested=function(s,f,item,at) eq(s.name,'gleba'); return GL.contested(surf,f,item,at) end}
+  local id=D.record({name='luna',force={name='player'}},{platform='Swiftlet',surface='gleba',pad={x=54,y=8},sent={'roboport*1'}})
+  st.drops.list[1].pod=nil
+  game.tick=200; D.tick(210)
+  local lines=D.lines({name='luna'},{})
+  has(lines[1],'drop #'..id..' from Swiftlet landed in the landing pad at (54,8) on gleba: roboport*1')
+  has(lines[1],'; 2 roboport ghosts of ours in network 98 want roboport and it holds 0: roboport (67,44) (no claim), 38 tiles from (54,8); roboport (204,69) (claim #1112')
+  game,defines,prototypes=nil,nil,nil
+end
+print('d18_batch38 B3 ghosts that want an item the network holds too few of: ok')
 print('d18 batch38 ok')

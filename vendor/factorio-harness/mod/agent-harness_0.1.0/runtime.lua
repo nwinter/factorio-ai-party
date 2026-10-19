@@ -12205,7 +12205,7 @@ M.outputstop=require('outputstop'){try=function(fn) local ok,v=pcall(fn); if ok 
 M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end,blocker=function(s,q) return M.linecut and M.linecut.blocker(s,q) end}
 -- Underground entrances fed from the side by an inserter or a belt (sidefeed.lua; Sol, shift10).
 M.sidefeed=require('sidefeed'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
-local blueprint_handlers=blueprint_module{fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
+local blueprint_handlers=blueprint_module{contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
   build_notes=function(p,ents) return M.build_notes(p,ents) end,
   heat_loss=function(surface,force,list) return M.heating.loss(surface,force,list) end,
   placed=function(p,e) return M.efficiency.built(M.board.who(p),e) end,
@@ -16885,7 +16885,7 @@ M.robottrips=require('robottrips'){avoid=function() return M.avoid end}
 M.logaudit=require('logaudit'){state=state,surface_named=function(f,a) return M.networks.surface_named(f,a) end}
 function handlers.logistics_audit(p,a) return M.logaudit.read(p,a) end
 -- Each ghost near a point or in an area: what places it and whether robots can build it (ghostlist.lua; A10, Muse).
-M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer,robot_row=function(r,net,cache) return M.robots.row(r,net,cache) end,
+M.ghostlist=require('ghostlist'){claim_at=function(surface,pos) local ok,i=pcall(M.claims.find,{surface=surface},pos); return ok and i and {id=i.id,owner=i.owner,title=i.title} or nil end,position=position,distance=distance,integer=integer,robot_row=function(r,net,cache) return M.robots.row(r,net,cache) end,
   under=function(g) return M.robots.under(g) end,under_lines=function(list,where) return M.robots.under_lines(list,where) end}
 function handlers.ghosts(p,a) return M.ghostlist.read(p,a) end
 -- What sends a platform on besides its schedule's waits: agents' queue steps and orders (departure.lua; Grok 16:50).
@@ -16973,7 +16973,7 @@ M.pushalerts=require('pushalerts'){mine_forecast=function(surface,force,q,cap) r
   alert_reader=function(force) return M.cameras.alert_reader(force, M.is_director) end}
 function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
-M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
+M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end}
 -- A pole's death that cut power (powercut.lua, round2120a): team.alerts and status alerts; scan rows' pole wires.
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
