@@ -698,7 +698,7 @@ local function finish(index, outcome)
     last.route=stock.route_text(action)
     last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
-    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack
+    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead
     last.left_out=action.left_out; last.left_out_count=action.left_out_count
     last.turrets_skipped=action.turrets_skipped  -- (batch32 A2) turrets a rearm walk skipped: other ammo with no room, ghosts
     if action.fuel_round then local r=action.fuel_round;last.fuel_taken=r.taken+(r.source and r.source.got or 0);last.sources=r.sources;last.source_read_capped=r.source_read_capped;last.why=action.why or last.why end
@@ -4401,8 +4401,20 @@ function M.via_next(p,action,outcome,index)
   -- A queue step restarted after a pause resumes from the next via point (scheduler.lua).
   local q=(state().queues or {})[index]
   if q and q.current and q.current.args==v.args then q.current.via_done=v.index end
+  -- (d18 batch36 B2) the next leg against enemy groups and units seen now: one in reach of it ends the walk short here
+  local nxt=v.index+1
+  local to=nxt>#v.points and v.final or v.points[nxt]
+  local args=v.args or {}
+  if v.mode and args.unsafe_goal==nil then
+    local okl,lt=pcall(M.avoid.leg_threat,p,p.position,to,v.mode)
+    if okl and lt then
+      action.why=string.format('%s; stopped at (%.1f,%.1f) before it (leg %d of %d)',lt.line,p.position.x,p.position.y,nxt,#v.points+1)
+      action.enemies_ahead=action.why
+      return false,'enemies_ahead'
+    end
+  end
   for _,k in ipairs(M.LEG_FIELDS) do action[k]=nil end
-  M.via_leg(p,action,v.index+1)
+  M.via_leg(p,action,nxt)
   if not action.direct then M.avoid.start(p,action,v.mode); request_path(p,action) end
   return true
 end
@@ -17179,7 +17191,7 @@ stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_gro
   find=function(p,pos) return entity(p,{position=pos}) end,
   -- Every tour's enemy check (round1950a): the walk's mode, and a place inside a reach the map shows.
   avoid_mode=function(v) return M.avoid.mode(v) end,
-  goal_check=function(p,from,goal,mode) return M.avoid.goal_check(p,from,goal,mode) end,
+  goal_check=function(p,from,goal,mode) return M.avoid.goal_check(p,from,goal,mode) end,leg_threat=function(p,from,to,mode) return M.avoid.leg_threat(p,from,to,mode) end,
   goal_text=function(label,goal,c) return M.avoid.goal_text(label,goal,c) end,
   -- The call's check of every stop (round2120a), and the reply's avoid_enemies line.
   goal_inside=function(p,goal,mode) return M.avoid.inside(p,goal,mode) end,
@@ -17707,7 +17719,10 @@ function M.tick_action(index,action,event)
     -- Legs around enemies (avoid.lua): the next one starts where one ends.
     if outcome and action.foes and M.avoid.leg_done(p,action,outcome) then outcome=nil end
     -- Legs through via points: the next one starts where one arrives.
-    if outcome and action.via and M.via_next(p,action,outcome,index) then outcome=nil end
+    if outcome and action.via then
+      local nxt,instead=M.via_next(p,action,outcome,index)
+      if nxt then outcome=nil elseif instead then outcome=instead end
+    end
     -- An end that says arrived far from the walk's goal is no arrival (A1): stopped_short, with where and why.
     if outcome=='arrived' or outcome=='arrived_near' then outcome=M.short_check(p,action,outcome) end
     if outcome then

@@ -8099,3 +8099,11 @@ fh watch    # deploy on every change
   lines) and `held_alerts_count` (a direct wait's `last` has them). Damage to the character, tells and mentions wake as
   before. The direct wait_until now takes `wake_on_urgent` too: the scheduler's schema lacked it, so `fh call
   wait_until --no-urgent` and `--urgent-radius` were refused as an unknown argument.
+- Each leg re-checked before it starts (B2, Haiku: 8 hits from big spitters at (-112,240) on a rearm tour whose walk
+  started clear). A tour's next stop (rearm, feed, refuel, collect, recover, transfer tours) and a move_to's next via
+  leg are checked against enemy groups and enemy units seen now (and demolishers): one whose reach (24 tiles) the
+  straight leg passes through stops the walk where it stands, outcome `enemies_ahead`, and `last.why` /
+  `last.enemies_ahead` name it with what it does and where it stopped: `the leg from (-100,200) to (-120,280) passes 1
+  enemy unit (1 big-spitter) at (-110,238), 7.6 tiles from it: moving units (big-spitter (-110,238) wandering, facing
+  west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
+  avoid_enemies false checks nothing.

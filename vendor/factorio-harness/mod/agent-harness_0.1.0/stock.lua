@@ -995,6 +995,17 @@ return function(api)
       end
     end
     local t=action.targets[action.index]
+    -- (d18 batch36 B2) the next leg against enemy groups and units seen now, before it starts: one in reach of it stops
+    -- the tour short, naming it and where it stopped (unsafe_goal true or "moving" walks on)
+    if not action.nav and action.avoid_mode and action.unsafe_goal==nil and api.leg_threat then
+      local okl,lt=pcall(api.leg_threat,p,p.position,t.position,action.avoid_mode)
+      if okl and lt then
+        api.stop_walking(p)
+        action.enemies_ahead=string.format('%s; stopped at (%.1f,%.1f) before it, %d of %d stops done',lt.line,p.position.x,p.position.y,action.index-1,#action.targets)
+        action.why=action.enemies_ahead
+        return 'enemies_ahead'
+      end
+    end
     if not action.nav then
       -- A place inside a worm's range, within 40 tiles of a spawner or in an area under attack now is not walked to
       -- (round1950a: Haiku's rearm cluster lay in attack #1548): left out, named, unless unsafe_goal.

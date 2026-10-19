@@ -187,3 +187,51 @@ do
   game=nil
 end
 print('d18_batch36 B1 wake near: ok')
+
+-- B2 (Haiku: 8 hits from big spitters at (-112,240) on a rearm tour whose walk started clear): the next leg checked
+-- against enemy groups and units seen now; one in reach stops the walk short, named.
+do
+  local player_force={name='player',players={{}},is_chunk_visible=function() return true end}
+  game={tick=100,forces={player=player_force,enemy={name='enemy'}}}
+  defines={command={attack=1,go_to_location=2,wander=5}}
+  local spitter={valid=true,name='big-spitter',type='unit',position={x=-110,y=238},orientation=0.75,commandable={command={type=5}}}
+  local surface={name='nauvis',find_entities_filtered=function(f) if f.type=='unit' then return {spitter} end return {} end}
+  local A=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return {} end,charted=function() return true end}
+  local p={surface=surface,force=player_force,position={x=-100,y=200}}
+  local mode=A.mode(nil)
+  local lt=A.leg_threat(p,{x=-100,y=200},{x=-120,y=280},mode)
+  has(lt.line,'the leg from (-100,200) to (-120,280) passes 1 enemy unit (1 big-spitter) at (-110,238)')
+  has(lt.line,'moving units (big-spitter (-110,238) wandering, facing west)')
+  -- a leg 40 tiles off it: nothing
+  eq(A.leg_threat(p,{x=-40,y=200},{x=-40,y=280},mode),nil)
+  -- avoid_enemies false: no check
+  eq(A.leg_threat(p,{x=-100,y=200},{x=-120,y=280},nil),nil)
+  game,defines=nil,nil
+end
+do
+  -- a tour: stops short before the leg, names it; unsafe_goal walks on
+  game={tick=0}
+  local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
+  local f={}
+  local p={force=f,position={x=0,y=0},reach_distance=10}
+  local t1={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=5,y=0}}
+  local t2={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=60,y=0}}
+  local threat,stopped,visits=nil,0,0
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){distance=distance,integer=function(v,d) return v or d end,
+    goal_inside=function() return nil end,goal_check=function() return nil end,goal_text=function() return 'place' end,
+    leg_threat=function(_,from,to) if threat and to.x==60 then return {line='the leg from (5,0) to (60,0) passes enemy group of 9'} end end,
+    visit=function() visits=visits+1; return {transferred=10} end,can_reach=function() return true end,
+    request_path=function(_,nav) nav.requested=true end,navigate=function() return 'arrived' end,stop_walking=function() stopped=stopped+1 end}
+  p.can_reach_entity=function(e) return distance(p.position,e.position)<=10 end
+  local action=S.start_tour(p,'rearm',{t1,t2},3600,{avoid_mode={}})
+  threat=true
+  local r
+  for _=1,20 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  eq(r,'enemies_ahead'); eq(stopped,1)
+  has(action.enemies_ahead,'the leg from (5,0) to (60,0) passes enemy group of 9; stopped at (0.0,0.0) before it, 1 of 2 stops done')
+  action=S.start_tour(p,'rearm',{t2},3600,{avoid_mode={},unsafe_goal='moving'})
+  for _=1,3 do game.tick=game.tick+1; r=S.tick(p,action); if r then break end end
+  assert(r~='enemies_ahead','unsafe_goal walks on')
+  game=nil
+end
+print('d18_batch36 B2 legs checked against enemies seen now: ok')
