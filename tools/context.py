@@ -300,10 +300,25 @@ def team_projects(d, me, keep=4, cap=200):
     return out, when
 
 
+RULES_FILE = ".ground_rules.json"   # fh files the team's ground rules from the replies that carry them (cli.ts)
+
+
+def ground_rules(d):
+    """The team's ground rules fh filed (the shift block, ground_rules reads), or []."""
+    try:
+        with open(os.path.join(d, RULES_FILE)) as f:
+            return [l for l in (json.load(f).get("lines") or []) if isinstance(l, str) and l.strip()]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
 def brief(d, why):
-    """After a compaction: at most BRIEF_MAX characters from notes.md (Now, claims, agreements), the agent's own
-    claims and the last tells to it from its journal, and what its last 30 minutes measured (handover.py), instead of
-    the whole notes.md; the harnesses that keep AGENTS.md are told not to re-read it."""
+    """After a compaction: at most BRIEF_MAX characters instead of the whole notes.md. (d19 batch41 C2, viewer Aurora: the
+    3 KB cut fell on the later sections while the older notes stayed.) Kept whole, in this order: the team's ground rules
+    (fh's file), the agent's open commitments (notes.md's Commitments, Agreements and Claims sections and its own open
+    board items) and its live checks (notes.md's next or live check section, the reminder lines last told to it, and the
+    reads to make before acting). Trimmed first when over, oldest material first: what its last 30 minutes measured, the
+    team's projects, the other tells (oldest first), then notes.md's Now from its end; the brief says what it trimmed."""
     try:
         kind = open(os.path.join(d, MARKER)).read().split()[0]
     except (OSError, IndexError):
@@ -314,31 +329,76 @@ def brief(d, why):
         notes = ""
     me = os.path.basename(os.path.realpath(d))
     lines = journal_tail(d)
-    out = [f"{why} A brief of at most 3 KB follows; notes.md has the rest (read only what this lacks)."]
+    head = [f"{why} A brief of at most 3 KB follows; notes.md has the rest (read only what this lacks)."]
     if kind in KEEPS_AGENTS_MD:
-        out.append("AGENTS.md is still loaded in your context: do not re-read it.")
-    now = section(notes, "now")
-    out += ["", "## Now (notes.md)", now or "(notes.md has no Now section)"]
-    for name in ("claim", "agreement"):
-        s = section(notes, name, cap=400)
-        if s:
-            out += ["", f"## {name.capitalize()}s (notes.md)", s]
+        head.append("AGENTS.md is still loaded in your context: do not re-read it.")
+    # (title, lines, trimmable): the kept blocks and, between them, the ones trimmed when over
+    blocks = []
+    rules = ground_rules(d)
+    if rules:
+        blocks.append(("## Ground rules (the team's, from your fh replies)", [f"- {r}" for r in rules], False))
+    commit = []
+    for name in ("commitment", "agreement", "claim"):
+        s_ = section(notes, name, cap=600)
+        if s_:
+            commit.append(f"### {name.capitalize()}s (notes.md)")
+            commit += s_.split("\n")
     claims = my_claims(lines, me)
     if claims:
-        out += ["", "## Your open board items (your replies)"] + [f"- {c}" for c in claims]
+        commit.append("### Your open board items (your replies)")
+        commit += [f"- {c}" for c in claims]
+    if commit:
+        blocks.append(("## Your open commitments", commit, False))
+    tells = recent_tells(lines, keep=4)
+    reminders = [t for t in tells if t.startswith("reminder #")]
+    others = [t for t in tells if not t.startswith("reminder #")]
+    live = []
+    check = section(notes, "next check", "live check", cap=400)
+    if check:
+        live += ["### Next check (notes.md)"] + check.split("\n")
+    live += [f"- {t}" for t in reminders]
+    live.append("Before acting: read deadline.txt, then ./fh call status and ./fh call chat.")
+    now = section(notes, "now", cap=1000000)
+    trim = []   # (title, lines) in display order; trimmed by TRIM_ORDER
+    trim.append(("## Now (notes.md)", (now or "(notes.md has no Now section)").split("\n")))
     projects, when = team_projects(d, me)
     if projects:
-        out += ["", f"## Open team projects (your fh replies, {when})"] + [f"- {p}" for p in projects]
-    tells = recent_tells(lines)
-    if tells:
-        out += ["", "## Last tells to you"] + [f"- {t}" for t in tells]
+        trim.append((f"## Open team projects (your fh replies, {when})", [f"- {p}" for p in projects]))
+    if others:
+        trim.append(("## Last tells to you", [f"- {t}" for t in others]))
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from handover import journal_stats, measured_lines
     st = journal_stats(os.path.join(d, "journal.jsonl"), since=time.time() - 1800, max_bytes=3_000_000)
     if st and st["first"]:
-        out += ["", "## Your last 30 minutes, measured (your journal)"] + measured_lines(st, "last 30 minutes")[:6]
-    out += ["", "Before acting: read deadline.txt, then ./fh call status and ./fh call chat."]
-    text = "\n".join(out)
+        trim.append(("## Your last 30 minutes, measured (your journal)", measured_lines(st, "last 30 minutes")[:6]))
+
+    def render(trimmed):
+        out = list(head)
+        for title, body, _ in blocks:
+            out += ["", title] + body
+        for title, body in trim:
+            if body:
+                out += ["", title] + body
+        if trimmed:
+            out += ["", "Trimmed to fit 3 KB (notes.md and your journal have them): " + "; ".join(trimmed) + "."]
+        out += ["", "## Your live checks"] + live
+        return "\n".join(out)
+
+    trimmed = []
+    for prefix in ("## Your last 30 minutes", "## Open team projects", "## Last tells to you", "## Now"):
+        for title, body in trim:
+            if not title.startswith(prefix):
+                continue
+            n = 0
+            # oldest first: a list's first lines (tells, stats); Now from its end (agents write it newest first)
+            while body and len(render(trimmed + [f"{n + 1} lines of {title[3:]}"])) > BRIEF_MAX:
+                body.pop(-1 if prefix == "## Now" else 0)
+                n += 1
+            if n:
+                trimmed.append(f"{n} line{'s' if n != 1 else ''} of {title[3:]}" if body else f"{title[3:]} (all {n} line{'s' if n != 1 else ''})")
+        if len(render(trimmed)) <= BRIEF_MAX:
+            break
+    text = render(trimmed)
     return text if len(text) <= BRIEF_MAX else text[:BRIEF_MAX - 40].rstrip() + "\n[... brief cut at 3 KB]"
 
 

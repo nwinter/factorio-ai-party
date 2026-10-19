@@ -486,6 +486,22 @@ function noteProjects(reply: unknown) {
     writeFileSync(projectsFile, JSON.stringify({at:new Date().toISOString(), lines}) + '\n');
   } catch (error) { process.stderr.write(`projects file: ${String(error)}\n`); }
 }
+// (d19 batch41 C2, viewer Aurora: resume prompts dropped the ground rules) the team's ground rules for the same brief:
+// FH_RULES_FILE (default .ground_rules.json next to the journal) holds the lines the last reply carried them in (the
+// shift block's `ground_rules`; ground_rules, ground_rule_add and ground_rule_retire replies' `rules`).
+let rulesFile: string | undefined;
+function noteRules(reply: unknown) {
+  const result = reply && typeof reply === 'object' ? (reply as Reply).result as Record<string, unknown> | undefined : undefined;
+  if (!rulesFile || !result || typeof result !== 'object') return;
+  const team = result.team && typeof result.team === 'object' ? result.team as Record<string, unknown> : {};
+  const shift = team.shift && typeof team.shift === 'object' ? team.shift as Record<string, unknown> : {};
+  const isRules = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0
+    && v.every(l => typeof l === 'string' && (/^rule \d+ \(by /.test(l) || l === 'no ground rules yet'));
+  const list = isRules(shift.ground_rules) ? shift.ground_rules : isRules(result.rules) ? result.rules : undefined;
+  if (!list) return;
+  try { writeFileSync(rulesFile, JSON.stringify({at:new Date().toISOString(), lines:list.filter(l => l !== 'no ground rules yet')}) + '\n'); }
+  catch (error) { process.stderr.write(`ground rules file: ${String(error)}\n`); }
+}
 // The game's pace (pace.ts; world n 13:41: a crash, a restart from the 13:35 autosave, then 7-10 ticks/s): FH_PACE_FILE
 // (default .fh-pace.json next to the journal) keeps the last tick, the speed between calls and an outage in course.
 // A rollback and the end of an outage are said once, on the reply that sees them (paceNotes, put first by output).
@@ -1132,6 +1148,7 @@ async function main() {
   journalPath = values.journal ? resolve(values.journal) : undefined;
   retriedId = values.id;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
+  rulesFile = process.env.FH_RULES_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.ground_rules.json') : undefined);
   shownFile = process.env.FH_SHOWN_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-shown.json') : undefined);
   describeCache = process.env.FH_DESCRIBE_CACHE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-describe.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
@@ -1141,7 +1158,7 @@ async function main() {
   pollsSeenFile = process.env.FH_POLLS_SEEN || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-polls-seen.json') : undefined);
   {
     const inner = harness;
-    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); notePace(reply); return reply; }};
+    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); noteRules(reply); notePace(reply); return reply; }};
   }
   // The look-ahead block on a reply when it is due (LOOKAHEAD_MS); the first call of a workspace starts its clock. Read
   // with peek, so the extra request leaves the agent's team news for its own replies.

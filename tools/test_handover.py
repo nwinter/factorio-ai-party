@@ -173,7 +173,43 @@ def brief():
         shutil.rmtree(d)
 
 
+def brief_trim():
+    """(d19 batch41 C2, viewer Aurora: the 3 KB cut fell on the later sections while older notes stayed) over 3 KB, the
+    ground rules, open commitments and live checks stay whole; the measured lines, projects and other tells go first,
+    then Now from its end; the brief says what it trimmed."""
+    d = tempfile.mkdtemp()
+    try:
+        ws = os.path.join(d, "sol")
+        os.makedirs(ws)
+        journal(os.path.join(ws, "journal.jsonl"), time.time() - 1000, [
+            (0, "status", {}, True, {"clock": clock(0), "team": {"tells": ["astra, 9s ago: " + "t" * 170,
+                                                                           "reminder #97, 5s ago: freight review (sol, every 15m): check Swiftlet PU"]}}),
+            (10, "transfer", {"item": "coal"}, True, {"transferred": 0, "clock": clock(10)}),
+            (20, "board_post", {"kind": "task", "title": "x"}, True, {"item": {"id": 1213, "title": "Bastion departure checklist", "owner": "sol", "status": "doing"}}),
+        ])
+        rules = [f"rule {i} (by astra): ship rule {i} " + "r" * 120 + f"; from lessons #{40 + i}" for i in range(1, 4)]
+        open(os.path.join(ws, context.RULES_FILE), "w").write(json.dumps({"at": "2026-10-19T13:00:00.000Z", "lines": rules}))
+        now = "\n".join(f"- older state line {i} " + "n" * 60 for i in range(30))
+        open(os.path.join(ws, "notes.md"), "w").write(
+            "# Notes\n\n## Now\n" + now + "\n\n## Commitments\n- Swiftlet PU 600 to Aquilo each leg (Sol owns)\n\n"
+            "## Next check\n- Swiftlet section 5 on at 14:00\n")
+        b = context.brief(ws, "Your context was just compacted.")
+        assert len(b) <= context.BRIEF_MAX, len(b)
+        for r in rules:
+            assert r in b, r
+        assert "Swiftlet PU 600 to Aquilo each leg (Sol owns)" in b and "#1213 Bastion departure checklist (doing)" in b, b
+        live = b.split("## Your live checks\n", 1)[1]
+        assert "Swiftlet section 5 on at 14:00" in live and "reminder #97" in live and live.rstrip().endswith("./fh call chat."), live
+        assert "older state line 0" in b and "older state line 29" not in b, b
+        trimmed = b.split("Trimmed to fit 3 KB (notes.md and your journal have them): ", 1)[1].split("\n", 1)[0]
+        assert "Your last 30 minutes, measured (your journal) (all 4 lines); Last tells to you (all 1 line)" in trimmed and "lines of Now (notes.md)" in trimmed, trimmed
+        print(f"brief trim: ok ({len(b)} characters)")
+    finally:
+        shutil.rmtree(d)
+
+
 if __name__ == "__main__":
     stats()
     carry()
     brief()
+    brief_trim()
