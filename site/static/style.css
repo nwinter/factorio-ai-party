@@ -797,3 +797,15 @@ html { scroll-padding-top: 76px; }
 .poll-idea-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .poll-idea .fx-btn { justify-self: start; }
 @media (max-width: 520px) { .poll-idea-opts { grid-template-columns: 1fr; } .poll-opts { grid-template-columns: 1fr; } }
+
+/* (d19 batch43 A2) a long text whole: one line with an ellipsis, open for all of it; evidence lines under an item */
+.lt { display: block; min-width: 0; }
+.lt > summary { cursor: pointer; display: flex; gap: .3em; min-width: 0; list-style: none; }
+.lt > summary::-webkit-details-marker { display: none; }
+.lt > summary::after { content: "▸"; color: var(--fx-muted, #999); flex: none; }
+.lt[open] > summary::after { content: "▾"; }
+.lt .lt-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+.lt[open] .lt-line { display: none; }
+.lt .lt-full { white-space: pre-wrap; overflow-wrap: anywhere; }
+.lt-short { display: block; }
+.evidence { display: grid; gap: 2px; font-size: .85em; margin-top: 2px; }

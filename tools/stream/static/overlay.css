@@ -529,6 +529,11 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .pin .msg.answer { margin-left: 22px; padding: 3px 8px 4px 6px; gap: 8px; border-left: 3px solid var(--agent, var(--fx-orange));
   border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0; background: linear-gradient(90deg, rgba(var(--fx-orange-rgb), 0.10), transparent 80%); }
 .pin .msg .text { -webkit-line-clamp: 3; }
+/* (d19 batch43 A3) the newest line in the feed, and an agent's answer pinned under a viewer's question, show whole: a
+   say is up to 500 bytes (its parts too), about 7 lines here; 3 lines kept about 200 characters of it. Older lines
+   keep 3 (the well clips the oldest). */
+#chat-list > .msg:last-child .text { -webkit-line-clamp: 9; }
+.pin .msg.answer .text { -webkit-line-clamp: 9; }
 .msg .tag.atag { background: var(--agent, var(--fx-orange)); color: var(--fx-text-dark); }
 /* the operator's own lines (game chat from `server`): an OP badge, gold, in the feed and pinned */
 .msg.operator { padding: 4px 8px 5px 6px; margin-left: -6px; border-left: 3px solid #e8c547; border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;

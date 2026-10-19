@@ -11,7 +11,7 @@ import { loadPace, savePace, seeTick, seeDown, slowNote, rolledBack, Pacer, over
 import { Harness, retryBudgetMs, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
-import { splitSay, SAY_BYTES, SAY_PARTS } from './saysplit.js';
+import { splitSay, overLimit, SAY_BYTES, SAY_PARTS } from './saysplit.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync, renameSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate, walkLine } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
@@ -1811,32 +1811,38 @@ async function main() {
     if (stopping) throw new Error('Stopped waiting; inspect status.');
     return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
-  // The parts of one long say in order; reply_to and look go with the first, aloud with each. A part that fails stops
-  // the rest, and the reply says which parts were posted.
-  async function sayParts(parts: string[], args: Record<string,unknown>): Promise<Reply> {
+  // The parts of one long say or tell in order; reply_to and look go with the first, aloud with each. A tell's parts
+  // before the last go fyi (they wake nobody) and the last as asked, so a recipient woken by it finds every part in its
+  // team block, in order (d19 batch43 A1). A part that fails stops the rest, and the reply says which were sent.
+  async function sendParts(action: 'say'|'tell', parts: string[], args: Record<string,unknown>): Promise<Reply> {
     const posted: {seq: unknown, bytes: number}[] = [];
     for (const [i, text] of parts.entries()) {
       const partArgs: Record<string,unknown> = {...args, text};
       if (i > 0) { delete partArgs.reply_to; delete partArgs.look; }
-      const reply = await execute('say', partArgs);
+      if (action === 'tell' && i < parts.length - 1) { partArgs.fyi = true; delete partArgs.wake; }
+      const reply = await execute(action, partArgs);
       if (!reply.ok) {
-        if (reply.error) reply.error = {...reply.error, message:`part ${i + 1} of ${parts.length}: ${reply.error.message ?? ''} (parts posted: ${posted.length})`};
+        if (reply.error) reply.error = {...reply.error, message:`part ${i + 1} of ${parts.length}: ${reply.error.message ?? ''} (parts ${action === 'say' ? 'posted' : 'sent'}: ${posted.length})`};
         return reply;
       }
       posted.push({seq:reply.result?.seq, bytes:Buffer.byteLength(text,'utf8')});
       if (i === parts.length - 1) return {...reply, result:{...reply.result, seq:reply.result?.seq, parts:posted,
-        split:`posted in ${parts.length} parts at sentence ends, each within ${SAY_BYTES} bytes`}};
+        split:`${action === 'say' ? 'posted' : 'sent'} in ${parts.length} parts at sentence ends, each within ${SAY_BYTES} bytes`}};
     }
-    throw new Error('say has no text');
+    throw new Error(`${action} has no text`);
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     args = normalizeWaitArgs(action, args);
-    // (d19 batch42 A1) a say over 500 bytes goes as numbered parts cut at sentence ends (host/saysplit.ts)
-    if (action === 'say' && typeof args.text === 'string') {
+    // (d19 batch42 A1, batch43 A1) a say or tell over 500 bytes goes as numbered parts cut at sentence ends
+    // (host/saysplit.ts); a confession or chronicle entry over its limit is refused (batch43 A3: the runtime cut them
+    // without a word)
+    if ((action === 'say' || action === 'tell') && typeof args.text === 'string') {
       const parts = splitSay(args.text);
-      if (parts.length > SAY_PARTS) throw new Error(`say text is ${Buffer.byteLength(args.text,'utf8')} bytes: fh posts up to ${SAY_PARTS} parts of ${SAY_BYTES} bytes, and this needs ${parts.length}; nothing was sent`);
-      if (parts.length > 1) return sayParts(parts, args);
+      if (parts.length > SAY_PARTS) throw new Error(`${action} text is ${Buffer.byteLength(args.text,'utf8')} bytes: fh ${action === 'say' ? 'posts' : 'sends'} up to ${SAY_PARTS} parts of ${SAY_BYTES} bytes, and this needs ${parts.length}; nothing was sent`);
+      if (parts.length > 1) return sendParts(action, parts, args);
     }
+    const over = overLimit(action, args);
+    if (over) throw new Error(over);
     const requestId = id ?? randomUUID();
     // `fh call sleep` (with or without --wait) blocks like fh sleep: the raw
     // action only starts a sleep (shake4-6: Luna's 103 sleeps that never waited).

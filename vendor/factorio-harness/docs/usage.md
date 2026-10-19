@@ -1269,7 +1269,9 @@ fh board events --since 40
 - A `say` over 500 bytes (the runtime keeps 500 of a line) goes as numbered parts, each within 500 bytes, cut at
   sentence ends (a sentence longer than a part at word ends) and repeating the line's leading `@names`:
   `@Foobator (1/2) ...`, `@Foobator (2/2) ...` (d19 batch42 A1, host/saysplit.ts; viewer Aurora: a reply cut mid-word at
-  500). `reply_to` and `look` go with the first part, `--aloud` with each; the reply is the last part's, with `parts`
+  500). `reply_to` and `look` go with the first part, `--aloud` with each; `fh tell` splits the same way (d19 batch43
+  A1). `fh confess` over 300 bytes and `fh chronicle` over 600 (its `--title` over 80) are refused before anything is
+  sent, with the size and the limit (the runtime cut them without a word); the reply is the last part's, with `parts`
   (seq and bytes of each) and `split`. Over 6 parts is refused before anything is posted. The site keeps the parts in
   one viewer thread (tools/stream/viewer_replies.py).
 
@@ -4541,8 +4543,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Each agent's first reply carrying a `team` block has, once, the reminder `stream: viewers hear your say --aloud lines
   and confessions, spoken in your voice, and like hearing from you every few minutes; other chat and tells show on the
   stream only as text, which viewers read on screen, so write them as plain sentences with spaces between words`.
-- `tell {to, text}` sends one line (1..500 characters; longer is cut to 500 and the reply carries `cut {length,
-  kept}`) to teammates outside the game chat: `to` is a name or display
+- `tell {to, text}` sends one line (1..500 bytes; `fh tell` sends a longer one as numbered parts cut at sentence ends,
+  as for say: the parts before the last go fyi and the last as asked, so a teammate woken by it finds them all in its
+  `team.tells`, in order; d19 batch43 A1, viewer Aurora: Luna's tell to Astra cut at 500 and resent; in a queue step
+  or plan a longer one is cut to 500 and the reply carries `cut {length, kept}`) to teammates outside the game chat: `to` is a name or display
   name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names

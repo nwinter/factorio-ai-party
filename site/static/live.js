@@ -572,7 +572,8 @@
     // board
     var claims = (board.claims || []).map(function (c) {
       var o = byName[c.agent] || {};
-      return '<li>' + avatar(o.name ? o : { name: c.agent || c.owner }, 24) + '<span><b>' + esc(o.display_name || c.owner || '?') + '</b> ' + esc(c.title) + '</span></li>';
+      return '<li>' + avatar(o.name ? o : { name: c.agent || c.owner }, 24) + '<span><b>' + esc(o.display_name || c.owner || '?') + '</b> ' + esc(c.title) +
+        evidenceHtml('item' + c.id, c) + '</span></li>';
     }).join('');
     // open projects (board kind project): owner, title and progress ("3 of 7 steps") with a bar; each opens to its steps
     var projects = projectsHtml(board, byName, 'board', false);
@@ -581,13 +582,13 @@
     function who(name) { var o = byName[name] || {}; return o.display_name || name || ''; }
     var openJobs = (board.open_items || []).map(function (j) {
       return '<li><span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span> <b>' + esc(j.title) + '</b>' +
-        (j.requested_by ? ' <span class="fx-muted">asked by ' + esc(who(j.requested_by)) + '</span>' : '') + '</li>';
+        (j.requested_by ? ' <span class="fx-muted">asked by ' + esc(who(j.requested_by)) + '</span>' : '') + evidenceHtml('item' + j.id, j) + '</li>';
     }).join('');
     var doingJobs = (board.doing_items || []).map(function (j) {
       var o = byName[j.agent] || {};
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
         esc(j.title) + ' <span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span>' +
-        (j.status === 'claimed' ? ' <span class="fx-muted">claimed</span>' : '') + '</span></li>';
+        (j.status === 'claimed' ? ' <span class="fx-muted">claimed</span>' : '') + evidenceHtml('item' + j.id, j) + '</span></li>';
     }).join('');
     function more(total, shown) { return total > shown ? '<p class="fx-muted small">+' + esc(total - shown) + ' more</p>' : ''; }
     var jobsHtml = (openJobs ? '<h4>Open jobs</h4><ul class="board-jobs">' + openJobs + '</ul>' + more(board.open_items_total || 0, (board.open_items || []).length) : '') +
@@ -713,7 +714,8 @@
         : p.steps_partial ? '<p class="fx-muted small">The next open steps; the whole list comes with a later refresh.</p>' : '') +
       (p.status === 'blocked' ? '<p class="small"><span class="fx-chip fx-chip--grey">blocked</span></p>' : '') +
       (needs ? '<p class="small"><span class="fx-muted">Needs:</span> ' + needs + '</p>' : '') +
-      (p.handoff ? '<p class="small"><span class="fx-muted">Handoff:</span> ' + esc(p.handoff) + '</p>' : '') +
+      (p.handoff ? '<p class="small">' + longText('proj' + p.id + ':handoff', p.handoff, 'Handoff:') + '</p>' : '') +
+      (p.evidence ? '<div class="small">' + evidenceHtml('proj' + p.id, p) + '</div>' : '') +
       (who ? '<p class="small fx-muted">Asked by ' + esc(who) + '</p>' : '');
     return body;
   }
@@ -728,6 +730,24 @@
       (withNext && p.next && p.status !== 'done' ? '<span class="small plan-next"><span class="fx-muted">Next:</span> ' + esc(p.next) + '</span>' : '') + '</span>';
     return '<li><details class="project" data-project="' + esc(key) + '"' + (openProjects[key] ? ' open' : '') + '><summary>' + head +
       '</summary><div class="project-body">' + stepsHtml(p) + '</div></details></li>';
+  }
+  // (d19 batch43 A2, batch41 B2) A long text shown whole: one line, cut with an ellipsis by CSS, that opens to all of it
+  // (a reminder's result up to 1000 characters, evidence lines); the reader's open ones stay open across refreshes.
+  var openLong = {};
+  function longText(key, text, label) {
+    text = String(text || '');
+    var head = label ? '<span class="fx-muted">' + esc(label) + '</span> ' : '';
+    if (text.length <= 110) return '<span class="lt-short">' + head + esc(text) + '</span>';
+    return '<details class="lt" data-lt="' + esc(key) + '"' + (openLong[key] ? ' open' : '') + '><summary>' + head +
+      '<span class="lt-line">' + esc(text) + '</span></summary><div class="lt-full">' + esc(text) + '</div></details>';
+  }
+  // A board item's or reminder's evidence (the runtime's lines, oldest first): the newest first, each whole.
+  function evidenceHtml(key, row) {
+    var ev = Array.isArray(row && row.evidence) ? row.evidence : [];
+    if (!ev.length) return '';
+    return '<div class="evidence">' + ev.slice().reverse().map(function (line, i) {
+      return longText(key + ':ev' + (ev.length - 1 - i), line, i ? 'earlier evidence:' : 'evidence:');
+    }).join('') + (row.evidence_more ? '<span class="fx-muted small">+' + esc(row.evidence_more) + ' earlier</span>' : '') + '</div>';
   }
   // The team's reminder jobs (d15 batch5 group I; viewer Foobator's idea, Astra and Sol's design): who set each, its
   // message, when it is next due, the last result and its age, and each recipient's state (pending, acknowledged,
@@ -745,8 +765,8 @@
       }).join(' ');
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
         esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted">' + esc([j.cadence, due].filter(Boolean).join(', ')) + '</span>' +
-        (j.last_result ? '<br><span class="fx-muted">last result' + (j.result_age_s != null ? ' ' + esc(ago(j.result_age_s)) : '') + ':</span> ' + esc(j.last_result) : '') +
-        (states ? '<br>' + states : '') + '</span></li>';
+        (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result' + (j.result_age_s != null ? ' ' + ago(j.result_age_s) : '') + ':') : '') +
+        evidenceHtml('rem' + j.id, j) + (states ? '<br>' + states : '') + '</span></li>';
     }).join('');
     return '<h4>Reminders</h4><ul class="board-claims board-reminders">' + rows + '</ul>' +
       (rem.total > rem.jobs.length ? '<p class="fx-muted small">+' + esc(rem.total - rem.jobs.length) + ' more</p>' : '');
@@ -769,6 +789,7 @@
   app.addEventListener('toggle', function (ev) {
     var d = ev.target;
     if (d && d.dataset && d.dataset.project) openProjects[d.dataset.project] = !!d.open;
+    if (d && d.dataset && d.dataset.lt) openLong[d.dataset.lt] = !!d.open;
   }, true);
   app.addEventListener('click', function (ev) {
     var b = ev.target && ev.target.closest ? ev.target.closest('[data-action="projects-all"]') : null;
