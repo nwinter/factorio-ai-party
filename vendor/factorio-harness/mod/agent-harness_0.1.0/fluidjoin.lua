@@ -247,6 +247,33 @@ return function(api)
     end
     return #lines > 0 and lines or nil, #mixes > 0 and mixes or nil, #cuts > 0 and cuts or nil
   end
+  -- (d18 batch39 D1) what each of a would-be machine's fluid ports touches: {flow, at (the port's tile centre), wants (its
+  -- recipe's or box's fluid), touches (the built segment's fluid there), segment, via}; plain ports only (an underground
+  -- one is a pipe-to-ground's), one tile find a port.
+  function M.touches(s, force, proto, pos, dir, recipe)
+    local rows = try(function() return api.fluid_rows({prototype=proto, position=pos, direction=dir or 0}, recipe) end) or {}
+    local out = {}
+    for _, c in ipairs(rows) do
+      if (c.kind or 'normal') == 'normal' then
+        local x, y = tile_of(c.at)
+        local tx, ty = tile_of(c.joins)
+        local row = {flow=c.flow, box=c.box, at={x=x + 0.5, y=y + 0.5}, wants=c.fluid ~= 'none' and c.fluid or nil}
+        for _, o in pairs(try(function() return s.find_entities_filtered{area={{tx + 0.1, ty + 0.1}, {tx + 0.9, ty + 0.9}}, force=force, limit=4} end) or {}) do
+          if o.valid and o.type ~= 'entity-ghost' and o.type ~= 'character' and not row.touches then
+            for _, oc in ipairs(try(function() return api.fluid_connections(o) end) or {}) do
+              if (oc.kind or 'normal') == 'normal' and oc.x == tx and oc.y == ty and oc.tx == x and oc.ty == y then
+                local seg = segment_of(o, oc.box)
+                if seg then row.touches, row.segment, row.via = seg.fluid or 'empty', seg.id or seg.own, o.name .. ' ' .. at(o.position) end
+                break
+              end
+            end
+          end
+        end
+        out[#out+1] = row
+      end
+    end
+    return out
+  end
   -- The entries of a place_ghosts or build call (a.entities; a.builds; a.item and a.position), snapped as placed.
   function M.entries(a, kind)
     local out = {}

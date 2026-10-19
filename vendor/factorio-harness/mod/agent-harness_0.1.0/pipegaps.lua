@@ -123,7 +123,10 @@ return function(api)
         local prev = ents[prev_i]
         local continues = seg and (covered[prev_i] or (prev and joined(prev, e)))
         if seg and not continues and prev then
-          out.cuts[#out.cuts+1] = {between={at(tiles[prev_i]), at(t)}, line=string.format('%s and %s do not join', label(prev), label(e))}
+          -- (d18 batch39 D1) each side's fluid
+          local fa, fb2 = api.pipe_fluid and try(function() return api.pipe_fluid(prev) end), api.pipe_fluid and try(function() return api.pipe_fluid(e) end)
+          out.cuts[#out.cuts+1] = {between={at(tiles[prev_i]), at(t)}, fluids=fa and {fa, fb2} or nil,
+            line=string.format('%s%s and %s%s do not join', label(prev), fa and ' (' .. fa .. ')' or '', label(e), fb2 and ' (' .. fb2 .. ')' or '')}
         end
         if not continues then
           close()
@@ -144,9 +147,10 @@ return function(api)
         if seg then
           local last = ents[i - 1]
           if last then
+            local fl = api.pipe_fluid and try(function() return api.pipe_fluid(last) end)
             out.cuts[#out.cuts+1] = {between={at(tiles[i - 1]), at(t)}, line=ghost[i]
-              and string.format('%s: a ghost of %s at %s, not built yet', label(last), ghost[i].ghost_name, at(t))
-              or string.format('%s: nothing of ours with a fluidbox at %s', label(last), at(t))}
+              and string.format('%s%s: a ghost of %s at %s, not built yet', label(last), fl and ' (' .. fl .. ')' or '', ghost[i].ghost_name, at(t))
+              or string.format('%s%s: nothing of ours with a fluidbox at %s', label(last), fl and ' (' .. fl .. ')' or '', at(t))}
           end
         end
         close()

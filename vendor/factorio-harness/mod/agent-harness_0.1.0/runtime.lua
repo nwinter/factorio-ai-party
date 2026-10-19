@@ -3066,6 +3066,22 @@ local function view_area(p,a)
 end
 M.SCAN_BELT={['transport-belt']=true,['underground-belt']=true,splitter=true,['lane-splitter']=true,loader=true,['loader-1x1']=true,['linked-belt']=true}
 M.SCAN_BELTS,M.SCAN_HOLDING=1024,64  -- about 6 us a belt read on world n (512 on Kestrel II: 3.1 ms)
+-- A fluid entity's fluid as its segment holds it (scan rows, pipe_gaps cuts): the most of it in the segment, else what
+-- its first box holds, else its locked fluid or filter; 'empty' when none.
+function M.pipe_fluid(e)
+  local fb=e.fluidbox
+  local okc,contents=pcall(function() return fb.get_fluid_segment_contents(1) end)
+  local best,amount
+  for name,n in pairs(okc and contents or {}) do if not amount or n>amount then best,amount=name,n end end
+  if best then return best end
+  local okb,f=pcall(function() return fb[1] end)
+  if okb and f and f.name then return f.name end
+  local okl,lf=pcall(function() return fb.get_locked_fluid(1) end)
+  if okl and lf then return (type(lf)=='string' and lf or lf.name)..' (locked, empty)' end
+  local okf,flt=pcall(function() return fb.get_filter(1) end)
+  if okf and flt and flt.name then return flt.name..' (filter, empty)' end
+  return 'empty'
+end
 function handlers.scan(p,a)
   local area=a.positions==nil and view_area(p,a) or nil
   for _,key in ipairs({'name','type','fields'}) do
@@ -3204,6 +3220,11 @@ function handlers.scan(p,a)
         for i,s in ipairs(list) do if i<=8 then parts[#parts+1]=s.name..'*'..s.count end end
         row.holds=#parts>0 and table.concat(parts,' ')..(#list>8 and string.format(' +%d more',#list-8) or '') or 'nothing'
       end
+    end
+    -- (d18 batch39 D1, Opus: ~15 min in a dense oil block) a pipe, pipe-to-ground, tank or pump of ours names its
+    -- segment's fluid unasked: the most of it in the segment, else the box's, its locked fluid or its filter; empty
+    if row.fluid==nil and e.force==p.force and (e.type=='pipe' or e.type=='pipe-to-ground' or e.type=='storage-tank' or e.type=='pump') then
+      row.fluid=M.pipe_fluid(e)
     end
     -- An inserter or loader with item filters in use says so unasked (Sonnet 06:20: stale filters blocked a line).
     if row.filters==nil and e.force==p.force and (e.type=='inserter' or e.type=='loader' or e.type=='loader-1x1') then
@@ -13344,7 +13365,7 @@ function M.retreat_go(r)
     if last and last.retreated then last.retreated.going=info.going; last.why=info.why..'; '..info.going end
   end
 end
-M.shore=require('shore'){placewhy=M.placewhy,one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
+M.shore=require('shore'){fluid_touches=function(s,f,proto,pos,dir,recipe) return M.fluidjoin.touches(s,f,proto,pos,dir,recipe) end,placewhy=M.placewhy,one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
   chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
   drillspots=function(p,a,proto) return M.drillspots.read(p,a,proto) end}
 M.drillspots=require('drillspots'){position=position,integer=integer,read_sight=M.read_sight,
@@ -16988,7 +17009,7 @@ function handlers.belt_gaps(p,a)
   return M.beltgaps.read(p,a)
 end
 -- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
-M.pipegaps=require('pipegaps'){position=position,connections=function(e) return pipes.connections(e) end,
+M.pipegaps=require('pipegaps'){pipe_fluid=function(e) return M.pipe_fluid(e) end,position=position,connections=function(e) return pipes.connections(e) end,
   segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end,
   fluids=function(e) return pipes.fluids(e,true) end}
 function handlers.pipe_gaps(p,a)

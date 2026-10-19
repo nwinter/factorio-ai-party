@@ -205,7 +205,8 @@
   ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
   what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
 - `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
-  where neighbours do not join or the line stops. `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
+  where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
+  tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
   network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities:
   each fluid segment by the engine's id with its fluid, amount over capacity and box, `empty` (with the fluid it is
   locked to), and the machines it joins with each box's fluid. inspect's rows and compact lines give an entity's
@@ -294,15 +295,17 @@
   room left. `limit`: rows (default 12, up to 48); 256 requesters a call, `next_from` gives `from` for the rest.
   `far` (default 200): each ask short or with a delivery on the way whose pickup the network would pick now lies
   farther off, with that chest and its distance. Characters' requests are left out.
-- `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
+- `construction_robots {network? | position?, sources?, sources_from?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
   target out of the area, waiting to charge, no charge, its target ghost standing over a live entity of ours not marked
   for upgrade or deconstruction); `ghosts_waiting`: each ghost in a held-up robot's queue; `ghosts_blocked`: the ghosts
   in the orders of robots in the air that stand over such an entity, counted per ghost and entity name with the `upgrade` (or
   `deconstruct`) call that marks them.
   `sources: true`: per group of waiting ghosts and item requests, first how many are in transit (construction robots
-  with an order on one holding its item, the nearest how far off), then for the rest the network's chests holding the
-  item (nearest 3) and whether the straight line from each passes within a worm's or spawner's reach the map shows.
+  with an order on one holding its item, the nearest how far off), then for the rest the chest the network's robots
+  would take the item from (the game's pickup choice; what it holds, the network's total) and whether the straight line
+  from it passes within a worm's or spawner's reach the map shows. A call reads up to 4 squares of 128 tiles of the
+  construction area (fewer once 60 ghosts are read); the first line names `sources_from` for the next squares.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines.
 - `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), each source's position

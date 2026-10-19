@@ -11,7 +11,9 @@ return function(api)
   local KIND = {container='chest', ['logistic-container']='chest', ['linked-container']='chest',
     ['infinity-container']='chest', ['temporary-container']='pod', lab='lab', ['assembling-machine']='machine', furnace='machine',
     ['rocket-silo']='machine', car='vehicle', ['cargo-wagon']='vehicle', ['spider-vehicle']='vehicle',
-    ['cargo-landing-pad']='pad', ['space-platform-hub']='hub', roboport='roboport'}
+    ['cargo-landing-pad']='pad', ['space-platform-hub']='hub', roboport='roboport',
+    -- (d18 batch39 D2, Opus: speed-module-2 917 read with no place for the most of it) module slots: beacons and drills
+    beacon='beacon', ['mining-drill']='drill'}
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}
   local TYPES = {}
   for t in pairs(KIND) do TYPES[#TYPES+1] = t end
@@ -96,6 +98,8 @@ return function(api)
     assert(not ok_proto or known, 'unknown item ' .. item)
     local limit = a.limit or 15
     assert(type(limit) == 'number' and limit >= 1 and limit <= MAX_LIMIT, 'limit must be 1..' .. MAX_LIMIT)
+    assert(a.sort == nil or a.sort == 'largest' or a.sort == 'nearest', 'sort is "largest" (default) or "nearest"')
+    assert(a.page == nil or (type(a.page) == 'number' and a.page >= 1 and a.page == math.floor(a.page)), 'page is a whole number from 1')
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface or platform surface name')
@@ -116,8 +120,14 @@ return function(api)
       if n > 0 then
         local kind = KIND[e.type] or 'other'
         add(kind, n)
+        -- what of it sits in the module slots (a machine, beacon, drill or lab)
+        local mods = (kind == 'machine' or kind == 'beacon' or kind == 'drill' or kind == 'lab') and
+          (pcall(function() return e.get_module_inventory() end) and e.get_module_inventory()) or nil
+        local in_mods = mods and select(2, pcall(function() return mods.get_item_count(item) end)) or 0
+        if type(in_mods) ~= 'number' then in_mods = 0 end
         places[#places+1] = {kind=kind, entity=e.name, position={x=e.position.x, y=e.position.y}, count=n,
-          distance=dist(e.position)}
+          in_module_slots=in_mods > 0 and in_mods or nil, distance=dist(e.position)}
+        if in_mods > 0 then totals.module_slots = (totals.module_slots or 0) + in_mods; totals[kind] = totals[kind] - in_mods end
       end
     end
     -- Landed cargo pods of any force (batch28 B3, Muse: unclaimed cargo with no positions), each once.
@@ -215,11 +225,36 @@ return function(api)
         if e then local n = M.spoils_soon(e, item, M.SOON_TICKS); soon = soon + n; if n > 0 then pl.spoils_within_2_min = n end end
       end
     end
+    -- (D2) the places largest first by default (nearest with sort: "nearest"), a page of limit; and each kind's share
+    if a.sort ~= 'nearest' then
+      table.sort(places, function(x, y)
+        if x.count ~= y.count then return x.count > y.count end
+        if x.distance and y.distance and x.distance ~= y.distance then return x.distance < y.distance end
+        return x.position.x < y.position.x
+      end)
+    end
+    local nkind = {}
+    for _, pl in ipairs(places) do
+      local k = pl.in_module_slots and 'module_slots' or pl.kind == 'character' and 'characters' or pl.kind == 'ground' and 'on_ground' or pl.kind
+      nkind[k] = (nkind[k] or 0) + 1
+    end
+    local words = {}
+    for k, n in pairs(totals) do
+      if n > 0 then words[#words+1] = {k=k, n=n} end
+    end
+    table.sort(words, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.k < y.k end)
+    for i, w in ipairs(words) do
+      words[i] = string.format('%d %s%s', w.n, w.k == 'module_slots' and 'in module slots' or (w.k:gsub('_', ' ')), nkind[w.k] and string.format(' (%d place%s)', nkind[w.k], nkind[w.k] == 1 and '' or 's') or '')
+    end
+    local page = a.page or 1
     local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0, in_flight=#flying > 0 and flying or nil,
+      kinds_line=#words > 0 and string.format('%d %s: %s', total, item, table.concat(words, ', ')) or nil, sort=a.sort or 'largest', page=page,
+      pages=math.max(1, math.ceil(#places / limit)),
       spoils_within_2_min=soon, spoil_note=soon and string.format('%d of the %d spoil within 2 minutes (chests, machines and the like; belts, hands and robot cargo not read)', soon, total) or nil,
       robot_cargo=okr and robot_n > 0 and string.format('%d carried by %d robot%s now', robot_n, carriers, carriers == 1 and '' or 's') or nil, robot_note=robot_note}
+    local first = (page - 1) * limit + 1
     for i, e in ipairs(places) do
-      if i <= limit then out.places[i] = e else out.more = out.more + 1 end
+      if i >= first and i < first + limit then out.places[#out.places+1] = e elseif i >= first + limit then out.more = out.more + 1 end
     end
     if out.more == 0 then out.more = nil end
     -- (d17 batch34 A2, Astra, Luna) drops of it into a landing pad here, with what the pad showed after they landed
@@ -235,8 +270,9 @@ return function(api)
     return out
   end
   M.schema = {
-    where_is = {item='item name', limit='1..50 places (default 15)', surface='optional surface name (default yours)',
-      returns='deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 4096 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+    where_is = {item='item name', limit='1..50 places a page (default 15)', surface='optional surface name (default yours)',
+      sort='optional "largest" (default: the most held first) or "nearest"', page='optional page of places (default 1; pages says how many)',
+      returns='deconstructed: robots\' deconstructions of it (or of an entity of that name) on that surface, newest first (6): the robot that took it, then each step seen: the ghost it built (and who placed the ghost), the storage chest it went into, the construction robot that took it from there and what that one built, or that it left no trace seen; drops: recent drops of it into a landing pad on that surface (the last 4), each with what the pad showed: landed, then taken by construction robots (and how many, with the first orders they flew to), as the drops read\'s pad line; total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, beacon, drill, module_slots (what sits in machines\', beacons\', drills\' and labs\' module slots), vehicle, pad, hub, roboport, pod (a landed cargo pod\'s container, of any force), belts, inserter_hands, robot_cargo (what our logistic and construction robots carry now, up to 4096 robots read: robot_note when capped), characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); kinds_line (each kind\'s count and places, the most first); places: each chest, lab, machine, beacon, drill, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, in_module_slots, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), the most held first (sort: nearest), limit a page (belts and inserter hands as totals only); more: places past this page; page, pages; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

@@ -159,3 +159,44 @@ do
   game=nil
 end
 print('d19_batch41 B2 reminder evidence, whole results, folded runs with ticks: ok')
+
+-- D2 (operator d18 19:02: construction_robots sources took 24 ms on network 243): the ghosts read 4 squares of 128 a
+-- call (fewer once 60 are read); per group the chest the game would take the item from (select_pickup_point), not every chest; the worm checks
+-- share one budget of 64 map chunks a call, and a line past it says it was not read.
+do
+  defines={inventory={robot_cargo=9,chest=1}}
+  local force,surf={}, {name='nauvis'}
+  local protos=0
+  local function proto(item) return setmetatable({},{__index=function(_,k) if k=='items_to_place_this' then protos=protos+1; return {{name=item,count=1}} end end}) end
+  local ghosts={}
+  for i=1,4 do ghosts[#ghosts+1]={valid=true,type='entity-ghost',ghost_name='stone-wall',ghost_prototype=proto('stone-wall'),position={x=10+i,y=10}} end
+  for i=1,2 do ghosts[#ghosts+1]={valid=true,type='entity-ghost',ghost_name='gun-turret',ghost_prototype=proto('gun-turret'),position={x=200+i,y=10}} end
+  local function chest(x,items) return {valid=true,name='storage-chest',position={x=x,y=0},get_item_count=function(i) return items[i] or 0 end} end
+  local c20,c30=chest(20,{['stone-wall']=50}),chest(30,{['gun-turret']=5})
+  local picks={}
+  local net={valid=true,network_id=243,cells={{owner={valid=true,position={x=100,y=0}},construction_radius=200}},find_cell_closest_to=function() return true end,construction_robots={},
+    select_pickup_point=function(a) picks[#picks+1]=a.name; local o=({['stone-wall']=c20,['gun-turret']=c30})[a.name]; return o and {owner=o} end,
+    get_item_count=function(i) return ({['stone-wall']=57,['gun-turret']=5})[i] or 0 end}
+  surf.find_entities_filtered=function() return ghosts end
+  -- the map's chunk cache: the first line's chunks need 40 reads, the second's 40 more (over the budget of 64)
+  local scanned=0
+  local forty={} for k=1,40 do forty[k]=k end
+  local av={chunks_near=function(pts) return {{1,1,pts[2].x>100 and 'far' or 'near'}} end,
+    missing=function(_,path) if path[1][3]=='near' and scanned>0 then return {} end return forty end,
+    structures=function(_,_,path,budget) scanned=scanned+1; assert(budget<=64,budget); return {list={}} end,
+    reach=function() return 0 end,seg_dist=function() return 99 end}
+  local RB=dofile('mod/agent-harness_0.1.0/robots.lua'){position=function(v) return v end,avoid=function() return av end}
+  local lines=RB.sources({surface=surf,force=force},net,5)
+  eq(protos,2,'one item read a ghost name'); eq(#picks,2,'one pickup choice a group')
+  -- the 400x400 construction area is 16 squares of 128, 4 a call: the walls lie in square 6, the turrets in square 7
+  eq(lines[1],'ghosts read in squares 5-8 of the 16 squares (128 tiles a side) the construction area covers; sources_from: 9 reads on')
+  eq(lines[2],'4 ghosts for stone-wall near (12.5,10): robots would take it from storage-chest (20,0) (holds 50; the network 57), 13 tiles: the straight line passes within reach of no worm or spawner the map shows')
+  eq(lines[3],'2 ghosts for gun-turret near (201.5,10): robots would take it from storage-chest (30,0) (holds 5; the network 5), 172 tiles: the line was not read in this call (64 map chunks a call are read for these lines; the next call reads on)')
+  eq(RB.sources({surface=surf,force=force},net,13)[1],'no ghost or item request waits there (ghosts read in squares 13-16 of the 16 squares (128 tiles a side) the construction area covers; the last of them)')
+  fails(function() RB.sources({surface=surf,force=force},net,17) end,'sources_from: 1..16')
+  -- a square that brings 60 ghosts ends the call there
+  for i=1,120 do ghosts[#ghosts+1]={valid=true,type='entity-ghost',ghost_name='stone-wall',ghost_prototype=proto('stone-wall'),position={x=-50,y=-150+i}} end
+  eq(RB.sources({surface=surf,force=force},net)[1],'ghosts read in square 1 of the 16 squares (128 tiles a side) the construction area covers; sources_from: 2 reads on')
+  defines=nil
+end
+print('d19_batch41 D2 construction_robots sources bounded: ok')
