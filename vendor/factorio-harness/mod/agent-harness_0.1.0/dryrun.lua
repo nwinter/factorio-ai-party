@@ -2501,6 +2501,27 @@ return function(api)
       if farn > 0 then parts[#parts+1] = farn..' out of reach from here' end
     end
     out.cargo_bays = try(function() return M.cargo_bays(s, force, recs) end)
+    -- (d18 batch36 C1) the trees and rocks standing in the planned footprints (clear_obstacles takes them away)
+    out.trees_rocks = try(function()
+      local seen, by, order, n = {}, {}, {}, 0
+      for _, rec in ipairs(recs) do
+        if rec.proto and rec.pos then
+          for _, e in ipairs(s.find_entities_filtered{area=M.footprint(rec.proto, rec.pos, rec.dir), type={'tree', 'simple-entity'}}) do
+            local rock = e.type == 'tree' or try(function() return e.prototype.count_as_rock_for_filtered_deconstruction end) == true
+            if e.valid and rock and not seen[e] then
+              seen[e] = true; n = n + 1
+              if not by[e.name] then by[e.name] = {n=0, first=e.position}; order[#order+1] = e.name end
+              by[e.name].n = by[e.name].n + 1
+            end
+          end
+        end
+      end
+      if n == 0 then return nil end
+      local parts = {}
+      for i, name in ipairs(order) do if i <= 6 then parts[#parts+1] = string.format('%d %s (one at %s)', by[name].n, name, at(by[name].first)) end end
+      return string.format('%d trees and rocks in the footprints: %s%s (clear_obstacles: true marks them, mines those in reach by hand and runs the call once they are gone)',
+        n, table.concat(parts, ', '), #order > 6 and ', ...' or '')
+    end)
     out.checked = n
     out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')'..(over_cliffs > 0 and string.format('; %d over cliffs', over_cliffs) or '')) or nil
     return out, recs, counts

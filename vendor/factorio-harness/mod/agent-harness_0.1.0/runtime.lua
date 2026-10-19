@@ -2087,6 +2087,11 @@ function handlers.describe(_,a)
       b.retries='(set by the retry: how many so far)'
     end
   end
+  -- (d18 batch36 C1) clear_obstacles on build and place_ghosts (clearobs.lua)
+  for _,name in ipairs({'build','place_ghosts'}) do
+    local d=description.actions[name]
+    if d then d.clear_obstacles='optional true: the trees and rocks in the entries\' footprints are marked for deconstruction, those in reach mined by hand (a timed construct over them), the rest left to the construction robots; once all are gone the call runs again (watched 10 min; last.cleared); none in the way: the call runs at once (cleared says so); returns cleared, mining, robots, then_runs. The dry run lists them in trees_rocks' end
+  end
   description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
@@ -16837,6 +16842,22 @@ do
     return out
   end
 end
+-- clear_obstacles on build and place_ghosts (clearobs.lua; d18 batch36 C1, Opus): the trees and rocks in the footprints
+-- marked, those in reach mined by hand, the call run again once all are gone.
+M.clearobs=require('clearobs'){state=state,position=position,direction_of=function(d) return M.direction_of(d) end,
+  snap=function(pr,pos,d) return M.dryrun.snap(pr,pos,d) end,footprint=function(pr,pos,d) return (M.dryrun.footprint(pr,pos,d)) end,
+  construct=function(p,a) return handlers.construct(p,a) end}
+do
+  local build,place=handlers.build,handlers.place_ghosts
+  handlers.build=function(p,a)
+    if type(a)=='table' and a.clear_obstacles~=nil and not (a.dry_run~=nil and a.dry_run~=false) then return M.clearobs.call(p,'build',a,build) end
+    return build(p,a)
+  end
+  handlers.place_ghosts=function(p,a)
+    if type(a)=='table' and a.clear_obstacles~=nil and not (a.dry_run~=nil and a.dry_run~=false) then return M.clearobs.call(p,'place_ghosts',a,place) end
+    return place(p,a)
+  end
+end
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
 function handlers.platform_gate(p,a) return space.gate(p,a) end
@@ -17992,6 +18013,7 @@ function M.tick_body(event)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
   if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
+  if event.tick%60==13 and state().clear_jobs then pcall(M.clearobs.tick) end  -- clear_obstacles waits (clearobs.lua)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do

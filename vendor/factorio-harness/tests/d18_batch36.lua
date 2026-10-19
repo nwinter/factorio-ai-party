@@ -260,6 +260,50 @@ do
   defines=nil
 end
 print('d18_batch36 C2 cargo bays in a dry run: ok')
+
+-- C1 (Opus, 3 times placing small cells: each tree in a footprint stopped the batch): clear_obstacles marks the trees and
+-- rocks in the footprints, mines those in reach by hand, and runs the call again once they are gone.
+do
+  game={tick=100,surfaces={}}
+  prototypes={item={['stone-furnace']={place_result={name='stone-furnace'}}},entity={['stone-furnace']={name='stone-furnace'}}}
+  local marked,constructed,plain_calls={},nil,{}
+  local function ent(name,typ,x,y,rockflag)
+    local e={valid=true,name=name,type=typ,position={x=x,y=y},bounding_box={left_top={x=x-0.5,y=y-0.5},right_bottom={x=x+0.5,y=y+0.5}},
+      prototype={count_as_rock_for_filtered_deconstruction=rockflag}}
+    e.order_deconstruction=function() marked[#marked+1]=e end
+    return e
+  end
+  local tree=ent('tree-01','tree',2,2); local rock=ent('big-rock','simple-entity',30,2,true); local fish=ent('decal','simple-entity',2,3,false)
+  local surface={find_entities_filtered=function(f) if f.area.left_top.x<10 then return {tree,fish} end return {rock} end}
+  local st={last={}}
+  local C=dofile('mod/agent-harness_0.1.0/clearobs.lua'){state=function() return st end,position=function(q) return q end,
+    snap=function(_,pos) return pos end,footprint=function(_,pos) return {left_top={x=pos.x-1,y=pos.y-1},right_bottom={x=pos.x+1,y=pos.y+1}} end,
+    construct=function(_,a) constructed=a; return {} end}
+  local p={index=4,surface=surface,character={},force={},can_reach_entity=function(e) return e.position.x<10 end}
+  local plain=function(_,a) plain_calls[#plain_calls+1]=a; return {built=true} end
+  local out=C.call(p,'build',{item='stone-furnace',builds={{position={x=2,y=2}},{position={x=30,y=2}}},clear_obstacles=true},plain)
+  eq(#plain_calls,0,'not run yet'); eq(#marked,2)
+  eq(out.cleared,'2 in the footprints marked for deconstruction: 1 tree-01 (one at (2,2)), 1 big-rock (one at (30,2))')
+  eq(out.mining,'1 in reach mined by hand now (a timed construct over them)'); eq(constructed.area.left_top.x,0)
+  eq(out.robots,'1 out of reach left to the construction robots')
+  -- the tree mined; the rock still stands: waits
+  tree.valid=false; C.tick(); eq(st.then_calls,nil)
+  rock.valid=false; C.tick()
+  eq(#st.then_calls,1); eq(st.then_calls[1].call.action,'build'); eq(st.then_calls[1].call.args.clear_obstacles,nil)
+  eq(st.clear_jobs,nil)
+  -- nothing in the way: the call at once
+  st.then_calls=nil
+  surface.find_entities_filtered=function() return {fish} end
+  out=C.call(p,'place_ghosts',{entities={{name='stone-furnace',position={x=2,y=2}}},clear_obstacles=true},plain)
+  eq(out.built,true); eq(out.cleared,'no tree or rock in the footprints'); eq(plain_calls[1].clear_obstacles,nil)
+  -- a watch that runs out
+  tree.valid=true; surface.find_entities_filtered=function() return {tree} end
+  C.call(p,'place_ghosts',{entities={{name='stone-furnace',position={x=2,y=2}}},clear_obstacles=true},plain)
+  game.tick=100+C.WAIT+1; st.last[4]={}; C.tick()
+  eq(st.last[4].cleared,'1 of 1 trees and rocks still stand after 10 min: place_ghosts not run again')
+  game,prototypes=nil,nil
+end
+print('d18_batch36 C1 clear_obstacles: ok')
 -- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},

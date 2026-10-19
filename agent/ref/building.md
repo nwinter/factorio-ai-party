@@ -40,7 +40,9 @@
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.
   Example: `./fh call build --args '{"item":"transport-belt","direction":"east","builds":[{"position":{"x":10.5,"y":6.5}},{"position":{"x":11.5,"y":6.5}}]}'`
-- `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, dry_run?}`: places ghosts, no items needed
+- `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, clear_obstacles?, dry_run?}`: places ghosts, no items needed
+  (`clear_obstacles: true`, on `build` too: trees and rocks in the footprints marked, those in reach mined by hand,
+  the call run again once they are gone; dry runs list them in `trees_rocks`)
   (a requester or buffer chest, or a machine on electricity, is watched: once robots build it in no logistic network,
   or with no pole or no power, your team block says so at once);
   entries `{name, position, direction?, recipe?}` with entry settings as `build`'s. An entry already standing as asked

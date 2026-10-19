@@ -8121,3 +8121,10 @@ fh watch    # deploy on every change
   the built bays joined, and the slots after the planned bays join. A bay's slots are not in the API (cargo-bay has no
   inventory_size_bonus on 2.0.77): they are read from the hub or pad, its slots now less its prototype's own over the
   built bays joined to it (on world n a pad's own is 80, a hub's 59); with no built bay joined, the reply says so.
+- `clear_obstacles: true` on build and place_ghosts (C1, Opus, 3 times placing small cells: each tree in a footprint
+  stopped the batch). The trees and rocks (a simple entity the game counts as a rock) in the entries' footprints are
+  marked for deconstruction, as a player's planner marks them; those in reach are mined by hand (a timed construct
+  over them, as move_to's mine_out does), the rest are left to the construction robots. Once every one is gone the call
+  runs again, without clear_obstacles (watched 10 min; `last.cleared` says which). Returns cleared (what was marked),
+  mining, robots, then_runs; with none in the way the call runs at once and cleared says so. Dry runs give
+  `trees_rocks`: the trees and rocks in the planned footprints.
