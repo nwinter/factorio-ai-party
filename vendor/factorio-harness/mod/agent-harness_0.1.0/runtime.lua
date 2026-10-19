@@ -12664,13 +12664,13 @@ function M.cargo_eta(p,a,rockets)
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
-M.silo=require('silo'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
+M.silo=require('silo'){spoil=function() return M.spoil end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){spoil_lines=function(inv) return M.silo.spoil_lines(inv) end,ammofeed={trace=function(pl) return M.ammofeed.get(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,

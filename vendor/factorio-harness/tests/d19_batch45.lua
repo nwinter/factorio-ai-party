@@ -23,3 +23,17 @@ do
   game,defines=nil,nil
 end
 print('d19_batch45 C1 artillery already coming: ok')
+
+-- batch40 B2 (Grok: a stale provider pile looked like the load that launched): a silo inventory's spoilable items with
+-- their spread, as the silo row, load_silo and the launch record give them; nil when none spoils
+do
+  game={tick=100}
+  local spoil={inventory=function(inv,acc) for _,r in ipairs(inv.rows) do acc[#acc+1]=r end return acc end,spread_text=function(r) return r.key..'*'..r.count..': spoiled '..r.pct..'%' end}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){spoil=function() return spoil end,state=function() return {} end}
+  local lines=S.spoil_lines({rows={{key='bioflux',count=40,pct=31},{key='agricultural-science-pack',count=500,pct=12}}})
+  eq(lines[1],'agricultural-science-pack*500: spoiled 12%'); eq(lines[2],'bioflux*40: spoiled 31%')
+  eq(S.spoil_lines({rows={}}),nil)
+  eq(S.spoil_lines(nil),nil)
+  game=nil
+end
+print('d19_batch45 B2 silo spoil lines: ok')
