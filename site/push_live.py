@@ -52,12 +52,12 @@ WATCHING_STALE = 180  # a "watching now" reading older than this is unknown (cas
 
 
 def public_space(sp):
-    """Space Age for the map's inset: planets reached, rockets, and each platform's place or route (no camera views,
+    """Space Age for the map's inset: planets reached, rockets, and each platform's place or route (every platform; no camera views,
     no moments: a few hundred bytes)."""
     if not sp or not sp.get("active"):
         return None
     return {"rockets": sp.get("rockets") or 0, "planets": sp.get("planets") or [], "summary": sp.get("summary"),
-            "platforms": [{k: p[k] for k in PLATFORM_KEYS if p.get(k) is not None} for p in (sp.get("platforms") or [])[:6]]}
+            "platforms": [{k: p[k] for k in PLATFORM_KEYS if p.get(k) is not None} for p in (sp.get("platforms") or [])]}
 
 
 def public_fights(fights, now):
