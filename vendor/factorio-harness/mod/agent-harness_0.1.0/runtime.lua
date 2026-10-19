@@ -616,6 +616,7 @@ local function finish(index, outcome)
     last.built=action.built; last.mined=action.mined; last.tiles_mined=action.tiles_mined; last.remaining=construction.remaining(action)
     last.missing=next(action.missing) and action.missing or nil
     last.failed=#action.failed>0 and action.failed or nil
+    last.line=construction.result_line(action)
     -- Marked cliffs in the area: left by construct (construction.lua), each needs one cliff explosive.
     if action.ncliffs then
       local at={}
@@ -6604,7 +6605,7 @@ function handlers.construct(p,a)
   state().active[p.index]=action
   -- Nothing to do is done: plans continue rather than pausing on an error.
   if #action.pending==0 then finish(p.index,'nothing_to_do'); return {total=0,built=0,outcome='nothing_to_do',left_out=action.left_out} end
-  return {until_tick=action.until_tick,total=#action.pending,materials=materials,left_out=action.left_out,
+  return {until_tick=action.until_tick,total=#action.pending,materials=materials,left_out=action.left_out,line=construction.plan_line(p,action),
     avoid_enemies=action.avoid_mode and M.avoid.describe(action.avoid_mode) or nil}
 end
 -- Its parts are profile parts inspect.<part> (operator 18:33: inspect 70 ms on average, one call 287 ms).

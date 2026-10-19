@@ -63,7 +63,10 @@
   marked for deconstruction, tiles too, walking between them. Its walks go round worms and spawners (not areas under
   attack unless `avoid_enemies: true`) and stand no nearer a worm or spawner than its reach + the margin; a ghost
   inside an enemy's reach is left out (`left_out`; `unsafe_goal: true` builds it). It reports `materials` before
-  acting (need, held, missing, queued, hand_craftable); `dry_run: true` checks them without acting.
+  acting (need, held, missing, queued, hand_craftable, over every ghost in the area) and a `line`: the ghosts it builds
+  by name, those you hold too few for (skipped unless crafted in time; the rest are built) and those left out. Its
+  result's `line`: built N of the ghosts it took up, skipped with the count short, left out, failed. `dry_run: true`
+  checks the materials without acting.
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
 - `rebuild {area | position+radius, all?, from?, dry_run?}`: one queued plan for the ghosts there robots will not build:
   takes the items you do not carry (from `from`, else chests of ours within 96 tiles of you), hand-crafts what none

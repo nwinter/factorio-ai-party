@@ -144,4 +144,23 @@ do
   defines,prototypes=nil,nil
 end
 print('d18_batch38 A4 a robot carrying the item reads in transit: ok')
+
+-- B1 (Haiku, 3 times: "construct stops the whole batch when one item is missing"; on shift36 the poles were left out
+-- inside a spitter spawner's sight and the 2 laser ghosts skipped for no lasers held): the reply and the result say what
+-- it builds, what it skips for a missing item (the count short) and what it leaves out.
+do
+  prototypes={entity={['laser-turret']={items_to_place_this={{name='laser-turret',count=1}}},['medium-electric-pole']={items_to_place_this={{name='medium-electric-pole',count=1}}}}}
+  local C=dofile('mod/agent-harness_0.1.0/construction.lua'){directions={}}
+  local action={to_build={['laser-turret']=2},left_names={['medium-electric-pole']=3,['laser-turret']=2},built=0,missing={['laser-turret']=2},failed={}}
+  local inv={get_item_count=function(i) return i=='medium-electric-pole' and 9 or 0 end}
+  eq(C.plan_line({get_main_inventory=function() return inv end},action),
+    "2 ghosts to build: 2 laser-turret; you hold too few for 2 laser-turret (those are skipped unless crafted in time; the rest are built); left out inside an enemy's reach: 3 medium-electric-pole, 2 laser-turret")
+  eq(C.result_line(action),"built 0 of the 2 ghosts it took up; skipped, item missing (none held and none crafting; the rest built): 2 laser-turret short; left out inside an enemy's reach the map shows (unsafe_goal: true builds them): 3 medium-electric-pole, 2 laser-turret")
+  -- the first batch: poles built, lasers short
+  local a2={to_build={['laser-turret']=2,['medium-electric-pole']=3},built=3,missing={['laser-turret']=2},failed={}}
+  eq(C.result_line(a2),'built 3 of the 5 ghosts it took up; skipped, item missing (none held and none crafting; the rest built): 2 laser-turret short')
+  eq(C.result_line({to_build={['medium-electric-pole']=4},built=4,missing={},failed={}}),'built 4 of the 4 ghosts it took up')
+  prototypes=nil
+end
+print('d18_batch38 B1 construct says built, skipped and left out: ok')
 print('d18 batch38 ok')

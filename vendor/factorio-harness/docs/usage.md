@@ -8297,3 +8297,12 @@ fh watch    # deploy on every change
     network holds no ITEM and no robot carries one to it".
   - construction_robots `sources` gives, per group, how many are in transit in robots' cargo (and the nearest), then
     the chests (or "no chest in the network holds it") for the rest only.
+- B1 (Haiku, 3 times: "construct stops the whole batch when one item is missing: a 4-laser + pole batch built 0
+  poles"):
+  - Found on shift36: construct already skips a ghost whose item is neither held nor crafting and builds the rest
+    (construction.lua). In Haiku's batches at ticks 29635899 and 29637477, the 3 medium poles were left out inside a
+    spitter spawner's sight ((-26,-394), 40 tiles), and the 2 laser ghosts it took up were skipped (no lasers held).
+    The reply's `materials` counted every ghost in the area, so a laser shortage and the poles' left out read as one.
+  - Now the reply has a `line`: the ghosts it builds by name, those you hold too few for, and those left out inside
+    an enemy's reach. The result's `last.line` says "built 0 of the 2 ghosts it took up; skipped, item missing ...:
+    2 laser-turret short; left out inside an enemy's reach ... : 3 medium-electric-pole, 2 laser-turret".
