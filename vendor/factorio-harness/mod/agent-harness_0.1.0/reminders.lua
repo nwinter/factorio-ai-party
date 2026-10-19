@@ -15,7 +15,10 @@
 -- the next unfinished step. reminders {pending: true} is the grouped read: what waits for you, each at its next step.
 return function(api)
   local M = {}
-  local MAX_JOBS, MAX_OWN, MAX_TEXT, MAX_RESULT = 48, 12, 300, 200
+  -- (d19 batch41 B2, Sol seq 865: "a 200-character ack hides outcomes") a result up to 1000 characters, kept whole
+  local MAX_JOBS, MAX_OWN, MAX_TEXT, MAX_RESULT = 48, 12, 300, 1000
+  local Ev_
+  local function Ev() Ev_ = Ev_ or require('evidence')(); return Ev_ end
   local MIN_EVERY, MAX_EVERY = 3600, 7 * 24 * 216000
   local MAX_STEPS, MIN_STEP_EVERY = 12, 1800
   local CHECK = 60
@@ -41,6 +44,14 @@ return function(api)
     if s >= 3600 then return string.format('%dh%02dm', math.floor(s / 3600), math.floor(s % 3600 / 60)) end
     if s >= 60 then return string.format('%dm%02ds', math.floor(s / 60), s % 60) end
     return s .. 's'
+  end
+  -- (d19 batch41 B2, Sol seq 865: reminder 97 folded runs 3-9 into one line) the runs folded, how many and when.
+  local function missed_text(pd)
+    if not (pd and pd.missed and pd.missed > 0) then return nil end
+    if not pd.first_missed then return string.format('%d run%s missed', pd.missed, pd.missed == 1 and '' or 's') end
+    if pd.missed == 1 then return string.format('1 run missed (tick %d, %s ago)', pd.first_missed, ago(game.tick - pd.first_missed)) end
+    return string.format('%d runs missed (the first at tick %d, %s ago; the last at tick %d, %s ago)', pd.missed, pd.first_missed,
+      ago(game.tick - pd.first_missed), pd.last_missed, ago(game.tick - pd.last_missed))
   end
   local function names_of(to, me)
     if to == nil then return {me}, false end
@@ -118,10 +129,15 @@ return function(api)
       last_fired_tick=job.last_fired, last_result=job.last_result, result_by=job.result_by, result_tick=job.result_tick,
       result_age_s=job.result_tick and math.floor((game.tick - job.result_tick) / 60) or nil,
       board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=job.done or nil}
+    -- (B2) the evidence given with acknowledgments, newest last
+    if job.evidence and #job.evidence > 0 then
+      r.evidence = {}
+      for k, e in ipairs(job.evidence) do r.evidence[k] = Ev().line(e) end
+    end
     local states = {}
     for _, n in ipairs(targets(job)) do
       local st, pd = status_of(job, n)
-      states[#states+1] = n .. ' ' .. st .. (pd and pd.missed > 0 and string.format(' (%d run%s missed%s)', pd.missed, pd.missed == 1 and '' or 's',
+      states[#states+1] = n .. ' ' .. st .. (pd and pd.missed > 0 and string.format(' (%s%s)', missed_text(pd),
         pd.told_owner and ', the owner told' or '') or '')
       if pd and pd.missed > 0 then r.missed = r.missed or {}; r.missed[n] = pd.missed end
     end
@@ -142,6 +158,7 @@ return function(api)
     if job.enabled then parts[#parts+1] = 'next in ' .. ago(job.next_due - game.tick) else parts[#parts+1] = job.done and 'done' or 'off' end
     if job.steps then parts[#parts+1] = string.format('checklist of %d steps%s', #job.steps, r.next_step and ', yours next: ' .. r.next_step or '') end
     if job.last_result then parts[#parts+1] = string.format('last result %s ago: %s', ago(game.tick - job.result_tick), job.last_result) end
+    if r.evidence then parts[#parts+1] = 'evidence ' .. r.evidence[#r.evidence] end
     parts[#parts+1] = r.states
     r.line = table.concat(parts, '; ')
     return r
@@ -260,8 +277,10 @@ return function(api)
     local job = find(a.id)
     local me = api.who(p)
     local result = a.result ~= nil and one_line(a.result, MAX_RESULT, 'result') or nil
+    local evidence = a.evidence ~= nil and Ev().check(a.evidence, me) or nil
     job.pending = job.pending or {}; job.acked = job.acked or {}
     local was = job.pending[me]
+    if evidence then job.evidence = Ev().add(job.evidence, evidence) end
     -- A checklist (B1): a step recorded (the next unfinished one by default), leave, resume; the run is done for you
     -- when every step is recorded.
     if job.steps then
@@ -301,7 +320,7 @@ return function(api)
         if all then job.done = true; job.enabled = false end
       end
       return {recorded=step, step_name=step and job.steps[step].name or nil, acknowledged=job.id, done=string.format('all %d steps', #job.steps),
-        checklist_done=job.done or nil, missed=was and was.missed > 0 and was.missed or nil, reminder=row(job, me)}
+        checklist_done=job.done or nil, missed=was and was.missed > 0 and was.missed or nil, missed_runs=missed_text(was), reminder=row(job, me)}
     end
     assert(a.step == nil and a.leave == nil and a.resume == nil, 'step, leave and resume are for a checklist (reminder_add steps)')
     job.pending[me] = nil; job.acked[me] = game.tick
@@ -319,7 +338,7 @@ return function(api)
       job.next_due = game.tick + ticks_arg(a.next_in_ticks, 60, MAX_EVERY, 'next_in_ticks'); job.enabled = true; job.done = nil
       note = string.format('the next run in %s (that run only; the cadence goes on from its anchor after it)', ago(job.next_due - game.tick))
     end
-    return {acknowledged=job.id, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil,
+    return {acknowledged=job.id, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil, missed_runs=missed_text(was),
       note=note, reminder=row(job, me)}
   end
   function M.handlers.reminders(p, a)
@@ -383,6 +402,7 @@ return function(api)
       local pd = job.pending[name]
       if pd then
         pd.missed = pd.missed + 1
+        pd.first_missed = pd.first_missed or game.tick; pd.last_missed = game.tick
         -- (d17 batch35 D3, viewer Aurora and Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and
         -- 16 for Sonnet before a viewer asked) two runs missed: one line to the owner, once until that recipient
         -- acknowledges or the recipients change
@@ -391,8 +411,8 @@ return function(api)
           local others = {}
           for _, r in ipairs(job.recipients) do if r ~= name then others[#others+1] = string.format('%q', r) end end
           api.deliver(index[job.owner], {seq='reminder', tick=game.tick, from='reminder #' .. job.id,
-            text=string.format('%s has missed %d runs of your reminder #%d (%s, %s): not acknowledged for %ds; last result: %s; reminder_edit {id: %d, recipients: [%s]} changes its recipients',
-              name, pd.missed, job.id, job.name or 'review', cadence(job), math.floor((game.tick - pd.tick) / 60),
+            text=string.format('%s has missed %d runs of your reminder #%d (%s, %s): not acknowledged for %ds (%s); last result: %s; reminder_edit {id: %d, recipients: [%s]} changes its recipients',
+              name, pd.missed, job.id, job.name or 'review', cadence(job), math.floor((game.tick - pd.tick) / 60), missed_text(pd),
               job.last_result and string.format('%s (by %s, %ds ago)', job.last_result, tostring(job.result_by), math.floor((game.tick - (job.result_tick or game.tick)) / 60)) or 'none yet',
               job.id, table.concat(others, ', '))})
         end
@@ -445,11 +465,12 @@ return function(api)
     reminder_edit = {id='reminder number', message='as reminder_add', every_ticks='as reminder_add (sets the anchor now)', due_tick='as reminder_add', due_in_ticks='as reminder_add', recipients='as reminder_add', name='as reminder_add; false clears it',
       board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', steps='as reminder_add; false clears them; a change starts every recipient\'s progress again', returns='edited, reminder; its owner only'},
     reminder_remove = {id='reminder number', returns='removed, was; its owner only'},
-    reminder_ack = {id='reminder number', result='optional 1..200 characters: what the review found (shown with the job and on the site)',
+    reminder_ack = {id='reminder number', result='optional 1..1000 characters: what the review found, kept whole (shown with the job and on the site)',
+      evidence='optional {metric?, tick?, decision?, result?, owner?, next_check?}, as board_post evidence: kept with the reminder (the newest 5) and shown with it',
       step='a checklist: the step number this records (default: your next unfinished step)', leave='a checklist: true sets it aside (an emergency): no step lines until resume; your progress kept',
       resume='a checklist: true takes it up again at your next unfinished step (any step\'s ack does too)',
       next_in_ticks='optional 60..: the next run that many ticks from now (that run only), with the ack', every_ticks='optional, its owner: a new cadence from now (e.g. 18000, 5 min), with the ack',
-      returns='acknowledged, was_pending, missed (runs folded into the line), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
+      returns='acknowledged, was_pending, missed (runs folded into the line), missed_runs (how many and the ticks of the first and last), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
     reminder_snooze = {id='reminder number', ticks='60..: the next run that many ticks from now (the next run only)', returns='snoozed, next_due_tick, reminder; its owner or a recipient'},
     reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed, the owner told; steps done), missed {name: runs}, yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
   }

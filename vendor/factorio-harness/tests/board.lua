@@ -119,7 +119,7 @@ fails(function() grok('board_update',{id=1,status='finished'}) end,'status must 
 -- A bad argument changes nothing, even with a valid owner beside it.
 fails(function() sol('board_update',{id=1,owner='astra',note=''}) end,'note is required')
 eq(grok('board',{id=1}).item.owner,'grok')
-fails(function() grok('board_update',{id=1}) end,'give status, owner, note, allow, title, needs or (a claim) surface')
+fails(function() grok('board_update',{id=1}) end,'give status, owner, note, evidence, allow, title, needs or (a claim) surface')
 fails(function() grok('board_update',{id=4,owner='sol'}) end,'stays with its poster')
 -- The requester may reassign; the owner may release.
 r=sol('board_update',{id=1,owner='astra'}); eq(r.item.owner,'astra'); eq(r.changed[1],'assigned')
@@ -738,7 +738,7 @@ fails(function() sol('board_post',{kind='task',title='x',steps={'a'}}) end,'goal
 fails(function() grok('board_update',{id=t.id,done=1}) end,'done is for a project (#'..t.id..' is a task); status "done" finishes an item')
 fails(function() astra('board_update',{id=pj.id,done=true}) end,'done takes step numbers: a number or an array of them (status "done" finishes the project)')
 fails(function() astra('board_update',{id=pj.id,done=9}) end,'project #'..pj.id..' has no step 9; its steps: 1, 2, 3')
-fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, allow, title, needs or (a claim) surface; for a project also step, done, undone')
+fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, evidence, allow, title, needs or (a claim) surface; for a project also step, done, undone')
 fails(function() astra('board_update',{id=pj.id,done={1,9}}) end,'has no step 9')
 eq(astra('board',{id=pj.id}).item.progress,'0 of 3 steps') -- a bad argument changes nothing
 -- anyone adds steps and marks them done; who did each shows
@@ -1026,6 +1026,15 @@ do
   fails(function() sol('board_post',{kind='note',title='too long',note=string.rep('n',1001)}) end,'note is 1001 characters, over its limit of 1000: nothing stored')
   fails(function() sol('board_update',{id=c.item.id,note=string.rep('é',600)}) end,'note is 600 characters (1200 bytes), over its limit of 1000')
   eq(#sol('board_update',{id=c.item.id,note=string.rep('m',1000)}).item.notes,2)
+  sol('board_update',{id=c.item.id,status='done'})
+end
+do
+  -- (d19 batch41 B2, Sol seq 865) evidence on an item: stored, the newest shown in the compact view and all in the full one
+  local c=sol('board_post',{kind='task',title='Swiftlet PU route',evidence={metric='PU delivered 600',decision='section 5 stays on',owner='sol',next_check='after the next Aquilo stop'}})
+  eq(#c.item.evidence,1); assert(c.item.evidence[1]:find('metric PU delivered 600',1,true),c.item.evidence[1])
+  local u=astra('board_update',{id=c.item.id,evidence={result='Spindle launched on time'}})
+  eq(#u.item.evidence,2); assert(u.item.evidence[2]:find('by astra',1,true),u.item.evidence[2])
+  fails(function() sol('board_update',{id=c.item.id,evidence={}}) end,'evidence is {metric?, tick?, decision?, result?, owner?, next_check?}')
   sol('board_update',{id=c.item.id,status='done'})
 end
 print('board: ok')

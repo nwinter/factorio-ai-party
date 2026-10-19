@@ -128,3 +128,34 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d19_batch41 B1 request section and departure gate edits: who, when, old and new; the earlier editor told: ok')
+
+-- B2 (Sol seq 865: structured evidence; reminder 97 folded runs 3-9; a 200-character ack hid outcomes): evidence on a
+-- reminder's ack is kept and shown; a 700-character result is kept whole; folded runs say how many and when.
+do
+  package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+  game={tick=0}
+  local st,boxes={}, {}
+  local agents={{name='sol',index=2},{name='astra',index=1}}
+  local R=dofile('mod/agent-harness_0.1.0/reminders.lua'){state=function() return st end,
+    resolve=function(w) for _,a in ipairs(agents) do if a.name==w then return w end end error('no teammate '..w,0) end,
+    agents=function() return agents end,who=function(p) return p.name end,
+    deliver=function(index,t) boxes[index]=boxes[index] or {}; table.insert(boxes[index],t) end}
+  local sol,astra={name='sol',index=2},{name='astra',index=1}
+  local function run(ticks) for _=1,ticks do game.tick=game.tick+1; R.tick() end end
+  R.handlers.reminder_add(sol,{name='freight review',message='check Swiftlet PU',every_ticks=3600,recipients='sol,astra'})
+  run(3600*3)
+  local r=R.handlers.reminders(sol,{}).reminders[1]
+  has(r.states,'astra overdue (2 runs missed (the first at tick 7200, 1m00s ago; the last at tick 10800, 0s ago), the owner told)')
+  local long=string.rep('Swiftlet delivered 600 PU at Aquilo; ',19)
+  assert(#long>700)
+  local a=R.handlers.reminder_ack(astra,{id=1,result=long,evidence={metric='PU at Aquilo 600',tick=10000,decision='keep section 5 on',result='Spindle launched',owner='sol',next_check=14400}})
+  eq(a.missed_runs,'2 runs missed (the first at tick 7200, 1m00s ago; the last at tick 10800, 0s ago)')
+  eq(a.reminder.last_result,(long:gsub('%s+$','')),'kept whole')
+  eq(a.reminder.evidence[1],'by astra 0m ago: metric PU at Aquilo 600 (tick 10000); decision keep section 5 on; result Spindle launched; owner sol; next check at tick 14400 (in 1m)')
+  has(a.reminder.line,'evidence by astra 0m ago: metric PU at Aquilo 600')
+  fails(function() R.handlers.reminder_ack(astra,{id=1,result=string.rep('x',1001)}) end,'result is at most 1000 characters (1001)')
+  fails(function() R.handlers.reminder_ack(astra,{id=1,evidence={colour='red'}}) end,'evidence: unknown field colour')
+  fails(function() R.handlers.reminder_ack(astra,{id=1,evidence={tick=99999}}) end,'evidence.tick is a game tick up to now')
+  game=nil
+end
+print('d19_batch41 B2 reminder evidence, whole results, folded runs with ticks: ok')
