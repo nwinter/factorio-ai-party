@@ -510,7 +510,11 @@ return function(api)
     local kind='turrets|'..s.name..'|'..(area and table.concat({area[1][1],area[1][2],area[2][1],area[2][2]},',') or 'all')..(hfl_below and '|hfl'..hfl_below or '')
     local q={force=p.force,surface={index=s.index}}
     return cached(q,kind,limit,function()
-      local found=s.find_entities_filtered{force=p.force,type=TURRET_TYPES,area=area,limit=MAX_FIND}
+      -- (d19 batch44 A2: this find was 15.5 ms for 566 turrets on the private copy's Nauvis) with no area, the census
+      -- pass's turrets when it has them
+      local found=not area and api.census_typed and (function() local ok,l=pcall(api.census_typed,p.force,s,TURRET_TYPES); return ok and l or nil end)()
+      if found and #found>MAX_FIND then for i=#found,MAX_FIND+1,-1 do found[i]=nil end end
+      found=found or s.find_entities_filtered{force=p.force,type=TURRET_TYPES,area=area,limit=MAX_FIND}
       local rows,units={},{}
       for _,e in ipairs(found) do
         if e.valid then

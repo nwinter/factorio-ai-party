@@ -152,7 +152,10 @@ return function(api)
     assert(a.radius == nil or (type(a.radius) == 'number' and a.radius > 0 and a.radius <= 4096), 'radius is 1..4096 tiles')
     local f = {type=TYPES, force=p.force}
     if a.radius then f.position, f.radius = centre, a.radius end
-    local all = try(function() return surface.find_entities_filtered(f) end) or {}
+    -- (d19 batch44 A2) with no radius, the census pass's artillery when it has it (a whole-surface find: about 10.5 ms
+    -- on the private copy's Nauvis)
+    local all = not a.radius and api.census_typed and try(function() return api.census_typed(p.force, surface, TYPES) end)
+    if not all then all = try(function() return surface.find_entities_filtered(f) end) or {} end
     table.sort(all, function(x, y) return dist(x.position, centre) < dist(y.position, centre) end)
     local rows, lines = {}, {}
     for i = 1, math.min(MAX, #all) do
@@ -203,7 +206,8 @@ return function(api)
     -- (d18 batch37 C2, viewer Aurora 16:57) a flare is a manual target: a piece fires at it within its manual range (its
     -- prototype's manual_range_modifier times its automatic range); each piece in reach says which range holds it
     local reach, out_of_reach, empty, watch = {}, 0, {}, {}
-    for _, e in ipairs(try(function() return p.surface.find_entities_filtered{type=TYPES, force=p.force} end) or {}) do
+    local pieces = api.census_typed and try(function() return api.census_typed(p.force, p.surface, TYPES) end)
+    for _, e in ipairs(pieces or try(function() return p.surface.find_entities_filtered{type=TYPES, force=p.force} end) or {}) do
       local range, min_range = M.range(e)
       local manual = range * (try(function() return e.prototype.manual_range_modifier end) or 1)
       local d = dist(e.position, pos)

@@ -886,7 +886,20 @@ return function(api)
       surface = game.get_surface(a.surface)
       assert(surface, 'no surface ' .. a.surface)
     end
-    local silos = surface.find_entities_filtered{type='rocket-silo', force=p.force, limit=MAX_SILOS}
+    -- (d19 batch44 A2: this find was 11.5 ms on the private copy's Nauvis, 54 silo calls an hour in shifts 39-41) the
+    -- silos the census pass found (every 30 s); with position, the 10 tiles round it read live too (a silo built since);
+    -- none known: the whole surface as before
+    local silos = api.census_typed and try(function() return api.census_typed(p.force, surface, 'rocket-silo') end)
+    if silos and a.position ~= nil then
+      local q = api.position(a.position)
+      local near = false
+      for _, e in ipairs(silos) do if (e.position.x - q.x) ^ 2 + (e.position.y - q.y) ^ 2 <= 100 then near = true end end
+      if not near then
+        for _, e in ipairs(try(function() return surface.find_entities_filtered{type='rocket-silo', force=p.force, position=q, radius=10} end) or {}) do silos[#silos+1] = e end
+      end
+    end
+    local from_census = silos and #silos > 0
+    if not silos or #silos == 0 then silos = surface.find_entities_filtered{type='rocket-silo', force=p.force, limit=MAX_SILOS} end
     assert(#silos > 0, 'no rocket silo of ours on ' .. surface.name)
     if a.position ~= nil then
       local pos = api.position(a.position)
@@ -905,7 +918,8 @@ return function(api)
       rows[1].why = M.why(p, silos[1], rows[1])
     end
     return {surface=surface.name, silos=rows, rockets_launched=try(function() return p.force.rockets_launched end),
-      note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil}
+      note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil,
+      read_from=from_census and a.position == nil and 'the silos the background census found (every 30 s); one built since: silo {position} reads it' or nil}
   end
   M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours), or "all": every silo of ours on every planet, a line each (as all: true)',
     all='optional true: every silo of ours on every planet (16 at most): lines, a line a silo: its rocket parts and their rate, what is aboard, the platform its automatic requests fill for and what of that request it holds, next_auto_launch; silos (each silo\'s full read)',

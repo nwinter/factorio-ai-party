@@ -38,12 +38,18 @@ print('d19_batch44 A1 where_is from the census index: ok')
 -- A1: census.where_index gives the last pass's holders still valid, its belts and hands, as_of; nil for a surface the
 -- pass listed no holder on, and for a force it does not read.
 do
-  local st={census={done={start=900,holders={[1]={{valid=true},{valid=false},{valid=true}}},belt_items={[1]={coal=5}},hand_items={}}}}
+  local st={census={done={start=900,walked={[1]=true,[3]=true},by_type={[1]={n=4,container={{valid=true},{valid=false}},furnace={{valid=true}},['rocket-silo']={{valid=true,type='rocket-silo'}},radar={{valid=true}}},[3]={n=0}},
+    belt_items={[1]={coal=5}},hand_items={}}}}
   local C=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return st end,walk={}}
   local w=C.where_index({name='player'},{index=1})
-  eq(#w.holders,2); eq(w.belts.coal,5); eq(w.as_of,900)
-  eq(C.where_index({name='player'},{index=2}),nil)
+  eq(#w.holders,3,'container, furnace and silo: the radar holds nothing'); eq(w.belts.coal,5); eq(w.as_of,900)
+  eq(C.where_index({name='player'},{index=2}),nil,'not walked')
+  eq(C.where_index({name='player'},{index=3}),nil,'walked, no holder: read live')
   eq(C.where_index({name='enemy'},{index=1}),nil)
+  -- A2: typed lists for the handlers
+  eq(#C.typed({name='player'},{index=1},'rocket-silo'),1); eq(#C.typed({name='player'},{index=1},{'radar','furnace'}),2)
+  eq(#C.typed({name='player'},{index=3},'rocket-silo'),0,'walked and none: an empty list')
+  eq(C.typed({name='player'},{index=2},'rocket-silo'),nil)
 end
 print('d19_batch44 A1 census where_index: ok')
 
@@ -58,3 +64,26 @@ do
   eq(G.on_ground_index({name='enemy'},{index=1},'coal'),nil)
 end
 print('d19_batch44 A1 ground index: ok')
+
+-- A2: the loss log's slots by force and surface: built once from the log, kept as rows are written, a slot written over
+-- passed over; rows_in newest first, the newest row a position wins
+do
+  game={tick=0}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/lostlog.lua'){state=function() return st end}
+  local function die(surface,name,x)
+    game.tick=game.tick+1
+    L.died({force={name='player'},surface={name=surface},name=name,position={x=x,y=0},supports_direction=false},'test')
+  end
+  for i=1,10 do die('nauvis','pipe',i) end
+  local r=L.rows_in('player','nauvis')
+  eq(#r,10); eq(r[1].x,10,'newest first')
+  -- the index is built now; the ring wraps: 6000 more on gleba write over the nauvis slots
+  for i=1,6000 do die('gleba','stone-wall',i % 50) end
+  eq(#L.rows_in('player','nauvis'),0,'written over')
+  eq(#L.rows_in('player','gleba'),50,'one a position')
+  die('nauvis','pipe',3); die('nauvis','pipe',3)
+  r=L.rows_in('player','nauvis'); eq(#r,1); eq(r[1].t,game.tick)
+  game=nil
+end
+print('d19_batch44 A2 loss log index: ok')

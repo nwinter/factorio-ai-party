@@ -1036,7 +1036,13 @@ return function(api)
     else need(a.radius == nil, 'radius goes with near {x,y}') end
     local function find(f)
       f.force = force
-      if area then f.position, f.radius = area.position, area.radius end
+      if area then f.position, f.radius = area.position, area.radius
+      else
+        -- (d19 batch44 A2: trace {item} found the surface's crafters and drills each call, about 10.5 ms a find on the
+        -- private copy's Nauvis) the census pass's when it has them
+        local known = api.census_typed and try(api.census_typed, force, surface, f.type)
+        if known then return known end
+      end
       return surface.find_entities_filtered(f)
     end
     -- Makers: crafters whose recipe makes it, nearest to you first; and mining drills on a resource that gives it (an

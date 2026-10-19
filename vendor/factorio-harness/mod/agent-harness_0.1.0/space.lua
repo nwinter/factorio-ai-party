@@ -1372,7 +1372,11 @@ return function(api)
     end
     -- Silos on the character's surface: what the launch button would send.
     local silos={}
-    for _,e in pairs(p.surface.find_entities_filtered{type='rocket-silo',force=p.force,limit=16}) do
+    -- (d19 batch44 A2: this find was about 10.5 ms on the private copy's Nauvis in every platform read, 228 an hour in
+    -- shifts 39-41) the census pass's silos when it has them
+    local known=api.census_typed and try(function() return api.census_typed(p.force,p.surface,'rocket-silo') end)
+    for i,e in ipairs(known or p.surface.find_entities_filtered{type='rocket-silo',force=p.force,limit=16}) do
+      if i>16 then break end
       local cargo=e.get_inventory(defines.inventory.rocket_silo_rocket)
       local trash=defines.inventory.rocket_silo_trash and e.get_inventory(defines.inventory.rocket_silo_trash)
       -- rocket_ready beside parts, and the rocket in words (silo.lua M.rocket; Astra 10:50)
