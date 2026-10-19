@@ -8822,3 +8822,21 @@ fh watch    # deploy on every change
   long and the runs missed), recipients of its own reminders that are overdue, and its active board items whose newest
   evidence has a `next_check` tick now past; oldest first, 8 lines and a count of the rest. On the private copy of the
   d17 save sol's read listed 4 reminders, the oldest waiting 12h32m.
+## d19 batch41, Group C (eng/d19-batch41)
+
+- C1 (Astra seq 866, Sol seq 867): with full tools, AGENTS.md's "Your tools" says `team-tools/` holds the team's shared
+  files and, when they exist at launch, names `team-tools/README.md` and the newest `knowledge-index*.md` (by last
+  change), each with its first heading and the writer it names in its first lines ("Written by X", "Author: X"), else
+  "no writer named": the harness records no writer of team-tools files (tools/full_tools.py team_files). The paragraph
+  was shortened by the same bytes (the Codex core: 21990, was 21992).
+- C2 (viewer Aurora): fh files the team's ground rules beside the journal (`.ground_rules.json`, `FH_RULES_FILE`) from
+  the shift block's `ground_rules` and the `rules` of ground_rules, ground_rule_add and ground_rule_retire replies. The
+  post-compaction brief (tools/context.py) keeps whole the ground rules, the open commitments (notes.md's
+  Commitments, Agreements and Claims sections, the agent's own open board items) and the live checks (notes.md's Next
+  check or Live check section, the reminder lines last told to it, the reads before acting, last). Over 3 KB it trims
+  what the last 30 minutes measured, the projects, the other tells, then Now from its end, and says what it trimmed.
+- C3 (viewer Aurora, the operator 13:50): the shift handoff of notes.md (tools/handover.py carry, 16 KB): the Log
+  first, then the other sections oldest first (in file order; a second section of a kind, such as an older Now, counts
+  as older), each cut from its end down to its heading; the first Now, Claims, Agreements or Decisions, Commitments
+  or Open board items, and Next check sections stay whole. The carried head names what was trimmed (five parts and a
+  count of the rest).
