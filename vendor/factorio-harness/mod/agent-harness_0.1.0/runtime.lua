@@ -2070,6 +2070,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.lanecheck and M.lanecheck.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.spoil and M.spoil.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gates and M.gates.schema or {}) do description.actions[name]=schema end
@@ -13405,6 +13406,9 @@ M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,tr
   scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
   status=function(e) return M.machine_status(e) end}
 function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
+-- platform_lanes: each belt line's end on a platform, lane by lane (lanecheck.lua; d19 batch45, batch40 D1, Sol).
+M.lanecheck=require('lanecheck'){platform=function(p,name) return space.platform(p,name) end}
+function handlers.platform_lanes(p,a) return M.lanecheck.read(p,a) end
 -- gates: every circuit and logistic condition there, what it reads now, and the ones the network can never meet
 -- (gates.lua; d17 batch22 B3, Muse).
 M.gates=require('gates'){position=position,integer=integer,circuit_read=function(e,cb) return M.circuits.conditions(e,cb) end,
@@ -15821,6 +15825,7 @@ reads.logistics_audit=true
 reads.platform_gate=true
 reads.fleet=true
 reads.ingredient_gap=true
+reads.platform_lanes=true
 reads.gates=true
 reads.demolishers=true
 reads.dependency=true

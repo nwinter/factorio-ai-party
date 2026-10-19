@@ -63,3 +63,40 @@ do
   game,defines=nil,nil
 end
 print('d19_batch45 B1 where_is census: ok')
+
+-- batch40 D1 (Sol: Wayfarer fuel and ammo starvation): a platform's belt line ends, lane by lane: a stopped lane no
+-- inserter takes from, a lane whose front item no inserter there takes (its lane choice or filter), what is past the end
+do
+  defines={}
+  prototypes={item={['iron-ore']={type='item'},['firearm-magazine']={type='ammo'}},get_item_filtered=function() return {} end}
+  local function line(items,n) return {get_item_count=function() return n end,get_detailed_contents=function() local out={} for k,name in ipairs(items) do out[k]={stack={valid_for_read=true,name=name},position=k} end return out end} end
+  local unit=0
+  local function belt(x,y,dir,left,right,typ)
+    unit=unit+1
+    local b={valid=true,unit_number=unit,name=typ or 'transport-belt',type=typ or 'transport-belt',position={x=x,y=y},direction=dir,belt_neighbours={inputs={},outputs={}}}
+    b.get_max_transport_line_index=function() return 2 end
+    b.get_transport_line=function(k) return k==1 and left or right end
+    return b
+  end
+  -- line A: two belts east, its end at the hull edge, ore stopped on the right lane, nothing picks
+  local a1=belt(0.5,0.5,4,line({},0),line({'iron-ore'},1))
+  local a2=belt(1.5,0.5,4,line({},0),line({'iron-ore','iron-ore','iron-ore','iron-ore'},4))
+  a2.belt_neighbours.inputs={a1}; a1.belt_neighbours.outputs={a2}
+  -- line B: magazines on the left lane; an inserter picks from the right lane only
+  local b1=belt(0.5,5.5,4,line({'firearm-magazine','firearm-magazine'},2),line({},0))
+  local ins={valid=true,name='inserter',position={x=0.5,y=6.5},pickup_target=b1,pickup_from_left_lane=false,pickup_from_right_lane=true,filter_slot_count=0}
+  local surface={find_entities_filtered=function(f)
+      if f.type=='inserter' then return {ins} end
+      if f.type and type(f.type)=='table' and f.type[1]=='transport-belt' then return {a1,a2,b1} end
+      return {} end,
+    get_tile=function(x,y) return {name=x>=2 and 'empty-space' or 'space-platform-foundation'} end}
+  local L=dofile('mod/agent-harness_0.1.0/lanecheck.lua'){platform=function() return {name='Wren',surface=surface} end}
+  local r=L.read({force={}},{platform='Wren',all=true})
+  eq(r.ends,2); eq(r.flagged,2)
+  local t=table.concat(r.lines,' | ')
+  has(t,'transport-belt (1.5,0.5) right lane: 4 on the end tile (stopped), front iron-ore; past it the hull edge (empty space past it); 0 inserters on the 2 tiles back: stopped: no inserter on the run takes from it')
+  has(t,'transport-belt (0.5,5.5) left lane: 2 on the end tile, front firearm-magazine')
+  has(t,'no inserter on the run takes firearm-magazine from this lane (inserter (0.5,6.5) picks from the other lane)')
+  defines,prototypes=nil,nil
+end
+print('d19_batch45 D1 platform_lanes: ok')

@@ -8925,3 +8925,14 @@ fh watch    # deploy on every change
   effective research units (the largest 120 places read for spoil; spoil_read says how many), made and used a minute
   (production statistics, last 10 minutes) and the read's tick. On the private copy 4.9 ms (agricultural packs) and 7.9
   ms (iron-plate) on Nauvis.
+- batch40 D1 (Sol: several hours on Wayfarer's fuel and ammunition starvation; in shifts 39-41, 14 platform belt_flow
+  calls by Sol and 6 by Astra): `platform_lanes {platform, all?}` (lanecheck.lua): each belt line's end (a belt with no
+  belt after it; an underground exit is followed back through its entrance), lane by lane: on the end tile, stopped
+  (3 or more), the front item, what is past the end (the hull edge, open foundation, an entity; an underground exit
+  with no entrance paired), the inserters picking on the run back (up to 64 tiles of one-input belts) with their lane
+  choice (pickup_from_left_lane / right) and filters. Flagged: a stopped lane no inserter on the run takes from, a lane
+  whose front item no inserter there takes. Default: the items that feed the machines making thruster fuel, oxidizer
+  or ammunition there, and the ammunition its turrets take; all: every item. On the private copy: Swift 138 belts, 13
+  ends, 4 stopped lanes, none flagged; Wren 48 belts, 16 ends, 1 flagged: an underground exit with no entrance at the
+  hull edge holding 3 iron ore. It builds on belt_flow's lane_mix (batch35 B2) and trace's lane reads (batch32 B1);
+  side-load merges are not re-read here.

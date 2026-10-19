@@ -191,6 +191,10 @@
   there now (`build {now, why}`: foundation among the 8 tiles round it, at most one run of empty space beside it, not
   in a thruster's exhaust or over 200 tiles north of the hub). Example:
   `./fh call platform_tiles --args '{"platform":"Kestrel II","area":{"left_top":{"x":-4,"y":8},"right_bottom":{"x":4,"y":16}}}'`
+- `platform_lanes {platform, all?}`: each belt line's end on the platform, lane by lane: on the end tile, stopped (3 or
+  more), the front item, what is past the end (the hull edge, open foundation, an entity; an underground exit with no
+  entrance), the inserters picking on the 64 tiles back; flagged: a stopped lane none takes from, or one whose front
+  item none takes (lane choice, filter). Default the items for thruster fuel, oxidizer and ammunition; `all`: every item.
 - `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
   aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
