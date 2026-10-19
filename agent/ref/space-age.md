@@ -251,7 +251,7 @@
   and `went_up`. `./fh queue submit --file plan.json --args '{"dry_run":true}'` shows the silo cargo before each
   queued launch step.
   Example: `./fh call launch --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","wait_ready":true}' --wait`
-- `silo {position?, surface?, why?}`: `loading` near the head (when anything is): for whom (the platform its automatic
+- `silo {position?, surface?, why?, requests?, page?}`: `loading` near the head (when anything is): for whom (the platform its automatic
   requests fill for, else the platform a hand load was for and by whom), the requests it fills now, what is aboard,
   what robots bring and a paused manifest's rockets left; a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
   its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
@@ -261,7 +261,11 @@
   below_min_payload, split_networks (another network holds it), hub_full, filling; each with what the silo's network
   can give now (provider and storage chests, less robots' reservations; requester and buffer chests not counted) and
   `next_launch` (an automatic launch for it goes under `min_payload N` or `full N` by weight); `next_auto_launch` names
-  the request the next automatic launch serves. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
+  the request the next automatic launch serves. The rows come in flag order (filling, matched, split_networks,
+  hub_full, below_min_payload), the first 8 with `platform_requests_count`, `platform_requests_flags` (each flag's
+  count) and `platform_requests_more`; `requests: true` lists every one (48 a page, `page: N`). Only platforms in orbit
+  of the silo's planet count; one flying here shows in `platforms_coming` (from where, share flown), its requests
+  listed once it is in orbit. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
   request and its network's stock), then that item's chain on the planet down to the root, with makers not working.
   `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically` on a silo)
   take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk. A silo's
