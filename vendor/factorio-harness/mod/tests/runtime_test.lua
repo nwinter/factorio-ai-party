@@ -5413,6 +5413,17 @@ end)()
   silo.rocket_silo_status=defines.rocket_silo_status.building_rocket; silo.rocket_parts=35
   fails(function() call('launch',{position=silo.position,platform='Nowhere'}) end,', building the rocket: parts 35/50')
   silo.rocket_silo_status=defines.rocket_silo_status.rocket_ready; silo.rocket_parts=0
+  -- (d18 batch38 C2, Sonnet) a launch over one rocket's lift is split by rocket by default, each at most a full rocket;
+  -- launch_split: false refuses it, naming the split; all_or_nothing stays one rocket
+  do
+    local q=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=2500},launch=true,chests=false})
+    eq(q.rockets,5,'3 cargo slots of 200 here: 600 a rocket'); eq(q.rocket_cargo[1],'rocket 1: agricultural-science-pack 600'); eq(q.rocket_cargo[5],'rocket 5: agricultural-science-pack 100')
+    assert(q.split:find('(split by default: launch_split: false refuses a list over one rocket)',1,true),q.split)
+    call('queue_cancel',{})
+    fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=2500},launch=true,chests=false,launch_split=false}) end,
+      'it would go as 5 rockets (rocket 1: agricultural-science-pack 600; rocket 2: agricultural-science-pack 600; rocket 3: agricultural-science-pack 600; rocket 4: agricultural-science-pack 600; rocket 5: agricultural-science-pack 100); launch_split: true sends it so')
+    fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=2500},launch=true,chests=false,all_or_nothing=true}) end,'it would go as 5 rockets')
+  end
   p.surface.find_entities_filtered,main,defines.rocket_silo_status,p.position,p.force.platforms=kept_find,kept_main,kept_rss,kept_pos,kept_platforms
   ag.weight,ag.stack_size=kept_w,kept_s; p.get_main_inventory=kept_gmi
 end)()

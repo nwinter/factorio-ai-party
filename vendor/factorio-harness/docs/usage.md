@@ -8512,3 +8512,10 @@ fh watch    # deploy on every change
   - The drop's landing line: for the first 2 such items sent, from where it landed.
   - deconstruct (dry run and live) `contested`: for the items the marked entities free (the first 2).
   - ghosts read `contested`: per network and item, from the network's pickup point for it, at most 3 searches a read.
+- C1 (Sonnet: many chests to many chests) is left for batch37 C1 (transfer `steps`), which is not done yet: batch37 is
+  at its Group A checkpoint. The short form `from: [positions], to: [positions], item, count` belongs with it.
+- C2 (Sonnet: load_silo should split by rocket by default): with `launch`, a list over one rocket's lift or cargo slots
+  now goes as rockets of at most a full rocket each, one load_silo step each appended to the queue. The reply has
+  `rockets`, `rocket_cargo` ("rocket 1: agricultural-science-pack 600", ...) and `split`. `launch_split: false`
+  refuses it, naming the split. `all_or_nothing` and `wait_platform`, one rocket each, still refuse unless
+  `launch_split: true`.

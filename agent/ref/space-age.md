@@ -303,7 +303,9 @@
   not go back; `in_next_rocket`: the list's items in the silo's rocket now).
   `up_to_stock_at_start: true` loads at most what you and the chests held when it began (`stock_at_start`), then ends
   (launches with `launch`). `up_to: true` loads what fits and is held and launches with that (`up_to_short`). A list
-  over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`
+  over one rocket goes, with `launch`, as rockets of at most a full rocket each, queued in turn (`rockets`,
+  `rocket_cargo`, `split`); `launch_split: false` refuses it, and so do `all_or_nothing` and `wait_platform` (one rocket
+  each) unless `launch_split: true`; `rockets: 3` with `launch`
   queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
   launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`

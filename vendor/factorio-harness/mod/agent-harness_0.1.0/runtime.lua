@@ -12782,14 +12782,17 @@ function handlers.load_silo_run(p,a)
         local okc,l,sl=pcall(M.cargo.limits,silo); if okc and l then lift,slots=l,sl or slots end
       end
       local parts,total=M.rocketload.split(list,lift,slots)
-      -- (A9) a split only when asked: launch_split: true; else refused, naming it
-      if parts and not a.launch_split then
+      -- (A9) a split only when asked: launch_split: true; else refused, naming it. (d18 batch38 C2, Sonnet: a load over
+      -- one rocket's lift is split by rocket by default, each at most a full rocket; launch_split: false refuses it, and
+      -- so do all_or_nothing and wait_platform, one rocket each, unless launch_split: true)
+      local split_ok=a.launch_split==true or (a.launch_split==nil and not a.all_or_nothing and not a.wait_platform)
+      if parts and not split_ok then
         local lines={}
         for i,part in ipairs(parts) do
           local t={}; for _,r in ipairs(part) do t[#t+1]=r.name..' '..r.count end
           lines[i]=string.format('rocket %d: %s',i,table.concat(t,', '))
         end
-        error(string.format('the list is over one rocket (%s kg; lift %g kg, %d slots): it would go as %d rockets (%s); launch_split: true sends it so, or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
+        error(string.format('the list is over one rocket (%s kg; lift %g kg, %d slots): it would go as %d rockets (%s); launch_split: true sends it so (the default without all_or_nothing, wait_platform or launch_split: false), or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
           total,lift/1000,slots,#parts,table.concat(lines,'; ')),0)
       end
       if parts then
@@ -12809,8 +12812,10 @@ function handlers.load_silo_run(p,a)
         local steps={}
         for i=1,#parts do steps[#steps+1]={action='load_silo',args=args_for(parts[i],#parts-i+1),label=string.format('rocket %d of %d',i,#parts)} end
         local out=scheduler.handlers.queue_submit(p,{steps=steps,mode='append'})
-        out.split=string.format('%s kg over %d rockets (lift %g kg, %d slots): %s; each a load_silo step appended to your queue, loading and launching in turn',
-          total,#parts,lift/1000,slots,table.concat(lines,'; '))
+        out.rockets=#parts
+        out.rocket_cargo=lines
+        out.split=string.format('%s kg over %d rockets (lift %g kg, %d slots): %s; each a load_silo step appended to your queue, loading and launching in turn%s',
+          total,#parts,lift/1000,slots,table.concat(lines,'; '),a.launch_split==nil and ' (split by default: launch_split: false refuses a list over one rocket)' or '')
         return out
       end
     end
