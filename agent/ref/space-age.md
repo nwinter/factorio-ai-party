@@ -387,7 +387,9 @@
   lands (a pod that names no station yet: the planet's landing pad, said so); inserter hands and
   what our logistic and construction robots carry now (`robot_cargo`, up to 1024 robots read) count in the total. The
   places come from the background census (every 30 s) with their counts read now; belts, inserter hands and the ground
-  as that pass read them (`read_from`, `ground_read_from` say how old). A spoilable item adds
+  as that pass read them (`read_from`, `ground_read_from` say how old). `census: true` adds the count by holder (pads,
+  provider, storage, requester and plain chests, labs, machines, hands, robots), each with its spoil spread and a
+  pack's research units, and made and used a minute. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
