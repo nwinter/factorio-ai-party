@@ -12220,6 +12220,7 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
+M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
 M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
@@ -16982,7 +16983,8 @@ M.shipment=require('shipment'){state=state,drops_taken=function(f) return M.drop
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
-  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end}
+  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,
+  ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -18176,6 +18178,7 @@ function M.on_event(event)
   -- Rocket launches for the silo read (silo.lua): like research news, faults are counted.
   if event.name==defines.events.on_rocket_launch_ordered then
     if M.freight then pcall(M.freight.on_launch,event) end
+    pcall(M.ledger.on_launch,event)  -- the cargo ledger (d18 batch36 D3)
     local ok,err=pcall(M.silo.on_launch_ordered,event)
     if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     return

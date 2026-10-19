@@ -324,6 +324,30 @@ do
   game=nil
 end
 print('d18_batch36 D1 silo on every planet: ok')
+
+-- D3 (Luna 15:48: the silo chain inferred across cargo, shipment and inspect): the surface's cargo ledger.
+do
+  game={tick=1000}
+  defines={inventory={cargo_unit=1}}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/ledger.lua'){state=function() return st end}
+  local hub={get_item_count=function() return 20 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='low-density-structure'},min=100,import_from='nauvis'}}} end} end}
+  local pl={valid=true,name='Wren',hub=hub}
+  local silo={valid=true,position={x=15.5,y=59.5},surface={name='nauvis'},transitional_request_target=pl}
+  local pod={get_inventory=function() return {get_contents=function() return {{name='low-density-structure',count=50}} end} end,cargo_pod_destination={space_platform=pl}}
+  L.on_launch({rocket_silo=silo,rocket={attached_cargo_pod=pod}})
+  game.tick=4600
+  local drops={{id=7,tick=3000,platform='Wren',surface='nauvis',sent={'iron-plate*100'},state='landed',landed_in='cargo-landing-pad (0,0)',
+    pad_text='the pad held iron-plate 0 before it and 100 when it landed; in the 20 s after: iron-plate: logistic robots took 100',verdict='landed, then 100 of 100 left the pad',pad_asks='iron-plate 200 (held 0)'},
+    {id=8,tick=3500,platform='Wren',surface='gleba',sent={'nutrients*10'}}}
+  local lines=L.read('nauvis',drops)
+  eq(#lines,2)
+  eq(lines[1],'up #1, 1m00s ago: rocket-silo (15.5,59.5) launched low-density-structure*50 to Wren; Wren asked low-density-structure 100 (holds 20) (its automatic requests)')
+  eq(lines[2],'down drop #7, 26s ago: from Wren, iron-plate*100; the pad asked iron-plate 200 (held 0); landed in cargo-landing-pad (0,0); the pad held iron-plate 0 before it and 100 when it landed; in the 20 s after: iron-plate: logistic robots took 100 (landed, then 100 of 100 left the pad)')
+  eq(#L.read('gleba',drops),1)
+  game,defines=nil,nil
+end
+print('d18_batch36 D3 cargo ledger: ok')
 -- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},

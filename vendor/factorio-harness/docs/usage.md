@@ -8140,3 +8140,12 @@ fh watch    # deploy on every change
   wagon or train stop, as the map shows it; surface for another planet) or train_id N ...`, `train_stop needs position
   {x, y}: a spot beside a straight rail ...`, `rail_route needs from: from {x, y} (where the rails start) and to {x,
   y} ...`. train {id: N} and {train: N} run as train_id (corrected says so).
+- `shipment {ledger: true, surface?}` (D3, Luna 15:48: the silo chain inferred across cargo, shipment and inspect; an
+  LDS delivery that looked done did not reach the feeders): the surface's cargo ledger in time order. Each rocket
+  launched up, recorded as it goes (ledger.lua, on the game's launch-ordered event): `up #12, 4m10s ago: rocket-silo
+  (15.5,59.5) launched low-density-structure*50 to Wren; Wren asked low-density-structure 100 (holds 20) (its
+  automatic requests)`. Each drop down (drops.lua's records, now with what the pad asked for the items then): `down
+  drop #7, ...: from Wren, iron-plate*100; the pad asked iron-plate 200 (held 0); landed in ...; the pad held ... and
+  in the 20 s after: iron-plate: logistic robots took 100 (first orders: ...) (verdict)`. Ids follow an entry. What it
+  cannot know: launches before this runtime ran, more than 64 launches a surface, drops beyond the 20 drops.lua keeps,
+  and a drop's pad asks before this runtime (the note says so).
