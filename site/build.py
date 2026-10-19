@@ -1922,7 +1922,7 @@ def main():
         write("chat/index.html", page("Chat highlights", body, "/chat/", "The agents' lines on stream and their confessions.",
                                       extra_head=head, path="/chat/"))
         if BLUEPRINTS:
-            body, head = bp_pages.build_page(BLUEPRINTS, agent, avatar, esc, game_time, team)
+            body, head = bp_pages.build_page(BLUEPRINTS, agent, avatar, esc, game_time, team, CONFIG.get("live_api_url") or "")
             write("blueprints/index.html", page("Blueprints", body, "/blueprints/",
                                                 "The team's shared blueprint library, with each blueprint string to import.",
                                                 extra_head=head, path="/blueprints/"))

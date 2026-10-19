@@ -471,7 +471,7 @@
   }
   function mapData(s) {
     var bm = s.basemap || {};
-    return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, terrain: bm.terrain,
+    return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, turrets_read: bm.turrets_read, terrain: bm.terrain,
       planets: keepPlanets(s),
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
       clouds: s.clouds || [] };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch

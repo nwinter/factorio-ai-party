@@ -2,7 +2,7 @@
 AREA.webp + AREA.json), in the shape the map viewer (static/mapview.js) reads:
 
     {"src": "/live/terrain/shift06--1_-1-4633539.webp", "x0": -641.5, "y0": -544.5, "x1": 928.6, "y1": 553.4,
-     "tick": 4633539, "w": 2048, "h": 1432}
+     "tick": 4633539, "w": 2048, "h": 1432, "t": 1792433272}  (t: the capture's wall time, when the frame has one)
 
 pixel (0,0) is tile (x0,y0) and pixel (w,h) tile (x1,y1); older frames first, so the newest is drawn on top.
 
@@ -47,8 +47,11 @@ def _rows(long, runs_dir):
 def _entry(r):
     m = r["meta"]
     x, y, w, h = m["box"]
-    return {"src": URL + r["name"], "x0": x, "y0": y, "x1": round(x + w, 1), "y1": round(y + h, 1), "tick": m.get("tick"),
-            "w": m["px"][0], "h": m["px"][1]}
+    out = {"src": URL + r["name"], "x0": x, "y0": y, "x1": round(x + w, 1), "y1": round(y + h, 1), "tick": m.get("tick"),
+           "w": m["px"][0], "h": m["px"][1]}
+    if isinstance(m.get("t"), (int, float)):  # (d19 batch42 B3) when it was captured, wall time: the map's legend says so
+        out["t"] = int(m["t"])
+    return out
 
 
 def terrain_frames(runs_dir, long):

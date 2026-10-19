@@ -86,9 +86,12 @@
     return out;
   }
   // The base's core from the coarse grid alone (a stream service without basemap.core): the box around the biggest
-  // connected group of dense 32-tile blocks (pipes, belts, inserters and rails left out), plus 8 tiles.
+  // connected group of dense blocks (pipes, belts, inserters and rails left out), plus 8 tiles. A block is 32 tiles,
+  // or 4 cells of a coarser grid (d19 batch42 B1, viewer Aurora: on Fulgora's 32-tile grid each block held one cell,
+  // none was dense, and reading the group of none stopped the switch with the previous planet still drawn); with no
+  // dense group, the box around every cell.
   function baseCore(g) {
-    var cells = [], cell = g.cell;
+    var cells = [], cell = g.cell, B = Math.max(32, 4 * cell);
     g.rows.forEach(function (row, r) {
       row = String(row);
       for (var c = 0; c < row.length; c++) {
@@ -99,7 +102,7 @@
     if (cells.length < 12) return { x0: g.x0, y0: g.y0, x1: g.x0 + (g.w || 0) * cell, y1: g.y0 + g.rows.length * cell, out: [] };
     var blocks = {}, top = 0;
     cells.forEach(function (p) {
-      var key = Math.floor(p.x / 32) + ',' + Math.floor(p.y / 32);
+      var key = Math.floor(p.x / B) + ',' + Math.floor(p.y / B);
       blocks[key] = (blocks[key] || 0) + 1;
       top = Math.max(top, blocks[key]);
     });
@@ -121,9 +124,13 @@
       if (!best || total > best.total) best = { total: total, group: group };
     });
     var box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    best.group.forEach(function (b) {
-      box.x0 = Math.min(box.x0, b[0] * 32 - 8); box.y0 = Math.min(box.y0, b[1] * 32 - 8);
-      box.x1 = Math.max(box.x1, b[0] * 32 + 40); box.y1 = Math.max(box.y1, b[1] * 32 + 40);
+    if (best) best.group.forEach(function (b) {
+      box.x0 = Math.min(box.x0, b[0] * B - 8); box.y0 = Math.min(box.y0, b[1] * B - 8);
+      box.x1 = Math.max(box.x1, b[0] * B + B + 8); box.y1 = Math.max(box.y1, b[1] * B + B + 8);
+    });
+    else cells.forEach(function (p) {
+      box.x0 = Math.min(box.x0, p.x - cell / 2 - 8); box.y0 = Math.min(box.y0, p.y - cell / 2 - 8);
+      box.x1 = Math.max(box.x1, p.x + cell / 2 + 8); box.y1 = Math.max(box.y1, p.y + cell / 2 + 8);
     });
     box.out = outposts(g, box);
     return box;
@@ -155,10 +162,21 @@
     d.pins = home ? (data.pins || []).filter(function (p) { return p && ok(p.position); }) : [];
     d.nests = (home && Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
     d.turrets = (home && Array.isArray(data.turrets) ? data.turrets : []).filter(function (t) { return t && isFinite(t[0]) && isFinite(t[1]) && t[2] > 0 && t[2] < 80; });
+    // (d19 batch42 B2, viewer Aurora) what the turret list is: every turret read in the map's defence cells (the stream's
+    // sweep, tools/stream/turretsweep.py), or the basemap's first 600 only (capped: more stand that are not drawn)
+    var tr = home && data.turrets_read && typeof data.turrets_read === 'object' ? data.turrets_read : null;
+    d.turretNote = !d.turrets.length ? '' : tr && tr.complete ? 'all ' + tr.turrets + ' turrets' + (tr.drawn < tr.turrets ? ', ' + (tr.turrets - tr.drawn) + ' within 2 tiles of another merged' : '')
+      : (tr && tr.capped) || d.turrets.length >= 600 ? 'incomplete: the first ' + d.turrets.length + ' turrets read; the rest are not drawn yet' : '';
+    d.turretsCapped = !!d.turretNote && d.turretNote.indexOf('incomplete') === 0;
     d.terrain = (home && Array.isArray(data.terrain) ? data.terrain : []).filter(function (t) {
       return t && typeof t.src === 'string' && /^(\/[\w\/.-]+|https:\/\/[^"'<>\s]+)$/.test(t.src) &&
         [t.x0, t.y0, t.x1, t.y1].every(isFinite) && t.x1 > t.x0 && t.y1 > t.y0 && (data.tick == null || !(t.tick > data.tick));
     }).sort(function (a, b) { return (a.tick || 0) - (b.tick || 0); });
+    // (d19 batch42 B3, viewer Aurora) when the frames drawn were captured: the newest and oldest wall time (or game tick)
+    var caps = d.terrain.map(function (t) { return isFinite(t.t) ? t.t : null; }).filter(function (t) { return t != null; });
+    d.terrainNote = !d.terrain.length ? '' : caps.length ? 'captured ' + when(Math.min.apply(0, caps)) +
+      (Math.max.apply(0, caps) - Math.min.apply(0, caps) > 600 ? ' to ' + when(Math.max.apply(0, caps)) : '')
+      : 'captured at game tick ' + d.terrain[d.terrain.length - 1].tick;
     d.cams = data.cams || {};
     d.box = null;
     if (core) {
@@ -185,6 +203,23 @@
     return d;
   }
 
+  // prepare(), and when a layer's data breaks it, the view without that layer (the planet's map, then the clouds), so a
+  // switch always shows the surface chosen; d.missing names what was left out (the scale line says so).
+  function prepareSafe(data) {
+    var drop = [['planets', 'map'], ['base', 'map'], ['clouds', 'pollution'], ['terrain', 'terrain'], ['turrets', 'turret range']];
+    var tried = Object.assign({}, data), missing = [];
+    for (var i = 0; ; i++) {
+      try {
+        var d = prepare(tried);
+        d.missing = missing;
+        return d;
+      } catch (e) {
+        if (i >= drop.length) { d = prepare({ surface: data && data.surface }); d.missing = ['everything']; return d; }
+        if (tried[drop[i][0]] != null) { tried[drop[i][0]] = null; missing.push(drop[i][1]); }
+      }
+    }
+  }
+
   function textWidth(s, perChar) { return String(s).length * perChar + 2; }
   // A label where it overlaps no other label, dot or tag: right, left, below, above; none free: no label.
   function placeLabel(x, y, w, taken, W, H, hasTag) {
@@ -199,6 +234,11 @@
       if (!hit) { taken.push(b); return tries[i]; }
     }
     return null;
+  }
+  // A capture's wall time as the reader's local date and time ("Oct 19, 07:47").
+  function when(t) {
+    var dt = new Date(t * 1000);
+    try { return dt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return dt.toISOString().slice(0, 16).replace('T', ' '); }
   }
   function ago(sec) {
     sec = Math.max(0, Math.round(sec));
@@ -546,7 +586,7 @@
     var self = this, has = (this.data.clouds || []).some(function (c) { return c && c.surface === self.surface; }) ||
       !!(this.data.planets && this.data.planets[this.surface]);
     if (this.surface !== 'nauvis' && !has) this.surface = 'nauvis';  // its cloud and map are gone: back to the base
-    this.d = prepare(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
+    this.d = prepareSafe(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
     this.renderLegend();
     this.draw();
@@ -571,23 +611,33 @@
   };
   Viewer.prototype.paintNow = function () {
     var self = this, sz = this.size(), dpr = window.devicePixelRatio || 1, cv = this.canvas;
-    if (!this.d.auto) { cv.style.height = '0px'; this.root.querySelector('.mapview-scale').textContent = 'No positions yet.'; return; }
+    var where = this.d.surface && this.d.surface !== 'nauvis' ? ' on ' + cap(this.d.surface) : '';
+    var gone = this.d.missing && this.d.missing.length ? ' · left out (unreadable): ' + this.d.missing.join(', ') : '';
+    if (!this.d.auto) { cv.style.height = '0px'; this.root.querySelector('.mapview-scale').textContent = 'No positions yet' + where + '.' + gone; return; }
     if (cv.width !== Math.round(sz.w * dpr) || cv.height !== Math.round(sz.h * dpr)) { cv.width = Math.round(sz.w * dpr); cv.height = Math.round(sz.h * dpr); }
     cv.style.height = sz.h + 'px';
     var v = this.current(), t0 = Date.now();
-    this.sc = scene(this.d, v, sz.w, sz.h, this.on);
-    var follow = this.follow;
-    this.sc.agents.forEach(function (a) { a.follow = a.name === follow; });
     var ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    paint(ctx, this.sc, function (src) { return self.image(src); }, this.font, function (w, h) {
-      if (!self.off) self.off = document.createElement('canvas');
-      if (self.off.width !== Math.round(w * dpr) || self.off.height !== Math.round(h * dpr)) { self.off.width = Math.round(w * dpr); self.off.height = Math.round(h * dpr); }
-      self.off.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
-      return self.off;
-    });
+    try {
+      this.sc = scene(this.d, v, sz.w, sz.h, this.on);
+      var follow = this.follow;
+      this.sc.agents.forEach(function (a) { a.follow = a.name === follow; });
+      paint(ctx, this.sc, function (src) { return self.image(src); }, this.font, function (w, h) {
+        if (!self.off) self.off = document.createElement('canvas');
+        if (self.off.width !== Math.round(w * dpr) || self.off.height !== Math.round(h * dpr)) { self.off.width = Math.round(w * dpr); self.off.height = Math.round(h * dpr); }
+        self.off.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+        return self.off;
+      });
+    } catch (e) {
+      // never the previous surface's picture under this one's name: a blank map that says so
+      ctx.clearRect(0, 0, sz.w, sz.h);
+      this.sc = null;
+      this.root.querySelector('.mapview-scale').textContent = 'The map' + where + ' could not be drawn (' + String(e && e.message || e).slice(0, 80) + ').';
+      return;
+    }
     this.root.dataset.paintMs = Date.now() - t0;  // tools/site_shots.js reads how long a frame took
-    this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles';
+    this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
   };
@@ -609,18 +659,19 @@
     this.d.clouds.forEach(function (c) { if (c.surface !== 'nauvis' && !seenS[c.surface]) { seenS[c.surface] = 1; others.push({ surface: c.surface, text: c.label || cap(c.surface) }); } });
     var surfaces = others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others) : [];
     var sig = LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
-      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface;
+      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     box.innerHTML = surfaces.map(function (x) {
       return '<button type="button" class="fx-btn small mapview-surface" data-surface="' + esc(x.surface) + '" aria-pressed="' + (self.surface === x.surface ? 'true' : 'false') + '">' + esc(x.text) + '</button>';
     }).join('') + LAYERS.filter(function (l) { return has(self.d, l[0]); }).map(function (l) {
-      var text = l[0] === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : l[1];
+      var text = l[0] === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : l[0] === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : l[1];
       return '<button type="button" class="fx-btn small mapview-layer" data-layer="' + l[0] + '" aria-pressed="' + (self.on[l[0]] ? 'true' : 'false') + '">' + esc(text) + '</button>';
     }).join('');
   };
   Viewer.prototype.renderLegend = function () {
     var d = this.d, on = this.on, h = '';
+    if (d.terrain.length && on.terrain) h += '<li><i class="mv-terrain"></i>Terrain: the game\'s map view, ' + esc(d.terrainNote) + '</li>';
     if (d.base && on.buildings) {
       var seen = {};
       [d.base, d.fine].forEach(function (g) { if (g) Object.keys(runs(g)).forEach(function (c) { seen[c] = 1; }); });
@@ -636,7 +687,8 @@
         esc((d.cloud.pollutant === 'spores' ? 'Spores' : 'Pollution') + ' per chunk, up to ' + d.cloud.max) + '</li>';
       if ((d.cloud.reached || []).length) h += '<li><i class="mv-reached"></i>Nests it reached</li>';
     }
-    if (d.turrets.length && on.coverage) h += '<li><i class="mv-range"></i>Turret range</li>';
+    if (d.turrets.length && on.coverage) h += '<li' + (d.turretsCapped ? ' class="mv-incomplete"' : '') + '><i class="mv-range"></i>Turret range' +
+      (d.turretNote ? ' (' + esc(d.turretNote) + ')' : '') + '</li>';
     if (d.nests.length && on.nests) h += '<li><i class="nest"></i>Enemy nests</li>';
     if (d.fights.length && on.alerts) h += '<li><i class="mv-fight"></i>Fights</li>';
     var box = this.root.querySelector('.mapview-legend');
