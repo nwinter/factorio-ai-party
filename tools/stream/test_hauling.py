@@ -48,6 +48,15 @@ def check_rows():
     # a new save: counters lower than the first row count from zero
     reset = hauling.shift_rows({"agents": [agent("grok", 900, 90)]}, {"agents": [agent("grok", 30, 2)]})
     assert reset[0]["items"] == 30 and reset[0]["calls"] == 2, reset
+    # (d17 batch35 D5) this shift's hauls, most repeated first; haul_feed's args; the agent's line
+    assert [h["item"] for h in g["hauls"]] == ["iron-plate", "solid-fuel"] and g["hauls"][1]["times"] == 12, g["hauls"]
+    assert hauling.feed_args(rows) == [{"agent": "gemini", "item": "iron-plate", "surface": "fulgora", "to": {"x": -60, "y": 71},
+                                        "to_name": "stone-furnace"}], hauling.feed_args(rows)
+    hl = hauling.haul_line(g, {"agent": "gemini", "item": "iron-plate", "line": "stone-furnace (-60,71) on fulgora, fed iron-plate without hands now: none"})
+    assert hl == ("most repeated this shift: iron-plate on fulgora from (-48,74) to stone-furnace (-60,71), 30 times (600 items); "
+                  "there now: stone-furnace (-60,71) on fulgora, fed iron-plate without hands now: none; next: solid-fuel to stone-furnace (-63,71) 12 times"), hl
+    assert hauling.haul_line(rows[1]) is None and hauling.haul_line({"top": dict(g["top"], times=1)}) is None
+    assert all(w not in hl.lower() for w in ("should", "consider", "please"))
     line = hauling.card_line(rows, 5, lambda n: n.title())
     assert line == "Hand hauling this shift: 1. Gemini 2,310 items, 2. Grok 400 items, 3. Haiku 40 items", line
     assert hauling.card_line([], 5) is None
@@ -58,6 +67,7 @@ def check_file(tmp):
     assert hauling.append(path, {"tick": 10, "agents": [agent("grok", 1, 1)]}, 1000.04)["t"] == 1000.0
     assert hauling.append(path, {"error": "x"}, 1001) is None
     assert hauling.append(None, {"tick": 11, "agents": []}, 1002) == {"t": 1002, "tick": 11, "agents": []}
+    assert hauling.append(None, {"tick": 12, "agents": []}, 1003, {"grok": {"line": "x"}})["feeds"] == {"grok": {"line": "x"}}
     with open(path, "a") as f:
         f.write("not json\n")
     hauling.append(path, {"tick": 20, "agents": [agent("grok", 5, 2)]}, 1300)
@@ -120,6 +130,32 @@ def check_live(tmp):
     errs = {}
     bad.observe_hauling({}, errs)
     assert errs["hauling"] == "rcon closed" and bad.next_hauling <= time.time() + 61
+
+
+def check_live_feed(tmp):
+    """(d17 batch35 D5) with haul_feed listed: each agent's most repeated haul's destination read, kept in the row."""
+    class H:
+        def __init__(self):
+            self.reads, self.n = [], 0
+
+        def operator_read(self, action, args):
+            self.reads.append((action, args))
+            if action == "haul_feed":
+                return {"rows": [{"agent": "grok", "item": "coal", "line": "boiler (1,2) on nauvis, fed coal without hands now: none"}]}, None
+            self.n += 5
+            return {"tick": 60, "agents": [agent("grok", 10 * self.n, self.n, hauls=[haul("coal", self.n, 10 * self.n)])]}, None
+    h = H()
+    src = live_source(tmp, h)
+    src.has_haul_feed = True
+    obs, errors = {}, {}
+    src.observe_hauling(obs, errors)
+    src.next_hauling = 0
+    src.observe_hauling(obs, errors)
+    asked = [a for a, _ in h.reads]
+    assert asked == ["hauling", "hauling", "haul_feed"], asked
+    assert h.reads[-1][1] == {"rows": [{"agent": "grok", "item": "coal", "surface": "fulgora", "to": {"x": -63, "y": 71}, "to_name": "stone-furnace"}]}
+    assert obs["hauling"]["feeds"]["grok"]["line"].endswith("without hands now: none") and not errors, (obs, errors)
+    assert hauling.read_rows(hauling.path_for(tmp))[-1]["feeds"]["grok"]["item"] == "coal"
 
 
 def snap_with(rows, now):
@@ -189,7 +225,9 @@ def main():
     check_segment()
     check_model()
     check_overlay()
-    print("hauling: ok (shift rows, the run file, live reads every 5 min, the 30-min card, hosts' facts)")
+    with tempfile.TemporaryDirectory() as tmp:
+        check_live_feed(tmp)
+    print("hauling: ok (shift rows, the run file, live reads every 5 min, the 30-min card, hosts' facts; each agent's haul and its destination's feed)")
 
 
 if __name__ == "__main__":

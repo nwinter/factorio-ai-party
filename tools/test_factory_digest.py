@@ -100,6 +100,26 @@ def main():
     assert all(len(t.encode()) <= LIMIT for ts in delta_messages(first, 'x').values() for t in ts)
     assert all(w not in ' '.join(t for ts in delta_messages(first, 'x').values() for t in ts).lower() for w in ('consider', 'should', 'please', 'recommend'))
 
+    # (d17 batch35 D5) each agent's most repeated haul this shift and its destination's feed now: its own part
+    from factory_digest import haul_lines
+    with tempfile.TemporaryDirectory() as run:
+        h0 = {'name': 'astra', 'items': 10, 'calls': 1, 'hauls': [{'item': 'iron-plate', 'surface': 'nauvis', 'from': {'x': 0, 'y': 0},
+                                                                     'to': {'x': 5, 'y': 5}, 'to_name': 'steel-chest', 'times': 2, 'items': 20}]}
+        open(os.path.join(run, 'hauling.jsonl'), 'w').write(json.dumps({'t': 1, 'agents': [h0]}) + '\n')
+        h1 = dict(h0, items=100, calls=9, hauls=[dict(h0['hauls'][0], times=9, items=90)])
+        asked = []
+        def hd(action, args, request_id=None):
+            asked.append(action)
+            if action == 'hauling': return {'agents': [h1]}
+            assert action == 'haul_feed' and args['rows'][0]['to_name'] == 'steel-chest'
+            return {'rows': [{'agent': 'astra', 'item': 'iron-plate', 'line': 'steel-chest (5.5,5.5) on nauvis, fed iron-plate without hands now: none'}]}
+        hl = haul_lines(run, hd)
+        assert list(hl) == ['astra'] and hl['astra'][0].startswith('most repeated this shift: iron-plate on nauvis from (0,0) to steel-chest (5,5), 7 times (70 items); there now: steel-chest'), hl
+        def old_runtime(action, args, request_id=None):
+            if action == 'haul_feed': raise RuntimeError('unknown action')
+            return hd(action, args)
+        assert 'there now' not in haul_lines(run, old_runtime)['astra'][0], 'no haul_feed: the haul alone'
+
     calls, sends, cache = [], [], {}
     fail_part = None
     def dispatch(action, args, request_id=None):
@@ -147,6 +167,13 @@ def main():
         Digest(run, 20000).step(12800, dispatch, dry_run=True)
         assert len(sends) == before
         assert all(row['sent'] is False for row in map(json.loads, open(d.log)) if row.get('dry_run'))
+        # (D5) the extra lines reach only their agent, inside the delta
+        extra_run = os.path.join(os.path.dirname(run), os.path.basename(run) + '-extra')
+        os.makedirs(extra_run)
+        before = len(sends)
+        Digest(extra_run, 20000, extra=lambda report: {'grok': ['most repeated this shift: coal 9 times']}).step(12800, dispatch)
+        grok = [t for to, t in sends[before:] if to == 'grok']
+        assert grok and 'your hauls: most repeated this shift: coal 9 times.' in grok[-1] and not [t for to, t in sends[before:] if to != 'grok' and 'coal 9' in t]
         # the next run resumes from this one: its delta compares with this run's last digest
         nxt = os.path.join(os.path.dirname(run), os.path.basename(run) + '-next')
         os.makedirs(nxt)

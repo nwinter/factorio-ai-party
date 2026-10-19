@@ -12,7 +12,7 @@
 Switches, newest source first: runs/RUN/switches.env (start-team writes it from now on); the argv of PREV's helpers
 while they still run (stream-service.pid: serve.py --viewers-youtube, caster.py --writer or --model, --urgent-model);
 then start.log ("full tools: on", "RCON broker: on", "player votes: on", "helper caster ...", "helper analyst ..."),
-caster.log's first line (writer=or:MODEL), stream.json (space_age), viewers-relay.on and team.txt (which
+caster.log's first line (writer=or:MODEL), stream.json (space_age), viewers-relay.on, viewers-route.on and team.txt (which
 agent/team-*.tsv has the same names). A switch nothing tells is left out, so start-team's default applies.
 """
 import argparse
@@ -30,7 +30,8 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYS = ["POG_BROKER", "POG_FULL_TOOLS", "POG_SPACE_AGE", "POG_YOUTUBE", "POG_CASTER_MODEL", "POG_CASTER_URGENT",
-        "POG_CASTER_LOW_MODEL", "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_TEAM_FILE", "POG_CAMS"]
+        "POG_CASTER_LOW_MODEL", "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_VIEWER_ROUTE", "POG_TEAM_FILE",
+        "POG_CAMS"]
 # Set in the operator's environment at a shift change, these beat what PREV ran with (POG_CAMS=1 at the Saturday 21:30
 # change for Sunday's one camera, POG_CAMS=3 to go back); the rest carry over from PREV.
 ENV_FIRST = ("POG_CAMS",)
@@ -97,6 +98,8 @@ def switches(rundir, ps=ps_args):
     # 0. The viewer relay's live switch (rm/touch runs/RUN/viewers-relay.on mid-run) beats what the run started with.
     if os.path.exists(os.path.join(rundir, "start.log")) or os.path.exists(os.path.join(rundir, "switches.env")):
         out["POG_VIEWER_RELAY"] = ("1" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "0", "viewers-relay.on")
+        # (d17 batch35 D4, operator 18:20) routing viewer lines by content: its switch file the same way
+        out["POG_VIEWER_ROUTE"] = ("1" if os.path.exists(os.path.join(rundir, "viewers-route.on")) else "0", "viewers-route.on")
     # 1. What start-team recorded (runs started after shift-change.sh existed).
     for line in read(os.path.join(rundir, "switches.env")).splitlines():
         if "=" in line and not line.startswith("#"):
@@ -233,7 +236,8 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
         parts.append("OBS restarted" if ok else "OBS restart FAILED (" + re.sub(r"^\S+ obs-restart: ", "", restart)[:100] + ")")
         if not ok:
             bad.append("OBS restart")
-    parts.append("relay " +("on" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "off"))
+    parts.append("relay " + ("on" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "off")
+                 + ", route " + ("on" if os.path.exists(os.path.join(rundir, "viewers-route.on")) else "off"))
     span = f"{round(window / 60)} min" if window >= 60 else f"{round(window)} s"
     if errors or faults:
         parts.append(f"harness Lua errors in the first {span}: {len(errors)}" + (f", runtime_fault {sorted(faults)[0]}" if faults else ""))

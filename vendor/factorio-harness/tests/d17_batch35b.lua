@@ -168,4 +168,38 @@ do
   game=nil
 end
 print('d17_batch35b D3 missed reminder runs to the owner: ok')
+
+-- D5 (viewer Aurora 14:47): what feeds a haul's destination the item without hands now (hauling.lua haul_feed). --------
+do
+  game={tick=500}
+  defines={logistic_member_index={logistic_container=1}}
+  local chest={valid=true,name='steel-chest',type='container',position={x=-70.5,y=93.5},get_item_count=function(n) return n=='iron-plate' and 40 or 0 end}
+  local belt={valid=true,name='transport-belt',type='transport-belt',position={x=-62.5,y=91.5},get_max_transport_line_index=function() return 2 end,
+    get_transport_line=function(i) return {get_item_count=function(n) return n=='iron-plate' and i or 0 end} end}
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=-65.5,y=90.5},bounding_box={left_top={x=-70,y=86},right_bottom={x=-61,y=95}},
+    use_transitional_requests=true,get_logistic_point=function(i) if i then return nil end return {{targeted_items_deliver={{name='iron-plate',count=12}}}} end}
+  local ins={
+    {name='fast-inserter',drop_target=silo,pickup_target=chest,use_filters=false},
+    {name='inserter',drop_target=silo,pickup_target=belt,use_filters=true,filter_slot_count=1,get_filter=function() return {name='iron-plate'} end},
+    {name='inserter',drop_target=silo,pickup_target=chest,use_filters=true,filter_slot_count=1,get_filter=function() return {name='coal'} end},
+    {name='inserter',drop_target=chest,pickup_target=belt}}
+  local surf={name='fulgora',find_entities_filtered=function(f)
+    if f.type=='inserter' then assert(f.limit,'bounded'); return ins end
+    assert(f.limit and f.name=='rocket-silo'); return {silo} end}
+  game.get_surface=function(n) return n=='fulgora' and surf or nil end
+  local H=dofile('mod/agent-harness_0.1.0/hauling.lua'){state=function() return {} end}
+  local out=H.operator.haul_feed({rows={{agent='astra',item='iron-plate',surface='fulgora',to={x=-65,y=91},to_name='rocket-silo'},
+    {agent='sol',item='coal',surface='vulcanus',to={x=0,y=0},to_name='boiler'}}})
+  local r=out.rows[1]
+  eq(r.entity,'rocket-silo'); eq(#r.feeds,4)
+  has(r.line,'rocket-silo (-65.5,90.5) on fulgora, fed iron-plate without hands now: fast-inserter from steel-chest (-70.5,93.5) holding 40 now; inserter from transport-belt (-62.5,91.5) holding 3 now; the silo\'s automatic requests (on); robots bringing 12 now')
+  has(out.rows[2].line,'no surface vulcanus')
+  -- none
+  ins={}; silo.use_transitional_requests=false; silo.get_logistic_point=function() return nil end
+  has(H.operator.haul_feed({rows={{agent='astra',item='iron-plate',surface='fulgora',to={x=-65,y=91},to_name='rocket-silo'}}}).rows[1].line,'without hands now: none')
+  local ok,err=pcall(H.operator.haul_feed,{rows={}}); assert(ok)
+  ok,err=pcall(H.operator.haul_feed,{}); assert(not ok and tostring(err):find('rows: 1..16',1,true),err)
+  game,defines=nil,nil
+end
+print('d17_batch35b D5 haul_feed: ok')
 print('d17 batch35b ok')
