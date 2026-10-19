@@ -64,15 +64,47 @@ return function(api)
       for _, e in ipairs(surface.find_entities_filtered{type='ammo-turret', force=p.force, limit=256}) do turrets[#turrets+1] = {entity=e} end
       table.sort(turrets, function(x, y) local u, v = x.entity.position, y.entity.position; if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
     end
+    -- (d19 batch41 A2, Sol seq 868: firearm-magazine requested of 5 railgun and 6 rocket turrets on Bastion) the ammunition
+    -- each turret kind takes: an item no named turret takes is refused with each kind and its items; with no positions,
+    -- the turrets aboard that do not take it are left out and named.
+    local kinds, order = {}, {}
+    for _, t in ipairs(turrets) do
+      local e = t.entity
+      if e and not kinds[e.name] then
+        local tk = api.takes and try(function() return api.takes(e.prototype) end)
+        -- a kind whose ammunition is unknown (no prototype read) takes any
+        local fits = tk and {} or setmetatable({}, {__index=function() return true end})
+        for _, n in ipairs(tk and tk.items or {}) do fits[n] = true end
+        kinds[e.name] = {n=0, items=tk and tk.items or {}, fits=fits}; order[#order+1] = e.name
+      end
+      if e then kinds[e.name].n = kinds[e.name].n + 1 end
+    end
+    local left_out
+    if a.item ~= nil then
+      local bad = {}
+      for _, name in ipairs(order) do
+        local k = kinds[name]
+        if not k.fits[a.item] then bad[#bad+1] = string.format('%s (%d) takes %s', name, k.n, #k.items > 0 and table.concat(k.items, ', ') or 'no ammunition item') end
+      end
+      local any = false
+      for _, name in ipairs(order) do if kinds[name].fits[a.item] then any = true end end
+      if #bad > 0 and (a.positions ~= nil or not any) then
+        error(string.format('item %s: not taken by %s', a.item, table.concat(bad, '; ')), 0)
+      end
+      if #bad > 0 then left_out = string.format('left out, not taking %s: %s', a.item, table.concat(bad, '; ')) end
+    end
     local st = store(pl and pl.name or a.platform)
     local rows, asked, items, wanted = {}, 0, 0, {}
     for _, t in ipairs(turrets) do
       local e = t.entity
-      if not e then rows[#rows+1] = {position=t.position, error=t.error}
+      if e and a.item ~= nil and not kinds[e.name].fits[a.item] then e = nil end
+      if not e then if t.error then rows[#rows+1] = {position=t.position, error=t.error} end
       else
         local inv = e.get_inventory(defines.inventory.turret_ammo)
         local item = a.item or held_ammo(inv)
         local row = {name=e.name, position=e.position}
+        -- a request already on it for ammunition it does not take (configure {position, item_requests: false} removes it)
+        row.unusable_request = api.unusable and try(function() return api.unusable(e) end) or nil
         if not item then
           row.note = 'empty, and no item named: item names the ammunition'
         else
@@ -99,13 +131,13 @@ return function(api)
       hub_lines[#hub_lines+1] = string.format('the hub holds %d %s%s', h, item, h < n and string.format(' (fewer than the %d asked: the rest waits for more in the hub)', n) or '')
     end
     table.sort(hub_lines)
-    return {platform=pl and pl.name or a.platform, turrets=#rows, requested=asked, rows=rows, hub=#hub_lines > 0 and hub_lines or nil,
+    return {platform=pl and pl.name or a.platform, turrets=#rows, requested=asked, rows=rows, hub=#hub_lines > 0 and hub_lines or nil, left_out=left_out,
       refills=string.format('%d item requests (%d rounds) since tick %d', st.requests, st.items, st.since),
       line=string.format('%d of %d turrets under %d: topped up to %d (%d rounds asked from the hub)', asked, #rows, below, target, items)}
   end
   M.schema = {platform_rearm = {platform='platform name', positions='optional 1..32 turret positions (platform coordinates); default every ammo turret aboard',
-    item='optional ammunition name (default: what each turret holds now)', ammo_below='1..10000: a turret holding fewer of it, counting what is on the way, is topped up',
+    item='optional ammunition name (default: what each turret holds now); refused when a named turret does not take it; with no positions the turrets aboard that do not take it are left out (left_out names them)', ammo_below='1..10000: a turret holding fewer of it, counting what is on the way, is topped up',
     target_count='ammo_below..10000: what it is topped up to',
-    returns='turrets, requested (how many got an item request), rows [{name, position, item, held, on_the_way (an item request not yet filled), requested, refused, note, error}], hub (what the hub holds of each item asked), refills (requests and rounds asked on this platform since), line. Item requests the hub fills, as deliver\'s; no body. A platform lane step (lane platform:NAME or remote); queue_repeat with interval_ticks keeps topping up'}}
+    returns='turrets, requested (how many got an item request), rows [{name, position, item, held, on_the_way (an item request not yet filled), requested, refused, unusable_request (a request on it for ammunition it does not take; configure item_requests: false removes it), note, error}], left_out, hub (what the hub holds of each item asked), refills (requests and rounds asked on this platform since), line. Item requests the hub fills, as deliver\'s; no body. A platform lane step (lane platform:NAME or remote); queue_repeat with interval_ticks keeps topping up'}}
   return M
 end
