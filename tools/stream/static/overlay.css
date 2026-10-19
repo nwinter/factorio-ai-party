@@ -756,3 +756,16 @@ body:not(.onecam) .loadout.lo-main { top: calc(70px + var(--alerts-clear, 0px));
 .loadout .lo-equip { font-size: 12px; color: var(--muted); }
 .loadout .lo-build { font-size: 14px; color: var(--muted); }
 .loadout .lo-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+
+/* (d19 batch42 C1) a ship on camera: name, where it is or its route with progress, speed (onecam.py ship_facts) */
+.ship-card { position: absolute; left: 14px; top: 62px; z-index: 3; min-width: 220px; max-width: 420px; padding: 6px 12px 7px;
+  border-radius: var(--fx-r-2); background: rgba(var(--fx-frame-rgb), 0.88); box-shadow: var(--fx-bevel), 0 2px 8px rgba(0, 0, 0, 0.6);
+  border-left: 3px solid var(--fx-blue, #4aa3ff); color: var(--ink); font-size: 17px; line-height: 1.3; pointer-events: none; }
+.ship-card .ship-name { font-weight: 700; }
+.ship-card .ship-where { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ship-card .ship-bar { flex: 1 1 90px; min-width: 70px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.ship-card .ship-bar i { display: block; height: 100%; background: var(--fx-blue, #4aa3ff); }
+.ship-card .ship-pct { font-variant-numeric: tabular-nums; color: var(--muted); }
+.ship-card .ship-facts { color: var(--muted); font-size: 0.9em; }
+body.onecam #cam-main .ship-card { top: 14px; font-size: 20px; }
+body.trio #cam-cam2 .ship-card, body.trio #cam-cam3 .ship-card { top: 8px; left: 8px; font-size: 13px; min-width: 0; padding: 4px 8px; }

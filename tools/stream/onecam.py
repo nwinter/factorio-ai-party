@@ -1026,6 +1026,7 @@ class OneCam(Director):
         self.maybe_artillery(snapshot, by_name, scores, now, segment)
         self.maybe_enemy_pip(snapshot, by_name, scores, now)
         self.release_maps(now)
+        self.pan_step(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
@@ -2015,6 +2016,34 @@ class OneCam(Director):
             text += f" · hub {round(hp)}%"
         return text
 
+    def surface_platform(self, surface):
+        """The platform whose surface a camera shows (an agent aboard), else None."""
+        if not surface or surface == "nauvis":
+            return None
+        return next((n for n, r in self.plat_rows.items() if (r.get("view") or {}).get("surface") == surface), None)
+
+    def ship_facts(self, name):
+        """(d19 batch42 C1, viewer Foobator: "when a ship is shown ... where it is docked or from where to where it is
+        flying, with what speed, and how far along it is on the trip") What the stream already reads of a platform
+        (model.platform_where, the platforms read): {name, at} at a planet, else {name, from, to, pct, speed_kms};
+        paused when it is."""
+        row = self.plat_rows.get(name) if name else None
+        if not row:
+            return None
+        out = {"name": name}
+        route = row.get("route")
+        if route:
+            out.update({"from": route.get("from"), "to": route.get("to"), "pct": route.get("pct")})
+            if row.get("speed_kms"):
+                out["speed_kms"] = row["speed_kms"]
+        elif row.get("where") and row["where"] != "in transit":
+            out["at"] = row["where"]
+        else:
+            out["at"] = None  # in transit, the route not read
+        if row.get("paused"):
+            out["paused"] = True
+        return out
+
     def watch_platforms(self, snapshot, now):
         """The snapshot's platforms; one that starts travelling (it was seen still) is a departure."""
         rows = [p for p in (snapshot.get("space") or {}).get("platforms") or [] if p.get("name")]
@@ -2039,6 +2068,8 @@ class OneCam(Director):
         t = dict(platform_shot(view, travelling=self.travelling(row), frac=self.cfg["view_frac"]),
                  agents=[agent] if agent else [], subject="@platform", until=until,
                  platform={"name": name, "why": why, "label": label or self.platform_label(name, why)})
+        if t.get("pan"):  # a tall ship: from the bow (pan_step)
+            t["position"] = dict(t["position"], y=t["pan"]["y0"])
         if agent:
             t["platform"]["agent"] = agent
         return t
@@ -2079,6 +2110,34 @@ class OneCam(Director):
             return self.platform_target(name, "follow", f["until"], agent=self.fol, label=label)
         return None
 
+    PAN_END_S = 3.0    # a tall ship's pan rests this long at the bow and at the stern
+    PAN_LEG_S = 40.0   # at most this long from bow to stern; a longer shot goes back and forth
+    PAN_STEP = 2.0     # tiles: the camera is moved when the pan's place is this far from where it is
+
+    def pan_y(self, t, now):
+        """Where a tall ship's view is along its pan (model.platform_shot `pan`) at `now`: at the bow for PAN_END_S, to
+        the stern over the shot's time (at most PAN_LEG_S, then back), at the stern for PAN_END_S."""
+        p, since = t["pan"], t.get("since") if t.get("since") is not None else now
+        span = max(1.0, (t.get("until") or since + 20) - since)
+        leg = max(4.0, min(self.PAN_LEG_S, span - 2 * self.PAN_END_S))
+        cycle = 2 * (leg + self.PAN_END_S)
+        x = (now - since) % cycle
+        f = 0.0 if x < self.PAN_END_S else min(1.0, (x - self.PAN_END_S) / leg) if x < self.PAN_END_S + leg + self.PAN_END_S \
+            else max(0.0, 1.0 - (x - 2 * self.PAN_END_S - leg) / leg)
+        return round(p["y0"] + (p["y1"] - p["y0"]) * f, 1)
+
+    def pan_step(self, now):
+        """(d19 batch42 C2) Each camera holding a tall ship (a `pan` in its target) moves along it, bow to stern."""
+        for slot in self.slots:
+            t = self.state.get(slot["slot"])
+            if not t or not t.get("pan") or not t.get("position") or now >= t.get("until", now + 1):
+                continue
+            y = self.pan_y(t, now)
+            if abs(y - t["position"]["y"]) >= self.PAN_STEP or (y in (t["pan"]["y0"], t["pan"]["y1"]) and y != t["position"]["y"]):
+                target = {k: v for k, v in t.items() if k != "jump"}
+                target["position"] = dict(t["position"], y=y)
+                self.apply(slot, target, "reframe", {}, now, quiet=True)
+
     @staticmethod
     def same_platform(a, b):
         ap, bp = (a or {}).get("platform") or {}, (b or {}).get("platform") or {}
@@ -2105,7 +2164,9 @@ class OneCam(Director):
             if slot["slot"] == self.onair:
                 self.onair_since, self.resume = now, None
         else:
-            changed = any(t.get(k) != shot.get(k) for k in ("position", "zoom", "surface"))
+            if t.get("pan") and t.get("pan") == shot.get("pan"):  # a tall ship's pan moves the view: not a new frame
+                shot = {k: v for k, v in shot.items() if k != "position"}
+            changed = any(t.get(k) != shot.get(k) for k in ("position", "zoom", "surface", "pan") if k in shot)
             t.update(shot)
             if changed:
                 self.apply(slot, dict(t, jump=slot["slot"] != self.onair), "reframe", scores, now, quiet=True)
@@ -2599,6 +2660,9 @@ class OneCam(Director):
                 if t.get("cloud"):  # a cloud shot: "Spores on Gleba" (the overlay draws its cells)
                     row["map"] = t["cloud"]["label"]
                     row["cloud"] = t["cloud"]
+            ship = self.ship_facts((t.get("platform") or {}).get("name") or self.surface_platform(t.get("surface")))
+            if ship:  # (d19 batch42 C1) the overlay's ship card: where it is or its route, progress, speed
+                row["ship"] = ship
             if t.get("platform"):  # {name, why, label, agent?}: a visit and a work shot read the latest row
                 p = dict(t["platform"])
                 if p["why"] == "visit":

@@ -593,6 +593,11 @@ def main():
     import pollstrip
     polls = pollstrip.PollStrip(os.path.join(os.path.dirname(os.path.abspath(a.run)), "polls.json")) \
         if a.run and not a.mock else None
+    # (d19 batch42 B4) the team's blueprint library as tools/bplibrary.py mirrors it: the site lists the ones saved since
+    # its /blueprints/ page was built
+    import library
+    lib = library.Library(os.path.join(os.path.dirname(os.path.abspath(a.run)), "blueprints", "index.json")) \
+        if a.run and not a.mock else None
     analyst = AnalystBoard()
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
@@ -748,6 +753,7 @@ def main():
                     feed.relay.set_team(router.Team.from_snapshot(snap, list(model.board["items"].values())))
                 snap["analyst"] = analyst.public(now)
                 snap["poll"] = polls.step(now) if polls else None
+                snap["library"] = lib.public() if lib else None
                 if highlights:
                     highlights.step(snap, now)
                     snap["highlights"] = highlights.public()

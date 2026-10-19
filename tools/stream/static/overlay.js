@@ -886,6 +886,7 @@
       if (!frame) continue;
       const label = frame.querySelector(".cam-label");
       const cam = (s.cameras || {})[slot];
+      renderShip(frame, slot, cam && !cam.map && !(slot === "main" && (s.hostview || s.show)) ? cam.ship : null);
       if (slot === "inset") frame.classList.toggle("on", !!cam); // up only while the director has an inset
       const cloudKey = renderCloud(frame, cam && cam.map ? cam : null, s);
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
@@ -1027,6 +1028,32 @@
       applyPalette(label, lead);
       label.classList.add("on");
     }
+  }
+
+  // (d19 batch42 C1, viewer Foobator) A ship on camera (onecam.py ship_facts): its name, where it is ("At Fulgora") or
+  // its route with a progress bar ("Gleba → Nauvis 43%"), and its speed; on the main view and the small tiles.
+  function renderShip(frame, slot, ship) {
+    let card = frame._ship;
+    if (!ship || slot === "inset") { if (card) { card.remove(); frame._ship = null; } return; }
+    const sig = JSON.stringify(ship);
+    if (card && card.dataset.sig === sig) return;
+    if (!card) { card = frame._ship = el("div", "ship-card"); frame.append(card); }
+    card.dataset.sig = sig;
+    card.textContent = "";
+    card.append(el("div", "ship-name", "🛰️ " + ship.name));
+    const line = el("div", "ship-where");
+    if (ship.from && ship.to) {
+      line.append(el("span", "", ship.from + " → " + ship.to));
+      if (Number.isFinite(ship.pct)) {
+        const bar = el("span", "ship-bar"), fill = el("i");
+        fill.style.width = Math.max(0, Math.min(100, ship.pct)) + "%";
+        bar.append(fill);
+        line.append(bar, el("span", "ship-pct", ship.pct + "%"));
+      }
+    } else line.append(el("span", "", ship.at ? "At " + ship.at : "In transit"));
+    card.append(line);
+    const facts = [ship.speed_kms ? ship.speed_kms + " km/s" : "", ship.paused ? (ship.from ? "paused, drifting back" : "paused") : ""].filter(Boolean);
+    if (facts.length) card.append(el("div", "ship-facts", facts.join(" · ")));
   }
 
   // Space Age panel (right column, above chat): planets reached, space-age science made, then a two-line card per
