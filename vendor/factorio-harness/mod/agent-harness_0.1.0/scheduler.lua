@@ -706,7 +706,28 @@ return function(api)
   end
   -- A reply that carries the steps' corrections.
   local function with(out,corrected) out.corrected=corrected; return out end
+  -- (d18 batch37 C3, Muse, daily: a direct walk or transfer paused the running queue and it stayed paused) a queue a
+  -- direct call paused, resumed when that call ends: not one the agent paused (queue_pause holds it). Returns true when
+  -- it was paused and now runs.
+  function M.resume_direct(index)
+    local q=(api.state()[QUEUES] or {})[index]
+    if not (q and q.paused and not q.held) then return false end
+    q.paused=false; q.revision=q.revision+1
+    q.resumed_why={tick=game.tick,line='resumed when the direct call that paused it ended'}
+    return true
+  end
+  -- The queue's own setting: every direct call that pauses it resumes it when the call ends.
+  function M.resume_after_direct(index)
+    local q=(api.state()[QUEUES] or {})[index]
+    return q and q.resume_after_direct or false
+  end
+  local function setting(p,a)
+    if a.resume_after_direct==nil then return end
+    assert(type(a.resume_after_direct)=='boolean','resume_after_direct must be true or false')
+    queue(p.index).resume_after_direct=a.resume_after_direct or nil
+  end
   function M.handlers.queue_submit(p,a)
+    setting(p,a)
     -- dry_run (Luna 15:20): the plan checked as a submit checks it, nothing queued, the queue left as it is; the silo
     -- cargo its steps would leave before each launch (rocketload.lua M.simulate).
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
@@ -786,6 +807,7 @@ return function(api)
   end
   LOOP_WALK={transfer=true,collect=true,feed=true,rearm=true,refuel=true}
   function M.handlers.queue_repeat(p,a)
+    setting(p,a)
     local q=queue(p.index); revision(q,a)
     local items,corrected=steps(a,p)
     assert(#items>0,'repeating plan must not be empty')
@@ -1050,14 +1072,14 @@ return function(api)
     queue_status={args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',
       returns='active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
-    queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
+    queue_repeat={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       orders='which standing orders may run in the pause between rounds: triggers (default: orders with when, as they would while you are free), all (the default routine too) or none; an order that runs then finishes before the next round loads (the round waits for it, up to its max_ticks); its hold counts from your own last request, not the round\'s last step; queue_status says orders_between_rounds',
       name='optional 1..32 characters: names the loop in its round lines',
       condition='optional wait_until condition object: checked before the first round, after each round and before the next; a met condition ends the loop successfully, without starting another round',
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)'},

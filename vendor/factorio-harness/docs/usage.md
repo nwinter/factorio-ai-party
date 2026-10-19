@@ -8329,3 +8329,9 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+- A queue paused by a direct call runs again when the call ends (C3, Muse, daily; batch35 A5 said so but left it
+  paused). `queue_resume_after: true` on any direct call: a queue it pauses runs again when it ends: at once for a call
+  that ends at once or fails (`queue_resumed`, or the error says so), else when the action it started ends
+  (`queue_resumes`, then `last.queue_resumed`); an action ended by stop leaves it paused. `resume_after_direct: true` on
+  queue_submit or queue_repeat does it for every direct call from then on (false turns it off). A queue the agent paused
+  with queue_pause is never resumed this way.

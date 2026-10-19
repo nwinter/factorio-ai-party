@@ -98,6 +98,8 @@
   direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused
   queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it). A failed direct call that
   paused it says so first in its error, and `team.queue_paused` stays on every reply until `queue_resume`.
+  `queue_resume_after: true` on the direct call (or queue_submit's `resume_after_direct: true`) runs it again when the call
+  ends.
 - `queue_repeat {steps, interval_ticks?, times?, for_ticks?, condition?, orders?, name?}`: replaces the queue with a
   repeating plan. `times` (rounds) and `for_ticks` (no round starts after that) end the loop with one `queue:` line
   (`done after N rounds: ...`) and `loop_done` in `queue_status`; `condition: {until: ...}` ends it at a round

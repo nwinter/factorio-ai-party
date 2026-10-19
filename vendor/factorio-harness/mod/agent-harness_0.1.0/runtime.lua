@@ -260,6 +260,8 @@ local function finish(index, outcome)
   s.last=s.last or {}
   local action=s.active[index]
   if action and action.resume_queue and not action.finishing then M.resume_after(index,action.resume_queue) end
+  -- (d18 batch37 C3) a direct action that paused the queue with queue_resume_after: the queue runs again as it ends
+  if action and action.resume_direct and not action.finishing and outcome~='stopped' and scheduler and scheduler.resume_direct(index) then action.queue_resumed=true end
   -- One carried over a harness update ends guarded (carry.lua): a shape this runtime does not expect still ends it.
   if action and action.carried and not action.finishing then
     action.finishing=true
@@ -284,6 +286,7 @@ local function finish(index, outcome)
   if action and action.retreated and action.retreated.idle and outcome=='retreated' then pcall(M.flee_on,index) end
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
+  if action and action.queue_resumed then s.last[index].queue_resumed='your queue, paused by this call, runs again now (queue_resume_after)' end
   -- (d17 batch31 C2, Opus twice: a request cleared before its items arrived) a direct wait ended early by a message,
   -- an urgent alert or damage: the personal requests still unfilled, with what is on the way
   if action and (action.kind=='wait_ticks' or action.kind=='wait_until') and M.WAIT_EARLY[outcome] then
@@ -15556,7 +15559,7 @@ function check_args(action,args)
     -- peek (boolean) on any request: read without consuming this agent's
     -- team hints (overlays polling as an agent).
     if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean')
-      and not (key=='helper' and type(args.helper)=='boolean') then
+      and not (key=='helper' and type(args.helper)=='boolean') and not (key=='queue_resume_after' and type(args.queue_resume_after)=='boolean') then
       local valid={}
       for k in pairs(set) do valid[#valid+1]=k end
       table.sort(valid)
@@ -16046,7 +16049,31 @@ function M.dispatch(request)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   local called_as=M.resolve_alias(request)
   M.direct_paused=nil
+  -- (d18 batch37 C3, Muse, daily) queue_resume_after: true on any call: a queue it pauses runs again when it ends
+  local resume_after
+  if type(request)=='table' and type(request.args)=='table' and request.args.queue_resume_after~=nil then
+    resume_after=request.args.queue_resume_after==true
+    local c={}
+    for k,v in pairs(request.args) do if k~='queue_resume_after' then c[k]=v end end
+    request.args=c
+  end
   local ok,result=pcall(M.dispatch_inner,request)
+  local dp=M.direct_paused
+  if dp and type(request)=='table' and dp.index==request.player and dp.tick==game.tick and (resume_after or scheduler.resume_after_direct(dp.index)) then
+    local act=state().active[dp.index]
+    if ok and act and act.call and not act.queued then
+      act.resume_direct=true
+      if type(result)=='table' then result.queue_resumes='your queue, paused by this call, runs again when it ends (queue_resume_after)' end
+    elseif scheduler.resume_direct(dp.index) then
+      if ok then
+        if type(result)=='table' then result.queue_resumed='your queue, paused by this call, runs again now (queue_resume_after)' end
+      else
+        -- the bootstrap stops the player after a failure: this one leaves the resumed queue alone
+        passive_failed=game.tick; M.direct_paused=nil
+        result=tostring(result)..'; your queue, paused by this call, runs again (queue_resume_after)'
+      end
+    end
+  end
   M.caller_index=nil
   if called_as then
     if ok and type(result)=='table' then result.called_as=called_as
