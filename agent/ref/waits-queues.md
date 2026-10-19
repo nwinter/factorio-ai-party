@@ -147,8 +147,12 @@
   recorded (a one-time checklist is done when everyone's is). `leave: true` sets it aside in an emergency (no step
   lines); `resume: true` or any step's ack picks it up at the next unfinished step. Example:
   `./fh call reminder_ack --args '{"id":3,"result":"all boilers fed","next_in_ticks":36000}'`
-- `reminders {pending?}`: lists them, with each recipient's runs missed (`missed`); `pending: true` lists only what
-  waits for you, each at its next step.
+  `result` takes up to 1000 characters, kept whole; `evidence` as board items' (below in team) is kept with the
+  reminder (the newest 5) and shown with it.
+- `reminders {pending?}`: lists them, with each recipient's runs missed (`missed`: how many, and the ticks of the first
+  and last); `pending: true` lists only what waits for you, each at its next step. `status` `overdue_reviews` lists
+  your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
+  `next_check` tick, oldest first.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
   `--wait` and `./fh wait` on an action too; on an action alone it waits as `--wait` does), a tell sent with `--wake`

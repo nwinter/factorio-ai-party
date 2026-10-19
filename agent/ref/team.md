@@ -1,5 +1,10 @@
 - `./fh board projects [--args '{"id":N}']`: the open projects, one line each with progress, next step and handoff; an
   `id` shows one in full. A long project list shows one compact line each (`board {projects: "full"}` for more).
+- `evidence: {metric?, tick?, decision?, result?, owner?, next_check?}` on `board post` and `board update`: what was
+  measured (at `tick`), the decision it changed, the downstream result, who owns what is open and the next check (text
+  or a game tick); the item shows the newest (all 5 kept in a full read). Notes take up to 1000 characters; longer is
+  refused with its size. `requests`, `platform NAME` and `platform_gate` show each request section's and stop's last
+  edit (who, when, old -> new); whoever set one last is told once when someone else changes it.
 - `board_review {id?}`: flags board items naming gone platforms, stale handoffs, superseded items still active and
   conflicting needs. `board_review {ownership: true, surface?}`: per surface, each electric network's machines, each
   logistic network and each platform with the open claims covering it (how many of its machines or roboports lie in

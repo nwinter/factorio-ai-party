@@ -8793,3 +8793,26 @@ fh watch    # deploy on every change
 - A5 (Sol and Astra d19 04:56): the open-request limit (10) counts the agent's own `harness_request` items whose status
   is open, claimed, doing or blocked, at any age (the operator owns them; the operator or the filer closes one with
   `board_update {id, status}`). The refusal lists them, oldest first, with status, owner, age and the last note.
+## d19 batch41, Group B (eng/d19-batch41)
+
+- B1 (Sol seq 861: another agent switched off Swiftlet's required section while Sol's queue waited; the reads showed
+  no name): editlog.lua. Each `requests` edit of a section (a hub's, a requester or buffer chest's, a landing pad's) and
+  each `platform_schedule` change of a stop's departure conditions (`stops`, or `stop` with `wait`) records the
+  editor, the tick, and the old and new text of each section or stop it changed (the last 5 kept). A section reads
+  `on: iron-plate 600..inf from nauvis`, a stop `nauvis: time 10s and item_count iron-plate >= 600`. A dry run records
+  nothing. Reads: `requests` sections `last_edit`; `platform {platform}` `request_edits`; `platform_gate` lines end
+  with the current stop's last edit, and `edits` lists each stop's. Whoever made the previous edit of that section or
+  stop, when someone else changes it, gets one tell a call (`changed what you set last: Swift hub request section 6:
+  off: ... -> on: ...`), and the reply says `told_of_edit`. Records begin with this deploy: a section nobody edited
+  since has no editor and tells nobody. Checked on the private copy (Swift section 6, sol then astra): sol's next
+  reply carried the tell.
+- B2 (Sol seq 865): `evidence {metric?, tick?, decision?, result?, owner?, next_check?}` (evidence.lua) on
+  `board_post`, `board_update` and `reminder_ack`: each field up to 500 characters, `tick` a game tick up to now,
+  `next_check` text or a game tick. The newest 5 are kept; a board item's compact view shows the newest, its full view
+  all; a reminder's row and line show them. `reminder_ack` `result` takes up to 1000 characters (was 200) and is kept
+  whole. Folded runs say how many and when: `2 runs missed (the first at tick 7200, 1m00s ago; the last at tick
+  10800, 0s ago)` in states, the owner's line, and `missed_runs` on the ack.
+- B3 (Astra seq 862, 864): `status` `overdue_reviews`: this agent's reminder runs waiting past their cadence (with how
+  long and the runs missed), recipients of its own reminders that are overdue, and its active board items whose newest
+  evidence has a `next_check` tick now past; oldest first, 8 lines and a count of the rest. On the private copy of the
+  d17 save sol's read listed 4 reminders, the oldest waiting 12h32m.
