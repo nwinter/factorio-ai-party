@@ -136,6 +136,40 @@ return function(api)
     table.sort(list, function(a, b) return a.index < b.index end)
     return list
   end
+  -- (d18 batch39 B2, Grok: the nutrient chamber at (7.5,24.5) stood at energy 0 with spoilage in its slots, its status
+  -- busy, and the egg loop stalled for minutes) burner crafters on the surface stopped by a full burnt-result slot or a
+  -- fuel slot of what they do not burn (burnt.lua): once per stop, a waking line to the machine's builder. Only crafters
+  -- whose prototype burns fuel are read (by name, cached).
+  local burner_kind = {}
+  local function burns(e)
+    local v = burner_kind[e.name]
+    if v == nil then v = try(function() return e.prototype.burner_prototype ~= nil end) or false; burner_kind[e.name] = v end
+    return v
+  end
+  function M.burnt_check(force, surface)
+    if not (api.burnt_stuck and api.crafters) then return 0 end
+    local st = store()
+    st.burnt = st.burnt or {}
+    local key = force.name .. '|' .. surface.name
+    local was, now, told = st.burnt[key] or {}, {}, 0
+    for _, e in ipairs(api.crafters(force, surface) or {}) do
+      if e.valid and burns(e) then
+        local f = try(function() return api.burnt_stuck(e) end)
+        if f and e.unit_number then
+          now[e.unit_number] = true
+          if not was[e.unit_number] then
+            local who = try(function() return e.last_user and e.last_user.name end)
+            local index = who and api.index_of and api.index_of(who)
+            local line = string.format('burner alert: %s (%g,%g) on %s%s stopped: %s', e.name, e.position.x, e.position.y, surface.name,
+              recipe_name(e) and ' making ' .. recipe_name(e) or '', api.burnt_line and try(function() return api.burnt_line(e, f) end) or 'nothing burns')
+            if index and api.deliver then pcall(api.deliver, index, {seq='burnt', tick=game.tick, from='burner alert', text=line, wake=true}); told = told + 1 end
+          end
+        end
+      end
+    end
+    st.burnt[key] = next(now) and now or nil
+    return told
+  end
   -- One surface a check, in turn; each seed's state change told once to its builders.
   function M.tick(tick)
     if tick % M.CHECK ~= 41 then return end
@@ -147,6 +181,7 @@ return function(api)
     st.next = st.next + 1
     for _, force in pairs(game.forces) do
       if force.name == 'player' or (force.name ~= 'enemy' and force.name ~= 'neutral' and #(try(function() return force.players end) or {}) > 0) then
+        pcall(M.burnt_check, force, surface)
         local rows = M.read(force, surface) or {}
         for seed in pairs(M.SEEDS) do
           local key = force.name .. '|' .. surface.name .. '|' .. seed

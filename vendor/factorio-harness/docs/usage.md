@@ -8607,3 +8607,12 @@ fh watch    # deploy on every change
   launch reads `last launch 1m31s ago (up #7, tick T) to ...`, shipment's `a rocket launched 32s ago (up #7, tick T)
   carries ...`, and `shipment {ledger}` lists `up #7`. Each silo row has `read_tick`, and its line ends
   `read at tick T`.
+- A burner stopped by its own spoilage (batch39 B2, Grok: the nutrient chamber at (7.5,24.5) at energy 0, spoilage in
+  its slots, its status busy, the egg loop stalled for minutes). burnt.lua's full burnt-result slot (shift14) was
+  already read by inspect, scan, supply, the status survey and makers. Now:
+  - `fuel_unusable`: nothing burning and a fuel slot holding only what the burner does not burn (spoilage in a
+    biochamber), said the same way, with the slots' contents.
+  - supply.makers {makers: "all"} gives the line as each row's why.
+  - A burner alert: the seed check's surface turn (every 10 s, one surface) reads the census crafters whose prototype
+    burns fuel. Each that is stopped is told once, waking, to its builder: what it makes and what fills its slots.
+    It is told again only after the machine ran.

@@ -11,6 +11,7 @@ return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   M.STATE = 'burnt_result_full'
+  M.UNUSABLE = 'fuel_unusable'
   -- 'spoilage*200 nutrients@rare*3', in slot order.
   local function contents(inv)
     local by, order = {}, {}
@@ -63,16 +64,46 @@ return function(api)
     out.foreign = #foreign > 0 and table.concat(foreign, ', ') or nil
     return out
   end
-  -- Stopped: its burnt-result slots full and nothing burning. The full read, or nil.
+  -- (d18 batch39 B2, Grok: the nutrient chamber at (7.5,24.5) at energy 0, spoilage in its slots, status busy) nothing
+  -- burning and a fuel slot holding only what it does not burn (spoilage in a biochamber's): {fuel, burns, foreign,
+  -- burnt, unusable=true}, or nil. An empty fuel slot is plain no fuel, not this.
+  function M.unusable(e)
+    local b = try(function() return e.burner end)
+    if not b or (b.remaining_burning_fuel or 0) > 0 then return nil end
+    local fuel = b.inventory
+    if not fuel or fuel.is_empty() then return nil end
+    local cats = try(function() return b.fuel_categories end) or {}
+    local foreign = {}
+    for i = 1, #fuel do
+      local st = fuel[i]
+      if st.valid_for_read then
+        local c = try(function() return st.prototype.fuel_category end)
+        if c and cats[c] then return nil end
+        foreign[#foreign+1] = st.name
+      end
+    end
+    local names = {}
+    for c in pairs(cats) do names[#names+1] = c end
+    table.sort(names)
+    local inv = b.burnt_result_inventory
+    return {fuel=contents(fuel), burns=table.concat(names, ', '), foreign=table.concat(foreign, ', '), burnt=inv and #inv > 0 and contents(inv) or '', unusable=true}
+  end
+  -- Stopped: its burnt-result slots full and nothing burning, or nothing burning and only unusable fuel. The read, or nil.
   function M.stuck(e)
     local f = M.full(e)
     if f and not f.burning then return f end
+    if not f then return M.unusable(e) end
     return nil
   end
   -- One line for inspect and the supply rows: what fills the slot and what it does.
   function M.line(e, f, engine_status)
-    f = f or M.full(e)
+    f = f or M.full(e) or M.unusable(e)
     if not f then return nil end
+    if f.unusable then
+      return string.format('its fuel slot holds %s, which it does not burn (it burns %s)%s: nothing burns, it has no energy%s', f.fuel, f.burns,
+        f.burnt ~= '' and '; its burnt-result slot holds ' .. f.burnt or '',
+        engine_status and engine_status ~= 'no_fuel' and ' (the game\'s status reads ' .. engine_status .. ')' or '')
+    end
     local text = 'its burnt-result slot is full (' .. f.burnt .. ')'
     if f.foreign then
       text = text .. string.format('; its fuel slot holds %s, which it does not burn (it burns %s)', f.fuel, f.burns)
