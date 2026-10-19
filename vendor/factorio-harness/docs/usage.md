@@ -8589,3 +8589,18 @@ fh watch    # deploy on every change
     along x, row by row: `[{x,y,count,name}]`, `tile_count`, with `tile_runs_truncated` past tiles_limit (1024 runs by
     default). Pass tile_names to keep only some, e.g. a lake's water.
   - `tiles_limit` is now in observe's schema (the code read it before, but the arg check refused it).
+- Where a deconstructed item went (D3, Astra: recovered artillery silently built an older ghost elsewhere). A robot's
+  mining of one of our entities, or of an item on the ground (on_robot_mined_entity; trees, rocks and other neutral
+  clearing are skipped), is followed by deconwent.lua every second.
+  - While the robot holds the item: the order it flies. When it carries the item to a ghost, the ghost and who placed
+    it.
+  - When the robot no longer holds it, one of: it built that ghost (an entity of the ghost's name now stands there);
+    it put the item into a storage chest within 3 tiles; or neither was seen.
+  - A storage chest is then watched. A construction robot within 8 tiles holding the item when the chest's count
+    falls is followed the same way (3 robots a record).
+  - Limits: 16 followed at once, 2 minutes a robot, 5 minutes a chest, 32 records kept.
+  - `where_is {item}` gives `deconstructed`: the last 6 for that item or entity name on the surface, each step with
+    its time after the mining.
+  - The robot-built event is not forwarded to the runtime (control.lua's fixed list, which only a mod reload changes),
+    so a build is known by the entity standing at the ghost's place. An item taken from storage may be another of the
+    same name in that chest.

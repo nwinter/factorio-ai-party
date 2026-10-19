@@ -15244,7 +15244,9 @@ M.pods=require('pods'){state=state}
 -- Landed cargo pods on the ground (landed.lua; d17 pods, Nick 15:45): the pods read, status and the team block.
 M.landed=require('landed'){state=state,position=position}
 function handlers.pods(p,a) return M.landed.read(p,a) end
-M.stores=require('stores'){pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
+-- where a deconstructed item went (deconwent.lua; d18 batch37 D3, Astra)
+M.deconwent=require('deconwent'){state=state}
+M.stores=require('stores'){deconstructed=function(item,surface) return M.deconwent.lines(item,surface) end,pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
   character=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and p.character or nil end}
 function handlers.where_is(p,a) return M.stores.where_is(p,a) end
 -- The construction robots of a logistic network: each in the air, what holds it up (robots.lua; Astra, shift13).
@@ -18189,6 +18191,7 @@ function M.tick_body(event)
   if event.tick%60==13 and state().clear_jobs then pcall(M.clearobs.tick) end  -- clear_obstacles waits (clearobs.lua)
   if event.tick%600==29 then pcall(M.timed,'hubfull.tick',M.hubfull.tick,event.tick) end  -- a hub too full for its payload (hubfull.lua)
   if event.tick%60==37 and state().artillery_checks then pcall(M.artillery.tick) end  -- a flare's shot confirmed (artillery.lua)
+  if event.tick%60==41 and state().decon_went then pcall(M.deconwent.tick) end  -- where a deconstructed item went (deconwent.lua)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
@@ -18338,6 +18341,11 @@ function M.on_event(event)
     -- a belt line blocked by what was built on its tile (linecut.lua; batch17 C1, Sonnet)
     if event.name==defines.events.on_built_entity and M.linecut then pcall(M.linecut.built,event) end
     -- mined or deconstructed by us: the fog memory forgets it (fogmem.lua)
+    -- (d18 batch37 D3) a robot's mining: where its items go (deconwent.lua)
+    if event.name==defines.events.on_robot_mined_entity and M.deconwent then
+      local okd,errd=pcall(M.deconwent.on_mined,event)
+      if not okd then local s=state(); s.decon_went_error={tick=game.tick,error=tostring(errd)} end
+    end
     if (event.name==defines.events.on_player_mined_entity or event.name==defines.events.on_robot_mined_entity) and M.fogmem then
       pcall(M.fogmem.forget,event.entity)
     end

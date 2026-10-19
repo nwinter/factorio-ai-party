@@ -516,3 +516,54 @@ do
   force.is_chunk_charted=seen_charted
 end
 print('d18_batch37 D1 map, grid and observe of another planet: ok')
+
+-- D3 (Astra: recovered artillery silently built an older ghost elsewhere): a robot's mining followed: into storage, taken
+-- by another construction robot, and the ghost it built.
+do
+  local saved_game,saved_defines=game,defines
+  defines={inventory={robot_cargo=1}}
+  local st={}
+  local surf={name='nauvis'}
+  local built={}
+  local function bot(n,x,y,items)
+    local b={valid=true,type='construction-robot',unit_number=n,position={x=x,y=y},robot_order_queue={},force={name='player'}}
+    b.get_inventory=function() return {get_item_count=function(i) return items[i] or 0 end} end
+    b.items=items
+    return b
+  end
+  local r1=bot(11,0,0,{['artillery-turret']=1})
+  local chest={valid=true,name='storage-chest',type='logistic-container',position={x=20.5,y=0.5},prototype={logistic_mode='storage'},held=0,surface=surf}
+  chest.get_item_count=function() return chest.held end
+  local r2=bot(12,21,0,{})
+  local ghost={valid=true,type='entity-ghost',ghost_name='artillery-turret',position={x=200,y=-50},last_user={name='sol'}}
+  surf.find_entities_filtered=function(f)
+    if f.type=='logistic-container' then return {chest} end
+    if f.type=='construction-robot' then return {r2} end
+    if f.name=='artillery-turret' then return built end
+    return {}
+  end
+  game={tick=100,get_surface=function() return surf end}
+  local D=dofile('mod/agent-harness_0.1.0/deconwent.lua'){state=function() return st end}
+  local turret={name='artillery-turret',type='artillery-turret',force={name='player'},position={x=10,y=0},surface=surf}
+  D.on_mined{entity={name='tree-01',type='tree',force={name='neutral'},position={x=1,y=1},surface=surf},robot=r1,buffer={get_contents=function() return {{name='wood',count=4}} end}}
+  eq(#D.lines('wood','nauvis'),0)
+  D.on_mined{entity=turret,robot=r1,buffer={get_contents=function() return {{name='artillery-turret',count=1}} end}}
+  for _=1,3 do game.tick=game.tick+60; D.tick() end
+  -- into storage
+  r1.position={x=20,y=1}; r1.items['artillery-turret']=nil; chest.held=1
+  game.tick=game.tick+60; D.tick()
+  -- a second robot takes it, flying to the old ghost
+  chest.held=0; r2.items['artillery-turret']=1; r2.robot_order_queue={{target=ghost}}
+  game.tick=game.tick+60; D.tick()
+  game.tick=game.tick+60; D.tick()
+  r2.items['artillery-turret']=nil; built={{valid=true}}
+  game.tick=game.tick+60; D.tick()
+  local l=D.lines('artillery-turret','nauvis')[1]
+  has(l,'#1 artillery-turret at (10,0) on nauvis, deconstructed 7s ago: robot #11 took artillery-turret*1')
+  has(l,'robot #11 put it into storage-chest (20.5,0.5) 4s after')
+  has(l,'construction robot #12 took artillery-turret from storage-chest (20.5,0.5) 5s after')
+  has(l,'robot #12 built the artillery-turret ghost at (200,-50) (placed by sol) 7s after')
+  assert(not l:find('still followed'),l)
+  game,defines=saved_game,saved_defines
+end
+print('d18_batch37 D3 where a deconstructed item went: ok')
