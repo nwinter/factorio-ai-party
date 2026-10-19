@@ -995,12 +995,24 @@ return function(api)
       end
     end
     local t=action.targets[action.index]
+    -- (d18 batch36 B2) the next leg against enemy groups and units seen now, before it starts: one in reach of it stops
+    -- the tour short, naming it and where it stopped (unsafe_goal true or "moving" walks on)
+    if not action.nav and action.avoid_mode and action.unsafe_goal==nil and api.leg_threat then
+      local okl,lt=pcall(api.leg_threat,p,p.position,t.position,action.avoid_mode)
+      if okl and lt then
+        api.stop_walking(p)
+        action.enemies_ahead=string.format('%s; stopped at (%.1f,%.1f) before it, %d of %d stops done',lt.line,p.position.x,p.position.y,action.index-1,#action.targets)
+        action.why=action.enemies_ahead
+        return 'enemies_ahead'
+      end
+    end
     if not action.nav then
       -- A place inside a worm's range, within 40 tiles of a spawner or in an area under attack now is not walked to
       -- (round1950a: Haiku's rearm cluster lay in attack #1548): left out, named, unless unsafe_goal.
-      if action.avoid_mode and not action.unsafe_goal and api.goal_check then
+      -- (d17 batch35 A3) unsafe_goal "moving": a place whose only threats move is walked to
+      if action.avoid_mode and action.unsafe_goal~=true and api.goal_check then
         local okc,c=pcall(api.goal_check,p,p.position,t.position,action.avoid_mode)
-        if okc and c then
+        if okc and c and not (action.unsafe_goal=='moving' and c.moving_only) then
           local why=api.goal_text('place',t.position,c)
           action.danger=(action.danger or 0)+1
           action.dangers=action.dangers or {}
@@ -1026,11 +1038,22 @@ return function(api)
     -- guns it went to, and was killed beside a live attack at (10,-103)): once a second the stop is checked against the
     -- areas under attack now; inside one, the walk holds where it is (held_short says which attack and where) until the
     -- attack has had no hit for 30 s, then goes on. unsafe_goal walks anyway.
-    if action.avoid_mode and not action.unsafe_goal and api.goal_check and game.tick>=(action.attack_check or 0) then
+    if action.avoid_mode and action.unsafe_goal~=true and api.goal_check and game.tick>=(action.attack_check or 0) then
       action.attack_check=game.tick+60
       local okc,c=pcall(api.goal_check,p,p.position,t.position,action.avoid_mode)
       local m=okc and c and c.m
-      if m and m.attack then
+      if action.unsafe_goal=='moving' and c and c.moving_only then m=nil end
+      -- (d17 batch35 A3, Haiku: rearm retried the whole tour) a rearm stop under attack is skipped, named, and the tour
+      -- goes on; other tours hold short
+      if m and m.attack and action.op=='rearm' then
+        api.stop_walking(p)
+        local why=api.goal_text(t.entity and t.entity.valid and t.entity.name or 'place',t.position,c)
+        action.skipped_attack=action.skipped_attack or {}
+        if #action.skipped_attack<8 then action.skipped_attack[#action.skipped_attack+1]=why end
+        action.first_unreached=action.first_unreached or string.format('(%g,%g): %s (skipped; unsafe_goal: "moving" walks there)',t.position.x,t.position.y,why)
+        action.index=action.index+1; action.unreached=(action.unreached or 0)+1; action.nav=nil
+        return nil
+      elseif m and m.attack then
         if not action.holding then
           api.stop_walking(p)
           action.holding={since=game.tick,name=m.name,at={x=math.floor(m.x+0.5),y=math.floor(m.y+0.5)}}

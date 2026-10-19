@@ -192,7 +192,7 @@ do
   local r=astra('observe',{radius=1,limit=1,exclude_resources=true,entity_types={'character'},peek=true})
   eq(r.player.body,'none'); eq(r.player.surface,'platform-1'); eq(r.player.inventory,nil); eq(r.player.health,nil)
   local plan=astra('queue_submit',{start=false,steps={{action='wait_until',args={['until']='platform_arrived',platform='Sunward',location='vulcanus'}},
-    {action='drop',args={platform='Sunward',items={['solid-fuel']=1}}}}})
+    {action='drop',args={platform='Sunward',items={{item='solid-fuel',count=1}}}}}})
   eq(plan.pending_count,2)
   fails(function() astra('queue_submit',{steps={{action='craft',args={recipe='rocket-fuel'}}}}) end,'steps[1] (craft)')
   eq(astra('queue_status',{}).pending_count,2)

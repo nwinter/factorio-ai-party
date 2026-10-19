@@ -500,8 +500,47 @@ return function(api)
     for i = 1, math.min(4, #order) do parts[i] = by[order[i]] .. ' ' .. order[i] end
     local ways = nav.squeeze_tried and 'pathfind=false steers straight at the goal (belts carry you)'
       or 'move_to squeeze=true walks your own steps out along the gaps; pathfind=false steers straight at the goal (belts carry you)'
-    return string.format('boxed in at %s by %s within 2.5 tiles: the gaps between them are narrower than a path request starts in, but the area you can reach is not closed in: %s',
-      at(here), table.concat(parts, ', '), ways)
+    -- (d17 batch35 A4) the nearest open spot and the straight walk there
+    local spot, d = M.open_spot(p)
+    nav.open_spot = spot
+    local open = spot and string.format('; the nearest open spot: %s, %.1f tiles away, reached straight over the belts as a player walks across them (move_to {position: {x: %g, y: %g}, pathfind: false}); unbox: true takes that walk in the same call, then the path to the goal',
+      at(spot), d, spot.x, spot.y) or string.format('; no open spot (room to turn, no belt or drill within %g tile) within %d tiles is reached in a straight line', M.OPEN_CLEAR, M.OPEN_R)
+    return string.format('boxed in at %s by %s within 2.5 tiles: the gaps between them are narrower than a path request starts in, but the area you can reach is not closed in: %s%s',
+      at(here), table.concat(parts, ', '), ways, open)
+  end
+  -- (d17 batch35 A4, Haiku at (-19.8,545.6) under behemoth fire: boxed in by belts, out only by a guessed pathfind=false)
+  -- The nearest spot out of the belt field: room to turn (a box padded by PAD fits), no belt, splitter, loader or drill
+  -- within OPEN_CLEAR tiles of the character's box, reached from here in a straight line its box sweeps (belts walked
+  -- over, as a player walks across them). On the half-tile grid within OPEN_R tiles; returns the spot and its distance,
+  -- or nil.
+  local OPEN_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt', 'mining-drill'}
+  M.OPEN_R, M.OPEN_CLEAR = 8, 1
+  function M.open_spot(p)
+    local c = p.character
+    local here = p.position
+    local h, R = M.half(c), M.OPEN_R
+    local area = {{here.x - R - 3, here.y - R - 3}, {here.x + R + 3, here.y + R + 3}}
+    local belts = {}
+    for _, e in ipairs(try(function() return p.surface.find_entities_filtered{area=area, type=OPEN_TYPES} end) or {}) do
+      local b = e.valid and try(function() return e.bounding_box end)
+      if b then belts[#belts+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y} end
+    end
+    local near_belt = grid(belts, h + M.OPEN_CLEAR)
+    local blocked = grid(boxes_in(p.surface, area, c), h + PAD)
+    local cands = {}
+    for i = math.floor((here.x - R) * 2), math.ceil((here.x + R) * 2) do
+      for j = math.floor((here.y - R) * 2), math.ceil((here.y + R) * 2) do
+        local q = {x=i / 2, y=j / 2}
+        local d = dist(here, q)
+        if d <= R then cands[#cands+1] = {q=q, d=d} end
+      end
+    end
+    table.sort(cands, function(a, b) return a.d < b.d end)
+    for _, cd in ipairs(cands) do
+      local q = cd.q
+      if not near_belt(q.x, q.y, h + M.OPEN_CLEAR) and not blocked(q.x, q.y, h + PAD) and clear_line(blocked, here, q, h, 0.1) then return q, cd.d end
+    end
+    return nil
   end
   -- Why a walk ended blocked after its stalls (batch25 A1, Haiku ~4 times: a rearm tour ended "(-76,161): blocked" after a
   -- dry run said the route was clear, a minute each): where it stopped, how far from the goal, and what stands within
@@ -551,6 +590,16 @@ return function(api)
         nav.why = string.format('no path request found a way for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
         local boxed = M.boxed(p, nav)
         if boxed then nav.why = nav.why .. '; ' .. boxed end
+        -- unbox: true (batch35 A4): the straight walk to the open spot, then the path asked again from there (as an escape)
+        if boxed and nav.unbox and not nav.unboxed and nav.open_spot then
+          local here = p.position
+          nav.unboxed = {from={x=here.x, y=here.y}, to=nav.open_spot}
+          nav.escape = {from={x=here.x, y=here.y}, to=nav.open_spot}
+          nav.waypoints = {{position=nav.open_spot}}; nav.waypoint = 1; nav.reach = 0.12
+          nav.path_state = 'escape'; nav.found = nil; nav.sidestep = nil; nav.stalled = 0; nav.progress_tick = nil
+          nav.why = nil
+          return
+        end
         -- Walkable water between (oil ocean, shallow water, wetland) was ground to the requests (friction4: Gemini, shift14
         -- 23:15, took a walk into its packed island for the oil ocean being impassable; on a copy of world n move_to
         -- crossed shallow and deep oil ocean). The box from here to the goal, cut to 64 tiles round the goal.

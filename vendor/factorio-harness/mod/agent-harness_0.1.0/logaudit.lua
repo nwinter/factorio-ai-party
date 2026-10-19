@@ -17,7 +17,9 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function dist(a, b) return math.floor(math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) + 0.5) end
-  local function name_of(v) if type(v) == 'table' then return v.name end return v end
+  -- a filter's name and quality read as prototypes (userdata) on the live game, as tables in tests (Gemini 15:35: storage on
+  -- network 410 failed concatenating a LuaItemPrototype)
+  local function name_of(v) if type(v) == 'table' or type(v) == 'userdata' then return v.name end return v end
   local function span(t)
     local s = math.floor(t / 60)
     return s >= 60 and string.format('%dm%02ds', math.floor(s / 60), s % 60) or s .. 's'
@@ -204,6 +206,134 @@ return function(api)
     return {network=ln.network_id, surface=surface.name, storage_chests=chests, free_slots=free, full_chests=full, filtered=#fl > 0 and fl or nil,
       robots_stuck=stuck, stuck_items=#item_lines > 0 and item_lines or nil, robots_read=read, line=line}
   end
+  -- backlog (d18 batch36 A1, Luna and Grok, all of shift35: Gleba's science requester at (15.5,28.5) lacked 10
+  -- nutrients for about 36 minutes with about 98 in a provider 9 tiles off; not_sent, and "all 250 logistic bots
+  -- occupied"): the network's oldest unfilled requests (how long since the networks watch first saw each short), the
+  -- provider the game would take each from with what robots already reserve there, the robots (idle, on orders by
+  -- type, holding cargo with no order and what, charging and queued to charge, the charging slots), and for each
+  -- request the first of these that holds it now. Read on world n (18 Oct, network #98 on Gleba): all 250 robots
+  -- busy, the 50 read each holding ammunition with no order; about 4 us a robot with its order queue and cargo.
+  local BACKLOG_ROWS, BACKLOG_ROBOTS = 12, 2048
+  local function count_of(list, name, quality)
+    local n = 0
+    for k, v in pairs(type(list) == 'table' and list or {}) do
+      if type(v) == 'number' then if k == name then n = n + v end
+      elseif type(v) == 'table' and name_of(v.name) == name and (name_of(v.quality) or 'normal') == quality then n = n + (v.count or 0) end
+    end
+    return n
+  end
+  function M.backlog(p, a, surface, ln)
+    local n = (api.state() or {}).networks or {}
+    local now = game.tick
+    local points = try(function() return ln.requester_points end) or {}
+    local free, asks = {}, {}
+    for i = 1, math.min(#points, LOOK) do
+      local r = look(ln, points[i], n, free, now)
+      for _, x in ipairs(r and r.asks or {}) do x.e = r.e; asks[#asks+1] = x end
+    end
+    table.sort(asks, function(x, y)
+      if (x.unfilled or -1) ~= (y.unfilled or -1) then return (x.unfilled or -1) > (y.unfilled or -1) end
+      if x.short ~= y.short then return x.short > y.short end
+      return x.e.unit_number < y.e.unit_number
+    end)
+    -- the robots
+    local names = {}
+    for k, v in pairs(defines.robot_order_type or {}) do names[v] = k end
+    local total = try(function() return ln.all_logistic_robots end) or 0
+    local idle = try(function() return ln.available_logistic_robots end) or 0
+    local orders, carry, stuck, stuck_items, read = {}, {}, 0, {}, 0
+    for _, r in ipairs(try(function() return ln.logistic_robots end) or {}) do
+      if read >= BACKLOG_ROBOTS then break end
+      read = read + 1
+      local q = try(function() return r.robot_order_queue end) or {}
+      local inv = try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
+      local st = inv and inv[1]
+      local held = st and st.valid_for_read and {name=st.name, count=st.count} or nil
+      if #q > 0 then
+        local k = names[q[1].type] or tostring(q[1].type)
+        orders[k] = (orders[k] or 0) + 1
+        if held then carry[held.name] = (carry[held.name] or 0) + held.count end
+      elseif held then
+        stuck = stuck + 1
+        stuck_items[held.name] = (stuck_items[held.name] or 0) + held.count
+      end
+    end
+    local charging, queued, slots = 0, 0, 0
+    local per = {}
+    for _, c in ipairs(try(function() return ln.cells end) or {}) do
+      charging = charging + (try(function() return c.charging_robot_count end) or 0)
+      queued = queued + (try(function() return c.to_charge_robot_count end) or 0)
+      local o = try(function() return c.owner end)
+      local pn = o and o.valid and o.name
+      if pn and per[pn] == nil then per[pn] = try(function() return o.prototype.logistic_parameters.charging_station_count end) or false end
+      slots = slots + (pn and per[pn] or 0)
+    end
+    local function top(t, k)
+      local list = {}
+      for name, c in pairs(t) do list[#list+1] = {name=name, n=c} end
+      table.sort(list, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.name < y.name end)
+      local parts = {}
+      for i = 1, math.min(k, #list) do parts[i] = list[i].name .. ' ' .. list[i].n end
+      return parts, #list
+    end
+    local carry_parts = top(carry, 5)
+    local stuck_parts = top(stuck_items, 5)
+    local order_parts = top(orders, 8)
+    local robots = {total=total, idle=idle, on_orders=order_parts, carrying=#carry_parts > 0 and carry_parts or nil,
+      cargo_no_order=stuck, cargo_no_order_items=#stuck_parts > 0 and stuck_parts or nil, charging=charging, queued_to_charge=queued,
+      charging_slots=slots, free_charging_slots=math.max(0, slots - charging), read=read < total and read or nil}
+    local robots_line = string.format('%d logistic robots: %d idle%s%s; %d charging, %d queued to charge at its roboports, %d charging slots (%d free)',
+      total, idle, #order_parts > 0 and ', on orders ' .. table.concat(order_parts, ', ') .. (#carry_parts > 0 and ' (carrying ' .. table.concat(carry_parts, ', ') .. ')' or '') or '',
+      stuck > 0 and string.format(', %d holding cargo with no order (%s)', stuck, table.concat(stuck_parts, ', ')) or '',
+      charging, queued, slots, math.max(0, slots - charging))
+    -- what holds each request now: the first that reads true
+    local function held_by(x, pick, reserved)
+      if x.on_way > 0 and x.short == 0 then return string.format('%d on the way cover it', x.on_way) end
+      if x.no_room then return 'no room in the chest for it' end
+      if x.free == 0 then return 'none of it in the network\'s providers or storage' end
+      if not pick then return 'no provider the game would take it from (select_pickup_point found none)' end
+      if pick.holds - reserved <= 0 then return string.format('the provider the game picks holds %d, all reserved by robots on the way', pick.holds) end
+      if idle == 0 then
+        local busy = {}
+        if stuck > 0 then busy[#busy+1] = string.format('%d hold cargo with no order to put it anywhere (%s; logistics_audit {storage: true} reads where it could go)', stuck, table.concat(stuck_parts, ', ')) end
+        if #order_parts > 0 then busy[#busy+1] = 'on orders ' .. table.concat(order_parts, ', ') .. (#carry_parts > 0 and ' (carrying ' .. table.concat(carry_parts, ', ') .. ')' or '') end
+        if queued > 0 then busy[#busy+1] = string.format('%d queued to charge', queued) end
+        return string.format('no idle logistic robot of %d%s', total, #busy > 0 and ': ' .. table.concat(busy, '; ') or '')
+      end
+      if queued > 0 and slots - charging <= 0 then return string.format('robots queued to charge: %d waiting, every one of %d charging slots taken', queued, slots) end
+      return string.format('%d idle robots and %d unreserved at the provider: not sent yet (the game\'s dispatch is not exposed)', idle, pick.holds - reserved)
+    end
+    local rows, lines = {}, {}
+    local limit = math.min(MAX_ROWS, math.max(1, math.floor(tonumber(a.limit) or BACKLOG_ROWS)))
+    local shown = 0
+    for _, x in ipairs(asks) do
+      if shown >= limit then break end
+      if x.short > 0 then
+        shown = shown + 1
+        local pos = x.e.position
+        local pt = x.free > 0 and try(function() return ln.select_pickup_point{name={name=x.item, quality=x.q}, position=pos} end)
+        local o = pt and try(function() return pt.owner end)
+        local pick, reserved = nil, 0
+        if o and o.valid then
+          reserved = count_of(try(function() return pt.targeted_items_pickup end), x.item, x.q)
+          pick = {name=o.name, position=o.position, distance=dist(o.position, pos), holds=try(function() return o.get_item_count{name=x.item, quality=x.q} end) or 0, reserved=reserved}
+        end
+        local why = held_by(x, pick, reserved)
+        rows[#rows+1] = {chest=x.e.name, position=pos, item=key_of(x.item, x.q), want=x.want, have=x.have, on_way=x.on_way, short=x.short,
+          short_s=x.unfilled and math.floor(x.unfilled / 60) or nil, provider=pick, held_by=why}
+        lines[#lines+1] = string.format('%s %s: %s %d short (has %d of %d%s)%s; %s; held by: %s', x.e.name, at(pos), key_of(x.item, x.q), x.short, x.have, x.want,
+          x.on_way > 0 and string.format(', %d on the way', x.on_way) or '', x.unfilled and ' for ' .. span(x.unfilled) or ' (not yet seen short by the networks watch)',
+          pick and string.format('the provider the game picks: %s %s, %d tiles, holds %d (%d reserved)', pick.name, at(pick.position), pick.distance, pick.holds, reserved)
+            or (x.free > 0 and string.format('%d in the network', x.free) or 'none in the network'), why)
+      end
+    end
+    local short_n = 0
+    for _, x in ipairs(asks) do if x.short > 0 then short_n = short_n + 1 end end
+    local line = string.format('logistic network #%d on %s backlog: %d requests short (of %d requester points read%s); %s%s', ln.network_id, surface.name, short_n,
+      math.min(#points, LOOK), #points > LOOK and string.format(' of %d', #points) or '', robots_line, rows[1] and '; the oldest: ' .. lines[1] or '')
+    return {network=ln.network_id, surface=surface.name, requests=rows, lines=lines, robots=robots, robots_line=robots_line,
+      requests_short=short_n, more_short=short_n > #rows and short_n - #rows or nil, line=line}
+  end
   function M.read(p, a)
     a = a or {}
     local surface = (a.surface or a.platform) and api.surface_named and api.surface_named(p.force, a) or p.surface
@@ -211,6 +341,10 @@ return function(api)
     if a.storage ~= nil then
       assert(a.storage == true, 'storage is true')
       return M.storage(p, a, surface, ln)
+    end
+    if a.backlog ~= nil then
+      assert(a.backlog == true, 'backlog is true')
+      return M.backlog(p, a, surface, ln)
     end
     local n = (api.state() or {}).networks or {}
     local now = game.tick
@@ -303,7 +437,7 @@ return function(api)
     return {far=#far > 0 and far or nil, network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
       shown=#out, lines=lines, summary=summary, next_from=more}
   end
-  M.schema = {logistics_audit = {storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 2048 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
+  M.schema = {logistics_audit = {backlog='optional true: why requests wait (the backlog): the oldest unfilled requests first (chest, item, short, how long the networks watch has seen it short, the provider the game picks with what robots reserve there, and held_by: the first that holds it now: on the way, no room, none in the network, no provider, all reserved, no idle robot (with what the busy ones do: orders by type, cargo with no order and what, queued to charge), robots queued with every charging slot taken, or not sent yet); robots {total, idle, on_orders, carrying, cargo_no_order, cargo_no_order_items, charging, queued_to_charge, charging_slots, free_charging_slots}; requests, lines, robots_line, line',storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 2048 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
     surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',far='optional tiles (default 200): far lists each ask short or with a delivery on the way whose pickup the network would pick now lies farther off (the first 128 asks read, 16 lines)',
     returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary, far (requesters served from over far tiles away: the ask, on the way, short, the chest robots would take it from and how far). Characters left out. Read only'}}
   return M

@@ -53,7 +53,9 @@ fh call walk --args '{"direction":"east","ticks":60}' --wait
 fh call status
 ```
 
-- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
+- Arguments go in `--args JSON` or `--args-file F`. A flag the command does not read (`fh call ACTION --file X`), or words
+  after `fh call ACTION`, are refused before anything is sent, naming the flags the command takes and where the flag
+  belongs (`--file is for fh queue submit|repeat|edit, fh plan save, ...`). `fh describe` lists every action's arguments; `fh help ACTION`
   (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
   describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json
@@ -1012,6 +1014,15 @@ fh call status
       goal, within 128 tiles. The chunks round the goal and the spot are read at the call.
     - Via points are checked the same way (`via point 1 (55,10) is inside ...`).
     - `unsafe_goal: true` goes anyway; the reply says `unsafe_goal: goal (60,0) is inside ...`.
+    - (batch35 A3, Haiku: refused near one passing biter, about 6 times a shift) With more than one threat, or one
+      that moves, the refusal lists every threat holding the goal: `[2 threats hold it: 1 enemy unit (1 small-biter) at
+      (61,2), 2.2 tiles from it: moving units (small-biter (61,2) attacking gun-turret (62,0) (distracted), facing
+      east); medium-worm-turret at (70,0), 10.0 tiles from it: standing (range 30)]`. Groups say where they head and
+      their state, an area under attack what of ours was hit and by what. `unsafe_goal: "moving"` goes only when every
+      threat moves (enemy units, a group, a demolisher, an area under attack now), never past a worm, spawner or
+      turret. rearm takes it too: those turrets stay in the tour (`through`), the rest are left out as before; and a
+      rearm stop that comes under attack on the way is skipped and named (`last.skipped_attack`), the tour going on
+      (other tours hold short of it).
     - `avoid_enemies: false` checks nothing.
   - With the default or `true` margin, a nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
     nest's margin only (outside the weapon's own range) keeps that worm's disc just short of it, so the way there still
@@ -1109,7 +1120,11 @@ fh call status
   (strongest magazine kind first; a carried gun goes into an empty gun slot before it) and say so in `equipped`
   (`equipped from your inventory: 20 firearm-magazine to ammo slot 1`; for move_to under `combat`); when the slots run
   dry mid-fight they are refilled the same way and the fight goes on (`last_combat.reloads`, kite `last.reloads`); with
-  nothing carried that fits a gun they fail as before. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  nothing carried that fits a gun they fail as before. The selected gun's own empty ammo slot is loaded from the main
+  inventory first even while another slot holds ammo, as a player's click does (shoot `loaded`: `loaded rocket*20 from
+  your main inventory into ammo slot 2 for rocket-launcher`), and the shoot's gun (move_to combat: the selected one) is
+  loaded again and selected again when it runs dry mid-fight (`last_combat.equipped`); with nothing carried that it
+  fires, `last_combat.dry` says when it ran dry (batch35 A2, Grok: one rocket in the slot, more in the main inventory). `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
@@ -5784,6 +5799,12 @@ fh watch    # deploy on every change
   closed in, and our drills or belts stand within 2.5 tiles, `last.why` adds `boxed in at (x,y) by 7
   burner-mining-drill within 2.5 tiles ...` and names `squeeze=true` and `pathfind=false`. Reproduced on the copy at
   Opus's spot; squeeze=true then arrived.
+  (batch35 A4, Haiku at (-19.8,545.6) under behemoth fire until a guessed pathfind=false) It also names the nearest
+  open spot: room to turn, no belt, splitter, loader or drill within a tile, within 8 tiles on the half-tile grid, and
+  reached from where you stand in a straight line your box sweeps (belts walked over, as a player walks across them):
+  `the nearest open spot: (-25.5,545.5), 5.7 tiles away, reached straight over the belts ... (move_to {position: {x:
+  -25.5, y: 545.5}, pathfind: false})`. `move_to {unbox: true}` takes that walk in the same call when the walk ends
+  boxed in, then asks the path to the goal again from there (`last.unboxed`); once a walk.
 - transfer farther (C5, Luna 18:20: a 39-tile transfer refused twice, split by hand into a walk and two calls):
   transfer, collect, feed, rearm and refuel walk into reach by default within 64 tiles (mine, build, rotate and
   configure keep 32; `walk: true` any distance, as before, which the refusal now says). `transfer {via: [{x,y}, ...]}`
@@ -7864,6 +7885,16 @@ fh watch    # deploy on every change
     give-up tick). It gives no `progress` and no `stuck_s`, so no stuck warning.
   - Test: tests/rocketload.lua, two sources: both taken (60 and 40), then the hold at the silo, nothing loaded, and
     the hold line.
+
+## d17 batch35 (the agents' 13:50 poll)
+
+- A failed direct call that pauses the queue says so first (A5, Muse 14:16: rocket launches stalled 5+ minutes until a
+  queue_status read showed `paused_by`). A direct call that drives the character pauses a running queue at its start;
+  when it then fails, the error opens with `this failed move_to paused your queue (plan #1, step 1 of 2 #job-1
+  move_to): queue_resume resumes it; the call: ...` (a standing order: `the standing order keeps its steps for
+  later`). `paused_by` reads `your move_to call failed while your queue ran (...)`, and while the queue stays paused
+  that way every reply's team block carries `queue_paused: your queue is paused since your move_to failed 40s ago
+  (...): queue_resume resumes it`. A failed read, a hand craft or a queue call pauses nothing and says nothing.
 - C1 (Muse: three long walking tours; "no bot-fetch to player inventory"): already there. `requests` with no position
   sets the character's own logistic requests, and the network's logistic robots bring them while the character stands
   in its logistic area. Opus used it on shift35 at 131h: copper-plate 28 to 500 in about 80 s, advanced-circuit 38 to
@@ -7894,6 +7925,74 @@ fh watch    # deploy on every change
   spoilable stacks, soonest first (24, then `spoiling_more`), each with its slot, the time left (spoil_tick) and spoil
   percent. An item with spoil_to_trigger_result reads `hatches in` (pentapod-egg on world n; nutrients spoil to
   spoilage).
+
+## d18 batch36 (the agents' 15:20 poll)
+
+- `logistics_audit {network | position, backlog: true}` (A1, Luna and Grok, all of shift35: Gleba's science requester
+  at (15.5,28.5) lacked 10 nutrients for about 36 minutes with about 98 in a provider 9 tiles off; logistics_audit said
+  not_sent and "all 250 logistic bots occupied"). Per network: the oldest unfilled requests first (256 requester points
+  read, 12 rows, `limit` up to 48): chest, item, short, `short_s` (how long since the networks watch first saw it
+  short), the provider the game would take it from (select_pickup_point) with what it holds and what robots already
+  reserve there (its targeted_items_pickup), and `held_by`, the first of these that reads true now: the delivery on
+  the way covers it; no room in the chest; none in the network's providers or storage; no provider the game picks;
+  every unit there reserved; no idle logistic robot (with how many hold cargo with no order and what, the orders the
+  rest are on by type and what they carry, and the queue to charge); robots queued to charge with every charging slot
+  taken; else idle robots and an unreserved provider, not sent yet (the game's dispatch is not exposed). `robots`:
+  total, idle (available_logistic_robots), on orders by type (robot_order_queue), carrying (top 5), holding cargo
+  with no order, charging and queued to charge (each cell's charging_robot_count and to_charge_robot_count), charging
+  slots (each roboport's logistic_parameters.charging_station_count) and how many are free. Read from the game: those
+  fields. Not read: when the game will dispatch a robot, and any minimum the game sends for (a requester chest has
+  none the API shows). On world n (18 Oct, network #98 on Gleba, 122 requester points, 250 robots) it ran
+  3.1-3.4 ms; in three reads a few minutes apart the robots were 201 holding cargo with no order (firearm-magazine 396,
+  ice 348, agricultural-science-pack 36, cannon-shell 20) and 4 idle, then all 250 on orders (126 deliver, 124
+  pickup) with 25 queued to charge, and nutrients read none free in the network for 21 short requesters.
+- `launch_needs` (A2, viewer Aurora 15:36: Swiftlet waited at a stop for carbon fiber while the silo there could not
+  finish rockets for want of processing units Swiftlet's hub held). On platform_schedule's reply, the platforms read
+  of one platform, and each silo line of shipment's readiness read: for a stop that waits on items (an item_count or
+  request wait) at the planet the platform is stopped at (else the stop it flies to), each rocket silo of ours there
+  whose input holds less than one rocket part's worth of an ingredient while it has parts left to make, and what of
+  that ingredient the waiting platform's own hub holds: `Swiftlet holds 400 processing-unit; rocket-silo (5.5,10.5)
+  on fulgora: its rocket parts lack it (holds 0, 10 a part; parts 12/50)`. The silos come from the census pass (no
+  search; a whole-surface find took 10.5 ms on Nauvis); 0.01-0.25 ms a platform on world n. Only rocket parts are
+  read: a payload is the platform's own requests, which its hub already holds and asks more of.
+- Stop waits as the game evaluates them (A3, Luna 15:58: an item-count OR time departure written without compare: "or"
+  ran as and, so the gate held past the time fallback; viewer Aurora 16:09: Spindle needed repeated fixes).
+  waitgroups.lua, for platform_schedule (stops and stop/wait) and train schedules:
+  - Waits of more than one kind with no compare past the first are refused, naming the default and the way to say
+    or: `stop 1: its waits mix item_count and time with no compare on wait 2; the game joins a wait with no compare by
+    and (the default), so every one must hold. Say each: compare: "and" or compare: "or" ...`. Waits of one kind keep
+    the default and. In shifts 33-36, 69 of 506 platform wait lists mixed kinds with no compare.
+  - `wait: {any_of: [...]}` or `{all_of: [...]}` is written as the game's chain (any_of may hold all_of groups; the
+    chain is ors of ands, so (a or b) and c is written as two all_of groups); read_as says so.
+  - The readback groups the waits as the game evaluates them (and binds before or): `nauvis (fluid_count
+    thruster-fuel >= 24000 or time 300s) [branch 2, time 300s, departs with no fuel condition]`. A branch is named when
+    another branch has a fuel (thruster-fuel, or an item with a fuel value), oxidizer or ammunition condition and it
+    has none.
+  - A platform stop's `save_as: NAME` keeps its wait list (as written) in the harness's storage, and `wait_from: NAME`
+    takes it on another stop or platform; read_as says which and who saved it.
+- `configure {position, hand_size}` on an inserter, built or ghost (C1, Astra: a one-egg surplus export took a
+  constant combinator and a stack size signal only to set hand size 1). The 2.0 inserter GUI has the setting: a
+  forum thread asks to rename its "Stack size override", and Bilka renamed it "Override hand size" for 2.1.22
+  (forums.factorio.com/viewtopic.php?p=646961). hand_size sets LuaEntity.inserter_stack_size_override: 1 up to the
+  inserter's hand size now (1, its prototype's bonus and the force's inserter or bulk capacity bonus), 0 or false
+  for none. Returns hand_size, hand_size_before, hand_max, and circuit_note when the inserter's circuit set stack
+  size is on (that signal sets the hand while it is on the wires). It goes with filters and spoil_priority in the
+  same call. No combinator is placed.
+- `wake: {near: N}` on sleep, wait_ticks and wait_until, `fh ... --wake-near N` (B1, Haiku: an urgent alert every 15-30
+  s on Nauvis woke each wait). Only an attack on our structures or buildings of ours destroyed within N tiles of the
+  character (1..200) wake it as urgent; every other urgent alert (enemy groups, platform hits, a teammate's death, power
+  cut or collapse, an outpost's output, a captive spawner) is held and given with the reply: `held_alerts` (up to 8
+  lines) and `held_alerts_count` (a direct wait's `last` has them). Damage to the character, tells and mentions wake as
+  before. The direct wait_until now takes `wake_on_urgent` too: the scheduler's schema lacked it, so `fh call
+  wait_until --no-urgent` and `--urgent-radius` were refused as an unknown argument.
+- Each leg re-checked before it starts (B2, Haiku: 8 hits from big spitters at (-112,240) on a rearm tour whose walk
+  started clear). A tour's next stop (rearm, feed, refuel, collect, recover, transfer tours) and a move_to's next via
+  leg are checked against enemy groups and enemy units seen now (and demolishers): one whose reach (24 tiles) the
+  straight leg passes through stops the walk where it stands, outcome `enemies_ahead`, and `last.why` /
+  `last.enemies_ahead` name it with what it does and where it stopped: `the leg from (-100,200) to (-120,280) passes 1
+  enemy unit (1 big-spitter) at (-110,238), 7.6 tiles from it: moving units (big-spitter (-110,238) wandering, facing
+  west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
+  avoid_enemies false checks nothing.
 
 ## d17 batch35, Groups B and D (the 13:50 poll; eng/d17-batch35b)
 
@@ -7946,6 +8045,24 @@ fh watch    # deploy on every change
   192 rows, the rest counted). The automatic launch line's waiting rows also give the count of the rest. Only platforms
   in orbit of the silo's planet count; one flying here is named in `platforms_coming` (from where, share of the leg
   flown) and its requests count once it is in orbit. On world n: Fulgora's two silos with every row, 4 ms.
+- Record lists in args are checked field by field (A6, Muse: requests `set` with `{count}` for `{min}` read 0..inf and
+  fetched nothing; Sol 14:20: `import_from` for `from` defaulted to nauvis, and circuit_set `signals` as an object
+  was read as none). argshapes.lua, walked by the schema check every call and every queued step passes through:
+  requests `set`, circuit_set `signals`, drop `items`, load_silo and silo_stage `items`, deliver `items`, build
+  `builds`, craft `recipes`, place_ghosts `entities`, platform_schedule `stops`, train `schedule` (and its waits). A
+  field the record does not take is refused, naming the fields it takes and what was likely meant: `requests set[1]:
+  count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count:
+  min is how much it asks for, max caps it)`. An object where an array goes is refused with the shape: `circuit_set
+  signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
+  not read as one` (the map form `{name: count}` stays where the docs give it: requests set, load_silo, silo_stage,
+  deliver). The fields are those each action's parser reads (build and ghost entries also take configure, requests,
+  circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7
+  circuit_set calls with signals as an object, and 16 ghost entries with `network`, `role` or `flow`, each dropped
+  without a word then.
+- silo's `loading` line and launch's cargo_for check read a hand load's record only while the rocket holds an item
+  that load put aboard (A7, operator 14:45: Gleba's silo read `loading for Cinder (loaded by hand by grok, 6h58m
+  ago); aboard nothing` with the rocket empty and automatic requests on). load_silo now records the items it loaded;
+  a record without them (from before) holds while anything is aboard. A record that no longer holds is dropped.
 - B6 (viewer Aurora 14:48: guns can read as covering big asteroids): platform_defense's damage apart from reach
   (platdefense.lua `M.damage`), for `route` or the schedule's next leg (the connection it flies):
   - Each asteroid that spawns on the connection (asteroid_spawn_definitions of type entity; chunks left out), its

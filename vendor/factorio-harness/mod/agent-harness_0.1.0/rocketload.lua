@@ -453,7 +453,7 @@ return function(api)
     end
     if #moved_all > 0 and api.moved then pcall(api.moved, p, silo, moved_all) end
     -- what platform this cargo is for (D11: a launch elsewhere is refused)
-    if #moved_all > 0 and (a.platform or a.for_platform) and api.loaded_for then pcall(api.loaded_for, p, silo, a.platform or a.for_platform) end
+    if #moved_all > 0 and (a.platform or a.for_platform) and api.loaded_for then pcall(api.loaded_for, p, silo, a.platform or a.for_platform, moved_all) end
     local out = {silo=string.format('%s at %s', silo.name, at(silo.position)), loaded=rows,
       cargo=list_text(contents(inv)), rocket_weight=api.rocket_weight(silo), slots=used_slots(inv) .. '/' .. #inv,
       chests=#chests > 0 and #chests or nil, complete=#short == 0, short=#short > 0 and short or nil,

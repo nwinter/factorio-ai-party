@@ -96,7 +96,8 @@
 - `queue_pause {lane?}` (`./fh queue pause`): pauses a queue and holds it: the running step goes back to the head of
   pending, and nothing resumes it until `./fh queue resume` (or a submit or repeat that starts it). Without it, a
   direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused
-  queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it).
+  queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it). A failed direct call that
+  paused it says so first in its error, and `team.queue_paused` stays on every reply until `queue_resume`.
 - `queue_repeat {steps, interval_ticks?, times?, for_ticks?, condition?, orders?, name?}`: replaces the queue with a
   repeating plan. `times` (rounds) and `for_ticks` (no round starts after that) end the loop with one `queue:` line
   (`done after N rounds: ...`) and `loop_done` in `queue_status`; `condition: {until: ...}` ends it at a round
@@ -149,7 +150,9 @@
   to the whole team waits for your next reply), urgent news on your surface or in your claims (another platform's
   losses wait), and `--until alert` on your surface; `--wake-on-orders`: a standing order's rounds end a sleep too (by
   default only the plan you submitted, finishing or stalling: `queue_done`, `queue_stalled`); `--urgent-radius N`
-  (1..200): attacks, groups, losses and deaths count only within N tiles of you. Urgent alerts and the action ending
+  (1..200): attacks, groups, losses and deaths count only within N tiles of you; `--wake-near N` (`wake: {near: N}` on
+  sleep, wait_ticks, wait_until): only an attack on ours or a loss within N tiles wakes it, the other urgent alerts
+  come with the reply as `held_alerts`. Urgent alerts and the action ending
   still end every wait. Each attack, group, loss or death wakes you once, however its counts grow (an attack after a
   minute's quiet is a new one); a power collapse or captive spawner again only when it comes back after 2 minutes gone
   (`alerts_digest` keeps the counts). A platform's alert lines (turrets empty, slow, fuel short, no repair packs) are

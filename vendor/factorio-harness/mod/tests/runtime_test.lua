@@ -2173,7 +2173,7 @@ do
   p.character.selected_gun_index=2
   local r=call('shoot',{position={x=3,y=0},ticks=4})
   eq(r.gun.slot,2); eq(r.gun.name,'rocket-launcher'); eq(r.gun.count,0); eq(r.gun.range,36)
-  eq(r.no_compatible_ammo,'gun slot 2 (rocket-launcher) has nothing in ammo slot 2; slot 1 pistol has firearm-magazine*10 (gun_slot picks it)')
+  eq(r.no_compatible_ammo,'gun slot 2 (rocket-launcher) has nothing in ammo slot 2 and your main inventory holds no ammunition it fires; nothing fires from it; slot 1 pistol has firearm-magazine*10 (gun_slot picks it)')
   advance(5); eq(call('status').last_combat.why_none:sub(1,19),'no_compatible_ammo:')
   r=call('shoot',{position={x=30,y=0},ticks=4,gun_slot=1})
   eq(r.gun.slot,1); eq(r.gun.ammo,'firearm-magazine'); eq(r.gun.count,10); eq(r.out_of_range,'pistol reaches 15 tiles; the target is '..string.format('%.1f',math.sqrt((30-p.position.x)^2+p.position.y^2))..' away')

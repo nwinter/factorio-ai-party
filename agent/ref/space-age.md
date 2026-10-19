@@ -32,8 +32,10 @@
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
 - `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
   waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
-- `platform_schedule {platform, stops, current?, keep_leg?, paused?}`, `{platform, next: true}` or `{platform, stop, wait, go?}`: each stop `{station, wait: [...]}`; a wait is `{type,
-  ticks?, condition?, compare: "and"|"or"}`. Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
+- `platform_schedule {platform, stops, current?, keep_leg?, paused?}`, `{platform, next: true}` or `{platform, stop, wait, go?}`: each stop `{station, wait: [...]}` (the reply's `launch_needs`: a silo at an item-waiting stop whose rocket parts lack
+  what the hub holds); a wait is `{type,
+  ticks?, condition?, compare: "and"|"or"}` (kinds mixed need compare on each wait past the first; or `wait:
+  {any_of: [...]}` / `{all_of: [...]}`; a stop's `save_as`/`wait_from` reuses a wait list by name). Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
   `any_request_not_satisfied`, `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a
   fluid), `circuit` (any signal on the hub's red and green wires: wire a tank or a combinator to the hub;
   `circuit_note` when the hub has no wire). A condition is `"thruster-fuel >= 10000"` or `{signal, comparator, value |

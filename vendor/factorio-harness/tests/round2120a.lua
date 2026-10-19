@@ -174,7 +174,14 @@ haiku('stop')
 -- An area under attack now (threat.lua's incident, last hit within 30 s) counts as well.
 storage.agent_harness.damage={['nauvis:0,-1']={id=1548,at={x=-58,y=-4},first=tick,last=tick,hits=3,damage=90,surface='nauvis',size=2,kinds={['small-biter']=2}}}
 r=haiku('rearm',{surface=true,below=5})
-eq(r.places,1); eq(#r.left_out,3); eq(r.left_out[2],'gun-turret (-60,0) is within 24 tiles of attack #1548 at (-58,-4), an area under attack now (last hit 0s ago, 2 attackers seen) (4.5 tiles from it); it clears in about 30 s (tick 1800) unless hit again (an area counts as under attack 30 s after its last hit)')
+eq(r.places,1); eq(#r.left_out,3); eq(r.left_out[2],'gun-turret (-60,0) is within 24 tiles of attack #1548 at (-58,-4), an area under attack now (last hit 0s ago, 2 attackers seen) (4.5 tiles from it); it clears in about 30 s (tick 1800) unless hit again (an area counts as under attack 30 s after its last hit) [1 threat holds it: attack #1548 at (-58,-4), 4.5 tiles from it: our entities under attack now (last hit 0s ago by 2 small-biter); every one moves (unsafe_goal: "moving" goes on)]')
+haiku('stop')
+-- (d17 batch35 A3, Haiku) unsafe_goal "moving": the turret only the attack holds stays in the tour, named in through;
+-- those the worm and the spawner hold are left out
+r=haiku('rearm',{surface=true,below=5,unsafe_goal='moving'})
+eq(#r.left_out,2); assert(r.left_out[1]:find('big-worm-turret',1,true),r.left_out[1]); assert(r.left_out[2]:find('biter-spawner',1,true),r.left_out[2])
+eq(#r.through,1); assert(r.through[1]:find('gun-turret (-60,0) is within 24 tiles of attack #1548',1,true),r.through[1])
+assert(r.through[1]:find('every one moves',1,true),r.through[1]); eq(r.places,2)
 storage.agent_harness.damage={}
 haiku('stop')
 
@@ -215,7 +222,7 @@ eq(active('haiku'),tour,'a read: the tour goes on')
 eq(r.dry_run,true); eq(#r.corpses,2)
 local c=r.corpses[1]
 eq(c.distance,110); eq(c.items,69); eq(c.holds,'explosives*50, firearm-magazine*19'); eq(c.died,'0m00s ago')
-has(c.walk,'left out by recover: the corpse (110,0) is inside big-worm-turret (120,0) range 38 (10.0 tiles from it); the nearest safe spot toward it: (')
+has(c.walk,'left out by recover: the corpse (110,0) is inside big-worm-turret (120,0) range 38 (10.0 tiles from it) [2 threats hold it: big-worm-turret at (120,0), 10.0 tiles from it: standing (range 38); attack #1687 at (112,2), 2.8 tiles from it: our entities under attack now (last hit 1s ago by 1 big-worm-turret)]; the nearest safe spot toward it: (')
 eq(c.danger[1],'big-worm-turret (120,0): 10.0 tiles from it, range 38: the corpse lies inside it')
 eq(c.danger[2],'attack #1687 at (112,2): 2.8 tiles from it, 1 attacker seen (1 big-worm-turret), last hit 1s ago (under attack now)')
 eq(#c.danger,2); eq(c.nests[1],'1 big-worm-turret around (120,0)')
@@ -231,7 +238,7 @@ eq(r.corpses[3].danger[1],"biter-spawner (0,100): 50.0 tiles from it, its units 
 k3.valid=false; storage.agent_harness.bots.by_name.haiku.corpses[3]=nil
 -- unsafe_goal: walked to, named; avoid_enemies false: no check, the danger still listed.
 r=haiku('recover',{dry_run=true,unsafe_goal=true})
-eq(r.corpses[1].walk,'recover walks to it (unsafe_goal): the corpse (110,0) is inside big-worm-turret (120,0) range 38 (10.0 tiles from it)')
+eq(r.corpses[1].walk,'recover walks to it (unsafe_goal): the corpse (110,0) is inside big-worm-turret (120,0) range 38 (10.0 tiles from it) [2 threats hold it: big-worm-turret at (120,0), 10.0 tiles from it: standing (range 38); attack #1687 at (112,2), 2.8 tiles from it: our entities under attack now (last hit 1s ago by 1 big-worm-turret)]')
 r=haiku('recover',{dry_run=true,avoid_enemies=false})
 eq(r.corpses[1].walk,'recover walks to it (avoid_enemies false: no check)'); eq(r.avoid_enemies,'false: no check')
 eq(r.corpses[1].danger[1],'big-worm-turret (120,0): 10.0 tiles from it, range 38: the corpse lies inside it')

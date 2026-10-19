@@ -4,6 +4,7 @@
 -- are always shown in remote view, so none of this needs the character there.
 return function(api)
   local M={}
+  M.waitgroups=require('waitgroups')()  -- (d18 batch36 A3) the waits' and/or chain: groups, the mixed refusal, the readback
   local function invert(t) local out={} for k,v in pairs(t or {}) do out[v]=k end return out end
   -- Riding a rocket and dropping from the hub are LuaPlayer moves; a bot (no
   -- player to sit in the hub) travels through bots.lua instead: same payload
@@ -686,8 +687,7 @@ return function(api)
     if not (sch and sch.records and #sch.records>0) then return nil end
     local parts={}
     for i,r in ipairs(sch.records) do
-      local waits={}
-      for _,w in ipairs(r.wait_conditions or {}) do
+      local function wait_text(w)
         -- (d17 batch31 B9) a count or circuit wait with its condition (none: the game compares nothing); the harness's
         -- never-holding circuit wait (platwait.lua) as what it is
         local c=w.condition
@@ -697,9 +697,12 @@ return function(api)
         elseif w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit' then
           text=w.type..(f and ' '..f..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '?')..' '..tostring(c.constant or (c.second_signal and c.second_signal.name) or 0) or ' with no condition')
         else text=w.type..(w.ticks and ' '..math.floor(w.ticks/60)..'s' or '') end
-        waits[#waits+1]=text
+        return text
       end
-      parts[i]=(i==sch.current and '>' or '')..(r.station or '?')..(#waits>0 and ' ('..table.concat(waits,', ')..')' or '')
+      -- (d18 batch36 A3) as the game evaluates them: and binds before or; a branch that leaves with no fuel, oxidizer or
+      -- ammunition condition another branch has is named
+      local grouped,notes=M.waitgroups.text(r.wait_conditions,wait_text)
+      parts[i]=(i==sch.current and '>' or '')..(r.station or '?')..(grouped and ' ('..grouped..')' or '')..(notes and ' ['..table.concat(notes,'; ')..']' or '')
     end
     return table.concat(parts,' | ')
   end
@@ -1303,6 +1306,8 @@ return function(api)
           row.tile_removals=try(function() return M.tile_removals(pl) end)
           -- (d17 batch31 B9) the stop waits the harness keeps for it
           row.harness_waits=api.platwait and try(function() return api.platwait().line(pl.name) end) or nil
+          -- (d18 batch36 A2) a silo at its stop that lacks a rocket-part ingredient its own hub holds
+          row.launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil
           -- Its last stops and legs (expected, left, came aboard, spoiled, rockets) and its spoilable items now
           -- against the arrival (Luna, shift12 12:47).
           local fr=try(function() return freight.read(pl) end)
@@ -1365,11 +1370,43 @@ return function(api)
   local FLUID_NOTE='on world n the game\'s fluid_count stop condition on a platform did not hold while its storage tanks held more: Cinder at Gleba (2026-10-18 14:23 UTC) waited over 5 min on thruster-fuel >= 22000 and thruster-oxidizer >= 22000 with 26000 of each in its tanks; the API does not say what it reads, and the hub holds no fluid. What reads the tanks: a circuit wait, with the tanks wired (red or green) to the hub, their contents on the wire (Cinder\'s hub read 25000 of each so), or harness: true on the wait (the harness reads the tanks and sends the platform on)'
   -- One stop's waits as the game's records take them, and the harness's watch for it (B9), or nil; runs and read_as get
   -- their lines. Shared by stops and by stop (B8).
+  -- Wait lists kept by name (save_as / wait_from), as written; the harness's storage, no defaults.
+  function M.saved_waits(i,stop,read_as,p)
+    if stop.save_as==nil and stop.wait_from==nil then return stop end
+    local st=api.state and api.state()
+    assert(st,'saved waits need the harness storage')
+    st.saved_waits=st.saved_waits or {}
+    local out={}
+    for k,v in pairs(stop) do if k~='save_as' and k~='wait_from' then out[k]=v end end
+    if stop.wait_from~=nil then
+      assert(stop.wait==nil,'stop '..i..': wait_from takes the saved wait list; give wait or wait_from, not both')
+      local saved=st.saved_waits[stop.wait_from]
+      if not saved then
+        local names={}
+        for n in pairs(st.saved_waits) do names[#names+1]=n end
+        table.sort(names)
+        error(string.format('stop %d: no wait list saved as %s (saved: %s)',i,tostring(stop.wait_from),#names>0 and table.concat(names,', ') or 'none'),0)
+      end
+      out.wait=saved.wait
+      read_as[#read_as+1]=string.format('stop %d: waits from %s%s',i,tostring(stop.wait_from),saved.by and ' (saved by '..saved.by..')' or '')
+    end
+    if stop.save_as~=nil then
+      assert(type(stop.save_as)=='string' and #stop.save_as>0 and #stop.save_as<=40,'stop '..i..': save_as is a name of 1..40 characters')
+      assert(out.wait~=nil,'stop '..i..': save_as keeps the stop\'s wait list; it has none')
+      st.saved_waits[stop.save_as]={wait=out.wait,tick=game.tick,by=p and p.name or nil}
+      read_as[#read_as+1]=string.format('stop %d: its waits saved as %s',i,stop.save_as)
+    end
+    return out
+  end
   local function stop_waits(i,stop,runs,read_as)
     local entry
     local waits={}
     local harness_conds,mirror,other,ordered={},{},{},{}
-    for j,w in ipairs(stop.wait or {}) do
+    -- (d18 batch36 A3) any_of / all_of as the game's chain; kinds mixed with no compare past the first: refused
+    local list,grouped=M.waitgroups.flatten(stop.wait,'stop '..i)
+    if grouped then read_as[#read_as+1]=string.format('stop %d: %s written as the game\'s chain of %d waits',i,stop.wait.any_of and 'any_of' or 'all_of',#list)
+    else M.waitgroups.mixed(list,'stop '..i) end
+    for j,w in ipairs(list or {}) do
       assert(type(w)=='table' and type(w.type)=='string','stop '..i..' wait '..j..' needs a type')
       -- (d17 batch31 B9, Luna: {type: fluid_count, fluid, count} was taken with no condition, and the game's wait
       -- then had nothing to compare) a field a wait does not take is refused, and a count wait needs its condition
@@ -1596,6 +1633,7 @@ return function(api)
         edited=string.format('stop %d (%s): %d wait condition%s set in place; the records and the current stop (%d) %s; state %s%s',idx,station,#waits,#waits==1 and '' or 's',
           new_cur,new_cur~=cur and string.format('changed from %d (current)',cur) or 'kept',state,state~=before and ' (was '..tostring(before)..')' or ' (kept)'),
         leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,
+        launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil,
         harness_waits=W and W.line(pl.name) or nil}
     end
     local circuit_note,sent,go_error,rebuilt,one_stop_note
@@ -1611,6 +1649,8 @@ return function(api)
       runs,read_as={},{}
       for i,stop in ipairs(a.stops) do
         assert(type(stop)=='table' and type(stop.station)=='string' and prototypes.space_location[stop.station],'stop '..i..': station must be a planet or space location name')
+        -- (d18 batch36 A3) a stop's wait list kept under a name for reuse (save_as) or taken from one (wait_from)
+        stop=M.saved_waits(i,stop,read_as,p)
         local waits,entry=stop_waits(i,stop,runs,read_as)
         watch[i]=entry
         records[i]={station=stop.station,wait_conditions=#waits>0 and waits or nil}
@@ -1715,7 +1755,8 @@ return function(api)
     return {name=pl.name,state=state,state_note=state_note,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),one_stop=one_stop_note,
       sent_to=sent and string.format('stop %d (%s): go to station called',sent.index,sent.station) or nil,go_error=go_error,rebuilt=rebuilt,note=note,circuit_note=circuit_note,
       current_note=current_note,leg=leg_note,read_as=read_as and #read_as>0 and read_as or nil,waits_run=runs and #runs>0 and runs or nil,fluid_count_note=fluid_note,
-      harness_waits=api.platwait and api.platwait().line(pl.name) or nil}
+      harness_waits=api.platwait and api.platwait().line(pl.name) or nil,
+      launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil}
   end
   -- Rocket cargo weight against the lift, in grams as the game counts them
   -- (item prototype weight; rocket_lift_weight 1000000 = 1000 kg). The game
