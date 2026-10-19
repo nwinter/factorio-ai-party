@@ -260,6 +260,8 @@ local function finish(index, outcome)
   s.last=s.last or {}
   local action=s.active[index]
   if action and action.resume_queue and not action.finishing then M.resume_after(index,action.resume_queue) end
+  -- (d18 batch37 C3) a direct action that paused the queue with queue_resume_after: the queue runs again as it ends
+  if action and action.resume_direct and not action.finishing and outcome~='stopped' and scheduler and scheduler.resume_direct(index) then action.queue_resumed=true end
   -- One carried over a harness update ends guarded (carry.lua): a shape this runtime does not expect still ends it.
   if action and action.carried and not action.finishing then
     action.finishing=true
@@ -284,6 +286,7 @@ local function finish(index, outcome)
   if action and action.retreated and action.retreated.idle and outcome=='retreated' then pcall(M.flee_on,index) end
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
+  if action and action.queue_resumed then s.last[index].queue_resumed='your queue, paused by this call, runs again now (queue_resume_after)' end
   -- (d17 batch31 C2, Opus twice: a request cleared before its items arrived) a direct wait ended early by a message,
   -- an urgent alert or damage: the personal requests still unfilled, with what is on the way
   if action and (action.kind=='wait_ticks' or action.kind=='wait_until') and M.WAIT_EARLY[outcome] then
@@ -700,6 +703,11 @@ local function finish(index, outcome)
     last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
     last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead
+    -- (d18 batch37 C1) a chain: what of its items is held, the steps left, and on_fail "return"'s walk back
+    if action.chain then
+      local okc,call=pcall(M.transferchain.report,M.lookup(index),action,last,outcome)
+      if okc and call then s.then_calls=s.then_calls or {}; s.then_calls[#s.then_calls+1]={index=index,call=call,started_by='on_fail "return" of a transfer chain that ended '..outcome} end
+    end
     last.left_out=action.left_out; last.left_out_count=action.left_out_count
     last.turrets_skipped=action.turrets_skipped  -- (batch32 A2) turrets a rearm walk skipped: other ammo with no room, ghosts
     if action.fuel_round then local r=action.fuel_round;last.fuel_taken=r.taken+(r.source and r.source.got or 0);last.sources=r.sources;last.source_read_capped=r.source_read_capped;last.why=action.why or last.why end
@@ -2087,6 +2095,11 @@ function handlers.describe(_,a)
       b.retry_ticks='with retry_when_clear: 600..54000 (default 18000)'
       b.retries='(set by the retry: how many so far)'
     end
+  end
+  -- (d18 batch37 C1) transfer {steps}
+  if description.actions.transfer then
+    description.actions.transfer.steps='a chain in one walking call: [{take: [{x,y}, ...], item, count?}, {give: [{x,y}, ...], item, split?: "even" | "fill", count?}, ...] in order (32 chests at most): a take takes the item from those chests (count in all; default all), a give gives what you hold of it (even: an even share at each; fill: all that fits, the default; count: at most that many); the first leg that fails or is not reached ends it: last.chain_held (what of its items you hold), last.chain_left (the steps left)'
+    description.actions.transfer.on_fail='with steps: "return": on a failure, what the chain took and you still hold goes back to the chests it came from (a second walk; last.chain_return); "keep" (default): you keep it'
   end
   -- (d18 batch36 C1) clear_obstacles on build and place_ghosts (clearobs.lua)
   for _,name in ipairs({'build','place_ghosts'}) do
@@ -12221,10 +12234,15 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
+M.hubfull=require('hubfull'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,
+  request_rows=function(e,f,only) return M.silo.request_rows(e,f,nil,only) end,listeners=function(pl) return M.platalerts.listeners(pl) end,
+  deliver=function(index,t) return M.board.deliver(index,t) end}  -- a hub too full for its payload (d18 batch37 B3)
+M.elsewhere=require('elsewhere'){chests=function(f,s) if M.census then return M.census.chests_on(f,s) end end,
+  crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- what no network gives (d18 batch37 B1)
 M.makersall=require('makersall'){status_name=function(e) return M.machine_status(e) end,state_text=function(e) return M.thrust.state_text(e) end,
   census_makers=function(s) if M.census then return (M.census.makers(s)) end end}  -- supply {item, makers: "all"} (d18 batch37 A1)
 M.ledger=require('ledger'){state=state}  -- launches up per surface, for shipment {ledger} (d18 batch36 D3)
-M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
+M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end,elsewhere=function(...) return M.elsewhere.line(...) end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
@@ -12287,7 +12305,7 @@ M.capsules=require('capsules'){state=state,position=position,assert_visible=asse
 handlers.use_item=M.capsules.handlers.use_item
 -- Artillery (artillery.lua; Grok, d15 14:07): the pieces with the spawners and worms in range, automatic targeting
 -- (configure auto_targeting) and the targeting remote (use_item).
-M.artillery=require('artillery'){position=position,held=held}
+M.artillery=require('artillery'){position=position,held=held,state=state,deliver=function(index,t) return M.board.deliver(index,t) end}
 -- Artillery shells in flight and their targets, for the stream's director (artycam.lua; d17 artycam, viewer Foobator).
 M.artycam=require('artycam'){state=state,range=function(e) return M.artillery.range(e) end}
 function handlers.artillery(p,a) return M.artillery.read(p,a) end
@@ -12423,7 +12441,7 @@ function M.cargo_eta(p,a,rockets)
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
-M.silo=require('silo'){state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
+M.silo=require('silo'){elsewhere=function(...) return M.elsewhere.line(...) end,state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end,leg=function(pl) return M.freight and M.freight.leg(pl) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
@@ -15553,7 +15571,7 @@ function check_args(action,args)
     -- peek (boolean) on any request: read without consuming this agent's
     -- team hints (overlays polling as an agent).
     if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean')
-      and not (key=='helper' and type(args.helper)=='boolean') then
+      and not (key=='helper' and type(args.helper)=='boolean') and not (key=='queue_resume_after' and type(args.queue_resume_after)=='boolean') then
       local valid={}
       for k in pairs(set) do valid[#valid+1]=k end
       table.sort(valid)
@@ -16043,7 +16061,31 @@ function M.dispatch(request)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   local called_as=M.resolve_alias(request)
   M.direct_paused=nil
+  -- (d18 batch37 C3, Muse, daily) queue_resume_after: true on any call: a queue it pauses runs again when it ends
+  local resume_after
+  if type(request)=='table' and type(request.args)=='table' and request.args.queue_resume_after~=nil then
+    resume_after=request.args.queue_resume_after==true
+    local c={}
+    for k,v in pairs(request.args) do if k~='queue_resume_after' then c[k]=v end end
+    request.args=c
+  end
   local ok,result=pcall(M.dispatch_inner,request)
+  local dp=M.direct_paused
+  if dp and type(request)=='table' and dp.index==request.player and dp.tick==game.tick and (resume_after or scheduler.resume_after_direct(dp.index)) then
+    local act=state().active[dp.index]
+    if ok and act and act.call and not act.queued then
+      act.resume_direct=true
+      if type(result)=='table' then result.queue_resumes='your queue, paused by this call, runs again when it ends (queue_resume_after)' end
+    elseif scheduler.resume_direct(dp.index) then
+      if ok then
+        if type(result)=='table' then result.queue_resumed='your queue, paused by this call, runs again now (queue_resume_after)' end
+      else
+        -- the bootstrap stops the player after a failure: this one leaves the resumed queue alone
+        passive_failed=game.tick; M.direct_paused=nil
+        result=tostring(result)..'; your queue, paused by this call, runs again (queue_resume_after)'
+      end
+    end
+  end
   M.caller_index=nil
   if called_as then
     if ok and type(result)=='table' then result.called_as=called_as
@@ -16516,7 +16558,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
 -- the minutes only.
@@ -16851,6 +16893,24 @@ do
     return out
   end
 end
+-- transfer {steps} (transferchain.lua; d18 batch37 C1, Sonnet): a chain of takes and gives in one walking call.
+M.transferchain=require('transferchain'){integer=integer,position=position,held=held}
+do
+  local plain=handlers.transfer
+  handlers.transfer=function(p,a)
+    if type(a)~='table' or a.steps==nil then return plain(p,a) end
+    local places,legs,groups=M.transferchain.plan(a)
+    local action=stock.start_legs(p,places,integer(a.ticks,18000,1,36000,'ticks'),{chain=true,chain_legs=legs,groups=groups,took={},on_fail=a.on_fail,transfer={direction="chain"},return_of=a.return_of,
+      rows={},items={},avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal})
+    if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+    state().active[p.index]=action
+    local parts={}
+    for _,g in ipairs(groups) do parts[#parts+1]=string.format('step %d: %s %s at %d chest%s%s',g.step,g.kind,g.item,g.n,g.n==1 and '' or 's',
+      g.kind=='give' and ' ('..g.split..')' or (g.left and ' ('..g.left..' in all)' or '')) end
+    return {chain=table.concat(parts,'; '),legs=#legs,on_fail=a.on_fail or 'keep',
+      note='walks the legs in order; the first that fails or is not reached ends it (last: chain_held, chain_left'..(a.on_fail=='return' and ', and what it took goes back)' or ')')}
+  end
+end
 -- clear_obstacles on build and place_ghosts (clearobs.lua; d18 batch36 C1, Opus): the trees and rocks in the footprints
 -- marked, those in reach mined by hand, the call run again once all are gone.
 M.clearobs=require('clearobs'){state=state,position=position,direction_of=function(d) return M.direction_of(d) end,
@@ -16989,7 +17049,7 @@ M.shipment=require('shipment'){state=state,drops_taken=function(f) return M.drop
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force,only) return M.silo.request_rows(e,force,nil,only) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end,
   gate=function(p,a) return space.gate(p,a) end,gate_row=function(e) return M.gates.row(e) end,rocket=function(e) return M.silo.rocket(e) end,
-  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,
+  launch_need=function(pl,silos) return M.launchneed.for_platform(pl,silos) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,
   ledger=function(surface) return M.ledger.read(surface,M.drops.ledger_rows()) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
@@ -17092,7 +17152,7 @@ M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=fu
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
 M.platwait=require('platwait'){state=state}
-space=space_module{deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -17135,7 +17195,7 @@ function M.last_drop(index)
   local last=state().last_drop and state().last_drop[index]
   return last and game.tick-last.tick<=3600 and last or nil
 end
-stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+stock=stock_module{elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
@@ -17173,6 +17233,16 @@ stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_gro
     if action.op=='transfer' then
       -- transfer {walk=true}: the call's own transfer at each place (M.transfer_walk); a row per place. A courier
       -- (M.pick_source with to): its leg's transfer, the give for what the take got.
+      -- (d18 batch37 C1) a chain's leg: a take or a give, sized now (transferchain.lua)
+      if action.chain then
+        local t,g=M.transferchain.args(p,action)
+        local epos,ename=e.position,e.name
+        local out=transfer_one(p,t,nil,e)
+        M.transferchain.moved(action,g,e,out.transferred or 0)
+        if (out.transferred or 0)>0 then action.items[g.item]=(action.items[g.item] or 0)+out.transferred end
+        action.rows[#action.rows+1]={position=epos,name=ename,moved=out.transferred,direction=t.direction,step=g.step,item=g.item}
+        return {transferred=out.transferred}
+      end
       local t=action.legs and action.legs[action.index] or action.transfer
       if action.fill and not action.legs then
         local c={}
@@ -18024,6 +18094,8 @@ function M.tick_body(event)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
   if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
   if event.tick%60==13 and state().clear_jobs then pcall(M.clearobs.tick) end  -- clear_obstacles waits (clearobs.lua)
+  if event.tick%600==29 then pcall(M.timed,'hubfull.tick',M.hubfull.tick,event.tick) end  -- a hub too full for its payload (hubfull.lua)
+  if event.tick%60==37 and state().artillery_checks then pcall(M.artillery.tick) end  -- a flare's shot confirmed (artillery.lua)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
@@ -18100,7 +18172,7 @@ function M.tick_body(event)
       local text=ok and (type(r)=='table' and (r.until_tick and string.format('%s started (until tick %d)',c.call.action,r.until_tick) or c.call.action..' ran') or tostring(r)) or (c.call.action..' refused: '..reason(r))
       if last then last.then_result=text end
       -- the action it started says so in its own last (finish)
-      if ok and now and now.kind~='wait_until' then now.started_by=c.call.action..' run again after a wait (then_call)' end
+      if ok and now and now.kind~='wait_until' then now.started_by=c.started_by or c.call.action..' run again after a wait (then_call)' end
     end
   end
   if event.tick%120==7 and state().belt_cuts then pcall(M.belt_cut_tell) end

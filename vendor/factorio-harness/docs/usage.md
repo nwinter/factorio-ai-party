@@ -8161,6 +8161,31 @@ fh watch    # deploy on every change
   - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
     operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
   - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.
+- What a surface holds that no network gives (B1; Sonnet: calcite stalled Wayfarer twice while it sat in chests the
+  silo's network could not give; Grok 16:57: Gleba held about 16,000 copper ore in plain chests while furnaces and LDS
+  assemblers were empty). elsewhere.lua reads our chests (a new census list, no search: a whole-surface find of chests
+  took 14-16 ms on Nauvis) and our crafters' outputs (census), by kind: plain chests (in no network: none gives them,
+  logistic chests outside any network among them), requester and buffer chests (theirs), provider and storage chests
+  of another network than the one named, machine outputs; counts, how many places, the nearest three. Kept a minute a
+  surface and item; about 1.7 us a chest on world n (all of Nauvis's about 2,500 chests and 900 crafters: about 6 ms).
+  It is on silo's platform request rows (and so on shipment's readiness read) when the silo's network cannot give a
+  rocket's payload (`elsewhere`, with the other networks left to the row's own words), on stock's item read
+  (`elsewhere`), and on supply when users are short of the item.
+- Stop item waits against the planet (B2, Gemini 16:53: Kestrel II waiting for 500 carbon fiber at Fulgora, which made
+  none). platform_schedule's reply and the one-platform platforms read give `wait_facts`, and shipment's readiness read a
+  `wait:` line each. Per item_count wait of each stop: what the hub holds against it, the stop's planet's stock (its
+  logistic networks' count, and elsewhere.lua's count outside them), what that planet made of it a minute over the last
+  10 minutes (production statistics), and at that rate when the hub's count would be reached: `stop 1 (fulgora) waits
+  for carbon-fiber >= 250: the hub holds 0, 250 short; fulgora holds 100 (100 in its logistic networks, 0 outside them)
+  and made 0 a minute over the last 10 min: not met at this rate` (world n, Kestrel II). The rate is the planet's
+  making, not what reaches the hub. 0.01-2.5 ms a platform on world n.
+- A hub too full for its payload (B3, Grok: Spindle's hub filled with ore twice and the science rocket could not board,
+  seen only in the silo line's hub_full): every 10 s one platform waiting at a stop, in turn (hubfull.lua); each silo
+  of ours on that planet (census list) whose request row for it reads hub_full is told once per wait, as a line that
+  wakes them, to those who hear about the platform (platalerts' rule: its creator, who worked on it lately, who is
+  aboard): `hub full: Spindle waits at gleba with 1 free hub slots; the agricultural-science-pack payload a rocket from
+  rocket-silo (65.5,14.5) waits for takes 5; the hub holds copper-ore 150 (3 slots), iron-ore 50 (1 slots)`. On world n
+  one check took up to 1.3 ms (Kestrel II waiting at Fulgora; no hub full then).
 - D5 (viewer Aurora 14:47: each agent's most repeated haul): the hauls of this shift, which are the hauling read now
   less the run's first row in runs/RUN/hauling.jsonl, most repeated first (tools/stream/hauling.py `shift_rows` hauls,
   `haul_line`).
@@ -8304,6 +8329,31 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+- A queue paused by a direct call runs again when the call ends (C3, Muse, daily; batch35 A5 said so but left it
+  paused). `queue_resume_after: true` on any direct call: a queue it pauses runs again when it ends: at once for a call
+  that ends at once or fails (`queue_resumed`, or the error says so), else when the action it started ends
+  (`queue_resumes`, then `last.queue_resumed`); an action ended by stop leaves it paused. `resume_after_direct: true` on
+  queue_submit or queue_repeat does it for every direct call from then on (false turns it off). A queue the agent paused
+  with queue_pause is never resumed this way.
+- Artillery (C2). Across surfaces (Muse, about 6 times): `use_item {item: "artillery-targeting-remote", surface}` naming
+  another surface is refused: the remote places its flare where your character is. Whether the game lets a player use
+  it on another planet in remote view was not established: the Factorio wiki says the remote is used "from the map or
+  normally from the world" and says nothing of another surface, and a script can place a flare anywhere, which is not
+  a player's action; a teammate there can place it. The flare's reply (viewer Aurora 16:57) now says for each piece in
+  reach whether the flare is in its automatic range too or in its manual range only (its prototype's
+  manual_range_modifier, 2.5 for the turret, times the automatic range), and `confirm`: 10 s later the placer's team
+  block says whether a shot followed: the flare gone (its shots taken) or still there, shells gone from the pieces that
+  reached it, artillery projectiles in the air within 64 tiles of it, and the surface's shells used in 10 min.
+- Transfer chains (C1, Sonnet: 10+ chained transfers a brick cycle; a failure mid-chain left items in the pack):
+  `transfer {steps: [{take: [{x,y}, ...], item, count?}, {give: [{x,y}, ...], item, split?: "even" | "fill", count?}], on_fail?}`
+  walks the chests in order in one call (32 at most; transferchain.lua over stock.lua's courier legs, never re-routed).
+  A take takes the item (`count` in all across its chests, default all); a give gives what you hold of it: `fill` (default)
+  all that fits at each in turn, `even` an even share of what is held now at each chest left in the step, `count` at
+  most that many in all. The first leg that fails (the entity gone, a transfer refused) or is not reached ends it:
+  `last.chain_held` (what of its items you hold) and `last.chain_left` (each leg left: step, take or give, item, position).
+  `on_fail: "return"` then walks what the chain took and you still hold back to the chests it came from, as a transfer
+  chain of its own started next tick (`last.chain_return`; that walk's last has `started_by` and `chain_failed`, the
+  failed chain's outcome, error, held and left). `keep` (default) leaves it in your pack.
 
 ## d18 batch36 (the agents' 15:20 poll)
 

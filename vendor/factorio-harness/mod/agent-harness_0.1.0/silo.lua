@@ -628,6 +628,11 @@ return function(api)
               elseif payload and net + other_n >= payload then r.flag = 'split_networks'
               else r.flag = 'below_min_payload' end
               if #others > 0 and r.flag ~= 'matched' then words[#words+1] = 'other networks on ' .. e.surface.name .. ': ' .. table.concat(others, '; ', 1, math.min(3, #others)) end
+              -- (d18 batch37 B1, Sonnet: calcite stalled Wayfarer twice) short of the payload: where else the planet holds it
+              if r.flag ~= 'matched' and r.flag ~= 'filling' and api.elsewhere then
+                local eline = try(function() return (api.elsewhere(force, e.surface, name, ln, e.position, true)) end)
+                if eline then r.elsewhere = eline; words[#words+1] = eline end
+              end
               -- split_networks: carried over by hand, a walking load_silo from those chests that launches for the platform
               if r.flag == 'split_networks' and #chests > 0 then
                 local auto = try(function() return e.use_transitional_requests end)

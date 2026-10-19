@@ -289,6 +289,8 @@ return function(api)
     out.planet = planet
     local here = w.stopped and w.at == planet
     lines[#lines+1] = here and string.format('stopped at %s', planet) or string.format('not stopped at %s (%s): its silos load for it once it is, its pads take cargo then', planet, w.text or '?')
+    -- (d18 batch37 B2) its item waits against each planet's stock and production rate
+    for _, l in ipairs(api.wait_need and try(function() return api.wait_need(pl) end) or {}) do lines[#lines+1] = 'wait: ' .. l end
     -- up: the requests from there not delivered
     local cache = {}
     local _, rows = M.platform(pl, cache, nil, true, planet)

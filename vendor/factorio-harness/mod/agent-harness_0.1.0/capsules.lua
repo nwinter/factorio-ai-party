@@ -10,7 +10,7 @@ return function(api)
   local M = {handlers={}}
   local SUPPORTED = {throw=true, ['use-on-self']=true}
   M.schema = {
-    use_item = {item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives, artillery-targeting-remote (held, or by the shortcut once artillery is researched; not used up: an artillery flare at position, any charted tile, and our artillery with shells that reaches it fires there; the reply lists those pieces), ...',
+    use_item = {surface='your surface only (named, it must be yours): the artillery remote is not used on another surface here (see its refusal)', item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives, artillery-targeting-remote (held, or by the shortcut once artillery is researched; not used up: an artillery flare at position, any charted tile, and our artillery with shells that reaches it fires there; the reply lists those pieces), ...',
       position='{x,y} target for a thrown capsule: in sight, within its range (and beyond its minimum range); not for one used on yourself',
       quality='default normal',
       walk='cliff-explosives only: true walks into range first (as clear_cliffs)',
@@ -56,6 +56,14 @@ return function(api)
     if ca.type == 'destroy-cliffs' then
       assert(a.position ~= nil, 'position is required: the cliff to blow up (as scan lists it)')
       return M.handlers.clear_cliffs(p, {position=a.position, item=a.item, quality=a.quality, walk=a.walk == true})
+    end
+    -- (d18 batch37 C2, Muse about 6 times: only her body could fire on Nauvis while Astra on Aquilo had the targets)
+    if a.surface ~= nil then
+      local okh, here = pcall(function() return p.surface.name end)
+      if not okh then here = nil end
+      assert(a.surface == here, string.format('use_item acts where your character is (%s). The artillery targeting remote places its flare on that surface here: '
+        .. 'whether the game lets a player use it on another planet in remote view is not established (the Factorio wiki says the remote is used "from the map or normally from the world", '
+        .. 'and says nothing of another surface; a script on 2.0.77 can place a flare on any surface, which is not a player\'s action). A teammate on %s can place it', tostring(here), tostring(a.surface)))
     end
     -- The artillery targeting remote (Grok, d15 14:07): a flare at the position (artillery.lua).
     if ca.type == 'artillery-remote' and api.artillery_remote then return api.artillery_remote(p, a, ca) end
