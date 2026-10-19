@@ -195,10 +195,51 @@ def classify(line, viewer_lines, inbox=()):
     return None
 
 
+# (d19 batch42 A1) fh posts a say over 500 bytes as numbered parts, "@Foobator (2/3) ...", each repeating the line's
+# leading @names (host/saysplit.ts). Part k of n from the same speaker within PART_S of part k-1 answers what part 1
+# answered: one thread, also when part 1 named the viewer only as a vocative and the later parts name nobody.
+PART = re.compile(r"^(?:@[^\s,:]+[,:]?\s+)*\((\d{1,2})/(\d{1,2})\)\s")
+PART_S = 120
+
+
+def part_of(text):
+    """(k, n) of a numbered part ("@Foobator (2/3) ..."), else None."""
+    m = PART.match(str(text or ""))
+    if not m:
+        return None
+    k, n = int(m.group(1)), int(m.group(2))
+    return (k, n) if 1 <= k <= n and n >= 2 else None
+
+
+class Threads:
+    """classify() that keeps a long reply's numbered parts in part 1's thread (model.py, replies())."""
+
+    def __init__(self):
+        self.last = {}  # speaker -> ((k, n), line, result) of its latest numbered part that classified
+
+    def classify(self, line, viewer_lines, inbox=()):
+        who = speaker(line)
+        p = part_of(line.get("text"))
+        prev = self.last.get(who) if who else None
+        if p and p[0] > 1 and prev and prev[0] == (p[0] - 1, p[1]) and 0 <= _age_s(line, prev[1]) <= PART_S:
+            r = prev[2]
+        else:
+            # part 1 reads without its "(1/3) " ("(1/3) Foobator, the steel line ..." names Foobator as a vocative)
+            m = PART.match(str(line.get("text") or "")) if p else None
+            plain = dict(line, text=line["text"][:m.start(1) - 1] + line["text"][m.end():]) if m else line
+            r = classify(plain, viewer_lines, inbox)
+        if who:
+            if p and r and p[0] < p[1]:
+                self.last[who] = (p, line, r)
+            else:
+                self.last.pop(who, None)
+        return r
+
+
 def replies(lines, window_s=WINDOW_S, inbox=()):
     """Every reply and viewer-addressed line in a chat log (oldest first) -> [(line, result)]. inbox: the run's
     inbox_lines (viewers' lines to the Operator), for the Operator's replies."""
-    out, viewers = [], []
+    out, viewers, threads = [], [], Threads()
     for line in lines:
         if viewer_name(line):
             viewers.append(line)
@@ -206,17 +247,20 @@ def replies(lines, window_s=WINDOW_S, inbox=()):
             while viewers and _age_s(line, viewers[0]) > window_s:
                 viewers.pop(0)
             continue
-        r = classify(line, viewers, inbox)
+        r = threads.classify(line, viewers, inbox)
         if r:
             out.append((line, r))
     return out
 
 
 def row(line, result):
-    """The public row for the live page: {seq, t, tick, by, text, kind, to, answers: {name, text, t, tick, source}}."""
+    """The public row for the live page: {seq, t, tick, by, text, kind, to, history?, answers: {name, text, t, tick,
+    source}}."""
     a = result.get("answers")
     out = {"seq": line.get("seq"), "t": line.get("t"), "tick": line.get("tick"), "by": speaker(line),
            "text": str(line.get("text") or ""), "kind": result["kind"], "to": result["to"]}
+    if line.get("history"):  # read again at a stream restart (model.py chat_time): its own time, shown as history
+        out["history"] = True
     if a:
         out["answers"] = {"name": viewer_name(a), "text": bare(a.get("text")), "t": a.get("t"), "tick": a.get("tick"),
                           "source": a.get("source")}

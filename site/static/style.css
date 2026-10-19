@@ -463,6 +463,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 /* an agent's or the Operator's reply to a viewer (state.viewer_replies), in the agent's colour, under the line it answers */
 .vchat .c-agent { border-left: 3px solid var(--ac, var(--fx-muted, #888)); padding-left: 6px; margin: 1px 0; }
 .vchat .c-agent.c-thread { margin-left: 12px; }
+.vchat .c-agent.c-hist { opacity: .72; }
+.vchat .c-history { font-size: .78em; text-transform: uppercase; letter-spacing: .04em; }
 .vchat .c-src-agent { background: var(--ac, #6c7a89); color: #111; }
 .vchat .c-agent-name { color: var(--ac, var(--fx-heading)); }
 .vchat .c-to { font-size: 0.85em; }

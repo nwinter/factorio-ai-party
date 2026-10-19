@@ -581,6 +581,8 @@ def main():
     import operator_inbox
     inbox = operator_inbox.path_for(os.path.dirname(os.path.abspath(a.run))) if a.run and not a.mock else None
     model.set_inbox(inbox)  # the Operator's replies thread under those lines too (viewer_replies.py)
+    if a.run and not a.mock:  # chat read again at a restart keeps its time (chat-log.py's logged_at)
+        model.set_chat_log(os.path.join(os.path.dirname(os.path.abspath(a.run)), "chat.jsonl"))
     # YouTube deletions, with what they remove, beside it: the site leaves those lines out (site/moderation.py)
     deletions = os.path.join(os.path.dirname(os.path.abspath(a.run)), "viewer-deletions.jsonl") if a.run and not a.mock else None
     feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock,

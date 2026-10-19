@@ -91,6 +91,12 @@ def payload_tests():
                                                  {"id": "site:2731", "status": "weird"}]})
     assert dv == {"2707": {"s": "relayed", "to": "astra"}, "2721": {"s": "not_relayed", "why": "clef:injection"},
                   "2730": {"s": "held", "why": "Clef unavailable"}}, dv
+    # (d19 batch42 A3, A4) every recipient of a group line, and the operator's inbox receipt beside the agents' copy
+    dv = push_live.public_delivery({"delivery": [{"id": "site:3200", "status": "relayed", "to": "sol", "to_all": ["sol", "luna"]},
+                                                 {"id": "site:3201", "status": "relayed", "to": "muse", "to_all": ["muse"], "inbox": True},
+                                                 {"id": "site:3202", "status": "not_relayed", "why": "impersonation:text", "inbox": True}]})
+    assert dv == {"3200": {"s": "relayed", "to": "sol", "to_all": ["sol", "luna"]}, "3201": {"s": "relayed", "to": "muse", "op": 1},
+                  "3202": {"s": "not_relayed", "why": "impersonation:text", "op": 1}}, dv
     # (d17 batch35 D5) each agent's most repeated haul this shift and its destination's feed now
     hl = push_live.public_haul({"rows": [{"name": "gemini", "top": {"item": "iron-plate", "surface": "fulgora", "to_name": "stone-furnace",
                                                                      "times": 30, "items": 600, "from": {"x": 1, "y": 2}}},
