@@ -223,4 +223,29 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d18_batch38 B3 ghosts that want an item the network holds too few of: ok')
+
+-- C3 (Sonnet: 0.3 a minute idle against 55 while a load waits read as a contradiction): the part rate's window and what
+-- the silo did in it (parts are made only while it builds).
+do
+  game={tick=0}
+  defines={rocket_silo_status={building_rocket=0,rocket_ready=7}}
+  local st={}
+  local status='working'
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return st end,status_name=function() return status end}
+  local silo={unit_number=5,products_finished=0,rocket_silo_status=0}
+  S.sample_made(silo)
+  -- 1 min building: 50 parts; then 9 min with a built rocket standing
+  game.tick=3600; silo.products_finished=50; silo.rocket_silo_status=7; S.sample_made(silo)
+  for i=1,9 do game.tick=3600+i*3600; S.sample_made(silo) end
+  local m=S.sample_made(silo)
+  eq(m.per_min,5); eq(m.while_building,50); eq(m.state,'ready')
+  eq(S.rate_text(m),'5 a minute over the last 10m00s (samples at most every 10 s): building parts 1m00s (50 a minute then), holding a built rocket (no parts until it launches) 9m00s')
+  -- short of an ingredient while building
+  silo.rocket_silo_status=0; status='item_ingredient_shortage'
+  game.tick=game.tick+1200; S.sample_made(silo)
+  game.tick=game.tick+1200; m=S.sample_made(silo)
+  has(S.rate_text(m),'short of an ingredient 20s')
+  game,defines=nil,nil
+end
+print('d18_batch38 C3 the part rate says its window and what the silo did: ok')
 print('d18 batch38 ok')

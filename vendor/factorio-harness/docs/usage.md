@@ -8519,3 +8519,8 @@ fh watch    # deploy on every change
   `rockets`, `rocket_cargo` ("rocket 1: agricultural-science-pack 600", ...) and `split`. `launch_split: false`
   refuses it, naming the split. `all_or_nothing` and `wait_platform`, one rocket each, still refuse unless
   `launch_split: true`.
+- C3 (Sonnet: "the silo part rate (0.3/min idle vs 55/min while a load waits) is confusing"): each 10-s sample of a
+  silo's products_finished now keeps what the silo was doing: building parts, short of an ingredient, or holding a
+  built rocket. `parts_rate` gives the rate, its window and the time in each state, counted at each interval's start:
+  "5 a minute over the last 10m00s (samples at most every 10 s): building parts 1m00s (50 a minute then), holding a
+  built rocket (no parts until it launches) 9m00s". The `silo {surface: "all"}` lines add "(N while building)".
