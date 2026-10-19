@@ -30,6 +30,13 @@ return function(api)
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).
     if action=='min_payload' then return end
+    -- (d18 batch36 C4, Astra: steps[7] rotate refused in the remote lane) rotate by remote view, as its direct call takes
+    -- it: on a platform (platform) or on a planet in a chunk our force sees (surface)
+    if action=='rotate' then
+      assert((type(a.platform)=='string' and a.platform~='') or (type(a.surface)=='string' and a.surface~=''),
+        'remote lane rotate requires platform or surface (rotate by remote view, as the direct call takes it)')
+      return
+    end
     if action=='drop' or action=='platform_schedule' or PLATFORM_WRITES[action] then
       assert(type(a.platform)=='string' and a.platform~='', 'remote lane '..action..' requires platform')
       return
@@ -129,7 +136,7 @@ return function(api)
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform; drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts, deconstruct and platform_rearm with explicit platform; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform; drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts, deconstruct and platform_rearm with explicit platform; rotate with platform or surface; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end
