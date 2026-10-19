@@ -378,9 +378,10 @@
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.
-- `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it
-  (landed cargo pods of any force as kind `pod`, stacks on the ground in sight as kind `ground`),
-  nearest first; `deconstructed`: robots' deconstructions of it, followed: the ghost it built, the storage chest and the next robot;
+- `where_is {item, surface?, limit?, sort?, page?}`: where an item is on a surface: the total by kind (`kinds_line`:
+  each kind's count and places) and each place holding it (landed cargo pods of any force as kind `pod`, stacks on the
+  ground in sight as kind `ground`; beacons and drills too, and `in_module_slots` where it sits in module slots), the
+  most held first (`sort: "nearest"`), `limit` a page (`page`, `pages`); `deconstructed`: robots' deconstructions of it, followed: the ghost it built, the storage chest and the next robot;
   stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert, each with where it
   lands (a pod that names no station yet: the planet's landing pad, said so); inserter hands and

@@ -219,11 +219,18 @@ local w=astra('where_is',{item='automation-science-pack'})
 eq(w.total,1118+40+4+2+14+7+1); eq(w.by_kind.chest,1158); eq(w.by_kind.lab,4); eq(w.by_kind.belts,14) -- 2 belts x 2 lines
 eq(w.by_kind.inserter_hands,1)
 eq(w.by_kind.characters,7)
+-- (d18 batch39 D2, Opus) the most held first by default, each kind's count and places in kinds_line
+eq(w.places[1].entity,'steel-chest'); eq(w.places[1].count,1118); eq(w.places[2].entity,'wooden-chest'); eq(w.places[2].count,40)
+eq(w.kinds_line,'1186 automation-science-pack: 1158 chest (2 places), 14 belts, 7 characters (1 place), 4 lab (1 place), 2 machine (1 place), 1 inserter hands')
+-- sort: "nearest": the caller's nearest first, as before
+w=astra('where_is',{item='automation-science-pack',sort='nearest'})
 eq(w.places[1].kind,'character'); eq(w.places[1].agent,'sol') -- bots stand at the spawn with astra
 eq(w.places[2].entity,'wooden-chest'); eq(w.places[2].count,40)
 eq(w.places[#w.places].entity,'steel-chest'); eq(w.places[#w.places].count,1118)
 for k=2,#w.places do assert(w.places[k].distance>=w.places[k-1].distance) end
-w=astra('where_is',{item='automation-science-pack',limit=2}); eq(#w.places,2); eq(w.more,3)
+w=astra('where_is',{item='automation-science-pack',limit=2}); eq(#w.places,2); eq(w.more,3); eq(w.pages,3)
+w=astra('where_is',{item='automation-science-pack',limit=2,page=3}); eq(#w.places,1); eq(w.more,nil); eq(w.page,3)
+fails(function() astra('where_is',{item='automation-science-pack',sort='random'}) end,'sort is "largest" (default) or "nearest"')
 eq(astra('where_is',{item='military-science-pack'}).places[1].entity,'passive-provider-chest')
 local plates=astra('where_is',{item='iron-plate',surface='nauvis'}); eq(plates.by_kind.chest,5) -- (the bots' kits hold more)
 eq(plates.by_kind.pod,16)

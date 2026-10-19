@@ -65,4 +65,30 @@ do
   met,saw=C.check(p,{['until']='researched',technology='railgun-damage-1',level=7},nil,{}); eq(met,true); has(saw,'levels to 7 researched, every level')
 end
 print('d18_batch39_ad A3 researched on a technology with levels: ok')
+
+-- D2 (Opus: speed-module-2 917, the bulk not among the places listed): the most held first, module slots as places
+-- (beacons and drills read too), each kind's count and places.
+do
+  prototypes={item={['speed-module-2']={get_spoil_ticks=function() return 0 end}}}
+  defines={inventory={robot_cargo=1}}
+  game={tick=100}
+  local function ent(t,name,x,n,mods) return {valid=true,type=t,name=name,position={x=x,y=0},get_item_count=function() return n end,
+    get_module_inventory=mods and function() return {get_item_count=function() return mods end} end or nil} end
+  local list={ent('container','steel-chest',300,755),ent('beacon','beacon',5,4,4),ent('beacon','beacon',9,4,4),ent('assembling-machine','assembling-machine-2',2,2,2),
+    ent('mining-drill','electric-mining-drill',40,6,6)}
+  local surf={name='nauvis',find_entities_filtered=function(f) if f.type=='item-entity' then return {} end
+    local want={} for _,t in ipairs(f.type or {}) do want[t]=true end
+    local out={} for _,e in ipairs(list) do if want[e.type] then out[#out+1]=e end end return out end}
+  local S=dofile('mod/agent-harness_0.1.0/stores.lua'){agents=function() return {} end}
+  local p={surface=surf,position={x=0,y=0},force={logistic_networks={}}}
+  local w=S.where_is(p,{item='speed-module-2'})
+  eq(w.total,771); eq(w.places[1].entity,'steel-chest'); eq(w.places[1].count,755)
+  eq(w.places[2].entity,'electric-mining-drill'); eq(w.places[2].in_module_slots,6)
+  eq(w.by_kind.module_slots,16); eq(w.by_kind.beacon,0)
+  eq(w.kinds_line,'771 speed-module-2: 755 chest (1 place), 16 in module slots (4 places)')
+  w=S.where_is(p,{item='speed-module-2',sort='nearest',limit=2})
+  eq(w.places[1].entity,'assembling-machine-2'); eq(w.pages,3); eq(w.more,3)
+  game,defines,prototypes=nil,nil,nil
+end
+print('d18_batch39_ad D2 where_is: the most held first, module slots as places: ok')
 print('d18 batch39 ad ok')

@@ -8840,3 +8840,16 @@ fh watch    # deploy on every change
   as older), each cut from its end down to its heading; the first Now, Claims, Agreements or Decisions, Commitments
   or Open board items, and Next check sections stay whole. The carried head names what was trimmed (five parts and a
   count of the rest).
+- D2 (Opus: where_is speed-module-2 read 917 and listed no place for most of it):
+  - Found in Opus's shift37 journal (tick 29871396): the places were there, nearest first, and the first 15 were him
+    (13) and nearby machines (2-3 each). The 755 in chests came past the limit. Beacons and mining drills, where
+    modules also sit, were not read at all.
+  - Now the places come largest first by default (`sort: "nearest"` as before), `limit` a page, with `page` and
+    `pages`.
+  - Beacons and mining drills are read. `in_module_slots` marks what sits in a machine's, beacon's, drill's or lab's
+    module slots, and `by_kind.module_slots` totals it.
+  - `kinds_line` gives each kind's count and number of places: "771 speed-module-2: 755 chest (1 place), 16 in module
+    slots (4 places)".
+  - Cost: where_is already reads every holding entity of the surface in one find, so it was not probed on n (21:05
+    rule). The Lua part over fake entities in a counted loop is about 3.5 us a place holding the item (1000: 3.4 ms,
+    2000: 7.1 ms, 4000: 14.0 ms), plus one module-inventory read a machine, beacon or drill holding it.
