@@ -103,12 +103,15 @@ return function(api)
       lines[#lines+1] = 'turrets: ' .. out.turrets
     end
     if endu and endu.solar then out.power = endu.solar; lines[#lines+1] = 'power: ' .. endu.solar end
+    -- (d18 batch37 D4) every agent's queued or running jobs on this platform (platjobs.lua)
+    local okj, jobs = pcall(api.jobs, pl.name)
+    if okj and jobs then out.jobs = jobs; for _, l in ipairs(jobs) do lines[#lines+1] = 'job: ' .. l end end
     out.lines = lines
     out.errors = #errors > 0 and errors or nil
     out.note = 'from platforms, platform_supply, platform_endurance and platform_defense; each of those reads gives the detail'
     return out
   end
   M.schema = {platform_digest = {platform='platform name',
-    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks collected and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power); errors (a read that failed, by name). Read only'}}
+    returns='lines: stopped or blocked first (the supply chain\'s stops: collectors, crushers, fuel and oxidizer makers, thrusters, empty guns; collectors no turret reaches; hull sides with uncovered edge tiles; machines on no power), route (state, where, leg, km left, arrival, next stop, speed, schedule), hub slots and the asteroid chunks in it, chunks collected and where each goes, fuel outlook (thruster fuel and oxidizer held, made and used a minute, whether each lasts the leg), crushers and fuel and oxidizer makers (recipe, state, in and out), thrusters, tanks (thruster fuel and oxidizer: stock, made and used, run-out), ammunition (stock by place, made and used, stranded), turrets (count, empty, ammunition that reaches them and stranded), power; job: each agent\'s queued or running job that acts on or waits on the platform (owner, lane, the step now and pending, its wait and what it saw, its drops so far); the same as fields (stopped, route, hub, chunks, crushers, makers, thrusters, tanks, ammo, turrets, power, jobs); errors (a read that failed, by name). Read only'}}
   return M
 end

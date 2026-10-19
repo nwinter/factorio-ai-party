@@ -17112,10 +17112,26 @@ M.platsupply=require('platsupply'){platform=function(p,name) return space.platfo
 M.fuelstock=require('fuelstock'){}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
 -- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
-M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,
+M.platdigest=require('platdigest'){jobs=function(name) return M.platjobs.lines(name) end,platform=function(p,name) return space.platform(p,name) end,
   reads={platforms=function(p,a) return handlers.platforms(p,a) end,platform_supply=function(p,a) return handlers.platform_supply(p,a) end,
     platform_endurance=function(p,a) return handlers.platform_endurance(p,a) end,platform_defense=function(p,a) return handlers.platform_defense(p,a) end}}
 function handlers.platform_digest(p,a) return M.platdigest.read(p,a) end
+-- (d18 batch37 D4, viewer Aurora 18:11) every agent's queued or running jobs that act on or wait on a platform
+-- (platjobs.lua): on the platforms read (one platform, or each row with jobs) and platform_digest. Read only.
+M.platjobs=require('platjobs'){state=state,lookup=function(i) return M.lookup(i) end,remote_keys=function(s) return scheduler.remote_keys(s) end}
+do
+  local plain=handlers.platforms
+  handlers.platforms=function(p,a)
+    local out=plain(p,a)
+    local ok,by=pcall(M.platjobs.all)
+    if ok and type(out)=='table' and type(out.platforms)=='table' then
+      for _,row in ipairs(out.platforms) do
+        if type(row)=='table' and row.name and by[row.name] then row.jobs=M.platjobs.lines(row.name,by) end
+      end
+    end
+    return out
+  end
+end
 -- platform_tiles (tilecheck.lua, batch24 B3): tiles at exact coordinates, and whether the hub removes or builds them now.
 M.tilecheck=require('tilecheck')()
 function handlers.platform_tiles(p,a)

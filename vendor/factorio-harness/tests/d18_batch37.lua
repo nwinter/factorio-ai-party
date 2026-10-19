@@ -369,3 +369,25 @@ do
   has(last.started_by,'on_fail "return" of a transfer chain that ended failed')
 end
 print('d18_batch37 C1 a chain of transfers in one call: ok')
+
+-- D4 (viewer Aurora 18:11: hidden unload plans read as missing automation): every agent's queued or running jobs that
+-- act on or wait on a platform, read only.
+do
+  local st=storage.agent_harness
+  local gi=runtime.bots.index_of('grok')
+  st.queues=st.queues or {}
+  st.queues[gi]={revision=1,sequence=3,paused=false,history={{action='drop',ok=true,args={platform='Kestrel II'},result={dropped={'carbon-fiber*100'}},finished_tick=game.tick}},
+    current={id=2,action='wait_until',args={['until']='item_count',platform='Kestrel II',item='carbon-fiber',at_least=500},started_tick=game.tick,saw={line='hub holds 120'}},
+    pending={{id=3,action='drop',args={platform='Kestrel II',items={{item='carbon-fiber',count=500}}}},{id=4,action='move_to',args={position={x=1,y=1}}}}}
+  st.platform_lanes={['Kestrel II']=true}
+  st['lane_queues|Kestrel II']={[gi]={revision=1,sequence=1,paused=true,history={},pending={{id=1,action='platform_schedule',args={platform='Kestrel II'}}}}}
+  local lines=runtime.platjobs.lines('Kestrel II')
+  eq(#lines,2)
+  has(lines[1],'grok, lane body: now: wait_until item_count carbon-fiber >= 500 on Kestrel II, running, waiting since 0s ago; saw hub holds 120')
+  has(lines[1],'pending #1: drop carbon-fiber*500'); assert(not lines[1]:find('move_to'),lines[1])
+  has(lines[1],'1 drop so far (1 ok, 0 failed); last carbon-fiber*100')
+  has(lines[2],'grok, lane platform:Kestrel II: pending #1: platform_schedule')
+  has(runtime.platjobs.lines('Petrel')[1],'no agent has a queued or running job that acts on or waits on Petrel')
+  st.queues[gi]=nil; st['lane_queues|Kestrel II']=nil; st.platform_lanes=nil
+end
+print('d18_batch37 D4 every agent\'s jobs on a platform: ok')
