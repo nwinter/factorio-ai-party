@@ -481,3 +481,89 @@ do
   st.damage={}
 end
 print('d18_batch37 U2 an attack\'s repeats do not wake an alert wait: ok')
+
+-- D1 (Sol on Aquilo could not survey Nauvis; Astra: lake-to-lake planning from Aquilo): map, grid and observe take
+-- surface by remote view, centred on a place there, within what our force has charted; observe gives tile_runs.
+do
+  local far={name='aquilo',index=2}
+  local tiles={}
+  for x=0,5 do tiles[#tiles+1]={name='ammoniacal-ocean',position={x=x+0.5,y=3.5}} end
+  for x=6,7 do tiles[#tiles+1]={name='ice-smooth',position={x=x+0.5,y=3.5}} end
+  tiles[#tiles+1]={name='ammoniacal-ocean',position={x=40.5,y=3.5}}  -- in an uncharted chunk
+  far.find_tiles_filtered=function(f)
+    if f.name then local out={}; for _,t in ipairs(tiles) do for _,n in ipairs(f.name) do if t.name==n then out[#out+1]=t end end end; return out end
+    return tiles
+  end
+  far.find_entities_filtered=function() return {} end
+  far.count_tiles_filtered=function() return 0 end
+  game.get_surface=function(n) if n=='aquilo' then return far end return surface end
+  local seen_charted=force.is_chunk_charted
+  force.is_chunk_charted=function(s,c) if s==far then return c.x==0 and c.y==0 end return true end
+  force.is_chunk_visible=function(s,c) if s==far then return false end return true end
+  force.platforms={}
+  fails(function() grok('map',{surface='aquilo'}) end,'map with surface needs position there')
+  fails(function() grok('observe',{surface='aquilo',tile_runs=true}) end,'observe with surface needs position there')
+  local o=grok('observe',{surface='aquilo',position={x=4,y=4},radius=32,tile_runs=true})
+  eq(#o.tile_runs,2); eq(o.tile_runs[1].name,'ammoniacal-ocean'); eq(o.tile_runs[1].count,6); eq(o.tile_runs[2].count,2); eq(o.tile_count,8)
+  o=grok('observe',{surface='aquilo',position={x=4,y=4},radius=32,tile_runs=true,tile_names={'ammoniacal-ocean'}})
+  eq(#o.tile_runs,1)
+  fails(function() grok('map',{surface='aquilo',position={x=40,y=4}}) end,'position must be in a charted chunk')
+  prototypes.tile=prototypes.tile or {}
+  local g=grok('grid',{surface='aquilo',position={x=4,y=4},radius=4})
+  local row3; for _,r in ipairs(g.rows) do if r.y==3 then row3=r.row end end
+  assert(row3 and row3:find('~',1,true),tostring(row3))
+  local m=grok('map',{surface='aquilo',position={x=4,y=4},radius=32}); assert(type(m)=='table')
+  force.is_chunk_charted=seen_charted
+end
+print('d18_batch37 D1 map, grid and observe of another planet: ok')
+
+-- D3 (Astra: recovered artillery silently built an older ghost elsewhere): a robot's mining followed: into storage, taken
+-- by another construction robot, and the ghost it built.
+do
+  local saved_game,saved_defines=game,defines
+  defines={inventory={robot_cargo=1}}
+  local st={}
+  local surf={name='nauvis'}
+  local built={}
+  local function bot(n,x,y,items)
+    local b={valid=true,type='construction-robot',unit_number=n,position={x=x,y=y},robot_order_queue={},force={name='player'}}
+    b.get_inventory=function() return {get_item_count=function(i) return items[i] or 0 end} end
+    b.items=items
+    return b
+  end
+  local r1=bot(11,0,0,{['artillery-turret']=1})
+  local chest={valid=true,name='storage-chest',type='logistic-container',position={x=20.5,y=0.5},prototype={logistic_mode='storage'},held=0,surface=surf}
+  chest.get_item_count=function() return chest.held end
+  local r2=bot(12,21,0,{})
+  local ghost={valid=true,type='entity-ghost',ghost_name='artillery-turret',position={x=200,y=-50},last_user={name='sol'}}
+  surf.find_entities_filtered=function(f)
+    if f.type=='logistic-container' then return {chest} end
+    if f.type=='construction-robot' then return {r2} end
+    if f.name=='artillery-turret' then return built end
+    return {}
+  end
+  game={tick=100,get_surface=function() return surf end}
+  local D=dofile('mod/agent-harness_0.1.0/deconwent.lua'){state=function() return st end}
+  local turret={name='artillery-turret',type='artillery-turret',force={name='player'},position={x=10,y=0},surface=surf}
+  D.on_mined{entity={name='tree-01',type='tree',force={name='neutral'},position={x=1,y=1},surface=surf},robot=r1,buffer={get_contents=function() return {{name='wood',count=4}} end}}
+  eq(#D.lines('wood','nauvis'),0)
+  D.on_mined{entity=turret,robot=r1,buffer={get_contents=function() return {{name='artillery-turret',count=1}} end}}
+  for _=1,3 do game.tick=game.tick+60; D.tick() end
+  -- into storage
+  r1.position={x=20,y=1}; r1.items['artillery-turret']=nil; chest.held=1
+  game.tick=game.tick+60; D.tick()
+  -- a second robot takes it, flying to the old ghost
+  chest.held=0; r2.items['artillery-turret']=1; r2.robot_order_queue={{target=ghost}}
+  game.tick=game.tick+60; D.tick()
+  game.tick=game.tick+60; D.tick()
+  r2.items['artillery-turret']=nil; built={{valid=true}}
+  game.tick=game.tick+60; D.tick()
+  local l=D.lines('artillery-turret','nauvis')[1]
+  has(l,'#1 artillery-turret at (10,0) on nauvis, deconstructed 7s ago: robot #11 took artillery-turret*1')
+  has(l,'robot #11 put it into storage-chest (20.5,0.5) 4s after')
+  has(l,'construction robot #12 took artillery-turret from storage-chest (20.5,0.5) 5s after')
+  has(l,'robot #12 built the artillery-turret ghost at (200,-50) (placed by sol) 7s after')
+  assert(not l:find('still followed'),l)
+  game,defines=saved_game,saved_defines
+end
+print('d18_batch37 D3 where a deconstructed item went: ok')

@@ -128,6 +128,8 @@
   Example: `./fh call build_path --args '{"points":[{"x":0.5,"y":0.5},{"x":20.5,"y":0.5}]}' --wait`
 - `grid {position?, radius?}`: one character per tile; `,` is `walkable water` (shallow water, wetland, Fulgora's oil
   ocean, deep too), `~` water a character cannot cross; `map` tells them apart the same way.
+  `map`, `grid` and `observe` take `surface` (another planet by remote view, with `position`, grid `area` too) within
+  what our force has charted there; `observe {tile_runs: true, tile_names?}` gives charted tiles as runs along x.
 - `pole_route {from, to, surface?}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
   `short`. `surface` (pole_route and belt_route, dry runs too): on another planet by remote view, in charted chunks;
   that planet's construction robots build them. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
