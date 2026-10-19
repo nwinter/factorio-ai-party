@@ -484,8 +484,17 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
         left, top, right, bottom = left - 8, top - 32, right + 8, bottom + 8
     w, h = right - left + margin, bottom - top + margin
     zoom = max(0.3, min(2.0, 60.0 * frac / w, 34.0 / h))
-    return {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
-            "zoom": round(zoom, 2), "exact_zoom": True}
+    out = {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
+           "zoom": round(zoom, 2), "exact_zoom": True}
+    # (d19 batch42 C2, viewer Foobator: "see all of Bastion when it flies") taller than the view at the zoom that fits
+    # (the least zoom 0.3 shows ~113 tiles; Bastion in flight needs ~174): `pan`, the view's centre from the bow (north,
+    # forward) to the stern; OneCam starts the shot at the bow and moves it (pan_step), a camera without that keeps the
+    # centre
+    vh = 34.0 / round(zoom, 2)
+    if h > vh + margin:  # (a few tiles of the margin cut is no pan: Cinder in flight is 111 high at 0.31, ~110)
+        y0, y1 = top - margin / 2 + vh / 2, bottom + margin / 2 - vh / 2
+        out["pan"] = {"y0": round(y0, 1), "y1": round(y1, 1)}
+    return out
 
 
 def fmt_game_time(sec):
