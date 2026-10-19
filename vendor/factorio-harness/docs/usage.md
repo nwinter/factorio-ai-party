@@ -8551,3 +8551,14 @@ fh watch    # deploy on every change
   - On world n (read-only, saved first), Wayfarer: 8 feeders in 12.2 ms. My first two versions took 57 ms and 26 ms for
     10 feeders (a 138-belt and a 111-belt segment walked again per feeder), over the 20 ms bound for one command each;
     that is why the budget exists.
+- D2 (Opus 18:23, 3 times about 20 min each: which machines or chests took the advanced circuits?): `supply {item,
+  consumers: "all"}` (supply.lua `consumers`), beside batch37 A1's `makers: "all"`.
+  - Every machine of ours on the surface whose recipe takes the item, from the census pass's crafters: its status and
+    its take a minute now (working: crafts a minute at its speed times the recipe's amount; productivity does not
+    change what a craft takes) and at full speed.
+  - Every requester or buffer chest asking for it, from the requesters read (reused for the same item and surface):
+    asks, holds, robots bringing it now, and what the machines its inserters feed take at full speed. Robot deliveries
+    are not kept over time, so a chest's use is its machines' take.
+  - The largest use first, 24 a call (`from`, `next_from`), with the totals per recipe and now/full.
+  - Cost on world n: the machine part reads 200 crafters in 0.7 ms (Nauvis has about 775). The requesters part is the
+    existing read, about 18 ms on Nauvis.

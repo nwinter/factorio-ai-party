@@ -21,9 +21,11 @@
   a mined or pumped step names its drills or pumps, their states (working, output full, no resource left) and what
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
-- `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?, makers?}`: `makers: "all"`: every machine
+- `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?, makers?, consumers?}`: `makers: "all"`: every machine
   making it on the surface, nearest first, 24 a call (`from`), each with status and why, rate, inputs against one craft
-  and what it feeds. `requesters: true`: who gets
+  and what it feeds. `consumers: "all"`: every machine whose recipe takes it (status, its take a minute now and at full
+  speed) and every requester or buffer chest asking for it (as `requesters` reads them), the largest use first, 24 a
+  call (`from`), with the totals. `requesters: true`: who gets
   an item: every requester or buffer chest in a logistic network on the surface asking for it, served now (robots bringing N) first, then
   unmet (and why: no network, none free, no idle robot, none on the way yet), then met, each with its request, what it
   holds and the machines it feeds that use it (working, take a minute); each network's free stock and idle robots;

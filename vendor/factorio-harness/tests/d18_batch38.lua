@@ -330,4 +330,27 @@ do
   defines,prototypes=nil,nil
 end
 print('d18_batch38 D1/batch37 D2 circuit-gated feeders and their belt readers: ok')
+
+-- D2 (Opus 18:23: advanced circuits made and used at 216 a minute; which machines or chests took them?): supply {item,
+-- consumers: "all"}: every machine whose recipe takes it and every chest asking for it, the largest use first.
+do
+  game={tick=7200}
+  defines={logistic_member_index={logistic_container=1},logistic_mode={requester=1,buffer=2}}
+  prototypes={item={['advanced-circuit']={}},recipe={['processing-unit']={energy=10,ingredients={{name='advanced-circuit',amount=2},{name='electronic-circuit',amount=20}}},
+    ['electric-furnace']={energy=5,ingredients={{name='advanced-circuit',amount=5},{name='steel-plate',amount=10}}},['iron-plate']={energy=3.2,ingredients={{name='iron-ore',amount=1}}}}}
+  local function m(x,recipe,speed,status) return {valid=true,type='assembling-machine',name='assembling-machine-3',position={x=x,y=0},unit_number=x,crafting_speed=speed,
+    status=status,get_recipe=function() return {name=recipe} end,bounding_box={left_top={x=x-1.5,y=-1.5},right_bottom={x=x+1.5,y=1.5}}} end
+  local list={m(1,'processing-unit',1.25,'working'),m(5,'processing-unit',1.25,'working'),m(9,'electric-furnace',1.25,'item_ingredient_shortage'),m(13,'iron-plate',1,'working')}
+  local surf={index=1,name='nauvis',find_entities_filtered=function() return {} end}
+  local force={name='player',logistic_networks={nauvis={}}}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){census_crafters=function() return list,0 end,status_name=function(e) return e.status end}
+  local r=S.consumers({force=force,surface=surf},surf,'advanced-circuit',{consumers='all'})
+  eq(r.machines,3); eq(r.working,2); eq(r.per_min,30); eq(r.full_per_min,105)
+  eq(r.line,'advanced-circuit on nauvis: 3 machines take it (1 electric-furnace, 2 processing-unit), 2 working, 30 a minute now (105 at full speed); 0 requester or buffer chests ask for it')
+  eq(r.rows[1].recipe,'processing-unit'); eq(r.rows[1].per_min,15)
+  eq(r.rows[3].line,'assembling-machine-3 (9,0) electric-furnace: item ingredient shortage; takes 0 a minute now (75 at full speed)')
+  local ok,err=pcall(S.consumers,{force=force,surface=surf},surf,'advanced-circuit',{consumers=true}); assert(not ok and tostring(err):find('consumers is "all"',1,true),err)
+  game,defines,prototypes=nil,nil,nil
+end
+print('d18_batch38 D2 supply consumers: ok')
 print('d18 batch38 ok')
