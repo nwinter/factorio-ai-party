@@ -90,6 +90,8 @@ return function(api)
     local dy=math.max(y0-c.y,0,c.y-y1)
     return dx*dx+dy*dy<=r*r
   end
+  -- (d19 batch45: threat.watch was 35 ms on the private copy's Nauvis, 430 spawners: 5 ms the sort reading positions
+  -- in its comparison, 13 ms the clustering) each spawner's position read once: {e, position}
   local function by_position(a,b)
     if a.position.y~=b.position.y then return a.position.y<b.position.y end
     return a.position.x<b.position.x
@@ -113,8 +115,10 @@ return function(api)
     else
       found=s.find_entities_filtered{type='unit-spawner',position=centre,radius=MAX_BASE_RANGE}
     end
-    table.sort(found,by_position)
-    return found
+    local keyed={}
+    for i,e in ipairs(found) do keyed[i]={e=e,position=e.position} end
+    table.sort(keyed,by_position)
+    return keyed
   end
   -- The index's background pass: the chunk box of every circle asked for in the last SPAWN_KEEP ticks, a band of up to
   -- SPAWN_BAND chunks of one row a step, the steps spread over half of SPAWN_TICKS.
@@ -157,27 +161,41 @@ return function(api)
       st.spawn_jobs[key]=nil
     end
   end
-  -- Spawners within range of the agent, clustered into bases.
-  local function bases(p)
+  -- Spawners within range of the agent, clustered into bases. In steps (d19 batch45: a reply's watch, M.watch_step):
+  -- bases_begin lists them, bases_slice clusters n more (nil: the rest), bases_end keeps what each base's position
+  -- decides.
+  local function bases_begin(p)
+    return {found=spawners_near(p),i=1,out={},known={},visible={},surface=p.surface.index}
+  end
+  local function bases_slice(p,job,n)
     local s=p.surface
-    local found=spawners_near(p)
-    local out={}
-    for _,e in ipairs(found) do
-      if e.valid and e.type=='unit-spawner' and e.force~=p.force and api.known(p,e) then
+    local found,out,known,visible=job.found,job.out,job.known,job.visible
+    local last=n and math.min(#found,job.i+n-1) or #found
+    -- per chunk: known (a spawner of another force there, as api.known has it), visible
+    for i=job.i,last do
+      local e,q=found[i].e,found[i].position
+      local key=math.floor(q.x/32)..','..math.floor(q.y/32)
+      if known[key]==nil and e.valid then known[key]=api.known(p,e) and true or false end
+      if e.valid and known[key] and e.type=='unit-spawner' and e.force~=p.force then
         local base
-        for _,b in ipairs(out) do if api.distance(b.first,e.position)<=64 then base=b; break end end
-        if not base then base={first=e.position,sx=0,sy=0,spawners=0,chunks={},keys={},absorbing=0}; out[#out+1]=base end
-        base.sx=base.sx+e.position.x; base.sy=base.sy+e.position.y; base.spawners=base.spawners+1
-        local key=math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
+        for _,b in ipairs(out) do local dx,dy=b.fx-q.x,b.fy-q.y; if dx*dx+dy*dy<=4096 then base=b; break end end
+        if not base then base={fx=q.x,fy=q.y,sx=0,sy=0,spawners=0,chunks={},keys={},absorbing=0}; out[#out+1]=base end
+        base.sx=base.sx+q.x; base.sy=base.sy+q.y; base.spawners=base.spawners+1
         if not base.chunks[key] then
           base.chunks[key]=true; base.keys[#base.keys+1]=key
-          local amount,last=M.polluted(s,e.position)
+          local amount,last=M.polluted(s,q)
           base.absorbing=base.absorbing+amount
           if last and (not base.polluted_tick or last>base.polluted_tick) then base.polluted_tick=last end
-          if p.force.is_chunk_visible(s,{x=math.floor(e.position.x/32),y=math.floor(e.position.y/32)}) then base.visible=true end
+          if visible[key]==nil then visible[key]=p.force.is_chunk_visible(s,{x=math.floor(q.x/32),y=math.floor(q.y/32)}) end
+          if visible[key] then base.visible=true end
         end
       end
     end
+    job.i=last+1
+    return job.i>#found
+  end
+  local function bases_end(p,job)
+    local s,out=p.surface,job.out
     -- What a base's position alone decides (our nearest building, the cloud's
     -- gap) is kept per surface and base chunk for every agent: NEAR_TICKS and
     -- CLOUD_TICKS. At most FRESH searches per call (task-statuscost, 01:15 on
@@ -192,7 +210,7 @@ return function(api)
     for key,v in pairs(info) do if game.tick-v.tick>=FORGET_TICKS then info[key]=nil end end
     for _,b in ipairs(out) do
       b.position={x=round(b.sx/b.spawners),y=round(b.sy/b.spawners)}
-      b.first,b.sx,b.sy,b.chunks=nil,nil,nil,nil
+      b.fx,b.fy,b.sx,b.sy,b.chunks=nil,nil,nil,nil,nil
       b.absorbing=round(b.absorbing)
       b.reached=M.reached(b.polluted_tick)
       local key=math.floor(b.position.x/32)..','..math.floor(b.position.y/32)
@@ -243,6 +261,11 @@ return function(api)
     end
     table.sort(out,function(a,b) return (a.distance or math.huge)<(b.distance or math.huge) end)
     return out
+  end
+  local function bases(p)
+    local job=bases_begin(p)
+    bases_slice(p,job)
+    return bases_end(p,job)
   end
 
   -- Chart coverage and the charted extent of the pollution cloud; polluted
@@ -402,6 +425,8 @@ return function(api)
         if e.chart then e.chart.tick=tick end
       end
     end
+    -- A reply's nest watch (M.watch).
+    M.watch_step(st,tick)
     -- The spawner index (spawners_near), per force and surface asked for.
     local wanted={}
     for key in pairs(st.spawn_want or {}) do wanted[#wanted+1]=key end
@@ -458,7 +483,36 @@ return function(api)
     local last=math.max(entry and entry.surface==p.surface.index and entry.tick or -math.huge,st.threat_watch[p.index] or -math.huge)
     if game.tick-last<3600 then return end
     st.threat_watch[p.index]=game.tick
-    note_bases(p,bases(p))
+    -- (d19 batch45: 25-35 ms in the reply with 430 spawners in range on the private copy's Nauvis) asked here, read in
+    -- the background (M.watch_step)
+    st.watch_jobs=st.watch_jobs or {}
+    st.watch_jobs[p.index]=st.watch_jobs[p.index] or {asked=game.tick}
+  end
+  -- One agent's watch at a time, a step a tick: its spawners listed, WATCH_SLICE of them clustered a tick, then what
+  -- each base's position decides (FRESH searches at most) and the news. A step that fails ends that watch
+  -- (watch_errors).
+  local WATCH_SLICE=64
+  function M.watch_step(st,tick)
+    local jobs=st.watch_jobs
+    if not (jobs and next(jobs)) then return end
+    local index
+    for i in pairs(jobs) do if not index or i<index then index=i end end
+    local job=jobs[index]
+    local ok,err=pcall(function()
+      local p=api.lookup and api.lookup(index)
+      if not (p and p.valid and p.character and p.character.valid) or (job.surface and job.surface~=p.surface.index) then jobs[index]=nil; return end
+      if not job.found then
+        for k,v in pairs(bases_begin(p)) do job[k]=v end
+        return
+      end
+      if not bases_slice(p,job,WATCH_SLICE) then return end
+      jobs[index]=nil
+      note_bases(p,bases_end(p,job))
+    end)
+    if not ok then
+      jobs[index]=nil
+      st.watch_errors={count=((st.watch_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
+    end
   end
   -- Lines for news after `from` (an alert_seq), oldest first.
   function M.news_lines(from,since_tick,reader)

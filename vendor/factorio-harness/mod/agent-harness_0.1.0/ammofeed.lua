@@ -660,10 +660,12 @@ return function(api)
   end
   -- The trace for a reader: read at once for a platform of up to SYNC_BELTS belts; else the last background read (said
   -- with its age; a new one begins when it is older than max_age, default FRESH), or nil and why while the first runs.
-  function M.get(pl, max_age)
+  -- background: the background read for any platform (d19 batch45: the reply's platform alerts traced Swift's 138 belts and
+  -- 6 turrets at once, 33 ms on the private copy).
+  function M.get(pl, max_age, background)
     local J = jobs()
     local n = J and (try(function() return pl.surface.count_entities_filtered{type=BELTS, force=pl.force} end) or 0) or 0
-    if not J or n <= M.SYNC_BELTS then return M.trace(pl) end
+    if not J or n <= M.SYNC_BELTS and not background then return M.trace(pl) end
     local d = J.done[pl.index]
     if not d or game.tick - d.tick >= (max_age or M.FRESH) then M.start(pl) end
     if d and d.tr then

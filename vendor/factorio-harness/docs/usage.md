@@ -8936,3 +8936,22 @@ fh watch    # deploy on every change
   ends, 4 stopped lanes, none flagged; Wren 48 belts, 16 ends, 1 flagged: an underground exit with no entrance at the
   hull edge holding 3 iron ore. It builds on belt_flow's lane_mix (batch35 B2) and trace's lane reads (batch32 B1);
   side-load merges are not re-read here.
+- Operator 16:12 (ingredient_gap {all, area} 258 ms on n right after the 16:00 load; 8 calls in shifts 39-41). On the
+  private copy the call was 33 ms for that area on Nauvis, 240 ms for 17 machines with 13 short on Vulcanus, and 0.7 to
+  1.9 s for dense 128x128 areas of Nauvis. Each short item's donor search found every holder within 64 tiles again
+  and read every item on the ground of the whole surface (stores.on_ground, about 10 ms an item). Now (gap.lua,
+  stock.near): the machines are read first, then the donors of the first 8 short items (`donors_skipped` names the
+  rest) from holders found once in those machines' box widened by 64 tiles. Crafters, chests and pads are found
+  apart and each holder's contents, name and position are read once. The ground comes from the ground watch's last
+  pass (`ground_note` when it has not binned the surface). 16 machines a call: area `skip` reads on, positions past
+  16 come back in `left`; with all, a machine short of nothing gives its line only (32 machines' reply was 26 KB, 9 ms
+  to encode).
+- The first call after a load or an idle minute (76 to 116 ms on the private copy for an `inventory`) paid the team
+  block:
+  - threat.watch (25 to 35 ms with 430 spawners within 512 tiles) is now asked for in the reply and read in the
+    background (threat.watch_step: listed in one tick, then 64 spawners a tick, then the news). Its sort and
+    clustering read each spawner's position once.
+  - The platform alerts' ammunition trace (ammofeed.get background) is always read in the background for replies.
+  - The belt, line-cut, robot-loss and power-cut alert groups (M.belt_groups_read) are read in the tick every 120
+    ticks; a reply reads them only when none is kept or the kept list is 600 ticks old.
+  - check_args' argument sets (8 to 14 ms, built from describe) are built in the first tick after a load.

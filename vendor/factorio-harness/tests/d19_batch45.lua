@@ -100,3 +100,96 @@ do
   defines,prototypes=nil,nil
 end
 print('d19_batch45 D1 platform_lanes: ok')
+
+-- Operator 16:12 (ingredient_gap {all, area} 258 ms on n after the 16:00 load; 240 ms with 21 short items on the private
+-- copy's Vulcanus, 1.9 s on a dense 128x128 of Nauvis): each short item's donor search found every holder within 64
+-- tiles again and read the surface's whole ground. Now the holders are found once a call in the donor machines' box
+-- (stock.near), each one's contents read once; the ground from the ground watch's last pass, once an item; donors for
+-- the first 8 short items; 16 machines a call (skip; positions past 16 come back as left); with all, a machine short of
+-- nothing has its line only.
+do
+  game={tick=100}
+  defines={inventory={assembling_machine_input=2,furnace_source=3,chest=1,cargo_landing_pad_main=1}}
+  prototypes={recipe={gear={ingredients={{type='item',name='iron-plate',amount=2}}},plate={ingredients={{type='item',name='iron-ore',amount=1}}}}}
+  local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^.5 end
+  local empty={get_contents=function() return {} end,get_item_count=function() return 0 end}
+  local function asm(x,y,recipe,held)
+    return {valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=y},get_recipe=function() return {name=recipe} end,
+      get_inventory=function() return {get_item_count=function() return held or 0 end} end,get_output_inventory=function() return empty end,fluidbox={}}
+  end
+  local plates={get_contents=function() return {{name='iron-plate',count=50,quality='normal'}} end,get_item_count=function() return 50 end}
+  local chest={valid=true,name='iron-chest',type='container',position={x=10.5,y=0.5},get_inventory=function() return plates end}
+  local machines={}
+  local finds={near=0,radius=0,pods=0}
+  local surface={name='nauvis',find_entities_filtered=function(f)
+    if f.name=='cargo-pod-container' then finds.pods=finds.pods+1; return {} end
+    if f.radius then finds.radius=finds.radius+1; return {} end
+    if f.type[3]=='rocket-silo' then return machines end
+    finds.near=finds.near+1
+    if f.type[1]=='assembling-machine' then return machines end
+    if f.type[1]=='container' then return {chest} end
+    return {}
+  end}
+  local p={surface=surface,force={name='player'},position={x=0,y=0}}
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){distance=distance}
+  local grounds=0
+  local G=dofile('mod/agent-harness_0.1.0/gap.lua'){position=function(v) return v end,seen=function() return true end,
+    entity=function(_,a) for _,m in ipairs(machines) do if m.position.x==a.position.x and m.position.y==a.position.y then return m end end end,
+    scan=function(pp,item,opts) return S.scan(pp,item,opts) end,near=function(pp,box,ground) return S.near(pp,box,ground) end,
+    ground_index=function() grounds=grounds+1; return nil end,
+    where_kept=function(_,item,need,scan) local x=scan.places[1]; return x and string.format('%s (%g,%g) %d tiles, %d free',x.name,x.position.x,x.position.y,math.floor(x.distance+0.5),x.count) or 'none' end}
+  for i=1,10 do machines[i]=asm(i*3+0.5,4.5,'gear',0) end
+  local area={left_top={x=-10,y=-10},right_bottom={x=60,y=60}}
+  local r=G.read(p,{area=area})
+  eq(r.read,10); eq(r.short,10)
+  eq(finds.near,3,'the holders found once: crafters, chests, pads'); eq(finds.pods,1); eq(finds.radius,0,'no search of its own per item')
+  eq(grounds,1,'the ground index once an item')
+  eq(r.machines[1].ingredients[1].donors,'iron-chest (10.5,0.5) 8 tiles, 50 free')
+  has(r.lines[1],'iron-plate 0/2: 2 short; iron-chest (10.5,0.5) 8 tiles, 50 free')
+  eq(r.machines[9].ingredients[1].donors,'donors not read: the call searched those of its first 8 short items')
+  eq(r.donors_skipped,'2 short items past the first 8: their donors not read in this call')
+  has(r.ground_note,'stacks on the ground not read: the ground watch has not binned them on nauvis yet')
+  -- a holder past 64 tiles of a machine is not its donor
+  chest.position={x=120.5,y=0.5}
+  r=G.read(p,{area=area})
+  eq(r.machines[1].ingredients[1].donors,'none')
+  chest.position={x=10.5,y=0.5}
+  -- 16 machines a call; skip reads on
+  for i=11,20 do machines[i]=asm((i-10)*3+0.5,8.5,'gear',2) end
+  r=G.read(p,{area=area,all=true})
+  eq(r.read,16); eq(r.more,'20 machines there; 1-16 read (top to bottom, then left to right); skip: 16 reads the next')
+  eq(r.machines[11].ingredients,nil,'a machine short of nothing: its line only'); has(r.machines[11].line,'iron-plate 2/2')
+  eq(#r.machines[1].ingredients,1)
+  r=G.read(p,{area=area,all=true,skip=16})
+  eq(r.read,4); eq(r.more,nil); eq(r.machines[1].position.x,21.5)
+  r=G.read(p,{area=area,skip=20})
+  eq(r.read,0); eq(r.lines[1],'20 machines there; skip 20 passes over them all')
+  fails=fails or function(fn,want) local ok,err=pcall(fn); assert(not ok,'expected a failure'); has(err,want) end
+  fails(function() G.read(p,{positions={{x=3.5,y=4.5}},skip=1}) end,'skip goes with area')
+  -- positions past 16: left
+  local ps={}
+  for i=1,18 do ps[i]=machines[i].position end
+  r=G.read(p,{positions=ps})
+  eq(r.read,16); eq(#r.left.positions,2); eq(r.left.positions[1].x,ps[17].x)
+  has(r.left.note,'2 positions not read (16 a call): pass them as positions')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d19_batch45 operator 16:12 ingredient_gap bounded: ok')
+
+-- The first reply after a load: a platform's ammunition trace for the reply's alerts is read in the background (it was
+-- traced at once for a platform of up to 400 belts, 67 ms in one first reply on the private copy).
+do
+  game={tick=500}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){state=function() return st end}
+  local surface={count_entities_filtered=function() return 138 end,find_entities_filtered=function() return {} end}
+  local pl={index=4,name='Swift',valid=true,surface=surface,force='player'}
+  local tr,why=F.get(pl,3600,true)
+  eq(tr,nil); has(why,'the ammunition trace of Swift (138 belts) is read in the background')
+  assert(st.ammofeed.jobs[4],'a background read begun')
+  F.step(); F.step()
+  eq(st.ammofeed.jobs[4],nil); assert(st.ammofeed.done[4].tr,'the trace kept')
+  assert(F.get(pl,3600,true).as_of:find('read over',1,true))
+  game=nil
+end
+print('d19_batch45 ammofeed background for replies: ok')
