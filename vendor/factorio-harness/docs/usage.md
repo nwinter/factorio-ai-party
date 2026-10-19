@@ -8114,3 +8114,10 @@ fh watch    # deploy on every change
   it out): every move into one says `request` (`requester-chest asks iron-plate 150..250; it holds 300 now: 50 over its
   request max (trash unrequested off)`) and `over_request`; `up_to_request: true` moves only up to its request (its
   max, else its min). The request is summed over the chest's active sections for that item and quality.
+- Cargo bays in a dry run (C2, Astra twice: two placeable bays that joined nothing, mined and moved after inspect said
+  not_connected_to_hub_or_pad). place_ghosts, build and paste dry runs give `cargo_bays`: each planned bay joins the
+  platform hub or the landing pad (touching it edge to edge, or through a bay that does: built, a ghost, or one planned
+  before it) or joins nothing, with the nearest joined one and its distance; and per hub or pad its slots now, its own,
+  the built bays joined, and the slots after the planned bays join. A bay's slots are not in the API (cargo-bay has no
+  inventory_size_bonus on 2.0.77): they are read from the hub or pad, its slots now less its prototype's own over the
+  built bays joined to it (on world n a pad's own is 80, a hub's 59); with no built bay joined, the reply says so.

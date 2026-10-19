@@ -236,6 +236,30 @@ do
 end
 print('d18_batch36 B2 legs checked against enemies seen now: ok')
 
+
+-- C2 (Astra, twice: two placeable cargo bays that joined nothing): a dry run says whether each planned bay joins the pad
+-- or hub and the slots it would have after.
+do
+  defines={inventory={hub_main=1,cargo_landing_pad_main=2}}
+  local function box(x0,y0,x1,y1) return {left_top={x=x0,y=y0},right_bottom={x=x1,y=y1}} end
+  local pad={valid=true,type='cargo-landing-pad',name='cargo-landing-pad',position={x=0,y=0},bounding_box=box(-4,-4,4,4),
+    get_inventory=function() local inv={} for i=1,100 do inv[i]=true end return inv end,prototype={get_inventory_size=function() return 80 end}}
+  local bay={valid=true,type='cargo-bay',name='cargo-bay',position={x=6,y=0},bounding_box=box(4,-2,8,2)}
+  local s={find_entities_filtered=function(f) if f.ghost_type then return {} end return {pad,bay} end}
+  local D=dofile('mod/agent-harness_0.1.0/dryrun.lua'){placewhy={box_at=function(b,pos) return box(pos.x+b.left_top.x,pos.y+b.left_top.y,pos.x+b.right_bottom.x,pos.y+b.right_bottom.y) end}}
+  local proto={type='cargo-bay',collision_box=box(-1.9,-1.9,1.9,1.9)}
+  local recs={{proto=proto,name='cargo-bay',pos={x=10,y=0}},{proto=proto,name='cargo-bay',pos={x=0,y=20}}}
+  local lines=D.cargo_bays(s,{},recs)
+  eq(lines[1],'cargo-bay (10,0) joins cargo-landing-pad (0,0) through cargo-bay (6,0)')
+  eq(lines[2],'cargo-bay (0,20) joins nothing: it touches no hub, landing pad or bay joined to one, edge to edge; the nearest joined: cargo-landing-pad (0,0), 14 tiles from its edge')
+  eq(lines[3],'cargo-landing-pad (0,0): 100 slots now (80 its own, 1 built bay joined), 120 after the 1 planned bay joining it (20 a bay, as read from it)')
+  -- touching the pad itself
+  lines=D.cargo_bays(s,{},{{proto=proto,name='cargo-bay',pos={x=-6,y=0}}})
+  eq(lines[1],'cargo-bay (-6,0) joins cargo-landing-pad (0,0) (touching it)')
+  eq(D.cargo_bays(s,{},{{proto={type='container'},name='wooden-chest',pos={x=0,y=0}}}),nil)
+  defines=nil
+end
+print('d18_batch36 C2 cargo bays in a dry run: ok')
 -- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
