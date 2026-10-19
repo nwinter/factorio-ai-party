@@ -408,3 +408,15 @@ do
   pt.mode=3; eq(runtime.request_of(chest,'iron-plate','normal'),nil,'a provider asks nothing')
 end
 print('d18_batch36 C3 the request a transfer fills: ok')
+
+-- D2 (Gemini: train {} refused "position requires x and y" 17 times, train {id} and {train} as unknown 16 times in
+-- shifts 33-36): the train actions name a missing position and its shape; id and train run as train_id.
+do
+  fails(function() grok('train',{}) end,'train needs which train or stop: position {x, y}')
+  fails(function() grok('train',{surface='nauvis'}) end,'train needs which train or stop')
+  fails(function() grok('train_stop',{station='A'}) end,'train_stop needs position {x, y}')
+  fails(function() grok('rail_route',{to={x=1,y=1}}) end,'rail_route needs from: from {x, y}')
+  local ok,_,args,fix=pcall(runtime.aliases.fix,'train',{id=5},runtime.takes)
+  eq(args.train_id,5); has(table.concat(fix.notes,' '),'id is train_id')
+end
+print('d18_batch36 D2 train actions name what they lack: ok')

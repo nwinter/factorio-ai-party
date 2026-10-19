@@ -13765,6 +13765,8 @@ function handlers.rail_route(p,a)
   return out
 end
 function handlers.train_stop(p,a)
+  -- (d18 batch36 D2) where it goes, named when missing
+  assert(a.position~=nil,'train_stop needs position {x, y}: a spot beside a straight rail (the stop stands on the right of the way trains run there), and name: the station name')
   local name=a.name or a.station
   assert(type(name)=='string' and #name>=1 and #name<=100,'name (the station name) is 1..100 characters')
   assert(a.name==nil or a.station==nil or a.name==a.station,'name and station differ; give one of them')

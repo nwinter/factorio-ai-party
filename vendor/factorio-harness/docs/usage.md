@@ -8133,3 +8133,10 @@ fh watch    # deploy on every change
   automatic requests fill for with what of that request it holds, and next_auto_launch; `silos` keeps each silo's full
   read. The silos come from the census pass (one search a planet before the first pass). On world n: 9 silos on 5
   planets in 4.6 ms.
+- Train actions that omit coordinates (D2, Gemini: in shifts 33-36 `train {}` read "position requires x and y" 17
+  times, and `train {id}` / `{train}` were unknown arguments 16 times). The actions that take a position: train
+  (position or train_id; stops and all read every stop or train), train_stop (position, name) and rail_route (from,
+  to). Each names what is missing with its shape: `train needs which train or stop: position {x, y} (a locomotive,
+  wagon or train stop, as the map shows it; surface for another planet) or train_id N ...`, `train_stop needs position
+  {x, y}: a spot beside a straight rail ...`, `rail_route needs from: from {x, y} (where the rails start) and to {x,
+  y} ...`. train {id: N} and {train: N} run as train_id (corrected says so).
