@@ -227,6 +227,75 @@ def operator_elsewhere():
     assert r["answers"] is near, r
 
 
+def long_reply_parts():
+    """d19 batch42 A1 (Aurora: Muse's reply cut mid-word at 500): fh posts a long say as numbered parts. Parts 2..n stay in
+    part 1's thread when only part 1 names the viewer (as a vocative behind its "(1/3) "), in replies() and the model; a
+    part with no part before it, or one after another speaker's part, classifies on its own."""
+    q = v(1, 60000, "Foobator", "@muse how is the quality loop going?", source="site")
+    p1 = a(2, 60600, "muse", "(1/3) Foobator, the quality loop is the next step. The recyclers feed one belt.")
+    p2 = a(3, 60620, "muse", "(2/3) After that, production modules go into the gear assemblers.")
+    other = a(4, 60630, "sol", "(2/3) Unrelated part from sol.")
+    p3 = a(5, 60640, "muse", "(3/3) I will say here when it runs.")
+    got = V.replies([q, p1, p2, other, p3])
+    assert [(line["seq"], r["to"], (r["answers"] or {}).get("seq")) for line, r in got] == \
+        [(2, ["Foobator"], 1), (3, ["Foobator"], 1), (5, ["Foobator"], 1)], got
+    assert V.part_of("@Foobator (2/3) x") == (2, 3) and V.part_of("(1/1) x") is None and V.part_of("2/3 x") is None
+    # a part 3 whose part 2 never came, or that came too late: on its own (names nobody: not a reply)
+    late = a(6, 60640 + 60 * (V.PART_S + 1), "muse", "(2/3) After that, modules.")
+    assert [line["seq"] for line, _ in V.replies([q, p1, late])] == [2]
+    assert [line["seq"] for line, _ in V.replies([q, p1, p3])] == [2]
+    # with the @address repeated (host/saysplit.ts), every part names the viewer anyway
+    at = [a(7 + i, 60600 + i, "muse", f"@Foobator ({i + 1}/2) words {i}.") for i in range(2)]
+    assert [r["to"] for _, r in V.replies([q] + at)] == [["Foobator"], ["Foobator"]]
+    try:
+        import model
+    except Exception:
+        return
+    m = model.Model({"agents": {n: {} for n in ("muse", "sol")}})
+    for line in (q, p1, p2, p3):
+        m._ingest_chat(dict(line, t=2000.0 + line["tick"] / 60), 2000.0 + line["tick"] / 60)
+    assert [(r["seq"], r["to"], r["answers"]["text"]) for r in m.viewer_replies] == \
+        [(s, ["Foobator"], "how is the quality loop going?") for s in (2, 3, 5)], list(m.viewer_replies)
+
+
+def restored_chat():
+    """d19 batch42 A5 (Aurora: "old chat restored after a restart ... earlier defense replies now look new"): the first
+    chat read after a stream restart is the game's backlog. Its lines keep chat.jsonl's logged_at time (else the ticks
+    since them) and are marked history, on the reply rows too; lines read after that are new as before."""
+    import datetime, json, tempfile
+    try:
+        import model
+    except Exception:
+        return
+    q = v(100, 600000, "Aurora", "@astra is the west wall holding?", source="site")
+    ans = a(101, 600600, "astra", "Aurora, the west wall holds: 12 turrets with ammo.")
+    logged = datetime.datetime(2026, 10, 19, 9, 0, 0)
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "chat.jsonl")
+        with open(path, "w") as f:
+            for line, dt in ((q, 0), (ans, 10)):
+                row = {k: line[k] for k in ("seq", "tick", "from", "text")}
+                row["logged_at"] = (logged + datetime.timedelta(seconds=dt)).isoformat()
+                f.write(json.dumps(row) + "\n")
+        m = model.Model({"agents": {"astra": {}}})
+        m.set_chat_log(path)
+        now = logged.timestamp() + 3600
+        backlog = [{k: x[k] for k in x if k != "t"} for x in (q, ans)]
+        backlog.append({"seq": 102, "tick": 600000 + 3600 * 60, "from": "astra", "text": "Aurora, fresh line."})
+        m.ingest({"tick": 600000 + 3600 * 60, "chat": backlog}, now)
+        rows = list(m.viewer_replies)
+        assert len(rows) == 1 and rows[0]["t"] == logged.timestamp() + 10 and rows[0]["history"], rows
+        assert m.chat[-1]["t"] == now and "history" not in m.chat[-1], m.chat[-1]  # said just now
+        assert m.chat[0]["history"] and m.chat[0]["t"] == logged.timestamp()
+        # without chat.jsonl: the ticks since it
+        m2 = model.Model({"agents": {"astra": {}}})
+        m2.ingest({"tick": 600600 + 600 * 60, "chat": [{k: ans[k] for k in ans if k != "t"}]}, now)
+        assert m2.chat[0]["t"] == now - 600 and m2.chat[0]["history"], m2.chat[0]
+        # a later read is new
+        m2.ingest({"tick": 600600 + 700 * 60, "chat": [{"seq": 200, "tick": 600600, "from": "astra", "text": "late"}]}, now + 100)
+        assert "history" not in m2.chat[-1] and m2.chat[-1]["t"] == now + 100
+
+
 def main():
     host_tag()
     operator_elsewhere()
@@ -239,7 +308,9 @@ def main():
     else:
         model_tests()
     operator_inbox_all()
-    print("viewer replies: ok (@name, vocatives, viewer-addressed lines, third person left out, the answered line, model snapshot, "
+    long_reply_parts()
+    restored_chat()
+    print("viewer replies: ok (restored chat keeps its time as history, a long reply's numbered parts in one thread, @name, vocatives, viewer-addressed lines, third person left out, the answered line, model snapshot, "
           "the Operator's answer to an inbox line (d16 18:31) in classify, the archive, the model and live.js)")
 
 

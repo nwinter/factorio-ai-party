@@ -150,7 +150,8 @@ def public_haul(hauling):
 
 def public_delivery(status, keep=150):
     """(d17 batch35 D1, viewer Aurora: four lines received and never relayed, no reason shown) each site line's delivery
-    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?}},
+    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?,
+    to_all?: every recipient of a line to several agents, op?: 1 when it is in the operator's inbox too}},
     the newest `keep`. YouTube lines are not keyed by a site seq and stay out."""
     out = {}
     for r in (status or {}).get("delivery") or []:
@@ -160,6 +161,11 @@ def public_delivery(status, keep=150):
         row = {"s": r["status"]}
         if r.get("to"):
             row["to"] = str(r["to"])[:40]
+        # (d19 batch42 A4) every agent the game took a group line for; (A3) in the operator's inbox too
+        if r["status"] == "relayed" and isinstance(r.get("to_all"), list) and len(r["to_all"]) > 1:
+            row["to_all"] = [str(n)[:40] for n in r["to_all"][:9]]
+        if r.get("inbox"):
+            row["op"] = 1
         if r.get("why"):
             row["why"] = str(r["why"])[:120]
         out[i[5:]] = row
@@ -179,6 +185,8 @@ def public_replies(rows, hidden=None):
             continue
         row = {"seq": r.get("seq"), "t": round(r["t"], 1), "tick": r.get("tick"), "by": str(r["by"]), "text": str(r["text"]),
                "kind": r.get("kind") or "reply", "to": [str(n) for n in r.get("to") or []]}
+        if r.get("history"):  # (d19 batch42 A5) restored at a stream restart, with its own time
+            row["history"] = True
         a = r.get("answers")
         if isinstance(a, dict) and a.get("name"):
             if hidden and hidden.hides(a.get("name"), a.get("text")):

@@ -1266,6 +1266,12 @@ fh board events --since 40
   are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`). Text with an apostrophe or quote: use the
   heredoc, `fh say - <<'EOF'`, the text, `EOF`. `fh call say words...` and `fh call confess words...` take the words
   as text too (they used to send no text and fail with `text is required`).
+- A `say` over 500 bytes (the runtime keeps 500 of a line) goes as numbered parts, each within 500 bytes, cut at
+  sentence ends (a sentence longer than a part at word ends) and repeating the line's leading `@names`:
+  `@Foobator (1/2) ...`, `@Foobator (2/2) ...` (d19 batch42 A1, host/saysplit.ts; viewer Aurora: a reply cut mid-word at
+  500). `reply_to` and `look` go with the first part, `--aloud` with each; the reply is the last part's, with `parts`
+  (seq and bytes of each) and `split`. Over 6 parts is refused before anything is posted. The site keeps the parts in
+  one viewer thread (tools/stream/viewer_replies.py).
 
 ### Confessionals and viewer lines
 

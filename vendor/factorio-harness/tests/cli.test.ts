@@ -370,6 +370,22 @@ test('say takes plain text, a file or stdin, without JSON quoting',async()=>{
   assert.deepEqual(seen.map(r=>[r.action,r.args.text,r.args.aloud]),[
     ['say',"I'll bring gears",undefined],['say','it\'s "done" $HOME',true],['say',"from stdin, it's fine",undefined],['say','piped',undefined]]);
 });
+test('a say over 500 bytes posts numbered parts cut at sentence ends (d19 batch42 A1); reply_to and look go with the first',async()=>{
+  const seen:any[]=[];
+  const sentence='The recyclers feed the assemblers through one belt, and the second line takes their output to a chest. ';
+  const text='@Foobator '+sentence.repeat(7).trim();
+  await engine(request=>{seen.push(request);return {ok:true,result:{seq:100+seen.length}};},async port=>{
+    const {stdout}=await cli(port,['say',text,'--aloud','--args','{"reply_to":7}','--bot','muse']);
+    const reply=JSON.parse(stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.seq,102);
+    assert.deepEqual(reply.result.parts.map((p:any)=>p.seq),[101,102]);
+    assert.match(reply.result.split,/2 parts at sentence ends/);
+    const many=await compact(port,['say','word. '.repeat(700),'--bot','muse']);
+    assert.equal(many.code,1); assert.match(many.stdout,/fh posts up to 6 parts of 500 bytes, and this needs \d+; nothing was sent/);
+  });
+  assert.deepEqual(seen.map(r=>[r.args.text.slice(0,16),r.args.aloud,r.args.reply_to]),[['@Foobator (1/2) ',true,7],['@Foobator (2/2) ',true,undefined]]);
+  assert(seen.every(r=>Buffer.byteLength(r.args.text)<=500 && r.args.text.endsWith('chest.')));
+});
 test('confess takes text like say and maps to the confess action',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,note:'viewers hear this; teammates do not'}};},async port=>{

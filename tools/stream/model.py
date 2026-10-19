@@ -13,7 +13,7 @@ An observation is a dict:
   board_events: [{seq, tick, by, id, change, title, kind?, progress?, steps_done?, steps_total?}] (optional; docs/BOARD-API.md)
   board: {items: [...], open_unowned, plan} (optional, refreshed slowly; docs/BOARD-API.md; project items carry progress)
 """
-import json, math, os, re, time
+import datetime, json, math, os, re, time
 from collections import deque
 
 import attention
@@ -57,6 +57,8 @@ def research_units(used):
     return best if best > 0 else max((v or 0 for v in used.values()), default=0)
 
 
+HISTORY_S = 60  # game seconds: a line in the first chat read (the backlog at a restart) older than this is history
+CHAT_LOG_TAIL = 4 << 20  # bytes of runs/RUN/chat.jsonl read for restored lines' times (about 15000 lines)
 MAIDEN_STALE_S = 120  # game seconds: a platform_left read later than this (a restart catching up) is not shown
 PLANET_LABELS = {"nauvis": "Nauvis", "vulcanus": "Vulcanus", "fulgora": "Fulgora", "gleba": "Gleba", "aquilo": "Aquilo",
                  "solar-system-edge": "Solar system edge", "shattered-planet": "Shattered Planet"}
@@ -610,10 +612,13 @@ class Model:
         # agents' and the Operator's lines that answer a viewer or speak to the viewers (viewer_replies.py; Nick, d15
         # 08:07): the live page's site chat shows them among the viewers' lines, so they outlive the chat window
         self.viewer_replies = deque(maxlen=40)
+        self.reply_threads = viewer_replies.Threads()  # a long reply's numbered parts stay in part 1's thread
         # viewers' lines to the Operator, which go to the run's operator inbox, not the game chat (viewer_replies.py):
         # set_inbox; read again when the file changes
         self.inbox_path, self.inbox_mtime, self.inbox_rows = None, None, []
         self.chat_seen = set()
+        self.chat_read = False  # the first chat read (the backlog) is done
+        self.chat_log_path, self.chat_log_times = None, None  # set_chat_log
         self.operator_requests = deque(maxlen=5)  # the last few agents' requests to the operator, for the snapshot
         self.alerts = deque(maxlen=30)
         self.alert_keys = {}
@@ -698,8 +703,11 @@ class Model:
             if team and a.get("name") not in team:
                 continue
             self._ingest_agent(a, now)
-        for m in obs.get("chat", []):
-            self._ingest_chat(m, now)
+        chat = obs.get("chat") or []
+        for m in chat:
+            # the first read after a (re)start is the game's chat backlog: restored lines keep their time (chat_time)
+            self._ingest_chat(m, now, restored=not self.chat_read)
+        self.chat_read = self.chat_read or bool(chat)
         for e in (obs.get("chronicle") or {}).get("entries") or []:
             self._ingest_chronicle_entry(e, now)
         for e in (obs.get("chronicle") or {}).get("events") or []:
@@ -1035,7 +1043,35 @@ class Model:
         now = now or time.time()
         self._ingest_chat({"seq": f"stream-notice-{int(now * 1000)}", "tick": None, "from": "stream", "text": text, "t": now, "notice": True}, now)
 
-    def _ingest_chat(self, m, now):
+    def set_chat_log(self, path):
+        """runs/RUN/chat.jsonl (tools/chat-log.py: {seq, tick, ..., logged_at}): the wall time of lines read again at a
+        restart."""
+        self.chat_log_path, self.chat_log_times = path, None
+
+    def chat_time(self, m):
+        """(d19 batch42 A5, viewer Aurora: "old chat restored after a restart ... earlier defense replies now look new")
+        A backlog line's wall time: chat.jsonl's logged_at for its seq and tick, else the game ticks since it (at 60 a
+        second) before the tick read now."""
+        if self.chat_log_times is None:
+            self.chat_log_times = {}
+            try:
+                with open(self.chat_log_path, "rb") as f:
+                    f.seek(0, 2)
+                    f.seek(max(0, f.tell() - CHAT_LOG_TAIL))
+                    for raw in f.read().decode("utf-8", "replace").splitlines():
+                        try:
+                            r = json.loads(raw)
+                            self.chat_log_times[(r["seq"], r["tick"])] = datetime.datetime.fromisoformat(r["logged_at"]).timestamp()
+                        except (ValueError, KeyError, TypeError):
+                            pass
+            except (OSError, TypeError):
+                pass
+        t = self.chat_log_times.get((m.get("seq"), m.get("tick")))
+        if t is not None:
+            return t
+        return (self.tick_t or time.time()) - max(0, self.tick - m["tick"]) / 60.0
+
+    def _ingest_chat(self, m, now, restored=False):
         key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
         if key in self.chat_seen:
             return
@@ -1043,6 +1079,10 @@ class Model:
         sender = self._match_sender(m.get("from", ""))
         entry = {"seq": m.get("seq"), "tick": m.get("tick"), "from": m.get("from"), "agent": sender,
                  "text": m.get("text", ""), "t": m.get("t", now)}
+        if restored and m.get("t") is None and isinstance(m.get("tick"), (int, float)) and self.tick \
+                and (self.tick - m["tick"]) / 60.0 > HISTORY_S:
+            # said before this restart: its own time, and marked history (the site, the overlay; never voiced again)
+            entry["t"], entry["history"] = self.chat_time(m), True
         if m.get("aloud"):  # the agent asked for this line to be voiced on stream (tools/stream/caster.py)
             entry["aloud"] = True
         if m.get("source"):  # a relayed viewer line: where the viewer wrote, YouTube or site (chat.lua)
@@ -1056,14 +1096,14 @@ class Model:
         entry["lane"] = chat_lane(entry)
         self.chat.append(entry)
         if entry["lane"] not in ("viewer", "notice"):
-            r = viewer_replies.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
-                                        self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
+            r = self.reply_threads.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
+                                            self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
             if r:
                 self.viewer_replies.append(viewer_replies.row(entry, r))
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))
         if cl:
             self._changelog(cl.group(2).strip(), m.get("tick"), entry["t"], version=cl.group(1))
-        if sender and m.get("t", now) > now - 30:
+        if sender and entry["t"] > now - 30:
             ag = self.agents[sender]
             ag.bump(2, now)
             ag.last_activity_t = now

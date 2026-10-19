@@ -127,7 +127,7 @@
     var first = all.length ? all[0].t || 0 : 0;
     replyLines.slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); }).forEach(function (r) {
       if ((r.t || 0) < first) return;
-      var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind };
+      var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind, history: r.history === true };
       var at = answered(all, r);
       if (at >= 0) {
         item.thread = true;
@@ -147,23 +147,31 @@
     var who = esc(a.display_name || a.name || m.by);
     var tag = m.kind === 'to_viewers' ? 'TO VIEWERS' : 'REPLY';
     var to = m.to && m.to.length ? ' <span class="c-to fx-muted">↩ ' + esc(m.to.join(', ')) + '</span>' : '';
-    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + '"' + (col ? ' style="--ac:' + col + '"' : '') +
+    // (d19 batch42 A5, viewer Aurora) a reply read again at a stream restart keeps its own time and says it is history
+    if (m.history) to += ' <span class="c-history fx-muted" title="said before the stream service restarted">history</span>';
+    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + '"' + (col ? ' style="--ac:' + col + '"' : '') +
       '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
       who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';
   }
-  // A site line's delivery: "to Sol", "held", "to the operator", "not relayed: why" (the viewers-only lines never go)
+  // A site line's delivery: "to Sol", "to Sol, Luna", "held", "to the operator", "not relayed: why" (the viewers-only
+  // lines never go). (d19 batch42 A3, A4, viewer Aurora) a line in the operator's inbox shows that receipt on its own,
+  // beside what became of the agents' copy; a group line names every recipient.
+  function agentName(n) { return team[n] && team[n].display_name || n; }
   function deliveryHtml(m) {
     var d = m.src === 'site' ? delivery[m.seq] : null;
     if (!d || !d.s) return '';
-    var txt = d.s === 'relayed' ? (d.to ? 'to ' + (team[d.to] && team[d.to].display_name || d.to) : 'relayed') + (d.why ? ': ' + d.why : '')
+    var who = Array.isArray(d.to_all) && d.to_all.length ? d.to_all : d.to ? [d.to] : [];
+    var txt = d.s === 'relayed' ? (who.length ? 'to ' + who.map(agentName).join(', ') : 'relayed') + (d.why ? ': ' + d.why : '')
       : d.s === 'held' ? 'held' + (d.why ? ': ' + d.why : '')
       : d.s === 'operator' ? 'to the operator'
       : 'not relayed' + (d.why ? ': ' + d.why : '');
-    return ' <span class="c-delivery c-delivery-' + esc(d.s) + ' fx-muted">' + esc(txt) + '</span>';
+    var html = ' <span class="c-delivery c-delivery-' + esc(d.s) + ' fx-muted">' + esc(txt) + '</span>';
+    if (d.op && d.s !== 'operator') html = ' <span class="c-delivery c-delivery-operator fx-muted">to the operator</span>' + html;
+    return html;
   }
   function renderChat() {
     if (!chatList) return;
-    var all = joinedChat(), sig = all.map(function (m) { return m.k + (m.src === 'site' && delivery[m.seq] ? ':' + delivery[m.seq].s : ''); }).join(',');
+    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') : ''); }).join(',');
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
