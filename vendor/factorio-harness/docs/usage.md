@@ -8533,3 +8533,21 @@ fh watch    # deploy on every change
   - "250 agricultural-science-pack staged for Petrel (its hub asks gleba for it) spoil before its next arrival here
     in about 600s: the first in 300s (the silo's rocket); in storage-chest (24.5,47.5) 50, the silo's rocket 200".
   - Read at most every 30 s a silo, ahead of the silo's other alerts. 0.09 ms for Gleba's silo on world n.
+- D1 with batch37 D2 (Sol: hub stock against each belt reader; a filter set from a constant minus a whole-belt reader
+  starved the crusher feed): circuit_audit {platform} gives `feeders` (circaudit.lua `feeder`).
+  - Each inserter of ours whose filters the circuit sets or which the circuit turns on and off gets one line: what it
+    takes now, its pickup and the signals on its red and green networks.
+  - The line follows the combinators putting out onto those networks and what their inputs read, 3 deep, wire by wire
+    (player wires only), and names constant combinators.
+  - The hub's read is said apart ("its own signal").
+  - Each belt reader there: its mode and the belts its count covers. Hold is its own belt. Whole belt is the game's
+    segment, in flow order: the straight input at a side-load, undergrounds to their pair, stopping at a splitter or a
+    change of segment length. Then what it holds now of the inserter's items, the belts of it past the inserter's
+    pickup ("it cannot take what they hold", with the count there), and belts side-loading inside the count (marked
+    when upstream of the pickup).
+  - `inserter: {x, y}` reads one feeder.
+  - Bounded: the first 8 feeders, 96 connectors a network; a read walks at most 160 belts (400 for one inserter), and
+    readers past that are named, not walked. Belt contents, walks and members are each read once a read.
+  - On world n (read-only, saved first), Wayfarer: 8 feeders in 12.2 ms. My first two versions took 57 ms and 26 ms for
+    10 feeders (a 138-belt and a 111-belt segment walked again per feeder), over the 20 ms bound for one command each;
+    that is why the budget exists.

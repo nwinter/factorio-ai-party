@@ -16886,7 +16886,7 @@ end
 M.demolishers=require('demolishers'){state=state,position=function(v) return position(v) end,character_name=function(e) return M.character_name(e) end}
 function handlers.demolishers(p,a) return M.demolishers.read(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
-M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end,circuit_short=function(e) return M.circuits.short(e) end}
+M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end,circuit_short=function(e) return M.circuits.short(e) end,condition_text=function(c) return M.circuits.condition_text(c) end}
 function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end
 -- A logistic network's requesters by what keeps them short (logaudit.lua; d17 batch17 C2, Luna).
 -- Robot trips a dry run's jobs would take (robottrips.lua; d17 batch34 B3, Opus).
