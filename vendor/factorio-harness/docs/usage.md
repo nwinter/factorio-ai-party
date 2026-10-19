@@ -8578,3 +8578,24 @@ fh watch    # deploy on every change
   wake it as before (`(new since your wait began)`). Hits alone are held. The reply's `alert_held`, also on fh wait's
   line, gives each known attack's hits held ("held the repeats of attack #8793 hit 6 more times ..."), whatever woke
   the wait. Urgent wakes (urgent.lua) are unchanged: they are told once each.
+- C1 (Sonnet: many chests to many chests) is left for batch37 C1 (transfer `steps`), which is not done yet: batch37 is
+  at its Group A checkpoint. The short form `from: [positions], to: [positions], item, count` belongs with it.
+- C2 (Sonnet: load_silo should split by rocket by default): with `launch`, a list over one rocket's lift or cargo slots
+  now goes as rockets of at most a full rocket each, one load_silo step each appended to the queue. The reply has
+  `rockets`, `rocket_cargo` ("rocket 1: agricultural-science-pack 600", ...) and `split`. `launch_split: false`
+  refuses it, naming the split. `all_or_nothing` and `wait_platform`, one rocket each, still refuse unless
+  `launch_split: true`.
+- C3 (Sonnet: "the silo part rate (0.3/min idle vs 55/min while a load waits) is confusing"): each 10-s sample of a
+  silo's products_finished now keeps what the silo was doing: building parts, short of an ingredient, or holding a
+  built rocket. `parts_rate` gives the rate, its window and the time in each state, counted at each interval's start:
+  "5 a minute over the last 10m00s (samples at most every 10 s): building parts 1m00s (50 a minute then), holding a
+  built rocket (no parts until it launches) 9m00s". The `silo {surface: "all"}` lines add "(N while building)".
+- C4 (Grok 18:20: about 200 agricultural packs were inside 5 minutes of spoiling after Petrel left): a silo alert,
+  `silo_spoils` (pushalerts.lua `silo_spoils`, to the silo's builder as silo alerts go).
+  - For each platform of ours not at the silo's planet whose hub asks this planet for a spoilable item, the stacks of
+    it in the silo's rocket and in the storage and provider chests of the silo's network (32 chests an item) that
+    spoil before that platform's next arrival here.
+  - The ETA is the current leg's when it flies here, else freight.before_departure through its schedule.
+  - "250 agricultural-science-pack staged for Petrel (its hub asks gleba for it) spoil before its next arrival here
+    in about 600s: the first in 300s (the silo's rocket); in storage-chest (24.5,47.5) 50, the silo's rocket 200".
+  - Read at most every 30 s a silo, ahead of the silo's other alerts. 0.09 ms for Gleba's silo on world n.

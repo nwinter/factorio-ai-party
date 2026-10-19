@@ -223,4 +223,59 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d18_batch38 B3 ghosts that want an item the network holds too few of: ok')
+
+-- C3 (Sonnet: 0.3 a minute idle against 55 while a load waits read as a contradiction): the part rate's window and what
+-- the silo did in it (parts are made only while it builds).
+do
+  game={tick=0}
+  defines={rocket_silo_status={building_rocket=0,rocket_ready=7}}
+  local st={}
+  local status='working'
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return st end,status_name=function() return status end}
+  local silo={unit_number=5,products_finished=0,rocket_silo_status=0}
+  S.sample_made(silo)
+  -- 1 min building: 50 parts; then 9 min with a built rocket standing
+  game.tick=3600; silo.products_finished=50; silo.rocket_silo_status=7; S.sample_made(silo)
+  for i=1,9 do game.tick=3600+i*3600; S.sample_made(silo) end
+  local m=S.sample_made(silo)
+  eq(m.per_min,5); eq(m.while_building,50); eq(m.state,'ready')
+  eq(S.rate_text(m),'5 a minute over the last 10m00s (samples at most every 10 s): building parts 1m00s (50 a minute then), holding a built rocket (no parts until it launches) 9m00s')
+  -- short of an ingredient while building
+  silo.rocket_silo_status=0; status='item_ingredient_shortage'
+  game.tick=game.tick+1200; S.sample_made(silo)
+  game.tick=game.tick+1200; m=S.sample_made(silo)
+  has(S.rate_text(m),'short of an ingredient 20s')
+  game,defines=nil,nil
+end
+print('d18_batch38 C3 the part rate says its window and what the silo did: ok')
+
+-- C4 (Grok 18:20: about 200 agricultural packs were inside 5 minutes of spoiling after Petrel left): staged cargo that
+-- spoils before the platform asking for it is back.
+do
+  game={tick=60000}
+  defines={inventory={rocket_silo_rocket=1,chest=2}}
+  prototypes={item={['agricultural-science-pack']={get_spoil_ticks=function() return 216000 end},['iron-plate']={get_spoil_ticks=function() return 0 end}}}
+  local function stack(name,count,spoil) return {valid_for_read=true,name=name,count=count,spoil_tick=spoil} end
+  local rocket={stack('agricultural-science-pack',200,60000+18000),stack('agricultural-science-pack',100,60000+90000)}
+  local chest_inv={stack('agricultural-science-pack',50,60000+30000)}
+  local chest={valid=true,type='container',name='storage-chest',position={x=24.5,y=47.5},get_item_count=function() return 50 end,get_inventory=function() return chest_inv end}
+  local ln={storages={chest},providers={}}
+  local hub={valid=true,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+    filters={{value={name='agricultural-science-pack'},min=400,import_from='gleba'},{value={name='iron-plate'},min=100,import_from='gleba'}}} end} end}
+  local petrel={valid=true,name='Petrel',hub=hub,space_location={name='nauvis'}}
+  local surf={name='gleba',planet={name='gleba'},find_logistic_network_by_position=function() return ln end}
+  local silo={valid=true,name='rocket-silo',position={x=65.5,y=14.5},surface=surf,force={platforms={petrel}},get_inventory=function(i) eq(i,1); return rocket end}
+  local eta=600
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {} end,platform_eta=function(pl,loc) eq(pl.name,'Petrel'); eq(loc,'gleba'); return eta end}
+  local k,d=PA.silo_spoils(silo,surf)
+  eq(k,'silo_spoils')
+  eq(d,'rocket-silo (65.5,14.5): 250 agricultural-science-pack staged for Petrel (its hub asks gleba for it) spoil before its next arrival here in about 600s: the first in 300s (the silo\'s rocket); in storage-chest (24.5,47.5) 50, the silo\'s rocket 200')
+  eta=200
+  eq(PA.silo_spoils(silo,surf),nil,'back before any spoils')
+  -- a platform here now: no alert
+  eta=600; petrel.space_location={name='gleba'}
+  eq(PA.silo_spoils(silo,surf),nil)
+  game,defines,prototypes=nil,nil,nil
+end
+print('d18_batch38 C4 staged cargo spoiling before its platform is back: ok')
 print('d18 batch38 ok')

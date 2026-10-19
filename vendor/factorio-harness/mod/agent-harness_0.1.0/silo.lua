@@ -69,15 +69,56 @@ return function(api)
     local n = try(function() return e.products_finished end)
     if not n then return nil end
     local last = list[#list]
+    -- (d18 batch38 C3, Sonnet: 0.3 a minute idle against 55 while a load waits read as a contradiction) each sample with
+    -- what the silo was doing: building parts, short of an ingredient, or holding a built rocket (parts are made only
+    -- while it builds)
+    local now_state = M.made_state(e)
     if not last or game.tick - last.tick >= 600 or n < last.n then
       if last and n < last.n then for i = #list, 1, -1 do list[i] = nil end end
-      list[#list+1] = {tick=game.tick, n=n}
+      list[#list+1] = {tick=game.tick, n=n, s=now_state}
       while #list > 64 do table.remove(list, 1) end
     end
-    local from
-    for _, x in ipairs(list) do if game.tick - x.tick <= 36000 and x.tick < game.tick then from = x; break end end
+    local from, fi
+    for i, x in ipairs(list) do if game.tick - x.tick <= 36000 and x.tick < game.tick then from, fi = x, i; break end end
     local rate = from and (n - from.n) / ((game.tick - from.tick) / 3600) or nil
-    return {made=n, per_min=rate and math.floor(rate * 10 + 0.5) / 10 or nil, over_s=from and math.floor((game.tick - from.tick) / 60) or nil}
+    -- the window's time by state (each interval counted at its start's state) and the rate while building
+    local spent, built_parts = {}, 0
+    if from then
+      for i = fi, #list do
+        local x, y = list[i], list[i + 1]
+        local t1, n1 = y and y.tick or game.tick, y and y.n or n
+        local k = x.s or 'unknown'
+        spent[k] = (spent[k] or 0) + (t1 - x.tick)
+        if k == 'building' then built_parts = built_parts + (n1 - x.n) end
+      end
+    end
+    local b = spent.building or 0
+    return {made=n, per_min=rate and math.floor(rate * 10 + 0.5) / 10 or nil, over_s=from and math.floor((game.tick - from.tick) / 60) or nil,
+      spent=from and spent or nil, while_building=b >= 600 and math.floor(built_parts / (b / 3600) * 10 + 0.5) / 10 or nil, state=now_state}
+  end
+  -- What a silo is doing for the rate's window: building (parts in progress), short (building, an ingredient short),
+  -- ready (a built rocket stands: no parts until it launches), other.
+  function M.made_state(e)
+    local rs = try(function() return e.rocket_silo_status end)
+    local building = defines.rocket_silo_status and rs == defines.rocket_silo_status.building_rocket
+    if not building then return rs ~= nil and 'ready' or 'other' end
+    local st = api.status_name and try(function() return api.status_name(e) end)
+    if st == 'item_ingredient_shortage' or st == 'no_ingredients' or st == 'fluid_ingredient_shortage' then return 'short' end
+    return 'building'
+  end
+  local STATE_WORDS = {building='building parts', short='short of an ingredient', ready='holding a built rocket (no parts until it launches)', other='neither', unknown='unknown'}
+  -- "0.3 a minute over the last 10m00s: building parts 1m00s (about 3 a minute then), holding a built rocket 9m00s"
+  function M.rate_text(made)
+    if not (made and made.per_min) then return nil end
+    local parts = {}
+    for _, k in ipairs({'building', 'short', 'ready', 'other', 'unknown'}) do
+      local t = made.spent and made.spent[k]
+      if t and t > 0 then
+        parts[#parts+1] = STATE_WORDS[k] .. ' ' .. ago(t) .. (k == 'building' and made.while_building and string.format(' (%g a minute then)', made.while_building) or '')
+      end
+    end
+    return string.format('%g a minute over the last %s (samples at most every 10 s)%s', made.per_min, ago(made.over_s * 60),
+      #parts > 0 and ': ' .. table.concat(parts, ', ') or '')
   end
   local function records()
     local s = api.state()
@@ -304,7 +345,9 @@ return function(api)
     words[#words+1] = string.format('%s %s on %s: %s', e.name, at(e.position), e.surface.name, rk.rocket_now)
     if made then
       row.parts_made, row.parts_per_min = made.made, made.per_min
-      words[#words+1] = string.format('rocket parts made %d%s', made.made, made.per_min and string.format(', %g a minute over the last %s', made.per_min, ago(made.over_s * 60))
+      row.parts_rate = M.rate_text(made)
+      row.parts_per_min_building = made.while_building
+      words[#words+1] = string.format('rocket parts made %d%s', made.made, row.parts_rate and ', ' .. row.parts_rate
         or ' (the rate needs a second sample, 10 s or more later)')
     end
     -- Crafting: the part in progress, and the rest of the rocket at this speed.
@@ -808,7 +851,8 @@ return function(api)
         rows[#rows+1] = row
         local rk = M.rocket(e)
         local parts = rk.rocket_now
-        local rate = row.parts_per_min and string.format(', %s parts/min', tostring(row.parts_per_min)) or ''
+        local rate = row.parts_per_min and string.format(', %s parts/min%s', tostring(row.parts_per_min),
+          row.parts_per_min_building and string.format(' (%g while building)', row.parts_per_min_building) or '') or ''
         local aboard = row.cargo and row.cargo.items or 'nothing'
         local filling = {}
         for _, r in ipairs(row.platform_requests or {}) do
@@ -869,7 +913,7 @@ return function(api)
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, room_kg (lift left), stacks, slots, items, over_kg}, trash, robots_bringing (what logistic robots carry or have reserved toward the silo now) and requesting_for (the platform its automatic requests fill for), auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
-      .. 'platforms_above (ours in orbit of this planet), parts_made and parts_per_min (rocket parts made, products_finished; the rate over the last 10 min of samples taken at most every 10 s by reads and the alert scan), next_auto_launch (with automatic requests on: the request filled now, else the first the network can give a rocket\'s payload for: platform, item, under min_payload N or full N by weight), platform_requests [{platform, item, network_can_give (provider and storage chests less robots\' reservations), providers, storage, next_launch (min_payload N | full N), flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named, each with the chest robots would take it from; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), load_silo (split_networks: the args that carry it over by hand: a walking load from those chests that launches for the platform), line}] (each request a platform in orbit of this planet makes of it that its hub lacks, in flag order: filling, matched, split_networks, hub_full, below_min_payload; the first 8, or every one with requests: true), platform_requests_count, platform_requests_flags (the count of each flag), platform_requests_more (the rows past the first 8), platforms_coming (ours flying here now: from where, share flown; a platform\'s requests count once it is in orbit), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
+      .. 'platforms_above (ours in orbit of this planet), parts_made and parts_per_min (rocket parts made, products_finished; the rate over the last 10 min of samples taken at most every 10 s by reads and the alert scan), parts_rate (the rate, its window, and the time in it spent building parts, short of an ingredient or holding a built rocket: parts are made only while it builds), parts_per_min_building, next_auto_launch (with automatic requests on: the request filled now, else the first the network can give a rocket\'s payload for: platform, item, under min_payload N or full N by weight), platform_requests [{platform, item, network_can_give (provider and storage chests less robots\' reservations), providers, storage, next_launch (min_payload N | full N), flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named, each with the chest robots would take it from; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), load_silo (split_networks: the args that carry it over by hand: a walking load from those chests that launches for the platform), line}] (each request a platform in orbit of this planet makes of it that its hub lacks, in flag order: filling, matched, split_networks, hub_full, below_min_payload; the first 8, or every one with requests: true), platform_requests_count, platform_requests_flags (the count of each flag), platform_requests_more (the rows past the first 8), platforms_coming (ours flying here now: from where, share flown; a platform\'s requests count once it is in orbit), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M
 end

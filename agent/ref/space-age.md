@@ -259,7 +259,9 @@
   what robots bring and a paused manifest's rockets left; a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
   its feeders), the cargo aboard (items, kg against the lift, `room_kg` left, slots), the last launch, `robots_bringing` (what logistic robots carry or have
   reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
-  `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min).
+  `next_parts` counts parts for the rocket after it; `parts_made` and `parts_per_min` (over the last 10 min);
+  `parts_rate` says that window and how long in it the silo built parts, stood short of an ingredient or held a built
+  rocket (parts are made only while it builds), with `parts_per_min_building`.
   `platform_requests` flags each request a platform above makes: matched (the planet's network holds it),
   below_min_payload, split_networks (another network holds it), hub_full, filling; each with what the silo's network
   can give now (provider and storage chests, less robots' reservations; requester and buffer chests not counted) and
@@ -274,7 +276,9 @@
   take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk. A silo's
   transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part ingredients) and
   `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each. Silo
-  alerts: `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).
+  alerts: `silo_short.<item>` (parts stalled 2 min), `silo_ready_idle` (a rocket ready 3 min, not launched) and
+  `silo_spoils` (a spoilable item a platform asks this planet for, in the silo's rocket or its network's chests, that
+  spoils before that platform's next arrival here: how many, the first's time left, where).
   Example: `./fh call silo --args '{"position":{"x":65.5,"y":14.5},"why":true}'`
 - `cargo {items | position, silo?, to_platform?, incoming?}`: weighs a rocket cargo list (or a chest, silo or pad at
   `position`): each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets, and
@@ -303,7 +307,9 @@
   not go back; `in_next_rocket`: the list's items in the silo's rocket now).
   `up_to_stock_at_start: true` loads at most what you and the chests held when it began (`stock_at_start`), then ends
   (launches with `launch`). `up_to: true` loads what fits and is held and launches with that (`up_to_short`). A list
-  over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`
+  over one rocket goes, with `launch`, as rockets of at most a full rocket each, queued in turn (`rockets`,
+  `rocket_cargo`, `split`); `launch_split: false` refuses it, and so do `all_or_nothing` and `wait_platform` (one rocket
+  each) unless `launch_split: true`; `rockets: 3` with `launch`
   queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
   and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
   launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. With `walk: true`
