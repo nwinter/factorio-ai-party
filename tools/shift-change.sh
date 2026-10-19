@@ -6,7 +6,7 @@
 #    --stream or --no-stream given when PREV is streaming. --ignore quota,obs,... skips named checks (notes, quota,
 #    box, obs, running, stream).
 # 2. Reads PREV's switches while its helpers still run (tools/shift_change.py switches: switches.env, the helpers'
-#    arguments, start.log, stream.json, viewers-relay.on, team.txt), then POG_STOP_WORLD=1 tools/stop-team.sh PREV,
+#    arguments, start.log, stream.json, viewers-relay.on, viewers-route.on, team.txt), then POG_STOP_WORLD=1 tools/stop-team.sh PREV,
 #    closes PREV's agent panes (runs/PREV/panes.txt), and runs tools/start-team.sh NEXT MINUTES [--stream] with those
 #    switches, POG_RESUME=PREV and POG_NEXT_SHIFT at NEXT's end.
 #    Once PREV is stopped (its row on the site is complete), tools/site-refresh.sh --last-run PREV runs in the

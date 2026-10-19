@@ -32,7 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
 sys.dont_write_bytecode = True
-from factory_digest import Digest
+from factory_digest import Digest, haul_lines
 import pacing  # noqa: E402  (tools/stream/pacing.py: an agent's rest between turns)
 
 
@@ -300,7 +300,8 @@ def main():
     a = ap.parse_args()
     h = Harness(a.world, a.port)
     n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run), run_dir=a.run)
-    digest = Digest(a.run, n.deadline)
+    # (d17 batch35 D5) each agent's most repeated haul this shift, and its destination's feed now, in its part of the delta
+    digest = Digest(a.run, n.deadline, extra=lambda report: haul_lines(a.run, h.dispatch))
     if a.digest_now:
         for row in digest.step(time.time(), h.dispatch, manual=True, dry_run=a.dry_run):
             log(row['text'])

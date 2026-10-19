@@ -8157,3 +8157,25 @@ fh watch    # deploy on every change
   - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
     operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
   - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.
+- D5 (viewer Aurora 14:47: each agent's most repeated haul): the hauls of this shift, which are the hauling read now
+  less the run's first row in runs/RUN/hauling.jsonl, most repeated first (tools/stream/hauling.py `shift_rows` hauls,
+  `haul_line`).
+  - For the first haul's destination: what feeds it the item without hands now. A new operator read, `haul_feed`
+    (hauling.lua; rows: up to 16 {agent, item, surface, to, to_name}), gives:
+    - the inserters dropping into it, and from what (a belt, chest or machine, with what it holds of the item now;
+      an inserter whose filters leave the item out is not counted);
+    - its requester or buffer request for the item;
+    - a silo's automatic requests;
+    - robots bringing it;
+    - or none.
+  - Cost: one entity lookup and one inserter search of the entity's box widened by 3 tiles per row, 0.2 ms on world
+    n.
+  - The digest: one line in each agent's part of D2's delta (to that agent only): "your hauls: most repeated this
+    shift: ITEM on SURFACE from (x,y) to ENTITY (x,y), N times (M items); there now: ENTITY ... fed ITEM without hands
+    now: ...; next: ...".
+  - The site: live.py reads haul_feed with each hauling read (every 5 min) and keeps it in the row (`feeds`). The live
+    state's agents[].haul feeds the agents page's "Now": "Most repeated haul" and "Fed there now".
+- The routing switch at a shift change (operator 18:20): start-team.sh takes POG_VIEWER_ROUTE (default 0) and creates
+  or removes runs/RUN/viewers-route.on as it does viewers-relay.on, and it records the value in switches.env.
+  shift_change.py carries the previous run's file into the next run, the way it carries the relay's. The health line
+  says "relay on, route off".

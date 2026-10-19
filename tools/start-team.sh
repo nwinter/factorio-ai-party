@@ -7,6 +7,7 @@
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-c).
 # POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
+# POG_VIEWER_ROUTE (default 0; 1: a viewer line that names no agent goes by what it is about, tools/stream/router.py).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
 # starts on the previous run's stop save (its stopped.json, written by tools/stop-team.sh), else the newest save
 # written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
@@ -140,7 +141,7 @@ clow=${POG_CASTER_LOW_MODEL-anthropic/claude-haiku-5.5}
 printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}" "POG_SPACE_AGE=$POG_SPACE_AGE" \
   "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" "POG_CASTER_LOW_MODEL=$clow" \
   "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
-  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_TEAM_FILE=$team" "POG_CAMS=${POG_CAMS:-3}" \
+  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_VIEWER_ROUTE=${POG_VIEWER_ROUTE:-0}" "POG_TEAM_FILE=$team" "POG_CAMS=${POG_CAMS:-3}" \
   "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" > "$rundir/switches.env"
 
 if [ -n "$resume" ]; then
@@ -251,6 +252,8 @@ viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtu
 # on unless POG_VIEWER_RELAY=0; `rm runs/RUN/viewers-relay.on` stops it mid-run, `touch` starts it (checked every 2 s).
 viewers+=(--viewers-relay "$rundir/viewers-relay.on")
 if [ "${POG_VIEWER_RELAY:-1}" = 1 ]; then touch "$rundir/viewers-relay.on"; else rm -f "$rundir/viewers-relay.on"; fi
+# Routing by content (router.py) while runs/RUN/viewers-route.on exists: off unless POG_VIEWER_ROUTE=1; touch/rm mid-run.
+if [ "${POG_VIEWER_ROUTE:-0}" = 1 ]; then touch "$rundir/viewers-route.on"; else rm -f "$rundir/viewers-route.on"; fi
 nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json" --port 8788 "${viewers[@]}" \
   >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"

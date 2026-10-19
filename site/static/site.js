@@ -79,9 +79,14 @@
       var d = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd');
       dt.textContent = k; dd.textContent = v; d.appendChild(dt); d.appendChild(dd); dl.appendChild(d);
     };
-    var fill = function (sec, lo, age) {
+    var fill = function (sec, lo, age, haul) {
       var dl = sec.querySelector('.now-kv');
       dl.textContent = '';
+      // (d17 batch35 D5) its most repeated haul this shift, and what feeds that destination without hands now
+      if (haul) {
+        row(dl, 'Most repeated haul', words(haul.item) + ' to ' + words(haul.to_name || 'a spot') + ', ' + num(haul.times) + ' times this shift');
+        row(dl, 'Fed there now', haul.feed ? haul.feed.replace(/^.*without hands now: /, '') : '');
+      }
       var guns = [];
       (lo.guns || []).forEach(function (g, i) {
         if (!g) return;
@@ -111,12 +116,12 @@
     var poll = function () {
       fetch(api2 + '/v1/state', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
         var fresh = d && d.state && d.age_s != null && d.age_s < 120;
-        var by = {};
-        ((fresh && d.state.agents) || []).forEach(function (a) { if (a.loadout) by[a.name] = a.loadout; });
+        var by = {}, hauls = {};
+        ((fresh && d.state.agents) || []).forEach(function (a) { if (a.loadout) by[a.name] = a.loadout; if (a.haul) hauls[a.name] = a.haul; });
         grid.querySelectorAll('.agent-now').forEach(function (sec) {
-          var lo = by[sec.dataset.agent];
-          if (!lo) { sec.hidden = true; return; }
-          fill(sec, lo, (d.age_s || 0) + (lo.age_s || 0));
+          var lo = by[sec.dataset.agent], haul = hauls[sec.dataset.agent];
+          if (!lo && !haul) { sec.hidden = true; return; }
+          fill(sec, lo || {}, (d.age_s || 0) + ((lo || {}).age_s || 0), haul);
         });
       }).catch(function () {});
     };
