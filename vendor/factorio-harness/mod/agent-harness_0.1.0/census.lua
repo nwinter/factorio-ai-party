@@ -211,6 +211,13 @@ return function(api)
     -- Per-prototype planetary counts use this same pass, never a second find. Old in-flight jobs have no map.
     local counts=job.building_counts and job.building_counts[s.index]
     if counts and SNAP[t] then counts.entities[name]=(counts.entities[name] or 0)+1 end
+    -- (d18 batch37 B1) our chests, entity references (elsewhere.lua counts an item in them without a search: a whole-
+    -- surface find of chests took 14-16 ms on Nauvis, world n), at most CRAFTERS_MAX a surface
+    if (t == 'container' or t == 'logistic-container') and job.chests then
+      local list = job.chests[s.index]
+      if not list then list = {}; job.chests[s.index] = list end
+      if #list < CRAFTERS_MAX then list[#list+1] = e end
+    end
     -- (d17 batch30 B2) our assemblers and furnaces, entity references (supply requesters reads their recipes now), at
     -- most CRAFTERS_MAX a surface
     if (t == 'assembling-machine' or t == 'furnace') and job.crafters then
@@ -349,7 +356,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, makers={}, building_counts={}, fuel={}, planets={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, chests={}, makers={}, building_counts={}, fuel={}, planets={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -548,7 +555,7 @@ return function(api)
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
-        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters, makers=job.makers,
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters, chests=job.chests, makers=job.makers,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -565,6 +572,14 @@ return function(api)
     end
   end
 
+  -- (d18 batch37 B1) the chests of a force on a surface the last pass found (nil before a pass lists them).
+  function M.chests_on(force, surface)
+    local d = (api.state().census or {}).done
+    if not (d and d.chests) then return nil end
+    local out = {}
+    for _, e in ipairs(d.chests[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
+    return out
+  end
   -- Only entity references are cached; preflight reads their current rocket/cargo state.
   function M.silos(p)
     local d = (api.state().census or {}).done

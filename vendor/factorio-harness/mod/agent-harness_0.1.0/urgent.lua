@@ -402,7 +402,46 @@ return function(api)
     local a = f.area
     return pos ~= nil and pos.x >= a.left_top.x and pos.x <= a.right_bottom.x and pos.y >= a.left_top.y and pos.y <= a.right_bottom.y
   end
-  function M.alert(p, from, f)
+  -- (d18 batch37 U2, Haiku: one attack's alert woke wait --until alert again and again, 1 s apart, as its hits grew) the
+  -- attacks known when a wait begins: their attackers seen, and the loss count then. Such an attack wakes the wait only
+  -- when it changed: more attackers (a new group joined) or one of ours lost within LOSS_NEAR tiles of it since; its
+  -- other repeats are held (held_text says them).
+  M.LOSS_NEAR = 48
+  local function size_of(v) return math.max(v.size or 0, v.group and v.group.size or 0) end
+  function M.alert_known(p)
+    local s = api.state()
+    local k = {loss_seq=s.loss_seq or 0, areas={}, hits={}}
+    for _, v in pairs(s.damage or {}) do if v.id then k.areas[v.id] = size_of(v); k.hits[v.id] = v.hits or 0 end end
+    return k
+  end
+  local function lost_near(s, v, since)
+    local names, n = {}, 0
+    for _, i in ipairs(s.losses or {}) do
+      local b = i.box
+      if (i.seq or 0) > since and i.surface == v.surface and b and v.at.x >= b[1] - M.LOSS_NEAR and v.at.x <= b[3] + M.LOSS_NEAR
+        and v.at.y >= b[2] - M.LOSS_NEAR and v.at.y <= b[4] + M.LOSS_NEAR then
+        for name, c in pairs(i.names or {}) do names[#names+1] = name .. ' x' .. c; n = n + c end
+      end
+    end
+    return n > 0 and table.concat(names, ', ') or nil
+  end
+  -- The repeats a wait held: "held the repeats of attack #8793 (hit 6 more times; ...)": each known attack hit since the
+  -- wait began with no new attackers or losses near it.
+  function M.held_text(known)
+    if not known then return nil end
+    local s = api.state()
+    local parts = {}
+    for _, v in pairs(s.damage or {}) do
+      local was = v.id and known.hits and known.hits[v.id]
+      if was and (v.hits or 0) > was and not ((size_of(v) > (known.areas[v.id] or 0)) or lost_near(s, v, known.loss_seq)) then
+        parts[#parts+1] = string.format('#%d hit %d more time%s', v.id, v.hits - was, v.hits - was == 1 and '' or 's')
+      end
+    end
+    if #parts == 0 then return nil end
+    table.sort(parts)
+    return 'held the repeats of attack' .. (#parts == 1 and ' ' or 's ') .. table.concat(parts, ', ') .. ' (known when the wait began; no new attackers or losses there)'
+  end
+  function M.alert(p, from, f, known)
     local s = api.state()
     f = f or {}
     local surface = f.surface or (f.area and try(function() return p.surface.name end)) or nil
@@ -410,10 +449,17 @@ return function(api)
     local best, best_seq
     for _, v in pairs(s.damage or {}) do
       if v.id and v.at and (v.seq or 0) > from and (v.damage or 0) > 0 and here(v.surface) and inside(f, v.at) then
-        local size = math.max(v.size or 0, v.group and v.group.size or 0)
-        if (not f.min_size or size >= f.min_size) and (not best_seq or v.seq > best_seq) then
+        local size = size_of(v)
+        local was, changed = known and known.areas[v.id], nil
+        if was then
+          local lost = lost_near(s, v, known.loss_seq)
+          changed = size > was and string.format('%d more attacker%s seen', size - was, size - was == 1 and '' or 's') or nil
+          if lost then changed = (changed and changed .. '; ' or '') .. 'lost since: ' .. lost end
+        end
+        if (not was or changed) and (not f.min_size or size >= f.min_size) and (not best_seq or v.seq > best_seq) then
           best_seq = v.seq
-          best = api.attack_line and api.attack_line(v, false, try(function() return p.surface.name end)) or string.format('attack at (%d,%d)', v.at.x, v.at.y)
+          best = (api.attack_line and api.attack_line(v, false, try(function() return p.surface.name end)) or string.format('attack at (%d,%d)', v.at.x, v.at.y))
+            .. (changed and ' (changed since your wait began: ' .. changed .. ')' or (known and ' (new since your wait began)' or ''))
         end
       end
     end

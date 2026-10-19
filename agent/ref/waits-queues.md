@@ -35,7 +35,8 @@
   list) waking on whichever holds first and naming it: `item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5` (those
   chests, summed; also `<`, `below`, `above`), `rocket_ready 65.5,14.5`, `rocket_parts>=40 at 65.5,14.5` (no count:
   every part), `produced iron-gear-wheel>=50 at 10.5,20.5`, `queue_done` (your queue finishing or stalling, a standing
-  order's round too; at once when none runs), `alert` (a new attack, enemy group or nest alert),
+  order's round too; at once when none runs), `alert` (a new attack, enemy group or nest alert; an attack known when the wait began wakes it only
+  with new attackers or a loss near it, and the wake says the repeats it held: `alert_held`),
   `alert low_power starved` (a new or grown alert group of those kinds addressed to you, as `game_alerts` names them;
   `starved`: an assembler or furnace in your own claims that lacks ingredients and did not when the wait began;
   `speaker`: a programmable speaker of yours or on your surface starting an alert),
@@ -98,6 +99,8 @@
   direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused
   queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it). A failed direct call that
   paused it says so first in its error, and `team.queue_paused` stays on every reply until `queue_resume`.
+  `queue_resume_after: true` on the direct call (or queue_submit's `resume_after_direct: true`) runs it again when the call
+  ends.
 - `queue_repeat {steps, interval_ticks?, times?, for_ticks?, condition?, orders?, name?}`: replaces the queue with a
   repeating plan. `times` (rounds) and `for_ticks` (no round starts after that) end the loop with one `queue:` line
   (`done after N rounds: ...`) and `loop_done` in `queue_status`; `condition: {until: ...}` ends it at a round

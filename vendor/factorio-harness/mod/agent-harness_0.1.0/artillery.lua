@@ -200,24 +200,66 @@ return function(api)
       if made then break end
     end
     assert(made, 'the game did not create ' .. flare .. ' at (' .. pos.x .. ',' .. pos.y .. ')')
-    local reach, out_of_reach, empty = {}, 0, {}
+    -- (d18 batch37 C2, viewer Aurora 16:57) a flare is a manual target: a piece fires at it within its manual range (its
+    -- prototype's manual_range_modifier times its automatic range); each piece in reach says which range holds it
+    local reach, out_of_reach, empty, watch = {}, 0, {}, {}
     for _, e in ipairs(try(function() return p.surface.find_entities_filtered{type=TYPES, force=p.force} end) or {}) do
       local range, min_range = M.range(e)
+      local manual = range * (try(function() return e.prototype.manual_range_modifier end) or 1)
       local d = dist(e.position, pos)
-      if d <= range and d >= min_range then
+      if d <= manual and d >= min_range then
         local n = shells(e)
         local fed = n > 0 and M.fed_by(e)
-        if n > 0 then reach[#reach+1] = string.format('%s (%g,%g) %g tiles, %d shells%s', e.name, e.position.x, e.position.y, r1(d), n,
-          fed and ' (refilled by ' .. table.concat(fed, ', ') .. ': a shot fired leaves its count as it is; shells_used counts it)' or '')
+        local which = d <= range and 'in its automatic range too' or string.format('in its manual range only (%g; automatic %g)', r1(manual), r1(range))
+        if n > 0 then
+          reach[#reach+1] = string.format('%s (%g,%g) %g tiles, %s, %d shells%s', e.name, e.position.x, e.position.y, r1(d), which, n,
+            fed and ' (refilled by ' .. table.concat(fed, ', ') .. ': a shot fired leaves its count as it is; shells_used counts it)' or '')
+          if #watch < 16 then watch[#watch+1] = {e=e, n=n} end
         else empty[#empty+1] = string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end
       else out_of_reach = out_of_reach + 1 end
     end
-    local used_line = M.shells_used(p.surface, p.force)
+    local used_line, m1, m10 = M.shells_used(p.surface, p.force)
+    -- the shot confirmed (or not) CONFIRM ticks later, to the caller
+    if api.state then
+      local st = api.state()
+      st.artillery_checks = st.artillery_checks or {}
+      st.artillery_checks[#st.artillery_checks+1] = {index=p.index, force=p.force, flare=made, target=pos, surface=p.surface.index, tick=game.tick, pieces=watch, m10=m10}
+    end
     return {used=a.item, kind='artillery_remote', target=pos, flare=flare, by=held > 0 and 'held' or 'shortcut (artillery researched)',
       shells_used=used_line .. '; read artillery again after the shot to see it counted',
       in_range=reach, in_range_no_shells=#empty > 0 and empty or nil, out_of_range=out_of_reach,
+      confirm=string.format('in %d s your team block says whether a shot followed: the flare taken, shells gone from these pieces, projectiles seen', M.CONFIRM / 60),
       line=string.format('flare at (%g,%g); %s', pos.x, pos.y, #reach > 0 and ('in range with shells: ' .. table.concat(reach, '; '))
         or 'no artillery of ours with shells reaches it' .. (#empty > 0 and (' (in range, no shells: ' .. table.concat(empty, ', ') .. ')') or ''))}
+  end
+  -- (C2) CONFIRM ticks after a flare: whether a shot followed, told to whoever placed it.
+  M.CONFIRM = 600
+  function M.tick()
+    local st = api.state()
+    local list = st.artillery_checks
+    if not list then return end
+    local keep = {}
+    for _, c in ipairs(list) do
+      if game.tick - c.tick < M.CONFIRM then keep[#keep+1] = c
+      else
+        local fired = {}
+        for _, w in ipairs(c.pieces) do
+          local now = w.e.valid and shells(w.e) or nil
+          if now and now < w.n then fired[#fired+1] = string.format('%s (%g,%g) %d -> %d shells', w.e.name, w.e.position.x, w.e.position.y, w.n, now) end
+        end
+        local s = game.surfaces[c.surface]
+        local flying = s and #(try(function() return s.find_entities_filtered{type='artillery-projectile', position=c.target, radius=64} end) or {}) or 0
+        local taken = not (c.flare and try(function() return c.flare.valid end))
+        local _, _, m10 = nil, nil, nil
+        if s and c.force and c.force.valid then _, _, m10 = M.shells_used(s, c.force) end
+        local line = string.format('artillery flare at (%g,%g), %d s on: %s; %s; %d projectile%s in the air within 64 tiles of it%s', c.target.x, c.target.y, math.floor(M.CONFIRM / 60),
+          taken and 'the flare is gone (its shots were taken)' or 'the flare is still there (no piece has taken its shots)',
+          #fired > 0 and 'shells gone from ' .. table.concat(fired, ', ') or 'no watched piece holds fewer shells (an inserter may have refilled it)',
+          flying, flying == 1 and '' or 's', (m10 and c.m10 and m10 > c.m10) and string.format('; shells used on the surface in the last 10 min: %d (was %d)', m10, c.m10) or '')
+        if api.deliver then pcall(api.deliver, c.index, {seq='artillery', tick=game.tick, from='artillery', text=line}) end
+      end
+    end
+    st.artillery_checks = #keep > 0 and keep or nil
   end
   M.schema = {artillery = {position='optional {x,y}: the centre (default you)', radius='optional 1..4096 tiles round the centre (default the whole surface)',
     surface='optional planet name (default yours)',

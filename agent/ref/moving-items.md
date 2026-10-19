@@ -33,6 +33,9 @@
     requester or buffer source's own request (`spare`: how many can leave it with its request still filled), the
     destination's request and what robots bring each side now, and when the first stack spoils or hatches. Tour stops end once
     within transfer reach of the entity (a silo, a pad), as `move_to {target}` does.
+  - `steps: [{take: [{x,y}, ...], item, count?}, {give: [...], item, split?: "even" | "fill", count?}]` chains takes
+    and gives in one walking call, in order (32 chests at most). The first leg that fails or is not reached ends it:
+    `last.chain_held`, `last.chain_left`; `on_fail: "return"` walks what it took back to where it came from.
   - `via: [{"x":30,"y":5}]` walks those points first; a walking transfer's `last.route` gives where it started, each
     via point and stop as reached, and the tiles walked.
   - Robots bring items to you: `requests {set: [{item, min}]}` with no position sets your own logistic requests, and

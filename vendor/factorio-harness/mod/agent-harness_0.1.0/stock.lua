@@ -288,6 +288,8 @@ return function(api)
         or string.format('our machine outputs and chests within %d tiles of (%g,%g) on %s',radius,math.floor(centre.x),math.floor(centre.y),surface.name),
       as_of=string.format('live (tick %d)',game.tick),
       made_by=s.makers,held=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'},summary=M.line(s,centre),
+      -- (d18 batch37 B1, Grok: 16,000 copper ore in plain chests on Gleba) what no network's providers and storage give
+      elsewhere=api.elsewhere and M.try(function() return (api.elsewhere(p.force,surface,a.item,nil,centre)) end) or nil,
       hatches_into=h and string.format('%s (an enemy, %s) when it spoils: first_spoils_in is when the first hatches',h.entity,api.spoil.per_text(h)) or nil}
   end
   -- Gathering: visit stock places nearest-neighbour from the character and
@@ -824,6 +826,7 @@ return function(api)
   end
   -- A courier's legs (runtime.lua M.pick_source): its places in the given order, never re-routed; a place without
   -- an entity (find) is resolved on arrival, when the character comes within reach of its position.
+  M.AHEAD_EVERY=180
   function M.start_legs(p,places,ticks,fields)
     local action={kind='gather',op='transfer',got=0,visited=0,want=math.huge,targets=places,index=1,until_tick=game.tick+ticks}
     for k,v in pairs(fields or {}) do action[k]=v end
@@ -847,6 +850,7 @@ return function(api)
     -- before that when the silo was not reached or its load failed.
     if action.op=='load_silo' then return action.final or (unreached>0 and 'unreached') or (errors>0 and 'failed') or 'short' end
     -- transfer {walk=true}: what moved, or nothing to take, or nothing the targets wanted
+    if action.chain then return action.got>0 and 'transferred' or 'nothing_to_do' end  -- (d18 batch37 C1) every leg walked
     if action.op=='transfer' then
       -- collect {walk=true} names its outcome as a collect does.
       if action.got>0 then return action.collect and 'collected' or 'transferred' end
@@ -951,11 +955,17 @@ return function(api)
           action.rows[#action.rows+1]={position=t.position,error=why}
           action.errors=(action.errors or 0)+1
           action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,why)
+          if action.chain then action.chain_at=action.index; return 'failed' end
         end
       end
       if t.find and not t.entity then
         break
       elseif not (t.entity and t.entity.valid) then
+        if action.chain then
+          action.chain_at=action.index; action.errors=(action.errors or 0)+1
+          action.first_error=action.first_error or string.format('(%g,%g): the entity there is gone',t.position.x,t.position.y)
+          return 'failed'
+        end
         action.index=action.index+1; action.nav=nil
       elseif (t.pickup_reach and api.distance(p.position,t.position)<=t.pickup_reach) or (not t.pickup_reach and p.can_reach_entity(t.entity)) then
         local ok,out
@@ -989,6 +999,7 @@ return function(api)
           action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,(tostring(out):gsub('^[^:]*:%d+: ','')))
           -- A courier whose take failed goes no further (round1650d: Luna's walked on to the give).
           if action.legs and action.index==2 then return 'failed' end
+          if action.chain then action.chain_at=action.index-1; return 'failed' end  -- (d18 batch37 C1) a chain stops at its first failed leg
         end
       else
         break
@@ -997,13 +1008,35 @@ return function(api)
     local t=action.targets[action.index]
     -- (d18 batch36 B2) the next leg against enemy groups and units seen now, before it starts: one in reach of it stops
     -- the tour short, naming it and where it stopped (unsafe_goal true or "moving" walks on)
+    -- (d18 batch37 U1, Haiku: a 480-tile rearm leg cut 5 times in 2 minutes by units passing it) ahead_wait ticks (rearm
+    -- by default, retry_when_clear): it waits where it stands, rechecking every AHEAD_EVERY ticks, and goes on once the
+    -- leg is clear, saying how long it waited; enemies_ahead only when the wait runs out.
     if not action.nav and action.avoid_mode and action.unsafe_goal==nil and api.leg_threat then
+      local h=action.ahead_hold
+      if h and game.tick<h.next then return nil end
       local okl,lt=pcall(api.leg_threat,p,p.position,t.position,action.avoid_mode)
       if okl and lt then
         api.stop_walking(p)
-        action.enemies_ahead=string.format('%s; stopped at (%.1f,%.1f) before it, %d of %d stops done',lt.line,p.position.x,p.position.y,action.index-1,#action.targets)
+        if (action.ahead_wait or 0)>0 and (not h or game.tick-h.since<action.ahead_wait) then
+          if not h then
+            h={since=game.tick}; action.ahead_hold=h
+            action.until_tick=action.until_tick+action.ahead_wait  -- the wait does not eat the tour's own time
+          end
+          h.next=math.min(game.tick+M.AHEAD_EVERY,h.since+action.ahead_wait); h.line=lt.line
+          return nil
+        end
+        action.enemies_ahead=string.format('%s; stopped at (%.1f,%.1f) before it, %d of %d stops done%s',lt.line,p.position.x,p.position.y,action.index-1,#action.targets,
+          h and string.format('; waited %d s for it to clear (the most: %d s)',math.floor((game.tick-h.since)/60),math.floor(action.ahead_wait/60)) or '')
         action.why=action.enemies_ahead
+        action.ahead_hold=nil
         return 'enemies_ahead'
+      elseif h then
+        action.ahead_hold=nil
+        action.ahead_waited=action.ahead_waited or {}
+        if #action.ahead_waited<8 then
+          action.ahead_waited[#action.ahead_waited+1]=string.format('waited %d s at (%.1f,%.1f) before stop %d of %d, then went on: %s',
+            math.floor((game.tick-h.since)/60),p.position.x,p.position.y,action.index,#action.targets,h.line)
+        end
       end
     end
     if not action.nav then
@@ -1020,6 +1053,7 @@ return function(api)
           action.first_unreached=action.first_unreached or string.format('(%g,%g): %s (unsafe_goal: true walks there)',t.position.x,t.position.y,why)
           action.index=action.index+1; action.unreached=(action.unreached or 0)+1
           if action.legs and action.index==2 then return 'unreached' end
+          if action.chain then action.chain_at=action.index-1; return 'unreached' end
           return nil
         end
       end
@@ -1106,6 +1140,7 @@ return function(api)
       action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p)
       -- A courier's take not reached: nothing taken, so no give either (it gave from the inventory before).
       if action.legs and action.index==2 then return 'unreached' end
+      if action.chain then action.chain_at=action.index-1; return 'unreached' end
     end
   end
   return M
