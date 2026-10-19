@@ -1919,9 +1919,10 @@ TALK_KINDS = ("reaction", "plan", "request")
 
 
 def talk_text(text, limit=200, agent=None):
-    """The line as it would be voiced: no leading @handles, "opus here:" or "haiku:", no coordinates
+    """The line as it would be voiced: no leading @handles or part number, "opus here:" or "haiku:", no coordinates
     (voices.speakable), shouted words in lower case ("public COAL chest")."""
     t = re.sub(r"^(?:\s*@\w+[\s,:]*)+", "", str(text or ""))
+    t = re.sub(r"^\(\d{1,2}/\d{1,2}\)\s*", "", t)  # a long say's part number (host/saysplit.ts): "(1/3) "
     t = re.sub(r"^\s*\w+ here\s*[:,-]\s*", "", t, flags=re.I)
     if agent:
         t = re.sub(rf"^\s*{re.escape(agent)}\s*:\s*", "", t, flags=re.I)

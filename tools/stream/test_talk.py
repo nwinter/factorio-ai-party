@@ -128,5 +128,10 @@ check("chat_tick: the hosts yield to it", c2.yielding and c2.yielding["until"] >
 check("chat_tick: typed chat no longer reaches the hosts' events before it airs",
       'self.events.append(dict(e, prio=2 if not e["aloud"] else 4))' not in open(caster.__file__).read())
 
+# d19 batch42 A1: a long say's parts ("@Foobator (2/3) ...", host/saysplit.ts) are voiced without the part number
+check("talk_text: a part number is not read out",
+      caster.talk_text("@Foobator (2/3) After that, modules go in.") == "After that, modules go in.",
+      caster.talk_text("@Foobator (2/3) After that, modules go in."))
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

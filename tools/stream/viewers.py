@@ -270,6 +270,22 @@ def grief(text, agent_names=()):
                          f) for n in agent_names)
 
 
+def addressed_agents(text, agent_names=()):
+    """The agents a line speaks to, not about: "@astra" anywhere, or "astra," / "astra:" at the start, after a sentence
+    end, a comma or "and", or after the line's own address ("operator: astra, stop building", "@sol and Luna: ...").
+    "sonnet said ...", "can astra build ...": none."""
+    f = fold(text or "", leet=False).casefold()
+    out = []
+    for n in agent_names:
+        if len(n) < 2:
+            continue
+        k = re.escape(n.casefold())
+        if re.search(r"(?<![\w@-])@" + k + r"(?![\w-])", f) or \
+                re.search(r"(?:^|[.!?;:,]\s*|\band\s+)\W*(?:(?:hey|hi|hello|ok|okay)\s+)?" + k + r"\s*[,:]", f):
+            out.append(n)
+    return out
+
+
 def impersonation(text, agent_names=()):
     """Text that claims to come from an agent or the stream's staff: "this is the real astra, ...", "operator: ..."."""
     f = fold(text, leet=False)
@@ -412,10 +428,12 @@ class Filter:
             if m.get("source") != "youtube" and self.posing(m.get("name")):
                 reasons.append("impersonation:name")
             # "operator: ..." to the operator is no claim to be one, unless it orders the agents ("Operator: all agents
-            # pause") or names one (it would be relayed)
+            # pause") or addresses one ("operator: astra, stop building"). An agent named in the text is not addressed:
+            # (d19 batch42 A2) "operator: do agents not have upgrade or destruction blueprints? sonnet said there is no
+            # destruction blueprint tool" quotes Sonnet, and the line goes to the operator only (Relay.address)
             crew = re.search(r"\b(agents?|bots?|ais?|everyone|everybody|team|y'?all)\b", f) and not is_question(text)
-            to_op = to_operator(text) and not crew and not directive(text, self.agent_names) and not any(re.search(r"(?<![\w-])@?" + re.escape(n) + r"(?![\w-])", f.casefold())
-                                                  for n in self.agent_names if len(n) >= 2)
+            to_op = to_operator(text) and not crew and not directive(text, self.agent_names) \
+                and not addressed_agents(text, self.agent_names)
             if impersonation(text, self.agent_names) and not to_op:  # (the host: never)
                 reasons.append("impersonation:text")
         key = re.sub(r"\W+", " ", unicodedata.normalize("NFKC", clean(text).casefold())).strip()
@@ -990,6 +1008,18 @@ class Relay:
                 return True
         return False
 
+    def explicit(self, text):
+        """(d19 batch42 A3) the agents a line addresses, of those it names: "@sol", "Sol, ..." at the start or after a
+        sentence end or the line's own address ("operator: astra, stop building"), "..., sol?" at the end. An agent only
+        mentioned ("@operator Muse's reply was cut mid-word") is not one."""
+        out = []
+        for n, at in self.named_agents(text):
+            d = dict(self.roster).get(n)
+            aliases = [a for a in {n, re.sub(r"^pog-", "", n), d or ""} if a]
+            if at or self.called(text, n) or addressed_agents(text, aliases):
+                out.append(n)
+        return out
+
     def set_roster(self, roster):
         """[(name, display_name)] in team order; serve.py refreshes it from the snapshot (display names, offline)."""
         self.roster = [(n, d) for n, d in roster if n]
@@ -1012,6 +1042,15 @@ class Relay:
         addressed longest ago). The harness has no team-wide viewer mention (a viewer's "@everyone" wakes nobody),
         and waking all nine for one line would stop the team."""
         named = self.named_agents(msg["text"])
+        if msg.get("operator"):
+            # (d19 batch42 A3) a line to the operator goes to the agents it addresses too, never to one it only names
+            explicit = self.explicit(msg["text"])
+            return explicit, [n for n, at in named if n in explicit and not at]
+        if re.search(r"@\w", msg["text"]) and named:
+            # an explicit @recipient decides the route: "@sol ask luna about it" goes to Sol only; "@Foobator sol said
+            # ..." to no agent. Names said as an address count too ("@sol, luna: ...").
+            explicit = self.explicit(msg["text"])
+            named = [(n, at) for n, at in named if n in explicit]
         prev = self.asked.get(author)
         if (named and prev and now - prev[1] < self.ASK_WINDOW and prev[0] in [n for n, _ in self.roster]
                 and prev[0] not in [n for n, _ in named] and not any(at for _, at in named)
@@ -1387,10 +1426,11 @@ class Feed:
         """A line that passed: to the operator's inbox, chatter (shown only), or offered to the relay."""
         v["chatter"] = is_chatter(v["text"])
         if not v.get("staff") and to_operator(v["text"]):
-            # to the operator: into the operator's inbox, never to an agent unless the line names one too
+            # to the operator: into the operator's inbox, never to an agent unless the line addresses one too (d19
+            # batch42 A3: "@operator Muse's reply was cut mid-word ..." went to Muse, and the site showed only that)
             v["operator"], v["chatter"] = True, False
             self.to_inbox(v)
-            named = self.relay.named_agents(v["text"]) if self.relay else []
+            named = self.relay.explicit(v["text"]) if self.relay else []
             if named and relay_ok:
                 self.relay.offer(v, author)
             else:
@@ -1426,6 +1466,10 @@ class Feed:
         text, viewer: true}, no seq (the agents' requests resume by theirs); `dropped`: kept off the stream, and why."""
         if not self.inbox:
             return
+        # the site's receipt (deliver): in the inbox, also when the line was kept off the stream
+        v["inbox"] = True
+        if v.get("id") in self.deliveries:
+            self.deliveries[v["id"]]["inbox"] = True
         row = {"t": round(v.get("t") or time.time(), 1), "agent": f"viewer {v['name']}", "text": v.get("full") or v["text"], "viewer": True,
                "source": v.get("source")}
         if dropped:
@@ -1483,10 +1527,17 @@ class Feed:
             self.deliver(m, "not_relayed", ", ".join(lg[1]) or "refused")
 
     def deliver(self, v, status, why=None, to=None):
-        """(D1) a line's delivery for the site: relayed (to whom), held, operator, not_relayed (and why)."""
+        """(D1) a line's delivery for the site: relayed (to whom), held, operator, not_relayed (and why). (d19 batch42
+        A3, A4) `to_all`: every agent the game took it for; `inbox`: it is in the operator's inbox too, whatever
+        became of the agents' copy."""
         if not v.get("id"):
             return
-        self.deliveries[v["id"]] = {"status": status, "why": why, "to": to, "t": round(v.get("t") or time.time(), 1)}
+        row = {"status": status, "why": why, "to": to, "t": round(v.get("t") or time.time(), 1)}
+        if status == "relayed" and v.get("to_all"):
+            row["to_all"] = list(v["to_all"])
+        if v.get("inbox"):
+            row["inbox"] = True
+        self.deliveries[v["id"]] = row
         self.deliveries.move_to_end(v["id"])
         while len(self.deliveries) > DELIVERY_MAX:
             self.deliveries.popitem(last=False)
