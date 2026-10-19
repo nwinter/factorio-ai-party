@@ -148,6 +148,8 @@
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
+  `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
+  loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
 - `platform_defense {platform, feed?, route?}`: each asteroid collector's front and each hull side against turret ranges: the

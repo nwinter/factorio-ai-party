@@ -134,3 +134,33 @@ do
   fails(function() runtime.project({platforms={{name='P',hub={}}}},{'circuits'}) end,'its fields and its platforms rows\' fields: hub, name, platforms')
 end
 print('d18_batch39 C1 fields on platform, inspect and status: ok')
+
+-- C2 (Sol: a wrapper sampled every 1-2 min; dock bursts looked sustainable): platform_production {leg}: since the last
+-- departure and the last full leg, from freight's samples at each segment's start and end.
+do
+  local saved_game,saved_protos=game,prototypes
+  prototypes={item={['firearm-magazine']={type='ammo'}}}
+  local fl={['thruster-fuel']={1000,0},['thruster-oxidizer']={1000,0}}
+  local am={['firearm-magazine']={50,0}}
+  local function stats(t) return {get_input_count=function(n) return (t[n] or {0,0})[1] end,get_output_count=function(n) return (t[n] or {0,0})[2] end} end
+  local pl={index=4,name='Wayfarer',surface={},force={get_fluid_production_statistics=function() return stats(fl) end,get_item_production_statistics=function() return stats(am) end}}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  game={tick=0}
+  -- a leg from nauvis to gleba of 10 min with its samples, then a stop at gleba 5 min so far
+  st.freight={[4]={segs={
+    {kind='leg',from='nauvis',to='gleba',start=0,['end']=36000,fuel0={['thruster-fuel']={made=1000,used=0},['thruster-oxidizer']={made=1000,used=0}},ammo0={['firearm-magazine']={made=50,used=0}},
+      fuel1={['thruster-fuel']={made=7000,used=9000},['thruster-oxidizer']={made=6000,used=9000}},ammo1={['firearm-magazine']={made=150,used=120}}},
+    {kind='stop',at='gleba',start=36000,rockets={n=1,cargo={bioflux=500}},pods={received={n=1,cargo={['copper-ore']=500}}}}}}}
+  game.tick=54000
+  fl={['thruster-fuel']={10000,9000},['thruster-oxidizer']={9000,9000}}; am={['firearm-magazine']={200,120}}
+  local d=F.leg_delta(pl)
+  has(d.lines[1],'since it left nauvis (15m00s, ticks 0-54000): thruster-fuel made 9000, used 9000 (600/600 a minute, net +0 a minute)')
+  has(d.lines[1],'firearm-magazine made 150, used 120 (10/8 a minute, net +2 a minute)')
+  has(d.lines[1],'loaded bioflux 500'); has(d.lines[1],'dropped copper-ore 500')
+  has(d.lines[2],'the last full leg nauvis->gleba (10m00s, ticks 0-36000): thruster-fuel made 6000, used 9000'); has(d.lines[2],'firearm-magazine made 100, used 120 (10/12 a minute, net -2 a minute)')
+  has(d.lines[2],'thruster-oxidizer made 5000, used 9000 (500/900 a minute, net -400 a minute)')
+  eq(d.last_leg.loaded.bioflux,nil,'no cargo on the leg alone')
+  game,prototypes=saved_game,saved_protos
+end
+print('d18_batch39 C2 a whole leg\'s production: ok')

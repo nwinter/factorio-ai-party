@@ -456,6 +456,14 @@ return function(api)
     local pl = api.platform(p, a.platform)
     assert(pl.surface, 'platform ' .. pl.name .. ' has no surface yet')
     assert(a.item == nil or type(a.item) == 'string', 'item is an item or fluid name')
+    -- (d18 batch39 C2) leg: the whole leg's delta from freight's samples (freight.lua leg_delta)
+    if a.leg ~= nil then
+      assert(a.leg == true, 'leg is true')
+      local d = api.leg and api.leg(pl) or {lines={'no leg samples'}}
+      d.platform = pl.name
+      d.note = 'from the totals kept at each segment\'s start and end (thruster fuel and oxidizer: fluid statistics; ammunition: item statistics), cargo from the rockets launched to it and its cargo pods; read only'
+      return d
+    end
     local rows, lines = {}, {}
     for _, kind in ipairs({'item', 'fluid'}) do
       local stats = try(function() return kind == 'item' and p.force.get_item_production_statistics(pl.surface) or p.force.get_fluid_production_statistics(pl.surface) end)
@@ -486,7 +494,7 @@ return function(api)
       lines=#lines > 0 and lines or {'nothing made or used on ' .. pl.name .. (a.item and ' of ' .. a.item or '') .. ' in its statistics'},
       note='the platform\'s own production statistics (its surface), as the production GUI shows them; wait_until {until: produced, platform, item, at_least} waits for what it makes from now'}
   end
-  M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',
+  M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
     platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, asks, holds, short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',

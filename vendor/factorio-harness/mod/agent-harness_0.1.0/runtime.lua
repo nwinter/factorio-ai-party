@@ -16900,7 +16900,7 @@ function handlers.platform_rename(p,a) return M.platrename.rename(p,a) end
 M.minpayload=require('minpayload'){}
 function handlers.min_payload(p,a) return M.minpayload.handler(p,a) end
 -- A platform's remaining bill of materials (platbom.lua; B3, Sol 22:50).
-M.platbom=require('platbom'){platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
+M.platbom=require('platbom'){leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
   state=state,who=function(p) return M.board.who(p) end}
 function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end

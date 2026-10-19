@@ -8648,3 +8648,12 @@ fh watch    # deploy on every change
   rows and inspect's results or entities, and each row keeps its name and position. A name that matches nothing is
   refused with the names the reply has. The read runs whole (M.project cuts the reply), so the game-side cost is the
   same; the agent's context is what shrinks.
+- A whole leg's production (batch39 C2, Sol: a wrapper sampled every 1-2 min, and dock bursts looked sustainable).
+  freight.lua's segments (each stop and each leg) now keep thruster fuel and oxidizer made and used (fluid statistics
+  totals) at their start and end, beside the ammunition counts they kept already. `platform_production {platform,
+  leg: true}` gives two windows:
+  - Since the platform last departed: the leg and the stop after it so far.
+  - While it is stopped, the last full leg alone.
+  Each window has each fluid's and ammunition's made and used (totals, a minute, net a minute), cargo loaded (rockets
+  launched to it) and cargo dropped (its cargo pods: received, landed or gone), with the window's ticks. A leg that
+  began before this runtime has no fuel sample, and says so.
