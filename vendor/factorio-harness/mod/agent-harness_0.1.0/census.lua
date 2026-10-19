@@ -68,6 +68,10 @@ return function(api)
       for _, t in ipairs(list) do if not seen[t] then seen[t] = true; all[#all+1] = t end end
     end
     for t in pairs(CAT) do if not seen[t] then seen[t] = true; all[#all+1] = t end end
+    -- (d19 batch44 A1) where_is's other holders: landed cargo pods, spidertrons, linked and infinity chests, linked belts
+    for _, t in ipairs({'temporary-container', 'spider-vehicle', 'linked-container', 'infinity-container', 'linked-belt'}) do
+      if not seen[t] then seen[t] = true; all[#all+1] = t end
+    end
     table.sort(all)
     local known = {}
     for _, t in ipairs(all) do
@@ -161,6 +165,12 @@ return function(api)
   -- Our crafters, drills and offshore pumps by recipe, resource or fluid (chain.lua; d17 batch31 A1): entity references,
   -- at most MAKERS_MAX a surface.
   local MAKERS_MAX = 8192
+  -- (d19 batch44 A1) where_is's holder types (stores.lua KIND) and belt types; at most HOLDERS_MAX holders a surface
+  local WHERE = set{'container', 'logistic-container', 'linked-container', 'infinity-container', 'temporary-container', 'lab',
+    'assembling-machine', 'furnace', 'rocket-silo', 'car', 'cargo-wagon', 'spider-vehicle', 'cargo-landing-pad', 'space-platform-hub',
+    'roboport', 'beacon', 'mining-drill'}
+  local BELT = set{'transport-belt', 'underground-belt', 'splitter', 'lane-splitter', 'loader', 'loader-1x1', 'linked-belt'}
+  local HOLDERS_MAX = 30000
   local function add_maker(job, s, kind, key, e)
     local c = job.makers[s.index]
     if not c then c = {n=0, craft={}, mine={}, pump={}}; job.makers[s.index] = c end
@@ -217,6 +227,27 @@ return function(api)
       local list = job.chests[s.index]
       if not list then list = {}; job.chests[s.index] = list end
       if #list < CRAFTERS_MAX then list[#list+1] = e end
+    end
+    -- (d19 batch44 A1, where_is: 111 ms for one Nauvis call on the private copy, every holder, belt and inserter found and
+    -- read each call) where_is's holders as entity references, and what our belts and inserters' hands carry by item, as
+    -- this pass reads them (the belts' get_contents were 42 ms for 10,552 belts there, spread over the pass's steps)
+    if WHERE[t] and job.holders then
+      local list = job.holders[s.index]
+      if not list then list = {}; job.holders[s.index] = list end
+      if #list < HOLDERS_MAX then list[#list+1] = e end
+    elseif BELT[t] and job.belt_items then
+      local tot = job.belt_items[s.index]
+      if not tot then tot = {}; job.belt_items[s.index] = tot end
+      for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do
+        for _, c in ipairs(try(function() return e.get_transport_line(i).get_contents() end) or {}) do tot[c.name] = (tot[c.name] or 0) + c.count end
+      end
+    elseif t == 'inserter' and job.hand_items then
+      local hs = try(function() local h = e.held_stack; return h.valid_for_read and h end)
+      if hs then
+        local tot = job.hand_items[s.index]
+        if not tot then tot = {}; job.hand_items[s.index] = tot end
+        tot[hs.name] = (tot[hs.name] or 0) + hs.count
+      end
     end
     -- (d17 batch30 B2) our assemblers and furnaces, entity references (supply requesters reads their recipes now), at
     -- most CRAFTERS_MAX a surface
@@ -357,6 +388,7 @@ return function(api)
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
       machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, chests={}, makers={}, building_counts={}, fuel={}, planets={},
+      holders={}, belt_items={}, hand_items={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -556,6 +588,7 @@ return function(api)
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
         where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters, chests=job.chests, makers=job.makers,
+        holders=job.holders, belt_items=job.belt_items, hand_items=job.hand_items,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -572,6 +605,20 @@ return function(api)
     end
   end
 
+  -- (d19 batch44 A1) where_is's index of a surface from the last pass: {holders (entity references, still valid and
+  -- ours), belts and hands ({item=count} as the pass read them), as_of (the tick the pass started), capped}; nil before a
+  -- pass that keeps them.
+  function M.where_index(force, surface)
+    local d = (api.state().census or {}).done
+    -- the pass reads the player force only
+    -- (a surface where the pass listed no holder: nil, and where_is reads it live, as little stands there)
+    if not (d and d.holders and d.holders[surface.index]) or force.name ~= 'player' then return nil end
+    local out = {}
+    -- (all the player force's: the pass reads no other; a force read an entity was 1 us of the 2.3 ms for 1987 there)
+    for _, e in ipairs(d.holders[surface.index] or {}) do if e.valid then out[#out+1] = e end end
+    return {holders=out, belts=(d.belt_items or {})[surface.index] or {}, hands=(d.hand_items or {})[surface.index] or {}, as_of=d.start,
+      capped=#(d.holders[surface.index] or {}) >= HOLDERS_MAX or nil}
+  end
   -- (d18 batch37 B1) the chests of a force on a surface the last pass found (nil before a pass lists them).
   function M.chests_on(force, surface)
     local d = (api.state().census or {}).done

@@ -8869,3 +8869,16 @@ fh watch    # deploy on every change
   pipes read in 1.1 ms on the private copy. pipe_gaps cut lines name each side's fluid. `placements {name, fluids,
   recipe?}` keeps spots whose ports touch built segments of each fluid and join none of another (an empty segment
   holds none); none passing gives `fluids_line` in place of `in_the_way`.
+## d19 batch44 (eng/d19-batch44)
+
+- A1 (where_is on world n: 111 ms for one Nauvis call on the private copy; about 33 calls in shift41's 2.7 hours):
+  each call found every holder, belt, inserter, landed pod and ground stack on the surface and read them. The census
+  pass (every 30 s, in bands) now keeps where_is's holders as entity references and what our belts and inserter hands
+  carry by item (census.lua where_index); the ground watch bins each item's stacks by 32-tile cell (ground.lua
+  on_ground_index). A call counts the indexed holders now (still valid), adds belts, hands and the ground from the
+  passes, reads robots' cargo (1024 robots at most) and the team's characters, and says in `read_from` and
+  `ground_read_from` how old the passes are (places built since a pass are not in it). Before a pass, for another force,
+  or on a surface where the pass listed no holder, the reads are as before. Landed cargo pods of other forces are no
+  longer read. Private copy, iron-plate, before -> after: Nauvis 108 -> 7.2-8.6 ms, Gleba 24 -> 1.0-1.2, Fulgora 13 ->
+  4.1-5.2, Vulcanus 75 -> 2.3-2.8, Aquilo 1.4 -> 0.2, a platform 0.8 -> 0.1 (yumako-mash on Gleba 74 -> 0.35). The
+  same by_kind both ways (belts and hands differ by what moved between reads).

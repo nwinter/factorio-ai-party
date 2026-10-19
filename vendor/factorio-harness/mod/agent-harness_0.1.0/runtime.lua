@@ -15468,7 +15468,7 @@ M.landed=require('landed'){state=state,position=position}
 function handlers.pods(p,a) return M.landed.read(p,a) end
 -- where a deconstructed item went (deconwent.lua; d18 batch37 D3, Astra)
 M.deconwent=require('deconwent'){state=state}
-M.stores=require('stores'){deconstructed=function(item,surface) return M.deconwent.lines(item,surface) end,pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
+M.stores=require('stores'){where_index=function(f,s) return M.census and M.census.where_index(f,s) end,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,deconstructed=function(item,surface) return M.deconwent.lines(item,surface) end,pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
   character=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and p.character or nil end}
 function handlers.where_is(p,a) return M.stores.where_is(p,a) end
 -- The construction robots of a logistic network: each in the air, what holds it up (robots.lua; Astra, shift13).
