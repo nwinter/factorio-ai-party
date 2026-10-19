@@ -389,7 +389,7 @@ do
   force.technologies.artillery.researched=true
   local u=A.remote(p,{item='artillery-targeting-remote',position={x=200,y=0}},{type='artillery-remote',flare='artillery-flare'})
   eq(#made,1); eq(made[1].name,'artillery-flare'); eq(made[1].position.x,200)
-  eq(#u.in_range,1); has(u.line,'flare at (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells')
+  eq(#u.in_range,1); has(u.line,'flare at (200,0); in range with shells: artillery-turret (0,0) 200 tiles, in its automatic range too, 5 shells')
   eq(u.out_of_range,1); eq(u.by,'shortcut (artillery researched)')
   ok,err=pcall(A.remote,p,{item='artillery-targeting-remote',position={x=900,y=0}},{type='artillery-remote',flare='artillery-flare'})
   assert(not ok and err:find('not charted',1,true),err)

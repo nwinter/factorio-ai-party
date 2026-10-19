@@ -141,6 +141,40 @@ do
 end
 print('d18_batch37 B3 a hub too full for its payload: ok')
 
+
+-- C2 (viewer Aurora 16:57): the flare's reply says which range holds each piece, and 10 s on whether a shot followed.
+do
+  defines={inventory={artillery_turret_ammo=1,artillery_wagon_ammo=2},flow_precision_index={one_minute=1,ten_minutes=3}}
+  game={tick=0,surfaces={}}
+  local shells={a=5,b=3}
+  local function piece(key,x)
+    return {valid=true,name='artillery-turret',type='artillery-turret',position={x=x,y=0},force={artillery_range_modifier=0},
+      prototype={manual_range_modifier=2.5,guns={{attack_parameters={range=224,min_range=32}}}},
+      get_inventory=function() return {get_contents=function() return {{name='artillery-shell',count=shells[key]}} end} end}
+  end
+  local pa,pb=piece('a',0),piece('b',-300)
+  local flare={valid=true}
+  local surface={index=1,name='nauvis',create_entity=function() return flare end,
+    find_entities_filtered=function(f) if f.type=='artillery-projectile' then return {{}} end if f.type=='inserter' then return {} end return {pa,pb} end}
+  game.surfaces[1]=surface
+  local st,told={},{}
+  local force={technologies={artillery={researched=true}},is_chunk_charted=function() return true end,valid=true,
+    get_item_production_statistics=function() return {get_flow_count=function() return 2 end} end}
+  local A=dofile('mod/agent-harness_0.1.0/artillery.lua'){position=function(q) return q end,held=function() return 1 end,state=function() return st end,
+    deliver=function(i,t) told[#told+1]={i=i,t=t} end}
+  local p={index=5,surface=surface,force=force}
+  local r=A.remote(p,{item='artillery-targeting-remote',position={x=200,y=0}},{})
+  has(r.in_range[1],'artillery-turret (0,0) 200 tiles, in its automatic range too, 5 shells')
+  has(r.in_range[2],'artillery-turret (-300,0) 500 tiles, in its manual range only (560; automatic 224), 3 shells')
+  has(r.confirm,'in 10 s your team block says whether a shot followed')
+  game.tick=300; A.tick(); eq(#told,0,'not yet')
+  shells.a=4; flare.valid=false; game.tick=601; A.tick()
+  eq(told[1].i,5)
+  eq(told[1].t.text,'artillery flare at (200,0), 10 s on: the flare is gone (its shots were taken); shells gone from artillery-turret (0,0) 5 -> 4 shells; 1 projectile in the air within 64 tiles of it')
+  eq(st.artillery_checks,nil)
+  defines,game=nil,nil
+end
+print('d18_batch37 C2 artillery ranges and the shot confirmed: ok')
 -- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
@@ -232,3 +266,11 @@ do
   grok('queue_cancel',{})
 end
 print('d18_batch37 C3 a queue paused by a direct call runs again when it ends: ok')
+
+-- C2 (Muse about 6 times): the remote on another surface is refused, saying what is known of the game's rule.
+do
+  prototypes.item['artillery-targeting-remote']={capsule_action={type='artillery-remote'}}
+  local ok,err=pcall(grok,'use_item',{item='artillery-targeting-remote',position={x=1,y=1},surface='aquilo'})
+  assert(not ok); has(err,'use_item acts where your character is (nauvis)'); has(err,'is not established')
+end
+print('d18_batch37 C2 the remote on another surface refused: ok')

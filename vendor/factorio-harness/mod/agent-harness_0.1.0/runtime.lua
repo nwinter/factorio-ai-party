@@ -12294,7 +12294,7 @@ M.capsules=require('capsules'){state=state,position=position,assert_visible=asse
 handlers.use_item=M.capsules.handlers.use_item
 -- Artillery (artillery.lua; Grok, d15 14:07): the pieces with the spawners and worms in range, automatic targeting
 -- (configure auto_targeting) and the targeting remote (use_item).
-M.artillery=require('artillery'){position=position,held=held}
+M.artillery=require('artillery'){position=position,held=held,state=state,deliver=function(index,t) return M.board.deliver(index,t) end}
 -- Artillery shells in flight and their targets, for the stream's director (artycam.lua; d17 artycam, viewer Foobator).
 M.artycam=require('artycam'){state=state,range=function(e) return M.artillery.range(e) end}
 function handlers.artillery(p,a) return M.artillery.read(p,a) end
@@ -18055,6 +18055,7 @@ function M.tick_body(event)
   if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
   if event.tick%60==13 and state().clear_jobs then pcall(M.clearobs.tick) end  -- clear_obstacles waits (clearobs.lua)
   if event.tick%600==29 then pcall(M.timed,'hubfull.tick',M.hubfull.tick,event.tick) end  -- a hub too full for its payload (hubfull.lua)
+  if event.tick%60==37 and state().artillery_checks then pcall(M.artillery.tick) end  -- a flare's shot confirmed (artillery.lua)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do

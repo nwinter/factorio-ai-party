@@ -8335,3 +8335,12 @@ fh watch    # deploy on every change
   (`queue_resumes`, then `last.queue_resumed`); an action ended by stop leaves it paused. `resume_after_direct: true` on
   queue_submit or queue_repeat does it for every direct call from then on (false turns it off). A queue the agent paused
   with queue_pause is never resumed this way.
+- Artillery (C2). Across surfaces (Muse, about 6 times): `use_item {item: "artillery-targeting-remote", surface}` naming
+  another surface is refused: the remote places its flare where your character is. Whether the game lets a player use
+  it on another planet in remote view was not established: the Factorio wiki says the remote is used "from the map or
+  normally from the world" and says nothing of another surface, and a script can place a flare anywhere, which is not
+  a player's action; a teammate there can place it. The flare's reply (viewer Aurora 16:57) now says for each piece in
+  reach whether the flare is in its automatic range too or in its manual range only (its prototype's
+  manual_range_modifier, 2.5 for the turret, times the automatic range), and `confirm`: 10 s later the placer's team
+  block says whether a shot followed: the flare gone (its shots taken) or still there, shells gone from the pieces that
+  reached it, artillery projectiles in the air within 64 tiles of it, and the surface's shells used in 10 min.
