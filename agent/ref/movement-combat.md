@@ -39,7 +39,8 @@
     of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
-    mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
+    mid-walk stops it and walks you away (`last.retreated`); a tour stop or via leg whose straight way passes enemy units
+    or a group seen now is not started (`enemies_ahead`, naming them). A walk begun inside a reach goes out the shortest way
     first (`left_reach_first`). A goal inside one is refused, naming each threat (`unsafe_goal: true` goes anyway;
     `unsafe_goal: "moving"` only when every threat moves: units, a group, an attack on ours; also on rearm). No way round:
     `no_safe_route`, with `last.smaller_margins` (the largest smaller margin with a complete engine route, its closest

@@ -609,6 +609,8 @@ local function finish(index, outcome)
   end
   -- A direct wait ended by a tell or mention says from whom (the reply's team block has it in full).
   if action and action.told then s.last[index].why=action.told end
+  -- (d18 batch36 B1) urgent alerts a wake {near} held instead of waking it
+  if action and action.urgent and action.urgent.held then s.last[index].held_alerts=action.urgent.held; s.last[index].held_alerts_count=action.urgent.held_n end
   if action and action.kind=='construct' then
     local last=s.last[index]
     last.built=action.built; last.mined=action.mined; last.tiles_mined=action.tiles_mined; last.remaining=construction.remaining(action)
@@ -696,7 +698,7 @@ local function finish(index, outcome)
     last.route=stock.route_text(action)
     last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
-    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack
+    last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead
     last.left_out=action.left_out; last.left_out_count=action.left_out_count
     last.turrets_skipped=action.turrets_skipped  -- (batch32 A2) turrets a rearm walk skipped: other ammo with no room, ghosts
     if action.fuel_round then local r=action.fuel_round;last.fuel_taken=r.taken+(r.source and r.source.got or 0);last.sources=r.sources;last.source_read_capped=r.source_read_capped;last.why=action.why or last.why end
@@ -4399,8 +4401,20 @@ function M.via_next(p,action,outcome,index)
   -- A queue step restarted after a pause resumes from the next via point (scheduler.lua).
   local q=(state().queues or {})[index]
   if q and q.current and q.current.args==v.args then q.current.via_done=v.index end
+  -- (d18 batch36 B2) the next leg against enemy groups and units seen now: one in reach of it ends the walk short here
+  local nxt=v.index+1
+  local to=nxt>#v.points and v.final or v.points[nxt]
+  local args=v.args or {}
+  if v.mode and args.unsafe_goal==nil then
+    local okl,lt=pcall(M.avoid.leg_threat,p,p.position,to,v.mode)
+    if okl and lt then
+      action.why=string.format('%s; stopped at (%.1f,%.1f) before it (leg %d of %d)',lt.line,p.position.x,p.position.y,nxt,#v.points+1)
+      action.enemies_ahead=action.why
+      return false,'enemies_ahead'
+    end
+  end
   for _,k in ipairs(M.LEG_FIELDS) do action[k]=nil end
-  M.via_leg(p,action,v.index+1)
+  M.via_leg(p,action,nxt)
   if not action.direct then M.avoid.start(p,action,v.mode); request_path(p,action) end
   return true
 end
@@ -15056,7 +15070,7 @@ M.waits=require('waits'){state=state,personal_unfilled=function(p) return M.pers
   alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
   urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
-  urgent_option=function(v) return M.urgent.option(v) end,
+  urgent_option=function(v) return M.urgent.option(v) end,wake_arg=function(a) return M.wake_arg(a) end,
   alert_line=function(p,from,filter) return M.urgent.alert(p,from,filter) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
@@ -15338,8 +15352,18 @@ function M.resume_requeued_load(p,action,result)
 end
 -- A direct wait_ticks or wait_until as a sleep's request (the queue runs on; dispatch): ticks or timeout as seconds
 -- (rounded up), the rest of wait_until's arguments as the condition, and the wake options.
+-- (d18 batch36 B1) wake: {near: N} on sleep, wait_ticks and wait_until is the urgent wake filter (urgent.lua M.option).
+function M.wake_arg(a)
+  if type(a)~='table' or a.wake==nil then return a end
+  assert(a.wake_on_urgent==nil,'give wake or wake_on_urgent, not both')
+  assert(type(a.wake)=='table' and a.wake.near~=nil,'wake is {near: N}: only an attack on ours or buildings of ours destroyed within N tiles of you (1..200) wake it; other urgent alerts are held for the reply')
+  local c={}
+  for k,v in pairs(a) do if k~='wake' then c[k]=v end end
+  c.wake_on_urgent={near=a.wake.near}
+  return c
+end
 function M.wait_as_sleep(request)
-  local a=request.args
+  local a=M.wake_arg(request.args)
   local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent,wake_from=a.wake_from,wake_on_operator=a.wake_on_operator,wake_local=a.wake_local}
   if request.action=='wait_ticks' then
     args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.ticks) or 60)/60)))
@@ -15361,6 +15385,7 @@ end
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
 -- clock runs for it like any timed action).
 function handlers.wait_until(p,a)
+  a=M.wake_arg(a)
   assert(a.on_timeout==nil,'on_timeout is a queue step\'s (queue_submit {steps: [{action: "wait_until", args: {..., on_timeout: "hold"}}]}): a direct wait ends at its timeout')
   assert(a.wake_on_viewers==nil or type(a.wake_on_viewers)=='boolean','wake_on_viewers must be true or false')
   assert(a.wake_on_messages==nil or type(a.wake_on_messages)=='boolean','wake_on_messages must be true or false')
@@ -15441,6 +15466,10 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_post={'note'},board_update={'status','note'},lesson_edit={'status'},plan_save={'note'}}
 EXTRA_ARGS.circuit_set=TARGET
+-- (d18 batch36 B1) a direct wait_until's urgent wake options, which wait_until reads (fh --no-urgent and --urgent-radius
+-- send wake_on_urgent; the scheduler's schema lacked it, so those calls were refused); wake: {near} on both waits
+EXTRA_ARGS.wait_until={'wake_on_urgent','wake'}
+EXTRA_ARGS.wait_ticks={'wake'}
 EXTRA_ARGS.trace=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
@@ -17162,7 +17191,7 @@ stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_gro
   find=function(p,pos) return entity(p,{position=pos}) end,
   -- Every tour's enemy check (round1950a): the walk's mode, and a place inside a reach the map shows.
   avoid_mode=function(v) return M.avoid.mode(v) end,
-  goal_check=function(p,from,goal,mode) return M.avoid.goal_check(p,from,goal,mode) end,
+  goal_check=function(p,from,goal,mode) return M.avoid.goal_check(p,from,goal,mode) end,leg_threat=function(p,from,to,mode) return M.avoid.leg_threat(p,from,to,mode) end,
   goal_text=function(label,goal,c) return M.avoid.goal_text(label,goal,c) end,
   -- The call's check of every stop (round2120a), and the reply's avoid_enemies line.
   goal_inside=function(p,goal,mode) return M.avoid.inside(p,goal,mode) end,
@@ -17690,7 +17719,10 @@ function M.tick_action(index,action,event)
     -- Legs around enemies (avoid.lua): the next one starts where one ends.
     if outcome and action.foes and M.avoid.leg_done(p,action,outcome) then outcome=nil end
     -- Legs through via points: the next one starts where one arrives.
-    if outcome and action.via and M.via_next(p,action,outcome,index) then outcome=nil end
+    if outcome and action.via then
+      local nxt,instead=M.via_next(p,action,outcome,index)
+      if nxt then outcome=nil elseif instead then outcome=instead end
+    end
     -- An end that says arrived far from the walk's goal is no arrival (A1): stopped_short, with where and why.
     if outcome=='arrived' or outcome=='arrived_near' then outcome=M.short_check(p,action,outcome) end
     if outcome then

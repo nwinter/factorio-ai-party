@@ -689,6 +689,23 @@ return function(api)
     end
     return nil
   end
+  -- (d18 batch36 B2, Haiku: 8 hits from big spitters at (-112,240) on a rearm tour whose walk started clear) Before a leg
+  -- starts: an enemy group or enemy units seen now whose reach (ATTACK_R) the straight leg from here to `to` passes
+  -- through: {m, d, line} for the nearest, else nil. A demolisher counts too. Read only.
+  function M.leg_threat(p, from, to, mode)
+    if not (mode and mode.attacks) or p.surface.platform ~= nil then return nil end
+    local box = {math.min(from.x, to.x), math.min(from.y, to.y), math.max(from.x, to.x), math.max(from.y, to.y)}
+    local best
+    for _, d in ipairs(M.attack_discs(p.surface, mode, box)) do
+      if d.group or d.units then
+        local sd = seg_dist(from, to, d)
+        if sd < d.range and (not best or sd < best.d) then best = {m=d, d=sd} end
+      end
+    end
+    if not best then return nil end
+    best.line = string.format('the leg from %s to %s passes %s', at(from), at(to), M.threat_row(best))
+    return best
+  end
   -- Each tick while the path is asked for: read some chunks.
   function M.tick(p, nav)
     local f = nav.foes
