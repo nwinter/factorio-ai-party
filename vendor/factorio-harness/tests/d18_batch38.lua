@@ -278,4 +278,97 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d18_batch38 C4 staged cargo spoiling before its platform is back: ok')
+
+-- D1 with batch37 D2 (Sol: a filter set from a constant minus a whole-belt reader; the count took in belts the feeder could
+-- not reach): circuit_audit's feeders: the signals, the combinators, each belt reader's exact belts, past the pickup.
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2,combinator_input_red=3,combinator_input_green=4,combinator_output_red=5,combinator_output_green=6},
+    wire_origin={player=0},control_behavior={transport_belt={content_read_mode={pulse=0,hold=1,entire_belt_hold=2}}}}
+  prototypes={item={['iron-plate']={}}}
+  local nets={}
+  local function net(id,sigs) nets[id]={network_id=id,signals=sigs}; return nets[id] end
+  local conns={}
+  local function conn(e,id,netid) local c={owner=e,wire_connector_id=id,connections={},net=netid}; conns[#conns+1]=c; return c end
+  local function link(a,b) a.connections[#a.connections+1]={target=b,origin=0}; b.connections[#b.connections+1]={target=a,origin=0} end
+  local unit=0
+  local function ent(t,name,x,y,f) unit=unit+1; local e={valid=true,type=t,name=name,position={x=x,y=y},unit_number=unit,wires={}}
+    for k,v in pairs(f or {}) do e[k]=v end
+    e.get_wire_connector=function(id) return e.wires[id] end
+    e.get_circuit_network=function(id) local c=e.wires[id]; return c and nets[c.net] end
+    return e end
+  -- a belt line of 6, flowing east; 1 tile segment length each; items on each
+  local belts={}
+  for i=1,6 do belts[i]=ent('transport-belt','transport-belt',i,0,{direction=4,get_max_transport_line_index=function() return 2 end,
+    get_transport_line=function(l) return {get_item_count=function(n) return n=='iron-plate' and 5 or 0 end,get_contents=function() return {{name='iron-plate',count=5}} end,total_segment_length=6} end}) end
+  for i=1,6 do belts[i].belt_neighbours={inputs={belts[i-1]},outputs={belts[i+1]}} end
+  local side=ent('transport-belt','transport-belt',2,1,{direction=0,belt_neighbours={inputs={},outputs={belts[2]}},get_max_transport_line_index=function() return 2 end,
+    get_transport_line=function() return {get_item_count=function() return 0 end,get_contents=function() return {} end,total_segment_length=1} end})
+  table.insert(belts[2].belt_neighbours.inputs,side)
+  local reader=belts[3]
+  reader.get_control_behavior=function() return {read_contents=true,read_contents_mode=2} end
+  net(14,{{signal={name='iron-plate'},count=30}})
+  net(12,{{signal={name='iron-plate'},count=70}})
+  local comb=ent('arithmetic-combinator','arithmetic-combinator',0,5)
+  local hub=ent('space-platform-hub','space-platform-hub',0,0,{get_control_behavior=function() return {read_contents=true} end,get_item_count=function() return 500 end})
+  local ins=ent('inserter','inserter',4,1,{filter_slot_count=1,get_filter=function() return {name='iron-plate'} end,pickup_target=belts[4],
+    get_control_behavior=function() return {circuit_set_filters=true} end})
+  ins.wires[1]=conn(ins,1,12); comb.wires[5]=conn(comb,5,12); hub.wires[1]=conn(hub,1,12)
+  link(ins.wires[1],comb.wires[5]); link(ins.wires[1],hub.wires[1])
+  comb.wires[4]=conn(comb,4,14); reader.wires[2]=conn(reader,2,14); link(comb.wires[4],reader.wires[2])
+  local CA=dofile('mod/agent-harness_0.1.0/circaudit.lua'){circuit_short=function(e) return e==comb and 'each * -1 -> each' or nil end}
+  CA.feeders_begin(); local line,row=CA.feeder(ins); CA.feeders_end()
+  eq(row.readers[1].belts,6); eq(row.readers[1].past_pickup,2); eq(row.readers[1].holds,'iron-plate 60'); eq(row.set_filters,true)
+  has(line,'inserter (4,1): its filters set by the circuit (whitelist, now iron-plate); picks up from transport-belt (4,0)')
+  has(line,'red #12: iron-plate 70')
+  has(line,'put out by arithmetic-combinator (0,5) (each * -1 -> each)')
+  has(line,'its green input #14: iron-plate 30')
+  has(line,'transport-belt (3,0) reads its whole belt: its count covers 6 belts from (1,0) to (6,0) (the game\'s segment, in flow order), holding iron-plate 60 now')
+  has(line,'2 of those belts lie past the inserter\'s pickup (4,0), from (5,0) to (6,0): it cannot take what they hold (iron-plate 20 now)')
+  has(line,'belts joining inside the count (their items count in it): transport-belt (2,1) into (2,0) (upstream of the pickup)')
+  has(line,'the hub (0,0) reads its contents onto it: iron-plate 500 (its own signal, apart from any belt read)')
+  -- an inserter the circuit does not set: none
+  eq(CA.feeder(ent('inserter','inserter',9,9,{get_control_behavior=function() return {} end})),nil)
+  defines,prototypes=nil,nil
+end
+print('d18_batch38 D1/batch37 D2 circuit-gated feeders and their belt readers: ok')
+
+-- D2 (Opus 18:23: advanced circuits made and used at 216 a minute; which machines or chests took them?): supply {item,
+-- consumers: "all"}: every machine whose recipe takes it and every chest asking for it, the largest use first.
+do
+  game={tick=7200}
+  defines={logistic_member_index={logistic_container=1},logistic_mode={requester=1,buffer=2}}
+  prototypes={item={['advanced-circuit']={}},recipe={['processing-unit']={energy=10,ingredients={{name='advanced-circuit',amount=2},{name='electronic-circuit',amount=20}}},
+    ['electric-furnace']={energy=5,ingredients={{name='advanced-circuit',amount=5},{name='steel-plate',amount=10}}},['iron-plate']={energy=3.2,ingredients={{name='iron-ore',amount=1}}}}}
+  local function m(x,recipe,speed,status) return {valid=true,type='assembling-machine',name='assembling-machine-3',position={x=x,y=0},unit_number=x,crafting_speed=speed,
+    status=status,get_recipe=function() return {name=recipe} end,bounding_box={left_top={x=x-1.5,y=-1.5},right_bottom={x=x+1.5,y=1.5}}} end
+  local list={m(1,'processing-unit',1.25,'working'),m(5,'processing-unit',1.25,'working'),m(9,'electric-furnace',1.25,'item_ingredient_shortage'),m(13,'iron-plate',1,'working')}
+  local surf={index=1,name='nauvis',find_entities_filtered=function() return {} end}
+  local force={name='player',logistic_networks={nauvis={}}}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){census_crafters=function() return list,0 end,status_name=function(e) return e.status end}
+  local r=S.consumers({force=force,surface=surf},surf,'advanced-circuit',{consumers='all'})
+  eq(r.machines,3); eq(r.working,2); eq(r.per_min,30); eq(r.full_per_min,105)
+  eq(r.line,'advanced-circuit on nauvis: 3 machines take it (1 electric-furnace, 2 processing-unit), 2 working, 30 a minute now (105 at full speed); 0 requester or buffer chests ask for it')
+  eq(r.rows[1].recipe,'processing-unit'); eq(r.rows[1].per_min,15)
+  eq(r.rows[3].line,'assembling-machine-3 (9,0) electric-furnace: item ingredient shortage; takes 0 a minute now (75 at full speed)')
+  local ok,err=pcall(S.consumers,{force=force,surface=surf},surf,'advanced-circuit',{consumers=true}); assert(not ok and tostring(err):find('consumers is "all"',1,true),err)
+  game,defines,prototypes=nil,nil,nil
+end
+print('d18_batch38 D2 supply consumers: ok')
+
+-- D3 (Opus: a lane read "stopped, full" was coal, read as iron ore): beltaudit's full lane says what fills it (belt_flow's
+-- states and limit lines: tests/beltsample.lua).
+do
+  local BA=dofile('mod/agent-harness_0.1.0/beltaudit.lua'){try=function(f) local ok,v=pcall(f) if ok then return v end end,place=function(e) return e.name..' ('..e.position.x..','..e.position.y..')' end,
+    at=function(q) return '('..q.x..','..q.y..')' end,side=function(k) return k==1 and 'left' or 'right' end,
+    lanes_of=function(e) return e.lanes end,lane_text=function(m) local t={} for n,c in pairs(m) do t[#t+1]=c..' '..n end return #t>0 and table.concat(t,', ') or 'empty' end,
+    lane_near=function() return 1 end,lane_full=function(e,k) return e.full and k==1 end}
+  local target={valid=true,type='transport-belt',belt_shape='straight',name='transport-belt',position={x=0,y=0},direction=4,unit_number=1,full=true,lanes={left={coal=8},right={}}}
+  local side={valid=true,type='transport-belt',name='transport-belt',position={x=0,y=-1},direction=8,unit_number=2,lanes={left={['iron-ore']=3},right={['iron-ore']=2}}}
+  target.belt_neighbours={inputs={side},outputs={}}
+  local out={}
+  BA.sideloads(target,out,{})
+  eq(#out,1)
+  has(out[1],'side-loads both its lanes (left 3 iron-ore, right 2 iron-ore) onto transport-belt (0,0) left lane only: at most half of what it carries gets on (that lane is full: 8 coal)')
+end
+print('d18_batch38 D3 full lanes say what fills them: ok')
 print('d18 batch38 ok')

@@ -40,7 +40,7 @@ return function(h)
         done[b.unit_number] = true
         local k = h.lane_near(e, b.position) or 1
         local l = h.lanes_of(b)
-        local full = h.lane_full(e, k) and ' (that lane is full)' or ''
+        local full = h.lane_full(e, k) and ' (that lane is full: ' .. h.lane_text(h.lanes_of(e)[k == 1 and 'left' or 'right'] or {}) .. ')' or ''
         if straight and stub(straight) then
           out[#out+1] = string.format('a curve made a side-load at %s: %s turns into it, but the empty %s behind it keeps it straight, so both lanes of %s (left %s, right %s) go onto its %s lane only%s',
             place(e), place(b), place(straight), place(b), h.lane_text(l.left), h.lane_text(l.right), side(k), full)
