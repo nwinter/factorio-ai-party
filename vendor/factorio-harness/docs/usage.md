@@ -8141,3 +8141,19 @@ fh watch    # deploy on every change
     lines are asked: 52 of 199 passed today.
   - tools/stream/route_replay.py replays verdict logs through it against the game chat's record of whom each line
     went to (with the team as the live state shows it now).
+- D2 (viewer Aurora 12:5x: "Keep routine digests to changed blockers, failed checks and needed decisions, routed to
+  their owners. Keep full censuses on demand"): the scheduled digest (idle_nudge.py at deadline - 2 h,
+  tools/factory_digest.py) is a delta against the last digest, this run's or the run it resumed from.
+  - Its facts: per surface, the blockers (drills with no resources, input shortage and full output by machine type,
+    boilers and furnaces without fuel, labs not working); the failed checks (lessons whose check is not met); and
+    the decisions needed (items blocked, requests nobody owns). Each is said when it is new, has moved (by 2 and a
+    fifth) or has cleared.
+  - Each fact goes to its owner. A position goes to the claim holding it. A surface goes to every open claim on it,
+    else to the agents holding items whose title names it (at most 3). Otherwise it goes to the team, and so does a
+    request nobody owns.
+  - One tell list per recipient: "Factory digest, changed since the last one (tick T, N game min ago): blockers: ...;
+    failed checks: ...; decisions needed: ...". Nothing changed: no tell.
+  - The full census goes to the team on request (`idle_nudge.py --digest-now`).
+  - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
+    operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
+  - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.

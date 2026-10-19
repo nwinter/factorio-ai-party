@@ -22,8 +22,9 @@ once per --every-min minutes per agent, never in the first --grace-min minutes a
 start), and not after the run's deadline. Each nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not),
 with since_last_nudge: whether a reply delivered the last nudge's tell (its unread tells went to 0) and whether the
 agent made requests since. Delivered is not read: Sonnet writes its replies to a file and reads the last 2 lines.
-The same supervisor sends a cached factory digest once at deadline - 2 h.
---digest-now sends an operator-requested digest and exits; --dry-run logs without sending.
+The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
+fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
+team (on request) and exits; --dry-run logs without sending.
 """
 import argparse, datetime, json, os, sys, time
 
@@ -295,7 +296,7 @@ def main():
     ap.add_argument("--grace-min", type=float, default=5)
     ap.add_argument("--dry-run", action="store_true", help="log what would be sent; send nothing")
     ap.add_argument("--once", action="store_true", help="one poll (with --grace-min 0 to check the rules now)")
-    ap.add_argument("--digest-now", action="store_true", help="send one cached factory digest to the team now, then exit (no idle nudges)")
+    ap.add_argument("--digest-now", action="store_true", help="send the full cached factory census to the team now, then exit (no idle nudges)")
     a = ap.parse_args()
     h = Harness(a.world, a.port)
     n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run), run_dir=a.run)

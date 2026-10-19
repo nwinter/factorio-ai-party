@@ -304,8 +304,10 @@
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
   or ok each; feasible, sustained and the first unsatisfied. Example: `./fh call dependency --args '{"item":"rocket-fuel","surface":"nauvis"}'`
-- The operator's factory digest arrives by `tell` at the deadline minus 2 hours, or on operator request: remembered
-  machine and fuel counts per planet and sampled belt ends, with observation ages; missing data is unknown.
+- The operator's factory digest arrives by `tell` at the deadline minus 2 hours: what changed since the last digest
+  (blockers per planet, lessons whose check is not met, items blocked, requests nobody owns), each to the owner of
+  the claim or item it concerns, the rest to the team. On operator request the full census: remembered machine and
+  fuel counts per planet and sampled belt ends, with observation ages; missing data is unknown.
 - Shift and factory-digest `research_use` lines compare researched gear with the gear worn, fitted and carried now,
   show building tiers per planet from the dated census, and researched vehicles against force-wide built counts.
 - A full `status` gives `robots`: per planet or platform, all its logistic networks' robots by kind (idle, working,
