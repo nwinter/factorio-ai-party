@@ -37,4 +37,39 @@ do
 end
 print('d18_batch38 A1 a queue step waits for the second read: ok')
 
+
+-- A2 (Grok 18:20, twice: copper from Petrel read "to the ground (no pad takes it)" and landed in the pad at (54,8)): a
+-- pod that names no station yet goes to the planet's landing pad, said so; the station once named; no pad: the ground.
+do
+  defines={inventory={cargo_unit=1}}
+  local st={}
+  local glebapad={valid=true,position={x=54,y=8}}
+  local pads={gleba={glebapad},vulcanus={}}
+  game={forces={},get_surface=function(n) return {valid=true,name=n,find_entities_filtered=function(f)
+    eq(f.type,'cargo-landing-pad'); assert(f.limit==1,'bounded'); return pads[n] or {} end} end}
+  local P=dofile('mod/agent-harness_0.1.0/pods.lua'){state=function() return st end}
+  local on_deck={}
+  local deck={name='platform-7',valid=true,find_entities_filtered=function() return on_deck end}
+  local function pod(unit,dest) return {valid=true,unit_number=unit,cargo_pod_state='awaiting_launch',surface=deck,cargo_pod_destination=dest,
+    get_inventory=function() return {get_contents=function() return {{name='copper-ore',count=500,quality='normal'}} end} end} end
+  game.forces.player={name='player',platforms={{valid=true,name='Petrel',space_location={name='gleba'},surface=deck}}}
+  local a=pod(1,{type=1,surface='gleba'})
+  on_deck={a}
+  P.tick(60)
+  local f=P.in_flight('player','gleba')
+  eq(f[1].pad.x,54); eq(f[1].guessed,true)
+  eq(P.line('player','gleba'),"1 cargo pod from Petrel still in the air: copper-ore*500 (to the landing pad at (54,8) (gleba's pad: pods from a platform land in it; this one names no station yet); 1 awaiting_launch)")
+  -- the station named later: what the pod says
+  a.cargo_pod_destination={type=1,station={valid=true,position={x=54,y=8},surface={name='gleba'}}}
+  P.tick(120)
+  eq(P.in_flight('player','gleba')[1].guessed,nil)
+  has(P.line('player','gleba'),'(to the landing pad at (54,8); 1 awaiting_launch)')
+  -- a planet with no landing pad of ours
+  game.forces.player.platforms[1].space_location={name='vulcanus'}
+  on_deck={pod(2,{type=1,surface='vulcanus'})}
+  P.tick(180)
+  has(P.line('player','vulcanus'),'(to the ground (no landing pad of ours on vulcanus);')
+  game,defines=nil,nil
+end
+print('d18_batch38 A2 a pod with no station yet lands in the planet\'s pad: ok')
 print('d18 batch38 ok')
