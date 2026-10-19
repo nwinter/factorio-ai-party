@@ -8107,3 +8107,6 @@ fh watch    # deploy on every change
   enemy unit (1 big-spitter) at (-110,238), 7.6 tiles from it: moving units (big-spitter (-110,238) wandering, facing
   west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
   avoid_enemies false checks nothing.
+- rotate in the remote and platform queue lanes (C4, Astra: queue_submit refused steps[7] rotate in the remote lane though
+  a direct rotate takes platform): a rotate step with platform (on that platform) or surface (by remote view on a
+  planet) goes in lane remote or platform:NAME, as the direct call takes it; without either it is refused there.
