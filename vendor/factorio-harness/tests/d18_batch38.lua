@@ -144,4 +144,83 @@ do
   defines,prototypes=nil,nil
 end
 print('d18_batch38 A4 a robot carrying the item reads in transit: ok')
+
+-- B1 (Haiku, 3 times: "construct stops the whole batch when one item is missing"; on shift36 the poles were left out
+-- inside a spitter spawner's sight and the 2 laser ghosts skipped for no lasers held): the reply and the result say what
+-- it builds, what it skips for a missing item (the count short) and what it leaves out.
+do
+  prototypes={entity={['laser-turret']={items_to_place_this={{name='laser-turret',count=1}}},['medium-electric-pole']={items_to_place_this={{name='medium-electric-pole',count=1}}}}}
+  local C=dofile('mod/agent-harness_0.1.0/construction.lua'){directions={}}
+  local action={to_build={['laser-turret']=2},left_names={['medium-electric-pole']=3,['laser-turret']=2},built=0,missing={['laser-turret']=2},failed={}}
+  local inv={get_item_count=function(i) return i=='medium-electric-pole' and 9 or 0 end}
+  eq(C.plan_line({get_main_inventory=function() return inv end},action),
+    "2 ghosts to build: 2 laser-turret; you hold too few for 2 laser-turret (those are skipped unless crafted in time; the rest are built); left out inside an enemy's reach: 3 medium-electric-pole, 2 laser-turret")
+  eq(C.result_line(action),"built 0 of the 2 ghosts it took up; skipped, item missing (none held and none crafting; the rest built): 2 laser-turret short; left out inside an enemy's reach the map shows (unsafe_goal: true builds them): 3 medium-electric-pole, 2 laser-turret")
+  -- the first batch: poles built, lasers short
+  local a2={to_build={['laser-turret']=2,['medium-electric-pole']=3},built=3,missing={['laser-turret']=2},failed={}}
+  eq(C.result_line(a2),'built 3 of the 5 ghosts it took up; skipped, item missing (none held and none crafting; the rest built): 2 laser-turret short')
+  eq(C.result_line({to_build={['medium-electric-pole']=4},built=4,missing={},failed={}}),'built 4 of the 4 ghosts it took up')
+  prototypes=nil
+end
+print('d18_batch38 B1 construct says built, skipped and left out: ok')
+
+-- B2 (Haiku: big pole ghosts whose network held none, 3 times; a pole ghost outside every roboport's construction area):
+-- robot_dispatch names the covering network holding none of the item, and the nearest roboport and how far outside.
+do
+  prototypes={entity={['construction-robot']={max_payload_size=1},['logistic-robot']={max_payload_size=1}}}
+  local port={valid=true,name='roboport',position={x=0,y=0},unit_number=1}
+  local net={network_id=5,cells={{owner=port,construction_radius=55,stationed_construction_robot_count=10,stationed_logistic_robot_count=0}},
+    available_construction_robots=10,available_logistic_robots=0,get_item_count=function() return 0 end,
+    select_pickup_point=function() return nil end,select_drop_point=function() return nil end}
+  local force={worker_robots_storage_bonus=0,logistic_networks={nauvis={net}},find_logistic_network_by_position=function() return net end}
+  local surf={name='nauvis',find_logistic_networks_by_construction_area=function(pos) if math.abs(pos.x)<=55 and math.abs(pos.y)<=55 then return {net} end return {} end}
+  local DP=dofile('mod/agent-harness_0.1.0/robottrips.lua'){}
+  local lines=DP.preview(surf,force,{{kind='construct',pos={x=10,y=10},item='big-electric-pole',count=1},{kind='construct',pos={x=12,y=10},item='big-electric-pole',count=1},
+    {kind='construct',pos={x=67,y=3},item='big-electric-pole',count=1}})
+  local all=table.concat(lines,' | ')
+  has(all,'2 big-electric-pole ghosts near (11,10): network 5 covering them holds no big-electric-pole')
+  has(all,"1 big-electric-pole ghost near (67,3): no roboport's construction area covers it; the nearest roboport, roboport (0,0) (network 5), covers 55 tiles round it, and it is 12 tiles outside that")
+  assert(not all:find('no chest of the network',1,true),all)
+  prototypes=nil
+end
+print('d18_batch38 B2 robot_dispatch: none held, outside every construction area: ok')
+
+-- B3 (Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at (204,69)): more
+-- ghosts of ours in the network want the item than it holds: each named, its claim and distance, in the drop's receipt
+-- and the ghosts read.
+do
+  prototypes={item={roboport={place_result={name='roboport'}},['iron-plate']={}},entity={roboport={items_to_place_this={{name='roboport',count=1}}}}}
+  local g1={valid=true,type='entity-ghost',ghost_name='roboport',position={x=204,y=69}}
+  local g2={valid=true,type='entity-ghost',ghost_name='roboport',position={x=67,y=44}}
+  local net={network_id=98,cells={{owner={valid=true,position={x=100,y=50}},construction_radius=110}},get_item_count=function() return 0 end}
+  local surf={name='gleba',find_logistic_networks_by_construction_area=function() return {net} end,
+    find_entities_filtered=function(f) eq(f.ghost_name,'roboport'); eq(f.type,'entity-ghost'); assert(f.limit,'bounded'); return {g1,g2} end}
+  local GL=dofile('mod/agent-harness_0.1.0/ghostlist.lua'){position=function(v) return v end,integer=function(v,d) return v or d end,
+    distance=function(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end,
+    claim_at=function(s,pos) if pos.x==204 then return {id=1112,owner='luna',title='Gleba east farm defense'} end end}
+  local c=GL.contested(surf,{},'roboport',{x=54,y=8})
+  eq(c.wanted,2); eq(c.holds,0); eq(c.network,98)
+  eq(c.lines[1],'roboport (67,44) (no claim), 38 tiles from (54,8)')
+  eq(c.lines[2],'roboport (204,69) (claim #1112 Gleba east farm defense, luna), 162 tiles from (54,8)')
+  has(c.line,'2 roboport ghosts of ours in network 98 want roboport and it holds 0: ')
+  has(c.line,'robots build whichever they take it to first (the game sets no order among ghosts')
+  eq(GL.contested(surf,{},'iron-plate',{x=54,y=8}),nil,'an item that places nothing')
+  net.get_item_count=function() return 2 end
+  eq(GL.contested(surf,{},'roboport',{x=54,y=8}),nil,'the network holds enough')
+  -- the drop's receipt: once when it lands
+  net.get_item_count=function() return 0 end
+  local st={}
+  game={tick=100,surfaces={gleba={name='gleba',find_entities_filtered=function() return {} end}},forces={player={name='player'}}}
+  defines={inventory={cargo_unit=1}}
+  local D=dofile('mod/agent-harness_0.1.0/drops.lua'){state=function() return st end,who=function(p) return p.name end,
+    contested=function(s,f,item,at) eq(s.name,'gleba'); return GL.contested(surf,f,item,at) end}
+  local id=D.record({name='luna',force={name='player'}},{platform='Swiftlet',surface='gleba',pad={x=54,y=8},sent={'roboport*1'}})
+  st.drops.list[1].pod=nil
+  game.tick=200; D.tick(210)
+  local lines=D.lines({name='luna'},{})
+  has(lines[1],'drop #'..id..' from Swiftlet landed in the landing pad at (54,8) on gleba: roboport*1')
+  has(lines[1],'; 2 roboport ghosts of ours in network 98 want roboport and it holds 0: roboport (67,44) (no claim), 38 tiles from (54,8); roboport (204,69) (claim #1112')
+  game,defines,prototypes=nil,nil,nil
+end
+print('d18_batch38 B3 ghosts that want an item the network holds too few of: ok')
 print('d18 batch38 ok')

@@ -48,6 +48,7 @@ return function(api)
   end
   -- jobs: {{kind = construct | deconstruct | deliver, pos, item, count (1 for a ghost or an entity; the items asked for
   -- a delivery), contents (what an entity to deconstruct holds)}}. Returns lines (nil when no job) and the counts.
+  M.MAX_CELLS = 2048
   function M.preview(s, force, jobs)
     local groups, order = {}, {}
     for _, j in ipairs(jobs) do
@@ -77,9 +78,11 @@ return function(api)
       local net
       if g.kind == 'deliver' then net = try(function() return force.find_logistic_network_by_position(pos, s) end)
       else net = (try(function() return s.find_logistic_networks_by_construction_area(pos, force) end) or {})[1] end
-      if not net then uncovered = uncovered + g.n
+      if not net then uncovered = uncovered + g.n; g.uncovered = pos
       else
         local id = net.network_id
+        -- (d18 batch38 B2, Haiku, 3 times: big pole ghosts whose network held none) what the covering network holds
+        if g.kind == 'construct' then g.net_id, g.holds = id, try(function() return net.get_item_count(g.item) end) end
         nets[id] = nets[id] or {net=net, trips={construct=0, deconstruct=0, deliver=0}}
         local cap = loads[g.kind] or payload(force, g.kind)
         loads[g.kind] = cap
@@ -190,8 +193,39 @@ return function(api)
       end
     end
     local none = {}
-    for _, g in ipairs(order) do if g.no_source and #none < 4 then none[#none+1] = string.format('%d %s for %s', g.n, g.kind, g.item) end end
+    for _, g in ipairs(order) do
+      if g.kind == 'construct' and g.holds == 0 then
+        lines[#lines+1] = string.format('%d %s ghost%s near %s: network %d covering %s holds no %s', g.n, g.item, g.n == 1 and '' or 's',
+          at({x=g.sx / g.n, y=g.sy / g.n}), g.net_id, g.n == 1 and 'it' or 'them', g.item)
+      elseif g.no_source and #none < 4 then none[#none+1] = string.format('%d %s for %s', g.n, g.kind, g.item) end
+    end
     if #none > 0 then lines[#lines+1] = 'no chest of the network to take from or put into for ' .. table.concat(none, ', ') end
+    -- (B2, Haiku) a ghost outside every roboport's construction area: the nearest roboport and how far outside its area
+    -- (the area is a square round it); cells of our networks on the surface, the first MAX_CELLS
+    local cells
+    for _, g in ipairs(order) do
+      if g.uncovered and g.kind ~= 'deliver' then
+        if not cells then
+          cells = {}
+          for _, n in pairs(try(function() return force.logistic_networks[s.name] end) or {}) do
+            for _, c in ipairs(try(function() return n.cells end) or {}) do
+              local o = c.owner
+              local r = try(function() return c.construction_radius end) or 0
+              if #cells < M.MAX_CELLS and o and o.valid and r > 0 and not try(function() return c.mobile end) then cells[#cells+1] = {o=o, r=r, id=n.network_id} end
+            end
+          end
+        end
+        local best, bo
+        for _, c in ipairs(cells) do
+          local out = math.max(math.abs(c.o.position.x - g.uncovered.x), math.abs(c.o.position.y - g.uncovered.y)) - c.r
+          if not bo or out < bo then best, bo = c, out end
+        end
+        lines[#lines+1] = string.format('%d %s %s near %s: no roboport\'s construction area covers %s%s', g.n, g.item, g.kind == 'construct' and (g.n == 1 and 'ghost' or 'ghosts') or 'jobs',
+          at(g.uncovered), g.n == 1 and 'it' or 'them',
+          best and string.format('; the nearest roboport, %s %s (network %d), covers %d tiles round it, and %s %d tiles outside that', best.o.name, at(best.o.position), best.id, best.r,
+            g.n == 1 and 'it is' or 'their middle is', math.ceil(bo)) or '; no roboport of ours with a construction area on this surface')
+      end
+    end
     if uncovered > 0 then lines[#lines+1] = string.format('%d job%s no logistic network covers', uncovered, uncovered == 1 and '' or 's') end
     return #lines > 0 and lines or nil, {trips=trips, long=long_n, longest=longest and math.floor(longest.len + 0.5) or nil}
   end

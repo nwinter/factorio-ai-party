@@ -8487,3 +8487,28 @@ fh watch    # deploy on every change
     network holds no ITEM and no robot carries one to it".
   - construction_robots `sources` gives, per group, how many are in transit in robots' cargo (and the nearest), then
     the chests (or "no chest in the network holds it") for the rest only.
+- B1 (Haiku, 3 times: "construct stops the whole batch when one item is missing: a 4-laser + pole batch built 0
+  poles"):
+  - Found on shift36: construct already skips a ghost whose item is neither held nor crafting and builds the rest
+    (construction.lua). In Haiku's batches at ticks 29635899 and 29637477, the 3 medium poles were left out inside a
+    spitter spawner's sight ((-26,-394), 40 tiles), and the 2 laser ghosts it took up were skipped (no lasers held).
+    The reply's `materials` counted every ghost in the area, so a laser shortage and the poles' left out read as one.
+  - Now the reply has a `line`: the ghosts it builds by name, those you hold too few for, and those left out inside
+    an enemy's reach. The result's `last.line` says "built 0 of the 2 ghosts it took up; skipped, item missing ...:
+    2 laser-turret short; left out inside an enemy's reach ... : 3 medium-electric-pole, 2 laser-turret".
+- B2 (Haiku: big pole ghosts whose network held none, 3 times; a pole ghost outside every roboport's construction
+  area): robot_dispatch (place_ghosts, paste and blueprint_place dry runs; robottrips.lua) says, per group of ghosts
+  (item and 32-tile cell):
+  - "2 big-electric-pole ghosts near (11,10): network 5 covering them holds no big-electric-pole";
+  - "1 big-electric-pole ghost near (67,3): no roboport's construction area covers it; the nearest roboport, roboport
+    (0,0) (network 5), covers 55 tiles round it, and it is 12 tiles outside that". The construction area is a
+    square, and the cells read are our networks' on the surface, the first 2048. On world n, 153 cells took 0.3 ms.
+- B3 (Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at (204,69)):
+  the game sets no build priority among ghosts. ghostlist.lua `contested(surface, force, item, from)` gives the entity
+  ghosts of ours in the construction area of the network covering `from` that the item places, when there are more
+  than the network holds. Each ghost has where it is, the claim holding it and its owner, and its distance from
+  `from`. It runs only when the network holds 16 or fewer: the search covers the network's box, 9 ms for Nauvis's on
+  world n, 0.9 ms for Gleba's.
+  - The drop's landing line: for the first 2 such items sent, from where it landed.
+  - deconstruct (dry run and live) `contested`: for the items the marked entities free (the first 2).
+  - ghosts read `contested`: per network and item, from the network's pickup point for it, at most 3 searches a read.
