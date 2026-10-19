@@ -427,6 +427,9 @@ def map_tests():
                                           evidence=["by sol 30m ago: metric PU 540/min (tick 100)", "by astra 2m ago: metric PU 600/min "
                                                     "(tick 200); decision keep the second line; next check tick 300 " + "x" * 300])
         st["board"]["claims"][0]["evidence"] = ["by haiku 5m ago: metric 12 drills on the south-west patch"]
+        # (d19 batch46 item 0) batch41's missed-runs text has its own "; " inside the parentheses
+        st["reminders"]["jobs"][0]["states"] = ("astra overdue (8 runs missed (the first at tick 33987840, 7m35s ago; the last at tick "
+                                                "33987840, 7m35s ago), the owner told); sol acknowledged")
         json.dump(dict(st, youtube_chat=yt, planets=[{"surface": "vulcanus", "tick": 3, "buildings": 9}], planet_map=pm),
                   open(spath, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), spath], capture_output=True, text=True, timeout=30)
@@ -459,7 +462,8 @@ def map_tests():
         # the team's reminder jobs (d15 batch5 group I): owner, message, next due, the last result with its age, states
         assert '<h4>Reminders</h4><ul class="board-claims board-reminders">' in bd and "ship review: Petrel ammo, fuel and hub room" in bd, bd
         assert "every 15m00s, next in 7 min" in bd and "last result 8 min ago:</span> Petrel 900 magazines" in bd, bd
-        assert 'fx-chip--red">Astra overdue (2 runs missed)' in bd and 'fx-chip--green">Sol acknowledged' in bd, bd
+        assert 'fx-chip--red">Astra overdue (8 runs missed (the first at tick 33987840, 7m35s ago; the last at tick 33987840, 7m35s ago), the owner told)</span>' in bd \
+            and 'fx-chip--green">Sol acknowledged' in bd, bd
         # (d19 batch43 A2) the long result whole, collapsed to a line that opens; evidence newest first, the older after
         assert '<details class="lt" data-lt="rem2:result">' in bd and bd.count(long_result) == 2, bd  # the line and the opened text
         assert bd.index("PU 600/min") < bd.index("PU 540/min") and "earlier evidence:" in bd and "x" * 300 in bd, bd

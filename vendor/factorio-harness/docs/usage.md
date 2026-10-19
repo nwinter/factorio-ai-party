@@ -8886,6 +8886,27 @@ fh watch    # deploy on every change
   longer read. Private copy, iron-plate, before -> after: Nauvis 108 -> 7.2-8.6 ms, Gleba 24 -> 1.0-1.2, Fulgora 13 ->
   4.1-5.2, Vulcanus 75 -> 2.3-2.8, Aquilo 1.4 -> 0.2, a platform 0.8 -> 0.1 (yumako-mash on Gleba 74 -> 0.35). The
   same by_kind both ways (belts and hands differ by what moved between reads).
+
+## d19 batch46 (eng/d19-batch46)
+
+- Item 1, reminder checklists (Sol and viewer Foobator, d18 05:43): already in, from d17 batch30 B1 (reminder_add
+  `steps`, each named with its own `every_ticks`; reminder_ack records a step with its result; progress per recipient;
+  the steps in the reminder's row; done only when every step is recorded). Not changed.
+- Item 2, ownership audit (Sol and viewer Foobator, d18 08:09): already in, from d17 batch33 B2 (`board_review
+  {ownership: true, surface?}`). Not changed.
+- Item 3, setting edits on silos and platforms (viewer Aurora, d18 23:24; editlog.lua, as batch41 B1 for request
+  sections and departure gates). Recorded with the agent, the tick, before and after (the last 5 a setting):
+  a silo's automatic requests (`launch`/`configure {auto_requests}`, and load_silo's pause, its turning back on and
+  its `auto_requests: false`, which say so: `off (load_silo pause, back on after its last launch)`) and send to orbit
+  automatically (`configure`); a platform's schedule stops (`platform_schedule {stops}`: `1 nauvis, 2 fulgora -> 1
+  nauvis, 2 fulgora, 3 gleba`), paused (`platform_schedule {paused}`) and a request's custom minimum payload set by
+  `min_payload` (`minimum payload low-density-structure from nauvis: none -> 50`; set by `requests`, it is in that
+  section's batch41 record). Reads: the silo's row (`silo`, `silos`, the `settings` in `launch` and `configure`
+  replies) and `platform {platform}` carry `setting_edits`, the latest edit of each setting, oldest first:
+  `automatic requests: on -> off, by astra at game time 1h02m (tick 223200, 3m ago)`; a silo's line ends `changed: ...`.
+  The agent who made the previous edit of that setting, when someone else changes it, gets one tell a call (`changed
+  what you set last: automatic requests: on -> off`); a stops change is told once, with the departure gate's edit.
+  Records begin with this deploy. Test tests/d19_batch46.lua.
 - A2 (the actions agents call on n, audited for whole-surface reads; shifts 39-41: 11.1 hours, journals of 9 agents):
   each read action replayed with up to 15 of its journal calls on the private copy, as the bot that made it, timing the
   handler alone and then the reply around it. A whole-surface find costs about 10.5 ms on the copy's Nauvis whatever
@@ -8902,6 +8923,20 @@ fh watch    # deploy on every change
   and power-cut alert groups (4.6 ms) are kept 120 ticks per force, and the push alerts read the board's active claims
   once a tick (an agent shown no new alert group read every board item twice for each of about 170 groups, 10 ms):
   4.3-16 -> 0.7-1.5 ms a reply.
+- Todo (viewer Aurora d19 15:50: platform_defense cover by live weapon readiness, target filters and damage): the
+  target filters (cover per size by each turret's priority list, d17 batch23 A1) and the damage against the route's
+  asteroids (d17 batch35 B6) were already in. Now the cover is read again with only the turrets armed now (an ammo
+  turret holding ammo, an electric turret with energy, a fluid turret with fluid): a collector whose reaching turrets
+  are not all armed adds `armed now 0 of 1 (by size: small none, ...)` (rows `armed_by`, `by_size_armed`); a side's
+  size adds `4 more covered only by turrets not armed now ((0,0)-(3,0) 4 tiles)` (rows `unarmed_only`,
+  `unarmed_gaps`); the turrets line says how many are armed and names electric and fluid turrets that are not (`not
+  armed: laser-turret (60,0) (no energy)`); turret rows carry `armed` and `unarmed`. With every turret armed the read
+  is as before. The second pass over the hull edges runs only when a turret is not armed. Test tests/d19_batch46.lua.
+- Todo (Grok 09:22: the last pentapod eggs went from an inserter's hand into a robot's cargo; where_is and supply read
+  0 and the breeder died between reads): already in from d17 batch33 B1 (where_is `robot_cargo` and `inserter_hands`;
+  the seed alert, seeds.lua, counts robot cargo), and supply counted both before. Added here: the egg watch's hatch
+  warnings (spoil.lua: our holders near the machines that make or use what hatches, every 30 s) read logistic and
+  construction robots' cargo there as they read an inserter's hand. Test tests/d19_batch46.lua.
 ## d19 batch45 (eng/d19-batch45)
 
 - 2: `inspect {positions}` reads the first 8 positions a call (12 with `compact`); `rest` lists the others and `left`

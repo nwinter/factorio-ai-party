@@ -1296,6 +1296,8 @@ return function(api)
         local row={name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,
           schedule=schedule_text(pl),stops=try(function() return M.stops(pl) end),departure=api.departure and try(function() return api.departure(pl.name) end) or nil,deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
           weight=pl.weight and math.floor(pl.weight/1000) or nil}
+        -- (d19 batch46 3) the latest edit of each setting: stops, paused, a request's minimum payload (min_payload)
+        row.setting_edits=api.editlog and try(function() return api.editlog.lines('plat:'..pl.name) end) or nil
         for k,v in pairs(M.flight(pl) or {}) do row[k]=v end
         local hub=pl.hub
         if hub and hub.valid then
@@ -1884,11 +1886,26 @@ return function(api)
   M.gate_texts=gate_texts
   -- platform_schedule: the call (schedule_call), with each stop it changed recorded (who, when, old and new) and whoever
   -- set that stop last before, if someone else, told once.
+  -- (d19 batch46 3) the stops in order ("1 nauvis, 2 vulcanus") and paused, for the platform's setting edits
+  local function stop_list(pl)
+    local sch=try(function() return pl.schedule end)
+    local out={}
+    for i,rec in ipairs(sch and sch.records or {}) do out[#out+1]=i..' '..tostring(rec.station or '?') end
+    return #out>0 and table.concat(out,', ') or 'no stops'
+  end
   function M.platform_schedule(p,a)
-    local pl=api.editlog and (a.stops~=nil or a.stop~=nil) and select(2,pcall(M.platform,p,a.platform)) or nil
+    local pl=api.editlog and (a.stops~=nil or a.stop~=nil or a.paused~=nil) and select(2,pcall(M.platform,p,a.platform)) or nil
     if type(pl)~='table' then pl=nil end
     local before=pl and api.editlog and gate_texts(pl)
+    local stops_before,paused_before=pl and stop_list(pl),pl and (pl.paused and 'paused' or 'not paused')
     local out=M.schedule_call(p,a)
+    if pl and pl.valid and not a.dry_run then
+      local told={}
+      -- (the stops' own edit is told with the departure gate's, below)
+      api.editlog.setting('plat:'..pl.name,'schedule stops',p.name or '?',stops_before,stop_list(pl),true)
+      for _,n in ipairs(api.editlog.setting('plat:'..pl.name,'paused',p.name or '?',paused_before,pl.paused and 'paused' or 'not paused') or {}) do told[#told+1]=n end
+      if #told>0 then out.told_of_setting_edit=told end
+    end
     if before and pl.valid and not a.dry_run then
       local changes=api.editlog.diff(before,gate_texts(pl))
       if #changes>0 then
@@ -1969,7 +1986,10 @@ return function(api)
         end
       end
       local loaded=a.auto_requests and not silo.use_transitional_requests and top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
+      local was=silo.use_transitional_requests and 'on' or 'off'
       silo.use_transitional_requests=a.auto_requests
+      -- (d19 batch46 3) who switched it, when, before and after (editlog.lua; the silo's reads show it)
+      if api.editlog and silo.unit_number then pcall(api.editlog.setting,'silo:'..silo.unit_number,'automatic requests',p.name or '?',was,silo.use_transitional_requests and 'on' or 'off') end
       switched={auto_requests=silo.use_transitional_requests}
       if loaded then
         switched.cargo_to_trash=loaded

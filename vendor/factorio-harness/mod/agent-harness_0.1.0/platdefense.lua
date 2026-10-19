@@ -56,14 +56,21 @@ return function(api)
         if proxy then feed = 'robots bringing ammo' end
       end
     end
+    -- (d19 batch46, viewer Aurora 15:50) armed now: an ammo turret holding ammo, an electric turret with energy, a fluid
+    -- turret with fluid; cover is read by reach and again by the armed turrets only
+    local armed
+    if t.type == 'ammo-turret' then armed = rounds > 0
+    elseif t.type == 'electric-turret' then armed = (try(function() return t.energy end) or 0) > 0
+    else armed = (try(function() local fb = t.fluidbox[1]; return fb and fb.amount end) or 0) > 0 end
     local only = engages(t)
     local listed = {}
     for name in pairs(only or {}) do listed[#listed+1] = name end
     table.sort(listed)
-    return {entity=t, name=t.name, position=t.position, range=try(function() return t.prototype.attack_parameters.range end) or 0,
+    return {entity=t, name=t.name, type=t.type, position=t.position, range=try(function() return t.prototype.attack_parameters.range end) or 0,
       min_range=try(function() return t.prototype.attack_parameters.min_range end) or 0, only=only,
       engages=only and (#listed > 0 and 'only ' .. table.concat(listed, ', ') .. ' (ignores the rest)' or 'nothing (ignores every target off its empty priority list)') or 'every asteroid',
-      ammo=ammo, empty=t.type == 'ammo-turret' and rounds == 0, feed=feed or (t.type == 'ammo-turret' and 'nothing (by hand)' or t.type == 'electric-turret' and 'power' or 'pipe')}
+      ammo=ammo, empty=t.type == 'ammo-turret' and rounds == 0, armed=armed,
+      unarmed=not armed and (t.type == 'ammo-turret' and 'no ammo' or t.type == 'electric-turret' and 'no energy' or 'no fluid') or nil, feed=feed or (t.type == 'ammo-turret' and 'nothing (by hand)' or t.type == 'electric-turret' and 'power' or 'pipe')}
   end
   -- the turrets whose range reaches q (past their minimum range)
   local function covering(turrets, q)
@@ -265,10 +272,18 @@ return function(api)
       for i, t in ipairs(list) do if i <= 4 then words[i] = string.format('%s %s %s, engages %s, fed by %s', t.name, at(t.position), t.ammo, t.engages, t.feed) end end
       local bs = by_size(list, kinds)
       local row = {position=c.position, front=front, covered_by=#list, by_size=bs}
+      -- armed now: the same read with the turrets holding no ammo, energy or fluid left out
+      local live = {}
+      for _, t in ipairs(list) do if t.armed then live[#live+1] = t end end
+      local armed_words = ''
+      if #live < #list then
+        row.armed_by, row.by_size_armed = #live, by_size(live, kinds)
+        armed_words = string.format('; armed now %d of %d (by size: %s)', #live, #list, size_words(row.by_size_armed))
+      end
       collectors[#collectors+1] = row
       if #list > 0 then
-        lines[#lines+1] = string.format('asteroid-collector %s, front %s: %d turret%s reach it (by size: %s): %s%s', at(c.position), at(front), #list, #list == 1 and '' or 's',
-          size_words(bs), table.concat(words, '; '), #list > 4 and string.format('; +%d more', #list - 4) or '')
+        lines[#lines+1] = string.format('asteroid-collector %s, front %s: %d turret%s reach it (by size: %s)%s: %s%s', at(c.position), at(front), #list, #list == 1 and '' or 's',
+          size_words(bs), armed_words, table.concat(words, '; '), #list > 4 and string.format('; +%d more', #list - 4) or '')
       else
         lines[#lines+1] = string.format('asteroid-collector %s, front %s: NO turret reaches it%s', at(c.position), at(front),
           nearest and string.format(' (nearest %s %s, %.0f tiles past its range %g)', nearest.name, at(nearest.position), nd, nearest.range) or ' (no turret on the platform)')
@@ -279,16 +294,22 @@ return function(api)
     local set = {}
     for _, t in ipairs(tiles) do set[key(t.position.x, t.position.y)] = true end
     local sides = {}
+    local live_turrets, all_armed = {}, true
+    for _, t in ipairs(turrets) do if t.armed then live_turrets[#live_turrets+1] = t else all_armed = false end end
     for _, t in ipairs(tiles) do
       local x, y = t.position.x, t.position.y
       for _, d in ipairs(SIDES) do
         if not set[key(x + d[1], y + d[2])] then
-          local sd = sides[d[3]] or {edge=0, open={}, size_open={small={}, medium={}, big={}, huge={}}}
+          local sd = sides[d[3]] or {edge=0, open={}, size_open={small={}, medium={}, big={}, huge={}}, size_unarmed={small={}, medium={}, big={}, huge={}}}
           sides[d[3]] = sd
           sd.edge = sd.edge + 1
           local bs = cover_at(turrets, x + 0.5, y + 0.5, kinds)
+          local ba = not all_armed and cover_at(live_turrets, x + 0.5, y + 0.5, kinds) or bs
           local any = false
-          for _, size in ipairs(SIZES) do if not bs[size].covered then any = true; local o = sd.size_open[size]; o[#o+1] = {x=x, y=y} end end
+          for _, size in ipairs(SIZES) do
+            if not bs[size].covered then any = true; local o = sd.size_open[size]; o[#o+1] = {x=x, y=y}
+            elseif not ba[size].covered then local o = sd.size_unarmed[size]; o[#o+1] = {x=x, y=y} end
+          end
           if any then sd.open[#sd.open+1] = {x=x, y=y} end
         end
       end
@@ -322,19 +343,28 @@ return function(api)
           local g, n = gaps_of(o, 3)
           per[size] = {uncovered=#o, gaps=g}
           words[#words+1] = #o == 0 and size .. ' all covered' or string.format('%s %d uncovered (%s%s)', size, #o, table.concat(g, '; '), n > 3 and string.format('; +%d more runs', n - 3) or '')
+          -- covered by reach, but only by turrets not armed now
+          local u = sd.size_unarmed[size]
+          if #u > 0 then
+            local ug, un = gaps_of(u, 3)
+            per[size].unarmed_only, per[size].unarmed_gaps = #u, ug
+            words[#words] = words[#words] .. string.format(', %d more covered only by turrets not armed now (%s%s)', #u, table.concat(ug, '; '), un > 3 and string.format('; +%d more runs', un - 3) or '')
+          end
         end
         side_rows[#side_rows+1] = {side=d[3], edge_tiles=sd.edge, uncovered=#sd.open, gaps=gaps, by_size=per}
         lines[#lines+1] = string.format('%s side: %d edge tiles, %d where a size is not covered; %s', d[3], sd.edge, #sd.open, table.concat(words, '; '))
       end
     end
-    local empty, hand = {}, 0
+    local empty, hand, idle = {}, 0, {}
     for _, t in ipairs(turrets) do
       if t.empty then empty[#empty+1] = t.name .. ' ' .. at(t.position) end
       if t.feed == 'nothing (by hand)' then hand = hand + 1 end
+      if not t.armed and t.type ~= 'ammo-turret' and #idle < 6 then idle[#idle+1] = string.format('%s %s (%s)', t.name, at(t.position), t.unarmed) end
     end
-    lines[#lines+1] = string.format('%d turrets: %d empty%s, %d fed by nothing (by hand)', #turrets, #empty, #empty > 0 and ' (' .. table.concat(empty, ', ', 1, math.min(6, #empty)) .. ')' or '', hand)
+    lines[#lines+1] = string.format('%d turrets: %d armed now, %d empty%s, %d fed by nothing (by hand)%s', #turrets, #live_turrets, #empty,
+      #empty > 0 and ' (' .. table.concat(empty, ', ', 1, math.min(6, #empty)) .. ')' or '', hand, #idle > 0 and '; not armed: ' .. table.concat(idle, ', ') or '')
     local trows = {}
-    for i, t in ipairs(turrets) do if i <= 64 then trows[i] = {name=t.name, position=t.position, range=t.range, min_range=t.min_range > 0 and t.min_range or nil, engages=t.engages, ammo=t.ammo, feed=t.feed} end end
+    for i, t in ipairs(turrets) do if i <= 64 then trows[i] = {name=t.name, position=t.position, range=t.range, min_range=t.min_range > 0 and t.min_range or nil, engages=t.engages, ammo=t.ammo, armed=t.armed, unarmed=t.unarmed, feed=t.feed} end end
     -- (A1) the turrets that engage only part of the asteroids, one line
     local part = {}
     for _, t in ipairs(turrets) do if t.only and #part < 8 then part[#part+1] = string.format('%s %s engages %s%s', t.name, at(t.position), t.engages, t.min_range > 0 and string.format(', not within %g tiles', t.min_range) or '') end end
@@ -397,6 +427,6 @@ return function(api)
       kinds=kinds, note='a turret reaches what lies within its attack range of its centre and past its minimum range; it engages what its priority list allows (ignore unprioritised targets on: only those listed), by size: small, medium, big, huge, each covered where every kind of that size (kinds) is engaged by a turret reaching it; a collector\'s front is the middle of its collection area; the hull\'s edge tiles are foundation tiles with empty space beside them'}
   end
   M.schema = {platform_defense = {route='optional "FROM->TO" (planets) or a space connection name; default the schedule\'s next leg (or the connection it flies): damage per asteroid that spawns there: its health and resistances, per turret and the ammo it holds now the damage a second after them against its listed damage, together and the time to kill one; under 10% of listed: reached, little damage (damage [{asteroid, hp, dps, kill_s, little}], lines)',platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
-    returns='cover is per asteroid size (small, medium, big, huge): a turret engages what its priority list allows (ignore unprioritised targets on: only those listed; every turret, asteroid and ammo prototype has the same target mask) and reaches within its range and past its minimum range (a rocket turret: 15 tiles); a size is covered where every kind of it (kinds: metallic, carbonic, oxide, promethium when a turret lists one) is engaged by a turret reaching it. lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (by size: turrets engaging that size, none for the kinds no turret engages; each turret\'s ammo, what it engages, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with, per size, the edge tiles no turret engaging it reaches as runs, the longest first; by their priority lists: the turrets engaging only part of the asteroids; the turrets (empty, fed by hand); then the ammunition: what can reach a turret (turrets, the belts on their ways, sources, the hub when an inserter takes from it toward one) against what is stranded (on belts no turret\'s way reaches, by group with their area), and each turret low or stopped: what it holds, what can reach it (each inserter and its way: the hub, a chest or machine, or a belt with the ammo on the belts upstream and who puts items on them) and what stops it (no feeder, an inserter or belt switched off by its circuit, a filter leaving its ammo out, belts nothing feeds: dry after what is on them). Every turret\'s reach in one line (ammunition that can reach each turret), and per stranded group the belts holding it (most first) and the call that would recover it: pickup {belt, area} when your character stands on that surface, else deconstruct {platform, area, entity_types: the belts} (the hub takes the belts and the items on them; the other belts of ours in that area named), and whether the hub\'s ammunition reaches a turret. feed {reaches, stranded, stranded_groups, stranded_recover [{count, belts, area, other_belts_in_area}], hub_reaches, via_hub (ammo on belts running back into the hub, counted as reaching when the hub feeds a turret), at_end and at_end_rows (ammo on a belt ending just past a pickup on a turret\'s way: not stranded), turrets [{position, holds, reaches, stopped}], lines}. collectors [{position, front, covered_by, by_size {size: {covered, turrets, missing}}}], sides [{side, edge_tiles, uncovered (a size not covered), gaps, by_size {size: {uncovered, gaps}}}], turrets [{name, position, range, min_range, engages, ammo, feed, destroyed_ours}], kinds; destroyed_by_ours [{name, position, destroyed, loss, ago_s}]: what turrets of ours destroyed here, per turret (the loss incidents kept, apart from asteroid hits). Read only'}}
+    returns='cover is per asteroid size (small, medium, big, huge): a turret engages what its priority list allows (ignore unprioritised targets on: only those listed; every turret, asteroid and ammo prototype has the same target mask) and reaches within its range and past its minimum range (a rocket turret: 15 tiles); a size is covered where every kind of it (kinds: metallic, carbonic, oxide, promethium when a turret lists one) is engaged by a turret reaching it. lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (by size: turrets engaging that size, none for the kinds no turret engages; each turret\'s ammo, what it engages, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with, per size, the edge tiles no turret engaging it reaches as runs, the longest first; by their priority lists: the turrets engaging only part of the asteroids; the turrets (empty, fed by hand); then the ammunition: what can reach a turret (turrets, the belts on their ways, sources, the hub when an inserter takes from it toward one) against what is stranded (on belts no turret\'s way reaches, by group with their area), and each turret low or stopped: what it holds, what can reach it (each inserter and its way: the hub, a chest or machine, or a belt with the ammo on the belts upstream and who puts items on them) and what stops it (no feeder, an inserter or belt switched off by its circuit, a filter leaving its ammo out, belts nothing feeds: dry after what is on them). Every turret\'s reach in one line (ammunition that can reach each turret), and per stranded group the belts holding it (most first) and the call that would recover it: pickup {belt, area} when your character stands on that surface, else deconstruct {platform, area, entity_types: the belts} (the hub takes the belts and the items on them; the other belts of ours in that area named), and whether the hub\'s ammunition reaches a turret. feed {reaches, stranded, stranded_groups, stranded_recover [{count, belts, area, other_belts_in_area}], hub_reaches, via_hub (ammo on belts running back into the hub, counted as reaching when the hub feeds a turret), at_end and at_end_rows (ammo on a belt ending just past a pickup on a turret\'s way: not stranded), turrets [{position, holds, reaches, stopped}], lines}. collectors [{position, front, covered_by, by_size {size: {covered, turrets, missing}}, armed_by and by_size_armed (when a turret reaching it is not armed now: no ammo, energy or fluid)}], sides [{side, edge_tiles, uncovered (a size not covered), gaps, by_size {size: {uncovered, gaps, unarmed_only, unarmed_gaps (covered by reach only by turrets not armed now)}}}], turrets [{name, position, range, min_range, engages, ammo, armed, unarmed, feed, destroyed_ours}], kinds; destroyed_by_ours [{name, position, destroyed, loss, ago_s}]: what turrets of ours destroyed here, per turret (the loss incidents kept, apart from asteroid hits). Read only'}}
   return M
 end

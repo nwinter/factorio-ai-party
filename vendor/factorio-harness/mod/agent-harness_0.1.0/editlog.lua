@@ -4,6 +4,8 @@
 -- the editor, the tick and the old and new values, the last KEEP a section or stop. The reads show the last edit. The
 -- agent whose values an edit changes (the last editor before it) is told once a call when someone else edits.
 -- Records begin with this change: a section or stop nobody edited since has no editor and tells nobody.
+-- (d19 batch46 3) Also a silo's switches (automatic requests, send to orbit automatically) and a platform's settings
+-- (its schedule's stops, paused, a request's custom minimum payload set by min_payload): M.setting and M.lines.
 return function(api)
   local M = {}
   local KEEP, TEXT = 5, 300
@@ -59,6 +61,29 @@ return function(api)
   function M.last(scope, key)
     local list = (store()[scope] or {})[tostring(key)]
     return list and list[#list] or nil
+  end
+  -- (d19 batch46 3, viewer Aurora) a silo's and a platform's settings ('silo:<unit number>', 'plat:<platform>'): the
+  -- latest edit of each key edited, oldest first: "automatic requests: on -> off, by sol at 153h12m (tick N, 3m ago)".
+  function M.lines(scope, label)
+    local out = {}
+    for key, list in pairs(store()[scope] or {}) do
+      local e = list[#list]
+      if e then out[#out+1] = {tick=e.tick, key=key, e=e} end
+    end
+    table.sort(out, function(x, y) if x.tick ~= y.tick then return x.tick < y.tick end return x.key < y.key end)
+    for i, r in ipairs(out) do
+      local m = math.floor(r.e.tick / 3600)
+      out[i] = string.format('%s: %s -> %s, by %s at game time %dh%02dm (tick %d, %s ago)', label and label(r.key) or r.key,
+        r.e.old or 'none', r.e.new or 'none', r.e.by or '?', math.floor(m / 60), m % 60, r.e.tick, ago(game.tick - r.e.tick))
+    end
+    return #out > 0 and out or nil
+  end
+  -- One setting changed by `by`: recorded under scope and key, earlier editors told (not with quiet: a change another
+  -- record of the same call already tells). Returns the names told.
+  function M.setting(scope, key, by, old, new, quiet)
+    if old == new then return nil end
+    local owed = M.record(scope, by, {{key=key, old=old, new=new}}, function(k) return k end)
+    return not quiet and M.tell(owed, by) or nil
   end
   function M.text(e)
     if not e then return nil end
