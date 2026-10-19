@@ -274,3 +274,98 @@ do
   assert(not ok); has(err,'use_item acts where your character is (nauvis)'); has(err,'is not established')
 end
 print('d18_batch37 C2 the remote on another surface refused: ok')
+
+-- C1 (Sonnet: 10+ chained transfers a brick cycle; a failure mid-chain left items in the pack): transfer {steps} walks
+-- takes and gives in one call; a failure says what is held and the steps left; on_fail "return" gives it back.
+do
+  -- slot inventories: stores are {item=count} views kept in step with the slots
+  local function inv_of(store,n)
+    local inv={valid=true}
+    local function sync() for k in pairs(store) do store[k]=nil end; for i=1,#inv do local sl=inv[i]; if sl.valid_for_read then store[sl.name]=(store[sl.name] or 0)+sl.count end end end
+    local function slot()
+      local sl={valid_for_read=false,count=0,quality={name='normal'}}
+      sl.transfer_stack=function(src,k)
+        k=math.min(k or src.count,src.count)
+        if sl.valid_for_read and sl.name~=src.name then return false end
+        local room=100-sl.count; k=math.min(k,room)
+        if k<=0 then return false end
+        sl.name=src.name; sl.count=sl.count+k; sl.valid_for_read=true
+        src.count=src.count-k; if src.count<=0 then src.valid_for_read=false; src.count=0; src.name=nil end
+        src.owner_sync(); sync()
+        return true
+      end
+      sl.owner_sync=sync
+      return sl
+    end
+    for i=1,n or 8 do inv[i]=slot() end
+    for k,v in pairs(store) do
+      local left=v
+      for i=1,#inv do if left<=0 then break end; local sl=inv[i]; if not sl.valid_for_read then local c=math.min(100,left); sl.name=k; sl.count=c; sl.valid_for_read=true; left=left-c end end
+    end
+    inv.get_item_count=function(q) local nm=type(q)=='table' and q.name or q; sync(); if nm then return store[nm] or 0 end; local t=0; for _,v in pairs(store) do t=t+v end; return t end
+    inv.get_contents=function() sync(); local out={}; for k,v in pairs(store) do if v>0 then out[#out+1]={name=k,count=v,quality='normal'} end end return out end
+    inv.is_empty=function() sync(); return next(store)==nil end
+    inv.can_insert=function() return true end
+    inv.get_insertable_count=function() return 1000 end
+    inv.set=function(k,v) for i=1,#inv do local sl=inv[i]; if sl.name==k then sl.valid_for_read=false; sl.count=0; sl.name=nil end end
+      if v>0 then for i=1,#inv do local sl=inv[i]; if not sl.valid_for_read then sl.name=k; sl.count=v; sl.valid_for_read=true; break end end end; sync() end
+    return inv
+  end
+  local pack={}
+  local chests={}
+  local function chest(x,y,store)
+    local e={valid=true,name='wooden-chest',type='container',force=force,surface=surface,position={x=x,y=y},unit_number=900+#chests,
+      prototype={type='container'},store=store}
+    local inv=inv_of(store)
+    e.inv=inv
+    e.get_inventory=function() return inv end
+    e.get_output_inventory=function() return inv end
+    e.get_item_count=inv.get_item_count
+    chests[#chests+1]=e
+    return e
+  end
+  local a=chest(1,0,{['iron-plate']=30})
+  local b=chest(2,0,{['iron-plate']=10})
+  local c=chest(3,0,{})
+  local d=chest(4,0,{})
+  surface.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(chests) do
+      local pos=f.position
+      if e.valid and pos and math.abs(e.position.x-pos.x)<0.6 and math.abs(e.position.y-pos.y)<0.6 then out[#out+1]=e end
+    end
+    return out
+  end
+  local main=inv_of(pack,16)
+  body.get_main_inventory=function() return main end
+  body.get_inventory=function() return main end
+  body.get_item_count=main.get_item_count
+  body.position={x=2,y=1}
+  -- the shape refused before any walk
+  fails(function() grok('transfer',{steps={{take={{x=1,y=0}},give={{x=3,y=0}},item='iron-plate'}}}) end,'takes take or give')
+  fails(function() grok('transfer',{steps={{take={{x=1,y=0}},item='iron-plate',split='even'}}}) end,'split is for a give')
+  fails(function() grok('transfer',{steps={{take={{x=1,y=0}},item='iron-plate'}},on_fail='drop'}) end,'on_fail is "return"')
+  local r=grok('transfer',{steps={{take={{x=1,y=0},{x=2,y=0}},item='iron-plate',count=35},{give={{x=3,y=0},{x=4,y=0}},item='iron-plate',split='even'}}})
+  has(r.chain,'step 1: take iron-plate at 2 chests (35 in all)'); has(r.chain,'step 2: give iron-plate at 2 chests (even)'); eq(r.legs,4)
+  advance(30)
+  local last=grok('status',{}).last
+  eq(last.outcome,'transferred','chain outcome')
+  eq(a.inv.get_item_count('iron-plate'),0); eq(b.inv.get_item_count('iron-plate'),5)
+  eq(c.inv.get_item_count('iron-plate'),18); eq(d.inv.get_item_count('iron-plate'),17)
+  eq(last.chain_held,'none of its items'); eq(last.chain_left,nil)
+  -- a failed leg: the steps left, what is held, and on_fail "return" gives it back where it came from
+  a.inv.set('iron-plate',20)
+  b.valid=false
+  grok('transfer',{steps={{take={{x=1,y=0}},item='iron-plate'},{give={{x=2,y=0}},item='iron-plate'},{give={{x=3,y=0}},item='iron-plate'}},on_fail='return'})
+  for _=1,30 do advance(1); if grok('status',{}).last.outcome=='failed' then break end end
+  last=grok('status',{}).last
+  eq(last.outcome,'failed','failed chain'); has(last.chain_held,'iron-plate 20')
+  has(last.chain_left[1],'step 2 give iron-plate at (2,0)'); has(last.chain_left[2],'step 3 give iron-plate at (3,0)')
+  has(last.chain_return,'goes back to 1 chest')
+  advance(40)
+  eq(a.inv.get_item_count('iron-plate'),20,'returned'); eq(pack['iron-plate'] or 0,0)
+  last=grok('status',{}).last
+  eq(last.outcome,'transferred'); eq(last.chain_failed.outcome,'failed'); has(last.chain_failed.left[1],'step 2 give')
+  has(last.started_by,'on_fail "return" of a transfer chain that ended failed')
+end
+print('d18_batch37 C1 a chain of transfers in one call: ok')

@@ -8344,3 +8344,13 @@ fh watch    # deploy on every change
   manual_range_modifier, 2.5 for the turret, times the automatic range), and `confirm`: 10 s later the placer's team
   block says whether a shot followed: the flare gone (its shots taken) or still there, shells gone from the pieces that
   reached it, artillery projectiles in the air within 64 tiles of it, and the surface's shells used in 10 min.
+- Transfer chains (C1, Sonnet: 10+ chained transfers a brick cycle; a failure mid-chain left items in the pack):
+  `transfer {steps: [{take: [{x,y}, ...], item, count?}, {give: [{x,y}, ...], item, split?: "even" | "fill", count?}], on_fail?}`
+  walks the chests in order in one call (32 at most; transferchain.lua over stock.lua's courier legs, never re-routed).
+  A take takes the item (`count` in all across its chests, default all); a give gives what you hold of it: `fill` (default)
+  all that fits at each in turn, `even` an even share of what is held now at each chest left in the step, `count` at
+  most that many in all. The first leg that fails (the entity gone, a transfer refused) or is not reached ends it:
+  `last.chain_held` (what of its items you hold) and `last.chain_left` (each leg left: step, take or give, item, position).
+  `on_fail: "return"` then walks what the chain took and you still hold back to the chests it came from, as a transfer
+  chain of its own started next tick (`last.chain_return`; that walk's last has `started_by` and `chain_failed`, the
+  failed chain's outcome, error, held and left). `keep` (default) leaves it in your pack.

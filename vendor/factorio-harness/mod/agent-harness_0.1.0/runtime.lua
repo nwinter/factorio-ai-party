@@ -702,6 +702,11 @@ local function finish(index, outcome)
     last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
     last.danger=action.danger; last.dangers=action.dangers; last.skipped_attack=action.skipped_attack; last.enemies_ahead=action.enemies_ahead
+    -- (d18 batch37 C1) a chain: what of its items is held, the steps left, and on_fail "return"'s walk back
+    if action.chain then
+      local okc,call=pcall(M.transferchain.report,M.lookup(index),action,last,outcome)
+      if okc and call then s.then_calls=s.then_calls or {}; s.then_calls[#s.then_calls+1]={index=index,call=call,started_by='on_fail "return" of a transfer chain that ended '..outcome} end
+    end
     last.left_out=action.left_out; last.left_out_count=action.left_out_count
     last.turrets_skipped=action.turrets_skipped  -- (batch32 A2) turrets a rearm walk skipped: other ammo with no room, ghosts
     if action.fuel_round then local r=action.fuel_round;last.fuel_taken=r.taken+(r.source and r.source.got or 0);last.sources=r.sources;last.source_read_capped=r.source_read_capped;last.why=action.why or last.why end
@@ -2089,6 +2094,11 @@ function handlers.describe(_,a)
       b.retry_ticks='with retry_when_clear: 600..54000 (default 18000)'
       b.retries='(set by the retry: how many so far)'
     end
+  end
+  -- (d18 batch37 C1) transfer {steps}
+  if description.actions.transfer then
+    description.actions.transfer.steps='a chain in one walking call: [{take: [{x,y}, ...], item, count?}, {give: [{x,y}, ...], item, split?: "even" | "fill", count?}, ...] in order (32 chests at most): a take takes the item from those chests (count in all; default all), a give gives what you hold of it (even: an even share at each; fill: all that fits, the default; count: at most that many); the first leg that fails or is not reached ends it: last.chain_held (what of its items you hold), last.chain_left (the steps left)'
+    description.actions.transfer.on_fail='with steps: "return": on a failure, what the chain took and you still hold goes back to the chests it came from (a second walk; last.chain_return); "keep" (default): you keep it'
   end
   -- (d18 batch36 C1) clear_obstacles on build and place_ghosts (clearobs.lua)
   for _,name in ipairs({'build','place_ghosts'}) do
@@ -16881,6 +16891,24 @@ do
     return out
   end
 end
+-- transfer {steps} (transferchain.lua; d18 batch37 C1, Sonnet): a chain of takes and gives in one walking call.
+M.transferchain=require('transferchain'){integer=integer,position=position,held=held}
+do
+  local plain=handlers.transfer
+  handlers.transfer=function(p,a)
+    if type(a)~='table' or a.steps==nil then return plain(p,a) end
+    local places,legs,groups=M.transferchain.plan(a)
+    local action=stock.start_legs(p,places,integer(a.ticks,18000,1,36000,'ticks'),{chain=true,chain_legs=legs,groups=groups,took={},on_fail=a.on_fail,transfer={direction="chain"},return_of=a.return_of,
+      rows={},items={},avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal})
+    if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+    state().active[p.index]=action
+    local parts={}
+    for _,g in ipairs(groups) do parts[#parts+1]=string.format('step %d: %s %s at %d chest%s%s',g.step,g.kind,g.item,g.n,g.n==1 and '' or 's',
+      g.kind=='give' and ' ('..g.split..')' or (g.left and ' ('..g.left..' in all)' or '')) end
+    return {chain=table.concat(parts,'; '),legs=#legs,on_fail=a.on_fail or 'keep',
+      note='walks the legs in order; the first that fails or is not reached ends it (last: chain_held, chain_left'..(a.on_fail=='return' and ', and what it took goes back)' or ')')}
+  end
+end
 -- clear_obstacles on build and place_ghosts (clearobs.lua; d18 batch36 C1, Opus): the trees and rocks in the footprints
 -- marked, those in reach mined by hand, the call run again once all are gone.
 M.clearobs=require('clearobs'){state=state,position=position,direction_of=function(d) return M.direction_of(d) end,
@@ -17203,6 +17231,16 @@ stock=stock_module{elsewhere=function(...) return M.elsewhere.line(...) end,on_g
     if action.op=='transfer' then
       -- transfer {walk=true}: the call's own transfer at each place (M.transfer_walk); a row per place. A courier
       -- (M.pick_source with to): its leg's transfer, the give for what the take got.
+      -- (d18 batch37 C1) a chain's leg: a take or a give, sized now (transferchain.lua)
+      if action.chain then
+        local t,g=M.transferchain.args(p,action)
+        local epos,ename=e.position,e.name
+        local out=transfer_one(p,t,nil,e)
+        M.transferchain.moved(action,g,e,out.transferred or 0)
+        if (out.transferred or 0)>0 then action.items[g.item]=(action.items[g.item] or 0)+out.transferred end
+        action.rows[#action.rows+1]={position=epos,name=ename,moved=out.transferred,direction=t.direction,step=g.step,item=g.item}
+        return {transferred=out.transferred}
+      end
       local t=action.legs and action.legs[action.index] or action.transfer
       if action.fill and not action.legs then
         local c={}
@@ -18132,7 +18170,7 @@ function M.tick_body(event)
       local text=ok and (type(r)=='table' and (r.until_tick and string.format('%s started (until tick %d)',c.call.action,r.until_tick) or c.call.action..' ran') or tostring(r)) or (c.call.action..' refused: '..reason(r))
       if last then last.then_result=text end
       -- the action it started says so in its own last (finish)
-      if ok and now and now.kind~='wait_until' then now.started_by=c.call.action..' run again after a wait (then_call)' end
+      if ok and now and now.kind~='wait_until' then now.started_by=c.started_by or c.call.action..' run again after a wait (then_call)' end
     end
   end
   if event.tick%120==7 and state().belt_cuts then pcall(M.belt_cut_tell) end
