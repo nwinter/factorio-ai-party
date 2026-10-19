@@ -8107,3 +8107,24 @@ fh watch    # deploy on every change
   enemy unit (1 big-spitter) at (-110,238), 7.6 tiles from it: moving units (big-spitter (-110,238) wandering, facing
   west); stopped at (-100.0,200.0) before it, 3 of 7 stops done`. unsafe_goal (true or "moving") walks on;
   avoid_enemies false checks nothing.
+- rotate in the remote and platform queue lanes (C4, Astra: queue_submit refused steps[7] rotate in the remote lane though
+  a direct rotate takes platform): a rotate step with platform (on that platform) or surface (by remote view on a
+  planet) goes in lane remote or platform:NAME, as the direct call takes it; without either it is refused there.
+- transfer into a requester or buffer chest (C3, Grok: a hand transfer over the request went to trash and robots hauled
+  it out): every move into one says `request` (`requester-chest asks iron-plate 150..250; it holds 300 now: 50 over its
+  request max (trash unrequested off)`) and `over_request`; `up_to_request: true` moves only up to its request (its
+  max, else its min). The request is summed over the chest's active sections for that item and quality.
+- Cargo bays in a dry run (C2, Astra twice: two placeable bays that joined nothing, mined and moved after inspect said
+  not_connected_to_hub_or_pad). place_ghosts, build and paste dry runs give `cargo_bays`: each planned bay joins the
+  platform hub or the landing pad (touching it edge to edge, or through a bay that does: built, a ghost, or one planned
+  before it) or joins nothing, with the nearest joined one and its distance; and per hub or pad its slots now, its own,
+  the built bays joined, and the slots after the planned bays join. A bay's slots are not in the API (cargo-bay has no
+  inventory_size_bonus on 2.0.77): they are read from the hub or pad, its slots now less its prototype's own over the
+  built bays joined to it (on world n a pad's own is 80, a hub's 59); with no built bay joined, the reply says so.
+- `clear_obstacles: true` on build and place_ghosts (C1, Opus, 3 times placing small cells: each tree in a footprint
+  stopped the batch). The trees and rocks (a simple entity the game counts as a rock) in the entries' footprints are
+  marked for deconstruction, as a player's planner marks them; those in reach are mined by hand (a timed construct
+  over them, as move_to's mine_out does), the rest are left to the construction robots. Once every one is gone the call
+  runs again, without clear_obstacles (watched 10 min; `last.cleared` says which). Returns cleared (what was marked),
+  mining, robots, then_runs; with none in the way the call runs at once and cleared says so. Dry runs give
+  `trees_rocks`: the trees and rocks in the planned footprints.

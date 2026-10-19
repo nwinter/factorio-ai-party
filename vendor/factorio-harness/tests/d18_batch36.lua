@@ -235,3 +235,156 @@ do
   game=nil
 end
 print('d18_batch36 B2 legs checked against enemies seen now: ok')
+
+
+-- C2 (Astra, twice: two placeable cargo bays that joined nothing): a dry run says whether each planned bay joins the pad
+-- or hub and the slots it would have after.
+do
+  defines={inventory={hub_main=1,cargo_landing_pad_main=2}}
+  local function box(x0,y0,x1,y1) return {left_top={x=x0,y=y0},right_bottom={x=x1,y=y1}} end
+  local pad={valid=true,type='cargo-landing-pad',name='cargo-landing-pad',position={x=0,y=0},bounding_box=box(-4,-4,4,4),
+    get_inventory=function() local inv={} for i=1,100 do inv[i]=true end return inv end,prototype={get_inventory_size=function() return 80 end}}
+  local bay={valid=true,type='cargo-bay',name='cargo-bay',position={x=6,y=0},bounding_box=box(4,-2,8,2)}
+  local s={find_entities_filtered=function(f) if f.ghost_type then return {} end return {pad,bay} end}
+  local D=dofile('mod/agent-harness_0.1.0/dryrun.lua'){placewhy={box_at=function(b,pos) return box(pos.x+b.left_top.x,pos.y+b.left_top.y,pos.x+b.right_bottom.x,pos.y+b.right_bottom.y) end}}
+  local proto={type='cargo-bay',collision_box=box(-1.9,-1.9,1.9,1.9)}
+  local recs={{proto=proto,name='cargo-bay',pos={x=10,y=0}},{proto=proto,name='cargo-bay',pos={x=0,y=20}}}
+  local lines=D.cargo_bays(s,{},recs)
+  eq(lines[1],'cargo-bay (10,0) joins cargo-landing-pad (0,0) through cargo-bay (6,0)')
+  eq(lines[2],'cargo-bay (0,20) joins nothing: it touches no hub, landing pad or bay joined to one, edge to edge; the nearest joined: cargo-landing-pad (0,0), 14 tiles from its edge')
+  eq(lines[3],'cargo-landing-pad (0,0): 100 slots now (80 its own, 1 built bay joined), 120 after the 1 planned bay joining it (20 a bay, as read from it)')
+  -- touching the pad itself
+  lines=D.cargo_bays(s,{},{{proto=proto,name='cargo-bay',pos={x=-6,y=0}}})
+  eq(lines[1],'cargo-bay (-6,0) joins cargo-landing-pad (0,0) (touching it)')
+  eq(D.cargo_bays(s,{},{{proto={type='container'},name='wooden-chest',pos={x=0,y=0}}}),nil)
+  defines=nil
+end
+print('d18_batch36 C2 cargo bays in a dry run: ok')
+
+-- C1 (Opus, 3 times placing small cells: each tree in a footprint stopped the batch): clear_obstacles marks the trees and
+-- rocks in the footprints, mines those in reach by hand, and runs the call again once they are gone.
+do
+  game={tick=100,surfaces={}}
+  prototypes={item={['stone-furnace']={place_result={name='stone-furnace'}}},entity={['stone-furnace']={name='stone-furnace'}}}
+  local marked,constructed,plain_calls={},nil,{}
+  local function ent(name,typ,x,y,rockflag)
+    local e={valid=true,name=name,type=typ,position={x=x,y=y},bounding_box={left_top={x=x-0.5,y=y-0.5},right_bottom={x=x+0.5,y=y+0.5}},
+      prototype={count_as_rock_for_filtered_deconstruction=rockflag}}
+    e.order_deconstruction=function() marked[#marked+1]=e end
+    return e
+  end
+  local tree=ent('tree-01','tree',2,2); local rock=ent('big-rock','simple-entity',30,2,true); local fish=ent('decal','simple-entity',2,3,false)
+  local surface={find_entities_filtered=function(f) if f.area.left_top.x<10 then return {tree,fish} end return {rock} end}
+  local st={last={}}
+  local C=dofile('mod/agent-harness_0.1.0/clearobs.lua'){state=function() return st end,position=function(q) return q end,
+    snap=function(_,pos) return pos end,footprint=function(_,pos) return {left_top={x=pos.x-1,y=pos.y-1},right_bottom={x=pos.x+1,y=pos.y+1}} end,
+    construct=function(_,a) constructed=a; return {} end}
+  local p={index=4,surface=surface,character={},force={},can_reach_entity=function(e) return e.position.x<10 end}
+  local plain=function(_,a) plain_calls[#plain_calls+1]=a; return {built=true} end
+  local out=C.call(p,'build',{item='stone-furnace',builds={{position={x=2,y=2}},{position={x=30,y=2}}},clear_obstacles=true},plain)
+  eq(#plain_calls,0,'not run yet'); eq(#marked,2)
+  eq(out.cleared,'2 in the footprints marked for deconstruction: 1 tree-01 (one at (2,2)), 1 big-rock (one at (30,2))')
+  eq(out.mining,'1 in reach mined by hand now (a timed construct over them)'); eq(constructed.area.left_top.x,0)
+  eq(out.robots,'1 out of reach left to the construction robots')
+  -- the tree mined; the rock still stands: waits
+  tree.valid=false; C.tick(); eq(st.then_calls,nil)
+  rock.valid=false; C.tick()
+  eq(#st.then_calls,1); eq(st.then_calls[1].call.action,'build'); eq(st.then_calls[1].call.args.clear_obstacles,nil)
+  eq(st.clear_jobs,nil)
+  -- nothing in the way: the call at once
+  st.then_calls=nil
+  surface.find_entities_filtered=function() return {fish} end
+  out=C.call(p,'place_ghosts',{entities={{name='stone-furnace',position={x=2,y=2}}},clear_obstacles=true},plain)
+  eq(out.built,true); eq(out.cleared,'no tree or rock in the footprints'); eq(plain_calls[1].clear_obstacles,nil)
+  -- a watch that runs out
+  tree.valid=true; surface.find_entities_filtered=function() return {tree} end
+  C.call(p,'place_ghosts',{entities={{name='stone-furnace',position={x=2,y=2}}},clear_obstacles=true},plain)
+  game.tick=100+C.WAIT+1; st.last[4]={}; C.tick()
+  eq(st.last[4].cleared,'1 of 1 trees and rocks still stand after 10 min: place_ghosts not run again')
+  game,prototypes=nil,nil
+end
+print('d18_batch36 C1 clear_obstacles: ok')
+-- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
+storage={agent_harness={active={}}}
+defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
+  shooting={not_shooting=0,shooting_enemies=1},controllers={character=1,remote=27,spectator=2},direction={north=0},
+  inventory={chest=1,character_main=1,character_guns=3,character_ammo=4},
+  build_mode={normal=1},build_check_type={manual=1},flow_precision_index={five_seconds=0,one_minute=1}}
+prototypes={item={['submachine-gun']={type='gun',attack_parameters={ammo_categories={'bullet'},range=18}},
+  ['rocket-launcher']={type='gun',attack_parameters={ammo_categories={'rocket'},range=36}},
+  ['firearm-magazine']={type='ammo',ammo_category={name='bullet'}},rocket={type='ammo',ammo_category={name='rocket'}},
+  ['iron-plate']={type='item'}}}
+local drawn={}
+rendering={draw_text=function() local obj={valid=true}; obj.destroy=function() obj.valid=false end; drawn[#drawn+1]=obj; return obj end,
+  get_object_by_id=function(id) return drawn[id] end}
+remote={interfaces={}}
+helpers={json_to_table=function(t) return t end}
+local force={name='player',get_friend=function() return false end,get_cease_fire=function() return false end,chart=function() end,
+  is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
+local surface={name='nauvis',index=1}
+local units=0
+local function character(pos)
+  units=units+1
+  local c={valid=true,name='character',type='character',force=force,surface=surface,position=pos,unit_number=500+units,health=250,max_health=250,
+    prototype={collision_box={left_top={x=-0.2,y=-0.2},right_bottom={x=0.2,y=0.2}},collision_mask={layers={player=true}}},
+    driving=false,build_distance=10,reach_distance=10,character_running_speed=0.15,walking_state={walking=false},selected_gun_index=1}
+  c.insert=function(s) return s.count end
+  c.get_item_count=function() return 0 end
+  c.can_reach_entity=function() return true end
+  c.destroy=function() c.valid=false end
+  return c
+end
+surface.find_non_colliding_position=function(_,origin) return origin end
+surface.create_entity=function(args) if args.name=='character' then return character(args.position) end return {valid=true,name=args.name,position=args.position} end
+surface.can_place_entity=function() return true end
+surface.find_entities_filtered=function() return {} end
+surface.get_total_pollution=function() return 0 end; surface.get_chunks=function() return function() end end; surface.get_pollution=function() return 0 end
+surface.request_path=function() return 1 end
+local players={}
+local tick=0
+game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolution_factor=function() return 0 end,get_evolution_factor_by_time=function() return 0 end,
+  get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
+  get_player=function(i) if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
+  get_surface=function() return surface end,print=function() end,connected_players=players,
+  get_pollution_statistics=function() return {input_counts={},output_counts={},get_flow_count=function() return 0 end} end}
+local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
+local function advance(n) for _=1,n do tick=tick+1; game.tick=tick; runtime.tick{tick=tick} end end
+local function request(req)
+  local ok,result=pcall(runtime.dispatch,req)
+  if not ok then
+    if req.bot then pcall(runtime.stop_player,runtime.bots.index_of(req.bot)) end
+    error(result,0)
+  end
+  return result
+end
+local function as(name) return function(action,args) return request{action=action,args=args or {},bot=name} end end
+local grok=as('grok')
+runtime.operator.bot_create('grok')
+local body=runtime.lookup(runtime.bots.index_of('grok')).character
+
+
+-- C4 (Astra: queue_submit refused steps[7] rotate in the remote lane though a direct rotate takes platform): rotate in the
+-- remote and platform lanes where the direct call works (platform or surface).
+do
+  game.forces.player.platforms={{valid=true,name='Wren',index=1}}
+  local q=grok('queue_submit',{lane='remote',start=false,steps={{action='rotate',args={platform='Wren',position={x=1,y=2}}},{action='rotate',args={surface='gleba',position={x=3,y=4}}}}})
+  eq(q.lane,'remote')
+  fails(function() grok('queue_submit',{lane='remote',start=false,steps={{action='rotate',args={position={x=1,y=2}}}}}) end,'remote lane rotate requires platform or surface')
+  q=grok('queue_submit',{lane='platform:Wren',start=false,steps={{action='rotate',args={platform='Wren',position={x=1,y=2}}}}})
+  eq(q.lane,'platform:Wren')
+  grok('queue_cancel',{lane='remote'}); grok('queue_cancel',{lane='platform:Wren'})
+end
+print('d18_batch36 C4 rotate in the remote and platform lanes: ok')
+
+-- C3 (Grok: a hand transfer over a requester's request went to trash and robots hauled it out): the request read.
+do
+  defines.logistic_member_index={logistic_container=0}; defines.logistic_mode={requester=1,buffer=2,passive_provider=3}
+  local pt={mode=1,filters={{name='iron-plate',quality='normal',count=100,max_count=200},{name='iron-plate',quality='normal',count=50,max_count=50},{name='coal',quality='normal',count=10}}}
+  local chest={valid=true,type='logistic-container',name='requester-chest',get_logistic_point=function() return pt end,get_requester_point=function() return {trash_not_requested=false} end}
+  local r=runtime.request_of(chest,'iron-plate','normal')
+  eq(r.min,150); eq(r.max,250); eq(r.trash_unrequested,false)
+  r=runtime.request_of(chest,'coal','normal'); eq(r.min,10); eq(r.max,nil)
+  eq(runtime.request_of(chest,'stone','normal'),nil)
+  pt.mode=3; eq(runtime.request_of(chest,'iron-plate','normal'),nil,'a provider asks nothing')
+end
+print('d18_batch36 C3 the request a transfer fills: ok')
