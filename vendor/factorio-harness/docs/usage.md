@@ -8655,8 +8655,9 @@ fh watch    # deploy on every change
   - Since the platform last departed: the leg and the stop after it so far.
   - While it is stopped, the last full leg alone.
   Each window has each fluid's and ammunition's made and used (totals, a minute, net a minute), cargo loaded (rockets
-  launched to it) and cargo dropped (its cargo pods: received, landed or gone), with the window's ticks. A leg that
-  began before this runtime has no fuel sample, and says so.
+  launched to it) and cargo dropped (its cargo pods received by a landing pad or landed as containers; those gone
+  before leaving are not counted), with the window's ticks. A leg that began before this runtime has no fuel sample,
+  and says so. When the cargo records cannot be read, fuel and ammunition still stand (`cargo not read: ...`).
 - belt_route on a platform with an ejection end (batch39 C3, Sol: about 10 min and 6 dry runs on Wayfarer).
   belt_route was already in SURFACE_ACTIONS (a platform's name as `surface`). It is now also in PLATFORM_ACTIONS, so
   `platform: NAME` works. route.lua plans by can_place_entity, which keeps the line to foundation and to free

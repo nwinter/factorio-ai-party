@@ -935,7 +935,7 @@ return function(api)
   -- the window from the platform's last departure to now (the leg flown and the stop after it so far), and while it is
   -- stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, from the totals
   -- freight keeps at each segment's start and end (fuel0/fuel1, ammo0/ammo1); cargo loaded (rockets launched to it)
-  -- and dropped (its cargo pods, as received, landed or gone), from the segments in the window; totals and a minute.
+  -- and dropped (its cargo pods received or landed), from the segments in the window; totals and a minute.
   local function delta(a0, a1, names)
     local out = {}
     for name, v in pairs(a1 or {}) do
@@ -952,13 +952,26 @@ return function(api)
     if not (s0.fuel0 and s0.ammo0) then return {from=t0, to=t1, minutes=mins, no_sample='the leg began before this runtime kept fuel samples'} end
     local fuel = delta(s0.fuel0, now_end and fluid_counts(pl) or s1.fuel1)
     local ammo = delta(s0.ammo0, now_end and ammo_counts(pl) or s1.ammo1)
+    -- (live 23:09, Sol: Spindle after a drop failed with "attempt to index local r (a number value)": seg.pods holds
+    -- last_tick beside its tallies) dropped: the received and landed tallies only; the cargo sums are read apart, so
+    -- fuel and ammunition stand when they fail (cargo_error says why)
     local loaded, dropped = {}, {}
-    for i = from_i, to_i do
-      local sg = rec.segs[i]
-      for name, n in pairs(sg.rockets and sg.rockets.cargo or {}) do loaded[name] = (loaded[name] or 0) + n end
-      for _, r in pairs(sg.pods or {}) do for name, n in pairs(r.cargo or {}) do dropped[name] = (dropped[name] or 0) + n end end
-    end
-    return {from=t0, to=t1, minutes=mins, fuel=fuel, ammo=ammo, loaded=loaded, dropped=dropped}
+    local ok, err = pcall(function()
+      for i = from_i, to_i do
+        local sg = rec.segs[i]
+        for name, n in pairs(type(sg.rockets) == 'table' and type(sg.rockets.cargo) == 'table' and sg.rockets.cargo or {}) do
+          if type(n) == 'number' then loaded[name] = (loaded[name] or 0) + n end
+        end
+        for _, key in ipairs({'received', 'landed'}) do
+          local r = type(sg.pods) == 'table' and sg.pods[key]
+          for name, n in pairs(type(r) == 'table' and type(r.cargo) == 'table' and r.cargo or {}) do
+            if type(n) == 'number' then dropped[name] = (dropped[name] or 0) + n end
+          end
+        end
+      end
+    end)
+    if not ok then loaded, dropped = {}, {} end
+    return {from=t0, to=t1, minutes=mins, fuel=fuel, ammo=ammo, loaded=loaded, dropped=dropped, cargo_error=not ok and tostring(err) or nil}
   end
   local function window_line(label, w)
     if w.no_sample then return string.format('%s (%s): %s', label, secs(w.to - w.from), w.no_sample) end
@@ -978,6 +991,7 @@ return function(api)
       end
     end
     each(w.fuel); each(w.ammo); each(w.loaded, 'loaded'); each(w.dropped, 'dropped')
+    if w.cargo_error then parts[#parts+1] = 'cargo not read: ' .. w.cargo_error end
     return string.format('%s (%s, ticks %d-%d): %s', label, secs(w.to - w.from), w.from, w.to, #parts > 0 and table.concat(parts, '; ') or 'no fuel, oxidizer or ammunition made or used, no cargo')
   end
   function M.leg_delta(pl)
