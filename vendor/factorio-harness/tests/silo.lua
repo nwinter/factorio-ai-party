@@ -204,4 +204,52 @@ eq(rows[2].holds,'space-platform-foundation*50 rocket-fuel*20'); assert(rows[2].
 eq(rows[3].holds,'processing-unit*7')
 local names,recipe_name=S.ingredients(ns)
 eq(recipe_name,'rocket-part'); eq(#names,3); eq(names[3],'rocket-fuel')
+
+-- 8. (d17 batch35 B5, Gemini 14:16: 8 platforms and 2 silos, the rows past 8 kept silently) platform_requests in flag
+-- order with the count of the rest and of each flag; requests: true gives every row, a page at a time; a platform on its
+-- way here is named, its requests not listed until it is in orbit.
+do
+  local function hub(filters,free)
+    return {valid=true,get_inventory=function() return {count_empty_stacks=function() return free end} end,get_item_count=function() return 0 end,
+      get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters=filters} end} end}
+  end
+  local pu={}
+  for i=1,10 do pu[i]={value={name='processing-unit'},min=100+i,import_from='nauvis'} end
+  pu[11]={value={name='low-density-structure'},min=100,import_from='nauvis',minimum_delivery_count=50}
+  local net={network_id=3,get_item_count=function(name) return name=='low-density-structure' and 80 or (name=='processing-unit' and 50 or 0) end}
+  nauvis.find_logistic_network_by_position=function() return net end
+  local saved=force.platforms
+  force.platforms={{valid=true,name='Sunward',state=5,space_location={name='nauvis'},hub=hub(pu,20)},
+    {valid=true,name='Petrel',state=5,space_location={name='nauvis'},hub=hub({{value={name='rocket-fuel'},min=10,import_from='nauvis',minimum_delivery_count=5}},0)},
+    {valid=true,name='Skylark',state=4,space_connection={}}}
+  local S2=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return storage end,cargo=cargo,
+    position=function(v) return v end,status_name=function(e) return names[e.status] end,
+    leg=function(pl) if pl.name=='Skylark' then return {from='vulcanus',to='nauvis',flown=0.4} end end}
+  local n8=S2.read(p,{surface='nauvis'}).silos[1]
+  eq(#n8.platform_requests,8); eq(n8.platform_requests_count,12); eq(n8.platform_requests_more,4)
+  eq(n8.platform_requests_flags,'matched 1, hub_full 1, below_min_payload 10')
+  eq(n8.platform_requests[1].flag,'matched'); eq(n8.platform_requests[1].item,'low-density-structure')
+  eq(n8.platform_requests[2].flag,'hub_full'); eq(n8.platform_requests[2].platform,'Petrel')
+  eq(n8.platform_requests[3].flag,'below_min_payload'); eq(n8.platform_requests[3].item,'processing-unit')
+  assert(n8.platform_requests[3].line:find('asks processing-unit 101',1,true),'hub order kept within a flag: '..n8.platform_requests[3].line)
+  assert(n8.line:find('platform requests 12 (matched 1, hub_full 1, below_min_payload 10): the first 8 listed, 4 more (silo {position, requests: true} lists every one)',1,true),n8.line)
+  eq(n8.platforms_coming[1],'Skylark (from vulcanus, 40% flown)')
+  assert(n8.line:find('our platforms on their way here (their requests count once in orbit): Skylark (from vulcanus, 40% flown)',1,true),n8.line)
+  -- every row, and the one filled now first
+  ns.transitional_request_target={valid=true,name='Petrel'}
+  local all=S2.read(p,{surface='nauvis',requests=true}).silos[1]
+  eq(#all.platform_requests,12); eq(all.platform_requests_more,nil); eq(all.platform_requests_page,1); eq(all.platform_requests_pages,1)
+  eq(all.platform_requests[1].flag,'filling'); eq(all.platform_requests[1].platform,'Petrel'); eq(all.platform_requests[12].item,'processing-unit')
+  assert(all.line:find('platform requests 12 (filling 1, matched 1, below_min_payload 10): rows 1-12 listed, page 1 of 1',1,true),all.line)
+  local p2=S2.read(p,{surface='nauvis',requests=true,page=2}).silos[1]
+  eq(#p2.platform_requests,0); assert(p2.line:find('platform requests 12 (filling 1, matched 1, below_min_payload 10): no rows on page 2 of 1',1,true),p2.line)
+  -- past the rows read: counted, not read
+  local rows,unread=S2.request_rows(ns,force,net,nil,5)
+  eq(#rows,5); eq(unread,7)
+  local ok2,err2=pcall(S2.read,p,{surface='nauvis',page=2})
+  assert(not ok2 and tostring(err2):find('page goes with requests: true',1,true),err2)
+  ns.transitional_request_target=nil
+  nauvis.find_logistic_network_by_position=nil
+  force.platforms=saved
+end
 print('silo ok')

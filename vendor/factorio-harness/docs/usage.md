@@ -7939,6 +7939,13 @@ fh watch    # deploy on every change
   claim. `since` (the cursor the last reply gave) lists only the groups not shown then (kind, surface and 32-tile cell)
   with `new` and `gone_since`. Any of these gives the compact form and a new cursor, a sequence kept per agent (the
   last one only). A cursor that is not the last one is said, and everything is listed.
+- B5 (Gemini 14:16: 8 platforms and 2 silos, the requests past 8 left out with no word): silo's `platform_requests`
+  come in flag order (filling, matched, split_networks, hub_full, below_min_payload; hub order within a flag). A silo's
+  row lists the first 8, with `platform_requests_count`, `platform_requests_flags` (each flag's count) and
+  `platform_requests_more`, and its line says so. `requests: true` lists every row, 48 a page (`page: N`; reads up to
+  192 rows, the rest counted). The automatic launch line's waiting rows also give the count of the rest. Only platforms
+  in orbit of the silo's planet count; one flying here is named in `platforms_coming` (from where, share of the leg
+  flown) and its requests count once it is in orbit. On world n: Fulgora's two silos with every row, 4 ms.
 - B6 (viewer Aurora 14:48: guns can read as covering big asteroids): platform_defense's damage apart from reach
   (platdefense.lua `M.damage`), for `route` or the schedule's next leg (the connection it flies):
   - Each asteroid that spawns on the connection (asteroid_spawn_definitions of type entity; chunks left out), its
@@ -7990,3 +7997,5 @@ fh watch    # deploy on every change
   - U2: a line to the operator (to_operator) that Clef refuses goes to the operator's inbox, with dropped: the verdict.
   - U3: the abuse verdicts 2638 ("get kicking you coward slacker") and 2759 ("... it's idiotic ...") stay as the
     criteria say.
+- D1 fix (operator 16:03): after a stream service restart, a re-read backlog line in viewer-relayed.jsonl reads
+  relayed; one the verdict logs refused keeps that verdict; any other carries no delivery and logs nothing.
