@@ -57,6 +57,10 @@ return function(api)
     local unlocks = M.unlocks(t)
     local entry = {seq=news.seq, tick=event.tick or game.tick, force=t.force.name, name=t.name, unlocks=unlocks,
       by_script=event.by_script or nil, polled=event.polled or nil}
+    -- (d18 batch39 A3) a technology with levels: the level done, as wait_until researched reads it (its level reads the
+    -- one researching next, so the level done is one below, or the last one when every level is done)
+    local okm, max = pcall(function() return t.prototype.max_level end)
+    if okm and (max or 1) > 1 then entry.level = t.researched and t.level or math.max(1, (t.level or 1) - 1) end
     local by = M.queued_by(t.force.name, t.name)
     entry.queued_by = by and by.by
     news.list[#news.list+1] = entry
@@ -136,7 +140,7 @@ return function(api)
     for k = #news.list, 1, -1 do
       local e = news.list[k]
       if e.force == p.force.name then
-        out[#out+1] = {name=e.name, ago=ago(game.tick - e.tick), tick=e.tick, unlocks=e.unlocks, queued_by=e.queued_by}
+        out[#out+1] = {name=e.name, level=e.level, ago=ago(game.tick - e.tick), tick=e.tick, unlocks=e.unlocks, queued_by=e.queued_by}
         if #out >= limit then break end
       end
     end
@@ -717,7 +721,7 @@ return function(api)
   end
 
   M.schema = {
-    research_done = {limit='1..50 (default 10)', returns='done: technologies your force finished lately, newest first: name, ago, unlocks, queued_by'},
+    research_done = {limit='1..50 (default 10)', returns='done: technologies your force finished lately, newest first: name, level (a technology with levels: the level done), ago, unlocks, queued_by'},
     research_options = {returns='researchable_now: open technologies (prerequisites done, not trigger technologies) whose every pack the factory made in the last 10 minutes {name, units, packs, queued (queue position)}, fewest units first; waiting_for_packs: the rest grouped by packs_not_made {packs_not_made, count, technologies}; made_last_10_min per pack. Read only'},
   }
   return M

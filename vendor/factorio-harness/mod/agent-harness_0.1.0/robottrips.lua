@@ -203,8 +203,14 @@ return function(api)
     -- (B2, Haiku) a ghost outside every roboport's construction area: the nearest roboport and how far outside its area
     -- (the area is a square round it); cells of our networks on the surface, the first MAX_CELLS
     local cells
+    -- (d18 batch40 A2, Astra on Wayfarer) a space platform has no roboport: its hub builds from its inventory
+    local hub = try(function() return s.platform and s.platform.hub end)
     for _, g in ipairs(order) do
-      if g.uncovered and g.kind ~= 'deliver' then
+      if g.uncovered and g.kind ~= 'deliver' and hub and hub.valid then
+        local holds = try(function() return hub.get_item_count(g.item) end) or 0
+        lines[#lines+1] = string.format('%d %s %s near %s: on a space platform the hub builds %s from its inventory (no roboport); the hub holds %s', g.n, g.item,
+          g.kind == 'construct' and (g.n == 1 and 'ghost' or 'ghosts') or 'jobs', at(g.uncovered), g.n == 1 and 'it' or 'them', holds > 0 and holds .. ' ' .. g.item or 'no ' .. g.item)
+      elseif g.uncovered and g.kind ~= 'deliver' then
         if not cells then
           cells = {}
           for _, n in pairs(try(function() return force.logistic_networks[s.name] end) or {}) do
@@ -226,7 +232,7 @@ return function(api)
             g.n == 1 and 'it is' or 'their middle is', math.ceil(bo)) or '; no roboport of ours with a construction area on this surface')
       end
     end
-    if uncovered > 0 then lines[#lines+1] = string.format('%d job%s no logistic network covers', uncovered, uncovered == 1 and '' or 's') end
+    if uncovered > 0 and not (hub and hub.valid) then lines[#lines+1] = string.format('%d job%s no logistic network covers', uncovered, uncovered == 1 and '' or 's') end
     return #lines > 0 and lines or nil, {trips=trips, long=long_n, longest=longest and math.floor(longest.len + 0.5) or nil}
   end
   -- The jobs of entities a deconstruction would mark: the entity's item and what it holds.

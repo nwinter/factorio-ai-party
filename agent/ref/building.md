@@ -74,7 +74,10 @@
   Example: `./fh call rebuild --args '{"area":[[64,-256],[256,-192]],"dry_run":true}'`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
-  covers it; its network holds none and no robot carries one; no idle robot); `page` for more. `contested`: more of
+  covers it; its network holds none and no robot carries one; no idle robot); `page` for more. On a space platform the
+  hub builds from its inventory, with no roboport: each ghost says what holds it (no foundation under it, a foundation
+  ghost built first, the hub's count of its item and whether a hub request asks for it); place_ghosts' robot preview
+  says the same, and construction_robots there names this read. `contested`: more of
   our ghosts in its network want its item than the network holds (16 or fewer): each, its claim and distance.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
   it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up

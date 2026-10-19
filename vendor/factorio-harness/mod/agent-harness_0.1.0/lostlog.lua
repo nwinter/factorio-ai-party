@@ -137,6 +137,8 @@ return function(api)
         row.ghost = true
         local best = M.robots(s, f, q, item, nets)
         row.robots = verdict(best, item)
+        -- (d18 batch40 A2) on a space platform the hub builds it: what holds it there (ghostlist.lua)
+        if not best and api.platform_blocker then row.robots = api.platform_blocker(s, g, item, 1) or row.robots end
         local robots_build = best and best.idle > 0 and best.has > 0
         if best then counts.covered = counts.covered + 1 end
         if robots_build then counts.robots = counts.robots + 1; b.robots = b.robots + 1 else counts.outside = counts.outside + 1; b.outside = b.outside + 1 end

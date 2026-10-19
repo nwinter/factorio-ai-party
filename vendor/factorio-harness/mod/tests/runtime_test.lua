@@ -4028,6 +4028,15 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   prototypes.item=prototypes.item or {}; prototypes.item.coal=prototypes.item.coal or {fuel_value=4000000}
   local w=call('wait_until',{['until']='item_count',item='coal',positions={{x=24.5,y=0.5}},at_least=3,timeout=60})
   eq(w.saw,'coal 3 in 1 entities')
+  -- (d18 batch39 A2) a wait ended by anything but its condition says whether it holds now and its value
+  call('wait_until',{['until']='item_count',item='coal',positions={{x=24.5,y=0.5}},at_least=100,timeout=60})
+  local kept_cp,kept_tick=game.connected_players,tick
+  game.connected_players=kept_cp or {}
+  advance(80)
+  game.connected_players=kept_cp
+  local wl=call('status',{}).last
+  eq(wl.outcome,'timed_out'); eq(wl.waited_now,'item_count: not met now (coal 3 in 1 entities)')
+  tick=kept_tick; game.tick=tick  -- (the later cases count ticks from here)
   -- Named, the robot is still the target.
   eq(call('inspect',{position={x=24.5,y=0.5},name='logistic-robot'}).name,'logistic-robot')
   robot.position={x=24.55,y=0.45}

@@ -9,7 +9,8 @@
   keep the repeats; `over_levels` names more than it has levels left). `target_level: {"mining-productivity-3": 8}`
   keeps adding its next level until 8 is researched (at most 16 targets, 100 levels ahead; 0 removes one); `targets:
   true` and the plain read say per target what is researching or queued and the levels left. Example: `./fh call research --args '{"target_level":{"mining-productivity-3":8}}'`
-- `research_done` (`./fh research done`): what finished lately, newest first, and what each unlocked.
+- `research_done` (`./fh research done`): what finished lately, newest first, and what each unlocked (a technology
+  with levels: the level done).
 - `science {pack?, surface?, compact?, all_surfaces?}`: counts each pack the research needs (or `pack`) over your whole
   surface, the same for everyone wherever they stand: made and used in 10 minutes, the assemblers set to it and their
   states, packs in chests, in landing pads and hubs, on belts, in labs and carried, and the largest holders (landing
