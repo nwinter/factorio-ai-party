@@ -288,6 +288,8 @@ return function(api)
         or string.format('our machine outputs and chests within %d tiles of (%g,%g) on %s',radius,math.floor(centre.x),math.floor(centre.y),surface.name),
       as_of=string.format('live (tick %d)',game.tick),
       made_by=s.makers,held=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'},summary=M.line(s,centre),
+      -- (d18 batch37 B1, Grok: 16,000 copper ore in plain chests on Gleba) what no network's providers and storage give
+      elsewhere=api.elsewhere and M.try(function() return (api.elsewhere(p.force,surface,a.item,nil,centre)) end) or nil,
       hatches_into=h and string.format('%s (an enemy, %s) when it spoils: first_spoils_in is when the first hatches',h.entity,api.spoil.per_text(h)) or nil}
   end
   -- Gathering: visit stock places nearest-neighbour from the character and

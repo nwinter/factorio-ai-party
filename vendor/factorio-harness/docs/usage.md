@@ -8282,3 +8282,13 @@ fh watch    # deploy on every change
   - Reads: factory_digest, and operator board reads for claims, blocked items, open requests and held items. The
     operator may now read `lessons` (board.lua M.operator); a runtime without it gives no failed checks.
   - On world n now, the first delta would be 14 tells to 8 agents and the team, against 13 census tells to everyone.
+- What a surface holds that no network gives (B1; Sonnet: calcite stalled Wayfarer twice while it sat in chests the
+  silo's network could not give; Grok 16:57: Gleba held about 16,000 copper ore in plain chests while furnaces and LDS
+  assemblers were empty). elsewhere.lua reads our chests (a new census list, no search: a whole-surface find of chests
+  took 14-16 ms on Nauvis) and our crafters' outputs (census), by kind: plain chests (in no network: none gives them,
+  logistic chests outside any network among them), requester and buffer chests (theirs), provider and storage chests
+  of another network than the one named, machine outputs; counts, how many places, the nearest three. Kept a minute a
+  surface and item; about 1.7 us a chest on world n (all of Nauvis's about 2,500 chests and 900 crafters: about 6 ms).
+  It is on silo's platform request rows (and so on shipment's readiness read) when the silo's network cannot give a
+  rocket's payload (`elsewhere`, with the other networks left to the row's own words), on stock's item read
+  (`elsewhere`), and on supply when users are short of the item.

@@ -2003,6 +2003,8 @@ return function(api)
     out.users_stopped = ur and M.clusters(ur) or nil
     if out.makers_worst and #out.makers_worst == 0 then out.makers_worst = nil end
     if out.users_worst and #out.users_worst == 0 then out.users_worst = nil end
+    -- (d18 batch37 B1, Grok) users short of it: what the surface holds of it that no network's providers and storage give
+    if out.users_worst and api.elsewhere then out.elsewhere = try(function() return (api.elsewhere(force, surface, item, nil, area and area.position)) end) end
     out.feeders = M.feeders(t)
     out.takers = M.takers(t)
     out.full_chests = M.full_chests(t)

@@ -64,7 +64,8 @@ return function(api)
   end
   -- One line: what the surface holds of item that the network `ln` (nil: none) cannot give, nearest `to` first; nil when
   -- it holds none outside it.
-  function M.line(force, surface, item, ln, to)
+  -- no_networks: leave other networks out (the silo's request rows name them already).
+  function M.line(force, surface, item, ln, to, no_networks)
     local r = M.read(force, surface, item)
     local parts, total = {}, 0
     if r.plain.count > 0 then
@@ -77,7 +78,8 @@ return function(api)
     end
     local mine = ln and ln.network_id
     for id, g in pairs(r.networks) do
-      if id ~= 0 and id ~= mine then
+      -- (with no network named, every network's providers and storage give it: not counted)
+      if id ~= 0 and mine and id ~= mine and not no_networks then
         total = total + g.count
         parts[#parts+1] = string.format('network %d\'s provider and storage chests %d in %d (nearest %s)', id, g.count, g.places, nearest(g.list, to))
       end
@@ -87,6 +89,7 @@ return function(api)
       parts[#parts+1] = string.format('machine outputs %d in %d (nearest %s)', r.outputs.count, r.outputs.places, nearest(r.outputs.list, to))
     end
     if total == 0 then return nil, 0 end
+    if not r.listed then parts[#parts+1] = 'chests not read: the census pass has not listed them yet' end
     return string.format('%s holds %d %s %s: %s', surface.name, total, item, mine and ('that network ' .. mine .. ' cannot give') or 'outside the logistic networks\' providers and storage', table.concat(parts, '; ')), total
   end
   return M

@@ -65,3 +65,31 @@ do
   defines=nil
 end
 print('d18_batch37 A2 a machine off by its own condition among the worst: ok')
+
+-- B1 (Sonnet: calcite in chests the silo's network could not give; Grok: 16,000 copper ore in plain chests on Gleba):
+-- where a surface holds an item no network gives, from the census lists.
+do
+  game={tick=100}
+  local function chest(id,x,y,typ,mode,n,ln)
+    return {valid=true,unit_number=id,name=typ=='container' and 'steel-chest' or mode..'-chest',type=typ,position={x=x,y=y},
+      prototype={logistic_mode=mode},logistic_network=ln,get_item_count=function() return n end}
+  end
+  local net5,net7={network_id=5},{network_id=7}
+  local chests={chest(1,30,0,'container',nil,5200),chest(2,10,0,'container',nil,4000),chest(3,5,0,'logistic-container','requester',98),
+    chest(4,50,0,'logistic-container','passive-provider',300,net7),chest(5,60,0,'logistic-container','passive-provider',20,net5),
+    chest(6,70,0,'logistic-container','passive-provider',7,nil)}
+  local furnace={valid=true,name='stone-furnace',position={x=2,y=2},get_output_inventory=function() return {get_item_count=function() return 12 end} end}
+  local E=dofile('mod/agent-harness_0.1.0/elsewhere.lua'){chests=function() return chests end,crafters=function() return {furnace} end}
+  local surface={index=3,name='gleba'}
+  local line,total=E.line({name='player'},surface,'copper-ore',nil,{x=0,y=0})
+  eq(total,9317)
+  eq(line,'gleba holds 9317 copper-ore outside the logistic networks\' providers and storage: plain chests 9207 in 3 (no network gives them; nearest steel-chest (10,0) 4000, steel-chest (30,0) 5200, passive-provider-chest (70,0) 7); requester and buffer chests 98 in 1 (theirs; nearest requester-chest (5,0) 98); machine outputs 12 in 1 (nearest stone-furnace (2,2) 12)')
+  -- from network 5 (a silo's): network 7's providers count, network 5's do not
+  game.tick=5000
+  line=E.line({name='player'},surface,'copper-ore',net5,{x=0,y=0})
+  has(line,'that network 5 cannot give'); has(line,'network 7\'s provider and storage chests 300 in 1'); assert(not line:find('network 5\'s',1,true),line)
+  has(E.line({name='player'},surface,'copper-ore',net5,{x=0,y=0},true),'plain chests 9207')
+  assert(not E.line({name='player'},surface,'copper-ore',net5,{x=0,y=0},true):find('network 7',1,true))
+  game=nil
+end
+print('d18_batch37 B1 where a surface holds what no network gives: ok')
