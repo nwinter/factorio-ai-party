@@ -290,12 +290,15 @@ return function(api)
   -- The egg watch ------------------------------------------------------------
   local HOLDERS = {'container', 'logistic-container', 'assembling-machine', 'furnace', 'inserter', 'transport-belt', 'underground-belt',
     'splitter', 'loader', 'loader-1x1', 'linked-belt', 'cargo-wagon', 'car', 'spider-vehicle', 'cargo-landing-pad', 'rocket-silo',
-    'item-entity', 'character'}
+    'item-entity', 'character', 'logistic-robot', 'construction-robot'}
   local BELT = {['transport-belt']=true, ['underground-belt']=true, splitter=true, loader=true, ['loader-1x1']=true, ['linked-belt']=true}
   local INV = {container={'chest'}, ['logistic-container']={'chest'}, ['assembling-machine']={'assembling_machine_input', 'assembling_machine_output'},
     furnace={'furnace_source', 'furnace_result'}, ['cargo-wagon']={'cargo_wagon'}, car={'car_trunk'}, ['spider-vehicle']={'spider_trunk'},
     ['cargo-landing-pad']={'cargo_landing_pad_main'}, ['space-platform-hub']={'hub_main'}, ['rocket-silo']={'rocket_silo_rocket', 'assembling_machine_input'},
-    character={'character_main', 'character_trash'}}
+    character={'character_main', 'character_trash'},
+    -- (d19 batch46 todo, Grok 09:22: the last pentapod eggs were in an inserter hand, then in a robot's cargo, and every
+    -- read said 0 until the breeder died) a robot's cargo near the machines, as an inserter's hand
+    ['logistic-robot']={'robot_cargo'}, ['construction-robot']={'robot_cargo'}}
   -- The hatching stacks one entity holds: {name=count}, earliest tick and its share, and how many within WARN_TICKS.
   function M.hatching_in(e, names)
     local acc = {}

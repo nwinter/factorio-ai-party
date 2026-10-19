@@ -121,3 +121,25 @@ do
   defines=nil
 end
 print('d19_batch46 platform_defense cover by the turrets armed now: ok')
+
+-- todo (Grok 09:22: the last pentapod eggs went from an inserter's hand into a robot's cargo; every read said 0): the
+-- egg watch reads a robot's cargo as it reads an inserter's hand.
+do
+  game={tick=1000,surfaces={},forces={}}
+  defines={inventory={chest=1,robot_cargo=21}}
+  local function trigger(entity)
+    return {items_per_trigger=1,trigger={{action_delivery={{source_effects={{type='create-entity',entity_name=entity,as_enemy=true}},type='instant'}},type='direct'}}}
+  end
+  prototypes={item={['pentapod-egg']={name='pentapod-egg',get_spoil_ticks=function() return 54000 end,spoil_to_trigger_result=trigger('big-wriggler-pentapod-premature')}}}
+  local S=dofile('mod/agent-harness_0.1.0/spoil.lua'){state=function() return {} end,force=function() return nil end,characters=function() return {} end}
+  local egg={valid_for_read=true,name='pentapod-egg',count=1,quality={name='normal'},spoil_tick=game.tick+2*3600,spoil_percent=0.9}
+  local cargo={valid=true,egg}
+  cargo.get_item_count=function(name) return name=='pentapod-egg' and 1 or 0 end
+  for _,kind in ipairs({'logistic-robot','construction-robot'}) do
+    local robot={valid=true,type=kind,name=kind,get_inventory=function(i) return i==defines.inventory.robot_cargo and cargo or nil end}
+    local rows=S.hatching_in(robot,{'pentapod-egg'})
+    eq(#rows,1,kind); eq(rows[1].count,1)
+  end
+  game,defines,prototypes=nil,nil,nil
+end
+print('d19_batch46 egg watch reads robot cargo: ok')
