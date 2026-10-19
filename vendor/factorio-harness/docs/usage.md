@@ -8599,3 +8599,11 @@ fh watch    # deploy on every change
   - "250 agricultural-science-pack staged for Petrel (its hub asks gleba for it) spoil before its next arrival here
     in about 600s: the first in 300s (the silo's rocket); in storage-chest (24.5,47.5) 50, the silo's rocket 200".
   - Read at most every 30 s a silo, ahead of the silo's other alerts. 0.09 ms for Gleba's silo on world n.
+- Silo and shipment on one launch (batch39 B1, Astra 138h31). Astra's journal shows no lag: the silo read at 02:44:37
+  (ready, last launch 3m05s ago) came 14 s before the cryogenic launch, and the next silo read, at 02:44:56, said
+  launching, last launch 5 s ago. shipment's "launched 32 s ago" at 02:45:24 was that launch. silo.lua's records,
+  freight.lua's incoming list (shipment's "launched" line) and the cargo ledger are all written in the same
+  on_rocket_launch_ordered event. The ledger now runs first and its launch id travels with the other two. silo's last
+  launch reads `last launch 1m31s ago (up #7, tick T) to ...`, shipment's `a rocket launched 32s ago (up #7, tick T)
+  carries ...`, and `shipment {ledger}` lists `up #7`. Each silo row has `read_tick`, and its line ends
+  `read at tick T`.

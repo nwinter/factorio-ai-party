@@ -66,6 +66,7 @@ return function(api)
     st.by[surface] = list
     list[#list+1] = rec
     while #list > M.KEEP do table.remove(list, 1) end
+    return rec.id
   end
   -- The surface's launches and drops, oldest first.
   function M.read(surface_name, drops)

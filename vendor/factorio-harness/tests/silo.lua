@@ -100,7 +100,7 @@ eq(f.rocket,'building the rocket: parts 15/50; no launch seen')
 eq(f.line,'rocket-silo (-65.5,90.5) on fulgora: building the rocket: parts 15/50; working (part 40%), 35 parts left, the rocket in 1m44s at this speed; '
   ..'for the parts left: processing-unit 32 in the silo, 101 at feeders (34 needed), low-density-structure 32 in the silo, 5 at feeders (34 needed), '
   ..'rocket-fuel 0 in the silo, 0 at feeders (34 needed); lacks rocket-fuel in the silo; short for this rocket: rocket-fuel 34; '
-  ..'2 feeding inserters (1 idle: source transport-belt (-71.5,94.5) holds no ingredient it takes); no cargo loaded; automatic requests off; no launch seen')
+  ..'2 feeding inserters (1 idle: source transport-belt (-71.5,94.5) holds no ingredient it takes); no cargo loaded; automatic requests off; no launch seen; read at tick 360000')
 
 -- 2. Productivity: +10% makes 35 parts in 32 crafts.
 fs.productivity_bonus=0.1
@@ -131,12 +131,12 @@ game.tick=game.tick+3600*12+60*5
 n=S.read(p,{surface='nauvis'}).silos[1]
 eq(n.last_launch.ago,'12m05s'); eq(n.last_launch.to,'platform Sunward'); eq(n.last_launch.by,'sol')
 eq(n.last_launch.cargo,'processing-unit*100 space-platform-foundation*30')
-assert(n.line:find('last launch 12m05s ago to platform Sunward by sol, cargo processing-unit*100 space-platform-foundation*30',1,true),n.line)
+assert(n.line:find('last launch 12m05s ago (tick 360000) to platform Sunward by sol, cargo processing-unit*100 space-platform-foundation*30',1,true),n.line)
 -- An automatic launch (no player) to orbit later replaces it.
 S.on_launch_ordered({rocket_silo=ns,rocket={attached_cargo_pod={get_inventory=function() return inv({}) end,cargo_pod_destination={type=1}}}})
 n=S.read(p,{surface='nauvis'}).silos[1]
 eq(n.last_launch.to,'orbit'); eq(n.last_launch.by,nil); eq(n.last_launch.cargo,'empty'); eq(n.last_launch.ago,'0s')
-eq(n.rocket,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; last launch 0s ago to orbit")
+eq(n.rocket,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; last launch 0s ago (tick 403500) to orbit")
 -- A ready rocket while the silo makes the next one's parts (round1650d: Grok read "parts consumed (13/50)" as a rocket
 -- still being built): the parts are the next rocket's.
 ns.rocket_parts=13
@@ -151,7 +151,7 @@ eq(g.rocket_now,"rocket built (50/50 parts) and ready to launch, not launched; p
 ns.rocket_parts=0
 -- Rising into place (not launched), launching (the parts are the next rocket's), and the read-back.
 ns.rocket_silo_status=1
-eq(S.read(p,{surface='nauvis'}).silos[1].rocket,"rocket built (50/50 parts), rising into place (create rocket), not launched; parts for the rocket after it 0/50; last launch 0s ago to orbit")
+eq(S.read(p,{surface='nauvis'}).silos[1].rocket,"rocket built (50/50 parts), rising into place (create rocket), not launched; parts for the rocket after it 0/50; last launch 0s ago (tick 403500) to orbit")
 eq(S.read(p,{surface='nauvis'}).silos[1].rocket_ready,false)
 ns.rocket_silo_status=14; ns.rocket_parts=3
 eq(S.rocket(ns).rocket_now,"rocket launching (launch started); parts for the rocket after it 3/50")

@@ -286,9 +286,9 @@ do
     get_inventory=function() return inv({['firearm-magazine']=20}) end}
   F2.on_launch({rocket={attached_cargo_pod=pod},rocket_silo={surface={name='nauvis'}}})
   local inc=F2.incoming(pl)
-  eq(inc.rockets,1); eq(inc.cargo,'firearm-magazine*20'); eq(inc.lines[1],'a rocket from nauvis launched 0s ago: firearm-magazine*20 (rising over nauvis)')
+  eq(inc.rockets,1); eq(inc.cargo,'firearm-magazine*20'); eq(inc.lines[1],'a rocket from nauvis launched 0s ago (tick 26160): firearm-magazine*20 (rising over nauvis)')
   game.tick=game.tick+1800; pod.surface=surf
-  eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 30s ago: firearm-magazine*20 (coming down onto the platform)')
+  eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 30s ago (tick 26160): firearm-magazine*20 (coming down onto the platform)')
   pod.valid=false
   eq(F2.incoming(pl),nil,'delivered: the pod is gone')
   -- (batch27 B2) pod_watch times the arrival: the next launch says when it arrives at that time
@@ -299,7 +299,7 @@ do
   F2.on_launch({rocket={attached_cargo_pod=pod},rocket_silo={surface={name='nauvis'}}})
   pod.surface={name='nauvis'}
   game.tick=game.tick+600
-  eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 10s ago: firearm-magazine*20 (rising over nauvis); arrives in about 20s (the last 1 arrival took about 30s from launch)')
+  eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 10s ago (tick 27960): firearm-magazine*20 (rising over nauvis); arrives in about 20s (the last 1 arrival took about 30s from launch)')
   game.tick=game.tick+2999
   eq(F2.incoming(pl).rockets,1)
   assert(F2.incoming(pl).lines[1]:find('past the usual 30s from launch',1,true))

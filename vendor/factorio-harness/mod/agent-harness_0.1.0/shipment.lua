@@ -104,8 +104,8 @@ return function(api)
     for _, r in ipairs(incoming or {}) do
       if (r.cargo[item] or 0) > 0 and (r.from == nil or r.from == planet or try(function() return game.planets[planet].surface.name end) == r.from) then
         row.state = r.down and 'in flight' or 'launched'
-        row.line = string.format('%s %d from %s: %s (a rocket launched %s ago carries %d; %s; the hub holds %d)', item, min, planet, row.state,
-          ago(game.tick - r.tick), r.cargo[item], r.down and 'its pod comes down onto the platform' or 'its pod rises over ' .. planet, held)
+        row.line = string.format('%s %d from %s: %s (a rocket launched %s ago (%stick %d) carries %d; %s; the hub holds %d)', item, min, planet, row.state,
+          ago(game.tick - r.tick), r.up and 'up #' .. r.up .. ', ' or '', r.tick, r.cargo[item], r.down and 'its pod comes down onto the platform' or 'its pod rises over ' .. planet, held)
         return row
       end
     end

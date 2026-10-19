@@ -18316,8 +18316,11 @@ function M.on_event(event)
   end
   -- Rocket launches for the silo read (silo.lua): like research news, faults are counted.
   if event.name==defines.events.on_rocket_launch_ordered then
+    -- the cargo ledger first (d18 batch36 D3): its launch id goes with freight's and silo's records of the same launch
+    -- (d18 batch39 B1, Astra: silo and shipment read as disagreeing; both name it, with the launch tick)
+    local okl,lid=pcall(M.ledger.on_launch,event)
+    event.harness_up=okl and lid or nil
     if M.freight then pcall(M.freight.on_launch,event) end
-    pcall(M.ledger.on_launch,event)  -- the cargo ledger (d18 batch36 D3)
     local ok,err=pcall(M.silo.on_launch_ordered,event)
     if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     return
