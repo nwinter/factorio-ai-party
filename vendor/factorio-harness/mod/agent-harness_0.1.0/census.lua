@@ -69,7 +69,7 @@ return function(api)
     end
     for t in pairs(CAT) do if not seen[t] then seen[t] = true; all[#all+1] = t end end
     -- (d19 batch44 A1) where_is's other holders: landed cargo pods, spidertrons, linked and infinity chests, linked belts
-    for _, t in ipairs({'temporary-container', 'spider-vehicle', 'linked-container', 'infinity-container', 'linked-belt'}) do
+    for _, t in ipairs({'temporary-container', 'spider-vehicle', 'linked-container', 'infinity-container', 'linked-belt', 'artillery-wagon'}) do
       if not seen[t] then seen[t] = true; all[#all+1] = t end
     end
     table.sort(all)
@@ -170,6 +170,12 @@ return function(api)
     'assembling-machine', 'furnace', 'rocket-silo', 'car', 'cargo-wagon', 'spider-vehicle', 'cargo-landing-pad', 'space-platform-hub',
     'roboport', 'beacon', 'mining-drill'}
   local BELT = set{'transport-belt', 'underground-belt', 'splitter', 'lane-splitter', 'loader', 'loader-1x1', 'linked-belt'}
+  -- (d19 batch44 A2: a whole-surface find costs about 10.5 ms on the private copy's Nauvis whatever the type, and silo,
+  -- shipment, artillery, freight_audit and trace each made one or more a call) kept by type with the holders: our
+  -- turrets, artillery and radars too
+  local KEEP = set{'container', 'logistic-container', 'linked-container', 'infinity-container', 'temporary-container', 'lab',
+    'assembling-machine', 'furnace', 'rocket-silo', 'car', 'cargo-wagon', 'spider-vehicle', 'cargo-landing-pad', 'space-platform-hub',
+    'roboport', 'beacon', 'mining-drill', 'ammo-turret', 'electric-turret', 'fluid-turret', 'artillery-turret', 'artillery-wagon', 'radar'}
   local HOLDERS_MAX = 30000
   local function add_maker(job, s, kind, key, e)
     local c = job.makers[s.index]
@@ -231,10 +237,14 @@ return function(api)
     -- (d19 batch44 A1, where_is: 111 ms for one Nauvis call on the private copy, every holder, belt and inserter found and
     -- read each call) where_is's holders as entity references, and what our belts and inserters' hands carry by item, as
     -- this pass reads them (the belts' get_contents were 42 ms for 10,552 belts there, spread over the pass's steps)
-    if WHERE[t] and job.holders then
-      local list = job.holders[s.index]
-      if not list then list = {}; job.holders[s.index] = list end
-      if #list < HOLDERS_MAX then list[#list+1] = e end
+    if KEEP[t] and job.by_type then
+      local by = job.by_type[s.index]
+      if not by then by = {n=0}; job.by_type[s.index] = by end
+      if by.n < HOLDERS_MAX then
+        local list = by[t]
+        if not list then list = {}; by[t] = list end
+        list[#list+1] = e; by.n = by.n + 1
+      end
     elseif BELT[t] and job.belt_items then
       local tot = job.belt_items[s.index]
       if not tot then tot = {}; job.belt_items[s.index] = tot end
@@ -388,7 +398,7 @@ return function(api)
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
       machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, chests={}, makers={}, building_counts={}, fuel={}, planets={},
-      holders={}, belt_items={}, hand_items={},
+      by_type={}, walked={}, belt_items={}, hand_items={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -439,7 +449,7 @@ return function(api)
       end
       job.walk = job.walk or walk.start(s, bot_spots(s))
       local list = walk.band(job.walk, s, {force=f, type=types()})
-      if list then job.list, job.at = list, 1 else job.walk = nil; job.si = job.si + 1 end
+      if list then job.list, job.at = list, 1 else job.walk = nil; if job.walked then job.walked[s.index] = true end; job.si = job.si + 1 end
       return
     end
     local b = job.base
@@ -588,7 +598,7 @@ return function(api)
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
         where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters, chests=job.chests, makers=job.makers,
-        holders=job.holders, belt_items=job.belt_items, hand_items=job.hand_items,
+        by_type=job.by_type, walked=job.walked, belt_items=job.belt_items, hand_items=job.hand_items,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -605,19 +615,29 @@ return function(api)
     end
   end
 
-  -- (d19 batch44 A1) where_is's index of a surface from the last pass: {holders (entity references, still valid and
-  -- ours), belts and hands ({item=count} as the pass read them), as_of (the tick the pass started), capped}; nil before a
-  -- pass that keeps them.
-  function M.where_index(force, surface)
+  -- (d19 batch44 A1-A2) the last pass's entities of these types on a surface, still valid (the pass reads the player force
+  -- only), and the tick it started; nil before a pass that keeps them, for another force, or a surface it did not walk.
+  function M.typed(force, surface, types)
     local d = (api.state().census or {}).done
-    -- the pass reads the player force only
-    -- (a surface where the pass listed no holder: nil, and where_is reads it live, as little stands there)
-    if not (d and d.holders and d.holders[surface.index]) or force.name ~= 'player' then return nil end
+    if not (d and d.by_type and d.walked and d.walked[surface.index]) or force.name ~= 'player' then return nil end
+    local by = d.by_type[surface.index] or {}
     local out = {}
-    -- (all the player force's: the pass reads no other; a force read an entity was 1 us of the 2.3 ms for 1987 there)
-    for _, e in ipairs(d.holders[surface.index] or {}) do if e.valid then out[#out+1] = e end end
-    return {holders=out, belts=(d.belt_items or {})[surface.index] or {}, hands=(d.hand_items or {})[surface.index] or {}, as_of=d.start,
-      capped=#(d.holders[surface.index] or {}) >= HOLDERS_MAX or nil}
+    for _, t in ipairs(type(types) == 'table' and types or {types}) do
+      for _, e in ipairs(by[t] or {}) do if e.valid then out[#out+1] = e end end
+    end
+    return out, d.start, (by.n or 0) >= HOLDERS_MAX
+  end
+  -- where_is's index of a surface: {holders (the WHERE types), belts and hands ({item=count} as the pass read them),
+  -- as_of, capped}; nil as typed is, and for a surface where the pass listed no holder (where_is reads it live).
+  local WHERE_LIST = {}
+  for t in pairs(WHERE) do WHERE_LIST[#WHERE_LIST+1] = t end
+  table.sort(WHERE_LIST)
+  function M.where_index(force, surface)
+    local out, as_of, capped = M.typed(force, surface, WHERE_LIST)
+    if not out or #out == 0 then return nil end
+    local d = api.state().census.done
+    return {holders=out, belts=(d.belt_items or {})[surface.index] or {}, hands=(d.hand_items or {})[surface.index] or {}, as_of=as_of,
+      capped=capped or nil}
   end
   -- (d18 batch37 B1) the chests of a force on a surface the last pass found (nil before a pass lists them).
   function M.chests_on(force, surface)

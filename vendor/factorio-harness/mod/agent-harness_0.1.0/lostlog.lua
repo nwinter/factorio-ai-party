@@ -13,7 +13,7 @@
 -- 256x256, its walks with avoid_enemies as construct's.
 return function(api)
   local M = {}
-  local MAX = 6000
+  local MAX, CHECK = 6000, 100
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function store()
@@ -25,22 +25,61 @@ return function(api)
   function M.died(e, cause)
     local m = store()
     local q = try(function() return e.quality and e.quality.name end)
-    m.rows[m.next] = {f=e.force.name, s=e.surface.name, n=e.name, x=e.position.x, y=e.position.y,
+    local r = {f=e.force.name, s=e.surface.name, n=e.name, x=e.position.x, y=e.position.y,
       d=try(function() return e.supports_direction and e.direction or nil end), q=q ~= 'normal' and q or nil, t=game.tick, c=cause}
+    m.rows[m.next] = r
+    if m.pos then
+      local key = r.f .. '|' .. r.s
+      local by = m.pos[key]
+      if not by then by = {n=0, at={}}; m.pos[key] = by end
+      local k = r.n .. '@' .. r.x .. ',' .. r.y
+      if not by.at[k] then by.n = by.n + 1 end
+      by.at[k] = {m.next, r.t}
+      -- (positions whose slot the ring has written over since are dropped when they pass the log's size)
+      if by.n > MAX then
+        local n = 0
+        for kk, x in pairs(by.at) do
+          local o = m.rows[x[1]]
+          if o and o.t == x[2] then n = n + 1 else by.at[kk] = nil end
+        end
+        by.n = n
+      end
+    end
     m.next = m.next % MAX + 1
+  end
+  -- (d19 batch44 A2: rows_in read all 6000 slots a call, 9 ms on the private copy) by force and surface, each position's
+  -- newest slot with the tick written, built once from the log; a slot written over since fails its tick
+  local function index(m)
+    if m.pos then return m.pos end
+    m.idx = nil
+    m.pos = {}
+    for i = 0, MAX - 1 do
+      local slot = ((m.next + i - 1) % MAX) + 1
+      local r = m.rows[slot]
+      if r then
+        local key = r.f .. '|' .. r.s
+        local by = m.pos[key]
+        if not by then by = {n=0, at={}}; m.pos[key] = by end
+        local k = r.n .. '@' .. r.x .. ',' .. r.y
+        if not by.at[k] then by.n = by.n + 1 end
+        by.at[k] = {slot, r.t}
+      end
+    end
+    return m.pos
   end
   -- Rows of force/surface in box ({{x1,y1},{x2,y2}}), newest first; the newest row a position wins.
   function M.rows_in(force, surface, box, since)
-    local out, seen = {}, {}
+    local out = {}
     local m = store()
-    for i = 0, MAX - 1 do
-      local r = m.rows[((m.next - 2 - i) % MAX) + 1]
-      if r and r.f == force and r.s == surface and (not since or r.t >= since) and
+    local by = index(m)[force .. '|' .. surface]
+    for _, x in pairs(by and by.at or {}) do
+      local r = m.rows[x[1]]
+      if r and r.t == x[2] and (not since or r.t >= since) and
         (not box or (r.x >= box[1][1] and r.x <= box[2][1] and r.y >= box[1][2] and r.y <= box[2][2])) then
-        local k = r.n .. '@' .. r.x .. ',' .. r.y
-        if not seen[k] then seen[k] = true; out[#out+1] = r end
+        out[#out+1] = r
       end
     end
+    table.sort(out, function(a, b) if a.t ~= b.t then return a.t > b.t end if a.x ~= b.x then return a.x < b.x end return a.y < b.y end)
     return out
   end
   local function area_of(a, p)
@@ -66,10 +105,15 @@ return function(api)
     assert(s, 'unknown surface ' .. a.surface)
     return s
   end
+  local items_of = {}
   local function item_of(name)
+    local c = items_of[name]
+    if c then return c[1], c[2] end
     local it = try(function() return prototypes.entity[name].items_to_place_this[1] end)
-    if not it then return nil, 0 end
-    return type(it.name) == 'string' and it.name or try(function() return it.name.name end), it.count or 1
+    if not it then items_of[name] = {nil, 0}; return nil, 0 end
+    c = {type(it.name) == 'string' and it.name or try(function() return it.name.name end), it.count or 1}
+    items_of[name] = c
+    return c[1], c[2]
   end
   -- What robots make of a ghost at pos: the best covering network (idle robots, the item), or nil.
   function M.robots(s, f, pos, item, nets)
@@ -120,19 +164,29 @@ return function(api)
     if #rows == 0 then
       return {count=0, line='no building of ours lost' .. where .. (since and ' in that time' or ' that the log holds (it began d17; the newest ' .. MAX .. ')')}
     end
-    local ghosts = ghosts_for(s, f, rows)
+    -- (d19 batch44 A2: losses {} took 30-66 ms on the private copy, every row of the log checked; 300 rows checked were
+    -- still 28 ms) the newest CHECK rows
+    -- are checked (ghost, robots, rebuilt or gone); the older ones are counted by name and said unchecked
+    local checked = {}
+    for i = 1, math.min(#rows, CHECK) do checked[i] = rows[i] end
+    local ghosts = ghosts_for(s, f, checked)
     local inv = s == p.surface and try(function() return p.get_main_inventory() end)
     local nets, by_name, order, items, counts = {}, {}, {}, {}, {ghost=0, covered=0, robots=0, outside=0, rebuilt=0, gone=0, unknown=0}
     local out_rows = {}
-    for _, r in ipairs(rows) do
+    local unchecked = 0
+    for i, r in ipairs(rows) do
       local q = {x=r.x, y=r.y}
       local item, n = item_of(r.n)
       local row = {name=r.n, position=q, quality=r.q, lost_s_ago=math.floor((game.tick - r.t) / 60), cause=r.c}
-      local g = ghosts[r.n .. '@' .. r.x .. ',' .. r.y]
+      -- (the key, two numbers made text, only for a row checked: about 8 us a row on the private copy)
+      local g = i <= CHECK and ghosts[r.n .. '@' .. r.x .. ',' .. r.y]
       local b = by_name[r.n]
       if not b then b = {name=r.n, lost=0, ghosts=0, robots=0, outside=0}; by_name[r.n] = b; order[#order+1] = b end
       b.lost = b.lost + 1
-      if g then
+      if i > CHECK then
+        unchecked = unchecked + 1
+        row.now = string.format('not checked in this call (the newest %d are; area, since or name narrows the read)', CHECK)
+      elseif g then
         counts.ghost = counts.ghost + 1; b.ghosts = b.ghosts + 1
         row.ghost = true
         local best = M.robots(s, f, q, item, nets)
@@ -184,7 +238,8 @@ return function(api)
       line = line .. string.format('; %d without a ghost (%d rebuilt in sight, %d gone in sight, %d out of sight)', counts.rebuilt + counts.gone + counts.unknown,
         counts.rebuilt, counts.gone, counts.unknown)
     end
-    return {count=#rows, line=line, by_name=order, items=#item_rows > 0 and item_rows or nil, losses=shown, page=page, pages=pages,
+    if unchecked > 0 then line = line .. string.format('; the oldest %d not checked in this call (the newest %d are)', unchecked, CHECK) end
+    return {count=#rows, unchecked=unchecked > 0 and unchecked or nil, line=line, by_name=order, items=#item_rows > 0 and item_rows or nil, losses=shown, page=page, pages=pages,
       next=page < pages and page + 1 or nil,
       rebuild=counts.outside > 0 and string.format('rebuild {area} plans the %d ghosts robots will not build: takes the items you do not carry, crafts '
         .. 'what no chest holds, walks there and builds them', counts.outside) or nil}

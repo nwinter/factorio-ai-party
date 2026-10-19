@@ -6,7 +6,7 @@ local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= 
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 local AG='agricultural-science-pack'
 defines={inventory={chest=1,cargo_landing_pad_main=2,rocket_silo_rocket=3,lab_input=4,hub_main=5,hub_trash=6},flow_precision_index={ten_minutes=3}}
-prototypes={item={[AG]={weight=1000},['iron-plate']={}}}
+prototypes={item={[AG]={weight=1000,get_spoil_ticks=function() return 216000 end},['iron-plate']={get_spoil_ticks=function() return 0 end}}}
 game={tick=100000}
 -- An inventory of stacks; each stack spoils at its tick.
 local function inv(stacks)

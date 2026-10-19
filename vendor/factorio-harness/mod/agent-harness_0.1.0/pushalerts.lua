@@ -1522,12 +1522,24 @@ return function(api)
   -- else agents who built in it, else the nearest agent on its surface.
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   -- The claims over a point on the group's surface.
-  local function claims_over(g, pos)
-    local out, board = {}, api.state().board
+  -- (d19 batch44 A2: push_lines read every board item twice for each of about 170 alert groups, 10 ms in each reply of
+  -- an agent shown no new group on the private copy) the active claims with an area, built once a tick
+  local claims_tick, claims_list
+  local function active_claims()
+    if claims_tick == game.tick and claims_list then return claims_list end
+    local list, board = {}, api.state().board
     for _, i in pairs(board and board.items or {}) do
+      if i.kind == 'claim' and ACTIVE[i.status] and i.owner and i.area then list[#list+1] = i end
+    end
+    claims_tick, claims_list = game.tick, list
+    return list
+  end
+  local function claims_over(g, pos)
+    local out = {}
+    if not pos then return out end
+    for _, i in ipairs(active_claims()) do
       local a = i.area
-      if pos and i.kind == 'claim' and ACTIVE[i.status] and i.owner and a and pos.x >= a.left_top.x and pos.x <= a.right_bottom.x
-        and pos.y >= a.left_top.y and pos.y <= a.right_bottom.y
+      if pos.x >= a.left_top.x and pos.x <= a.right_bottom.x and pos.y >= a.left_top.y and pos.y <= a.right_bottom.y
         and (api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis') == g.surface then out[#out+1] = i end
     end
     table.sort(out, function(a, b) return a.id < b.id end)

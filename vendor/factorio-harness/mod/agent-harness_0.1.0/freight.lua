@@ -214,7 +214,10 @@ return function(api)
     local s = try(function() return game.planets[planet].surface end) or try(function() return game.get_surface(planet) end)
     local ask, hold = {}, {}
     if not s then return ask, hold end
-    for _, pad in ipairs(try(function() return s.find_entities_filtered{type='cargo-landing-pad', force=force} end) or {}) do
+    -- (d19 batch44 A2: shipment {item} found each stop's pads, 10.5 ms a find on the private copy's Nauvis) the census
+    -- pass's pads of ours when it has them
+    local known = api.census_typed and try(function() return api.census_typed(force, s, 'cargo-landing-pad') end)
+    for _, pad in ipairs(known or try(function() return s.find_entities_filtered{type='cargo-landing-pad', force=force} end) or {}) do
       local secs_ = try(function() return pad.get_logistic_sections() end)
       for i = 1, secs_ and secs_.sections_count or 0 do
         local sec = secs_.get_section(i)

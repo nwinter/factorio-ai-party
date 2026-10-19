@@ -25,14 +25,25 @@ return function(api)
     return inv and (try(function() return inv.get_item_count(item) end) or 0) or 0
   end
   -- The first stack of item to spoil among inventories: {tick, percent, where}.
+  -- (d19 batch44 A2: freight_audit {item: steel-plate} took 250 ms on the private copy, every slot of every network
+  -- chest read for an item that never spoils) items that spoil only, inventories that hold some only
+  local spoils_of = {}
+  local function spoils(item)
+    local v = spoils_of[item]
+    if v == nil then v = (try(function() return prototypes.item[item].get_spoil_ticks() end) or 0) > 0; spoils_of[item] = v end
+    return v
+  end
   local function spoil_into(first, inv, item, where)
-    if not inv then return first end
+    if not inv or not spoils(item) or count_in(inv, item) == 0 then return first end
     for i = 1, #inv do
       local s = inv[i]
       if s and s.valid_for_read and s.name == item then
         local tick, pct
         if api.spoil then tick, pct = api.spoil.stack_spoil(s) end
-        if tick and (not first or tick < first.tick) then first = {tick=tick, percent=pct or 0, where=where} end
+        -- where: a label, or the entity whose name and position make it (built only when it is the first so far)
+        if tick and (not first or tick < first.tick) then
+          first = {tick=tick, percent=pct or 0, where=type(where) == 'string' and where or (where.name .. ' ' .. at(where.position))}
+        end
       end
     end
     return first
@@ -68,6 +79,8 @@ return function(api)
     end
     return false
   end
+  local mode_of = {}
+  local function point_of(pt) return pt.owner, pt.filters end
   local function planet(force, surface, item, research)
     local row = {surface=surface.name, made_per_min=per_min(force, surface, item, 'input'), used_per_min=per_min(force, surface, item, 'output'),
       networks=0, unmet=0, requesters_short=0, pads=0, labs=0, silos=0, requesters=0}
@@ -81,40 +94,51 @@ return function(api)
     for _, ln in ipairs(try(function() return force.logistic_networks[surface.name] end) or {}) do
       row.networks = row.networks + math.max(0, try(function() return ln.get_item_count(item) end) or 0)
       for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
-        local owner = try(function() return pt.owner end)
-        if owner and owner.valid and owner.type == 'logistic-container' and not req_seen[owner.unit_number or owner]
-          and try(function() return owner.prototype.logistic_mode end) == 'requester' then
+        -- (d19 batch44 A2) one pcall a point (the closures a field were about half of Nauvis's 9 ms for 513 points);
+        -- a chest name's logistic mode read once; what is on its way only for a point whose filters name the item
+        local okp, owner, filters = pcall(point_of, pt)
+        if not okp then owner, filters = nil, nil end
+        local oname = owner and owner.valid and owner.type == 'logistic-container' and owner.name
+        if oname and mode_of[oname] == nil then mode_of[oname] = try(function() return owner.prototype.logistic_mode end) or false end
+        if oname and not req_seen[owner.unit_number or owner] and mode_of[oname] == 'requester' then
           req_seen[owner.unit_number or owner] = true
-          row.requesters = row.requesters + (try(function() return owner.get_item_count(item) end) or 0)
+          local okc, n = pcall(owner.get_item_count, item)
+          row.requesters = row.requesters + (okc and n or 0)
         end
-        local coming = 0
-        for _, c in pairs(try(function() return pt.targeted_items_deliver end) or {}) do
-          if type(c) == 'table' and (c.name == item or (type(c.name) == 'table' and c.name.name == item)) then coming = coming + (c.count or 0) end
-        end
-        for _, f in ipairs(try(function() return pt.filters end) or {}) do
+        local coming
+        for _, f in ipairs(filters or {}) do
           local name = type(f.name) == 'table' and f.name.name or f.name
           if name == item and (f.count or 0) > 0 and owner and owner.valid and owner.type ~= 'cargo-landing-pad' then
-            local have = try(function() return owner.get_item_count(item) end) or 0
-            local short = f.count - have - coming
+            if not coming then
+              coming = 0
+              for _, c in pairs(try(function() return pt.targeted_items_deliver end) or {}) do
+                if type(c) == 'table' and (c.name == item or (type(c.name) == 'table' and c.name.name == item)) then coming = coming + (c.count or 0) end
+              end
+            end
+            local okh, have = pcall(owner.get_item_count, item)
+            local short = f.count - (okh and have or 0) - coming
             if short > 0 then row.unmet = row.unmet + short; row.requesters_short = row.requesters_short + 1 end
           end
         end
       end
-      for _, list in ipairs({try(function() return ln.provider_points end) or {}, try(function() return ln.storage_points end) or {}}) do
+      -- (the chests' stacks are read for spoil only: an item that spoils)
+      for _, list in ipairs(spoils(item) and {try(function() return ln.provider_points end) or {}, try(function() return ln.storage_points end) or {}} or {}) do
         for _, pt in ipairs(list) do
           if chests >= CHESTS then break end
           local owner = try(function() return pt.owner end)
           if owner and owner.valid and owner.type == 'logistic-container' then
             chests = chests + 1
-            first = spoil_into(first, try(function() return owner.get_inventory(defines.inventory.chest) end), item, owner.name .. ' ' .. at(owner.position))
+            first = spoil_into(first, try(function() return owner.get_inventory(defines.inventory.chest) end), item, owner)
           end
         end
       end
     end
     row.chests_read = chests > 0 and chests or nil
     -- One find for the pads, silos, labs and plain chests (each whole-surface find sweeps every chunk).
-    local found = try(function()
-      return surface.find_entities_filtered{type={'cargo-landing-pad', 'rocket-silo', 'lab', 'container', 'temporary-container'}, force=force}
+    -- (d19 batch44 A2) the census pass's when it has them (the find was about 10.5 ms on the private copy's Nauvis)
+    local kinds = {'cargo-landing-pad', 'rocket-silo', 'lab', 'container', 'temporary-container'}
+    local found = api.census_typed and try(function() return api.census_typed(force, surface, kinds) end) or try(function()
+      return surface.find_entities_filtered{type=kinds, force=force}
     end) or {}
     local by = {['cargo-landing-pad']={}, ['rocket-silo']={}, lab={}, container={}, ['temporary-container']={}}
     for _, e in ipairs(found) do local l = by[e.type]; if l then l[#l+1] = e end end
@@ -139,7 +163,7 @@ return function(api)
         local n = count_in(inv, item)
         if n > 0 then
           row.chests = row.chests + n; row.chests_holding = row.chests_holding + 1
-          first = spoil_into(first, inv, item, c.name .. ' ' .. at(c.position))
+          first = spoil_into(first, inv, item, c)
         end
       end
     end
