@@ -8933,8 +8933,7 @@ fh watch    # deploy on every change
   armed: laser-turret (60,0) (no energy)`); turret rows carry `armed` and `unarmed`. With every turret armed the read
   is as before. The second pass over the hull edges runs only when a turret is not armed. Test tests/d19_batch46.lua.
 - Todo (Grok 09:22: the last pentapod eggs went from an inserter's hand into a robot's cargo; where_is and supply read
-  0 and the breeder died between reads): supply already counted robot cargo (in flight, by network) and inserter hands,
-  and where_is inserter hands. The egg watch (spoil.lua: our holders near the machines that make or use what hatches,
-  every 30 s) now reads logistic and construction robots' cargo there as it reads an inserter's hand, so eggs in a
-  robot's cargo get hatch lines and warnings. where_is robot cargo comes after batch45's where_is change has merged.
-  Test tests/d19_batch46.lua.
+  0 and the breeder died between reads): already in from d17 batch33 B1 (where_is `robot_cargo` and `inserter_hands`;
+  the seed alert, seeds.lua, counts robot cargo), and supply counted both before. Added here: the egg watch's hatch
+  warnings (spoil.lua: our holders near the machines that make or use what hatches, every 30 s) read logistic and
+  construction robots' cargo there as they read an inserter's hand. Test tests/d19_batch46.lua.
