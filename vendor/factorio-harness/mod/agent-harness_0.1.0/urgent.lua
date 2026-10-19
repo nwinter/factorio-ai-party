@@ -325,8 +325,14 @@ return function(api)
           if why then
             tell(told, key, i.total or 0)
             local c = box_centre(i.box)
-            local held = out(base, i.platform and 'platform' or 'loss', string.format('%s: loss #%s at (%d,%d)%s: %d destroyed (%s) by %s', why, tostring(i.id), round(c.x), round(c.y),
-              i.surface ~= surface and ' on ' .. tostring(i.surface) or '', i.total or 0, names_text(i.names, 3), names_text(i.causes, 2)))
+            -- (d18 batch40 A1, Sol: Wayfarer's 27 lost to its own railguns read "by 1 small-oxide-asteroid") our own
+            -- turrets' kills by where each stands, apart from the enemies'
+            local own = api.loss_own and api.loss_own(i)
+            local theirs = 0
+            for _, n in pairs(i.causes) do theirs = theirs + n end
+            local by = own and string.format(': %s; %d by enemies (%s)', own, theirs, names_text(i.causes, 2)) or ' by ' .. names_text(i.causes, 2)
+            local held = out(base, i.platform and 'platform' or 'loss', string.format('%s: loss #%s at (%d,%d)%s: %d destroyed (%s)%s', why, tostring(i.id), round(c.x), round(c.y),
+              i.surface ~= surface and ' on ' .. tostring(i.surface) or '', i.total or 0, names_text(i.names, 3), by))
             if held then return held end
           end
         end

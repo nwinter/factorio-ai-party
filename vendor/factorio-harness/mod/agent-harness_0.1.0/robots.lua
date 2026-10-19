@@ -179,6 +179,13 @@ return function(api)
   end
   local function network_for(p, a)
     local surface = p.surface
+    -- (d18 batch40 A2, Astra on Wayfarer) a space platform: its hub builds, no roboport (2.0.77 on world n: Wayfarer's
+    -- hub has no logistic network and its surface none)
+    local pl = try(function() return surface.platform end)
+    if pl and not next(try(function() return p.force.logistic_networks[surface.name] end) or {}) then
+      error(string.format('platform %s (surface %s) has no roboport or construction robot: its hub builds ghosts from its own inventory; ghosts {surface: "%s"} gives what holds each (the foundation under it, the hub\'s count of its item and its requests)',
+        pl.name, surface.name, surface.name), 0)
+    end
     if a.network ~= nil then
       assert(type(a.network) == 'number', 'network is a network id (the networks read lists them)')
       for _, net in pairs(try(function() return p.force.logistic_networks[surface.name] end) or {}) do

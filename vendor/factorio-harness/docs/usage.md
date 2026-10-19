@@ -8683,3 +8683,27 @@ fh watch    # deploy on every change
   right lane at (6.5,0.5) (4 coal)", "a side-load waits ...: belt (3.5,9.5) is stopped full of 4 carbon ..."). trace's
   belt-end lines already named each lane's contents; its audit's side-load lines now say what fills a full lane
   ("(that lane is full: 8 coal)").
+
+## d18 batch40, Group A (the 21:20 poll; eng/d18-batch40)
+
+- A1 (Sol 21:21: Wayfarer lost 27 structures to its own bow railguns; the platform alert read "28 destroyed ... by 1
+  small-oxide-asteroid"): loss incidents keep a count per turret of ours that destroyed something, by where it stands
+  (`own_by`, at most 8). The losses line gives each (`friendly fire: 20 railgun-turret at (-0.5,-21.5), 7
+  railgun-turret at (9.5,-21.5), 1 small-oxide-asteroid`), our own first when they destroyed more than the enemies
+  (the stream's label names the first). The urgent platform loss alert says `27 destroyed by our own railgun-turret at
+  (-0.5,-21.5): 20, railgun-turret at (9.5,-21.5): 7; 1 by enemies (1 small-oxide-asteroid)`. platform_defense gives
+  `destroyed by our own turrets (...)` per turret with its loss number and age, `it destroyed N of ours` on that
+  turret's line of fire, `destroyed_by_ours` and `turrets[].destroyed_ours`. The first such loss of an incident on a
+  platform is told once to the platform's listeners (platalerts.lua), with platform_defense named for a railgun's line
+  of fire.
+- A2 (Astra: about 10 reads of Wayfarer's bow said "no roboport's construction area covers it"): on world n Wayfarer's
+  hub has no logistic network and its surface none, so every platform ghost fell to that verdict. ghostlist.lua
+  `platform_blocker` gives what holds a ghost there: no foundation under some of its tiles (no foundation ghost
+  there), a foundation ghost under it built first, the hub's count of its item, and the hub's requests for it
+  (`hub_holds`, `hub_requests`, `no_foundation`, `foundation_ghosts`). ghosts, the losses read's rebuild rows and
+  place_ghosts' robot preview use it; construction_robots on a platform with no network refuses with the fact and the
+  ghosts read.
+- A3 (Astra, twice from Aquilo: "unknown argument surface for rates"): rates was in the remote-view list and its help
+  said `surface=`, but its schema had no surface key, so the argument check refused it. rates now takes `surface`. A
+  test over describe checks that every action listed as taking surface= or platform= has that key, and that no
+  action's help names `surface=` or `platform=` without it (0 found).

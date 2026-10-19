@@ -155,7 +155,10 @@
   runs. Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
   leg): each asteroid that spawns on it with its health and resistances, and per turret and the ammo it holds its
   damage a second after them against its listed damage (the force's bonuses counted), together and the time to kill
-  one; under 10% of listed: `reached, little damage`. A big metallic asteroid resists physical 2000 flat, so a
+  one; under 10% of listed: `reached, little damage`. Losses to our own turrets (from the death event's cause and its
+  force) are a line apart from asteroid hits, per turret with its count and loss number, also on its line of fire; the
+  platform loss alert says `27 destroyed by our own railgun-turret at (-0.5,-21.5): 20, ...; 1 by enemies (...)`, and
+  the platform's listeners get one tell on the first such loss of an incident. A big metallic asteroid resists physical 2000 flat, so a
   firearm round does almost nothing to it. A railgun's `line of fire` names the entities of ours its shots cross: it aims within 36 degrees of its facing
   (72 in all), and its ammo's line (1 wide, to 53.6 tiles from its centre) damages ours too; with what it engages. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
   them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's

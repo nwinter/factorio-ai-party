@@ -16,6 +16,67 @@ return function(api)
     local name = type(it.name) == 'string' and it.name or try(function() return it.name.name end)
     return name, it.count or 1
   end
+  -- (d18 batch40 A2, Astra: about 10 reads of Wayfarer's bow said "no roboport's construction area covers it") on a
+  -- space platform the hub builds ghosts from its own inventory, with no roboport: what holds a ghost there. An entity
+  -- ghost over empty space waits for the foundation under it (a foundation tile ghost there is built first; with none
+  -- it is never built); then the hub holds the item or not, and whether its requests ask for it. 2.0.77 on world n:
+  -- Wayfarer's hub has no logistic network and its surface none; past the hull the tile is empty-space.
+  -- Returns the verdict and {hub_holds, hub_requests, no_foundation, foundation_ghosts}, or nil off a platform.
+  function M.platform_blocker(s, g, item, count)
+    local pl = try(function() return s.platform end)
+    if not pl then return nil end
+    local hub = try(function() return pl.hub end)
+    if not (hub and hub.valid) then return 'the platform has no hub: nothing builds it', {} end
+    local info, parts = {}, {}
+    if g.type == 'entity-ghost' then
+      local b = try(function() return g.bounding_box end)
+      local bare, ghosted, n = 0, 0, 0
+      if b then
+        for x = math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1 do
+          for y = math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1 do
+            n = n + 1
+            local t = n <= 128 and try(function() return s.get_tile(x, y) end)
+            if t and t.name == 'empty-space' then
+              local tg = try(function() return s.count_entities_filtered{area={{x, y}, {x + 1, y + 1}}, type='tile-ghost', force=g.force} end) or 0
+              if tg > 0 then ghosted = ghosted + 1 else bare = bare + 1 end
+            end
+          end
+        end
+      end
+      if bare > 0 then
+        info.no_foundation = bare
+        parts[#parts+1] = string.format('no foundation under %d of its tiles and no foundation ghost there: the hub does not build it until foundation is placed', bare)
+      elseif ghosted > 0 then
+        info.foundation_ghosts = ghosted
+        parts[#parts+1] = string.format('waits for foundation: %d space-platform-foundation ghost%s under it, built first', ghosted, ghosted == 1 and '' or 's')
+      end
+    end
+    if not item then
+      parts[#parts+1] = 'no item places it'
+    else
+      local holds = try(function() return hub.get_item_count(item) end) or 0
+      info.hub_holds = holds
+      if holds >= (count or 1) then
+        parts[#parts+1] = string.format('the hub holds %d %s', holds, item)
+      else
+        local asks = 0
+        local secs = try(function() return hub.get_logistic_sections() end)
+        for i = 1, secs and secs.sections_count or 0 do
+          local sec = try(function() return secs.get_section(i) end)
+          if sec and sec.active ~= false then
+            for _, fl in ipairs(sec.filters or {}) do
+              local v = fl.value
+              if (type(v) == 'table' and v.name or v) == item then asks = asks + (fl.min or 0) end
+            end
+          end
+        end
+        info.hub_requests = asks
+        parts[#parts+1] = string.format('the hub holds %s; %s', holds > 0 and holds .. ' of the ' .. count .. ' ' .. item .. ' it needs' or 'no ' .. item,
+          asks > 0 and string.format('its requests ask for %d (filled from a planet the platform stops at)', asks) or 'no request of the hub asks for it')
+      end
+    end
+    return table.concat(parts, '; '), info
+  end
   local function area_of(v)
     assert(type(v) == 'table', 'area is {left_top, right_bottom} or [[x1,y1],[x2,y2]]')
     local a = api.position(v.left_top or v[1])
@@ -126,7 +187,12 @@ return function(api)
           end
         end
         local verdict
-        if carrier then
+        local plat, pinfo
+        if not best and not carrier then plat, pinfo = M.platform_blocker(s, g, item, count) end
+        if plat then
+          verdict = plat
+          row.hub_holds, row.hub_requests, row.no_foundation, row.foundation_ghosts = pinfo.hub_holds, pinfo.hub_requests, pinfo.no_foundation, pinfo.foundation_ghosts
+        elseif carrier then
           row.in_transit = carrier
           verdict = string.format('in transit: a construction robot carries %s to it (%d tiles away, its order %d)', item, carrier.distance, carrier.order)
         elseif not best then verdict = 'no roboport\'s construction area covers it'
@@ -213,7 +279,8 @@ return function(api)
     return {summary=summary, ghosts=list, lines=lines, blocked=#blocked > 0 and api.under_lines(blocked, where_s) or nil,
       blocked_checked=checked > MAX_UNDER and string.format('the nearest %d entity ghosts checked for a live entity on their spot', MAX_UNDER) or nil, total=#rows, page=pages > 1 and page or nil, pages=pages > 1 and pages or nil,
       more=#rows > page * limit and #rows - page * limit or nil, next=nextcmd, covered=covered,
-      note='construct {position, radius} builds ghosts by hand (it takes the items); robots build those in a construction area with idle robots and the item in the network'}
+      note=try(function() return s.platform end) and 'on a space platform the hub builds ghosts from its own inventory (no roboport or construction robot): an entity ghost once the foundation under it is there and the hub holds its item'
+        or 'construct {position, radius} builds ghosts by hand (it takes the items); robots build those in a construction area with idle robots and the item in the network'}
   end
   -- (d18 batch38 B3, Luna: the only roboport that landed was built at a duplicate ghost (67,44), not the claimed one at
   -- (204,69)) the game sets no build priority among ghosts. contested(surface, force, item, at): the entity ghosts of
@@ -258,6 +325,6 @@ return function(api)
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
     area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',
     limit='1..64 ghosts a page (default 24)', page='1.. the next ghosts, nearest first',
-    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (in transit: a construction robot with an order on it carries its item, how far off; robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM and no robot carries one to it; its network has no idle construction robot), in_transit {position, distance, count, order}, and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
+    returns='summary (how many, by name, by robots verdict); blocked: the nearest 512 entity ghosts over a live entity of ours whose collision meets theirs and not marked for upgrade or deconstruction (robots do not build them until it is), per ghost and entity name: how many and the upgrade call that marks them (another name of the same fast-replace group and size), else the deconstruct call; ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (in transit: a construction robot with an order on it carries its item, how far off; robots can build it; blocked: our live ENTITY stands on its spot, not marked for upgrade or deconstruction; no roboport\'s construction area covers it; its network holds no ITEM and no robot carries one to it; its network has no idle construction robot; on a space platform, where the hub builds: no foundation under it or a foundation ghost first, the hub holds ITEM or none and whether its requests ask for it: hub_holds, hub_requests, no_foundation, foundation_ghosts), in_transit {position, distance, count, order}, and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
   return M
 end

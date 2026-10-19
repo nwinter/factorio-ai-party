@@ -1915,7 +1915,7 @@ function handlers.describe(_,a)
       stock={unrequested='true: requester and buffer chests in our logistic networks on the surface (surface= another) holding items they do not request (item= one): per chest what and how many, where, its network, what it asks, and whether trash unrequested sends them to storage; the most first, 32 rows; items: per item the count and chests; 512 requester points a call (page: the next; next says it). Read only',items='optional 1..32 item names instead of item: one row each {item, total, line} (the read stock {item} gives with the other arguments: surface, position, radius, holders), lines; an item that fails is a row with its error',network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there, and reserved_for: where the robots taking it deliver it, the requester, buffer chest or character and how many, the 3 largest)',quality='default normal; places and position reads count that quality; a planet\'s whole count (surface alone, or item without radius) is of normal quality only: with another quality, surface alone is refused (naming the reads that count it) and the default total is the 128 tiles round you (quality_note)',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={spoiling='optional true: a recipe with a spoilable ingredient queues every craft asked; without it only the crafts that finish before the first held stack of it spoils (the hand queue ahead, then each craft at your crafting speed), and spoil says how many; products_spoil: how long each spoilable product lasts fresh once it lands',force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
-      rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
+      rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',surface='optional planet or platform name: that surface by remote view, as inspect and supply (d18 batch40 A3)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
       bottleneck={chain='with item: true: the recipe chain back from the item, a link per item: makers (the census pass\'s lists, up to 32 a link read now: states, speed), made and used a minute now, full (at full speed), asked (what the link it feeds takes at its full speed), stock (logistic networks); limit: the link the shortage comes down to, with its numbers and its makers\' states; at most 16 links',all_stopped='with item: true: stopped, per step of the line, every maker not working grouped by cluster (count, box, by name and state, every position)',shares='returned for a fluid (lubricant, heavy-oil, ...): its users by recipe on the surface: machines, how many work now, what they take at full speed and their share of all users\' take, against what the surface used and made in the last 10 min and its makers at full speed',item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack, spoilage its recipe does not take in its input; a maker stopped by its output: the chest its output waits on when every slot of it is used, slots used/total and what fills them), full_chests (those chests, with the machines whose output waits on each), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
@@ -2222,8 +2222,57 @@ local function record_loss(tick,e,cause,friendly,cause_at)
       local known=false
       for _,v in ipairs(list) do if v==at then known=true end end
       if not known and #list<2 then list[#list+1]=at end
+      LOSS.own_add(incident,cause,cause_at,e)
     end
   elseif cause then incident.causes[cause]=(incident.causes[cause] or 0)+1 end
+end
+-- (d18 batch40 A1, Sol 21:21: Wayfarer lost 27 structures to its own bow railguns; the platform alert said "28
+-- destroyed ... by 1 small-oxide-asteroid") the count per turret of ours that destroyed something, by where it
+-- stands: own_by [{name, x, y, n}], at most 8 (own_more counts the rest). The first such loss on a platform is told
+-- to the platform's listeners (platalerts.lua) once an incident, with the read that gives a railgun's line of fire.
+function LOSS.own_add(incident,cause,at,e)
+  incident.own_by=incident.own_by or {}
+  local row
+  for _,r in ipairs(incident.own_by) do if r.name==cause and r.x==at.x and r.y==at.y then row=r end end
+  if not row and #incident.own_by<8 then row={name=cause,x=at.x,y=at.y,n=0}; incident.own_by[#incident.own_by+1]=row end
+  if row then row.n=row.n+1 else incident.own_more=(incident.own_more or 0)+1 end
+  if not incident.platform or incident.own_told then return end
+  incident.own_told=true
+  pcall(function()
+    local pl=e.surface.platform
+    local arc=M.fireline and M.fireline.arc(cause)
+    local line=string.format('platform %s: our own %s at (%g,%g) destroyed %s at (%g,%g) (loss #%d)%s',incident.platform,cause,at.x,at.y,
+      e.name,e.position.x,e.position.y,incident.id,arc and string.format('; platform_defense {platform: "%s"} gives its line of fire (the entities of ours its shots cross)',incident.platform) or '')
+    for _,who in ipairs(M.platalerts.listeners(pl)) do
+      M.board.deliver(who.index,{seq='ownfire',tick=game.tick,from='loss alert',text=line,wake=true})
+    end
+  end)
+end
+-- Our own destroyers of an incident, most first: rows {name, at, n}, their total and those past the 8 kept.
+function LOSS.own(i)
+  local rows,total={},i.own_more or 0
+  for _,r in ipairs(i.own_by or {}) do rows[#rows+1]={name=r.name,at=string.format('(%g,%g)',r.x,r.y),n=r.n}; total=total+r.n end
+  table.sort(rows,function(a,b) return a.n>b.n or a.n==b.n and a.at<b.at end)
+  return rows,total,i.own_more or 0
+end
+-- A platform's kept incidents' own destroyers (platform_defense): rows {name, x, y, n, loss, last_tick}, most first.
+function LOSS.own_on(platform)
+  local out={}
+  for _,i in ipairs(state().losses or {}) do
+    if i.platform==platform then
+      for _,r in ipairs(i.own_by or {}) do out[#out+1]={name=r.name,x=r.x,y=r.y,n=r.n,loss=LOSS.id(i),last_tick=i.last or i.first} end
+    end
+  end
+  table.sort(out,function(a,b) return a.n>b.n or a.n==b.n and a.loss<b.loss end)
+  return out
+end
+-- "27 destroyed by our own railgun-turret at (-0.5,-21.5): 20, railgun-turret at (9.5,-21.5): 7", or nil.
+function LOSS.own_text(i)
+  local rows,total=LOSS.own(i)
+  if #rows==0 then return nil end
+  local parts,named={},0
+  for k,r in ipairs(rows) do if k<=4 then parts[k]=string.format('%s at %s: %d',r.name,r.at,r.n); named=named+r.n end end
+  return string.format('%d destroyed by our own %s%s',total,table.concat(parts,', '),total>named and string.format(' (+%d more)',total-named) or '')
 end
 local function losses_since(since)
   local out={}
@@ -2258,13 +2307,27 @@ function LOSS.parts(i)
   local causes=counted(i.causes)
   while #causes>2 do table.remove(causes) end
   local friendly={}
-  for _,v in ipairs(counted(i.friendly or {})) do
-    local name=v:match('^%d+ (.+)$')
-    local at=name and i.friendly_at and i.friendly_at[name]
-    friendly[#friendly+1]=v..(at and #at>0 and ' at '..table.concat(at,' ') or '')
+  local rows=LOSS.own(i)
+  if #rows>0 then
+    -- (batch40 A1) each turret of ours by where it stands with its count, then those not placed (unknown source)
+    local placed={}
+    for k,r in ipairs(rows) do placed[r.name]=(placed[r.name] or 0)+r.n; if k<=4 then friendly[k]=string.format('%d %s at %s',r.n,r.name,r.at) end end
+    for name,n in pairs(i.friendly or {}) do if n>(placed[name] or 0) and #friendly<5 then friendly[#friendly+1]=(n-(placed[name] or 0))..' '..name end end
+  else
+    for _,v in ipairs(counted(i.friendly or {})) do
+      local name=v:match('^%d+ (.+)$')
+      local at=name and i.friendly_at and i.friendly_at[name]
+      friendly[#friendly+1]=v..(at and #at>0 and ' at '..table.concat(at,' ') or '')
+    end
+    while #friendly>2 do table.remove(friendly) end
   end
-  while #friendly>2 do table.remove(friendly) end
-  if #friendly>0 then causes[#causes+1]='friendly fire: '..table.concat(friendly,', ') end
+  if #friendly>0 then
+    -- our own first when they destroyed more than the enemies did (the stream's label names the first)
+    local ours,theirs=0,0
+    for _,n in pairs(i.friendly or {}) do ours=ours+n end
+    for _,n in pairs(i.causes or {}) do theirs=theirs+n end
+    table.insert(causes,ours>theirs and 1 or #causes+1,'friendly fire: '..table.concat(friendly,', '))
+  end
   return table.concat(names,', '),#causes>0 and table.concat(causes,', ') or nil
 end
 -- "#7 in (x,y)-(x,y) 40 destroyed: ..."; `reader` (a surface name) names an incident on another surface; without a
@@ -16820,7 +16883,7 @@ function M.memory_visible(p,pos)
 end
 -- The fog view and lost buildings (fogmem.lua, lostlog.lua; Nick d17 17:28): what our force last saw of its buildings
 -- out of sight, and each building of ours that died, with the losses read and a one-call rebuild.
-M.lostlog=require('lostlog'){state=state,position=position,integer=integer,distance=distance,visible=M.memory_visible,
+M.lostlog=require('lostlog'){platform_blocker=function(s,g,item,n) return M.ghostlist.platform_blocker(s,g,item,n) end,state=state,position=position,integer=integer,distance=distance,visible=M.memory_visible,
   entity=function(p,pos) return M.stage_entity(p,pos) end,submit=function(p,a) return handlers.queue_submit(p,a) end,
   gather=function(p,want,chests) return M.stage.gather(p,want,chests) end}
 M.fogmem=require('fogmem'){state=state,direction_name=function(d) return M.direction_name and M.direction_name(d) or d end,
@@ -16910,7 +16973,7 @@ M.ammofeed=require('ammofeed'){state=state}
 -- A railgun's line of fire over our entities (fireline.lua; d17 batch31 B3, Astra, Nick 07:10): in platform_defense,
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
-M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,fireline=M.fireline}
+M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
 do
   local function target_surface(p,a)
     if type(a.platform)=='string' then
@@ -17246,7 +17309,7 @@ M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight
   owner=function(c) return M.character_owner(c) end}
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 -- Urgent alerts that end every sleep and direct wait (Nick, d15 06:17; urgent.lua), and until=alert's filter.
-M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.board.who(p) end,captive=function(p) return M.pushalerts.urgent_captive(p) end,
+M.urgent=require('urgent'){timed=M.timed,state=state,loss_own=function(i) return LOSS.own_text(i) end,who=function(p) return M.board.who(p) end,captive=function(p) return M.pushalerts.urgent_captive(p) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end,
