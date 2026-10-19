@@ -717,8 +717,50 @@ return function(api)
     out.line = table.concat(words, '; ')
     return out
   end
+  -- (d18 batch36 D1, Gemini) every surface in one call: silo {surface: "all"} or {all: true}: a line a silo (the planets'
+  -- silos from the census pass, else one search a planet): its rocket parts and their rate, the payload aboard against
+  -- the request it fills (the platform its automatic requests take up), and next_auto_launch. ALL_SILOS at most.
+  M.ALL_SILOS = 16
+  function M.read_all(p)
+    local rows, lines = {}, {}
+    local surfaces = {}
+    for _, s in pairs(game.surfaces) do if try(function() return s.planet end) then surfaces[#surfaces+1] = s end end
+    table.sort(surfaces, function(x, y) return x.index < y.index end)
+    for _, s in ipairs(surfaces) do
+      local list = api.census_silos and try(function() return api.census_silos(p.force, s) end)
+      local silos = {}
+      if list then silos = list
+      else
+        silos = try(function() return s.find_entities_filtered{type='rocket-silo', force=p.force, limit=MAX_SILOS} end) or {}
+      end
+      for _, e in ipairs(silos) do
+        if #rows >= M.ALL_SILOS then break end
+        local row = M.view(e, p.force)
+        rows[#rows+1] = row
+        local rk = M.rocket(e)
+        local parts = rk.rocket_now
+        local rate = row.parts_per_min and string.format(', %s parts/min', tostring(row.parts_per_min)) or ''
+        local aboard = row.cargo and row.cargo.items or 'nothing'
+        local filling = {}
+        for _, r in ipairs(row.platform_requests or {}) do
+          if r.filling then filling[#filling+1] = string.format('%s %d asked (holds %d)', r.item, r.asks or 0, r.holds or 0) end
+        end
+        lines[#lines+1] = string.format('%s %s on %s: %s%s; aboard %s%s%s', e.name, at(e.position), s.name, parts, rate, aboard,
+          row.requesting_for and string.format('; filling for %s%s', row.requesting_for, #filling > 0 and ': ' .. table.concat(filling, ', ') or '') or '',
+          row.next_auto_launch and '; next automatic launch: ' .. row.next_auto_launch or '')
+      end
+    end
+    assert(#rows > 0, 'no rocket silo of ours on any planet')
+    return {all=true, silos=rows, lines=lines, rockets_launched=try(function() return p.force.rockets_launched end),
+      note=#rows >= M.ALL_SILOS and 'the first ' .. M.ALL_SILOS .. ' silos' or nil}
+  end
   function M.read(p, a)
     assert(a.why == nil or type(a.why) == 'boolean', 'why must be true or false')
+    assert(a.all == nil or a.all == true, 'all is true: every silo of ours on every planet')
+    if a.all or a.surface == 'all' then
+      assert(a.position == nil and a.why == nil, 'all (surface "all") reads every silo; position and why read one')
+      return M.read_all(p)
+    end
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -746,7 +788,8 @@ return function(api)
     return {surface=surface.name, silos=rows, rockets_launched=try(function() return p.force.rockets_launched end),
       note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil}
   end
-  M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours)',
+  M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours), or "all": every silo of ours on every planet, a line each (as all: true)',
+    all='optional true: every silo of ours on every planet (16 at most): lines, a line a silo: its rocket parts and their rate, what is aboard, the platform its automatic requests fill for and what of that request it holds, next_auto_launch; silos (each silo\'s full read)',
     why='optional true, with position (or one silo there): why its rocket parts are short, as one read: the ingredient it is shortest of (one it lacks for the next part first), the places its feeding inserters take from (what each holds of it; a requester or buffer chest: its request, and what its logistic network holds and robots bring), and that item\'s chain on the silo\'s planet as bottleneck {item} reads it (each step\'s makers by state and what most of them lack, down to the root), with up to 3 makers not working and fixes: why {item, picked, feeders, chain, root, path, not_working, fixes, line}',
     returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), built_parts (ready or rising: the built rocket\'s, 50/50), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the rocket after it: a ready rocket with next_parts 6/50 is built and launches), rocket_ready (true only for a built rocket), rocket ("rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '

@@ -12220,7 +12220,7 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
-M.launchneed=require('launchneed'){state=state,crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
+M.launchneed=require('launchneed'){state=state,silos=function(f,s) if M.census then return M.census.silos_on(f,s) end end}  -- a platform's stop waiting on a silo its own hub would feed (d18 batch36 A2)  -- the record lists in args, field by field (check_args; d17 batch35 A6)
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 -- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
 function handlers.heat_budget(p,a)
@@ -12419,7 +12419,7 @@ function M.cargo_eta(p,a,rockets)
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
-M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end,
+M.silo=require('silo'){state=state,cargo=M.cargo,position=position,census_silos=function(f,sf) if M.census then return M.census.silos_on(f,sf) end end,status_name=function(e) return entity_status_names[e.status] end,
   pause_line=function(e) return M.silo_pause_line(e) end,load_record=function(e) return M.silo_load_record(e) end,
   bottleneck=function(p,a) return M.supply.bottleneck_item(p,a) end}
 function handlers.silo(p,a) return M.silo.read(p,a) end

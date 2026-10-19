@@ -70,7 +70,7 @@ do
     schedule={current=1,records={{station='fulgora',wait_conditions={{type='item_count'},{type='time',compare_type='or'}}}}}}
   local fulgora={index=4}
   game={planets={fulgora={surface=fulgora}}}
-  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){crafters=function(f,s) assert(s==fulgora); return {{valid=true,type='assembling-machine'},silo} end}
+  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){silos=function(f,s) assert(s==fulgora); return {silo} end}
   silo.type='rocket-silo'
   local lines=N.for_platform(pl)
   eq(#lines,1)
@@ -304,6 +304,26 @@ do
   game,prototypes=nil,nil
 end
 print('d18_batch36 C1 clear_obstacles: ok')
+
+-- D1 (Gemini): silo across every planet in one call: a line a silo.
+do
+  local nauvis,gleba={index=1,name='nauvis',planet={}},{index=3,name='gleba',planet={}}
+  local space={index=5,name='platform-1'}
+  game={surfaces={nauvis,gleba,space}}
+  local s1={valid=true,name='rocket-silo',position={x=15.5,y=59.5}}; local s2={valid=true,name='rocket-silo',position={x=65.5,y=14.5}}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return {} end,census_silos=function(f,sf) if sf==nauvis then return {s1} elseif sf==gleba then return {s2} end return {} end}
+  S.view=function(e) if e==s1 then return {parts_per_min=4.2,cargo={items='low-density-structure*50'},requesting_for='Wren',
+    platform_requests={{filling=true,item='low-density-structure',asks=100,holds=20}},next_auto_launch='Wren low-density-structure: full, 100'} end return {} end
+  S.rocket=function(e) return {rocket_now=e==s1 and 'building the rocket: parts 42/50' or 'rocket built (50/50 parts) and ready to launch, not launched'} end
+  local r=S.read({force={rockets_launched=7}},{surface='all'})
+  eq(#r.lines,2)
+  eq(r.lines[1],'rocket-silo (15.5,59.5) on nauvis: building the rocket: parts 42/50, 4.2 parts/min; aboard low-density-structure*50; filling for Wren: low-density-structure 100 asked (holds 20); next automatic launch: Wren low-density-structure: full, 100')
+  eq(r.lines[2],'rocket-silo (65.5,14.5) on gleba: rocket built (50/50 parts) and ready to launch, not launched; aboard nothing')
+  eq(S.read({force={}},{all=true}).all,true)
+  fails(function() S.read({force={}},{all=true,position={x=1,y=1}}) end,'all (surface "all") reads every silo')
+  game=nil
+end
+print('d18_batch36 D1 silo on every planet: ok')
 -- The runtime against a fake engine (as tests/d17_batch35.lua sets it up), for the calls below.
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},

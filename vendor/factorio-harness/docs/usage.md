@@ -8128,3 +8128,8 @@ fh watch    # deploy on every change
   runs again, without clear_obstacles (watched 10 min; `last.cleared` says which). Returns cleared (what was marked),
   mining, robots, then_runs; with none in the way the call runs at once and cleared says so. Dry runs give
   `trees_rocks`: the trees and rocks in the planned footprints.
+- `silo {surface: "all"}` or `silo {all: true}` (D1, Gemini): every silo of ours on every planet (16 at most) in one
+  call, a line each: its rocket parts (as the silo read says them) and their rate, what is aboard, the platform its
+  automatic requests fill for with what of that request it holds, and next_auto_launch; `silos` keeps each silo's full
+  read. The silos come from the census pass (one search a planet before the first pass). On world n: 9 silos on 5
+  planets in 4.6 ms.
