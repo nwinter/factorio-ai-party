@@ -43,6 +43,14 @@ return function(api)
     local which = e.type == 'furnace' and defines.inventory.furnace_result or defines.inventory.assembling_machine_output
     return try(function() return e.get_inventory(which) end)
   end
+  -- (d20 batch53 M2, Sol #1297: a breeder read 31.2 eggs a minute here, 10.4 crafts x 3, where inspect read 26: the
+  -- pentapod egg a craft returns is exempt from productivity, 1 + 1 x 1.5 = 2.5 a craft) the rate is inspect's
+  -- (craftrate.lua: ignored_by_productivity, the productivity cap), with net per minute when the item goes back in.
+  local CR
+  local function rates_of(e)
+    if CR == nil then local ok, mod = pcall(require, 'craftrate'); CR = ok and mod({}) or false end
+    return CR and try(function() return CR.machine(e) end) or nil
+  end
   -- One machine's row.
   function M.row(e, recipe, item)
     local row = {name=e.name, position={x=e.position.x, y=e.position.y}, recipe=recipe.name}
@@ -70,7 +78,11 @@ return function(api)
     local prod = 1 + (try(function() return e.productivity_bonus end) or 0)
     local each = per_craft(recipe, item)
     if status == 'working' and speed > 0 and energy > 0 then
-      row.per_min = math.floor(60 / (energy / speed) * prod * each * 10 + 0.5) / 10
+      local pr
+      for _, x in ipairs((rates_of(e) or {}).products or {}) do if x.name == item then pr = x end end
+      if pr then
+        row.per_min, row.net_per_min, row.ignored_by_productivity = pr.per_min, pr.net_per_min, pr.ignored_by_productivity
+      else row.per_min = math.floor(60 / (energy / speed) * prod * each * 10 + 0.5) / 10 end
     else row.per_min = 0 end
     -- why it stops
     local why
@@ -98,8 +110,8 @@ return function(api)
     if not why and row.short and status ~= 'working' then why = 'short of ' .. table.concat(row.short, ', ') end
     row.why = why
     row.feeds = #feeds > 0 and feeds or nil
-    row.line = string.format('%s %s %s: %s%s; %g a minute; inputs %s; output holds %d %s; feeds %s', e.name, at(e.position), recipe.name, (status:gsub('_', ' ')),
-      why and ' (' .. why .. ')' or '', row.per_min, row.inputs ~= '' and row.inputs or 'none', held, item,
+    row.line = string.format('%s %s %s: %s%s; %g a minute%s; inputs %s; output holds %d %s; feeds %s', e.name, at(e.position), recipe.name, (status:gsub('_', ' ')),
+      why and ' (' .. why .. ')' or '', row.per_min, row.net_per_min and string.format(' (net %g: %g a minute goes back in)', row.net_per_min, row.per_min - row.net_per_min) or '', row.inputs ~= '' and row.inputs or 'none', held, item,
       #feeds > 0 and table.concat(feeds, '; ') or 'nothing (no output inserter)')
     return row
   end

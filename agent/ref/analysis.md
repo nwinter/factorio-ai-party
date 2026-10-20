@@ -23,8 +23,9 @@
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
 - `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?, makers?, consumers?}`: `makers: "all"`: every machine
-  making it on the surface, nearest first, 24 a call (`from`), each with status and why, rate, inputs against one craft
-  and what it feeds. `consumers: "all"`: every machine whose recipe takes it (status, its take a minute now and at full
+  making it on the surface, nearest first, 24 a call (`from`), each with status and why, rate (as inspect's: a product
+  exempt from productivity, an egg breeder's returned egg, gets none; `net_per_min` when it goes back in), inputs
+  against one craft and what it feeds. `consumers: "all"`: every machine whose recipe takes it (status, its take a minute now and at full
   speed) and every requester or buffer chest asking for it (as `requesters` reads them), the largest use first, 24 a
   call (`from`), with the totals. `requesters: true`: who gets
   an item: every requester or buffer chest in a logistic network on the surface asking for it, served now (robots bringing N) first, then
@@ -204,7 +205,13 @@
   (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a
   line) follows the whole line both ways, in chunks our force sees now, up to 4096 tiles each way: at each end a belt of
   ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
-  what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
+  what stands on it (`gaps`); `head` and `end` say where and why it stops. A stretch standing only as ghosts carries
+  nothing: `ghost_breaks` (and `ghost_line`) give each with its tiles, the items that build it and whether a roboport's
+  construction area covers it (the network's count of each item, its idle construction robots).
+  Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
+- `uptime {positions, seconds?}`: up to 16 crafting machines watched for seconds (10..3600, default 600), a status sample
+  a second, in the background; `uptime {}` reads it so far or done: each machine's crafts finished and crafts a minute
+  against its full speed, status shares, the ingredients short at the samples that read short, `left_out`.
 - `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
@@ -311,8 +318,10 @@
   construction area (fewer once 60 ghosts are read); the first line names `sources_from` for the next squares.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines.
-- `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), each source's position
-  and facing, for hits our force saw. Empty ground says if its chunk was never charted, is charted and out of sight
+- `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), for hits our force saw:
+  what dealt each hit (a fire, projectile or stream) and the game's cause with its position, facing and distance against
+  its range, both from the game's event. A fire's cause is the turret whose stream lit the first fire; a hit past its
+  range is a fire that spread. Empty ground says if its chunk was never charted, is charted and out of sight
   (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
 - `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
   minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short

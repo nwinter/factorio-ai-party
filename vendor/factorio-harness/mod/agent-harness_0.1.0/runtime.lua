@@ -1872,7 +1872,7 @@ function handlers.describe(_,a)
       pipe_gaps={line='{x,y} of one pipe, pipe-to-ground, tank or pump of ours, instead of from and to: the pipe network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities; returns segments [{segment, entities, box, fluid, amount, capacity, flow, empty, line}] by the engine\'s segment id, empty (the empty ones), machines (what it joins, each box\'s fluid), not_in_sight, line',
         from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={line='{x,y} of one belt of a line, instead of from and to: the whole line both ways (belt neighbours, underground pairs; a splitter: its first output or input, the others in branches) in chunks our force sees now, up to 4096 tiles each way; at each end the 16 tiles on in its direction: a belt of ours facing the same way there (built or ghost) is the line going on, the tiles between a gap; returns tiles, head and end (where and why it stops), gaps [{from, to, tiles, between, line: each missing tile and what stands on it}], branches, line',
-        from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; a straight leg is read tile by tile; a leg that is not straight follows the remembered belt round its corners (each belt\'s direction, undergrounds to their exits; across a gap on the way the belt went while that nears the end, else toward it; from either end), refused when it does not lead there; at most 512 tiles',surface='optional surface name (default yours)',returns='followed (legs followed round corners); missing and ghosts with observed_tick (a missing tile in sight: blocked_by {name, position, force} and line, what stands on it); unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
+        from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; a straight leg is read tile by tile; a leg that is not straight follows the remembered belt round its corners (each belt\'s direction, undergrounds to their exits; across a gap on the way the belt went while that nears the end, else toward it; from either end), refused when it does not lead there; at most 512 tiles',surface='optional surface name (default yours)',returns='ghost_breaks and ghost_line (from, to and line too): each stretch of the line standing only as ghosts, a break until built (they carry nothing): from, to, tiles, materials (the items that build it), robots (whether a roboport\'s construction area covers its ghosts, the network\'s count of each item and its idle construction robots); followed (legs followed round corners); missing and ghosts with observed_tick (a missing tile in sight: blocked_by {name, position, force} and line, what stands on it); unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
       describe={if_bundle='optional: the bundle id of a describe you hold; when it is this runtime\'s, the reply is {bundle, unchanged=true} only'}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): spoiling (each spoilable stack of the main inventory, soonest first, 24: its slot, the time left and how spoiled it is; one that triggers when it spoils, a pentapod egg, hatches in; spoiling_more), inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
@@ -2080,6 +2080,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.uptime and M.uptime.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltupgrade and M.beltupgrade.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.alertdigest and M.alertdigest.schema or {}) do description.actions[name]=schema end
@@ -14794,6 +14795,10 @@ function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
 -- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
 M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform}
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
+-- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
+M.uptime=require('uptime'){state=state,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
+  status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end}
+function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
   entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
@@ -15924,6 +15929,7 @@ reads.platform_production=true
 reads.platform_defense=true
 reads.platform_digest=true
 reads.belt_flow=true
+reads.uptime=true
 reads.platform_tiles=true
 reads.alerts_digest=true
 reads.requester_rate=true
@@ -18640,6 +18646,7 @@ function M.tick_body(event)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
+  if event.tick%60==7 and state().uptime then pcall(M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua)
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops

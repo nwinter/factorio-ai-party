@@ -260,6 +260,17 @@ return function(api)
         out.missing[#out.missing+1]=row
       end
     end
+    -- (d20 batch53 M1, Sol #932) the stretches standing only as ghosts: breaks until built, with their materials and
+    -- robot coverage; a tile missing, under ground or not recorded parts two stretches
+    if #out.ghosts>0 then
+      local seq={}
+      for _,t in ipairs(wanted) do
+        local c=chunks[key(math.floor(t.x/32),math.floor(t.y/32))];local r=c.tiles and c.tiles[key(t.x,t.y)]
+        seq[#seq+1]={position={x=t.x+0.5,y=t.y+0.5},ghost=r and r.ghost or false,name=r and r.name}
+      end
+      local okb,GB=pcall(require,'ghostbreaks')
+      if okb then out.ghost_breaks,out.ghost_line=GB().breaks(seq,s,f) end
+    end
     return out
   end
   function M.alert_groups(force)

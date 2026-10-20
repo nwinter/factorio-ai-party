@@ -216,7 +216,7 @@ do
   local h=D.of(wall)
   eq(#h,2)
   eq(h[1],'4s ago: 1 acid hit, 5 damage, from no source the game names (a fire or projectile that outlived it)')
-  eq(h[2],'4s ago: 2 fire hits, 24 damage, from flamethrower-turret at (14,4) facing east')
+  eq(h[2],'4s ago: 2 fire hits, 24 damage, from flamethrower-turret at (14,4) facing east, 4 tiles from the hit')  -- (d20 batch53 M4) its distance
   local r=D.read({surface={name='nauvis',find_entities_filtered=function() return {} end},position={x=10,y=4}},{radius=4})
   eq(#r.entities,1); eq(r.entities[1].alive,false); eq(#r.entities[1].hits,2)
 end
