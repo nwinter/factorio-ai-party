@@ -1610,7 +1610,10 @@ async function main() {
     const shown = read.ok ? {action:then.action, ...(read.result ?? {})} : {action:then.action, error:read.error};
     return {...reply, result:{...(reply.result ?? {}), then_read:shown}};
   }
-  async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false, begunReply?: Reply): Promise<Reply> {
+  // call: the arguments of `fh call sleep` past seconds and condition (wake_on_messages, wake_from, wake_on_board,
+  // wake_local, ...), sent to the runtime's sleep over what the flags say (d19 batch46 item 5, Sol 16:45: they were
+  // dropped, so a sleep with wake_on_messages false and wake_from [operator] woke on Luna's and Astra's tells).
+  async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false, begunReply?: Reply, call: Record<string,unknown> = {}): Promise<Reply> {
     const left = deadline === undefined ? undefined : deadline-Date.now();
     if (left !== undefined && left <= 1000) {
       return {ok:true, result:{woke:'deadline', slept_s:0, note:`no sleep: ${deadlineText(deadline!)}`}};
@@ -1636,7 +1639,7 @@ async function main() {
     let noBoard = values['no-board-wake'] === true;
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
       ...(noUrgent ? {wake_on_urgent:false} : near !== undefined ? {wake_on_urgent:{near}} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
-      ...(deaf ? {wake_on_messages:false} : {}), ...(noBoard ? {wake_on_board:false} : {}), ...wakeArgs()});
+      ...(deaf ? {wake_on_messages:false} : {}), ...(noBoard ? {wake_on_board:false} : {}), ...wakeArgs(), ...call});
     // A direct wait the runtime ran as a sleep (your queue runs: as_sleep) is followed from its reply.
     let started = begunReply ?? await harness.request('sleep',sleepArgs(quiet));
     if (!started.ok && deaf && /unknown argument wake_on_messages/.test(String(started.error?.message ?? ''))) {
@@ -1867,7 +1870,8 @@ async function main() {
       const seconds = args.seconds;
       if (typeof seconds !== 'number' || !Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS');
       if (args.condition !== undefined && (typeof args.condition !== 'object' || args.condition === null)) throw new Error('sleep condition must be an object; or use fh sleep SECONDS --until ...');
-      return sleep(seconds, args.condition as Record<string,unknown> | undefined);
+      const {seconds: _s, condition: _c, ...call} = args;
+      return sleep(seconds, args.condition as Record<string,unknown> | undefined, false, undefined, call);
     }
     // A waited wait_until runs as long as the CLI waits: --wait-timeout MS
     // becomes its timeout in ticks (up to 15 minutes) unless args name one.

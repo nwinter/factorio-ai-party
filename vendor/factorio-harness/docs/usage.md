@@ -8990,3 +8990,11 @@ fh watch    # deploy on every change
   - The belt, line-cut, robot-loss and power-cut alert groups (M.belt_groups_read) are read in the tick every 120
     ticks; a reply reads them only when none is kept or the kept list is 600 ticks old.
   - check_args' argument sets (8 to 14 ms, built from describe) are built in the first tick after a load.
+- Item 5 (Sol 16:45, operator-inbox seq 874: `fh call sleep {seconds: 40, wake_on_messages: false, wake_from:
+  [operator], wake_on_board: false, wake_local: true}` woke after 4 s on Luna's ordinary tell, and after 22 s on
+  Astra's): `fh call sleep` runs the host's sleep loop (it polls sleep_check), and that loop built the runtime's
+  `sleep` from the command-line flags only: the journal shows `sleep {seconds: 40}` sent, every wake argument dropped.
+  Now the call's arguments past `seconds` and `condition` go to the runtime's sleep, over what the flags say (a call's
+  `wake_from` wins over `--wake-from`). `fh sleep` with flags was not affected. Tells reach a sleep one way
+  (board.deliver): batch43's split tells (parts before the last fyi) and batch41's edit tells (from the editing agent)
+  take it like any tell, so the sleep's wake filters apply to them. Test tests/waitevents.test.ts.
