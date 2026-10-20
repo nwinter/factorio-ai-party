@@ -1366,18 +1366,34 @@ eq(changed.recipe,'copper-cable'); eq(changed.returned['iron-plate'],8); eq(chan
 eq(changed.spilled['iron-gear-wheel'],2); eq(table.concat(spills,','),'iron-gear-wheel:2')
 eq(plate_stack.valid_for_read,false); eq(gear_stack.valid_for_read,false)
 am.fluidbox={{name='water',amount=10}}
--- batch26 A3 (Sol): a fluid the new recipe takes none of: refused, naming it; drain flushes the box; keep (or force) changes it.
+-- batch26 A3 (Sol): a fluid the new recipe takes none of: refused, naming it. (d20 batch56 R6, Astra #1410) Read on
+-- 2.0.77: set_recipe drops such a fluid and a machine's box has no segment, so flush returns {} there (a table: drain
+-- crashed on arithmetic with it); drain and keep make the change and say how much left the machine.
 fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'assembling-machine-1 holds water 10 (fluidbox 1), which recipe iron-gear-wheel takes none of')
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'fluid: "drain" flushes those boxes first')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'in 2.0.77 a recipe change drops a fluid the new recipe takes none of')
 do
-local kept=call('configure',{position=am.position,recipe='iron-gear-wheel',force=true})
-eq(kept.recipe,'iron-gear-wheel'); assert(kept.fluid:find('^kept: '),kept.fluid)
+local set_recipe=am.set_recipe
+am.set_recipe=function(name) am.fluidbox[1]=nil; return set_recipe(name) end
 local flushed_box
-am.fluidbox.flush=function(i,name) flushed_box=i..':'..name; return 10 end
-am.set_recipe('copper-cable')
+am.fluidbox.flush=function(i,name) flushed_box=i..':'..name; return {} end
 local drained=call('configure',{position=am.position,recipe='iron-gear-wheel',fluid='drain'})
-eq(flushed_box,'1:water'); assert(drained.fluid:find('water 10 from fluidbox 1',1,true),drained.fluid)
+eq(flushed_box,'1:water'); eq(drained.recipe,'iron-gear-wheel'); eq(drained.fluid_flushed.water,10)
+assert(drained.fluid:find('^drained: assembling%-machine%-1 holds water 10 %(fluidbox 1%)'),drained.fluid)
+assert(drained.fluid:find('gone from the machine with the change: water 10',1,true),drained.fluid)
+-- keep: the same change, said as it went; a fluid the change leaves is named with its box
+am.set_recipe=set_recipe
+set_recipe('copper-cable'); am.fluidbox[1]={name='water',amount=10}
+local kept=call('configure',{position=am.position,recipe='iron-gear-wheel',force=true})
+eq(kept.recipe,'iron-gear-wheel'); eq(kept.fluid_flushed,nil)
+assert(kept.fluid:find('^kept: '),kept.fluid); assert(kept.fluid:find('nothing of it left the machine; still in it: water 10 in fluidbox 1',1,true),kept.fluid)
+-- a flush the game refuses: said, the recipe left as it was
+am.fluidbox.flush=function() error('LuaFluidBox: index out of range',0) end
+set_recipe('copper-cable')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',fluid='drain'}) end,'fluid "drain": the game refused to flush water from fluidbox 1: LuaFluidBox: index out of range; the recipe is unchanged')
+eq(current_recipe.name,'copper-cable')
 am.fluidbox.flush=nil
+am.fluidbox[1]=nil
+set_recipe('iron-gear-wheel')
 end
 -- batch26 C4 (Grok): collect wait_ticks with to hands each take on to another machine; refusals before any wait.
 do

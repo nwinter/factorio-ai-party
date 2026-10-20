@@ -168,7 +168,8 @@
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
 - `platform_defense {platform, feed?, route?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
-  runs. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
+  runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
+  range of a collector whose arc misses it is named under `outside_arc` and not counted. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
   only, or preload only), wrong ammunition on its way, and inserters whose circuit sets more filters than their slots.
   Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
   leg): each asteroid that spawns on it with its health and resistances, and per turret and the ammo it holds its

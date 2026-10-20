@@ -857,6 +857,26 @@ fh call status
     (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells`. The flare is made with
     the game's create_entity, as the capsule's flare (`artillery-flare`); this path was not run on a live world before
     the deploy.
+- `platform_defense` and a turret's firing arc (d20 batch56 R5, Sol #1409: a railgun facing east read as covering a
+  collector north of it). A turret whose prototype's `attack_parameters.turn_range` is under a full turn (railgun-turret:
+  0.2, 72 degrees) reaches a point only within that arc centred on its facing (its direction, 0..15; northeast and the
+  other diagonals too), as `line_of_fire` (fireline.lua) reads it. Collector fronts and hull edge tiles count it only
+  there; a collector in its range but outside the arc lists it under `outside_arc` {name, position, facing,
+  arc_degrees, off_degrees} and in its line (`in range but outside the arc, not counted: railgun-turret (22.5,10.5)
+  aims within 72 degrees centred east: 54 degrees outside it`). Turret rows add `facing` and `arc_degrees`. The read
+  has no asteroid velocities, so it does not say where a point enters the arc late. The damage lines (per asteroid,
+  the engaging turrets together) are per route, not per point; their heading says a turret with an arc hits only
+  what lies in it.
+- A recipe change and a fluid the machine holds (d20 batch56 R6, Astra #1410: `configure {recipe, fluid: "drain"}`
+  failed "attempt to perform arithmetic on a table value": 2.0.77's `LuaFluidBox.flush` returns the fluid it removed by
+  name, a table). Read on 2.0.77 (private copy): a crafting machine's fluidbox has no fluid segment
+  (`get_fluid_segment_id` nil, with a pipe joined to it or not), so `flush` on it removes nothing and returns `{}`;
+  `set_recipe` drops a fluid the new recipe takes none of, from an input or an output box (cold fluoroketone 400 in
+  empty-fluoroketone-cold-barrel's output box, changed to the hot recipe: gone), and keeps one it takes (heavy oil
+  from lubricant to heavy-oil-cracking moved to the cracking recipe's box). `configure {recipe}` still refuses the
+  change by default, naming the fluid; `fluid: "drain"` (or `"keep"`, `force: true`) flushes any box that has a
+  segment, makes the change and reads the machine after: `fluid` (what left, anything still in it by box) and
+  `fluid_flushed` {fluid: amount gone}.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
   pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
