@@ -66,7 +66,7 @@
   said).
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, hand_size?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
-  ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?}`: a machine's or building's
+  ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?}`: a machine's or building's
   settings, as its GUI sets them; `inspect` reads each back.
   - `item_requests: false` (or `ammo: false` on a built turret): a built entity's item requests removed, every one on
     it, as a deconstruction planner over it and a cancel of that deconstruction do (`removed` per entity).
@@ -100,6 +100,9 @@
     (0..1), mode? (local|surface|global), polyphony?, instrument?, note?}}` sets its GUI's sound settings (instrument and
     note by name, `"alarms"`, `"siren"`, or number from 0); the reply's line ends `sound: alarms/alarm-1 at volume 100%,
     local` or `sound: off (volume 0)`.
+  - An arithmetic, decider, selector or constant combinator (built or ghost): `description` (up to 500 bytes, newlines
+    kept; `""` or `false` clears it) sets the description its GUI shows; `circuit_set` takes it too. `inspect`, `circuit`
+    and `circuit_set` replies show it as `description`; blueprints keep it, and a ghost placed from one has it.
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
     there by remote view where our force sees the chunk. Switching automatic requests on moves cargo loaded by hand
     into the silo's trash slots, which never launch: `auto_requests: true` is refused while the rocket holds cargo no

@@ -264,6 +264,15 @@ fh call status
   `circuit_set {position, ...}` changes what the entity's circuit GUI holds; `circuit` is its old name (a direct call
   runs as `circuit_set` and says so in `corrected`). `platform: "Sunward"` acts on that platform (platform coordinates,
   hub at 0,0); `surface: "vulcanus"` (a planet, a platform's name or its surface name) on another surface by remote view.
+- A combinator's description (d20 batch56 R4, Astra #1399 for viewer Foobator): in 2.0.77 the description a player
+  writes in the GUI is `LuaEntity.combinator_description`, read and written on arithmetic, decider, selector and
+  constant combinators and their ghosts only (any other entity raises "Entity is not arithmetic-combinator or ..."). The
+  game keeps the first 500 bytes of a longer one, cutting mid-character, so `configure {position, description}` and
+  `circuit_set {position, description}` refuse over 500 bytes; `""` or `false` clears it; newlines are kept. The reply:
+  `description`, `description_before`, `line`. `inspect` (top level and `circuit.description`), an area's rows,
+  `circuit` and `circuit_set` show it. A blueprint stores it as the entity's `player_description` (blueprint_capture,
+  blueprint_save and the exported string keep it, read on the private copy); a ghost placed from that blueprint has it
+  and the combinator the ghost becomes keeps it.
 - `place_ghosts`, its `dry_run` and `scan` take `surface: "vulcanus"` too (Astra 12:33: laying out a Vulcanus chain
   while Sonnet builds there by hand): in 2.0 a player places ghosts on another planet from the map, on charted
   chunks, and that planet's construction robots build them. `scan` there needs `position`, `area` or `positions`.
