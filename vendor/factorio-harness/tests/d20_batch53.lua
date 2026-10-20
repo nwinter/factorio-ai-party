@@ -123,3 +123,60 @@ do
   has(G.removal(sa).line,'section 1 removed with its 1 request (it left the group "stock"; the group and its other members stay)')
 end
 print('d20_batch53 L3 L4 sections and groups: ok')
+
+-- L5 (Sol #1331, viewer Foobator): a cargo wagon's slot filters and bar through train, read back.
+do
+  prototypes={item={['low-density-structure']={},coal={},['iron-plate']={}},quality={normal={},uncommon={}},entity={}}
+  defines={inventory={cargo_wagon=1}}
+  local slots,filters,bar={},{},41
+  for i=1,40 do slots[i]={valid_for_read=false} end
+  slots[1]={valid_for_read=true,name='coal',count=10,quality={name='normal'}}
+  local inv=setmetatable({get_bar=function() return bar end,set_bar=function(n) bar=n or 41 end,
+    get_filter=function(i) return filters[i] end,set_filter=function(i,f) filters[i]=f; return true end},
+    {__index=function(_,i) return slots[i] end,__len=function() return 40 end})
+  local loco={type='locomotive',name='locomotive'}
+  local w={type='cargo-wagon',name='cargo-wagon',unit_number=7,position={x=-401,y=-400},get_inventory=function() return inv end}
+  local train={carriages={loco,w}}
+  local T=dofile('mod/agent-harness_0.1.0/trains.lua'){integer=function(v,d,lo,hi,name) assert(type(v)=='number' and v>=lo and v<=hi,name) return v end}
+  fails(function() T.set_wagon_slots(train,w,{filters={['1']='iron-plate'}}) end,'slot 1 holds coal*10: a slot filter goes on an empty slot or one holding that item')
+  eq(filters[1],nil,'nothing set on a refusal')
+  local r=T.set_wagon_slots(train,loco,{wagon=2,filters={['1']='coal',['2']={name='low-density-structure',quality='uncommon'}},bar=30})
+  eq(r.carriage,2); eq(r.set,2); eq(r.bar,30); eq(r.slot_filters[2],'2 low-density-structure@uncommon'); eq(bar,31)
+  has(r.line,'(red-X limit: 30 usable)')
+  r=T.set_wagon_slots(train,w,{filters={['2']=false},bar=false})
+  eq(r.bar,'none'); eq(#r.slot_filters,1)
+  fails(function() T.set_wagon_slots(train,loco,{}) end,'carriage 1 is a locomotive')
+  fails(function() T.set_wagon_slots(train,w,{filters={['41']='coal'}}) end,'slot 41 is not one of 1..40')
+  fails(function() T.set_wagon_slots(train,w,{limit=3}) end,'wagon_slots takes wagon, filters and bar')
+  prototypes=nil; defines=nil
+end
+print('d20_batch53 L5 wagon slot filters and bar: ok')
+
+-- L6 (Astra #1205): assembler_batch with the requester's trash unrequested on switches it off before the requests are
+-- cleared and staged, and on after the output is released.
+do
+  defines={inventory={assembling_machine_input=2,assembling_machine_output=3}}
+  local recipe={name='fusion-reactor',products={{type='item',name='fusion-reactor',amount=1}},ingredients={{type='item',name='tungsten-plate',amount=200}}}
+  local m={valid=true,unit_number=1,name='assembling-machine-3',type='assembling-machine',position={x=22.5,y=-0.5},
+    bounding_box={left_top={x=21,y=-2},right_bottom={x=24,y=1}},get_recipe=function() return recipe end,get_inventory=function() return nil end}
+  local point={trash_not_requested=true}
+  local req={valid=true,unit_number=2,name='requester-chest',position={x=22.5,y=-3.5},prototype={logistic_mode='requester'},
+    get_item_count=function() return 0 end,get_requester_point=function() return point end}
+  local input={valid=true,unit_number=3,type='inserter',position={x=22.5,y=-2.5},pickup_target=req,drop_target=m}
+  local output={valid=true,unit_number=4,type='inserter',position={x=24.5,y=-0.5},pickup_target=m}
+  m.surface={find_entities_filtered=function() return {input,output} end}
+  local B=dofile('mod/agent-harness_0.1.0/batch.lua'){position=function(q) return q end,integer=function(v) return v end,
+    entity=function() return m end,submit=function() end}
+  local r=B.run({},{position={x=22.5,y=-0.5},count=1,dry_run=true})
+  local labels={}
+  for i,st in ipairs(r.steps) do labels[i]=st.label end
+  eq(table.concat(labels,' / '),'hold output / input held / keep staged (trash unrequested off) / clear requester / stage / staged tungsten-plate / staged / input on / made / input off / release output / trash unrequested on again')
+  eq(r.steps[3].args.trash_unrequested,false); eq(r.steps[12].args.trash_unrequested,true)
+  eq(r.trash_unrequested,'on: switched off for the batch and on again after')
+  has(r.plan[4],'requester (22.5,-3.5) has trash unrequested on')
+  point.trash_not_requested=false
+  r=B.run({},{position={x=22.5,y=-0.5},count=1,dry_run=true})
+  eq(#r.steps,10); eq(r.trash_unrequested,'off')
+  defines=nil
+end
+print('d20_batch53 L6 assembler_batch keeps the staged items: ok')

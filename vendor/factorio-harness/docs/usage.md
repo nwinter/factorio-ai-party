@@ -9243,3 +9243,16 @@ fh watch    # deploy on every change
   read "nothing the foundation rules hold it back by". Now that ghost and those within 16 tiles of it: `waits: ...`, or
   `not checked: the check ran out of its 4096 tile looks before deciding this one ...; unknown, not clear`, or `nothing
   the foundation rules hold it back by (checked with the N tile ghosts within 16 tiles of it)`. Tests: tests/d20_batch52.lua.
+- L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
+  wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
+  anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
+  {name, quality} or false}, the slots not named kept; `bar` is the usable slots (0..40) or false for none. On
+  2.0.77 the engine took an iron-plate filter on a slot holding coal; the GUI filters an occupied slot to what it
+  holds, so a filter on a slot holding another item is refused, naming it, and nothing is set. The reply adds
+  `wagon_slots {wagon, carriage, set, slot_filters ["2 low-density-structure@uncommon"], bar, line}`; `{wagon}` alone
+  reads them. No cargo moves. Checked on a wagon on the private copy (filters with quality, bar 30, cleared).
+- L6 (Astra #1205): assembler_batch reads the requester's trash unrequested. On, the plan switches it off before the
+  requester's requests are cleared and staged (`keep staged (trash unrequested off)`) and on again after the output
+  is released (`trash unrequested on again`); the dry run's `trash_unrequested` and plan line say so, and that a
+  plan stopped between leaves it off. Tests tests/d20_batch53.lua (L5, L6), tests/d17_batch19_rt.lua (the steps pass
+  the queue's checks).
