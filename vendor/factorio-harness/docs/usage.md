@@ -9318,3 +9318,9 @@ fh watch    # deploy on every change
   the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
   from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
   its cause read that way; event.source is set on 2.0.77.
+- N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
+  7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
+  read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;
+  uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
+  phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
+  tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).

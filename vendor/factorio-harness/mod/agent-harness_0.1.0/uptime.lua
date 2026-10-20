@@ -6,9 +6,16 @@
 -- up to MAX machines, sampled in the background; uptime {} reads it, so far or done. Left out (said in the reply): what
 -- happens between samples (a stop shorter than a second may not be seen), the exact ticks in each status (shares are
 -- of samples), and why an ingredient is short upstream.
+-- (d20 batch54 N2, viewer Aurora: "Sampling every 60 ticks can miss a 20-tick pulse entirely") sample k comes at
+-- start + 60 k + (7 k mod 60) ticks, a phase 7 ticks later each second, so 60 samples meet every tick of a second once
+-- and a machine working 20 ticks of every 60 reads a third of the time whatever its phase; the last at the window's end.
 return function(api)
   local M = {}
-  M.MAX, M.EVERY = 16, 60
+  M.MAX, M.EVERY, M.STEP = 16, 60, 7
+  local function next_at(job)
+    local k = job.samples
+    return math.min(job.start + M.EVERY * k + (M.STEP * k) % M.EVERY, job.until_tick)
+  end
   local CRAFT = {['assembling-machine']=true, furnace=true, ['rocket-silo']=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
@@ -89,9 +96,9 @@ return function(api)
       rows[#rows+1] = row
       lines[#lines+1] = row.line
     end
-    return {done=done or nil, watching=not done or nil, seconds=math.floor(secs + 0.5), of_seconds=job.seconds, samples=job.samples, every_ticks=M.EVERY,
+    return {done=done or nil, watching=not done or nil, seconds=math.floor(secs + 0.5), of_seconds=job.seconds, samples=job.samples, every_ticks=M.EVERY, phase_step_ticks=M.STEP,
       started_tick=job.start, machines=rows, lines=lines,
-      left_out='status once a second: a stop shorter than that may not be seen and shares are of samples, not exact ticks; crafts are the machine\'s finished count; why an ingredient is short upstream is not read (supply or trace for that)'}
+      left_out='status once a second at a phase 7 ticks later each second (60 samples meet every tick of a second once): a stop shorter than a second may not be seen and shares are of samples, not exact ticks; crafts are the machine\'s finished count; why an ingredient is short upstream is not read (supply or trace for that)'}
   end
   function M.tick(tick)
     local all = api.state().uptime
@@ -99,7 +106,7 @@ return function(api)
     for _, job in pairs(all) do
       if not job.result and tick >= job.next_tick then
         M.sample(job)
-        job.next_tick = tick + M.EVERY
+        job.next_tick = next_at(job)
         if tick >= job.until_tick then
           job.result = M.result(job, true)
           for _, m in ipairs(job.machines) do m.e = nil end
@@ -131,11 +138,11 @@ return function(api)
     local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick, seconds=seconds, samples=0, machines=machines}
     store()[p.index] = job
     M.sample(job)
-    job.next_tick = game.tick + M.EVERY
+    job.next_tick = next_at(job)
     local lines = {}
     for _, m in ipairs(machines) do lines[#lines+1] = string.format('%s %s %s: %d finished so far', m.name, at(m.position), m.recipe, m.finished0) end
     return {watching=true, seconds=seconds, machines=#machines, baseline=lines, replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
-      line=string.format('watching %d machine%s for %ds, a status sample a second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)}
+      line=string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)}
   end
   M.schema = {uptime = {positions='1..16 crafting machines {x,y} (an assembler, furnace, chemical plant, biochamber, ...; in sight or by remote view)', position='or one',
     seconds='optional 10..3600 (default 600): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',
