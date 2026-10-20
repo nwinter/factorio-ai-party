@@ -17,7 +17,11 @@
   remote lane too); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts` is the same name;
   `surface` as rocket_ready); `ammo_below` with `platform` (`count`; every ammo turret aboard, or `positions` or
   `area` in platform coordinates; saw names the lowest turret and what it holds; a remote and platform lane wait and
-  guard, e.g. `{"until":"ammo_below","platform":"Bastion","count":20}`); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
+  guard, e.g. `{"until":"ammo_below","platform":"Bastion","count":20}`); `platform_loss` (`platform`, `at_least?`,
+  `names?`, `since_tick?`: our entities on that platform destroyed since the wait or guard began; saw names each, where,
+  by what and when; a remote and platform lane wait and guard, met on a one-shot loss that ammo_below misses, e.g.
+  `{"until":"platform_loss","platform":"Edge5"}`); `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
+  remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,

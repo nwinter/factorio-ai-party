@@ -25,10 +25,12 @@ return function(api)
           or ((c['until']=='produced' or c['until']=='fluid_count' or c['until']=='circuit_signal' or c['until']=='pod_landed') and type(c.platform)=='string' and c.platform~='')
           -- (d20 batch52 K1) the guns of a platform; (K2) a silo on a named planet
           or (c['until']=='ammo_below' and type(c.platform)=='string' and c.platform~='')
+          -- (d20 batch55 P5, Sol #1400) a platform's losses since the wait began; its ghosts
+          or ((c['until']=='platform_loss' or c['until']=='ghosts_waiting') and type(c.platform)=='string' and c.platform~='')
           or ((c['until']=='rocket_ready' or c['until']=='rocket_parts') and type(c.surface)=='string' and c.surface~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, rocket_ready or rocket_parts with surface, and all of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss or ghosts_waiting with platform, rocket_ready or rocket_parts with surface, and all of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).
@@ -139,7 +141,7 @@ return function(api)
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below with platform, rocket_ready or rocket_parts with surface (guards\' when too); drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts, deconstruct and platform_rearm with explicit platform; rotate with platform or surface; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below, platform_loss or ghosts_waiting with platform, rocket_ready or rocket_parts with surface (guards\' when too); drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts, deconstruct and platform_rearm with explicit platform; rotate with platform or surface; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end
