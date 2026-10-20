@@ -1,4 +1,5 @@
 -- Run from repository root: lua tests/threat.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path  -- (snapfail.lua)
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^.5 end
 defines={flow_precision_index={one_minute=1}}
@@ -345,6 +346,34 @@ do
   local s3=T3.summary(a)
   eq(s3.pollution.cloud_chunks,first_s.pollution.cloud_chunks); eq(s3.pollution.cloud_extent,first_s.pollution.cloud_extent)
   eq(s3.pollution.cloud_beyond_chart,first_s.pollution.cloud_beyond_chart)
+  -- (d20 batch55 P1, viewer Aurora) A sweep that fails: the chart keeps the tick it was made at, status says its age and
+  -- the failure, and the next sweep starts CHART_TICKS after the failure.
+  local _,sh=next(st3.threat_shared)
+  local made=sh.chart.tick
+  local gen=surf.is_chunk_generated
+  game.tick=made+3600
+  T3.tick(game.tick); assert(next(st3.chart_jobs),'a sweep started')
+  surf.is_chunk_generated=function() error('chunk read broke') end
+  game.tick=game.tick+1; T3.tick(game.tick)
+  eq(next(st3.chart_jobs),nil,'the sweep ended'); eq(st3.chart_errors.count,1)
+  eq(sh.chart.tick,made,'the chart keeps its tick')
+  local failed_at=game.tick
+  game.tick=game.tick+600
+  eq(T3.summary(a).chart.refresh_failed,string.format('the last refresh of the chart failed 10s ago (%s); the chart is from %ds ago',
+    sh.chart.refresh_failed.error,math.floor((game.tick-made)/60)))
+  assert(sh.chart.refresh_failed.error:find('chunk read broke',1,true))
+  surf.is_chunk_generated=gen
+  game.tick=failed_at+3599; T3.tick(game.tick); eq(next(st3.chart_jobs),nil,'no sweep within CHART_TICKS of the failure')
+  game.tick=game.tick+1; T3.tick(game.tick); assert(next(st3.chart_jobs),'the next sweep')
+  -- A sweep finishing after a forced read (threats=true) never replaces its chart.
+  local job_start=select(2,next(st3.chart_jobs)).start
+  game.tick=game.tick+2; T3.tick(game.tick)
+  local forced=T3.summary(a,true)
+  local newer=sh.chart
+  eq(newer.tick,game.tick); eq(forced.chart.refresh_failed,nil,'a new chart carries no failure')
+  repeat game.tick=game.tick+1; T3.tick(game.tick) until not next(st3.chart_jobs)
+  assert(job_start<newer.tick)
+  eq(sh.chart,newer,'the sweep\'s older chart was dropped')
   game.forces={enemy=enemy,player=mine}; game.get_surface=nil; game.players=nil
 end
 -- The spawner index (operator 18:33: threat.watch 93 ms in one reply, its find of spawners within 512 tiles): built in

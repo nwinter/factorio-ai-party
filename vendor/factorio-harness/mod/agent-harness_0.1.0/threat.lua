@@ -2,6 +2,7 @@
 -- spawners it reaches, plus attack alerts. Only what a player could see: the
 -- pollution overlay and spawners on charted chunks, unit groups in visible ones.
 -- The surface scan is cached because status is polled several times a second.
+local snapfail=require('snapfail')
 return function(api)
   local M={}
   local CACHE_TICKS,CHART_TICKS,MAX_BASE_RANGE,CLOUD_SEARCH,EVOLUTION_WINDOW,MAX_NEWS=600,3600,512,8,18000,16
@@ -416,13 +417,14 @@ return function(api)
     for key in pairs(st.threat_shared or {}) do keys[#keys+1]=key end
     table.sort(keys)
     for _,key in ipairs(keys) do
-      -- A step that fails ends its sweep (noted in chart_errors); the chart is kept another CHART_TICKS.
+      -- A step that fails ends its sweep (noted in chart_errors and on the chart, snapfail.lua); the chart keeps the tick
+      -- it was made at and the next sweep starts CHART_TICKS after the failure.
       local e=st.threat_shared[key]
       local ok,err=pcall(M.sweep_step,st,key,e,tick)
       if not ok then
         st.chart_jobs[key]=nil
         st.chart_errors={count=((st.chart_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
-        if e.chart then e.chart.tick=tick end
+        if e.chart then e.chart.refresh_failed=snapfail.failed(err,tick) end
       end
     end
     -- A reply's nest watch (M.watch).
@@ -446,7 +448,7 @@ return function(api)
       local s=e.surface and game.get_surface(e.surface)
       if not job then
         local g=e.chart and e.chart.gen
-        if g and force and s and tick-e.chart.tick>=CHART_TICKS then
+        if g and force and s and tick-math.max(snapfail.since(e.chart.tick,e.chart.refresh_failed),e.chart.idle_tick or e.chart.tick)>=CHART_TICKS then
           local b={}
           if g.left then b={left=g.left-SWEEP_MARGIN,right=g.right+SWEEP_MARGIN,top=g.top-SWEEP_MARGIN,bottom=g.bottom+SWEEP_MARGIN} end
           for _,pl in pairs(game.players or {}) do
@@ -456,7 +458,7 @@ return function(api)
           if b.left then
             local per=math.min(SWEEP,math.max(SWEEP_MIN,math.ceil((b.right-b.left+1)*(b.bottom-b.top+1)/SWEEP_TICKS)))
             st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top,per=per}
-          else e.chart.tick=tick end  -- no generated chunk and nobody there: nothing to sweep
+          else e.chart.idle_tick=tick end  -- no generated chunk and nobody there: nothing to sweep (the chart's tick stays)
         end
       elseif not (force and s) then st.chart_jobs[key]=nil
       else
@@ -468,7 +470,11 @@ return function(api)
           n=n+1; job.x=job.x+1
           if job.x>job.right then job.x=job.left; job.y=job.y+1 end
         end
-        if job.y>job.bottom then e.chart=chart_done(job.t,s,force,job.start); st.chart_jobs[key]=nil end
+        if job.y>job.bottom then
+          -- (a chart made since the sweep started, threats=true, is newer: the sweep's is dropped)
+          if not snapfail.older(job.start,e.chart and e.chart.tick) then e.chart=chart_done(job.t,s,force,job.start) end
+          st.chart_jobs[key]=nil
+        end
       end
     end
   end
@@ -571,7 +577,8 @@ return function(api)
     pollution.cloud_chunks=c.cloud.chunks; pollution.cloud_extent=c.cloud.extent
     pollution.cloud_beyond_chart=c.cloud.beyond_chart
     return {evolution=M.evolution(p),pollution=pollution,enemies=enemies,as_of=entry.tick<game.tick and entry.tick or nil,
-      chart={charted_chunks=c.charted_chunks,visible_chunks=c.visible_chunks,extent=c.extent,radars=c.radars}}
+      chart={charted_chunks=c.charted_chunks,visible_chunks=c.visible_chunks,extent=c.extent,radars=c.radars,
+        refresh_failed=snapfail.line('the chart',c.tick,c.refresh_failed)}}
   end
 
   -- Attack alerts: gathered groups in visible chunks, and damage to our

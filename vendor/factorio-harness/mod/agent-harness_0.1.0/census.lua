@@ -13,6 +13,7 @@
 --   asked for in the last ORE_WANT ticks), its grids made in steps after the walk.
 -- Each part says as_of (the tick its pass started). Robots and vehicles move during a pass: one may count twice or
 -- not at all in a surface's count. Storage only; nothing in the game changes.
+local snapfail = require('snapfail')
 return function(api)
   local M = {operator={}}
   local walk = api.walk or require('walk'){state=api.state}
@@ -425,7 +426,7 @@ return function(api)
   function M.step(st, tick)
     local job = st.job
     if not job then
-      if st.done and tick - st.done.start < PERIOD then return end
+      if st.done and tick - snapfail.since(st.done.start, st.done.refresh_failed) < PERIOD then return end
       st.job = new_job(tick, st)
       return
     end
@@ -611,7 +612,8 @@ return function(api)
     if not ok then
       st.job = nil
       st.errors = {count=((st.errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
-      if st.done then st.done.start = tick end  -- (the last pass is kept another PERIOD)
+      -- (the last pass keeps the tick it started at, its as_of; the next starts PERIOD after the failure, snapfail.lua)
+      if st.done then st.done.refresh_failed = snapfail.failed(err, tick) end
     end
   end
 
@@ -637,7 +639,7 @@ return function(api)
     if not out or #out == 0 then return nil end
     local d = api.state().census.done
     return {holders=out, belts=(d.belt_items or {})[surface.index] or {}, hands=(d.hand_items or {})[surface.index] or {}, as_of=as_of,
-      capped=capped or nil}
+      capped=capped or nil, refresh_failed=snapfail.line('the census pass', d.start, d.refresh_failed)}
   end
   -- (d18 batch37 B1) the chests of a force on a surface the last pass found (nil before a pass lists them).
   function M.chests_on(force, surface)
@@ -716,7 +718,8 @@ return function(api)
     assert(args.surface == nil or (type(args.surface) == 'string' and part == 'basemap'), 'surface goes with part basemap: another planet\'s coarse map')
     if part == 'basemap' and args.ore then st.ore_asked = game.tick end
     if not d then return {ready=false, part=part, pass_running=st.job ~= nil} end
-    local out = {ready=true, part=part, as_of=d.start, pass_ticks=d.tick - d.start}
+    local out = {ready=true, part=part, as_of=d.start, pass_ticks=d.tick - d.start, age_s=math.floor((game.tick - d.start) / 60),
+      refresh_failed=snapfail.line('the census pass', d.start, d.refresh_failed)}
     if part == 'extras' then
       out.electric_machines, out.starved = d.extras.electric_machines, d.extras.starved
     elseif part == 'snapshot' then

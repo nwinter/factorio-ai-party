@@ -305,6 +305,50 @@ do
   game.tick=game.tick+5000; per_tick=0
   N.lines(force,'nauvis',8); N.read({force=force},{})
   eq(per_tick,0,'a reply reads the last view')
+  -- (d20 batch55 P1, viewer Aurora) A view job and a pole map walk that fail: the view and the map keep the ticks they
+  -- were made at, the reply says the view's age and the failure, and the next job starts VIEW_TICKS after it.
+  local nn=storage.networks
+  local get_surface=game.get_surface
+  game.get_surface=function(i) for _,sf in pairs(game.surfaces) do if sf.index==i then return sf end end end
+  local held,map_made=nn.views.player,nn.map_tick
+  local made=held.tick
+  local fail
+  nauvis.find_entities_filtered=function(f) if fail and not f.position then error(fail) end return find(f) end
+  game.tick=game.tick+1; N.tick(game.tick); assert(nn.view_jobs.player and nn.map_job,'a view job and a map walk')
+  fail='band find broke'
+  repeat game.tick=game.tick+1; N.tick(game.tick) until not nn.view_jobs.player and not nn.map_job
+  fail=nil
+  eq(nn.views.player,held); eq(held.tick,made,'the view keeps its tick'); eq(nn.map_tick,map_made,'the map keeps its tick')
+  assert(held.refresh_failed.error:find('band find broke',1,true)); assert(nn.map_failed.error:find('band find broke',1,true))
+  local failed_at=held.refresh_failed.tick
+  game.tick=game.tick+60
+  local told=N.read({force=force},{})
+  eq(told.as_of,string.format('%ds ago',math.floor((game.tick-made)/60)))
+  eq(told.refresh_failed,string.format('the last refresh of the networks view failed %ds ago (%s); the networks view is from %ds ago',
+    math.floor((game.tick-failed_at)/60),held.refresh_failed.error,math.floor((game.tick-made)/60)))
+  while game.tick<failed_at+3599 do game.tick=game.tick+1; N.tick(game.tick) end
+  eq(nn.view_jobs.player,nil,'no view job within VIEW_TICKS of the failure')
+  game.tick=game.tick+1; N.tick(game.tick); assert(nn.view_jobs.player,'the next view job')
+  -- A job finishing after a newer view (a force's first view, made in a reply) never replaces it; the same for a pole
+  -- map walk finishing after a map made at once.
+  local job_start=nn.view_jobs.player.start
+  for _=1,10 do game.tick=game.tick+1; N.tick(game.tick) end
+  nn.views.player=nil
+  N.read({force=force},{})
+  local newer=nn.views.player
+  eq(newer.tick,game.tick); eq(newer.refresh_failed,nil)
+  repeat game.tick=game.tick+1; N.tick(game.tick) until not nn.view_jobs.player
+  assert(job_start<newer.tick)
+  eq(nn.views.player,newer,'the job\'s older view was dropped')
+  while not nn.map_job do game.tick=game.tick+1; N.tick(game.tick) end
+  local walk_start=nn.map_job.start
+  nn.map_tick=nil
+  while not nn.map_tick do game.tick=game.tick+1; N.tick(game.tick) end
+  local at_once=nn.map_tick
+  repeat game.tick=game.tick+1; N.tick(game.tick) until not nn.map_job
+  assert(walk_start<at_once)
+  eq(nn.map_tick,at_once,'the walk\'s older map was dropped')
+  game.get_surface=get_surface
   -- (alert_groups runs in pushalerts' background job; only its low boilers' fuel look-ups read the world, bounded)
   nauvis.find_entities_filtered=find
 end
