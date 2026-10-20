@@ -281,6 +281,13 @@ return function(api)
     end
     return {checks=out, lines=lines, count=#out, note=#rows > M.COMPARE and string.format('the first %d checks\' areas compared; checks {id} compares one', M.COMPARE) or nil}
   end
+  -- A check's state as stored (no area read), for a loss incident's recovery line: nil when there is no such check.
+  function M.state_of(id)
+    local c = store().list[id]
+    if not c then return nil end
+    local v = view(c, false)
+    return string.format('check #%d %s: %s%s', c.id, c.name, v.state, v.result_age_s and string.format(' (last run %s %s ago)', v.result, ago(game.tick - v.result_tick)) or '')
+  end
   -- A board item's checks, as stored (no area read): lines for the item's view.
   function M.item_lines(id)
     local out = {}

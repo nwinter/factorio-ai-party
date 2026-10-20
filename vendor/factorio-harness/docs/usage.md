@@ -9454,3 +9454,15 @@ fh watch    # deploy on every change
   read fail (17 ghosts), pass once built, stale after an inserter was rotated (named), fail when run again (facing
   otherwise). The index lists `checks`; agent/team.md has no line (the codex core is at its cap). Tests:
   tests/d20_batch55.lua (P2).
+- P3 (viewer Aurora 14:38: "Could alerts include the owner's dated recovery check?"). What existed: loss incidents
+  (runtime.lua record_loss: losses on a surface within 32 tiles of a box, one raid, an id, the last 64 kept) had no
+  owner or acknowledgment; a reader is told each incident once and then its growth (losses_told), and a shift start
+  closes them. Added: `losses {incident, recovery: {checked, result?, check?}}` sets the incident's recovery check (who,
+  now, what was checked, the result, and a `checks` check whose state its line shows); `false` clears it, a new one
+  replaces it (said). The incident's lines (team.alerts, status alerts.latest) end with `handled by sol, checked 12m00s
+  ago: walls at the east gate: 2 walls rebuilt`; its row (alerts.incidents) has `recovery {by, tick, checked, result,
+  check, reopened, reopened_tick, lost_since}`. A loss after the check that joins the incident, or lands within 2
+  tiles of its box (a new incident after 5 quiet minutes), reopens it: `reopened: 1 lost there since sol's recovery
+  check 6m14s ago (1 stone-wall; the first 1s ago; that check: ...)`. Counted as each loss is recorded (the incidents
+  are looped there already); nothing is read from the map. An argument on `losses`, so no new index line. Tests:
+  tests/board.lua (recovery checks).
