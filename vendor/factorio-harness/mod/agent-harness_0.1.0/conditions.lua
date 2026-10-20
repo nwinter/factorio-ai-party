@@ -401,11 +401,45 @@ return function(api)
       return met,string.format('%s level %d%s: %s (levels to %d researched%s)',c.technology,want,c.level and '' or ' (its level when the wait began)',
         met and 'researched' or 'not researched yet',t.researched and lv or lv-1,t.researched and ', every level' or string.format(', level %d next%s',lv,infinite and ', infinite' or string.format(' of %d',max)))
     end,
-    -- Our ghosts (entities and tiles) waiting to be built.
+    -- Our ghosts (entities and tiles) waiting to be built. (d20 batch55 P5, Sol #1400) with platform: on that platform of
+    -- ours (every ghost, or those in area, platform coordinates), a remote lane wait and guard too.
     ghosts_waiting=function(p,c)
+      if c.platform then
+        local pl
+        for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+        assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+        local n=0
+        local boxes=M.areas_of(c.area)
+        if #boxes==0 then n=pl.surface.count_entities_filtered{type={'entity-ghost','tile-ghost'},force=p.force}
+        else for _,ar in ipairs(boxes) do n=n+pl.surface.count_entities_filtered{area=ar,type={'entity-ghost','tile-ghost'},force=p.force} end end
+        return n>=(c.at_least or 1),string.format('platform %s: %d ghost%s%s',c.platform,n,n==1 and '' or 's',#boxes>0 and ' in the area' or '')
+      end
       local centre,radius=area(p,c)
       local n=#p.surface.find_entities_filtered{position=centre,radius=radius,type={'entity-ghost','tile-ghost'},force=p.force}
       return n>=(c.at_least or 1),n..' ghosts'
+    end,
+    -- (d20 batch55 P5, Sol #1400: Edge5 lost a railgun turret in one shot while every other turret was fed, so no
+    -- ammo_below guard fired) our entities on a platform destroyed since the wait or guard began (since_tick, default
+    -- its first check, kept on the wait or the condition): met at at_least (default 1), of names when given; saw names
+    -- each one (where, by what, when), as the game's destroyed alerts do.
+    platform_loss=function(p,c,estimate,record)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+      local holder=record or c
+      holder.loss_since=holder.loss_since or c.since_tick or game.tick
+      local names
+      if c.names then names={}; for _,n in ipairs(c.names) do names[n]=true end end
+      local rows,n={},0
+      if api.losses_since then rows,n=api.losses_since(p.force.name,pl.surface.name,holder.loss_since,names,4) end
+      local want=c.at_least or 1
+      if n==0 then return false,string.format('platform %s: nothing of ours%s lost since tick %d',c.platform,names and ' of those names' or '',holder.loss_since) end
+      local parts={}
+      for _,r in ipairs(rows) do
+        parts[#parts+1]=string.format('%s (%g,%g)%s %ds ago',r.n,r.x,r.y,r.c and ' by '..r.c or '',math.floor((game.tick-r.t)/60))
+      end
+      return n>=want,string.format('platform %s: %d of ours lost since tick %d%s: %s%s',c.platform,n,holder.loss_since,
+        n<want and string.format(' (met at %d)',want) or '',table.concat(parts,', '),n>#rows and string.format(', +%d more',n-#rows) or '')
     end,
     -- A platform's foundation built (Astra, d15 06:23: ship conversions ran in the body queue with an outside tile
     -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either.
@@ -582,7 +616,7 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -618,8 +652,10 @@ return function(api)
     local kind=c['until']
     if c.area~=nil and (kind=='platform_built' or kind=='platform_ready') then
       -- (C5: an area or a list of them on the platform, checked below)
+    elseif c.area~=nil and kind=='ghosts_waiting' and c.platform~=nil then
+      M.areas_of(c.area)
     elseif c.area~=nil then
-      assert(kind=='ammo_below' or kind=='fuel_below','area applies to ammo_below or fuel_below (and platform_built, platform_ready)')
+      assert(kind=='ammo_below' or kind=='fuel_below','area applies to ammo_below or fuel_below (and platform_built, platform_ready, ghosts_waiting with platform)')
       assert(c.radius==nil and c.position==nil,'area excludes position and radius')
       local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
       assert(r.x>l.x and r.y>l.y and r.x-l.x<=256 and r.y-l.y<=256,'area must be nonempty and at most 256x256')
@@ -707,6 +743,17 @@ return function(api)
       if c.at_least~=nil then number(c.at_least,1,1000,'at_least') end
     end
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
+    if kind=='ghosts_waiting' and c.platform~=nil then
+      assert(type(c.platform)=='string' and #c.platform>0,'ghosts_waiting platform takes a platform name')
+      assert(c.position==nil and c.radius==nil,'ghosts_waiting on a platform: every ghost aboard, or those in area (platform coordinates); no position or radius')
+    end
+    if kind=='platform_loss' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_loss requires platform (a platform of ours by name)')
+      if c.at_least~=nil then number(c.at_least,1,1000,'at_least') end
+      assert(c.names==nil or (type(c.names)=='table' and #c.names>=1 and #c.names<=16),'platform_loss names: 1..16 entity names')
+      for _,n in ipairs(c.names or {}) do assert(type(n)=='string','platform_loss names are entity names') end
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_loss since_tick is a game tick up to now')
+    end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
     if kind=='pod_landed' then

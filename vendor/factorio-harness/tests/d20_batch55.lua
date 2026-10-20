@@ -4,6 +4,7 @@
 -- in their own files (tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua); here snapfail.lua and
 -- the ground watch.
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 game={tick=0}
 
@@ -205,3 +206,84 @@ do
   defines=nil
 end
 print('d20_batch55 P4 uptime crafts and productivity completions: ok')
+
+-- P5 (Sol #1400: Edge5 lost a railgun turret in one shot while every other turret was fed, so the ammo_below guard
+-- did not fire; ghosts_waiting with platform was refused on the remote lane). platform_loss: met on the first new loss
+-- on the platform since the guard began, saying what; ghosts_waiting with platform; both on the remote lanes.
+do
+  defines={inventory={turret_ammo=7}}
+  prototypes={item={['railgun-ammo']={}},quality={normal={}}}
+  local st={}
+  game={tick=1000}
+  local function rail(x,y,n)
+    local e={valid=true,name='railgun-turret',type='ammo-turret',position={x=x,y=y},force={name='player'},surface={name='platform-7'}}
+    e.get_inventory=function() return {get_item_count=function() return n end,get_contents=function() return {{name='railgun-ammo',count=n}} end} end
+    return e
+  end
+  local guns={rail(-6,-12,10),rail(0,-14,10),rail(6,-12,10)}
+  local ghosts=0
+  local deck={name='platform-7',find_entities_filtered=function(f)
+      local out={}
+      for _,e in ipairs(guns) do if e.valid then out[#out+1]=e end end
+      return out
+    end,
+    count_entities_filtered=function(f) return ghosts end}
+  local edge={valid=true,name='Edge5',surface=deck}
+  local force={name='player',platforms={edge}}
+  local sol={position={x=0,y=0},surface={name='nauvis'},force=force}
+  local L=dofile('mod/agent-harness_0.1.0/lostlog.lua'){state=function() return st end,position=function(v) return v end}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,known=function() return true end,
+    losses_since=function(f,s,since,names,max) return L.since(f,s,since,names,max) end}
+  -- a loss before the guard began does not count
+  L.died({force={name='player'},surface={name='platform-7'},name='solar-panel',position={x=3,y=3}},'small-metallic-asteroid')
+  game.tick=1200
+  local guard_ammo={['until']='ammo_below',platform='Edge5',count=1}
+  local guard_loss={['until']='platform_loss',platform='Edge5'}
+  C.validate(guard_ammo); C.validate(guard_loss)
+  -- the guards as check_guards reads them: no wait record, the condition kept in the queue
+  eq((C.check(sol,guard_ammo)),false,'every turret fed')
+  local met,saw=C.check(sol,guard_loss)
+  eq(met,false); eq(saw,'platform Edge5: nothing of ours lost since tick 1200'); eq(guard_loss.loss_since,1200,'kept on the condition')
+  -- a loss on another surface: not this platform's
+  game.tick=1300
+  L.died({force={name='player'},surface={name='nauvis'},name='stone-wall',position={x=1,y=1}},'small-biter')
+  eq((C.check(sol,guard_loss)),false)
+  -- one railgun turret, fed, destroyed in one shot; the other two still armed
+  game.tick=1400
+  guns[2].valid=false
+  L.died(guns[2],'big-metallic-asteroid')
+  game.tick=1410
+  eq((C.check(sol,guard_ammo)),false,'the armed turrets: ammo_below does not fire')
+  met,saw=C.check(sol,guard_loss)
+  eq(met,true); eq(saw,'platform Edge5: 1 of ours lost since tick 1200: railgun-turret (0,-14) by big-metallic-asteroid 0s ago')
+  -- names and at_least
+  local named={['until']='platform_loss',platform='Edge5',names={'thruster'},since_tick=1200}
+  C.validate(named)
+  eq((C.check(sol,named)),false,'not of those names')
+  local two={['until']='platform_loss',platform='Edge5',at_least=2,since_tick=999}
+  met,saw=C.check(sol,two)
+  eq(met,true); eq(saw,'platform Edge5: 2 of ours lost since tick 999: railgun-turret (0,-14) by big-metallic-asteroid 0s ago, solar-panel (3,3) by small-metallic-asteroid 6s ago')
+  -- a wait step keeps its start on its record
+  local rec={}
+  eq((C.check(sol,{['until']='platform_loss',platform='Edge5'},nil,rec)),false); eq(rec.loss_since,1410)
+  -- ghosts_waiting with platform
+  ghosts=0
+  eq((C.check(sol,{['until']='ghosts_waiting',platform='Edge5'})),false)
+  ghosts=1
+  met,saw=C.check(sol,{['until']='ghosts_waiting',platform='Edge5'})
+  eq(met,true); eq(saw,'platform Edge5: 1 ghost')
+  fails(function() C.validate({['until']='ghosts_waiting',platform='Edge5',radius=8}) end,'no position or radius')
+  fails(function() C.validate({['until']='platform_loss'}) end,'platform_loss requires platform')
+  fails(function() C.validate({['until']='platform_loss',platform='Edge5',since_tick=99999}) end,'since_tick is a game tick up to now')
+  -- the remote lanes take both, as waits and as guards' when
+  local lanes=dofile('mod/agent-harness_0.1.0/queue_lanes.lua')
+  local checked
+  local function factory(api) checked=api.check_step; return {handlers={},schema={queue_submit={}}} end
+  pcall(lanes,{scheduler={handlers={},schema={queue_submit={}}},base={player=function() end,busy=function() end},factory=factory,is_read=function() return false end})
+  assert(checked,'the lane check')
+  checked('wait_until',{['until']='platform_loss',platform='Edge5'})
+  checked('wait_until',{['until']='ghosts_waiting',platform='Edge5'})
+  fails(function() checked('wait_until',{['until']='ghosts_waiting'}) end,'ghosts_waiting with platform')
+  defines,prototypes=nil,nil
+end
+print('d20_batch55 P5 platform_loss: ok')
