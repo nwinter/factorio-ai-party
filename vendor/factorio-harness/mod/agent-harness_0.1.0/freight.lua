@@ -317,6 +317,13 @@ return function(api)
     else
       seg.kind, seg.from, seg.to = 'leg', w.leg.from, w.leg.to
       seg.visited = try(function() return pl.last_visited_space_location.name end)
+      -- (d20 batch52 K4, Astra #955) where along the connection it was when the leg began, and the thrusters and hull
+      -- width it flew with: the leg's speed is the distance flown over its time, and an estimate from it says when
+      -- the ship has changed since
+      seg.km0 = w.leg.flown and w.leg.length and w.leg.flown * w.leg.length or nil
+      seg.km1 = seg.km0
+      local g = M.geometry(pl)
+      seg.thrusters, seg.width = g.thrusters, g.width
     end
     rec.segs[#rec.segs+1] = seg
     while #rec.segs > M.KEEP do table.remove(rec.segs, 1) end
@@ -425,6 +432,8 @@ return function(api)
     elseif seg and not seg['end'] and rec.prev then
       spoil_step(seg, rec.prev, counts)
     end
+    -- (K4) the distance along the connection, kept each look while the leg goes on
+    if seg and seg.kind == 'leg' and not seg['end'] and w.leg and w.leg.flown and w.leg.length then seg.km1 = w.leg.flown * w.leg.length end
     rec.prev, rec.tick = counts, tick
     M.phase_step(rec, pl, w)
     -- The last flying speed (the arrival estimate before a departure reads it).
@@ -440,6 +449,19 @@ return function(api)
       end
       rec.leg_top = math.max(rec.leg_top or 0, v)
     end
+  end
+  -- (K4) The ship as it flies: its thrusters (count) and its hull's width (the foundation's x extent, in tiles, within
+  -- 128 tiles of the hub: Swift's 771 tiles read in 0.46 ms on the private copy; read when a leg begins).
+  function M.geometry(pl)
+    local s = try(function() return pl.surface end)
+    local out = {thrusters=s and try(function() return s.count_entities_filtered{type='thruster', force=pl.force} end) or nil}
+    local tiles = s and try(function() return s.find_tiles_filtered{name='space-platform-foundation', area={{-128, -128}, {128, 128}}} end)
+    if tiles and #tiles > 0 then
+      local lo, hi = math.huge, -math.huge
+      for _, t in pairs(tiles) do local x = t.position.x; if x < lo then lo = x end; if x > hi then hi = x end end
+      out.width = hi - lo + 1
+    end
+    return out
   end
   -- The speed an estimate flies at: the higher of now and the cruise (km a tick); nil before any flight seen.
   function M.cruise(pl)
@@ -765,10 +787,18 @@ return function(api)
     table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
   end
-  local function pod_done(rec, p, tick)
+  local function pod_done(rec, p, tick, hub_dead)
     local seg = seg_at(rec, p.seg) or {}
     seg.pods = seg.pods or {}
     local here = p.last and p.last.surface
+    -- (d20 batch52 K3, Sol #1323) 2.0.77 on the private copy: a cargo pod still on its platform's surface (waiting to launch, rising, or passing to the planet: its first 400 ticks or so) is removed with the platform when its hub is destroyed, and what it carried is gone; one already coming down over the planet lands as usual
+    if hub_dead and (not here or here == p.from) then
+      local where = 'lost: the platform\'s hub was destroyed before the pod left the platform\'s surface, which removes the pod and what it carried'
+      tally(seg.pods, 'lost', p.cargo)
+      receipt(rec, p, tick, 'lost', where)
+      seg.pods.last_tick = tick
+      return
+    end
     if here and here ~= p.from then
       if p.dest and p.dest.pad then
         local where = string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here)
@@ -845,6 +875,7 @@ return function(api)
     pcall(M.up_settle, rec, tick)
     -- The pods followed: where they are, and the ones gone.
     local keep = {}
+    local hub_dead = not try(function() return pl.hub.valid end)
     for _, p in ipairs(rec.pods or {}) do
       if try(function() return p.pod.valid end) then
         local where = try(function() return {surface=p.pod.surface.name, position=xy(p.pod.position)} end)
@@ -854,7 +885,7 @@ return function(api)
         keep[#keep+1] = p
       else
         p.pod = nil
-        pod_done(rec, p, tick)
+        pod_done(rec, p, tick, hub_dead)
       end
     end
     rec.pods = keep
@@ -912,7 +943,7 @@ return function(api)
   local function pods_text(seg, flying, now)
     local d = seg.pods or {}
     local sent = {n=0, cargo={}}
-    for _, k in ipairs({'received', 'landed', 'gone'}) do
+    for _, k in ipairs({'received', 'landed', 'gone', 'lost'}) do
       local r = d[k]
       if r then sent.n = sent.n + r.n; for name, n in pairs(r.cargo) do sent.cargo[name] = (sent.cargo[name] or 0) + n end end
     end
@@ -937,6 +968,7 @@ return function(api)
     if d.received then bits[#bits+1] = part(d.received, 'received by landing pads') end
     if d.landed then bits[#bits+1] = part(d.landed, 'landed as cargo pod containers (no landing pad)') end
     if d.gone then bits[#bits+1] = part(d.gone, 'gone before leaving the platform') end
+    if d.lost then bits[#bits+1] = part(d.lost, 'lost: the hub was destroyed before they left the platform (delivered nothing)') end
     if fly.n > 0 then bits[#bits+1] = string.format('in flight %d (%s): %s', fly.n, items_text(fly.cargo) or 'empty', table.concat(fly.units, ', ')) end
     return table.concat(bits, ', '), {sent=sent.n, sent_items=sent.cargo, received=d.received and d.received.n or 0,
       received_items=d.received and d.received.cargo or nil, landed=d.landed and d.landed.n or nil, gone=d.gone and d.gone.n or nil,
@@ -1156,6 +1188,10 @@ return function(api)
   -- Per ammo type over the last leg (flying: this leg so far; stopped: the leg before): made and used a minute, what the
   -- hub and the turrets hold now, and while flying what is left at the arrival at that rate (or when it runs out).
   -- A leg opened before this was counted (a runtime update) reads the game's last 10 minutes instead.
+  -- (d20 batch51 H1, viewer Aurora 09:36) The stock, what rockets bring and what is made on the way are platform_endurance's
+  -- (ammomodel.lua): what can reach no turret is left out, said; rockets on their way up count once; made is at most what
+  -- the ingredients aboard allow (Kestrel II's railgun rounds, shift45 12:05: made 145 by the rate against a cap of about
+  -- 30); each row says which limit binds.
   local function per_min(n, minutes)
     local v = minutes > 0 and n / minutes or 0
     return v >= 10 and string.format('%d', math.floor(v + 0.5)) or string.format('%.1f', math.floor(v * 10 + 0.5) / 10)
@@ -1168,8 +1204,11 @@ return function(api)
     end
     local now = ammo_counts(pl) or {}
     -- Every place aboard (the hub's main inventory: its trash goes down at the next stop): hub, turrets, belts, inserter
-    -- hands, machines' outputs (M.stock_places).
-    local sp = M.stock_places(pl)
+    -- hands, machines' outputs (M.stock_places); every item, for the ingredients the model counts.
+    local sp = M.stock_places(pl, setmetatable({}, {__index=function() return true end}))
+    local AM = api.ammomodel and api.ammomodel()
+    -- (the trace of what can reach a turret: its background read, so the platforms read and preflight trace nothing more)
+    local model = AM and try(function() return AM.new(pl, {places=sp, background=true}) end)
     local names, seen = {}, {}
     local function want(name) if not seen[name] then seen[name] = true; names[#names+1] = name end end
     for _, name in ipairs(ammo_names()) do if (sp.total[name] or 0) > 0 then want(name) end end
@@ -1197,7 +1236,12 @@ return function(api)
     local P = defines.flow_precision_index or {}
     local l = flying and M.leg(pl)
     local rows = {}
+    if model then
+      for name, n in pairs(model.received) do if n > 0 then want(name) end end
+    end
     table.sort(names)
+    -- the rates first: the model splits an ingredient two of them draw on by both
+    local counts = {}
     for _, name in ipairs(names) do
       local made, used
       if c0 then
@@ -1206,9 +1250,21 @@ return function(api)
       else
         made, used = flow(name, 'input', P.ten_minutes), flow(name, 'output', P.ten_minutes)
       end
+      counts[name] = {made, used}
+      if model and minutes > 0 then model.make(name, made / minutes) end
+    end
+    for _, name in ipairs(names) do
+      local made, used = counts[name][1], counts[name][2]
       local stock = sp.total[name] or 0
       local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s', name, per_min(made, minutes),
         per_min(used, minutes), window, stock, M.places_text(sp, name))
+      local stranded = model and model.stranded[name] or 0
+      if stranded > 0 then
+        stock = model.held[name] or 0
+        text = text .. string.format('; %d of it can reach no turret (stranded), not counted: %d', stranded, stock)
+      end
+      local rec = model and model.received[name] or 0
+      if rec > 0 then text = text .. string.format('; %d more on rockets on their way up, counted', rec) end
       -- Since the leg began, by place: what was loaded from the hub onto belts and into turrets is told from the firing.
       local moved = c0 and seg.places0 and M.moved_text(seg.places0, flying and sp or seg.places1, name)
       if moved then text = text .. '; since ' .. (flying and 'this leg began' or 'the last leg began') .. ': ' .. moved end
@@ -1223,14 +1279,22 @@ return function(api)
         end
       end
       if l and l.eta_ticks and minutes > 0 then
-        local net = (made - used) / minutes
         local eta_min = l.eta_ticks / 3600
-        local left = stock + net * eta_min
-        if left < 0 and net < 0 then
-          text = text .. string.format('; runs out in %s at that rate, before the arrival at %s in %s', secs(stock / -net * 3600), l.to, secs(l.eta_ticks))
+        local mr, ur = made / minutes, used / minutes
+        local left, lasts, b
+        if model then
+          left, lasts, b = model.left(name, mr, ur, eta_min, stock), model.lasts(name, mr, ur, stock), model.binds(name, mr, eta_min)
+        else
+          left = stock + (mr - ur) * eta_min
+          lasts = mr < ur and stock / (ur - mr) or nil
+        end
+        if left < 0 and lasts then
+          text = text .. string.format('; runs out in %s at that rate, before the arrival at %s in %s', secs(lasts * 3600), l.to, secs(l.eta_ticks))
         else
           text = text .. string.format('; at the arrival at %s in %s about %d at that rate', l.to, secs(l.eta_ticks), math.floor(left + 0.5))
         end
+        if b then text = text .. '; ' .. b.line end
+        if model and not model.feed and model.feed_why then text = text .. '; stranded ammunition not told apart yet: ' .. model.feed_why end
       end
       rows[#rows+1] = text
     end
@@ -1244,7 +1308,7 @@ return function(api)
     for i = #rec.receipts, math.max(1, #rec.receipts - (limit or 8) + 1), -1 do
       local r = rec.receipts[i]
       out[#out+1] = string.format('%s %s %s, %s ago (pod %s, left the hub %s ago, from the stop at %s)', items_text(r.cargo) or 'empty',
-        r.kind == 'received' and 'received by' or r.kind == 'landed' and 'landed as' or 'was', r.where, secs(game.tick - r.tick),
+        r.kind == 'received' and 'received by' or r.kind == 'landed' and 'landed as' or r.kind == 'lost' and 'was' or 'was', r.where, secs(game.tick - r.tick),
         r.unit and '#' .. r.unit or '?', secs(game.tick - r.sent), tostring(r.stop))
     end
     return out

@@ -74,11 +74,21 @@ return function(api)
   local function silo_at(p,c)
     assert(c.position,tostring(c['until'] or 'rocket_ready')..' requires position (a rocket silo\'s, any tile of it)')
     local pos=api.position(c.position)
+    -- (d20 batch52 K2, Sol #882: surface=nauvis from Aquilo read the character's surface) surface: the silo there, by
+    -- remote view in a chunk our force has charted, as its GUI opens there.
+    local s=p.surface
+    if c.surface~=nil then
+      s=game.get_surface(c.surface)
+      if not s then error('no surface named '..tostring(c.surface),0) end
+      if s~=p.surface and not p.force.is_chunk_charted(s,{math.floor(pos.x/32),math.floor(pos.y/32)}) then
+        error(string.format('(%g,%g) on %s is not charted: no remote view of a silo there',pos.x,pos.y,s.name),0)
+      end
+    end
     -- An area search meets the footprint (a position and radius only the silo's centre, read on a copy of world n).
-    for _,e in pairs(p.surface.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},type='rocket-silo',force=p.force}) do
+    for _,e in pairs(s.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},type='rocket-silo',force=p.force}) do
       if e.valid then return e end
     end
-    error(string.format('no rocket silo of ours at (%g,%g) on %s',pos.x,pos.y,p.surface.name),0)
+    error(string.format('no rocket silo of ours at (%g,%g) on %s',pos.x,pos.y,s.name),0)
   end
   -- Each returns met, and a short description of what it saw.
   -- A condition's own memory where no wait record is given (queue step conditions, orders): kept while the condition
@@ -119,13 +129,45 @@ return function(api)
       for _,e in ipairs(turrets(p,c)) do if e.valid and e.shooting_target then busy=busy+1 end end
       return busy==0,busy..' turrets shooting'
     end,
+    -- (d20 batch52 K1, Astra #1352: a bounded native flight test's rescue guard, refused in the remote lane) platform:
+    -- the ammo turrets on that platform, all of them, those at positions or in area (platform coordinates), as its
+    -- turret GUIs show them; saw names the lowest turret and what it holds.
     ammo_below=function(p,c)
-      local low=0
-      for _,e in ipairs(turrets(p,c)) do
-        local n=e.valid and ammo(e)
-        if n and n<c.count then low=low+1 end
+      local list
+      if c.platform then
+        local pl=M.platform_named(p,c.platform)
+        local s=pl.surface
+        if not s then error('platform '..c.platform..' has no surface yet',0) end
+        if c.positions then
+          list={}
+          for _,raw in ipairs(c.positions) do
+            local q=api.position(raw)
+            local found=s.find_entities_filtered{area={{q.x-0.01,q.y-0.01},{q.x+0.01,q.y+0.01}},type='ammo-turret',force=p.force,limit=1}
+            if not found[1] then error(string.format('no ammo turret of ours at (%g,%g) on %s',q.x,q.y,c.platform),0) end
+            list[#list+1]=found[1]
+          end
+        else
+          list=s.find_entities_filtered{area=c.area,type='ammo-turret',force=p.force,limit=1025}
+          assert(#list<=1024,'condition area exceeds 1024 entities')
+        end
+      else list=turrets(p,c) end
+      local low,n,lowest=0,0,nil
+      for _,e in ipairs(list) do
+        local k=e.valid and ammo(e)
+        if k then
+          n=n+1
+          if k<c.count then low=low+1 end
+          if not lowest or k<lowest.k then lowest={e=e,k=k} end
+        end
       end
-      return low>0,low..' turrets below '..c.count
+      local saw=low..' turrets below '..c.count
+      if lowest and c.platform then
+        local inv=lowest.e.get_inventory(defines.inventory.turret_ammo)
+        local held=try(function() local t={} for _,r in ipairs(inv.get_contents()) do t[#t+1]=r.count..' '..r.name end return table.concat(t,', ') end)
+        saw=saw..string.format(' (of %d%s; lowest %s (%g,%g): %s)',n,c.platform and ' on '..c.platform or '',lowest.e.name,lowest.e.position.x,lowest.e.position.y,
+          held and held~='' and held or 'no ammo')
+      elseif c.platform then saw=saw..' (no ammo turret of ours '..(c.area and 'in that area' or 'aboard')..' on '..c.platform..')' end
+      return low>0,saw
     end,
     health_below=function(p,c)
       local ch=p.character; local r=ch.health/ch.max_health
@@ -493,6 +535,7 @@ return function(api)
         assert(record.drop_id,'no drop from '..c.platform..' is recorded (the last 20 drops are kept)')
         local r=api.drop_record and api.drop_record(record.drop_id)
         assert(r,'drop #'..tostring(record.drop_id)..' is no longer kept (the last 20 drops are)')
+        if r.state=='lost' then error('drop #'..r.id..' is lost: '..tostring(r.note),0) end
         local landed=r.state~='descending'
         return landed,string.format('drop #%d from %s %s',r.id,tostring(r.platform),landed and ('landed'..(r.into and ' in '..r.into or '')
           ..(r.at and string.format(' at (%g,%g)',r.at.x,r.at.y) or '')..(r.surface and ' on '..r.surface or '')) or 'still descending'),
@@ -502,7 +545,7 @@ return function(api)
       local list=api.receipts and api.receipts(pl,record.pod_since) or {}
       local pods,items,last=0,0,nil
       for _,r in ipairs(list) do
-        if r.kind~='gone' then
+        if r.kind~='gone' and r.kind~='lost' then
           local n=c.item and ((r.cargo or {})[c.item] or 0) or 1
           if n>0 then pods=pods+1; items=items+(c.item and n or 0); last=r end
         end
@@ -582,6 +625,16 @@ return function(api)
       assert(r.x>l.x and r.y>l.y and r.x-l.x<=256 and r.y-l.y<=256,'area must be nonempty and at most 256x256')
     end
     if kind=='ammo_below' then number(c.count,1,1000,'count') end
+    if kind=='ammo_below' and c.platform~=nil then
+      assert(type(c.platform)=='string' and #c.platform>0,'ammo_below platform takes a platform name')
+      assert(c.position==nil and c.radius==nil,'ammo_below on a platform: every ammo turret aboard, or positions or area in platform coordinates (no position or radius)')
+      assert(c.positions==nil or c.area==nil,'ammo_below on a platform: positions or area, not both')
+    end
+    if kind=='ammo_below' and c.positions~=nil then
+      assert(c.platform~=nil,'ammo_below positions applies with platform (turrets on a platform, platform coordinates)')
+      assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'ammo_below positions takes 1..64 {x,y} (turrets)')
+      for _,pos in ipairs(c.positions) do api.position(pos) end
+    end
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
     -- (batch33 A2) quality: item_count reads it; no other condition does, and one given there is refused
     if c.quality~=nil then
@@ -645,6 +698,10 @@ return function(api)
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology'); assert(c.level==nil or (type(c.level)=='number' and c.level>=1 and c.level==math.floor(c.level)),'level is a whole number from 1: the level of the technology the wait waits for') end
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end
+    if (kind=='rocket_ready' or kind=='rocket_parts') and c.surface~=nil then
+      assert(type(c.surface)=='string' and game.get_surface(c.surface),kind..' surface must be a surface name (nauvis, vulcanus, ...)')
+      assert(not game.get_surface(c.surface).platform,kind..' surface is a planet (a rocket silo stands on one)')
+    end
     if kind=='rocket_parts' then
       assert(c.position~=nil,'rocket_parts requires position (a rocket silo\'s, any tile of it)')
       if c.at_least~=nil then number(c.at_least,1,1000,'at_least') end

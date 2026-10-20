@@ -12,8 +12,9 @@
   there is none.
 - `./fh platform NAME`: one platform, the same read as `./fh call platform --args '{"name":"Kestrel"}'` (`platforms`
   of that one): hub free slots, cargo, speed, next stop, ETA; `hub_chunks` (hub slots asteroid chunks take);
-  `ammo_rates` (per ammo type, made and used over the last leg, with the reserve at arrival; it counts the places
-  `platform_endurance` counts); `incoming` rockets; `freight` (per stop: what was expected down and up, what left the
+  `ammo_rates` (per ammo type, made and used over the last leg, with the reserve at arrival, counted as
+  `platform_endurance` counts it: ammunition that can reach a turret, rockets on their way up, made at most what the
+  ingredients aboard allow; `binds:` names the limit); `incoming` rockets; `freight` (per stop: what was expected down and up, what left the
   hub, what came aboard, with what construction robots placed from a rocket's cargo at once as "built at once N" and
   the platform's count before and after, and what spoiled; the rockets sent to it; the cargo pods sent down with what
   each landing pad received and the pods still in flight; per leg what spoiled on the way; a stop where the platform
@@ -88,7 +89,15 @@
   underground pair once), inserter hands and machines' outputs (`by_place`), with what moved between places since the
   leg began (`since this leg began: hub -300, belts +300`; moves are not use); only ammunition that can reach a turret
   counts. An item made aboard is capped by the ingredients aboard, two levels down, fluids included
-  (`ingredient-limited`), and the cap grows at the rate its ingredients are made aboard now (`more_per_min`). Rows add
+  (`ingredient-limited`), and the cap grows at the rate its ingredients are made aboard now (`more_per_min`); an
+  ingredient two products draw on is split between them by their make rates (`shared`), and other machines' use of it
+  comes off first (`other_use_per_min`). Ammunition on rockets on their way up counts once (`received`). Rows, `flight`,
+  `departure`, `forecast` and `ammo_rates` (preflight, platforms) use this one count and say which limit binds
+  (`no machine aboard makes it now` when the rate was measured before its makers went). Speed: the last leg's distance
+  flown over its time, flagged when the thrusters or hull width differ now. The forecast counts each asteroid's
+  fragments (huge into 3 big, big into 3 medium, medium into 3 small) and says `uncalibrated` for kinds the legs flown
+  met none of; rockets' damage is their projectile's:
+  `binds: the stock (none made aboard)`, `the make rate`, or `the ingredients: iron-plate (...)`. Rows add
   `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate); `departure`
   (each ammunition over the route: used, aboard, made, short or spare, a rocket's lift of it); `solar` with low and no
   power counts; flying, each line's last 60 s. `forecast: true` adds per leg the asteroids its connection spawns by
@@ -154,7 +163,9 @@
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
 - `platform_defense {platform, feed?, route?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
-  runs. Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
+  runs. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
+  only, or preload only), wrong ammunition on its way, and inserters whose circuit sets more filters than their slots.
+  Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
   leg): each asteroid that spawns on it with its health and resistances, and per turret and the ammo it holds its
   damage a second after them against its listed damage (the force's bonuses counted), together and the time to kill
   one; under 10% of listed: `reached, little damage`. Losses to our own turrets (from the death event's cause and its
@@ -378,7 +389,8 @@
   construction and logistic robots of ours within 8 tiles holding that item (and the first ghost or entity each flies
   to); its landing line comes 20 s after it lands with that line (the drops read: `pad`, `pad_verdict` such as `landed, then
   taken by construction robots`, `pad_now`). The game reserves nothing for the sender: robots may take what lands in a
-  pad.
+  pad. A drop whose platform's hub is destroyed before its pod leaves the platform's surface (about its first 400 ticks)
+  reads `lost`: the game removes such a pod and its cargo with the platform; a pod already coming down lands.
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.

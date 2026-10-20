@@ -116,12 +116,162 @@ return function(api)
     return nil, true
   end
 
+  -- (d20 batch52 J1, Sol shift46 10:31: three thruster ghosts on Limestone-spare-unbuilt over foundation tile ghosts,
+  -- refused as "blocked by tile ghost", and their dry run failed reading a tile past the chunks the platform had.)
+  -- 2.0.77 on the private copy, a thruster facing north: its ghost goes over foundation tile ghosts (the plain ghost
+  -- check takes it, and a blueprint holding the foundation and the thruster places both); over bare empty space the
+  -- forced check takes it and lays the foundation tile ghosts under it itself; built foundation takes it. Its second
+  -- rule keeps the 90 tiles behind it empty space, and the check refuses while their chunks are not generated (a plain
+  -- request generates them within a few ticks, as a player's view does).
+  -- The tiles an entity's tile rules judge, as the game judges a ghost: tile ghosts count as laid. {ruled, broken (the
+  -- first rule broken by a tile no tile item mends, as tile_rules says it), need [{x, y, item, tile}] (empty space where
+  -- a rule wants ground: the tile item that makes it so, foundation on a platform), ungenerated {count, chunks [{x, y}],
+  -- x0, x1, y0, y1} (tiles not judged: past the chunks the surface has generated)}. get(x, y), when given, reads a tile
+  -- ({name, layers, ungenerated_chunk}, nil when the tile is invalid: past the chunks the surface has) instead of the
+  -- surface and its tile ghosts. A tile of a chunk not generated yet is judged as read (the game judged those at y 100
+  -- on the copy) and counted in ungenerated, for what a refusal says.
+  -- The tile item that turns this tile into one the rule takes: placeable on it (its place_as_tile condition, as the
+  -- game checks it) and unlocked; foundation first on a platform (the dry run's order, dryrun.lua).
+  local RANK = {['space-platform-foundation']=1, landfill=2, ['ice-platform']=3, foundation=4}
+  local tile_items
+  local ground_items = {}
+  local function ground_item(force, rule, tile_name, tl)
+    if not tile_items then
+      tile_items = {}
+      for name, item in pairs(prototypes.item) do
+        local pt = try(function() return item.place_as_tile_result end)
+        local res = pt and try(function() return pt.result end)
+        if res then
+          local only
+          for _, t in ipairs(pt.tile_condition or {}) do only = only or {}; only[type(t) == 'string' and t or t.name] = true end
+          tile_items[#tile_items+1] = {item=name, tile=res.name, layers=try(function() return res.collision_mask.layers end) or {},
+            condition=pt.condition, invert=pt.invert == true, only=only}
+        end
+      end
+      table.sort(tile_items, function(a, b)
+        local ra, rb = RANK[a.item] or 9, RANK[b.item] or 9
+        if ra ~= rb then return ra < rb end
+        return a.item < b.item
+      end)
+    end
+    local key = tile_name .. '|' .. table.concat(layers(rule.required_tiles), ',') .. '|' .. table.concat(layers(rule.colliding_tiles), ',')
+    if ground_items[key] == nil then
+      ground_items[key] = false
+      for _, ti in ipairs(tile_items) do
+        local on = (not ti.only or ti.only[tile_name]) and touches(tl, ti.condition) == ti.invert
+        if on and (not rule.required_tiles or touches(ti.layers, rule.required_tiles)) and not (rule.colliding_tiles and touches(ti.layers, rule.colliding_tiles)) then
+          ground_items[key] = ti
+          break
+        end
+      end
+    end
+    local g = ground_items[key]
+    if not g then return nil end
+    local r = force and try(function() return force.recipes[g.item] end)
+    if r and not r.enabled then return nil end
+    return g
+  end
+  function M.rule_tiles(surface, force, proto, pos, dir, get)
+    local rules = try(function() return proto.tile_buildability_rules end)
+    if type(rules) ~= 'table' or #rules == 0 then return {ruled=false, need={}} end
+    local boxes = {}
+    for i, rule in ipairs(rules) do
+      local b = M.box_at(rule.area, pos, dir)
+      boxes[i] = {math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1, math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1}
+    end
+    if not get then
+      -- the surface, with its tile ghosts as laid (one find over each rule's box)
+      local ghosts, gen = {}, {}
+      for _, b in ipairs(boxes) do
+        for _, g in pairs(try(function() return surface.find_entities_filtered{area={{b[1], b[3]}, {b[2] + 1, b[4] + 1}}, type='tile-ghost'} end) or {}) do
+          local tp = prototypes.tile[g.ghost_name]
+          if tp then ghosts[math.floor(g.position.x) .. ',' .. math.floor(g.position.y)] = {name=g.ghost_name, layers=tp.collision_mask.layers} end
+        end
+      end
+      get = function(x, y)
+        local g = ghosts[x .. ',' .. y]
+        if g then return g end
+        local cx, cy = math.floor(x / 32), math.floor(y / 32)
+        local ck = cx .. ',' .. cy
+        if gen[ck] == nil then gen[ck] = try(function() return surface.is_chunk_generated({cx, cy}) end) ~= false end
+        local t = try(function() return surface.get_tile(x, y) end)
+        if not (t and t.valid ~= false) then return nil end
+        -- (a chunk asked for and not generated yet reads out-of-map: not judged either)
+        if not gen[ck] and t.name == 'out-of-map' then return nil end
+        return {name=t.name, layers=try(function() return t.prototype.collision_mask.layers end) or {}, ungenerated_chunk=not gen[ck] or nil}
+      end
+    end
+    local out = {ruled=true, need={}}
+    local needed = {}
+    for i, rule in ipairs(rules) do
+      local x0, x1, y0, y1 = boxes[i][1], boxes[i][2], boxes[i][3], boxes[i][4]
+      local bad, n, first = 0, 0, nil
+      for x = x0, x1 do
+        for y = y0, y1 do
+          n = n + 1
+          local t = get(x, y)
+          if not t or t.ungenerated_chunk then
+            local u = out.ungenerated or {count=0, chunks={}, seen={}, x0=x, x1=x, y0=y, y1=y}
+            out.ungenerated = u
+            u.count = u.count + 1
+            u.x0, u.x1, u.y0, u.y1 = math.min(u.x0, x), math.max(u.x1, x), math.min(u.y0, y), math.max(u.y1, y)
+            local ck = math.floor(x / 32) .. ',' .. math.floor(y / 32)
+            if not u.seen[ck] then u.seen[ck] = true; u.chunks[#u.chunks+1] = {x=math.floor(x / 32), y=math.floor(y / 32)} end
+          end
+          if t then
+            local tl = t.layers or {}
+            if (rule.required_tiles and not touches(tl, rule.required_tiles)) or (rule.colliding_tiles and touches(tl, rule.colliding_tiles)) then
+              -- empty space where the rule wants ground: the tile item that mends it (foundation)
+              local g = tl.empty_space and ground_item(force, rule, t.name, tl) or nil
+              if g then
+                local k = x .. ',' .. y
+                if not needed[k] then needed[k] = true; out.need[#out.need+1] = {x=x, y=y, item=g.item, tile=t.name, result=g.tile} end
+              else
+                bad = bad + 1
+                first = first or string.format('%s at (%d,%d)', t.name or '?', x, y)
+              end
+            end
+          end
+        end
+      end
+      if bad > 0 and not out.broken then
+        local need, clear = layers(rule.required_tiles), layers(rule.colliding_tiles)
+        local want = {}
+        if #need > 0 then want[#want+1] = 'need '..table.concat(need, '/') end
+        if #clear > 0 then want[#want+1] = 'must not be '..table.concat(clear, '/') end
+        out.broken = string.format('breaks its tile rule %d facing %s: tiles x %d..%d, y %d..%d %s; %d of %d do not (%s)',
+          i, M.direction_name(dir), x0, x1, y0, y1, table.concat(want, ' and '), bad, n, first)
+      end
+    end
+    if out.ungenerated then out.ungenerated.seen = nil end
+    return out
+  end
+  -- What to say of tiles a rule could not judge, and the chunks asked for: the game refuses the entity until they are
+  -- generated; a request generates them within a few ticks (no forced generation: 30 ms for 9 chunks on the copy).
+  function M.ungenerated_text(surface, u, request)
+    if not u then return nil end
+    local asked = 0
+    if request then
+      for i, c in ipairs(u.chunks) do
+        if i > 16 then break end
+        if try(function() surface.request_to_generate_chunks({c.x * 32 + 16, c.y * 32 + 16}, 0); return true end) then asked = asked + 1 end
+      end
+    end
+    local where = u.count == 1 and string.format('the tile (%d,%d) it needs lies in a chunk', u.x0, u.y0)
+      or string.format('%d tiles its tile rules need (x %d..%d, y %d..%d) lie in %d chunk%s', u.count, u.x0, u.x1, u.y0, u.y1, #u.chunks, #u.chunks == 1 and '' or 's')
+    return string.format('%s this surface has not generated yet, and the game refuses it until %s%s', where, #u.chunks == 1 and 'that chunk is' or 'they are',
+      asked > 0 and string.format('; generating %s was requested now (as a player\'s view would): call again in a few seconds', asked == 1 and 'it' or asked .. ' chunks') or '')
+  end
+
   -- A tile inside an asteroid collector's forward clearance (A5, Astra 01:50: the floor brush said only "47 tiles
   -- refused", the entity dry run "the game refuses foundation" with no why): the collector (built or a ghost) within
-  -- 8 tiles whose tile rule keeps that tile empty space, as text; nil when none.
+  -- 8 tiles whose tile rule keeps that tile empty space, as text; nil when none. (d20 batch52 J1) A thruster's exhaust
+  -- too: its second rule keeps the 90 tiles behind it empty space (a thruster or its ghost within 92 tiles).
   function M.collector_ahead(surface, force, x, y)
     local list = try(function() return surface.find_entities_filtered{area={{x - 8, y - 8}, {x + 9, y + 9}}, type='asteroid-collector', force=force} end) or {}
     for _, g in ipairs(try(function() return surface.find_entities_filtered{area={{x - 8, y - 8}, {x + 9, y + 9}}, ghost_type='asteroid-collector', force=force} end) or {}) do list[#list+1] = g end
+    for _, t in ipairs(try(function() return surface.find_entities_filtered{area={{x - 92, y - 92}, {x + 93, y + 93}}, type='thruster', force=force} end) or {}) do list[#list+1] = t end
+    for _, g in ipairs(try(function() return surface.find_entities_filtered{area={{x - 92, y - 92}, {x + 93, y + 93}}, ghost_type='thruster', force=force} end) or {}) do list[#list+1] = g end
     for _, c in ipairs(list) do
       local ghost = c.type == 'entity-ghost'
       local proto = ghost and try(function() return c.ghost_prototype end) or try(function() return c.prototype end)
@@ -132,9 +282,11 @@ return function(api)
         if empty then
           local b = M.box_at(rule.area, c.position, c.direction)
           if x + 0.5 >= b.left_top.x and x + 0.5 <= b.right_bottom.x and y + 0.5 >= b.left_top.y and y + 0.5 <= b.right_bottom.y then
-            return string.format('in front of %s%s (%g,%g) facing %s: its tile rule %d keeps tiles x %d..%d, y %d..%d empty space (its collection area)',
-              ghost and 'the ghost of ' or '', ghost and c.ghost_name or c.name, c.position.x, c.position.y, M.direction_name(c.direction), i,
-              math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1, math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1)
+            local thruster = (ghost and c.ghost_type or c.type) == 'thruster'
+            return string.format('%s %s%s (%g,%g) facing %s: its tile rule %d keeps tiles x %d..%d, y %d..%d empty space (%s)',
+              thruster and 'behind' or 'in front of', ghost and 'the ghost of ' or '', ghost and c.ghost_name or c.name, c.position.x, c.position.y, M.direction_name(c.direction), i,
+              math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1, math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1,
+              thruster and 'its exhaust' or 'its collection area')
           end
         end
       end

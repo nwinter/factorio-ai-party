@@ -704,18 +704,28 @@ return function(api)
     -- Tiles as they will be: planned tiles, then tile ghosts already ordered,
     -- over the surface's. One engine read per tile; a tile kind's collision
     -- layers are read once.
-    local planned, pending, cache, kinds = {}, {}, {}, {}
+    -- (d20 batch52 J1, Sol: "LuaTile API call when LuaTile was invalid": a thruster's tile rule reaches 90 tiles behind
+    -- it, past the chunks a small platform has; get_tile gives an invalid tile there.) An invalid tile is read as not
+    -- generated (ungenerated: true) and never judged; a tile of a chunk not generated yet is read and marked
+    -- (ungenerated_chunk), for what a refusal says.
+    local planned, pending, cache, kinds, gen = {}, {}, {}, {}, {}
+    local UNGENERATED = {name='not-generated', layers={}, ungenerated=true}
     local function surface_tile(x, y)
       local k = key(x, y)
       local c = cache[k]
       if c == nil then
+        local cx, cy = math.floor(x / 32), math.floor(y / 32)
+        local ck = key(cx, cy)
+        if gen[ck] == nil then gen[ck] = try(function() return s.is_chunk_generated({cx, cy}) end) ~= false end
         local ok, t = pcall(s.get_tile, x, y)
-        local name = ok and t and t.name or 'out-of-map'
+        if not (ok and t and t.valid ~= false) or (not gen[ck] and t.name == 'out-of-map') then cache[k] = UNGENERATED; return UNGENERATED end
+        local name = t.name
         c = kinds[name]
         if not c then
-          c = {name=name, layers=ok and t and try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}}
+          c = {name=name, layers=try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}}
           kinds[name] = c
         end
+        if not gen[ck] then c = {name=c.name, layers=c.layers, ungenerated_chunk=true} end
         cache[k] = c
       end
       return c
@@ -989,12 +999,25 @@ return function(api)
           end
           -- Tiles: the entity's own tile rules, else its collision mask against each tile.
           local rules = try(function() return proto.tile_buildability_rules end)
-          local tile_need, tile_bad, broken = {}, {}, nil
+          local tile_need, tile_bad, broken, ungenerated = {}, {}, nil, nil
           if type(rules) == 'table' and #rules > 0 then
-            broken = api.placewhy.tile_rules(s, proto, rec.pos, rec.dir, function(x, y)
+            -- (J1) as the game judges a ghost: tile ghosts and planned tiles laid; empty space where a rule wants ground
+            -- needs foundation, which place_ghosts lays under it first (as the game's forced placement does); tiles past
+            -- the generated chunks are not judged
+            local rt = api.placewhy.rule_tiles(s, force, proto, rec.pos, rec.dir, function(x, y)
               local t = tile_at(x, y)
-              return {name=t.name, prototype={collision_mask={layers=t.layers}}}
+              if t.ungenerated then return nil end
+              return t
             end)
+            broken, ungenerated = rt.broken, rt.ungenerated
+            if #rt.need > 0 then
+              if kind == 'ghosts' then
+                for _, n in ipairs(rt.need) do tile_need[#tile_need+1] = {x=n.x, y=n.y, item=n.item, tile=n.tile} end
+              elseif not broken then
+                broken = string.format('stands on %d %s tile%s its tile rules want %s under (%s lays them first; a %s does not)', #rt.need, rt.need[1].tile,
+                  #rt.need == 1 and '' or 's', rt.need[1].item, 'place_ghosts', kind == 'paste' and 'paste' or 'build')
+              end
+            end
           else
             for x = x0, x1 do
               for y = y0, y1 do
@@ -1083,6 +1106,10 @@ return function(api)
             end
           end
           rec.engine = engine
+          -- (J1) tiles past the generated chunks: when the game refuses it, the chunks are asked for and it is said
+          if ungenerated and engine ~= true and not same then
+            reasons[#reasons+1] = api.placewhy.ungenerated_text(s, ungenerated, true)
+          end
           -- Tiles laid by the plan or already ordered under it, and (a build
           -- batch) the last entry laying one.
           local covered, last_tile = false, nil

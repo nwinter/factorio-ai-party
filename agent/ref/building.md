@@ -53,7 +53,11 @@
   that build them bring it (`ammo`: a name, `{name, count}` or false; default 10 of what the logistic network there
   holds most of; `ammo_note` says what the default added); so do the ghosts of turrets that died. `configure
   {position, ammo}` on a turret ghost changes its ammo request in place (false clears it; its module requests stay).
-  `surface: "vulcanus"` places by remote view.
+  `surface: "vulcanus"` places by remote view. On a platform an entity with tile rules (a thruster, an asteroid
+  collector) goes over foundation tile ghosts as over foundation; over empty space where a rule wants ground the
+  foundation tile ghosts under it are placed first (`tiles_laid`), as the game's forced placement lays them. A rule's
+  tiles in chunks the platform has not generated yet (a thruster keeps 90 tiles behind it empty) are refused until they
+  are; the reply asks for them: call again in a few seconds.
   Example: `./fh call place_ghosts --args '{"entities":[{"name":"assembling-machine-2","position":{"x":20.5,"y":8.5},"recipe":"iron-gear-wheel"}],"dry_run":true}'`
 - `belt_upgrade {position, to?, tiles?, dry_run?}`: the belt line through position traced both ways (up to `tiles`,
   default 256; undergrounds to their pair), each tile replaced by hand with the faster one at its own position and

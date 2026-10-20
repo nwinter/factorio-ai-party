@@ -6557,6 +6557,27 @@ fh watch    # deploy on every change
   `ground_rule_retire {id, reason?}`, `ground_rules`: the team's own rules, at most 8 active, each from lessons it names,
   shown once at each shift start in team.shift with those lessons' evidence ticks and when verified, and the exceptions;
   the harness stores and shows what the agents wrote.
+- Ground rules where they apply (d20 batch50 E1, viewer Foobator, shift46 08:58: "how can we make this reliable?"; rule
+  8 by astra, "Use big mining drills by default for new ore outposts. Ordinary drills require a recorded exception and
+  an owned conversion task.", and Haiku built an electric-mining-drill at (23.5,-13.5) a minute into shift46):
+  `ground_rule_add {applies_to}` and `ground_rule_edit {id, applies_to}` name what a rule is about (1..16 entity, item
+  or recipe names; `[]` clears). Edit as a board item's title: its writer, the operator (operator request
+  `ground_rule_edit`), or anyone once the writer has made no request for 20 min. The successful reply of a build (and
+  its dry_run), place_ghosts, blueprint_place, paste (their previews and dry runs too, and what their reply names),
+  placements, craft, requests, configure, queue_submit or queue_edit whose args name one of them carries
+  `ground_rules: ["rule 8 (by astra) applies to electric-mining-drill: Use big mining drills ..."]`, once per agent and
+  rule per 10 game minutes (a preview counts as a call). A batch or a blueprint names each rule once with the count of
+  its matching entities (`applies to electric-mining-drill x8`; viewer Aurora 09:04). The names are every string in
+  the call's args (any shape: item, name, recipe, a batch's list, a requests map, queue steps), and a name keyed to a
+  number counts that many (a blueprint's counts). Nothing is refused. `ground_rules` lines say
+  `; applies to: ...`.
+- Ground rules after a compaction (d20 batch50 E2), per harness: Claude (SessionStart compact), Grok and Muse (the
+  next tool call after a marked compaction) get tools/context.py's brief, which starts with the rules fh filed (C2
+  below). Codex re-injects only AGENTS.md: tools/launch-agent.sh makes a `ground_rules` read at launch and
+  tools/brief.py `rules DIR` writes them into AGENTS.md as "## The team's ground rules" between `<!-- ground-rules -->`
+  markers; fh rewrites that section in a Codex workspace (`.context-hooks` says codex) whenever a reply carries the
+  rules (host/rules.ts). agy: a fresh conversation (past compact_at) starts with tools/agy_rules.py `digest-rules`, the
+  rules before notes.md.
 - board_focus (Sol 09:37 for viewer Foobator): `board_focus {id, step, blocker?, verify?}` sets an agent's current
   item (task, request or project), its step (a project step number, or text), blocker and next verification; one line
   on every status reply and in the team block once every 10 game minutes; `board_focus {}` or `{agent}` reads the
@@ -9111,3 +9132,114 @@ fh watch    # deploy on every change
   too. A dry run that joins or makes a group puts the section back (group first, then its requests) and drops a group
   it made. The GUI's picker shows each group's member count; the members are the entities whose logistics GUI shows
   the group.
+## d20 batch51 (eng/d20-batch51)
+
+- H1 (viewer Aurora, shift46 09:36: "Could departure and route forecasts use the same ingredient limits as endurance,
+  including shared stock? Otherwise their spare-ammo estimates can contradict a resource shortage."). Before this,
+  `platform_endurance`'s resource rows capped what is made by the ingredients aboard, while its `departure` lines, its
+  rows' `flight` text and its `forecast` multiplied the make rate by the time uncapped; `ammo_rates` (preflight, the
+  platforms read) did the same and counted ammunition stranded where no turret takes it, which endurance leaves out.
+  Shift46 15:48 (Sol, Kestrel IVa, one endurance reply): magazines `1461 aboard and about 828 made on the way: 1438 to
+  spare` beside a row whose cap allowed about 444 and a forecast ending `-1226 left at nauvis`. Now one model
+  (mod/agent-harness_0.1.0/ammomodel.lua) counts for all of them: the stock in every place aboard less what can reach
+  no turret; ammunition on rockets launched to the platform and not arrived (freight.lua incoming), counted once; made
+  at most what the machines aboard can make from the ingredients aboard (two levels down, fluids in tanks and fluid
+  boxes), where an ingredient two products draw on (iron plates for magazines and rockets) is split between them by
+  their make rates and what other machines use of it (its measured use less the products') comes off first. Each
+  reply says which limit binds: `binds: the stock (none made aboard)`, `binds: the make rate (60/min; the ingredients
+  aboard cover 1m00s, iron-plate the closest at 94 more, shared with rocket 8% by make rate: this one 92%)`, or `binds: the ingredients: iron-plate (400 aboard, shared
+  with rocket 8% by make rate: this one 92%; other machines use 40/min of it): at most 138 more over 20m00s, against
+  1200 at 60/min`. Rows gain `received`, `binds`, and `ingredient_limited.share`, `.shared`, `.other_use_per_min`; the
+  forecast's legs say `(the ingredients bind: iron-plate)` where the cap cut what was made, and end with one `binds`
+  line per ammunition. No shared stock with another platform or the planet below was counted by any of these reads;
+  the only receipts counted are rockets already launched to the ship (their cargo has left the planet's stock). Not
+  changed: the forecast's asteroid scale (x3.95 on Kestrel IVa) and the windows each read takes its rates from (the
+  flight line uses the moving rate, the rows the window's). Test tests/ammomodel.lua.
+
+## d20 batch52 (eng/d20-batch52)
+
+- J1 (Sol, shift46 10:31, operator inbox 883; requests 7e4bda19, 414d9a93, 8386b18b, 7e029ac7, 6e785e1e): three
+  thruster ghosts at (-8,110.5), (0,110.5), (8,110.5) facing north on Limestone-spare-unbuilt. The dry run failed with
+  `LuaTile API call when LuaTile was invalid.`: a thruster's second tile rule keeps the 90 tiles behind it empty space,
+  reaching y 200, past the chunks that 12x12 platform has; get_tile there gives an invalid tile and dryrun.lua read its
+  name outside its pcall. The real call refused each thruster `placement blocked by tile ghost
+  space-platform-foundation (...)`: the engine refused (its check needs those chunks), and placement_error named the
+  tile ghosts under it as what blocked.
+  What 2.0.77 does (the private copy pog-b41-headless, a thruster facing north on Swift and on a new platform): over
+  foundation tile ghosts the plain ghost check (manual_ghost) takes it, and a blueprint holding the foundation and the
+  thruster places both ghosts (in charted chunks; uncharted: nothing); over bare empty space only the forced check takes
+  it, and a forced blueprint of a lone thruster lays 20 foundation tile ghosts under it (a normal one places nothing);
+  built foundation takes it for a hand build too. The check refuses while the chunks behind it are not generated,
+  foundation or tile ghosts behind it break the rule. surface.request_to_generate_chunks (0.09 ms, not forced) makes the
+  chunks exist at once and generated a few ticks later; forced generation of 9 chunks took 30 ms (not used).
+  Now (placewhy.rule_tiles, shared by the dry run and the real call): tile ghosts count as laid and are never named as
+  blockers; empty space under a rule that wants ground needs foundation (the first unlocked tile item placeable on that
+  tile whose tile the rule takes), and place_ghosts lays those tile ghosts under it first (`tiles_laid`), the dry run
+  saying `needs_tiles ... (place_ghosts lays those tile ghosts under it first)`; tiles past the generated chunks are
+  not judged, and when the game refuses the entity the reply says `N tiles its tile rules need (x .., y ..) lie in K
+  chunks this surface has not generated yet, and the game refuses it until they are; generating K chunks was requested
+  now (as a player's view would): call again in a few seconds` (a tile ghost there says the same). Checked on the copy:
+  empty space (dry run needs_tiles, call placed with 20 foundation tile ghosts), tile ghosts (placeable, placed), built
+  foundation (placeable, placed), past the generated chunks (refused with the request; placed on the call 3 s later).
+  Test tests/thrusterghost.lua.
+- K1 (Astra #1352: `queue_submit platform:Bastion wait_until ammo_below platform/area/count1` refused by the remote
+  lane; main had no platform form of ammo_below at all: it read turrets round the character): `wait_until {until:
+  ammo_below, platform, count, positions? | area?}` reads the ammo turrets on that platform (every one, those at 1..64
+  positions, or in an area, platform coordinates), met when one holds under count; saw `2 turrets below 5 (of 3 on
+  Bastion; lowest gun-turret (8,4): no ammo)`. The remote lane and platform lanes take it as a wait and as a guard's
+  when. Checked on the copy: Swift's 6 guns, a direct wait, a platform:Swift lane step, and a guard pausing the queue
+  with that saw.
+- K2 (Sol #882: rocket_ready surface=nauvis from Aquilo read Aquilo; main did not read surface): `rocket_ready` and
+  `rocket_parts` take `surface` (a planet), the silo read by remote view in a chunk our force has charted (else
+  refused); the remote lane takes them with surface. Checked on the copy: both met from the remote lane on Nauvis's
+  silo (15.5,59.5).
+- K3 (Sol #1323: drop 1809's 725 foundation read "landed" while Aquilo's pad held none and the ground count did not
+  change; Kestrel IV's hub had died). What 2.0.77 does (the private copy, a hub killed at each cargo pod state; a pod
+  goes awaiting_launch, ascending about 400 ticks, surface_transition about 18 ticks on the platform's surface, then
+  descending about 600 ticks over the planet, parking): killed while the pod is still on the platform's surface
+  (awaiting_launch, ascending, surface_transition), the pod is gone 5-6 ticks later and the pad gets nothing (4 of 4);
+  killed while it descends (0, 1, 3, 10, 30 ticks in, and at first sight) or parks, it lands and delivers all of it
+  (10 of 10, a full pad spilling it on the ground). The platform is gone about 8 ticks after its hub. Now drops.lua
+  keeps the drop's hub: a pod gone after its hub, last seen on the platform's surface, is `lost` (unless the pad it
+  was sent to gained the items), told once in the team block (`drop #N from P to S: lost: ...`), `state: lost` with the
+  note in the drops read; a pod_landed wait on that drop fails with it; freight's receipts and stop lines count such a
+  pod as lost (never received), and pod_landed counts no lost pod. Checked on the copy: a hub killed while its pod
+  rose read lost (pad +0), one killed 5 ticks into the descent read landed (pad +30). Test tests/d20_batch52.lua.
+- K4 (Astra #955: Kestrel II's ETA used 62500 km/min from a 1m36 turn back; forecasts read no magazine use where big and
+  huge asteroids spawn; Bastion's speed was taken from before a hull loss). freight.lua records each leg's distance along
+  its connection when it begins and as it goes (km0, km1) and the thrusters and hull width it flew with (a foundation
+  find within 128 tiles of the hub when a leg begins: 0.46 ms for Swift's 771 tiles on the private copy). platform_endurance's
+  speed is the last leg's distance flown over its time (`the last leg X->Y: 600 km flown in 1m36s`); a leg recorded
+  before that, the connection over its time when flown whole; one first seen under way, none. When the thrusters or
+  the hull's width differ now: `(measured on another ship: 8 thrusters then, 6 now; times from it are from the old
+  geometry)`. The forecast counts fragments: an asteroid destroyed breaks into smaller ones by its prototype's dying
+  trigger (2.0.77: huge into 3 big, big into 3 medium, medium into 3 small), and shots per asteroid add those of its
+  fragments each ammunition can hurt (`big-metallic-asteroid none hurt + 447 for its fragments`); a leg whose shooting
+  is at kinds the legs flown met none of says `uncalibrated: N% ...`.
+- K5 (Sol #930: Swiftlet's rockets read "?" per big asteroid; production predicted from removed makers). A projectile's
+  damage is its prototype's attack_result, which 2.0.77 gives at runtime (rocket 200 explosion, explosive-rocket 50),
+  in the forecast with the force's ammo and turret bonuses (`rocket 3` against a big metallic one at +280%), and in
+  platform_defense (the base game's numbers only when none is read). A rate measured while no machine aboard has the
+  item's recipe now makes nothing more in the ammunition model: `binds: no machine aboard makes it now (the 6/min was
+  measured before; nothing more is counted)`, the row adds `no machine aboard makes it now`.
+- K6 (Sol #1145): the ammunition trace (platform_defense, endurance's stranded count) says what refills each turret's
+  way: `replenishment by turret: 1 from an ammunition maker aboard (assembling-machine-2 (3.5,-8.5) making
+  firearm-magazine), 2 from the hub, 0 from chests only (what fills them is not traced), 1 preload only: (16.5,-20)
+  (nothing puts more on their way: what they hold and what is on their way now is all)`; `wrong ammunition on turrets'
+  ways: gun-turret (16.5,-20): 4 rocket on its way (it takes none of it)`; `circuit filters past the slots:
+  bulk-inserter (-8,0.5): its circuit sets its filters from 7 positive item signals, more than its 5 filter slots`;
+  feed.turrets rows add `replenished` (maker, hub, chest, preload, none).
+- K7 (Astra #902): already in main. The revert Astra saw (shift30, 2026-10-17 22:22-22:29 UTC: min_payload EF4,
+  crusher3, long6 and four more set at 111h42, all seven back to the saved map by 111h49, by the platform_bom keeper)
+  came before d17 batch21 A2 (84da1fd7, committed 17:04 PDT that day, merged 17:32): since then the keeper adopts a
+  minimum payload changed on its slot, and min_payload's reply says "(in platform_bom's section: its keeper takes a
+  change made here as its own)" (test d17_batch21).
+- K8 (Astra #1277): a silo's products_finished counts rockets, not parts (the private copy: 331 -> 332 as a rocket
+  launched while rocket_parts went 0 -> 13 over 50 s): parts made are finished rockets times the parts a rocket takes plus
+  the parts of the one building; samples kept before are dropped once (the copy: 15.8 a minute after a launch, against
+  0.1 or less before). next_auto_launch takes, of the rows for the platform the silo fills for, the item its own request
+  asks or its rocket holds (it took the last such row: "rocket 25" while 56 magazines of 100 were aboard).
+- K9 (Astra #928): inspect's tile_wait for a tile ghost judged the platform's first 64 tile ghosts, so a ghost past them
+  read "nothing the foundation rules hold it back by". Now that ghost and those within 16 tiles of it: `waits: ...`, or
+  `not checked: the check ran out of its 4096 tile looks before deciding this one ...; unknown, not clear`, or `nothing
+  the foundation rules hold it back by (checked with the N tile ghosts within 16 tiles of it)`. Tests: tests/d20_batch52.lua.

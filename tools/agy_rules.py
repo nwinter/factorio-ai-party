@@ -5,13 +5,15 @@ each turn started with no memory of the last).
 
     python3 tools/agy_rules.py rules DIR      # AGENTS.md over agy's cut: a warning on stderr (exit 0 either way)
     python3 tools/agy_rules.py digest DIR     # what the loop puts at the head of each turn's prompt (stdout)
+    python3 tools/agy_rules.py digest-rules DIR   # the same with the team's ground rules first (a fresh conversation)
 
 rules: the brief's core (tools/brief.py) stays under 20 KB, so agy gets the same AGENTS.md and ref/ topic files as
 every agent; this warns at launch when it has grown past the 24000 bytes agy reads. digest: notes.md as the agent last
 wrote it (its "## Now" first, the file cut to 4000 characters) and how its last turn ended (the last 800 characters agy
-printed, .agy-last.txt).
+printed, .agy-last.txt). digest-rules (d20 batch50 E2): a fresh conversation (.agy-loop.sh past compact_at) starts with no
+shift block, so the team's ground rules fh filed (.ground_rules.json, as the shift start gave them) come first.
 """
-import os, sys, time
+import json, os, sys, time
 
 LIMIT = 24000      # agy's cut, in bytes
 
@@ -34,9 +36,19 @@ def section(text, name):
     return text[i:j if j >= 0 else len(text)].strip()
 
 
-def digest(dirpath, now=None):
+def ground_rules(dirpath):
+    try:
+        return [l for l in json.load(open(os.path.join(dirpath, ".ground_rules.json"))).get("lines") or [] if isinstance(l, str) and l.strip()]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def digest(dirpath, now=None, with_rules=False):
     now = now or time.time()
     parts = []
+    rules_ = ground_rules(dirpath) if with_rules else []
+    if rules_:
+        parts.append("The team's ground rules (as the shift start gave them):\n" + "\n".join(f"- {l}" for l in rules_))
     notes_path = os.path.join(dirpath, "notes.md")
     try:
         notes = open(notes_path, errors="replace").read()
@@ -61,8 +73,8 @@ def main(argv):
     if len(argv) == 3 and argv[1] == "rules":
         print("over" if rules(argv[2]) else "fits")
         return 0
-    if len(argv) == 3 and argv[1] == "digest":
-        sys.stdout.write(digest(argv[2]))
+    if len(argv) == 3 and argv[1] in ("digest", "digest-rules"):
+        sys.stdout.write(digest(argv[2], with_rules=argv[1] == "digest-rules"))
         return 0
     print(__doc__, file=sys.stderr)
     return 2

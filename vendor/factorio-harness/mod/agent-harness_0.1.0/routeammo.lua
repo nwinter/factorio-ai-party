@@ -6,6 +6,9 @@
 -- asteroids take than theirs; with what is made aboard meanwhile and what is left at each arrival. pessimistic {speed
 -- 0.1..1 (a share of the speed read), dwell_s 0..36000 (extra time at each stop, at the stopped rate)}. An estimate from
 -- prototypes and measured rates; the engine's own spawning is not simulated.
+-- (d20 batch51 H1, viewer Aurora 09:36) What is made on the way is endurance's (ammomodel.lua): at most what the
+-- ingredients aboard allow over the trip so far, an ingredient shared between products split by their rates; what
+-- rockets on their way up bring counts at the start; each ammunition's last line says which limit binds.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -40,7 +43,16 @@ return function(api)
     end
     return out
   end
-  -- An ammunition's damage per shot by type, and its category; nil when the damage is in a projectile (rockets).
+  -- The damage entries anywhere in a trigger (nested deliveries and area actions too).
+  local function damages_in(t, parts, depth)
+    if type(t) ~= 'table' or depth > 12 then return end
+    if t.type == 'damage' and type(t.damage) == 'table' and t.damage.amount then parts[#parts+1] = {amount=t.damage.amount, type=t.damage.type}; return end
+    for _, v in pairs(t) do damages_in(v, parts, depth + 1) end
+  end
+  M.damages_in = damages_in
+  -- An ammunition's damage per shot by type, and its category; nil when none is read. (d20 batch52 K5, Sol #930:
+  -- Swiftlet's rockets read "?" a big asteroid) A projectile's damage (rockets) is its prototype's attack_result, which
+  -- 2.0.77 gives at runtime: rocket 200 explosion, explosive-rocket 50 explosion (read on the private copy).
   local function damage_of(ammo)
     local at = try(function() return prototypes.item[ammo].get_ammo_type() end)
     if not at then return nil end
@@ -54,6 +66,11 @@ return function(api)
       for _, del in ipairs(act.action_delivery or {}) do
         if del.type == 'projectile' or del.type == 'stream' then projectile = true end
         walk(del.target_effects)
+        local pp = del.projectile and prototypes.entity[del.projectile]
+        if pp then
+          damages_in(try(function() return pp.attack_result end), parts, 0)
+          damages_in(try(function() return pp.final_attack_result end), parts, 0)
+        end
       end
     end
     if #parts == 0 then return nil, at.category, projectile end
@@ -88,14 +105,55 @@ return function(api)
       for _, c in ipairs(cats) do if c == cat then return t.name end end
     end
   end
-  -- Weighted shooting of a density table for one ammunition: sum of chance x shots (unknown shots count 1, can't-hurt 0).
+  -- (d20 batch52 K4, Astra #955, 158h42: firearm-magazine read no use on Aquilo->edge, whose asteroids spawn big and
+  -- huge, though their fragments are not) What one asteroid of a kind becomes when destroyed, by its prototype's dying
+  -- trigger (2.0.77: huge into 3 big, big into 3 medium, medium into 3 small; small into chunks): {kind: count}, itself
+  -- included, four levels at most.
+  local trees = {}
+  function M.breakup(kind)
+    if trees[kind] then return trees[kind] end
+    local out = {}
+    local function walk(k, n, depth)
+      out[k] = (out[k] or 0) + n
+      if depth >= 4 then return end
+      local e = prototypes.entity[k]
+      for _, t in ipairs(e and try(function() return e.dying_trigger_effect end) or {}) do
+        local child = t.type == 'create-entity' and t.entity_name and prototypes.entity[t.entity_name]
+        if child and try(function() return child.type end) == 'asteroid' then
+          walk(t.entity_name, n * #(t.offsets or {{0, 0}}) * (t.repeat_count or 1) * (t.probability or 1), depth + 1)
+        end
+      end
+    end
+    walk(kind, 1, 0)
+    trees[kind] = out
+    return out
+  end
+  local function shots_of(kind, ammo, force, turret, cache)
+    cache[kind] = cache[kind] or {}
+    if cache[kind][ammo] == nil then local s = M.shots(kind, ammo, force, turret); cache[kind][ammo] = s == nil and 'unknown' or s end
+    return cache[kind][ammo]
+  end
+  -- Shots of ammo one asteroid of a kind takes, its fragments it can hurt included: total, the kind's own (number,
+  -- false or 'unknown'), and the fragments' part.
+  local function tree_shots(kind, ammo, force, turret, cache)
+    local own = shots_of(kind, ammo, force, turret, cache)
+    local frag = 0
+    for k, n in pairs(M.breakup(kind)) do
+      if k ~= kind then
+        local s = shots_of(k, ammo, force, turret, cache)
+        if s ~= false then frag = frag + n * (s == 'unknown' and 1 or s) end
+      end
+    end
+    return (own == false and 0 or own == 'unknown' and 1 or own) + frag, own, frag
+  end
+  -- Weighted shooting of a density table for one ammunition: sum of chance x shots, fragments included (unknown shots
+  -- count 1, can't-hurt 0); cant: the kinds it cannot hurt (itself; their fragments may count).
   local function load_of(dens, ammo, force, turret, cache)
     local w, cant = 0, {}
     for kind, p in pairs(dens) do
-      cache[kind] = cache[kind] or {}
-      if cache[kind][ammo] == nil then local s = M.shots(kind, ammo, force, turret); cache[kind][ammo] = s == nil and 'unknown' or s end
-      local s = cache[kind][ammo]
-      if s == false then cant[#cant+1] = kind else w = w + p * (s == 'unknown' and 1 or s) end
+      local t, own = tree_shots(kind, ammo, force, turret, cache)
+      if own == false then cant[#cant+1] = kind end
+      w = w + p * t
     end
     table.sort(cant)
     return w, cant
@@ -110,8 +168,9 @@ return function(api)
     end
     return out
   end
-  -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, phases}).
-  function M.forecast(pl, legs, rows, opts)
+  -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, received, phases});
+  -- model: endurance's ammomodel (optional: without it, made is the rate times the time).
+  function M.forecast(pl, legs, rows, opts, model)
     opts = opts or {}
     local sp = opts.speed or 1
     local dwell = (opts.dwell_s or 0) / 60
@@ -128,8 +187,9 @@ return function(api)
     for _, l in ipairs(fl) do flown_names[#flown_names+1] = l.from .. '->' .. l.to end
     lines[#lines+1] = #fl > 0 and string.format('scaled from the legs flown in the last 2 hours: %s (%s)', table.concat(flown_names, ', ', 1, math.min(#flown_names, 6)), mins(fmin))
       or 'no leg flown in the last 2 hours on record: shots per asteroid only, no use estimate'
-    local left = {}
-    for _, r in ipairs(rows) do left[r.name] = r.stock or 0 end
+    lines[#lines+1] = 'fragments counted: an asteroid destroyed breaks into smaller ones by its prototype (huge into 3 big, big into 3 medium, medium into 3 small), and shots per asteroid add those of its fragments each ammunition can hurt'
+    local left, t_cum, made_cum = {}, {}, {}
+    for _, r in ipairs(rows) do left[r.name] = (r.stock or 0) + (r.received or 0) end
     for i, l in ipairs(legs) do
       local dens = M.density(l.from, l.to)
       local m = l.minutes and l.minutes / sp or nil
@@ -148,8 +208,9 @@ return function(api)
           local w, cant = load_of(dens, r.name, pl.force, turret, cache)
           local shots = {}
           for j = 1, math.min(4, #kinds) do
-            local s = cache[kinds[j].k] and cache[kinds[j].k][r.name]
-            shots[#shots+1] = string.format('%s %s', kinds[j].k, s == false and 'none hurt' or s == 'unknown' and '?' or tostring(s))
+            local _, s, frag = tree_shots(kinds[j].k, r.name, pl.force, turret, cache)
+            shots[#shots+1] = string.format('%s %s%s', kinds[j].k, s == false and 'none hurt' or s == 'unknown' and '?' or tostring(s),
+              frag > 0 and string.format(' + %d for its fragments', math.floor(frag + 0.5)) or '')
           end
           local mv = r.phases and r.phases.moving
           local st = r.phases and r.phases.stopped
@@ -158,18 +219,50 @@ return function(api)
           if mv and #fl > 0 and m then
             local wf = load_of(fd, r.name, pl.force, turret, cache)
             local ratio = wf > 0 and w / wf or nil
+            -- (K4) the part of this leg's shooting from kinds the legs flown met none of: the scale has no measure for it
+            local unmet, unmet_kinds = 0, {}
+            for k, p in pairs(dens) do
+              if not fd[k] or fd[k] <= 0 then
+                local t = tree_shots(k, r.name, pl.force, turret, cache)
+                if t > 0 then unmet = unmet + p * t; unmet_kinds[#unmet_kinds+1] = k end
+              end
+            end
+            table.sort(unmet_kinds)
+            if ratio and unmet > 0 and w > 0 then
+              text = text .. string.format('; uncalibrated: %d%% of this leg\'s shooting is at kinds the legs flown met none of (%s)', math.floor(unmet / w * 100 + 0.5),
+                table.concat(unmet_kinds, ', ', 1, math.min(3, #unmet_kinds)))
+            end
             if ratio then
               local use = mv.used_per_min * ratio * m + (st and st.used_per_min or 0) * dwell
               local made = mv.made_per_min * m + (st and st.made_per_min or 0) * dwell
+              -- at most what the ingredients aboard allow over the trip so far (ammomodel.lua)
+              local t1 = (t_cum[r.name] or 0) + m + dwell
+              local cap = model and model.cap(r.name)
+              local before = made_cum[r.name] or 0
+              local upto = before + made
+              if cap and cap.at(t1) < upto then upto = math.max(before, (cap.at(t1))) end
+              local bound = cap and upto < before + made
+              if bound and cap.none then bound = false; text = text .. '; no machine aboard makes it now' end
+              made = upto - before
+              t_cum[r.name], made_cum[r.name] = t1, upto
               left[r.name] = left[r.name] - use + made
-              text = text .. string.format('; uses about %d (%g/min on the legs flown x%.2f for these asteroids%s), about %d made; %d left at %s',
-                round(use), mv.used_per_min, ratio, dwell > 0 and string.format(', + %s at the stop', mins(dwell)) or '', round(made), round(left[r.name]), l.to)
+              text = text .. string.format('; uses about %d (%g/min on the legs flown x%.2f for these asteroids%s), about %d made%s; %d left at %s',
+                round(use), mv.used_per_min, ratio, dwell > 0 and string.format(', + %s at the stop', mins(dwell)) or '', round(made),
+                bound and string.format(' (the ingredients bind: %s)', cap.item) or '', round(left[r.name]), l.to)
             else
               text = text .. '; the legs flown spawn none it shoots: no use estimate'
             end
           end
           lines[#lines+1] = text
         end
+      end
+    end
+    -- Which limit binds what is made on the way, each ammunition once (the trip's whole time at the moving rate).
+    for _, r in ipairs(model and rows or {}) do
+      local mv = r.phases and r.phases.moving
+      if mv and t_cum[r.name] then
+        lines[#lines+1] = string.format('  %s over the forecast (%s%s): %s', r.name, mins(t_cum[r.name]),
+          (r.received or 0) > 0 and string.format(', %d on rockets on their way up counted at the start', r.received) or '', model.binds(r.name, mv.made_per_min, t_cum[r.name]).line)
       end
     end
     return lines

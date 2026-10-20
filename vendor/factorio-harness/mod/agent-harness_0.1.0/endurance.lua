@@ -28,12 +28,31 @@ return function(api)
     local v = try(function() return pl.speed end)
     local last, last_by
     local segs = api.segments and api.segments(pl) or {}
+    -- (d20 batch52 K4, Astra #955: Kestrel II's ETA used 62500 km/min from a 1m36 turn back near the solar edge, the
+    -- whole connection over a part of it flown) a leg's distance flown along its connection over its time (freight.lua
+    -- km0, km1); a leg recorded before those were kept: the connection's length, when it was flown whole
+    local from_seg
     for i = #segs, 1, -1 do
       local s = segs[i]
-      if s.kind == 'leg' and not s.partial and s['end'] and s.from and s.to and s['end'] > s.start then
-        local len = connection(s.from, s.to)
-        if len then last, last_by = len / ((s['end'] - s.start) / 3600), string.format('the last leg %s->%s', s.from, s.to); break end
+      if s.kind == 'leg' and s['end'] and s.from and s.to and s['end'] > s.start then
+        local km = s.km0 and s.km1 and s.km1 - s.km0
+        local m = (s['end'] - s.start) / 3600
+        if km and km > 0 then
+          last, last_by, from_seg = km / m, string.format('the last leg %s->%s: %d km flown in %s', s.from, s.to, math.floor(km + 0.5), mins(m)), s
+          break
+        elseif not km and not s.partial then
+          local len = connection(s.from, s.to)
+          if len then last, last_by, from_seg = len / m, string.format('the last leg %s->%s', s.from, s.to), s; break end
+        end
       end
+    end
+    -- the ship it was measured with against the ship now: thrusters and hull width
+    if from_seg and (from_seg.thrusters or from_seg.width) and api.geometry then
+      local g = try(function() return api.geometry(pl) end) or {}
+      local diff = {}
+      if from_seg.thrusters and g.thrusters and g.thrusters ~= from_seg.thrusters then diff[#diff+1] = string.format('%d thrusters then, %d now', from_seg.thrusters, g.thrusters) end
+      if from_seg.width and g.width and g.width ~= from_seg.width then diff[#diff+1] = string.format('a hull %d tiles wide then, %d now', from_seg.width, g.width) end
+      if #diff > 0 then last_by = last_by .. ' (measured on another ship: ' .. table.concat(diff, ', ') .. '; times from it are from the old geometry)' end
     end
     if type(v) == 'number' and v > 0 and try(function() return pl.space_connection end) then
       -- speeding up after a departure (A4): the last leg's average when it is higher
@@ -110,7 +129,11 @@ return function(api)
     return {line=string.format('%s: %s; %s', pl.name, where, table.concat(parts, '; ')), short=#short > 0 and short or nil, rows=rows,
       leg_left_min=left_min and round(left_min, 1) or nil}
   end
-  local routeammo
+  local routeammo, ammomodel_
+  local function ammomodel()
+    ammomodel_ = ammomodel_ or api.ammomodel or require('ammomodel'){stock_places=api.stock_places, ammofeed=api.ammofeed, incoming=api.incoming}
+    return ammomodel_
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
@@ -199,80 +222,16 @@ return function(api)
     local hub = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
     -- Stock in every place aboard (Sol, Astra 06:21-09:37: Tern read 42 rockets in the hub and turrets while 344 more
     -- sat on its belts): the hub, the turrets, belts (an underground pair once), inserter hands and machines' outputs,
-    -- every item (an ingredient on a belt counts too).
+    -- every item (an ingredient on a belt counts too). With what the machines aboard can still make from the ingredients
+    -- aboard (Astra, d15 15:39: parked Aegis projected rockets 1030 + 36/min to 2650 while about 500 explosives' worth of
+    -- ingredients were left; two levels down, fluids too; an ingredient two products draw on split between them, d20
+    -- batch51 H1), what rockets bring, and what can reach no turret: the one model the departure, flight and forecast
+    -- lines here and the ammo_rates of preflight and the platforms read use (ammomodel.lua).
     local places = api.stock_places and try(function() return api.stock_places(pl, setmetatable({}, {__index=function() return true end})) end)
-    local held = places and places.total or {}
-    if not places then
-      for _, r in ipairs(hub and try(function() return hub.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
-      for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
-        local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
-        for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
-      end
-    end
+    local model = ammomodel().new(pl, {places=places or false, rate=function(name, cat, fluid) return rate(fluid and fluid_stats or items_stats, name, cat) end,
+      fluid_stock=function(names) return fluid_stock(pl, names) end})
+    local held = model.held
     local rows = {}
-    -- What the machines aboard can still make of an item from the ingredients aboard (Astra, d15 15:39: parked Aegis
-    -- projected rockets 1030 + 36/min to 2650 while about 500 explosives' worth of ingredients were left): the
-    -- assemblers whose recipe makes it, their recipe's item ingredients in the hub and in those machines' inputs, one
-    -- level down (an ingredient made aboard too is named with its rate, not counted ahead).
-    local makers
-    -- Two levels down, fluids too (d15 blockers, seen but not fixed): an item ingredient the machines aboard make is
-    -- counted with what they can still make of it from their own ingredients aboard; a fluid ingredient is counted in
-    -- the storage tanks and in those machines' fluid boxes.
-    local function ceiling(name, depth)
-      depth = depth or 1
-      makers = makers or try(function() return pl.surface.find_entities_filtered{type='assembling-machine', force=pl.force} end) or {}
-      local rec, per, inputs, fluids_in = nil, 0, {}, {}
-      for _, m in ipairs(makers) do
-        local r = try(function() return m.get_recipe() end)
-        local made_here = 0
-        for _, pr in ipairs(r and try(function() return r.products end) or {}) do
-          if pr.name == name then made_here = (pr.amount or ((pr.amount_min or 0) + (pr.amount_max or 0)) / 2) * (pr.probability or 1) end
-        end
-        if made_here > 0 then
-          rec, per = r, made_here
-          local inv = try(function() return m.get_inventory(defines.inventory.assembling_machine_input) end)
-          for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do inputs[c.name] = (inputs[c.name] or 0) + c.count end
-          for i = 1, try(function() return #m.fluidbox end) or 0 do
-            local f = try(function() return m.fluidbox[i] end)
-            if f and f.name then fluids_in[f.name] = (fluids_in[f.name] or 0) + (f.amount or 0) end
-          end
-        end
-      end
-      if not rec then return nil end
-      -- Each ingredient: what is aboard, what its own makers aboard can still make (one level down), and the rate it is
-      -- made aboard now (Astra 07:51: the cap counted the ore on hand only, while the collectors and crushers kept
-      -- making more): over t minutes the ingredient on hand grows by what its makers below can make by then, else by
-      -- its measured rate.
-      local ings = {}
-      for _, ing in ipairs(try(function() return rec.ingredients end) or {}) do
-        if (ing.amount or 0) > 0 then
-          local fluid = ing.type == 'fluid'
-          local have
-          if fluid then have = (fluid_stock(pl, {[ing.name]=true})[ing.name] or 0) + (fluids_in[ing.name] or 0)
-          else have = (held[ing.name] or 0) + (inputs[ing.name] or 0) end
-          ings[#ings+1] = {item=ing.name, have=have, amount=ing.amount, fluid=fluid or nil,
-            below=not fluid and depth < 2 and ceiling(ing.name, depth + 1) or nil,
-            made=rate(fluid and fluid_stats or items_stats, ing.name, 'input')}
-        end
-      end
-      if #ings == 0 then return nil end
-      local cap = {per=per, ings=ings}
-      function cap.at(t)
-        local best, which
-        for _, g in ipairs(ings) do
-          local more = math.floor((g.have + (g.below and g.below.at(t) or g.made * t)) / g.amount) * per
-          if not best or more < best then best, which = more, g end
-        end
-        return math.floor(best), which
-      end
-      local more, g = cap.at(0)
-      cap.more, cap.item, cap.have, cap.per_craft, cap.fluid = more, g.item, round(g.have, 0), g.amount, g.fluid
-      cap.below = g.below and {more=g.below.more, item=g.below.item, have=g.below.have} or nil
-      cap.ingredient_made_per_min = round(g.made, 1)
-      -- more a minute at the rates now: over the next hour
-      cap.more_per_min = round((cap.at(60) - more) / 60, 1)
-      return cap
-    end
     -- A rate measured where it is now: flying, the last 10 minutes; stopped, the last finished leg's (ammunition, from
     -- freight.lua's counts at its ends), else unknown (Astra, d15 15:39: parked, thruster fuel read 0 made and 0 used,
     -- which read as lasting for ever): a stop's rate is not a flight's.
@@ -313,25 +272,21 @@ return function(api)
         rows[#rows+1] = row
         return
       end
-      local cap = made > 0 and unit == '' and ceiling(name) or nil
+      local cap = made > 0 and unit == '' and model.cap(name) or nil
+      -- (K5) made before, and no machine aboard has its recipe now: nothing more counted, said
+      if cap and cap.none then row.no_maker = true; cap = nil end
       if cap then
         row.ingredient_limited = {more=cap.more, item=cap.item, have=cap.have, per_craft=cap.per_craft, fluid=cap.fluid, below=cap.below,
-          ingredient_made_per_min=cap.ingredient_made_per_min, more_per_min=cap.more_per_min}
+          ingredient_made_per_min=cap.ingredient_made_per_min, more_per_min=cap.more_per_min, share=cap.share, shared=cap.shared, other_use_per_min=cap.other_use_per_min}
       end
-      local function at(t) return stock + math.min(made * t, cap and cap.at(t) or math.huge) - used * t end
-      if total_min then row.at_end = round(at(total_min), 0) end
+      -- on rockets launched to it and not arrived (counted once: no other platform's read and not the planet's stock)
+      local rec = unit == '' and model.received[name] or 0
+      if rec > 0 then row.received = rec end
+      if unit == '' and (made > 0 or used > 0) then row.binds = model.binds(name, made, total_min).line end
+      -- stock + received + made (capped) - used, and when it reaches 0: the model's (ammomodel.lua)
+      if total_min then row.at_end = round(model.left(name, made, used, total_min, stock), 0) end
       if used > 0 then
-        -- when the stock reaches 0 (at most a day ahead): the first quarter minute it is gone, then halved to a second
-        local lasts
-        local net = made - used
-        if not cap then
-          if net < 0 then lasts = stock / -net end
-        elseif at(1440) <= 0 then
-          local lo, hi = 0, 0.25
-          while at(hi) > 0 do lo, hi = hi, hi + 0.25 end
-          for _ = 1, 8 do local mid = (lo + hi) / 2; if at(mid) > 0 then lo = mid else hi = mid end end
-          lasts = hi
-        end
+        local lasts = model.lasts(name, made, used, stock)
         if lasts then
           row.lasts_min = round(lasts, 1)
           local t = 0
@@ -341,16 +296,18 @@ return function(api)
           end
         end
       end
-      row.line = string.format('%s: %s%s now%s, made %g/min, used %g/min (%s)%s%s%s%s', name, row.stock, unit, row.places and ' (' .. row.places .. ')' or '',
+      row.line = string.format('%s: %s%s now%s, made %g/min, used %g/min (%s)%s%s%s%s%s', name, row.stock, unit, row.places and ' (' .. row.places .. ')' or '',
         row.made_per_min, row.used_per_min, from, row.moved and (open_leg and '; since this leg began: ' or '; over the last leg: ') .. row.moved or '',
         cap and string.format('; ingredient-limited: the ingredients aboard make at most %d more now (%s %d%s aboard%s, %g a craft%s)%s', cap.more, cap.item, cap.have,
           cap.fluid and ' units' or '',
           cap.below and string.format(' and at most %d more from its own ingredients aboard (%s %d)', cap.below.more, cap.below.item, cap.below.have) or '',
           cap.per_craft, cap.ingredient_made_per_min > 0 and string.format('; %s made %g/min aboard', cap.item, cap.ingredient_made_per_min) or '',
           cap.more_per_min > 0 and string.format(', and about %g more a minute at the rates its ingredients are made aboard now', cap.more_per_min) or '') or '',
+        (row.received and string.format('; %d more on rockets on their way up, counted', row.received) or '')
+          .. (row.no_maker and '; no machine aboard makes it now: the rate made was measured before' or ''),
         row.lasts_min and string.format('; lasts %s at that rate%s', mins(row.lasts_min), row.runs_out_on and ' (runs out on ' .. row.runs_out_on .. ')'
           or (total_min and row.lasts_min >= total_min and ' (past the route\'s end)' or '')) or '',
-        row.at_end and string.format('; at the route\'s end about %d%s', math.max(0, row.at_end), unit) or '')
+        row.at_end and string.format('; at the route\'s end about %d%s', math.max(0, row.at_end), unit) or '') .. (row.binds and '; ' .. row.binds or '')
       rows[#rows+1] = row
     end
     local ammo = {}
@@ -360,31 +317,36 @@ return function(api)
     -- hundreds sat on a rear loop no turret's feed reached): the ammunition stranded on belts no turret's way reaches,
     -- or in a hub no inserter takes from toward a turret, is left out of the stock projected, and said.
     local ammo_feed
-    local tr_why
-    local tr = api.ammofeed and pl.surface and try(function() local t, w = (api.ammofeed.get or api.ammofeed.trace)(pl); tr_why = w; return t end)
-    local stranded_of = {}
-    if tr then
-      for name, n in pairs(tr.stranded_by or {}) do stranded_of[name] = (stranded_of[name] or 0) + n end
-      for name, n in pairs(tr.hub_stranded or {}) do stranded_of[name] = (stranded_of[name] or 0) + n end
-    end
-    local all_held = {}
-    for name, n in pairs(held) do all_held[name] = n end
-    for name, n in pairs(stranded_of) do held[name] = math.max(0, (held[name] or 0) - n) end
+    local tr, tr_why = model.feed, model.feed_why
+    local stranded_of, all_held = model.stranded, model.aboard
+    -- First the rate each is read at, and its moving rate (B3), so that an ingredient two of them draw on is split by both
+    -- rates before any is projected (ammomodel.lua).
+    local plan, phase_of = {}, {}
     for _, name in ipairs(ammo) do
       local made, used = rate(items_stats, name, 'input'), rate(items_stats, name, 'output')
-      local n_rows = #rows
-      if (held[name] or 0) > 0 or (stranded_of[name] or 0) > 0 or made > 0 or used > 0 then
+      if (held[name] or 0) > 0 or (stranded_of[name] or 0) > 0 or (model.received[name] or 0) > 0 or made > 0 or used > 0 then
+        local is_ammo = prototypes.item[name].type == 'ammo'
+        local x
         local lm2, lu2, from2
-        if flying and win_text and prototypes.item[name].type == 'ammo' then lm2, lu2, from2 = leg_now_rate(name) end
-        if lm2 then project(name, held[name] or 0, lm2, lu2, nil, from2)
-        elseif flying then project(name, held[name] or 0, made, used, nil, win_text or 'last 10 min, flying')
+        if flying and win_text and is_ammo then lm2, lu2, from2 = leg_now_rate(name) end
+        if lm2 then x = {lm2, lu2, from2}
+        elseif flying then x = {made, used, win_text or 'last 10 min, flying'}
         else
           local lm, lu, from = nil, nil, nil
-          if prototypes.item[name].type == 'ammo' then lm, lu, from = leg_rate(name) end
-          if lm then project(name, held[name] or 0, lm, lu, nil, from)
-          else project(name, held[name] or 0, made, used, nil, 'stopped, and no finished leg on record for it', true) end
+          if is_ammo then lm, lu, from = leg_rate(name) end
+          if lm then x = {lm, lu, from}
+          else x = {made, used, 'stopped, and no finished leg on record for it', true} end
         end
+        plan[#plan+1] = {name=name, x=x}
+        local ph = is_ammo and api.phase_rates and try(function() return api.phase_rates(pl, name) end)
+        phase_of[name] = ph or nil
+        model.make(name, math.max(x[1], ph and ph.moving and ph.moving.made or 0))
       end
+    end
+    for _, it in ipairs(plan) do
+      local name, x = it.name, it.x
+      local n_rows = #rows
+      project(name, held[name] or 0, x[1], x[2], nil, x[3], x[4])
       local st = stranded_of[name]
       if st and st > 0 and #rows > n_rows then
         local row = rows[#rows]
@@ -410,7 +372,7 @@ return function(api)
     -- moving rate what the route's flight and its last leg (the return) use.
     for _, row in ipairs(rows) do
       local item = prototypes.item[row.name]
-      local ph = item and item.type == 'ammo' and api.phase_rates and try(function() return api.phase_rates(pl, row.name) end)
+      local ph = item and item.type == 'ammo' and phase_of[row.name]
       if ph then
         local parts = {}
         for _, k in ipairs({'moving', 'still', 'stopped'}) do
@@ -425,10 +387,14 @@ return function(api)
         if mv and total_min and total_min > 0 then
           local last = legs[#legs]
           local back = last and last.minutes or nil
+          -- made: at most what the ingredients aboard allow (ammomodel.lua, as the row's at_end; d20 batch51 H1)
           local need = mv.used * total_min
-          local have = row.stock + mv.made * total_min
-          row.flight = string.format('at the moving rate the route\'s %s of flight uses about %d, with %d aboard and about %d made: %s%s', mins(total_min), math.floor(need + 0.5),
-            row.stock, math.floor(mv.made * total_min + 0.5), need > have and string.format('%d short', math.ceil(need - have)) or string.format('%d to spare', math.floor(have - need)),
+          local made = model.made(row.name, mv.made, total_min)
+          local have = row.stock + (row.received or 0) + made
+          local b = model.binds(row.name, mv.made, total_min)
+          row.flight = string.format('at the moving rate the route\'s %s of flight uses about %d, with %d aboard%s and about %d made: %s (%s)%s', mins(total_min), math.floor(need + 0.5),
+            row.stock, row.received and string.format(', %d on rockets on their way up', row.received) or '', math.floor(made + 0.5),
+            need > have and string.format('%d short', math.ceil(need - have)) or string.format('%d to spare', math.floor(have - need)), b.line,
             back and string.format('; the last leg %s->%s (%s) uses about %d', last.from, last.to, mins(back), math.floor(mv.used * back + 0.5)) or '')
           row.line = row.line .. '; ' .. row.flight
         end
@@ -441,14 +407,17 @@ return function(api)
     for _, row in ipairs(rows) do
       local item = prototypes.item[row.name]
       if total_min and total_min > 0 and row.used_per_min > 0 and item and item.type == 'ammo' then
+        -- made on the way: at most what the ingredients aboard allow, as the row's at_end (ammomodel.lua; d20 batch51 H1:
+        -- Kestrel IVa's 828 made against a cap of about 444 in one reply, shift46 15:48)
         local need = row.used_per_min * total_min
-        local have = row.stock + row.made_per_min * total_min
+        local made = model.made(row.name, row.made_per_min, total_min)
+        local have = row.stock + (row.received or 0) + made
         local w = try(function() return item.weight end)
         local per_rocket = w and w > 0 and math.floor(lift / w) or nil
         local short = math.ceil(need - have)
-        departure[#departure+1] = string.format('%s over the route (%s): uses about %d at %g/min; %d aboard and about %d made on the way: %s%s',
-          row.name, mins(total_min), math.floor(need + 0.5), row.used_per_min, row.stock, math.floor(row.made_per_min * total_min + 0.5),
-          short > 0 and string.format('%d short', short) or string.format('%d to spare', -short),
+        departure[#departure+1] = string.format('%s over the route (%s): uses about %d at %g/min; %d aboard%s and about %d made on the way: %s (%s)%s',
+          row.name, mins(total_min), math.floor(need + 0.5), row.used_per_min, row.stock, row.received and string.format(', %d on rockets on their way up', row.received) or '',
+          math.floor(made + 0.5), short > 0 and string.format('%d short', short) or string.format('%d to spare', -short), model.binds(row.name, row.made_per_min, total_min).line,
           per_rocket and string.format('; a rocket lifts %d of it%s', per_rocket, short > 0 and string.format(' (%d rocket%s for the shortfall)', math.ceil(short / per_rocket), math.ceil(short / per_rocket) == 1 and '' or 's') or '') or '')
       end
     end
@@ -533,7 +502,7 @@ return function(api)
         local item = prototypes.item[row.name]
         if item and item.type == 'ammo' then ammo[#ammo+1] = row end
       end
-      forecast = routeammo.forecast(pl, legs, ammo, pe)
+      forecast = routeammo.forecast(pl, legs, ammo, pe, model)
     end
     local legs_text = {}
     for _, l in ipairs(legs) do
@@ -558,6 +527,6 @@ return function(api)
   M.schema = {platform_endurance = {forecast='true: forecast, per leg of the route: the asteroids its space connection spawns by kind (the game\'s spawn chance, its mean over the leg; beside it, the legs flown in the last 2 hours), for each ammunition aboard the shots one asteroid of each kind takes (its health against the damage after resistances and our bonuses; none hurt: under 1 a hit), and the use: the moving rate on the legs flown scaled by how much more shooting this leg\'s asteroids take, what is made meanwhile, and what is left at each arrival. An estimate from prototypes and measured rates; rockets\' damage is in their projectile, not read (counted 1 shot)',
     pessimistic='with forecast: {speed: 0.1..1 (a share of the speed read: slower, longer legs), dwell_s: 0..36000 (extra time at each stop at the stopped rate)}',
     platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks, made and used a minute over the last minute, and flying whether each lasts the rest of the leg at the speed now; its owners get a team alert when one runs out before the leg ends); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
+    returns='fuel_outlook (one line: thruster fuel and oxidizer held in thrusters and tanks, made and used a minute over the last minute, and flying whether each lasts the rest of the leg at the speed now; its owners get a team alert when one runs out before the leg ends); each ammunition row adds phases {moving, still, stopped: minutes, used_per_min, made_per_min} (moving: flying, not paused; still: in space, paused or at speed 0; stopped: at a location; recent hours count most) and flight (at the moving rate: what the route\'s flight and its last leg use against what is aboard and made); departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min, share, shared {product: share}, other_use_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now; an ingredient two products draw on split by their make rates, other machines\' use of it taken off first), received (on rockets launched to it and not arrived, counted once), binds (which limit sets what is made over the route: the stock, the make rate or an ingredient; flight, departure, forecast and preflight\'s ammo_rates count the same way), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
   return M
 end

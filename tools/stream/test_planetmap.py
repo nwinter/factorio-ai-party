@@ -7,7 +7,7 @@ only): python3 tools/stream/test_planetmap.py
 2. Run under a stub `remote` in the local lua: a ready census answer is printed whole; no harness or no census yet
    prints {}.
 3. model.Model keeps the planet maps by surface across reads (one read a minute, in turn); a planet the census stops
-   listing is dropped; the snapshot carries planet_maps.
+   listing keeps its last map (d20 batch50 D1: the site labels it with its age); the snapshot carries planet_maps.
 """
 import json, os, shutil, subprocess, sys
 
@@ -76,9 +76,10 @@ m.ingest({"tick": 20, "agents": [], "planet_names": ["gleba", "vulcanus"], "plan
 snap = m.snapshot(1060)
 check("both maps kept across reads", sorted(snap["planet_maps"]) == ["gleba", "vulcanus"], sorted(snap.get("planet_maps") or {}))
 m.ingest({"tick": 30, "agents": [], "planet_names": ["gleba"]}, now=1120)
-check("a planet no longer listed is dropped", sorted(m.snapshot(1120)["planet_maps"]) == ["gleba"], m.planet_maps)
+check("a planet no longer listed keeps its last map", sorted(m.snapshot(1120)["planet_maps"]) == ["gleba", "vulcanus"]
+      and m.planet_maps["vulcanus"]["tick"] == 5, m.planet_maps)
 m.ingest({"tick": 40, "agents": []}, now=1180)
-check("a read with no planet list keeps them", sorted(m.snapshot(1180)["planet_maps"]) == ["gleba"])
+check("a read with no planet list keeps them", sorted(m.snapshot(1180)["planet_maps"]) == ["gleba", "vulcanus"])
 json.dumps(snap)  # the state is JSON
 
 if failed:
