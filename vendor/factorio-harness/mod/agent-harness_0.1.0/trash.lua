@@ -9,6 +9,7 @@ return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function key(name, quality) return name..'@'..(quality or 'normal') end
+  M.key = key
   -- The character's requests as the game compiles them (all its active
   -- sections): the max per item and quality, which items are requested, and
   -- whether unrequested items go to trash. nil when personal logistics are
