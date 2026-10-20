@@ -5883,8 +5883,9 @@ local function placement_error(p,proto,pos,direction,near)
     elseif near and e.valid and e.type=='entity-ghost' and e.ghost_name==proto.name
       and math.abs(e.position.x-pos.x)<0.01 and math.abs(e.position.y-pos.y)<0.01 then
       -- the ghost this build revives
-    elseif near and e.valid and e.type=='tile-ghost' then
-      -- a tile ordered under it: the tile there now decides
+    elseif e.valid and e.type=='tile-ghost' then
+      -- a tile ordered under it is no blocker: a build reads the tile there now; the game takes an entity ghost over
+      -- tile ghosts (d20 batch52 J1: Sol's thrusters were refused "blocked by tile ghost space-platform-foundation")
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
       -- An item on the ground (shake4: Grok's 9 tries at one spot): say which.
@@ -5907,7 +5908,15 @@ local function placement_error(p,proto,pos,direction,near)
   end
   -- Tile buildability rules (asteroid collectors: rear rows on foundation, the
   -- front in empty space): the broken one; with rules, they judge the tiles.
-  local rule,ruled=M.placewhy.tile_rules(p.surface,proto,pos,direction)
+  local rule,ruled
+  if near then rule,ruled=M.placewhy.tile_rules(p.surface,proto,pos,direction)
+  else
+    -- (d20 batch52 J1) a ghost: tile ghosts laid, tiles past the generated chunks asked for and said
+    local rt=M.placewhy.rule_tiles(p.surface,p.force,proto,pos,direction)
+    ruled=rt.ruled
+    rule=rt.broken or (rt.ungenerated and M.placewhy.ungenerated_text(p.surface,rt.ungenerated,true))
+      or (#rt.need>0 and string.format('stands on %d %s tiles its tile rules want %s under',#rt.need,rt.need[1].tile,rt.need[1].item)) or nil
+  end
   if rule then return ': '..rule end
   -- Tiles it cannot stand on (its collision mask against each tile: water,
   -- wetland, lava, space), with the tile item that makes them buildable;
@@ -13525,6 +13534,16 @@ do local function place_tile_ghost(p,tile,pos)
     if #blockers==0 then
       -- in front of an asteroid collector (A5, Astra 01:50): said
       local why=M.placewhy.collector_ahead(p.surface,p.force,x,y)
+      -- (d20 batch52 J1) past the chunks the surface has generated: asked for, and said
+      if not why then
+        local okt,t=pcall(p.surface.get_tile,x,y)
+        local okg,g=pcall(function() return p.surface.is_chunk_generated({math.floor(x/32),math.floor(y/32)}) end)
+        local gen=not okg or g~=false
+        if not (okt and t and t.valid~=false) or (not gen and t.name=='out-of-map') then
+          why=M.placewhy.ungenerated_text(p.surface,{count=1,chunks={{x=math.floor(x/32),y=math.floor(y/32)}},x0=x,x1=x,y0=y,y1=y},true)
+            :gsub('^the tile %(%-?%d+,%-?%d+%) it needs','it')
+        end
+      end
       error('tile placement blocked: the game refuses '..tile..' there now'..(why and ': '..why or ''),0)
     end
     for _,b in ipairs(blockers) do
@@ -13583,6 +13602,16 @@ local function place_ghost(p,spec)
   -- Trees and rocks where those tiles go are marked first (place_tile_ghost);
   -- anything else there refuses the ghost, named.
   local fixes=M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction)
+  -- (d20 batch52 J1) An entity with tile rules over empty space where a rule wants ground (a thruster's body): the
+  -- foundation tile ghosts under it first, as the game's forced placement lays them (2.0.77 on the copy: a forced
+  -- blueprint of a lone thruster placed it and 20 foundation tile ghosts); tile ghosts already there count as laid.
+  if not fixes and #(proto.tile_buildability_rules or {})>0 then
+    local rt=M.placewhy.rule_tiles(p.surface,p.force,proto,pos,direction)
+    for _,n in ipairs(rt.need) do
+      fixes=fixes or {}
+      fixes[#fixes+1]={x=n.x+0.5,y=n.y+0.5,tile=n.tile,item=n.item}
+    end
+  end
   for _,f in ipairs(fixes or {}) do
     local result=f.item and prototypes.item[f.item] and prototypes.item[f.item].place_as_tile_result
     f.result=result and result.result.name

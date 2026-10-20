@@ -9117,3 +9117,30 @@ fh watch    # deploy on every change
   the only receipts counted are rockets already launched to the ship (their cargo has left the planet's stock). Not
   changed: the forecast's asteroid scale (x3.95 on Kestrel IVa) and the windows each read takes its rates from (the
   flight line uses the moving rate, the rows the window's). Test tests/ammomodel.lua.
+
+## d20 batch52 (eng/d20-batch52)
+
+- J1 (Sol, shift46 10:31, operator inbox 883; requests 7e4bda19, 414d9a93, 8386b18b, 7e029ac7, 6e785e1e): three
+  thruster ghosts at (-8,110.5), (0,110.5), (8,110.5) facing north on Limestone-spare-unbuilt. The dry run failed with
+  `LuaTile API call when LuaTile was invalid.`: a thruster's second tile rule keeps the 90 tiles behind it empty space,
+  reaching y 200, past the chunks that 12x12 platform has; get_tile there gives an invalid tile and dryrun.lua read its
+  name outside its pcall. The real call refused each thruster `placement blocked by tile ghost
+  space-platform-foundation (...)`: the engine refused (its check needs those chunks), and placement_error named the
+  tile ghosts under it as what blocked.
+  What 2.0.77 does (the private copy pog-b41-headless, a thruster facing north on Swift and on a new platform): over
+  foundation tile ghosts the plain ghost check (manual_ghost) takes it, and a blueprint holding the foundation and the
+  thruster places both ghosts (in charted chunks; uncharted: nothing); over bare empty space only the forced check takes
+  it, and a forced blueprint of a lone thruster lays 20 foundation tile ghosts under it (a normal one places nothing);
+  built foundation takes it for a hand build too. The check refuses while the chunks behind it are not generated,
+  foundation or tile ghosts behind it break the rule. surface.request_to_generate_chunks (0.09 ms, not forced) makes the
+  chunks exist at once and generated a few ticks later; forced generation of 9 chunks took 30 ms (not used).
+  Now (placewhy.rule_tiles, shared by the dry run and the real call): tile ghosts count as laid and are never named as
+  blockers; empty space under a rule that wants ground needs foundation (the first unlocked tile item placeable on that
+  tile whose tile the rule takes), and place_ghosts lays those tile ghosts under it first (`tiles_laid`), the dry run
+  saying `needs_tiles ... (place_ghosts lays those tile ghosts under it first)`; tiles past the generated chunks are
+  not judged, and when the game refuses the entity the reply says `N tiles its tile rules need (x .., y ..) lie in K
+  chunks this surface has not generated yet, and the game refuses it until they are; generating K chunks was requested
+  now (as a player's view would): call again in a few seconds` (a tile ghost there says the same). Checked on the copy:
+  empty space (dry run needs_tiles, call placed with 20 foundation tile ghosts), tile ghosts (placeable, placed), built
+  foundation (placeable, placed), past the generated chunks (refused with the request; placed on the call 3 s later).
+  Test tests/thrusterghost.lua.
