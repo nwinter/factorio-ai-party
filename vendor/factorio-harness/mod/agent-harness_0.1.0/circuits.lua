@@ -709,6 +709,29 @@ return function(api)
   -- (d17 batch30 A2, Sol and viewer Foobator 05:47) a programmable speaker's alert settings, as its GUI's alert part:
   -- show_alert, show_on_map, icon (a signal), message; with its circuit condition and whether it holds now (the speaker
   -- plays, and alerts, while it holds). nil for anything else.
+  -- (d19 batch49, viewer Foobator 19:39) its GUI's sound settings: volume, playback mode (local: heard near it; surface:
+  -- on its surface; global: everywhere), polyphony, instrument and note (numbers from 0, as the game keeps them).
+  local function speaker_sound(e, cb)
+    local p = try(function() return e.parameters end)
+    if type(p) ~= 'table' then return nil end
+    local cp = cb and try(function() return cb.circuit_parameters end) or {}
+    local insts = try(function() return e.prototype.instruments end) or {}
+    local it = insts[(cp.instrument_id or 0) + 1]
+    local inst = it and it.name or nil
+    local note = it and it.notes and it.notes[(cp.note_id or 0) + 1] or nil
+    local vol = p.playback_volume or 1
+    local mode = p.playback_mode or 'local'
+    local vs = p.volume_controlled_by_signal and signal_text(p.volume_signal_id) or nil
+    local line
+    if vol <= 0 and not p.volume_controlled_by_signal then line = 'sound: off (volume 0)'
+    else
+      line = string.format('sound: %s/%s at volume %s, %s%s%s%s', inst or tostring(cp.instrument_id or 0), note or tostring(cp.note_id or 0),
+        vs and 'from signal ' .. vs or string.format('%d%%', math.floor(vol * 100 + 0.5)), mode, p.allow_polyphony and ', polyphony on' or '',
+        cp.signal_value_is_pitch and ', the note from the signal value' or '', cp.stop_playing_sounds and ', stops playing sounds' or '')
+    end
+    return {volume=vol, mode=mode, polyphony=p.allow_polyphony and true or false, instrument=inst, note=note,
+      instrument_id=cp.instrument_id or 0, note_id=cp.note_id or 0, volume_signal=vs, note_from_signal=cp.signal_value_is_pitch or nil, line=line}
+  end
   function M.speaker_alert(e)
     local ap = try(function() return e.alert_parameters end)
     if type(ap) ~= 'table' then return nil end
@@ -717,23 +740,71 @@ return function(api)
     local cb = try(function() return e.get_control_behavior() end)
     local c = cb and try(function() return cb.circuit_condition end)
     local cond = type(c) == 'table' and condition_text(c) or nil
+    local snd = speaker_sound(e, cb)
     return {show_alert=ap.show_alert and true or false, show_on_map=ap.show_on_map and true or false, icon=icon, message=msg,
-      condition=cond, condition_met=type(c) == 'table' and c.fulfilled or nil,
-      line=string.format('alert %s%s: %s%s; circuit condition %s', ap.show_alert and 'on' or 'off', ap.show_on_map and ' (on the map)' or '',
+      condition=cond, condition_met=type(c) == 'table' and c.fulfilled or nil, speaker_sound=snd,
+      line=string.format('alert %s%s: %s%s; circuit condition %s%s', ap.show_alert and 'on' or 'off', ap.show_on_map and ' (on the map)' or '',
         msg ~= '' and '"' .. msg .. '"' or 'no message', icon and ', icon ' .. icon or '',
-        cond and (cond .. (type(c) == 'table' and (c.fulfilled and ' (holds now)' or ' (does not hold now)') or '')) or 'none')}
+        cond and (cond .. (type(c) == 'table' and (c.fulfilled and ' (holds now)' or ' (does not hold now)') or '')) or 'none',
+        snd and '; ' .. snd.line or '')}
   end
-  local SPEAKER_KEYS = {show_alert=true, show_on_map=true, message=true, icon=true, condition=true}
-  -- configure {speaker_alert: {show_alert?, show_on_map?, message?, icon?, condition?}}: the rest kept; icon false clears
-  -- it; condition is its circuit condition (as circuit_set's enable takes it). Returns the settings after and before.
+  local SPEAKER_KEYS = {show_alert=true, show_on_map=true, message=true, icon=true, condition=true, speaker_sound=true}
+  local SOUND_KEYS = {volume=true, mode=true, polyphony=true, instrument=true, note=true}
+  local SOUND_MODES = {['local']=true, surface=true, global=true}
+  -- speaker_sound {volume?, mode?, polyphony?, instrument?, note?} checked against the speaker's settings now: the
+  -- parameters and circuit parameters to write (nothing is written here).
+  local function sound_spec(e, cb, spec)
+    if type(spec) ~= 'table' then error('speaker_alert.speaker_sound is {volume? (0..1), mode? (local|surface|global), polyphony?, instrument?, note?}', 0) end
+    for k in pairs(spec) do if not SOUND_KEYS[k] then error('speaker_sound takes volume, mode, polyphony, instrument and note, not ' .. tostring(k), 0) end end
+    local p = try(function() return e.parameters end) or {}
+    local np = {playback_volume=p.playback_volume or 1, playback_mode=p.playback_mode or 'local', allow_polyphony=p.allow_polyphony or false,
+      volume_controlled_by_signal=p.volume_controlled_by_signal or false, volume_signal_id=p.volume_signal_id}
+    if spec.volume ~= nil then
+      if type(spec.volume) ~= 'number' or spec.volume < 0 or spec.volume > 1 then error('speaker_sound.volume is a number from 0 to 1 (the GUI\'s 0% to 100%)', 0) end
+      np.playback_volume = spec.volume
+    end
+    if spec.mode ~= nil then
+      if not SOUND_MODES[spec.mode] then error('speaker_sound.mode is local, surface or global, not ' .. tostring(spec.mode), 0) end
+      np.playback_mode = spec.mode
+    end
+    if spec.polyphony ~= nil then
+      if type(spec.polyphony) ~= 'boolean' then error('speaker_sound.polyphony must be true or false', 0) end
+      np.allow_polyphony = spec.polyphony
+    end
+    local cp = cb and try(function() return cb.circuit_parameters end) or {}
+    local ncp = {signal_value_is_pitch=cp.signal_value_is_pitch or false, stop_playing_sounds=cp.stop_playing_sounds or false,
+      instrument_id=cp.instrument_id or 0, note_id=cp.note_id or 0}
+    local insts = try(function() return e.prototype.instruments end) or {}
+    local function pick(v, list, what)
+      for i, n in ipairs(list) do if v == n or v == i - 1 then return i - 1 end end
+      error(string.format('speaker_sound.%s: %s is none of this speaker\'s; it has %s (a name or its number from 0)', what, tostring(v), #list > 0 and table.concat(list, ', ') or 'none'), 0)
+    end
+    if spec.instrument ~= nil then
+      local names = {}
+      for i, it in ipairs(insts) do names[i] = it.name end
+      local id = pick(spec.instrument, names, 'instrument')
+      if id ~= ncp.instrument_id and spec.note == nil then ncp.note_id = 0 end
+      ncp.instrument_id = id
+    end
+    if spec.note ~= nil then
+      local it = insts[ncp.instrument_id + 1]
+      ncp.note_id = pick(spec.note, it and it.notes or {}, 'note' .. (it and ' (of ' .. it.name .. ')' or ''))
+    end
+    return np, ncp
+  end
+  -- configure {speaker_alert: {show_alert?, show_on_map?, message?, icon?, condition?, speaker_sound?}}: the rest kept;
+  -- icon false clears it; condition is its circuit condition (as circuit_set's enable takes it); speaker_sound its sound
+  -- settings (d19 batch49). Returns the settings after and before.
   function M.set_speaker_alert(e, spec)
     local t = e.type == 'entity-ghost' and e.ghost_type or e.type
     if t ~= 'programmable-speaker' then
       error(string.format('speaker_alert is a programmable speaker\'s alert settings; %s (%g,%g) is a %s', e.type == 'entity-ghost' and e.ghost_name or e.name, e.position.x, e.position.y, t), 0)
     end
-    if type(spec) ~= 'table' then error('speaker_alert is {show_alert?, show_on_map?, message?, icon?}', 0) end
-    for k in pairs(spec) do if not SPEAKER_KEYS[k] then error('speaker_alert takes show_alert, show_on_map, message, icon and condition, not ' .. tostring(k), 0) end end
+    if type(spec) ~= 'table' then error('speaker_alert is {show_alert?, show_on_map?, message?, icon?, condition?, speaker_sound?}', 0) end
+    for k in pairs(spec) do if not SPEAKER_KEYS[k] then error('speaker_alert takes show_alert, show_on_map, message, icon, condition and speaker_sound, not ' .. tostring(k), 0) end end
     local cond = spec.condition ~= nil and condition(spec.condition, 'speaker_alert.condition') or nil
+    local sp, scp
+    if spec.speaker_sound ~= nil then sp, scp = sound_spec(e, try(function() return e.get_control_behavior() end), spec.speaker_sound) end
     local before = M.speaker_alert(e)
     local ap = try(function() return e.alert_parameters end) or {}
     local new = {show_alert=ap.show_alert or false, show_on_map=ap.show_on_map or false, icon_signal_id=ap.icon_signal_id, alert_message=ap.alert_message or ''}
@@ -750,6 +821,10 @@ return function(api)
     if spec.icon ~= nil then new.icon_signal_id = spec.icon ~= false and signal(spec.icon, 'speaker_alert.icon') or nil end
     local ok, err = pcall(function() e.alert_parameters = new end)
     if not ok then error('the game refused speaker_alert: ' .. tostring(err):gsub('^[^:]*:%d+: ', ''), 0) end
+    if sp then
+      local oks, errs = pcall(function() e.parameters = sp; e.get_or_create_control_behavior().circuit_parameters = scp end)
+      if not oks then error('speaker_alert.speaker_sound: the game refused it: ' .. tostring(errs):gsub('^[^:]*:%d+: ', '') .. ' (the alert settings were set)', 0) end
+    end
     if cond then
       local okc, errc = pcall(function() e.get_or_create_control_behavior().circuit_condition = cond end)
       if not okc then error('speaker_alert.condition: the game refused it: ' .. tostring(errc):gsub('^[^:]*:%d+: ', '') .. ' (the alert settings were set)', 0) end
