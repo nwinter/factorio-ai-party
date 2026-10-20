@@ -1038,7 +1038,8 @@ return function(api)
             action.pods.trips=(action.pods.trips or 1)+1
           elseif out.inventory_full then return 'inventory_full' end
           if out.stop then return out.stop end
-          if out.wait then api.stop_walking(p);return nil end
+          -- (d20 batch54 N6) a hold begun on a belt or rail steps off it first (runtime.lua hold_off_belt)
+          if out.wait then if not (api.hold_off_belt and api.hold_off_belt(p,action,t.entity)) then api.stop_walking(p) end; return nil end
         else
           action.errors=(action.errors or 0)+1
           action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,(tostring(out):gsub('^[^:]*:%d+: ','')))
