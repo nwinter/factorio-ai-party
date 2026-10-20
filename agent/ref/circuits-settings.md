@@ -104,7 +104,7 @@
     there by remote view where our force sees the chunk. Switching automatic requests on moves cargo loaded by hand
     into the silo's trash slots, which never launch: `auto_requests: true` is refused while the rocket holds cargo no
     platform stopped above asks this planet for, naming it (`force: true` switches them on anyway); `silo` lists the
-    trash slots.
+    trash slots. A silo's ghost takes both too (a place_ghosts entry's `configure` among them), and the silo built from it keeps them.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
 - `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
   queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < 0`) and the
@@ -114,8 +114,8 @@
   inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
   (the machine would make more with it). The inserters need a logistic network for their logistic condition.
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
-- `requests {position | platform?, set?, clear?, clear_all?, section?, active?, trash_unrequested?, construction_requests?,
-  keep?, dry_run?, force?, surface?}`: a
+- `requests {position | platform?, set?, clear?, clear_all?, section?, active?, add_section?, remove_section?, group?,
+  trash_unrequested?, construction_requests?, keep?, dry_run?, force?, surface?}` or `{groups: true}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry is `{item, min, max?, quality?, from?,
   min_payload?}` and any other field is refused (as in every record list: signals, builds, entities, stops); an entry
@@ -147,6 +147,14 @@
     changes nothing and replies with the sections, `stored` and `sends_down` the change would make; on a requester,
     a buffer chest or yourself, `robot_dispatch`: the logistic robots' trips for what it would ask beyond what it holds
     (from the chest the network would take each from; how many at once, from where, how far, past which enemies).
+  - Sections and groups, as the logistics GUI: `add_section: true` adds a manual section (`set`, `clear`, `active` in
+    the call go to it); `remove_section: N` removes one with its requests (alone; a dry run reads it switched off).
+    `section: N, group: "name"`: a group that exists replaces the section's requests with the group's (`dropped` names
+    what goes); a new name makes the group from the section's requests; `group: false` leaves it keeping a copy. An
+    edit in a section of a group changes every member: `group_edit` names each other one, a dry run too. `groups: true`
+    lists our groups with their requests and members. There is no setting that stops a hub unloading: at each stop it
+    keeps only what its requests from that planet ask, so a reserve kept at every port is one section per port, each
+    requesting the item `from` that port.
   - Your own: `unfilled` lists the personal requests not filled, each with why (no network where you stand, no
     logistic robots, none free, none of the item in the network).
   Example: `./fh call requests --args '{"platform":"Starling","construction_requests":true}'`

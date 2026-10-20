@@ -24,8 +24,8 @@ return function()
   local BUILD = {label='build entry', fields={'item', 'position', 'direction?', 'quality?', 'type?', 'size?', 'entity?', 'recipe?', 'name?',
     'configure?', 'requests?', 'circuit?', 'wires?', 'settings?'}, hint=with(SETTING_HINTS, {count='one entry places one'})}
   local CRAFT = {label='recipe entry', fields={'recipe', 'count?', 'force?'}, hint={name='recipe', item='recipe', amount='count'}}
-  local GHOST = {label='ghost entry', fields={'name', 'position', 'direction?', 'type?', 'recipe?', 'ammo?', 'item?',
-    'configure?', 'requests?', 'circuit?', 'wires?', 'settings?'}, hint=with(SETTING_HINTS, {quality='a ghost takes no quality here'})}
+  local GHOST = {label='ghost entry', fields={'name', 'position', 'direction?', 'type?', 'recipe?', 'quality?', 'ammo?', 'item?',
+    'configure?', 'requests?', 'circuit?', 'wires?', 'settings?'}, hint=SETTING_HINTS}
   local TRAIN_WAIT = {label='train wait', fields={'type', 'ticks?', 'compare?', 'condition?'}, hint={seconds='ticks (60 a second)', compare_type='compare'}}
   local TRAIN_STOP = {label='train stop record', fields={'station', 'wait?'}, hint={name='station', stop='station', waits='wait'},
     nested={wait={list=TRAIN_WAIT, groups=true, example='[{"type":"time","ticks":1800}]'}}}

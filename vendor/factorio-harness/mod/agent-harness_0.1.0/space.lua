@@ -5,6 +5,7 @@
 return function(api)
   local M={}
   M.waitgroups=require('waitgroups')()  -- (d18 batch36 A3) the waits' and/or chain: groups, the mixed refusal, the readback
+  M.reqgroups=require('reqgroups')()  -- (d20 batch53 L3, L4) sections added and removed, named logistic groups
   local function invert(t) local out={} for k,v in pairs(t or {}) do out[v]=k end return out end
   -- Riding a rocket and dropping from the hub are LuaPlayer moves; a bot (no
   -- player to sit in the hub) travels through bots.lua instead: same payload
@@ -164,7 +165,21 @@ return function(api)
     assert(a.active==nil or type(a.active)=='boolean','active must be true or false: switch the section on or off')
     assert(a.clear_all==nil or type(a.clear_all)=='boolean','clear_all must be true or false')
     local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
-    if changing and a.section~=nil then
+    -- (d20 batch53 L3, L4) a section added (the GUI's Add section) or removed, and a section's group
+    assert(a.add_section==nil or a.add_section==true,'add_section is true: a new manual section (the GUI\'s Add section); with group it joins that group; set, clear and active go to it')
+    if a.add_section then assert(a.section==nil,'add_section makes a new section: give it without section') end
+    if a.remove_section~=nil then
+      local sec=secs.get_section(api.integer(a.remove_section,1,1,100,'remove_section'))
+      assert(sec,'section '..a.remove_section..' does not exist (sections_count '..secs.sections_count..')')
+      assert(sec.is_manual,'section '..sec.index..' is controlled by the game: only the game removes it')
+      assert(not changing and a.add_section==nil and a.group==nil and a.keep==nil,'remove_section goes alone (or with dry_run)')
+    end
+    if a.group~=nil then
+      if a.group~=false then M.reqgroups.check_name(a.group) end
+      assert(a.add_section or a.section~=nil,'group goes with section (that section joins the group, or leaves it with false) or with add_section')
+      assert(a.group~=false or not a.add_section,'a new section is in no group: group false goes with section')
+    end
+    if (changing or a.group~=nil) and a.section~=nil then
       local sec=secs.get_section(api.integer(a.section,1,1,100,'section'))
       assert(sec,'section '..a.section..' does not exist (sections_count '..secs.sections_count..')')
       assert(sec.is_manual,'section '..sec.index..' is controlled by the game')
@@ -360,8 +375,15 @@ return function(api)
       b.clear=list; b.remove=nil; a=b
     end
     assert(a.force==nil or type(a.force)=='boolean','force must be true or false')
+    -- (d20 batch53 L4) groups: true: the force's named logistic groups, their requests and members
+    if a.groups~=nil then
+      assert(a.groups==true,'groups is true: the named logistic groups')
+      for k in pairs(a) do assert(k=='groups' or k=='compact' or k=='fields','groups: true goes alone (a read of every group)') end
+      return M.reqgroups.list(p.force)
+    end
     local label,secs,chest=sections_of(p,a)
     local entries=M.check_requests(p,a,label,chest,secs)
+    local slots_changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
     -- A requester chest's "request from buffer chests" switch.
     local buffers
     if a.from_buffers~=nil then
@@ -394,7 +416,7 @@ return function(api)
       assert(on==a.construction_requests,'the game kept Request missing construction materials '..(on and 'on' or 'off'))
       switched=true
     end
-    local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
+    local changing=slots_changing or a.add_section~=nil or a.remove_section~=nil or a.group~=nil
     -- (d17 batch29 C4) on a hub: what it keeps before the change (sends_down), and for dry_run every manual section's
     -- slots and switch and the hub's kept minimum payloads, put back after the read
     local before=hub and hub.valid and changing and M.hub_keep_at(secs) or nil
@@ -412,10 +434,34 @@ return function(api)
       local mem=hub and hub.unit_number and api.state and api.state().hub_min_payload
       mem=mem and mem[hub.unit_number]
       if mem then snap.mp={}; for k,v in pairs(mem) do snap.mp[k]=v end end
+      snap.groups=M.reqgroups.snapshot(secs)
+    end
+    -- (d20 batch53 L3, L4) the section added or removed and the group joined or left, before the slots are edited: set,
+    -- clear and active after add_section go to the new section. A dry run's removal switches the section off as its
+    -- stand-in (what the hub keeps and sends down reads as without it), put back after.
+    local section_change,group_change,made={},nil,{}
+    if a.remove_section~=nil then
+      local rsec=secs.get_section(a.remove_section)
+      local r=M.reqgroups.removal(rsec)
+      section_change[#section_change+1]=r.line
+      if a.dry_run then rsec.active=false else secs.remove_section(a.remove_section) end
+    end
+    if a.add_section then
+      local nsec=secs.add_section()
+      assert(nsec,'the game added no section')
+      section_change[#section_change+1]='section '..nsec.index..' added'
+      local b={}; for k,v in pairs(a) do b[k]=v end
+      b.section=nsec.index; b.add_section=nil; a=b
+    end
+    if a.group~=nil then
+      local gsec=secs.get_section(a.section)
+      if a.group~=false and not try(function() return p.force.get_logistic_group(a.group) end) then made[a.group]=true end
+      group_change=M.reqgroups.set_group(p.force,gsec,a.group)
+      section_change[#section_change+1]=group_change.line
     end
     -- changed: a slot set or cleared, or the section switched (friction2: a set the call read as nothing still said
     -- changed_section).
-    local touched,stored,changed,told
+    local touched,stored,changed,told,group_edit
     local others={}
     -- keep: the import planet and minimum payload of each request the change drops
     local gone={}
@@ -426,7 +472,7 @@ return function(api)
         gone[n]={from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)),mp=f.minimum_delivery_count}
       end
     end
-    if changing then
+    if slots_changing then
       local sec
       -- The section a set or clear of one item goes to without section (Grok, d15 06:20: a hub's set added a new
       -- section and the hub requested the sum, underground-belt 2 plus 4): the manual section that already requests
@@ -574,7 +620,14 @@ return function(api)
       end
       if not touched then touch(default_section()) end
       if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
+      -- (d20 batch53 L4) a section in a group: the edit is every member's; each member it changes besides this one
+      for _,i in ipairs(sections_touched) do
+        local gs=secs.get_section(i)
+        local o=gs and (a.set~=nil or a.clear~=nil or a.clear_all or a.keep~=nil) and M.reqgroups.others(p.force,gs)
+        if o then group_edit=group_edit or {}; group_edit[#group_edit+1]=o.line end
+      end
     end
+    if #section_change>0 then changed=true end
     -- (B1) each section the call changed: recorded with the editor and the tick; whoever set it last before, if someone
     -- else, is told once
     if logged and logged.valid and logged.unit_number then
@@ -607,16 +660,24 @@ return function(api)
       local okd,lines=pcall(api.dispatch,where and where.surface or p.surface,p.force,jobs)
       if okd and lines then out.robot_dispatch=lines end
     end
+    -- (d20 batch53) the index read before a dry run's undo removes a section it added
+    local touched_index=touched and try(function() return touched.index end) or a.section
     if snap then
       for i=secs.sections_count,snap.count+1,-1 do pcall(secs.remove_section,i) end
+      -- a section's group back before its requests: a section in a group writes the group
+      for i,v in pairs(snap.secs) do
+        local s_=secs.get_section(i)
+        if s_ then pcall(M.reqgroups.restore_group,p.force,s_,snap.groups[i] or '') end
+      end
       for i,v in pairs(snap.secs) do
         local s_=secs.get_section(i)
         if s_ then s_.filters=v.filters; if v.active~=nil then s_.active=v.active end end
       end
+      M.reqgroups.drop_made(p.force,made)
       local mem=hub and hub.unit_number and api.state and api.state().hub_min_payload
       if mem then mem[hub.unit_number]=snap.mp end
       out.dry_run=true
-      out.dry_note='nothing was changed: sections, stored and sends_down are what the change would make'
+      out.dry_note='nothing was changed: sections, stored and sends_down are what the change would make'..(a.remove_section~=nil and ' (the section to remove reads switched off, its stand-in)' or '')
     end
     -- trash unrequested, when set now or on: what robots take to storage (a chest's items no request names).
     local ton=tpoint and try(function() return tpoint.trash_not_requested end)
@@ -650,14 +711,17 @@ return function(api)
     end
     -- Requests set into a section that is off are not made: say so.
     local off={}
-    for _,row in ipairs(out.sections) do if row.off and #row.requests>0 then off[#off+1]=row.index end end
+    for _,row in ipairs(out.sections) do if row.off and #row.requests>0 and not (a.dry_run and row.index==a.remove_section) then off[#off+1]=row.index end end
     if #off>0 then
       out.note=string.format('section%s %s %s switched off: %s requests are not made (requests {section, active: true} switches one on)',
         #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
     end
-    out.changed_section=changed and touched and touched.index or nil
+    out.changed_section=changed and touched_index or nil
     out.sections_note=#others>0 and others or nil
-    if changing and not changed then out.unchanged='this call set, cleared and switched nothing in section '..(touched and touched.index or '?') end
+    out.section_change=#section_change>0 and section_change or nil
+    out.group=group_change
+    out.group_edit=group_edit
+    if changing and not changed then out.unchanged='this call set, cleared and switched nothing in section '..(touched_index or '?') end
     out.stored=stored and #stored>0 and stored or nil
     if hub and hub.valid and keep then
       local c=keep.construction(hub)
@@ -2564,6 +2628,10 @@ return function(api)
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',trash_unrequested='boolean: the "trash unrequested" switch of a requester or buffer chest, a hub or your own logistics; on, robots take to storage what it holds that no request names (spoilage among it); the reply\'s trash_unrequested says on or off and, for a chest, what it holds that goes',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept; false or "": none named, the slot\'s dropped too: the game then stores nauvis, as it does for a new slot with none, and stored says so. At a stop the hub keeps only what its requests from that planet ask; the rest the landing pads there ask for goes down),min_payload? (platform hubs: the GUI\'s custom minimum payload for the request, minimum_delivery_count; omitted: the slot\'s is kept; false clears it). Seen on 2.0.77 above Fulgora: with min_payload 10 and min 50, automatic silos sent rockets of 28, 10 and 12 stone, 50 in all; with none, one full rocket (100 concrete for a min of 50). min is how much the hub asks for; min_payload how little a rocket may carry for it} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',keep='platform hubs, with a change: item names (array) the change would leave the hub keeping less of than it holds: each stays requested up to the count held (the dropped request\'s import planet and min payload; stored says), so none goes down as surplus at a stop on that import planet',dry_run='true: change nothing; the reply (sections, stored, sends_down) is what the change would make; on a requester or buffer chest or the character, robot_dispatch: the logistic robots\' trips for what it would ask beyond what it holds (from the chest the network would take each from, select_pickup_point; how many at once, from which roboports, the longest and mean trip, trips over 200 tiles, legs within reach of a worm or spawner the map shows)',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
+      add_section='true: a new manual section (the GUI\'s Add section), its index in section_change; set, clear and active in the same call go to it; with group it joins that group',
+      remove_section='a manual section\'s index: the section removed with its requests (alone, or with dry_run: what the hub would keep and send down without it); a section in a group leaves it, the group stays',
+      group='with section (or add_section): the GUI\'s logistic group of that section: a name that exists: the section takes the group\'s requests and its own are gone (dropped names them); a new name: the group is made from the section\'s requests; false: it leaves the group keeping a copy of the requests. A set or clear in a section of a group changes every member: group_edit names each other one (a dry run too)',
+      groups='true, alone: every named logistic group of our force: name, requests, members_count and members (each entity and section whose GUI shows the group); a group with no members stays',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub that alters what its requests keep of an item it holds: what they would keep and kept, by import planet, and what goes down to the landing pads of its stops, where it waits first then its schedule\'s: at each stop their ask less what they hold, beyond what its requests from that planet keep; or that it stays aboard), sends_down_rule (the rule, with the two cases it comes from); call with no set/clear/active to just read'},
     platform={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',platform='optional platform name (or name): the platforms read of that one (as platforms {platform}); none: every platform',name='the same as platform',compact='as platforms',returns='as platforms'},

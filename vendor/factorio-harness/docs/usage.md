@@ -9072,3 +9072,42 @@ fh watch    # deploy on every change
   signal says so). `speaker_sound` goes inside `speaker_alert` (`fh call configure '{"position":[29.5,31.5],
   "surface":"aquilo","speaker_alert":{"speaker_sound":{"volume":0.5,"note":"siren"}}}'`) because configure's own keys
   are in runtime.lua, which was not edited. Test tests/d19_batch49.lua; the writes checked on the private copy (2.0.77).
+
+## d20 batch53 (eng/d20-batch53)
+
+- L1 (Astra #1223, Sol #1298): a `place_ghosts` entry takes `quality` (the entity's; a quality our force has unlocked,
+  as the quality picker offers; robots bring that quality's item; a recipe's quality stays `configure {recipe,
+  quality}`). On 2.0.77 the engine takes a ghost of a locked quality (an epic ghost with epic locked), so the harness
+  refuses it; it also stacked an uncommon and a normal assembler ghost on one spot, so an entry where the same entity
+  stands at another quality (built or a ghost) is refused, naming `upgrade {position, quality}`, and the dry run reads
+  it blocked the same way. `already_placed` matches the quality too. `upgrade` takes `quality` (a target quality, as
+  the planner's target item takes one); with it `to` may be left out. Without `quality` each entity keeps its own:
+  before this an order with a bare name targeted normal (an uncommon belt ordered to fast-transport-belt read
+  normal). Checked on the private copy: a ghost changed in place kept its recipe and module request (an uncommon
+  assembling-machine-2 ghost became a rare assembling-machine-3); a built machine marked for an uncommon upgrade reads
+  that target; a fast replace (what a robot's upgrade is) kept recipe, modules and circuit condition.
+  `needs` names the quality (`1 assembling-machine-2 (uncommon)`).
+- L1 note (Astra #1223, silo ghost): configure on a rocket silo's ghost sets `auto_requests` and
+  `send_to_orbit_automatically` on the ghost (2.0.77 keeps both into the silo it becomes); a place_ghosts entry's
+  configure did pass its dry run and was refused live with "only assembling machines support recipe configuration".
+- L2 (Astra #1275): a place_ghosts dry run with an embedded configure recipe failed with "attempt to call global
+  configure_check a nil value": batch47 put configure_check in a do-block that settings_dry is outside of (since
+  b051d8fc, d17). It is M.configure_check now. tests/d20_batch53.lua lists every global each module reads (luac -l)
+  against the game's and Lua's; configure_check was the only stray one.
+- L3 (Sol #1276): `requests {add_section: true}` adds a manual section (its index in `section_change`; set, clear and
+  active in the call go to it); `requests {remove_section: N}` removes a manual one with its requests (alone; a dry
+  run reads it switched off as its stand-in, so `sends_down` shows what the hub would send without it). The notes'
+  question: the game has no setting that keeps items from being unloaded. At a stop the hub keeps what its requests
+  importing from that planet ask (space.lua KEEP_RULE: Cinder, Swift); a request from another planet keeps nothing
+  there. A reserve kept at every port is one section per port, each requesting the item `from` that port: at each
+  stop only that port's request keeps it, and only it asks that planet for more.
+- L4 (Astra #1035, host NickWinter): named logistic groups, as the GUI's group picker (2.0.77 on the private copy:
+  naming a new group makes it from the section's requests; joining one that exists replaces the section's own
+  requests, coal 7 gone for the group's iron-plate 10; an edit in one member is every member's; leaving keeps a copy;
+  a group with no members stays). `requests {section: N, group: "name"}` joins or makes one (`group.dropped` names
+  the section's own requests that go), `group: false` leaves, `add_section: true, group: "name"` adds a section in
+  it. `requests {groups: true}` lists our groups: requests, members_count and members (each entity and section: a hub
+  by its platform). A set or clear in a grouped section gives `group_edit`: each other member it changes, a dry run
+  too. A dry run that joins or makes a group puts the section back (group first, then its requests) and drops a group
+  it made. The GUI's picker shows each group's member count; the members are the entities whose logistics GUI shows
+  the group.

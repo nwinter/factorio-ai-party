@@ -45,7 +45,9 @@
   the call run again once they are gone; dry runs list them in `trees_rocks`)
   (a requester or buffer chest, or a machine on electricity, is watched: once robots build it in no logistic network,
   or with no pole or no power, your team block says so at once);
-  entries `{name, position, direction?, recipe?}` with entry settings as `build`'s. An entry already standing as asked
+  entries `{name, position, direction?, recipe?, quality?}` with entry settings as `build`'s; `quality` is the entity's
+  (a quality our force has unlocked; robots bring that quality's item), a recipe's quality is `configure {recipe, quality}`.
+  Where the same entity stands at another quality (built or a ghost) the entry is refused naming `upgrade {position, quality}`. An entry already standing as asked
   (the same ghost or the built entity) is counted apart: `already_placed`, `already`; only real refusals are `failed`.
   A real call says on the `warning:` line when what it placed closes you in. Turret ghosts request ammo, so the robots
   that build them bring it (`ammo`: a name, `{name, count}` or false; default 10 of what the logistic network there
@@ -95,8 +97,10 @@
   reach of a worm or spawner the map shows. `contested` (dry run and live): an item the marked entities free that more
   of our ghosts in that network want than it holds (16 or fewer), each ghost with its claim and distance.
   Example: `./fh call deconstruct --args '{"area":{"left_top":{"x":180,"y":50},"right_bottom":{"x":200,"y":70}},"tiles":["landfill"]}'`
-- `upgrade {area | position, to, from?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
-  planner; a ghost changes in place (wires and settings kept), a built one is marked for robots.
+- `upgrade {area | position, to, from?, quality?}` or `{area, map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade
+  planner; a ghost changes in place (wires and settings kept), a built one is marked for robots (their replacement
+  keeps recipe, modules and circuit settings). `quality` is the target quality (unlocked ones); with it `to` may be
+  left out (the same entity at that quality); without it each keeps its own quality.
   Example: `./fh call upgrade --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":30,"y":30}},"map":{"transport-belt":"fast-transport-belt"}}'`
 - `paste {position, name?, direction?, mode?, preserve_existing_settings_and_wires?, dry_run?}`: pastes the clipboard,
   or a library entry by `name`, as ghosts; turret ghosts request ammo as `place_ghosts`'s do.
