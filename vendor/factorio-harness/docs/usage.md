@@ -9072,3 +9072,27 @@ fh watch    # deploy on every change
   signal says so). `speaker_sound` goes inside `speaker_alert` (`fh call configure '{"position":[29.5,31.5],
   "surface":"aquilo","speaker_alert":{"speaker_sound":{"volume":0.5,"note":"siren"}}}'`) because configure's own keys
   are in runtime.lua, which was not edited. Test tests/d19_batch49.lua; the writes checked on the private copy (2.0.77).
+
+## d20 batch51 (eng/d20-batch51)
+
+- H1 (viewer Aurora, shift46 09:36: "Could departure and route forecasts use the same ingredient limits as endurance,
+  including shared stock? Otherwise their spare-ammo estimates can contradict a resource shortage."). Before this,
+  `platform_endurance`'s resource rows capped what is made by the ingredients aboard, while its `departure` lines, its
+  rows' `flight` text and its `forecast` multiplied the make rate by the time uncapped; `ammo_rates` (preflight, the
+  platforms read) did the same and counted ammunition stranded where no turret takes it, which endurance leaves out.
+  Shift46 15:48 (Sol, Kestrel IVa, one endurance reply): magazines `1461 aboard and about 828 made on the way: 1438 to
+  spare` beside a row whose cap allowed about 444 and a forecast ending `-1226 left at nauvis`. Now one model
+  (mod/agent-harness_0.1.0/ammomodel.lua) counts for all of them: the stock in every place aboard less what can reach
+  no turret; ammunition on rockets launched to the platform and not arrived (freight.lua incoming), counted once; made
+  at most what the machines aboard can make from the ingredients aboard (two levels down, fluids in tanks and fluid
+  boxes), where an ingredient two products draw on (iron plates for magazines and rockets) is split between them by
+  their make rates and what other machines use of it (its measured use less the products') comes off first. Each
+  reply says which limit binds: `binds: the stock (none made aboard)`, `binds: the make rate (60/min; the ingredients
+  aboard cover 1m00s, iron-plate the closest at 94 more, shared with rocket 8% by make rate: this one 92%)`, or `binds: the ingredients: iron-plate (400 aboard, shared
+  with rocket 8% by make rate: this one 92%; other machines use 40/min of it): at most 138 more over 20m00s, against
+  1200 at 60/min`. Rows gain `received`, `binds`, and `ingredient_limited.share`, `.shared`, `.other_use_per_min`; the
+  forecast's legs say `(the ingredients bind: iron-plate)` where the cap cut what was made, and end with one `binds`
+  line per ammunition. No shared stock with another platform or the planet below was counted by any of these reads;
+  the only receipts counted are rockets already launched to the ship (their cargo has left the planet's stock). Not
+  changed: the forecast's asteroid scale (x3.95 on Kestrel IVa) and the windows each read takes its rates from (the
+  flight line uses the moving rate, the rows the window's). Test tests/ammomodel.lua.

@@ -6,6 +6,9 @@
 -- asteroids take than theirs; with what is made aboard meanwhile and what is left at each arrival. pessimistic {speed
 -- 0.1..1 (a share of the speed read), dwell_s 0..36000 (extra time at each stop, at the stopped rate)}. An estimate from
 -- prototypes and measured rates; the engine's own spawning is not simulated.
+-- (d20 batch51 H1, viewer Aurora 09:36) What is made on the way is endurance's (ammomodel.lua): at most what the
+-- ingredients aboard allow over the trip so far, an ingredient shared between products split by their rates; what
+-- rockets on their way up bring counts at the start; each ammunition's last line says which limit binds.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -110,8 +113,9 @@ return function(api)
     end
     return out
   end
-  -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, phases}).
-  function M.forecast(pl, legs, rows, opts)
+  -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, received, phases});
+  -- model: endurance's ammomodel (optional: without it, made is the rate times the time).
+  function M.forecast(pl, legs, rows, opts, model)
     opts = opts or {}
     local sp = opts.speed or 1
     local dwell = (opts.dwell_s or 0) / 60
@@ -128,8 +132,8 @@ return function(api)
     for _, l in ipairs(fl) do flown_names[#flown_names+1] = l.from .. '->' .. l.to end
     lines[#lines+1] = #fl > 0 and string.format('scaled from the legs flown in the last 2 hours: %s (%s)', table.concat(flown_names, ', ', 1, math.min(#flown_names, 6)), mins(fmin))
       or 'no leg flown in the last 2 hours on record: shots per asteroid only, no use estimate'
-    local left = {}
-    for _, r in ipairs(rows) do left[r.name] = r.stock or 0 end
+    local left, t_cum, made_cum = {}, {}, {}
+    for _, r in ipairs(rows) do left[r.name] = (r.stock or 0) + (r.received or 0) end
     for i, l in ipairs(legs) do
       local dens = M.density(l.from, l.to)
       local m = l.minutes and l.minutes / sp or nil
@@ -161,15 +165,33 @@ return function(api)
             if ratio then
               local use = mv.used_per_min * ratio * m + (st and st.used_per_min or 0) * dwell
               local made = mv.made_per_min * m + (st and st.made_per_min or 0) * dwell
+              -- at most what the ingredients aboard allow over the trip so far (ammomodel.lua)
+              local t1 = (t_cum[r.name] or 0) + m + dwell
+              local cap = model and model.cap(r.name)
+              local before = made_cum[r.name] or 0
+              local upto = before + made
+              if cap and cap.at(t1) < upto then upto = math.max(before, (cap.at(t1))) end
+              local bound = cap and upto < before + made
+              made = upto - before
+              t_cum[r.name], made_cum[r.name] = t1, upto
               left[r.name] = left[r.name] - use + made
-              text = text .. string.format('; uses about %d (%g/min on the legs flown x%.2f for these asteroids%s), about %d made; %d left at %s',
-                round(use), mv.used_per_min, ratio, dwell > 0 and string.format(', + %s at the stop', mins(dwell)) or '', round(made), round(left[r.name]), l.to)
+              text = text .. string.format('; uses about %d (%g/min on the legs flown x%.2f for these asteroids%s), about %d made%s; %d left at %s',
+                round(use), mv.used_per_min, ratio, dwell > 0 and string.format(', + %s at the stop', mins(dwell)) or '', round(made),
+                bound and string.format(' (the ingredients bind: %s)', cap.item) or '', round(left[r.name]), l.to)
             else
               text = text .. '; the legs flown spawn none it shoots: no use estimate'
             end
           end
           lines[#lines+1] = text
         end
+      end
+    end
+    -- Which limit binds what is made on the way, each ammunition once (the trip's whole time at the moving rate).
+    for _, r in ipairs(model and rows or {}) do
+      local mv = r.phases and r.phases.moving
+      if mv and t_cum[r.name] then
+        lines[#lines+1] = string.format('  %s over the forecast (%s%s): %s', r.name, mins(t_cum[r.name]),
+          (r.received or 0) > 0 and string.format(', %d on rockets on their way up counted at the start', r.received) or '', model.binds(r.name, mv.made_per_min, t_cum[r.name]).line)
       end
     end
     return lines
