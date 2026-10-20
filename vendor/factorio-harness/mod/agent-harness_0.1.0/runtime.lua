@@ -1414,6 +1414,28 @@ function M.read_sight(p,pos,what)
   error(string.format('%s at (%g,%g) (%s) is in no chunk our force sees now (radar coverage or a character\'s sight)%s%s',what,pos.x,pos.y,
     from_character(p,pos),okg and '; '..g or '',near and '; '..near or ''),0)
 end
+-- The chunks under a box our force sees now (d20 batch56 R3: inspect {area} of an empty area in sight read like a
+-- sight refusal, 27 times in shifts 45-47; R2: a screenshot's frame by remote view): seen, all, and the unseen ones.
+function M.area_sight(p,lt,rb)
+  local seen,n,unseen=0,0,{}
+  for cx=math.floor(lt.x/32),math.floor(rb.x/32) do
+    for cy=math.floor(lt.y/32),math.floor(rb.y/32) do
+      n=n+1
+      if own_platform(p) or p.force.is_chunk_visible(p.surface,{x=cx,y=cy}) then seen=seen+1 else unseen[#unseen+1]={x=cx,y=cy} end
+    end
+  end
+  return seen,n,unseen
+end
+function M.area_sight_text(p,lt,rb)
+  local seen,n=M.area_sight(p,lt,rb)
+  if seen==n then return n==1 and 'the area is in sight now (our force sees its chunk)' or string.format('the area is in sight now (our force sees all %d of its chunks)',n) end
+  if seen==0 then
+    local near=M.nearest_coverage(p,{x=(lt.x+rb.x)/2,y=(lt.y+rb.y)/2})
+    return string.format('the area is out of sight now (%s our force sees: radar coverage or a character\'s sight lights a chunk)%s',
+      n==1 and 'its chunk is not one' or string.format('none of its %d chunks is one',n),near and '; '..near or '')
+  end
+  return string.format('%d of its %d chunks in sight now, %d out of sight',seen,n,n-seen)
+end
 local function charted(p,pos) return own_platform(p) or p.force.is_chunk_charted(p.surface,chunk_of(pos)) end
 -- Read views may be centred anywhere on the charted map, so scripts can look
 -- without walking the character there.
@@ -1859,7 +1881,7 @@ function handlers.describe(_,a)
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
     operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live'},
-    target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
+    target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, and their reach and sight come from its position; reads see by remote view, as the map does: inspect, belt_flow, trace and screenshot with position in any chunk our force sees now on your surface, scan, observe and nearest centred on any charted chunk, surface= and platform= elsewhere',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove|list (default list)',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal',vehicle='optional: a vehicle\'s grid instead of your armor\'s, by unit_number or {x,y} (a tank 6x8 and a spidertron 10x6 have one; a car, locomotive or wagon does not); insert and remove in reach or seated, as its GUI allows; list also by remote view in a chunk our force sees',returns='insert/remove: what moved, where, grid (size, equipment, free_cells, shield, battery_mj); list: the same with rows (each piece at its cell)'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
@@ -1978,7 +2000,8 @@ function handlers.describe(_,a)
         dry_run='true: mark nothing (deconstruct is passive: the running action and queue go on): with tiles, tiles_would_mark (those not marked yet with nothing standing on them; refused under_entity for the rest, as the game refuses those), tile_ghosts_would_go, and on a platform tiles_go and waiting as if they were marked; entities: would_mark and would_mark_by_name, robot_dispatch (the construction robots\' trips: one for each entity and one a robot load of what it holds, from the roboport nearest it with robots to it and on to where the network would put it (select_drop_point); how many would go at once, from which roboports, the longest and mean trip, trips over 200 tiles, legs passing within reach of a worm or spawner the map shows), and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither) for the heat parts it would mark (the live reply too, when not none). With tiles on a platform (live or dry): spans_cut, each underground belt or pipe-to-ground pair (built or ghost) whose span, the tiles between its ends, holds a tile this marks or one marked already, with those tiles (a span over empty space is cut)',
         cut_spans='true: mark tiles under underground spans anyway; without it a live tile deconstruct on a platform that would is refused, naming the pairs (spans_cut), and marks nothing'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',surface='optional planet name: cancel marks there by remote view',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks_cancelled, robot_orders_cancelled, robots_freed); entity_types item-entity or entity_names item-on-ground is the same',
         tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
-      screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080'}},
+      screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080',position='optional {x,y}: the centre, by remote view (every chunk of the frame one our force sees now); default the character\'s position',
+        surface='optional planet name (with position)',platform='optional platform name (platform coordinates, hub at 0,0)'}},
     limitations={'No teleport, resource creation, free crafting, direct mining, remote building, or map reveal',
       'Runtime source installation is trusted operator code, not a security sandbox',
       'Screenshots require a graphical client controlling the requested player; headless hosts do not render',
@@ -7383,12 +7406,13 @@ do
     end
     if #found==0 and (also or (fog and not fog.empty)) then
       return {entities={},count=0,by_name={},also=also,fog=fog,not_in_sight=strict and fog and fog.line or unseen_line(),
-        note=string.format('no %s of ours with its centre there in a chunk our force sees now%s%s',what,also and '; '..also or '',
+        note=string.format('no %s of ours with its centre there; %s%s%s',what,M.area_sight_text(p,lt,rb),also and '; '..also or '',
           fog and '; out of sight: fog (what our force last saw there, the ghosts and losses there)' or '')}
     end
-    assert(#found>0,string.format('no %s of ours with its centre in (%g,%g)-(%g,%g) in a chunk our force sees now%s',what,lt.x,lt.y,rb.x,rb.y,
-      not strict and (unseen>0 and string.format(' (%d in chunks it does not: radar coverage or a character\'s sight lights a chunk)',unseen) or '')
-      or (fog and string.format('; %d of its chunks are out of sight, and our force remembers nothing there, nor has a ghost or a loss there',fog.chunks_out_of_sight) or '')))
+    -- In sight and empty, or out of sight (all or part), said apart (d20 batch56 R3).
+    assert(#found>0,string.format('no %s of ours with its centre in (%g,%g)-(%g,%g); %s%s',what,lt.x,lt.y,rb.x,rb.y,M.area_sight_text(p,lt,rb),
+      not strict and (unseen>0 and string.format('; %d more there in chunks out of sight (not listed)',unseen) or '')
+      or (fog and '; our force remembers nothing in its chunks out of sight, nor has a ghost or a loss there' or '')))
     -- One shape at any size (d17 batch13 A3, Muse: a list sometimes and a by-name summary at other times broke his
     -- scripts; batch10 C3 had switched to the summary alone past MAX_ROWS): entities, a page of MAX_ROWS in reading
     -- order (page, pages, next past one page), and by_name beside them, every name's count, states and where they lie.
@@ -12125,12 +12149,33 @@ do local function screenshot_client(p)
   end
   return pick and pick.player
 end
+-- position (with surface= or platform=, bots.lua's lists) centres the shot there by remote view (d20 batch56 R2,
+-- Enginerd 14:42: 5 of 19 shots came right after a 143-606 tile walk): the engine draws what stands there now, fog or
+-- not, so every chunk of the frame (32 px a tile at zoom 1) must be one our force sees now, as remote view shows it.
+-- Without position the shot is centred on the character, as before.
 function handlers.screenshot(p,a)
   assert(type(a.path)=='string' and #a.path<=160 and a.path:match('^[%w_/-]+%.png$') and not a.path:find('..',1,true) and a.path:sub(1,1)~='/','path must be a relative PNG path')
+  local w,h=integer(a.width,1280,320,1920,'width'),integer(a.height,720,240,1080,'height')
+  local remote=type(p)=='table' and rawget(p,'__remote')
+  assert(a.position~=nil or not remote,'screenshot with surface needs position there (your character stands on another surface)')
+  local at,by=p.position,nil
+  if a.position~=nil then
+    at=position(a.position)
+    by=M.read_sight(p,at,'screenshot centre')
+    local lt,rb={x=at.x-w/64,y=at.y-h/64},{x=at.x+w/64,y=at.y+h/64}
+    local _,n,unseen=M.area_sight(p,lt,rb)
+    if #unseen>0 then
+      local list={}
+      for i,c in ipairs(unseen) do if i<=6 then list[i]=string.format('(%d,%d)-(%d,%d)',c.x*32,c.y*32,c.x*32+31,c.y*32+31) end end
+      error(string.format('the frame (%g,%g)-(%g,%g) (%dx%d px, 32 px a tile) takes in %d of %d chunks our force does not see now: %s%s',
+        lt.x,lt.y,rb.x,rb.y,w,h,#unseen,n,table.concat(list,', '),#unseen>6 and ', ...' or ''),0)
+    end
+  end
   local client=screenshot_client(p)
   assert(client,'no graphical client is connected to render a screenshot')
-  game.take_screenshot{player=real(p),by_player=client,surface=p.surface,position=p.position,path=a.path,resolution={x=integer(a.width,1280,320,1920,'width'),y=integer(a.height,720,240,1080,'height')},zoom=1,show_entity_info=true}
-  return {queued=true,path=a.path,client=client.name,requires_graphical_client=true}
+  game.take_screenshot{player=real(p),by_player=client,surface=p.surface,position=at,path=a.path,resolution={x=w,y=h},zoom=1,show_entity_info=true}
+  return {queued=true,path=a.path,client=client.name,requires_graphical_client=true,position=a.position~=nil and {x=at.x,y=at.y} or nil,
+    surface=a.position~=nil and p.surface.name or nil,by=by}
 end
 end function handlers.revive_ghost(p,a)
   local e=entity(p,a); friendly(p,e)
@@ -17616,7 +17661,7 @@ M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.b
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
-M.freight=require('freight'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
+M.freight=require('freight'){leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
@@ -17689,7 +17734,8 @@ M.endurance=require('endurance'){platform=function(p,name) return space.platform
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
-  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end}
+  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end,
+  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}
@@ -17803,7 +17849,42 @@ function M.last_drop(index)
   local last=state().last_drop and state().last_drop[index]
   return last and game.tick-last.tick<=3600 and last or nil
 end
-stock=stock_module{elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+-- (d20 batch54 N6, viewers Foobator 14:43 and 14:49: "we're seeing grok do something to stay stationary on the belt")
+-- A tour's hold at an entity (a visit that waits: load_silo's silo stop) begun on a belt or rail: Grok's silo wait stood
+-- on a west belt 400+ s, the belt carrying him to the edge of reach and the tour's leg walking him back each time, a
+-- walk in place. The hold steps to the nearest free tile in reach of the entity without a belt or rail, as move_to's
+-- arrival does (last.off_belt), at most 10 s; action.hold_belt {line} says what it did. True while it steps.
+function M.hold_off_belt(p,action,e)
+  local hb=action.hold_belt
+  if hb and hb.done then return false end
+  if not hb then
+    if not (p.character and e and e.valid) then return false end
+    local pos=p.position
+    local belt=M.pathing.belt_at(p.surface,pos)
+    local rail=not belt and M.rail_under(p,pos)
+    if not (belt or rail) then return false end
+    local r=(p.reach_distance or 10)-0.5
+    local spot=M.pathing.off_belt_spot(p,pos,0,function(c) return M.box_distance(c,e)<=r end,function(c) return M.rail_under(p,c,0.35)~=nil end)
+    hb={on=belt and belt.name or 'rail',at={x=pos.x,y=pos.y},spot=spot,since=game.tick}
+    action.hold_belt=hb
+    if not spot then
+      hb.done=true
+      hb.line=string.format('held on a %s at (%.1f,%.1f): no free tile without a belt or rail within 4 tiles in reach of %s',hb.on,pos.x,pos.y,e.name)
+      return false
+    end
+  end
+  if distance(p.position,hb.spot)<=0.3 or game.tick-hb.since>600 then
+    hb.done=true
+    local there=distance(p.position,hb.spot)<=0.3
+    hb.line=there and string.format('the hold began on a %s at (%.1f,%.1f); stepped to (%g,%g), the nearest free tile without a belt or rail in reach of %s',
+      hb.on,hb.at.x,hb.at.y,hb.spot.x,hb.spot.y,e.name)
+      or string.format('the hold began on a %s at (%.1f,%.1f); the step to (%g,%g) did not get there in 10 s (now (%.1f,%.1f))',hb.on,hb.at.x,hb.at.y,hb.spot.x,hb.spot.y,p.position.x,p.position.y)
+    return false
+  end
+  steer(p,hb.spot,nil)
+  return true
+end
+stock=stock_module{hold_off_belt=function(p,action,e) return M.hold_off_belt(p,action,e) end,elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,

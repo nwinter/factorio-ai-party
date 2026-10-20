@@ -52,14 +52,30 @@ exec "$root/bin/fh" "\$@" $target --journal "$dir/journal.jsonl"
 EOS
 cat > "$dir/shot" <<EOS
 #!/usr/bin/env bash
-# Real game screenshot centred on the character: ./shot NAME [WIDTH HEIGHT]. A game client renders it (yours, or a
-# director's for a bot) into script-output/pog/$ws/; tools/shot-sync.sh copies it from the game box into shots/.
+# Real game screenshot: ./shot NAME [WIDTH HEIGHT] [at=X,Y] [surface=PLANET | platform=NAME]. Centred on the character,
+# or with at= on that position by remote view (every chunk of the frame one our force sees now; refused otherwise, with
+# the nearest radar coverage). A game client renders it (yours, or a director's for a bot) into
+# script-output/pog/$ws/; tools/shot-sync.sh copies it from the game box into shots/.
 set -euo pipefail
 export POG_SLEEP_CAP=0   # the agents' wait cap (tools/sleepcap/run) is not for this script's waits
-name=\$(printf %s "\${1:?usage: ./shot NAME [WIDTH HEIGHT]}" | tr -c 'A-Za-z0-9_-' _); w=\${2:-1280}; h=\${3:-720}
+usage="usage: ./shot NAME [WIDTH HEIGHT] [at=X,Y] [surface=PLANET | platform=NAME]"
+name=\$(printf %s "\${1:?\$usage}" | tr -c 'A-Za-z0-9_-' _); shift
+dims=(); extra=""
+for arg in "\$@"; do
+  case "\$arg" in
+    at=*) xy=\${arg#at=}; x=\${xy%%,*}; y=\${xy#*,}
+      [[ \$xy == *,* && \$x =~ ^-?[0-9]+(\.[0-9]+)?\$ && \$y =~ ^-?[0-9]+(\.[0-9]+)?\$ ]] || { echo "\$usage" >&2; exit 2; }
+      extra="\$extra,\\"position\\":{\\"x\\":\$x,\\"y\\":\$y}" ;;
+    surface=*|platform=*) v=\${arg#*=}
+      [[ \$v =~ ^[A-Za-z0-9\ _.:-]+\$ ]] || { echo "\$usage" >&2; exit 2; }
+      extra="\$extra,\\"\${arg%%=*}\\":\\"\$v\\"" ;;
+    *) dims+=("\$arg") ;;
+  esac
+done
+w=\${dims[0]:-1280}; h=\${dims[1]:-720}
 cd "\$(dirname "\$0")"
 tag="\$name-\$(date +%s)-\$RANDOM"
-if ! out=\$(env POG_WORLD=$world $conn "$root/bin/fh" $target call screenshot --args "{\"path\":\"pog/$ws/\$tag.png\",\"width\":\$w,\"height\":\$h}" 2>&1); then
+if ! out=\$(env POG_WORLD=$world $conn "$root/bin/fh" $target call screenshot --args "{\"path\":\"pog/$ws/\$tag.png\",\"width\":\$w,\"height\":\$h\$extra}" 2>&1); then
   echo "\$out" >&2; exit 1
 fi
 for i in \$(seq 1 60); do
