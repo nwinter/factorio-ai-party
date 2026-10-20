@@ -383,7 +383,8 @@
   construction and logistic robots of ours within 8 tiles holding that item (and the first ghost or entity each flies
   to); its landing line comes 20 s after it lands with that line (the drops read: `pad`, `pad_verdict` such as `landed, then
   taken by construction robots`, `pad_now`). The game reserves nothing for the sender: robots may take what lands in a
-  pad.
+  pad. A drop whose platform's hub is destroyed before its pod leaves the platform's surface (about its first 400 ticks)
+  reads `lost`: the game removes such a pod and its cargo with the platform; a pod already coming down lands.
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
   requester demand.

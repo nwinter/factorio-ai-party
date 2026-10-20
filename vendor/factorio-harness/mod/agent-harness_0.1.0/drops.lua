@@ -168,7 +168,7 @@ return function(api)
     local s = store()
     s.seq = s.seq + 1
     local r = {id=s.seq, by=api.who(p), force=p.force and p.force.name, to=d.to or {}, platform=d.platform, surface=d.surface, pad=d.pad and xy(d.pad) or nil,
-      near=d.near and xy(d.near) or nil, sent=d.sent, tick=game.tick, pod=d.pod, state='descending'}
+      near=d.near and xy(d.near) or nil, sent=d.sent, tick=game.tick, pod=d.pod, hub=d.hub, state='descending'}
     -- (d17 batch34 A2) the pad it is sent to, and what of the sent items the pad holds before it lands
     if d.pad_e and try(function() return d.pad_e.valid end) and d.items then
       r.pad_e, r.items = d.pad_e, {}
@@ -237,6 +237,24 @@ return function(api)
     end
     r.contested = #out > 0 and out or nil
   end
+  -- (d20 batch52 K3, Sol #1323: drop 1809's 725 foundation read "landed" while Aquilo's pad held none before, at or
+  -- 20 s after: Kestrel IV's hub had died during the drop.) 2.0.77 on the private copy: a cargo pod still on its platform's surface (waiting to launch, rising, or passing to the planet: its first 400 ticks or so) is removed with the platform when its hub is destroyed, and what it carried is gone; one already coming down over the planet lands as usual. A pod gone after its hub, last seen still on
+  -- the platform's surface: lost (unless the pad it was sent to holds more of what was sent than before it).
+  local function hub_gone(r)
+    if r.hub_gone then return r.hub_gone end
+    if r.hub ~= nil and not try(function() return r.hub.valid end) then r.hub_gone = game.tick; return r.hub_gone end
+  end
+  local function pad_gained(r)
+    if not (r.pad_e and try(function() return r.pad_e.valid end) and r.items and r.pad_before) then return false end
+    for k, n in pairs(pad_counts(r)) do if n > (r.pad_before[k] or 0) then return true end end
+    return false
+  end
+  local function on_platform(r) return not (r.last and r.last.surface == r.surface) end
+  local function mark_lost(r)
+    r.state, r.hub = 'lost', nil
+    r.note = string.format('its platform %s\'s hub was destroyed (seen at tick %d, %s after the drop) before the pod left the platform\'s surface: it delivered nothing (%s)',
+      tostring(r.platform), r.hub_gone, ago(r.hub_gone - r.tick), '2.0.77 on the private copy: a cargo pod still on its platform\'s surface (waiting to launch, rising, or passing to the planet: its first 400 ticks or so) is removed with the platform when its hub is destroyed, and what it carried is gone; one already coming down over the planet lands as usual')
+  end
   local function settle(s, r)
     local surface = game.surfaces[r.surface]
     -- (backlog #812, Aquilo drop 786: read "landed in the landing pad" while the pad was full and its cargo lay round it)
@@ -250,6 +268,7 @@ return function(api)
           end
         end
       end
+      if not spilled and hub_gone(r) and on_platform(r) and not pad_gained(r) then mark_lost(r); return end
       if not spilled then
         r.state, r.at, r.into = 'landed', r.pad, 'cargo-landing-pad'
         if r.pad_e and try(function() return r.pad_e.valid end) then
@@ -294,6 +313,7 @@ return function(api)
       end
       if #near > MAX_NEARBY then r.nearby_more = #near - MAX_NEARBY end
       if #r.nearby == 0 then r.nearby = nil end
+    elseif hub_gone(r) and on_platform(r) then mark_lost(r)
     elseif game.tick - (r.gone or game.tick) >= GIVE_UP then
       r.state, r.at = 'landed', seen and xy(seen) or nil
       r.note = string.format('no cargo pod container within %d tiles of %s (emptied already, or it landed farther off)', SEARCH,
@@ -312,6 +332,7 @@ return function(api)
         if pod and try(function() return pod.valid end) then
           local where = try(function() return {surface=pod.surface.name, position=xy(pod.position)} end)
           if where then r.last = where end
+          hub_gone(r)
         else
           r.pod = nil
           r.gone = r.gone or tick
@@ -355,6 +376,8 @@ return function(api)
           -- the rest come in the next replies, untold until shown
         elseif r.state == 'landed' and told[r.id] ~= 'landed' and not (r.watch and not r.watch_done) then
           lines[#lines+1] = landed_line(r); keep[r.id] = 'landed'
+        elseif r.state == 'lost' and told[r.id] ~= 'lost' then
+          lines[#lines+1] = string.format('drop #%d from %s to %s: lost: %s; it held %s', r.id, tostring(r.platform), r.surface, r.note, items(r)); keep[r.id] = 'lost'
         elseif r.state == 'descending' and not told[r.id] and (r.by ~= me or game.tick - r.tick >= QUIET) then
           lines[#lines+1] = string.format('drop #%d from %s to %s: still descending (%s ago, aimed near %s); pods scatter: the team block says where it lands (drops reads them all)',
             r.id, r.platform, r.surface, ago(game.tick - r.tick), r.pad and at_text(r.pad) or r.near and at_text(r.near) or '?')
@@ -394,7 +417,7 @@ return function(api)
     return {drops=rows, note=#rows == 0 and 'no drops yet' or nil}
   end
   M.schema = {
-    drops = {limit='1..20 (default 10)', returns='drops newest first: {id, by, to, platform, surface, items, ago, state (descending|landed), aimed_near, at, landed_in (cargo-pod-container or cargo-landing-pad), container {name, position, holds} or {gone}, pad (a drop into a landing pad: what of the sent items the pad held before it and when it landed, and in the 20 s after, how many construction robots and logistic robots of ours within 8 tiles took, with the first orders they flew to (ghosts or entities), and what left with no robot seen; what it held then), pad_verdict (landed, then taken by construction robots | landed, then N of M taken by construction robots | landed, then N of M left the pad), pad_now (the sent items in the pad now), nearby [{position, holds}] (other cargo pod containers within 8 tiles when it landed, nearest first, at most 4; nearby_more), note}. Positions as the entities stand (x.5 for a container). A drop into a landing pad comes to the team block 20 s after it lands, with the pad\'s line. The game reserves nothing for the sender: robots may take what lands in a pad. Read only'},
+    drops = {limit='1..20 (default 10)', returns='drops newest first: {id, by, to, platform, surface, items, ago, state (descending|landed|lost: its platform\'s hub was destroyed before the pod left the platform\'s surface, which removes the pod and its cargo in 2.0.77; note says when), aimed_near, at, landed_in (cargo-pod-container or cargo-landing-pad), container {name, position, holds} or {gone}, pad (a drop into a landing pad: what of the sent items the pad held before it and when it landed, and in the 20 s after, how many construction robots and logistic robots of ours within 8 tiles took, with the first orders they flew to (ghosts or entities), and what left with no robot seen; what it held then), pad_verdict (landed, then taken by construction robots | landed, then N of M taken by construction robots | landed, then N of M left the pad), pad_now (the sent items in the pad now), nearby [{position, holds}] (other cargo pod containers within 8 tiles when it landed, nearest first, at most 4; nearby_more), note}. Positions as the entities stand (x.5 for a container). A drop into a landing pad comes to the team block 20 s after it lands, with the pad\'s line. The game reserves nothing for the sender: robots may take what lands in a pad. Read only'},
   }
   return M
 end

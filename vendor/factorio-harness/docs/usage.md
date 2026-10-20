@@ -9144,3 +9144,26 @@ fh watch    # deploy on every change
   empty space (dry run needs_tiles, call placed with 20 foundation tile ghosts), tile ghosts (placeable, placed), built
   foundation (placeable, placed), past the generated chunks (refused with the request; placed on the call 3 s later).
   Test tests/thrusterghost.lua.
+- K1 (Astra #1352: `queue_submit platform:Bastion wait_until ammo_below platform/area/count1` refused by the remote
+  lane; main had no platform form of ammo_below at all: it read turrets round the character): `wait_until {until:
+  ammo_below, platform, count, positions? | area?}` reads the ammo turrets on that platform (every one, those at 1..64
+  positions, or in an area, platform coordinates), met when one holds under count; saw `2 turrets below 5 (of 3 on
+  Bastion; lowest gun-turret (8,4): no ammo)`. The remote lane and platform lanes take it as a wait and as a guard's
+  when. Checked on the copy: Swift's 6 guns, a direct wait, a platform:Swift lane step, and a guard pausing the queue
+  with that saw.
+- K2 (Sol #882: rocket_ready surface=nauvis from Aquilo read Aquilo; main did not read surface): `rocket_ready` and
+  `rocket_parts` take `surface` (a planet), the silo read by remote view in a chunk our force has charted (else
+  refused); the remote lane takes them with surface. Checked on the copy: both met from the remote lane on Nauvis's
+  silo (15.5,59.5).
+- K3 (Sol #1323: drop 1809's 725 foundation read "landed" while Aquilo's pad held none and the ground count did not
+  change; Kestrel IV's hub had died). What 2.0.77 does (the private copy, a hub killed at each cargo pod state; a pod
+  goes awaiting_launch, ascending about 400 ticks, surface_transition about 18 ticks on the platform's surface, then
+  descending about 600 ticks over the planet, parking): killed while the pod is still on the platform's surface
+  (awaiting_launch, ascending, surface_transition), the pod is gone 5-6 ticks later and the pad gets nothing (4 of 4);
+  killed while it descends (0, 1, 3, 10, 30 ticks in, and at first sight) or parks, it lands and delivers all of it
+  (10 of 10, a full pad spilling it on the ground). The platform is gone about 8 ticks after its hub. Now drops.lua
+  keeps the drop's hub: a pod gone after its hub, last seen on the platform's surface, is `lost` (unless the pad it
+  was sent to gained the items), told once in the team block (`drop #N from P to S: lost: ...`), `state: lost` with the
+  note in the drops read; a pod_landed wait on that drop fails with it; freight's receipts and stop lines count such a
+  pod as lost (never received), and pod_landed counts no lost pod. Checked on the copy: a hub killed while its pod
+  rose read lost (pad +0), one killed 5 ticks into the descent read landed (pad +30). Test tests/d20_batch52.lua.

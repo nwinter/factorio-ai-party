@@ -2317,7 +2317,7 @@ return function(api)
         for _,w in ipairs(sent) do text[#text+1]=label(w.name,w.quality)..'*'..w.count end
         local used=0
         for i=1,#cargo do if cargo[i].valid_for_read then used=used+1 end end
-        local id=api.drops and api.drops.record(p,{pod=pod,platform=pl.name,surface=job.surface,pad=job.pad,pad_e=job.pad_e,near=job.dest.position,sent=text,items=sent,to=job.to})
+        local id=api.drops and api.drops.record(p,{pod=pod,hub=pl.hub,platform=pl.name,surface=job.surface,pad=job.pad,pad_e=job.pad_e,near=job.dest.position,sent=text,items=sent,to=job.to})
         job.sent[#job.sent+1]={pod=#job.sent+1,drop=id,items=table.concat(text,' '),slots=used}
         for _,w in ipairs(sent) do
           local k=w.name..'@'..w.quality
