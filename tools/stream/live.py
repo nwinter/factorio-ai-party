@@ -23,6 +23,7 @@ from waitcard import WaitFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
+FOCUS_RETRY = 600  # board_focus with no rows (a runtime before d20 batch54 N3): asked again after 10 min
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
@@ -418,19 +419,21 @@ class LiveSource:
     def read_focus(self, errors):
         """Each agent's board_focus (d20 batch54 N3, viewer Aurora: job cards from the focus, with its age): the read's
         rows [{agent, id, title, step, blocker, verify, tick, stalled}]; None when the runtime gives no rows (an older
-        one: not asked again) or the read fails."""
-        if getattr(self, "focus_ok", None) is False:
+        one: asked again after FOCUS_RETRY seconds, so a deploy needs no restart here) or the read fails."""
+        if getattr(self, "focus_ok", None) is False and time.time() < getattr(self, "focus_retry_t", 0):
             return None
         try:
             fr, _ = self.read("board_focus", {}, **self.reader())
         except Exception as e:
             if "unsupported action" in str(e) or "unknown action" in str(e):
-                self.focus_ok = False
+                self.focus_ok, self.focus_retry_t = False, time.time() + FOCUS_RETRY
             else:
                 errors["board_focus"] = str(e)
             return None
         rows = fr.get("rows") if isinstance(fr, dict) else None
         self.focus_ok = isinstance(rows, list)
+        if not self.focus_ok:
+            self.focus_retry_t = time.time() + FOCUS_RETRY
         return rows if self.focus_ok else None
 
     def notes_job(self, name):

@@ -9275,7 +9275,7 @@ fh watch    # deploy on every change
   state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read
   (no id) now adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled, gone}] and the tick. The
   stream service reads `board_focus {}` with its board reads (live.py read_focus; a runtime without rows or the action
-  is not asked again) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
+  is asked again after 10 minutes, so a deploy needs no restart of the service) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
   job_age_s and job_label: the focus `focus, set 5 min ago: #1355 Steel line coal; step 2 ...; blocker: ...`; no focus,
   the team-plan line `plan line, set 2 h ago; no focus set: ...`; then notes.md's Now line `notes.md Now line, saved
   12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the

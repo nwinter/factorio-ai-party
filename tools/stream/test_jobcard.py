@@ -6,7 +6,8 @@ python3 tools/stream/test_jobcard.py
 1. Model.job_card: the focus (with its step and blocker) labelled "focus, set N ago"; no focus: the plan line labelled
    "plan line, set N ago; no focus set"; then the notes.md Now line with the file's age; neither: said so. A runtime
    with no focus rows: the plan line without "no focus set".
-2. live.py read_focus: the board_focus read's rows; a runtime without rows or the action is not asked again.
+2. live.py read_focus: the board_focus read's rows; a runtime without rows or the action is asked again only after
+   FOCUS_RETRY (10 min).
 3. push_live sends job_label, job_age_s and job_tick; the overlay card draws the label.
 """
 import os, sys, time
@@ -75,7 +76,10 @@ def live_focus():
     assert Live.read_focus(f, errors) == rows and f.focus_ok is True and not errors
     old = Fake({"focus": ["sol focus (set 0s ago): #7 x"]})
     assert Live.read_focus(old, errors) is None and old.focus_ok is False
-    assert Live.read_focus(old, errors) is None and old.calls == 1, "not asked again"
+    assert Live.read_focus(old, errors) is None and old.calls == 1, "not asked again soon"
+    old.focus_retry_t = 0  # FOCUS_RETRY later (a deploy): asked again, and its rows taken
+    old.reply = {"focus": [], "rows": rows}
+    assert Live.read_focus(old, errors) == rows and old.calls == 2 and old.focus_ok is True
     gone = Fake(RuntimeError("unknown action board_focus"))
     assert Live.read_focus(gone, errors) is None and gone.focus_ok is False and not errors
     flaky = Fake(RuntimeError("timeout"))
