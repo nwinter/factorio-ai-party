@@ -92,7 +92,11 @@
   (`ingredient-limited`), and the cap grows at the rate its ingredients are made aboard now (`more_per_min`); an
   ingredient two products draw on is split between them by their make rates (`shared`), and other machines' use of it
   comes off first (`other_use_per_min`). Ammunition on rockets on their way up counts once (`received`). Rows, `flight`,
-  `departure`, `forecast` and `ammo_rates` (preflight, platforms) use this one count and say which limit binds:
+  `departure`, `forecast` and `ammo_rates` (preflight, platforms) use this one count and say which limit binds
+  (`no machine aboard makes it now` when the rate was measured before its makers went). Speed: the last leg's distance
+  flown over its time, flagged when the thrusters or hull width differ now. The forecast counts each asteroid's
+  fragments (huge into 3 big, big into 3 medium, medium into 3 small) and says `uncalibrated` for kinds the legs flown
+  met none of; rockets' damage is their projectile's:
   `binds: the stock (none made aboard)`, `the make rate`, or `the ingredients: iron-plate (...)`. Rows add
   `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate); `departure`
   (each ammunition over the route: used, aboard, made, short or spare, a rocket's lift of it); `solar` with low and no
@@ -159,7 +163,9 @@
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
 - `platform_defense {platform, feed?, route?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
-  runs. Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
+  runs. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
+  only, or preload only), wrong ammunition on its way, and inserters whose circuit sets more filters than their slots.
+  Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
   leg): each asteroid that spawns on it with its health and resistances, and per turret and the ammo it holds its
   damage a second after them against its listed damage (the force's bonuses counted), together and the time to kill
   one; under 10% of listed: `reached, little damage`. Losses to our own turrets (from the death event's cause and its

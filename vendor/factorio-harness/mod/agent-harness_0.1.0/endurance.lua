@@ -28,12 +28,31 @@ return function(api)
     local v = try(function() return pl.speed end)
     local last, last_by
     local segs = api.segments and api.segments(pl) or {}
+    -- (d20 batch52 K4, Astra #955: Kestrel II's ETA used 62500 km/min from a 1m36 turn back near the solar edge, the
+    -- whole connection over a part of it flown) a leg's distance flown along its connection over its time (freight.lua
+    -- km0, km1); a leg recorded before those were kept: the connection's length, when it was flown whole
+    local from_seg
     for i = #segs, 1, -1 do
       local s = segs[i]
-      if s.kind == 'leg' and not s.partial and s['end'] and s.from and s.to and s['end'] > s.start then
-        local len = connection(s.from, s.to)
-        if len then last, last_by = len / ((s['end'] - s.start) / 3600), string.format('the last leg %s->%s', s.from, s.to); break end
+      if s.kind == 'leg' and s['end'] and s.from and s.to and s['end'] > s.start then
+        local km = s.km0 and s.km1 and s.km1 - s.km0
+        local m = (s['end'] - s.start) / 3600
+        if km and km > 0 then
+          last, last_by, from_seg = km / m, string.format('the last leg %s->%s: %d km flown in %s', s.from, s.to, math.floor(km + 0.5), mins(m)), s
+          break
+        elseif not km and not s.partial then
+          local len = connection(s.from, s.to)
+          if len then last, last_by, from_seg = len / m, string.format('the last leg %s->%s', s.from, s.to), s; break end
+        end
       end
+    end
+    -- the ship it was measured with against the ship now: thrusters and hull width
+    if from_seg and (from_seg.thrusters or from_seg.width) and api.geometry then
+      local g = try(function() return api.geometry(pl) end) or {}
+      local diff = {}
+      if from_seg.thrusters and g.thrusters and g.thrusters ~= from_seg.thrusters then diff[#diff+1] = string.format('%d thrusters then, %d now', from_seg.thrusters, g.thrusters) end
+      if from_seg.width and g.width and g.width ~= from_seg.width then diff[#diff+1] = string.format('a hull %d tiles wide then, %d now', from_seg.width, g.width) end
+      if #diff > 0 then last_by = last_by .. ' (measured on another ship: ' .. table.concat(diff, ', ') .. '; times from it are from the old geometry)' end
     end
     if type(v) == 'number' and v > 0 and try(function() return pl.space_connection end) then
       -- speeding up after a departure (A4): the last leg's average when it is higher
@@ -254,6 +273,8 @@ return function(api)
         return
       end
       local cap = made > 0 and unit == '' and model.cap(name) or nil
+      -- (K5) made before, and no machine aboard has its recipe now: nothing more counted, said
+      if cap and cap.none then row.no_maker = true; cap = nil end
       if cap then
         row.ingredient_limited = {more=cap.more, item=cap.item, have=cap.have, per_craft=cap.per_craft, fluid=cap.fluid, below=cap.below,
           ingredient_made_per_min=cap.ingredient_made_per_min, more_per_min=cap.more_per_min, share=cap.share, shared=cap.shared, other_use_per_min=cap.other_use_per_min}
@@ -282,7 +303,8 @@ return function(api)
           cap.below and string.format(' and at most %d more from its own ingredients aboard (%s %d)', cap.below.more, cap.below.item, cap.below.have) or '',
           cap.per_craft, cap.ingredient_made_per_min > 0 and string.format('; %s made %g/min aboard', cap.item, cap.ingredient_made_per_min) or '',
           cap.more_per_min > 0 and string.format(', and about %g more a minute at the rates its ingredients are made aboard now', cap.more_per_min) or '') or '',
-        row.received and string.format('; %d more on rockets on their way up, counted', row.received) or '',
+        (row.received and string.format('; %d more on rockets on their way up, counted', row.received) or '')
+          .. (row.no_maker and '; no machine aboard makes it now: the rate made was measured before' or ''),
         row.lasts_min and string.format('; lasts %s at that rate%s', mins(row.lasts_min), row.runs_out_on and ' (runs out on ' .. row.runs_out_on .. ')'
           or (total_min and row.lasts_min >= total_min and ' (past the route\'s end)' or '')) or '',
         row.at_end and string.format('; at the route\'s end about %d%s', math.max(0, row.at_end), unit) or '') .. (row.binds and '; ' .. row.binds or '')

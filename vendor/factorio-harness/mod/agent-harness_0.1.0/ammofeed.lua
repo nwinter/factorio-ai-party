@@ -102,6 +102,35 @@ return function(api)
     if mode == 'blacklist' and any then return 'its blacklist (' .. table.concat(names, ', ') .. ') holds the turret\'s ammo back' end
     return nil
   end
+  -- (d20 batch52 K6, Sol #1145: Wayfarer's bow guns looked fed at departure while their rail loop had no source, and a
+  -- circuit set more positive filters than a bulk inserter's five slots) what refills a turret's way: a machine aboard
+  -- whose recipe makes ammunition it takes (maker), the hub, a chest, or nothing (preload only: what is on its way now).
+  local function source_kind(e, takes)
+    if e.type == 'space-platform-hub' then return 'hub', 'the hub' end
+    if e.type == 'assembling-machine' or e.type == 'furnace' then
+      local r = try(function() return e.get_recipe() end)
+      for _, pr in ipairs(r and try(function() return r.products end) or {}) do
+        if takes(pr.name) then return 'maker', string.format('%s %s making %s', e.name, at(e.position), pr.name) end
+      end
+      return 'machine', string.format('%s %s (its recipe makes none of it)', e.name, at(e.position))
+    end
+    return 'chest', string.format('%s %s', e.name, at(e.position))
+  end
+  -- An inserter whose circuit sets its filters from more positive item signals than it has filter slots: the text.
+  local function circuit_overflow(ins)
+    local cb = try(function() return ins.get_control_behavior() end)
+    if not (cb and try(function() return cb.circuit_set_filters end)) then return nil end
+    local sig = try(function() return ins.get_signals(defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green) end) or {}
+    local n = 0
+    for _, x in ipairs(sig) do
+      local t = x.signal and x.signal.type
+      if (x.count or 0) > 0 and (t == nil or t == 'item') then n = n + 1 end
+    end
+    local slots = try(function() return ins.filter_slot_count end) or 0
+    if n > slots then
+      return string.format('%s %s: its circuit sets its filters from %d positive item signals, more than its %d filter slots (the rest are left out)', ins.name, at(ins.position), n, slots)
+    end
+  end
   -- every inserter of the force on a surface by what it drops into (key)
   local function inserters_into(s, f)
     local into = {}
@@ -326,6 +355,8 @@ return function(api)
         local h = try(function() return i.held_stack end)
         if h and try(function() return h.valid_for_read end) and takes(h.name) then row.reaches = row.reaches + h.count end
         local blocked = off(i) and 'switched off by its circuit condition' or filter_blocks(i, takes)
+        local ov = circuit_overflow(i)
+        if ov then row.overflow = row.overflow or {}; row.overflow[#row.overflow+1] = ov end
         local src = pickup(i)
         if blocked then row.stops[#row.stops+1] = way .. ': ' .. blocked
         elseif not src then row.stops[#row.stops+1] = way .. ': takes from nothing'
@@ -335,11 +366,14 @@ return function(api)
           starts[#starts+1] = src
         elseif src.e.type == 'space-platform-hub' then
           any_hub = true
+          row.supply = row.supply or {}; row.supply[#row.supply+1] = {kind='hub', text='the hub'}
           local held = inv_count(hub_inv, takes)
           if not row.hub_counted then row.hub_counted = true; row.reaches = row.reaches + held end
           row.ways[#row.ways+1] = string.format('%s from the hub (holds %d of its ammo)', way, held)
         else
           local held = inv_count(try(function() return src.e.get_output_inventory() end) or try(function() return src.e.get_inventory(defines.inventory.chest) end), takes)
+          local sk, st = source_kind(src.e, takes)
+          row.supply = row.supply or {}; row.supply[#row.supply+1] = {kind=sk, text=st}
           reached_src[src.k] = {e=src.e, n=held}
           row.reaches = row.reaches + held
           row.ways[#row.ways+1] = string.format('%s from %s %s (holds %d)', way, src.e.name, at(src.e.position), held)
@@ -427,6 +461,20 @@ return function(api)
       row.belts = (row.belts or 0) + a.n
       -- (d17 batch23 A2, Astra: a disabled old loader was named beside the bulk inserter feeding the loop) the
       -- switched-off ones are named only when nothing else puts items on
+      -- (K6) what refills this way, the ammunition on it the turret takes none of, and circuit filters past the slots
+      row.supply = row.supply or {}
+      for _, x in ipairs(src_list) do
+        if not x.off then
+          local sk, st = source_kind(x.sp.e, takes)
+          row.supply[#row.supply+1] = {kind=sk, text=st}
+        end
+        local ov = circuit_overflow(x.si)
+        if ov then row.overflow = row.overflow or {}; row.overflow[#row.overflow+1] = ov end
+      end
+      if a.hub then row.supply[#row.supply+1] = {kind='hub', text='the hub'} end
+      for name, cnt in pairs(a.items) do
+        if not takes(name) and is_ammo(name) then row.wrong = row.wrong or {}; row.wrong[name] = (row.wrong[name] or 0) + cnt end
+      end
       local sources, off_sources = {}, {}
       for _, x in ipairs(src_list) do
         local text = string.format('%s %s from %s %s (holds %d of its ammo)', x.si.name, at(x.si.position), x.sp.e.name, at(x.sp.e.position), held_of(x)) .. (x.off and ' (switched off)' or '')
@@ -581,6 +629,17 @@ return function(api)
     return string.format('stranded %d on %s%s; recovered by %s%s', r.count, table.concat(r.belts, ', '), r.belts_more and string.format(' +%d more belts', r.belts_more) or '',
       call, r.other_belts_in_area and string.format('; that area also holds %d other belt%s of ours', r.other_belts_in_area, r.other_belts_in_area == 1 and '' or 's') or '')
   end
+  -- A turret's supply in one word: maker, hub, chest (chests only), preload (ways with nothing that refills them), none
+  -- (no inserter feeds it).
+  function M.supply_kind(row)
+    local k = {}
+    for _, x in ipairs(row.supply or {}) do k[x.kind] = true end
+    if k.maker then return 'maker' end
+    if k.hub then return 'hub' end
+    if k.chest then return 'chest' end
+    for _, st in ipairs(row.stops or {}) do if st == 'no inserter feeds it' then return 'none' end end
+    return 'preload'
+  end
   function M.lines(tr, all, platform, aboard)
     local lines = {}
     lines[#lines+1] = string.format('ammunition that can reach a turret: %d (turrets %d, belts on their ways %d, sources %d%s%s); stranded: %d%s',
@@ -604,6 +663,32 @@ return function(api)
       end
     end
     if shown > 16 then lines[#lines+1] = string.format('+%d more turrets', shown - 16) end
+    -- (d20 batch52 K6) what refills each turret: a maker aboard, the hub, chests only, or nothing (preload only)
+    local by, makers, preload, wrong, over, seen_over = {maker=0, hub=0, chest=0, preload=0, none=0}, {}, {}, {}, {}, {}
+    for _, row in ipairs(tr.rows) do
+      local k = M.supply_kind(row)
+      row.replenished = k
+      by[k] = by[k] + 1
+      if k == 'maker' then
+        for _, x in ipairs(row.supply or {}) do if x.kind == 'maker' and not makers[x.text] then makers[x.text] = true; makers[#makers+1] = x.text end end
+      elseif k == 'preload' and #preload < 12 then preload[#preload+1] = at(row.position) end
+      if row.wrong and #wrong < 8 then
+        local w = {}
+        for name, n in pairs(row.wrong) do w[#w+1] = n .. ' ' .. name end
+        table.sort(w)
+        wrong[#wrong+1] = string.format('%s %s: %s on its way (it takes none of it)', row.name, at(row.position), table.concat(w, ', '))
+      end
+      for _, o in ipairs(row.overflow or {}) do if not seen_over[o] and #over < 6 then seen_over[o] = true; over[#over+1] = o end end
+    end
+    if #tr.rows > 0 then
+      lines[#lines+1] = string.format('replenishment by turret: %d from an ammunition maker aboard%s, %d from the hub, %d from chests only (what fills them is not traced), %d preload only%s%s',
+        by.maker, #makers > 0 and ' (' .. table.concat(makers, ', ', 1, math.min(3, #makers)) .. ')' or '', by.hub, by.chest, by.preload,
+        #preload > 0 and ': ' .. table.concat(preload, ', ') .. (by.preload > #preload and string.format(' +%d more', by.preload - #preload) or '')
+          .. ' (nothing puts more on their way: what they hold and what is on their way now is all)' or '',
+        by.none > 0 and string.format(', %d with no inserter feeding it', by.none) or '')
+    end
+    if #wrong > 0 then lines[#lines+1] = 'wrong ammunition on turrets\' ways: ' .. table.concat(wrong, '; ') end
+    if #over > 0 then lines[#lines+1] = 'circuit filters past the slots: ' .. table.concat(over, '; ') end
     -- (d17 batch14 A7a) every turret's reach in one line
     local each = {}
     for i, row in ipairs(tr.rows) do if i <= 32 then each[i] = string.format('%s %d', at(row.position), row.reaches) end end

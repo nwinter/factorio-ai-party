@@ -195,6 +195,12 @@ return function(api)
     function m.cap(name)
       if caps[name] ~= nil then return caps[name] or nil end
       local n = rates[name] and node(name)
+      if rates[name] and not n and not maker(name) then
+        -- (d20 batch52 K5, Sol #930: Swiftlet's rockets kept their make rate after both makers were removed) made at a
+        -- rate while no machine aboard has its recipe now: nothing more is made
+        caps[name] = {none=true, more=0, more_per_min=0, at=function() return 0 end}
+        return caps[name]
+      end
       if not n then caps[name] = false; return nil end
       local u = uses()
       local cap = {per_craft=nil}
@@ -248,6 +254,7 @@ return function(api)
       if (made or 0) <= 0 then return {kind='stock', line='binds: the stock (none made aboard)'} end
       local cap = m.cap(name)
       if not cap then return {kind='rate', line=string.format('binds: the make rate (%g/min; no machine aboard with its recipe read)', round(made, 1))} end
+      if cap.none then return {kind='no_maker', line=string.format('binds: no machine aboard makes it now (the %g/min was measured before; nothing more is counted)', round(made, 1))} end
       local c = t and t > 0 and cap.at(t)
       local over = c and string.format(' over %s', mins(t)) or ''
       if (c and c < made * t) or (not t and cap.more == 0) then

@@ -9167,3 +9167,41 @@ fh watch    # deploy on every change
   note in the drops read; a pod_landed wait on that drop fails with it; freight's receipts and stop lines count such a
   pod as lost (never received), and pod_landed counts no lost pod. Checked on the copy: a hub killed while its pod
   rose read lost (pad +0), one killed 5 ticks into the descent read landed (pad +30). Test tests/d20_batch52.lua.
+- K4 (Astra #955: Kestrel II's ETA used 62500 km/min from a 1m36 turn back; forecasts read no magazine use where big and
+  huge asteroids spawn; Bastion's speed was taken from before a hull loss). freight.lua records each leg's distance along
+  its connection when it begins and as it goes (km0, km1) and the thrusters and hull width it flew with (a foundation
+  find within 128 tiles of the hub when a leg begins: 0.46 ms for Swift's 771 tiles on the private copy). platform_endurance's
+  speed is the last leg's distance flown over its time (`the last leg X->Y: 600 km flown in 1m36s`); a leg recorded
+  before that, the connection over its time when flown whole; one first seen under way, none. When the thrusters or
+  the hull's width differ now: `(measured on another ship: 8 thrusters then, 6 now; times from it are from the old
+  geometry)`. The forecast counts fragments: an asteroid destroyed breaks into smaller ones by its prototype's dying
+  trigger (2.0.77: huge into 3 big, big into 3 medium, medium into 3 small), and shots per asteroid add those of its
+  fragments each ammunition can hurt (`big-metallic-asteroid none hurt + 447 for its fragments`); a leg whose shooting
+  is at kinds the legs flown met none of says `uncalibrated: N% ...`.
+- K5 (Sol #930: Swiftlet's rockets read "?" per big asteroid; production predicted from removed makers). A projectile's
+  damage is its prototype's attack_result, which 2.0.77 gives at runtime (rocket 200 explosion, explosive-rocket 50),
+  in the forecast with the force's ammo and turret bonuses (`rocket 3` against a big metallic one at +280%), and in
+  platform_defense (the base game's numbers only when none is read). A rate measured while no machine aboard has the
+  item's recipe now makes nothing more in the ammunition model: `binds: no machine aboard makes it now (the 6/min was
+  measured before; nothing more is counted)`, the row adds `no machine aboard makes it now`.
+- K6 (Sol #1145): the ammunition trace (platform_defense, endurance's stranded count) says what refills each turret's
+  way: `replenishment by turret: 1 from an ammunition maker aboard (assembling-machine-2 (3.5,-8.5) making
+  firearm-magazine), 2 from the hub, 0 from chests only (what fills them is not traced), 1 preload only: (16.5,-20)
+  (nothing puts more on their way: what they hold and what is on their way now is all)`; `wrong ammunition on turrets'
+  ways: gun-turret (16.5,-20): 4 rocket on its way (it takes none of it)`; `circuit filters past the slots:
+  bulk-inserter (-8,0.5): its circuit sets its filters from 7 positive item signals, more than its 5 filter slots`;
+  feed.turrets rows add `replenished` (maker, hub, chest, preload, none).
+- K7 (Astra #902): already in main. The revert Astra saw (shift30, 2026-10-17 22:22-22:29 UTC: min_payload EF4,
+  crusher3, long6 and four more set at 111h42, all seven back to the saved map by 111h49, by the platform_bom keeper)
+  came before d17 batch21 A2 (84da1fd7, committed 17:04 PDT that day, merged 17:32): since then the keeper adopts a
+  minimum payload changed on its slot, and min_payload's reply says "(in platform_bom's section: its keeper takes a
+  change made here as its own)" (test d17_batch21).
+- K8 (Astra #1277): a silo's products_finished counts rockets, not parts (the private copy: 331 -> 332 as a rocket
+  launched while rocket_parts went 0 -> 13 over 50 s): parts made are finished rockets times the parts a rocket takes plus
+  the parts of the one building; samples kept before are dropped once (the copy: 15.8 a minute after a launch, against
+  0.1 or less before). next_auto_launch takes, of the rows for the platform the silo fills for, the item its own request
+  asks or its rocket holds (it took the last such row: "rocket 25" while 56 magazines of 100 were aboard).
+- K9 (Astra #928): inspect's tile_wait for a tile ghost judged the platform's first 64 tile ghosts, so a ghost past them
+  read "nothing the foundation rules hold it back by". Now that ghost and those within 16 tiles of it: `waits: ...`, or
+  `not checked: the check ran out of its 4096 tile looks before deciding this one ...; unknown, not clear`, or `nothing
+  the foundation rules hold it back by (checked with the N tile ghosts within 16 tiles of it)`. Tests: tests/d20_batch52.lua.
