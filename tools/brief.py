@@ -17,7 +17,7 @@ command names; when to read each topic, the third line of its file, is in agent/
 agent/ref/*.md (Space Age worlds add agent/spaceage.md at the head of space-age); `./fh help TOPIC` prints one, and fh
 names the topic of the call in an argument refusal (ref/commands.tsv, written here from the index).
 """
-import os, re, sys, tempfile
+import json, os, re, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENT = os.path.join(ROOT, "agent")
@@ -152,6 +152,27 @@ def harness_note(text, kind):
     return text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add
 
 
+RULES_START, RULES_END = "<!-- ground-rules -->", "<!-- /ground-rules -->"
+
+
+def rules_note(text, lines):
+    """(d20 batch50 E2) The team's ground rules (lines as the game gives them, e.g. "rule 8 (by astra): ...") in their own
+    section before the compaction instructions, between RULES_START and RULES_END; a section already there is replaced,
+    none with no rules. Codex re-injects only AGENTS.md after a compaction, so a Codex workspace carries them there
+    (tools/launch-agent.sh; fh rewrites the section when the rules change, host/cli.ts noteRules)."""
+    i, j = text.find(RULES_START), text.find(RULES_END)
+    if i >= 0 and j > i:
+        head = text[:i].rstrip("\n")
+        if head.endswith("## The team's ground rules"):
+            head = head[:-len("## The team's ground rules")].rstrip("\n")
+        text = head + "\n\n" + text[j + len(RULES_END):].lstrip("\n")
+    if not lines:
+        return text
+    add = ("## The team's ground rules\n" + RULES_START + "\n" + "".join(f"- {l}\n" for l in lines) + RULES_END + "\n\n")
+    k = text.find("## Compact instructions")
+    return text[:k] + add + text[k:] if k >= 0 else text.rstrip("\n") + "\n\n" + add
+
+
 def sample(kind, d=None):
     """The core a nine-agent Space Age shift writes for KIND (POG_FULL_TOOLS=1): roster agent/team-nine.tsv."""
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -190,6 +211,16 @@ def main(argv):
         path = os.path.join(argv[2], "AGENTS.md")
         text = open(path).read()
         open(path, "w").write(harness_note(text, argv[3]))
+        return 0
+    if len(argv) == 3 and argv[1] == "rules":  # DIR: the rules fh filed (.ground_rules.json) into DIR/AGENTS.md
+        path = os.path.join(argv[2], "AGENTS.md")
+        try:
+            lines = [l for l in json.load(open(os.path.join(argv[2], ".ground_rules.json"))).get("lines") or [] if isinstance(l, str)]
+        except (OSError, ValueError, AttributeError):
+            lines = []
+        text = open(path).read()
+        open(path, "w").write(rules_note(text, lines))
+        print(len(lines))
         return 0
     if len(argv) == 5 and argv[1] == "team":
         sys.stdout.write(team_text(*argv[2:]))

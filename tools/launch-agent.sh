@@ -55,6 +55,8 @@ woke=""
 # tools/agy_rules.py digest reads the file's end).
 exec > >(tee .agy-last.txt) 2>&1
 mem() { python3 '$root/tools/agy_rules.py' digest '$dir' 2>/dev/null; }
+# (d20 batch50 E2) a fresh conversation also gets the team's ground rules (fh's .ground_rules.json), as at the shift start
+memr() { python3 '$root/tools/agy_rules.py' digest-rules '$dir' 2>/dev/null; }
 turn -p "\$(cat '$prompt')
 
 \$(mem)"
@@ -74,7 +76,7 @@ while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
     turn -p "\$(cat '$prompt') \${pre}This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away.
 
-\$(mem)"
+\$(memr)"
   elif [ -n "\$pre" ]; then
     turn -c -p "\${pre}The deadline is \$left minutes away (deadline.txt; the clock: line shows it), the only stop condition.
 
@@ -206,6 +208,9 @@ case $kind in
     args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
+    # (d20 batch50 E2) Codex re-injects only AGENTS.md after a compaction: the team's ground rules go in it (a
+    # ground_rules read files them in .ground_rules.json; fh keeps the section current when they change)
+    { "$dir/fh" call ground_rules >/dev/null 2>&1 && python3 "$root/tools/brief.py" rules "$dir" >/dev/null; } || true
     python3 "$root/tools/clean-profile.py" "$kind" "$dir"
     # ai-session passes no environment: the wait cap goes in the workspace config's shell environment.
     python3 "$root/tools/sleepcap/setup.py" codex "$dir"

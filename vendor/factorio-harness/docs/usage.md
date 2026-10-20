@@ -6557,6 +6557,27 @@ fh watch    # deploy on every change
   `ground_rule_retire {id, reason?}`, `ground_rules`: the team's own rules, at most 8 active, each from lessons it names,
   shown once at each shift start in team.shift with those lessons' evidence ticks and when verified, and the exceptions;
   the harness stores and shows what the agents wrote.
+- Ground rules where they apply (d20 batch50 E1, viewer Foobator, shift46 08:58: "how can we make this reliable?"; rule
+  8 by astra, "Use big mining drills by default for new ore outposts. Ordinary drills require a recorded exception and
+  an owned conversion task.", and Haiku built an electric-mining-drill at (23.5,-13.5) a minute into shift46):
+  `ground_rule_add {applies_to}` and `ground_rule_edit {id, applies_to}` name what a rule is about (1..16 entity, item
+  or recipe names; `[]` clears). Edit as a board item's title: its writer, the operator (operator request
+  `ground_rule_edit`), or anyone once the writer has made no request for 20 min. The successful reply of a build (and
+  its dry_run), place_ghosts, blueprint_place, paste (their previews and dry runs too, and what their reply names),
+  placements, craft, requests, configure, queue_submit or queue_edit whose args name one of them carries
+  `ground_rules: ["rule 8 (by astra) applies to electric-mining-drill: Use big mining drills ..."]`, once per agent and
+  rule per 10 game minutes (a preview counts as a call). A batch or a blueprint names each rule once with the count of
+  its matching entities (`applies to electric-mining-drill x8`; viewer Aurora 09:04). The names are every string in
+  the call's args (any shape: item, name, recipe, a batch's list, a requests map, queue steps), and a name keyed to a
+  number counts that many (a blueprint's counts). Nothing is refused. `ground_rules` lines say
+  `; applies to: ...`.
+- Ground rules after a compaction (d20 batch50 E2), per harness: Claude (SessionStart compact), Grok and Muse (the
+  next tool call after a marked compaction) get tools/context.py's brief, which starts with the rules fh filed (C2
+  below). Codex re-injects only AGENTS.md: tools/launch-agent.sh makes a `ground_rules` read at launch and
+  tools/brief.py `rules DIR` writes them into AGENTS.md as "## The team's ground rules" between `<!-- ground-rules -->`
+  markers; fh rewrites that section in a Codex workspace (`.context-hooks` says codex) whenever a reply carries the
+  rules (host/rules.ts). agy: a fresh conversation (past compact_at) starts with tools/agy_rules.py `digest-rules`, the
+  rules before notes.md.
 - board_focus (Sol 09:37 for viewer Foobator): `board_focus {id, step, blocker?, verify?}` sets an agent's current
   item (task, request or project), its step (a project step number, or text), blocker and next verification; one line
   on every status reply and in the team block once every 10 game minutes; `board_focus {}` or `{agent}` reads the

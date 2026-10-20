@@ -16461,7 +16461,7 @@ function M.dispatch_inner(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
-        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.bplibrary_operator[request.action]
+        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -16552,6 +16552,9 @@ function M.dispatch_inner(request)
     if p and p.valid and not peek and type(request.args)=='table' then
       local okl,ls=pcall(M.board.lessons_for,p,request.action,request.args)
       if okl and ls then result.lessons=ls end
+      -- (d20 batch50 E1) the ground rules whose applies_to names the call's args name (lessonbook.lua applies)
+      local okr,gr=pcall(M.lessonbook.applies,p.index,request.action,request.args,result)
+      if okr and gr then result.ground_rules=gr end
     end
     if p and p.valid and not M.is_director(p.index) then
       -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
@@ -17534,6 +17537,8 @@ function handlers.board_focus(p,a) return M.progress.focus(p,a) end
 M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
   condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,
   who=function(p) return M.board.who(p) end,
+  quiet=function(name) local since=M.board.since_request(name); return name~='operator' and (not since or since>=M.board.QUIET) end,
+  QUIET=M.board.QUIET,owner_state=function(name) return M.board.owner_state(name) end,
   player_of=function(name) for _,ag in ipairs(M.board.agents()) do if ag.name==name then local pl=M.lookup(ag.index); return pl and pl.valid and pl or nil end end end}
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
