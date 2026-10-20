@@ -857,6 +857,16 @@ fh call status
     (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells`. The flare is made with
     the game's create_entity, as the capsule's flare (`artillery-flare`); this path was not run on a live world before
     the deploy.
+- `platform_defense` and a turret's firing arc (d20 batch56 R5, Sol #1409: a railgun facing east read as covering a
+  collector north of it). A turret whose prototype's `attack_parameters.turn_range` is under a full turn (railgun-turret:
+  0.2, 72 degrees) reaches a point only within that arc centred on its facing (its direction, 0..15; northeast and the
+  other diagonals too), as `line_of_fire` (fireline.lua) reads it. Collector fronts and hull edge tiles count it only
+  there; a collector in its range but outside the arc lists it under `outside_arc` {name, position, facing,
+  arc_degrees, off_degrees} and in its line (`in range but outside the arc, not counted: railgun-turret (22.5,10.5)
+  aims within 72 degrees centred east: 54 degrees outside it`). Turret rows add `facing` and `arc_degrees`. The read
+  has no asteroid velocities, so it does not say where a point enters the arc late. The damage lines (per asteroid,
+  the engaging turrets together) are per route, not per point; their heading says a turret with an arc hits only
+  what lies in it.
 - A recipe change and a fluid the machine holds (d20 batch56 R6, Astra #1410: `configure {recipe, fluid: "drain"}`
   failed "attempt to perform arithmetic on a table value": 2.0.77's `LuaFluidBox.flush` returns the fluid it removed by
   name, a table). Read on 2.0.77 (private copy): a crafting machine's fluidbox has no fluid segment
