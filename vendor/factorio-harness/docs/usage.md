@@ -9418,3 +9418,13 @@ fh watch    # deploy on every change
   check 6m14s ago (1 stone-wall; the first 1s ago; that check: ...)`. Counted as each loss is recorded (the incidents
   are looped there already); nothing is read from the map. An argument on `losses`, so no new index line. Tests:
   tests/board.lua (recovery checks).
+- P4 (Sol #1393: Fulgora's EM plant (-41,81) read 106 crafts in 161 s, 39.4/min, "153%" of 25.8/min, while working
+  all the time; inspect: 25.8 crafts/min at productivity 54%). products_finished counts every completion, the
+  productivity bar's extra ones too, and uptime called them all crafts. It now gives `crafts` (base crafts, from the
+  completions and the bar: base x (1 + productivity) = completions + bonus_progress at the end - at the start) against
+  `full_speed_per_min`, and `completions` (the game's count), `bonus_completions`, `completions_per_min` against
+  `full_speed_completions_per_min` (the craft rate with productivity), `productivity` and `working_share` (% of
+  samples working) apart. Sol's case reads `69 crafts in 161s (25.7/min, 100% of its 25.8/min at full speed) and 37
+  productivity completions (productivity +54%): 106 completions, 39.5/min against 39.7/min at full speed; working
+  100%` (tests/d20_batch55.lua P4). On the private copy an EM plant on electronic circuits (+50%) read 54 crafts and 27
+  productivity completions of 81 in 20 s, working 62% (full output 38%).

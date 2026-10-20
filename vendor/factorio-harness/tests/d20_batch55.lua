@@ -166,3 +166,42 @@ do
   game.get_surface=nil
 end
 print('d20_batch55 P2 checks: ok')
+
+-- P4 (Sol #1393: Fulgora's EM plant (-41,81) read 106 crafts in 161 s, 39.4/min, "153%" of 25.8/min, working all the
+-- time; inspect: 25.8 crafts/min, productivity 54%). products_finished counts the productivity bar's completions too:
+-- uptime gives base crafts against the craft rate and completions against the rate with productivity, the working
+-- share apart. A one-product recipe at 54%, 25.8 crafts a minute, working throughout.
+do
+  game={tick=2000}
+  defines={inventory={assembling_machine_input=2,furnace_source=2}}
+  local st={}
+  local recipe={name='supercapacitor',ingredients={}}
+  local base,bonus_bar,done=0,0.3,500
+  local m={valid=true,name='electromagnetic-plant',type='assembling-machine',position={x=-41,y=81},products_finished=done,bonus_progress=bonus_bar,
+    status='working',get_recipe=function() return recipe end,get_inventory=function() return {get_item_count=function() return 0 end} end}
+  local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st end,remote_entity=function() return m end,
+    status_name=function(e) return e.status end,craftrate=function() return {crafts_per_min=25.8,productivity=0.54} end}
+  U.handler({index=1},{positions={{x=-41,y=81}},seconds=161})
+  -- the game's model: each craft adds 0.54 to the bar; a full bar is one more completion
+  local per_tick,progress=25.8/3600,0
+  for t=2001,2000+161*60 do
+    game.tick=t
+    progress=progress+per_tick
+    if progress>=1 then
+      progress=progress-1; base=base+1; done=done+1; bonus_bar=bonus_bar+0.54
+      if bonus_bar>=1 then bonus_bar=bonus_bar-1; done=done+1 end
+    end
+    m.products_finished,m.bonus_progress=done,bonus_bar
+    U.tick(t)
+  end
+  local row=U.handler({index=1},{}).machines[1]
+  eq(row.completions,done-500); eq(row.crafts,base,'the base crafts'); eq(row.bonus_completions,done-500-base)
+  eq(row.crafts,69); eq(row.bonus_completions,37)
+  eq(row.crafts_per_min,25.7); eq(row.full_speed_per_min,25.8); eq(row.completions_per_min,39.5); eq(row.full_speed_completions_per_min,39.7)
+  eq(row.productivity,0.54); eq(row.working_share,100)
+  assert(row.line:find('69 crafts in 161s (25.7/min, 100% of its 25.8/min at full speed) and 37 productivity completions (productivity +54%): 106 completions, 39.5/min against 39.7/min at full speed; working 100%',1,true),row.line)
+  -- the split alone: no productivity, every completion a craft
+  eq(select(2,U.split(10,0,0,nil)),0); eq(U.split(10,0.2,0.9,0.5),7)
+  defines=nil
+end
+print('d20_batch55 P4 uptime crafts and productivity completions: ok')
