@@ -29,6 +29,7 @@ local function second(speed,fuel,ox)
   used['thruster-fuel']=used['thruster-fuel']+fuel; used['thruster-oxidizer']=used['thruster-oxidizer']+ox
   made['thruster-fuel']=made['thruster-fuel']+fuel/2
   E.tick(tick)
+  for t=tick,tick+59 do E.pump_tick(t) end
 end
 eq(E.read(pl),nil,'no samples yet')
 -- 120 s at 38 km/s burning 10 fuel and 12 oxidizer a second, then 60 s climbing to 55 at 20 and 24, the oxidizer
@@ -41,7 +42,7 @@ end
 local r=E.read(pl)
 eq(#r.lines,2)
 eq(r.lines[1],'last 60 s: speed mean 46.5 km/s (lowest 38, highest 55; 38 -> 55); thruster-fuel used 1200, made 600, thruster tanks 2000 -> 2000; '
-  ..'thruster-oxidizer used 1440, made 0, thruster tanks 2000 -> 1410; 2 pumps working 50% of the time')
+  ..'thruster-oxidizer used 1440, made 0, thruster tanks 2000 -> 1410; 2 pumps working 50% of the time (60 samples, one a second at a phase 7 ticks later each second: every tick of a second sampled once a minute)')
 local w180=r.windows[2]
 eq(w180.seconds,180); eq(w180.speed_first,38); eq(w180.fluids['thruster-fuel'].used,10*120+20*60)
 eq(finds,8,'thrusters and pumps found again each minute')

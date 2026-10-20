@@ -9257,3 +9257,16 @@ fh watch    # deploy on every change
   since_departure_s, samples [{seconds, at_stop_s, fluids {name: {used_per_min, made_per_min, tanks_first,
   tanks_last}}}] and since_line; its line (platform_endurance, platform_digest) is unchanged. Tests:
   tests/d20_batch54.lua, tests/platalerts.lua.
+- N2 (viewer Aurora, shift47 13:26 PDT: "Sampling every 60 ticks can miss a 20-tick pulse entirely, so longer averages
+  still report 0%"). The pump duty in the platforms read's engine lines (`N pumps working X% of the time`, engine.lua)
+  read each pump's status on the runtime's once-a-second tick, always at tick 0 of the second: a pump working ticks
+  0-19 of every 60 read 100%, one working ticks 30-49 read 0%. The pumps are now read once a second at a phase that
+  moves 7 ticks each second (7 and 60 share no factor), so 60 samples meet every tick of a second once; both pumps read
+  33%. The line says what the figure is built from: `1 pumps working 33% of the time (60 samples, one a second at a
+  phase 7 ticks later each second: every tick of a second sampled once a minute)`; under 60 samples `(N of the 60 ticks
+  of a second sampled)`; before the first read `N pumps, not sampled yet`. The window's first sample is left out of the
+  duty (N seconds, N samples). The game keeps no count of a pump's working ticks. The cost is the same reads as before
+  (each platform's pumps once a second) plus one modulo a tick. Other working shares checked: efficiency.lua credits a
+  drill's or lab's output from its status at each visit of its walk (a credit estimate marked "about", not a duty
+  figure); the rest of the "working" counts in the reads are the status now. Tests: tests/engine.lua,
+  tests/d20_batch54.lua.

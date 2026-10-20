@@ -62,3 +62,44 @@ do
   defines,game=nil,nil
 end
 print('d20_batch54 N1 fuel alert since departure: ok')
+
+-- N2 (viewer Aurora, shift47 13:26: "Sampling every 60 ticks can miss a 20-tick pulse entirely"): the pumps are read
+-- once a second at a phase that moves 7 ticks a second; a pump working 20 ticks of every 60 reads a third of the time
+-- in phase with the old once-a-second read (ticks 0-19) and out of it (ticks 30-49).
+do
+  defines={entity_status={working=1,no_input_fluid=2}}
+  local tick=0
+  local function pulse(from) return setmetatable({valid=true},{__index=function(_,k)
+    if k=='status' then local ph=tick%60; return (ph>=from and ph<from+20) and 1 or 2 end end}) end
+  local function run(from)
+    local pumps={pulse(from)}
+    local surface={find_entities_filtered=function(f) return f.type=='pump' and pumps or {} end}
+    local pl={valid=true,index=1,name='Pulse',surface=surface,force={},speed=0}
+    local st={}
+    local EN=require('engine'){state=function() return st end}
+    for t=0,181*60-1 do
+      tick=t
+      if t%60==0 then EN.sample(pl,t) end
+      EN.pump_tick(t)
+    end
+    return EN.read(pl)
+  end
+  for _,from in ipairs({0,30}) do
+    local r=run(from)
+    eq(r.windows[1].pump_duty,33,'from tick '..from); eq(r.windows[1].pump_samples,60)
+    has(r.lines[1],'1 pumps working 33% of the time (60 samples, one a second at a phase 7 ticks later each second: every tick of a second sampled once a minute)')
+    eq(r.windows[2].pump_duty,33); eq(r.windows[2].pump_samples,180)
+  end
+  -- a pump that never works and one that always does
+  local r=run(-100); eq(r.windows[1].pump_duty,0)
+  r=run(-10); eq(r.windows[2].pump_duty,math.floor(10/60*100+0.5))
+  -- before the first phase read of a second: not sampled yet, not "no pumps"
+  local pumps={{valid=true,status=1}}
+  local pl={valid=true,index=2,name='Fresh',surface={find_entities_filtered=function(f) return f.type=='pump' and pumps or {} end},force={},speed=0}
+  local st={}
+  local EN=require('engine'){state=function() return st end}
+  EN.sample(pl,60); EN.sample(pl,120)
+  has(EN.read(pl).lines[1],'; 1 pumps, not sampled yet')
+  defines=nil
+end
+print('d20_batch54 N2 pump duty at moving phases: ok')
