@@ -130,6 +130,9 @@
   a named chest and feeds several furnace areas on `fuel_below` is in usage.md (`keep-furnaces-fueled`). Example:
   `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":"ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`
 - `orders`: lists your standing orders with their state, runs, failures and last run.
+- `serves {name, position, surface?, radius?}` on `order_set`, `reminder_add` and `reminder_edit`: the machine it is
+  for (within 1 tile, or any in `radius` up to 64). While none is there, `orders`, `reminders` and their lines say so,
+  with the tick it was last seen. Example: `"serves":{"name":"boiler","position":{"x":8.5,"y":42},"radius":20}`
 - `order_remove {name}`: deletes one.
 - `orders_pause {seconds?}`: holds them (default until `orders_resume`); a running order stops and resumes after.
 - `orders_resume`: lets them run again.

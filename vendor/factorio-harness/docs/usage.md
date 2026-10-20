@@ -238,7 +238,11 @@ fh call status
   nearest first, with distance and compass direction:
   `Sol on Vulcanus; opus 25 tiles S (offline); Luna 100 tiles NE`. `dead` and `offline` are marked; a bot is offline
   after 15 minutes with no request or sleep poll, an attached player when disconnected. Human players and directors are
-  left out.
+  left out. An agent whose loop rests between turns (d20 batch50 B1, viewer Aurora: Gemini paces its quota) shows
+  `resting until 07:34 (pace)` (or `(quota)`) in place of offline, as does its `players` teammates row (`resting`).
+  The loop (tools/agy-quota.py, beside resting.json) sends the operator request `rest {agent, until_clock: "HH:MM",
+  until_s, reason: pace|quota, ticks_per_s?}` (rests.lua); the rest ends with `rest {agent, done: true}` at its next
+  turn, the agent's own next request, or `until_s` of game time (at ticks_per_s, default 60).
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
@@ -3979,7 +3983,7 @@ fh --bot astra call status                                                      
 - `profiles` (read-only, no character needed) lists every player and bot except directors: kind, name, profile, position, alive, active action kind, last_said, and dead_until_tick for bots.
 - In game every bot is marked for the stream, with no per-tick cost (rendering attached to its character, redrawn on spawn, on a `profile` change and by a 5 s recheck that also covers a hot deploy): its character is tinted in its `color` (or, with none, the avatar's default colour from its name), a name tag `glyph display_name` (or the bot name) sits just over its head in that colour (very dark colours are lightened for the text), and, in a world started with the current mod (`data.lua` sprites), its pixel `avatar` floats above the tag, drawn from the same parts and palette as the overlay's `avatar.js`. Emoji glyphs show blank: the game font has no emoji, so letters read better.
 - `say` also draws the text over the speaker's character (above its name tag and avatar) in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.
-- Director cameras (operator only): `remote.call("agent_harness","camera", json)` with `{"player":1,"follow":"astra","zoom":0.8}` (zoom 0.3..4) or `{"player":1,"position":{"x":0,"y":0},"smooth":false}`; `{"player":1,"release":true}` stops following. The player becomes a spectator once (its character is removed), and its view eases toward the target every tick, jumping when the target is over 200 tiles away. `remote.call("agent_harness","cameras")` and the read action `cameras` list them. An attached agent cannot be made a director.
+- Director cameras (operator only): `remote.call("agent_harness","camera", json)` with `{"player":1,"follow":"astra","zoom":0.8}` (zoom 0.3..4) or `{"player":1,"position":{"x":0,"y":0},"smooth":false}`; `{"player":1,"release":true}` stops following. The player becomes a spectator once (its character is removed), and its view eases toward the target every tick, jumping when the target is over 200 tiles away. `speed` (tiles per second, over 0 and at most 60) caps how fast a smooth camera moves toward its position (the stream's platform detail pans send a step a second at their pan speed, so the view glides evenly). `remote.call("agent_harness","cameras")` and the read action `cameras` list them. An attached agent cannot be made a director.
 - Directors: players that ever were cameras, spectators, and players named `pog-cam<N>` or `pog-director` (the camera clients, even before their first camera call). They never appear in `profiles`, and `say` lines are printed only to other players (camera views show the bubbles, not the chat console). A camera's view hides the GUI (minimap, research, side menu, quickbar, shortcut bar, crafting queue, alerts, tool bar, hotkey hints) but keeps entity info; if a camera player comes back with a character (a reconnect), it is made a spectator again within a tick, and its view settings are re-applied every 5 s. Every 5 s each connected director, with a camera or not (a camera client before its first camera call, or a released one), is also made a characterless spectator with `show_on_map=false`, so no director's name or body shows in the world on stream.
 
 ## Team board, reply hints, harness requests, saved plans
@@ -4557,7 +4561,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   Sonnet sat in back-to-back 15-minute waits like that, and no freight tell reached it for about an hour).
   `tell {wake: true}` (`fh tell NAME --wake "text"`) ends such a wait as well (outcome `told`, `last.why` `told by
   astra (wake: true)`), each time (the reply lists `woken`, with the count of your wake tells to them in the last 10
-  minutes), with the recipient in `ignoring`. `wake` and `fyi`
+  minutes), with the recipient in `ignoring`. A recipient resting between turns (above, `teammates`) is in `resting`:
+  `gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler check (review in 3 min)`
+  (its active board items whose newest evidence `next_check` tick falls inside the rest, five at most). `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
@@ -4591,8 +4597,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator stream camera (HTTP on the stream service, not an `fh` action): `POST /platform {name, seconds?, label?,
   by?}` holds the whole named platform on air; `DELETE /platform` ends it. Seconds defaults to 600, capped at 1800.
   The hold persists in `runs/RUN/director-platform.json` and takes priority over `/follow`; an unexpired follow
-  resumes afterward. A follow of an agent aboard also frames the whole ship. Flight framing includes space ahead
-  for asteroids; urgent events elsewhere use insets. Full operator details: `docs/STREAM-NOTES.md` in the pog repo.
+  resumes afterward. A follow of an agent aboard also frames the whole ship. Flight framing reaches as far as the
+  platform's turrets do (each one's range with quality; no turrets: the hull and 2 tiles); in flight with turrets the
+  shot is a closer view that rests 8 s on the bow and pans slowly to the stern and back; docked ships are a still
+  shot. Urgent events elsewhere use insets. Full operator details: `docs/STREAM-NOTES.md` in the pog repo.
 - Operator live attack groups (threat.lua; the pog stream follows a big group as it approaches): `attack_groups_live`
   (read) lists up to 10 enemy groups that finished gathering with a target, visible or not, while valid and under 10
   game minutes old: `id, surface, position, size, kinds, state (gathering|moving|attacking_*), gathered, first_size,
@@ -5257,7 +5265,8 @@ fh watch    # deploy on every change
   never drives a character, interrupts an action, combat or queue, changes a machine, runs Lua or retries anything.
   Standing orders and `queue_repeat` stay the tools for actions, and alerts stay apart.
   - `reminder_add {message, every_ticks | due_tick | due_in_ticks, recipients?, name?, board_item?, surface?,
-    expires_tick? | for_ticks?, enabled?}`. `every_ticks` (3600 and up; 54000 is 15 min) is a cadence anchored at
+    serves?, expires_tick? | for_ticks?, enabled?}` (`serves`: the machine it is about, flagged when gone; see
+    "What an order or a reminder serves"). `every_ticks` (3600 and up; 54000 is 15 min) is a cadence anchored at
     the call. `due_tick` or `due_in_ticks` runs it once. `recipients` are names or `team`; the default is you. At most
     12 a teammate and 48 in all.
   - When it is due, each recipient gets one private line in their next reply, as a tell from `reminder #N`: `reminder
@@ -6383,6 +6392,15 @@ fh watch    # deploy on every change
 - A2 (Haiku moved 31 tiles by a standing order mid-sleep): `order_set {max_walk: N}`: the order waits while its place
   lies over N tiles from you (state: "waits: ... lies N tiles from you, over max_walk"); `sleep {orders: false}`
   starts no standing order during that sleep.
+- What an order or a reminder serves (d20 batch50 B2, viewer Aurora: "Could standing orders link to the system they
+  serve and flag when it is retired or superseded?"; Haiku's `boilerfuel`, set in shift06, stayed on watch until 170h
+  for boilers that had no use left): `order_set`, `reminder_add` and `reminder_edit` take `serves {name, position,
+  surface?, radius?}` (serves.lua): an entity of that name of ours within 1 tile of the position, or with radius
+  2..64 any within it, on `surface` (default yours); `reminder_edit {serves: false}` clears it. Checked when set,
+  about once a game minute and when read (one count in that circle). `orders` and `reminders` rows carry `serves
+  {count, checked_tick, last_seen_tick, gone, gone_tick, line}`; while none is there the orders line, the reminder's
+  line and each line it sends say so: `boilerfuel serves boiler within 20 of (8.5,42) on nauvis: none there since tick
+  T (checked tick C); last seen tick L, 12m30s ago` (`not seen since it was set at tick S` for one never found).
 - A3 (Muse: an unreachable walk with no hint): `unreachable` and `no_safe_route` replies add `staging`: from every
   agent's walked trails of the last 30 minutes, a trail within 16 tiles of you and 48 of the goal gives via points,
   else the trail point nearest the goal within 48 tiles is a staging spot (`staging_via`, `staging_spot`).
@@ -6434,6 +6452,17 @@ fh watch    # deploy on every change
   the oldest's age, who, the text and the call that closes it); once one is 10 minutes old a single reminder (a wake)
   goes to the inbox, so a sleep or a remote plan's wait ends on it. At most 50 kept per agent. Copy: Luna's "@grok how
   many bioflux are left on Swift?" stayed on Grok's replies after a chat read; his "@luna about 400" closed it.
+- Answering a viewer (d20 batch50 C1; shift45 seq 16942: NickWinter asked "@muse Muse: How could we end the biter
+  problem on Nauvis once and for all?" and Muse's "Good question. The permanent fix is ..." named no one, so the
+  site showed no answer under his line). A viewer's line to an agent carries its seq and what answers it: in the team
+  block's mentions `viewer NickWinter (host) (site) @you, 0s ago: ... (#16942: a say naming NickWinter, or reply_to:
+  16942, answers it)`, and in a chat read as `answer` on that message. `say {reply_to: SEQ}` naming a viewer's line
+  keeps `reply_to` on the chat line (chat reads, chat.jsonl; the stream's viewer_replies.py threads the line under that
+  viewer line on the site whatever it names) and, when the text names the viewer nowhere, puts `@Name ` in front in
+  the game chat and the log; the reply says `reply_to {seq, to, addressed}`. A seq that is no viewer line changes
+  nothing but closing it as before. shift40-45: 11 agent lines answered a viewer's line to them without naming the
+  viewer (the first line from that agent within 5 game minutes, the viewer named nowhere, not to a teammate, opening with an
+  answer word or sharing 2+ words with the question), out of 441 viewer lines addressed to an agent.
 - B2 (Sol: a cargo pad's spilled hardware read 0): `where_is` adds `on_ground` and a place per 32-tile cell of stacks on
   the ground in chunks our force sees now; `stock {item, surface}` adds `on_ground` and a line (not in its total).
   Copy: 190 iron gears on the ground on Vulcanus near (-27,118). The ground read cost 11 ms of where_is's 94 ms on the copy.

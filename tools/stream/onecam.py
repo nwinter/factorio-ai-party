@@ -42,7 +42,8 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   that showed the map is released when it is off air (cameras.lua makes it a spectator again).
 - Space platforms (Nick: "Do we have the camera look at the space platform sometimes?"): the snapshot's
   space.platforms with a view (live.py PLATFORM_LUA: surface, hub, bounds). A standby shows one platform whole
-  (model.platform_shot, a fixed view on its surface), labelled "Starling · in orbit of Nauvis" (or travelling to X):
+  (model.platform_shot, a fixed view on its surface), labelled "Starling · in orbit of Nauvis" (or travelling to X);
+  framed out to its turrets' range, and in flight a closer view that pans bow to stern (d20 batch50; pan_step):
   - a visit about every `platform_every` (12 min) for `platform_hold` (20 s), the platform shown longest ago first;
     like the base map, never during an urgent or segment shot, a replay, a trio, an inset, a fight, or near a cut;
   - a departure (a platform starts travelling; Sol for a viewer: "continuous view during departure"): on it for
@@ -2133,16 +2134,24 @@ class OneCam(Director):
     PAN_LEG_S = 40.0   # at most this long from bow to stern; a longer shot goes back and forth
     PAN_STEP = 2.0     # tiles: the camera is moved when the pan's place is this far from where it is
 
+    DETAIL_STEP = 0.5  # tiles: a detail pan's step (d20 batch50 A2; cameras.lua glides between steps at its speed)
+
     def pan_y(self, t, now):
         """Where a tall ship's view is along its pan (model.platform_shot `pan`) at `now`: at the bow for PAN_END_S, to
-        the stern over the shot's time (at most PAN_LEG_S, then back), at the stern for PAN_END_S."""
+        the stern over the shot's time (at most PAN_LEG_S, then back), at the stern for PAN_END_S. A detail pan (d20
+        batch50 A2: `speed`, `bow_s`) rests bow_s on the bow, then moves at its speed in tiles/s, rests PAN_END_S at the
+        stern and comes back the same way: a short shot shows the bow and part of the hull."""
         p, since = t["pan"], t.get("since") if t.get("since") is not None else now
-        span = max(1.0, (t.get("until") or since + 20) - since)
-        leg = max(4.0, min(self.PAN_LEG_S, span - 2 * self.PAN_END_S))
-        cycle = 2 * (leg + self.PAN_END_S)
+        rest0 = rest1 = self.PAN_END_S
+        if p.get("speed"):
+            rest0, leg = p.get("bow_s", rest0), max(1.0, abs(p["y1"] - p["y0"]) / p["speed"])
+        else:
+            span = max(1.0, (t.get("until") or since + 20) - since)
+            leg = max(4.0, min(self.PAN_LEG_S, span - 2 * self.PAN_END_S))
+        cycle = 2 * leg + rest0 + rest1
         x = (now - since) % cycle
-        f = 0.0 if x < self.PAN_END_S else min(1.0, (x - self.PAN_END_S) / leg) if x < self.PAN_END_S + leg + self.PAN_END_S \
-            else max(0.0, 1.0 - (x - 2 * self.PAN_END_S - leg) / leg)
+        f = 0.0 if x < rest0 else min(1.0, (x - rest0) / leg) if x < rest0 + leg + rest1 \
+            else max(0.0, 1.0 - (x - rest0 - rest1 - leg) / leg)
         return round(p["y0"] + (p["y1"] - p["y0"]) * f, 1)
 
     def pan_step(self, now):
@@ -2152,9 +2161,12 @@ class OneCam(Director):
             if not t or not t.get("pan") or not t.get("position") or now >= t.get("until", now + 1):
                 continue
             y = self.pan_y(t, now)
-            if abs(y - t["position"]["y"]) >= self.PAN_STEP or (y in (t["pan"]["y0"], t["pan"]["y1"]) and y != t["position"]["y"]):
+            step = self.DETAIL_STEP if t["pan"].get("speed") else self.PAN_STEP
+            if abs(y - t["position"]["y"]) >= step or (y in (t["pan"]["y0"], t["pan"]["y1"]) and y != t["position"]["y"]):
                 target = {k: v for k, v in t.items() if k != "jump"}
                 target["position"] = dict(t["position"], y=y)
+                if t["pan"].get("speed"):  # cameras.lua moves at about this speed between the 1 s steps: no stutter
+                    target["glide"] = round(t["pan"]["speed"] * 1.15, 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
     @staticmethod

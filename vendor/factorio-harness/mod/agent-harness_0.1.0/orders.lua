@@ -24,6 +24,9 @@
 -- agent's running order and starts none until it is switched off again.
 return function(api)
   local M={handlers={},operator={}}
+  -- (d20 batch50 B2) what an order serves, flagged when none is left (serves.lua; loaded when first used)
+  local Sv_
+  local function Sv() Sv_=Sv_ or require('serves')(); return Sv_ end
   local MAX_ORDERS,MAX_STEPS,MAX_RADIUS,MAX_POSITIONS,MAX_FAILS=6,32,256,16,3
   local CHECK,HOLD=60,1200
   local function int(v,default,low,high,name)
@@ -202,6 +205,7 @@ return function(api)
     return math.max(b.busy_tick or 0,b.drove_tick or 0)
   end
   local function look(index,b)
+    for _,o in ipairs(b.list) do if o.serves then pcall(Sv().due,o.serves) end end
     settle(b,api.scheduler.order_result(index))
     enemy_waits(index,b)
     local running=api.scheduler.order(index)
@@ -273,12 +277,15 @@ return function(api)
   local function summary(index,b,o)
     return {name=o.name,when=o.when,priority=o.when and o.priority or nil,steps=#o.steps,state=state_of(index,b,o),
       cooldown_ticks=o.when and o.cooldown or nil,interval_ticks=not o.when and o.interval or nil,max_ticks=o.max_ticks,
-      runs=o.runs,failures=o.failures,off=o.off,last=o.last,saw=o.held and o.held.saw or nil}
+      runs=o.runs,failures=o.failures,off=o.off,last=o.last,saw=o.held and o.held.saw or nil,serves=o.serves and Sv().view(o.serves) or nil}
   end
   local function list(index,b)
     settle(b,api.scheduler.order_result(index))
     local out={}
-    for _,o in ipairs(b.list) do out[#out+1]=summary(index,b,o) end
+    for _,o in ipairs(b.list) do
+      if o.serves then pcall(Sv().check,o.serves) end
+      out[#out+1]=summary(index,b,o)
+    end
     return out
   end
   -- One line on every reply while the agent has orders.
@@ -318,6 +325,10 @@ return function(api)
       if o.enemy_wait then parts[#parts+1]=o.name..' waits for enemies'..(o.enemy_wait.at and string.format(' near (%g,%g)',o.enemy_wait.at.x,o.enemy_wait.at.y) or '')..' to clear (not a failure)' end
       if o.off then parts[#parts+1]=o.name..' off after '..MAX_FAILS..' failures: '..o.off..' (order_set it again)'
       elseif o.failures>0 and o.last then parts[#parts+1]=o.name..' failed '..o.failures..'/'..MAX_FAILS..': '..(o.last.reason or '?') end
+    end
+    -- (d20 batch50 B2) an order whose machine is gone: what it serves, since when, when last seen
+    for _,o in ipairs(b.list) do
+      if o.serves and Sv().gone(o.serves) then parts[#parts+1]=o.name..' '..Sv().line(o.serves) end
     end
     if b.error then parts[#parts+1]='error: '..b.error.message end
     return 'orders: '..table.concat(parts,'; ')
@@ -382,7 +393,7 @@ return function(api)
     local o={name=name,steps=items,when=when,priority=int(a.priority,5,1,9,'priority'),cooldown=int(a.cooldown_ticks,600,300,216000,'cooldown_ticks'),
       interval=int(a.interval_ticks,1800,60,216000,'interval_ticks'),max_ticks=int(a.max_ticks,default_ticks,60,216000,'max_ticks'),
       max_walk=a.max_walk~=nil and int(a.max_walk,nil,1,1000,'max_walk') or nil,
-      failures=0,runs=0,next_tick=game.tick}
+      failures=0,runs=0,next_tick=game.tick,serves=a.serves~=nil and Sv().parse(a.serves,p) or nil}
     local b=book(p.index,true)
     local old,at=find(b,name)
     if not old then assert(#b.list<MAX_ORDERS,'at most '..MAX_ORDERS..' standing orders: order_remove one first') end
@@ -463,7 +474,7 @@ return function(api)
   end
   M.schema={
     order_set={name='1..32 letters, digits, - or _; the same name replaces that order (and switches one that went off back on)',max_walk='optional 1..1000 tiles: the order starts only while its place (its first step\'s position, positions or area, else its when\'s position) lies within that many tiles of you; farther, it waits (its state says how far)',
-      steps='1..32 plan steps, as queue_submit (action, args, wait, label, on_fail)',
+      steps='1..32 plan steps, as queue_submit (action, args, wait, label, on_fail)',serves='optional {name, position, surface?, radius?}: the machine it serves (an entity of that name of ours within 1 tile of position, on surface, default yours), or with radius 2..64 any such machine within it; checked about once a game minute and when read: serves {count, last_seen_tick, gone, gone_tick, line} in the read, and a line naming it when none is there (the orders line names an order whose machine is gone)',
       when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|platform_arrived|platform_left|...; radius at most 256; ammo_below/fuel_below also take area up to 256x256, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
       priority='with when: 1..9 (default 5). The highest holding trigger runs first; a holding trigger stops a running order of lower priority (the default routine counts 0), which resumes after',
       cooldown_ticks='with when: 300..216000 (default 600) after a run before the trigger can fire again',
@@ -471,7 +482,7 @@ return function(api)
       max_ticks='60..216000 (default scales with scope and child ticks, at least 3600): a run that takes longer is stopped and counts as failed',
       returns='order, list. Orders run only while your character is free (no action, your queue empty and not repeating, a body on the map; between the rounds of a repeating queue, triggered orders, and the default routine with queue_repeat orders=all) and hold_s after your own last action. Your own character request or queue call stops a running order at once; it resumes after (a trigger only if it still holds). 3 failed runs in a row switch an order off. Every reply carries the orders line (which runs and why, or what they wait for)'},
     order_remove={name='order name'},
-    orders={returns='your standing orders: state (running, ready, holds, not holding, cooling N s, next in N s, resumes when free, off), runs, failures, last'},
+    orders={returns='your standing orders: state (running, ready, holds, not holding, cooling N s, next in N s, resumes when free, off), runs, failures, last; serves (order_set serves): count there now, last_seen_tick, gone, line'},
     orders_pause={seconds='optional 1..3600 (default until orders_resume); a running order stops and resumes after'},
     orders_resume={hold_s='optional 0..600 (default 20): how long your character must be free after your own last action before an order starts'},
   }

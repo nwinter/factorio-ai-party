@@ -184,6 +184,10 @@ return function(api)
         cam.surface = args.surface
       end
     end
+    if args.speed ~= nil then
+      assert(type(args.speed) == 'number' and args.speed > 0 and args.speed <= 60, 'speed must be a number of tiles per second, over 0 and at most 60')
+      cam.speed = args.speed
+    end
     if args.zoom ~= nil then
       assert(type(args.zoom) == 'number' and args.zoom >= MIN_ZOOM and args.zoom <= MAX_ZOOM, string.format('zoom must be %g..%g', MIN_ZOOM, MAX_ZOOM))
       cam.zoom = args.zoom
@@ -223,7 +227,10 @@ return function(api)
     if surface ~= p.surface or not cam.smooth or now and not cam.view_zoom or distance(here, target) > JUMP then
       p.teleport(target, surface)
     elseif distance(here, target) > 0.02 then
-      p.teleport({x=here.x + (target.x - here.x) * EASE, y=here.y + (target.y - here.y) * EASE})
+      local k = EASE
+      -- a pan (args.speed, tiles/s): at most that far a tick, so steps sent once a second glide at an even pace
+      if cam.speed then k = math.min(EASE, cam.speed / 60 / distance(here, target)) end
+      p.teleport({x=here.x + (target.x - here.x) * k, y=here.y + (target.y - here.y) * k})
     end
     local z = cam.view_zoom or cam.zoom
     if cam.smooth and math.abs(z - cam.zoom) > 0.002 then z = z + (cam.zoom - z) * EASE else z = cam.zoom end

@@ -626,6 +626,20 @@ return function(api)
     end
     return rows
   end
+  -- (d20 batch50 B1) `name`'s active items (owned, or posted with no owner) whose newest evidence names a next check at a
+  -- game tick from t0 to t1 (a rest's span: rests.lua). Rows {id, title, next_check}, the soonest first.
+  function M.reviews_between(name, t0, t1)
+    local rows = {}
+    for _, i in pairs(store().items) do
+      local mine = i.owner == name or (not i.owner and i.requested_by == name)
+      local e = mine and ACTIVE[i.status] and i.evidence and i.evidence[#i.evidence]
+      if e and type(e.next_check) == 'number' and e.next_check >= t0 and e.next_check <= t1 then
+        rows[#rows+1] = {id=i.id, title=clip(i.title, 60), next_check=e.next_check}
+      end
+    end
+    table.sort(rows, function(x, y) return x.next_check < y.next_check or (x.next_check == y.next_check and x.id < y.id) end)
+    return rows
+  end
   local function open_unowned()
     local n, oldest = 0, nil
     for _, i in pairs(store().items) do
@@ -2059,7 +2073,10 @@ return function(api)
         end
       else
         local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
-        lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
+        -- (d20 batch50 C1) a viewer's line: its seq and what answers it, as for an unanswered tell
+        local re = m.viewer and type(m.seq) == 'number' and string.format(' (#%d: a say naming %s, or reply_to: %d, answers it)', m.seq,
+          (tostring(m.from):gsub('^viewer ', ''):gsub(' %(host%)$', '')), m.seq) or ''
+        lines[#lines+1] = string.format('%s%s, %s ago: %s%s', from(m), tag, ago(game.tick - m.tick), m.text, re)
       end
     end
     for _, l in ipairs(M.unread_lines(box, shown) or {}) do tells[#tells+1] = l end

@@ -2,7 +2,8 @@
 explicit model replies to viewers ... on site chat feed ... most messages there should still be from human viewers").
 Pure; shared by model.py (the live page's `viewer_replies`) and site/longrun.py (the archived shift pages' Viewers).
 
-A line is a reply when it names a viewer who wrote in the last WINDOW_S seconds of game time:
+A line is a reply when it was said with reply_to a viewer line's seq (d20 batch50 C1; chat.lua keeps it on the line), or
+when it names a viewer who wrote in the last WINDOW_S seconds of game time:
   - `@name` anywhere ("@Foobator Yes. Sonnet is ...", the Operator's "@joonazan Operator: ...");
   - the name (or its short form, 4+ letters: "Craig" for craigNZ830) as a vocative: at the start or after a sentence
     end, a comma, or a greeting or reply word, and followed by `,` `:` `.` `!` `?` or the end ("Foobator, the steel line
@@ -155,6 +156,12 @@ def classify(line, viewer_lines, inbox=()):
     if not who:
         return None
     lines = list(viewer_lines)
+    # (d20 batch50 C1) say reply_to a viewer line's seq (chat.lua keeps it on the line): that line, whatever the text names
+    rt = line.get("reply_to")
+    if isinstance(rt, int) and not isinstance(rt, bool):
+        v = next((v for v in reversed(lines) if v.get("seq") == rt and viewer_name(v)), None)
+        if v:
+            return {"kind": "reply", "to": [viewer_name(v)], "answers": v}
     if who == "operator" and inbox:
         lines = sorted(lines + list(inbox), key=lambda v: wall_t(v) or 0)
     recent = [v for v in lines if viewer_name(v) and 0 <= _age_s(line, v) <= WINDOW_S]

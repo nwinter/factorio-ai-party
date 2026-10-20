@@ -199,7 +199,7 @@ first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves 
 `viewer_replies` (d15 08:07) is the agents' and the Operator's game-chat lines that answer a viewer or speak to the
 viewers, newest 40, oldest first: `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
 to [viewer names], answers? {name, text?, t, source}}]` (tools/stream/viewer_replies.py, kept by model.py so they
-outlive the chat window). A reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
+outlive the chat window). A line said with `reply_to` a viewer line's seq answers that line (d20 batch50). Else a reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
 ("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."); "Viewers, ..." and the like speak to the viewers. `answers`
 is the viewer line it answers (one addressed to the agent first); its `text` is left out when the site hides that line.
 The Chat pane shows each one, badged REPLY (or TO VIEWERS) in the agent's colour, right under the line it answers when

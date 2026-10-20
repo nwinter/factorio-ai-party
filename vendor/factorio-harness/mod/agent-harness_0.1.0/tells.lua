@@ -64,7 +64,7 @@ return function(api)
       reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a tell to the asker does too)',
       fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
       wake='true (fh tell --wake): also ends a recipient\'s wait that this tell would not end: a direct wait_ticks, wait_until or sleep that ignores messages (wake_on_messages: false, fh --wait-through-tells) or takes them only from others (wake_from), and an fh --wait that goes on through tells; every time (woken counts your wake tells to each in the last 10 minutes)',
-      returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
+      returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; resting "gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler check (review in 3 min)" for each recipient its loop rests between turns; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
     tells = {since='optional sequence number: the tells you sent or received after it (since=0: all of them); without it, the tells you received', limit='1..100, newest kept (default 30)',
       returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text} oldest first (those listed leave the team block\'s unread tells): without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
   }
@@ -118,12 +118,19 @@ return function(api)
         end
       end
     end
+    -- (d20 batch50 B1, viewer Aurora) recipients resting between turns (rests.lua): until when, and their board items
+    -- with a review in the rest
+    local resting = {}
+    for _, name in ipairs(api.resting and names or {}) do
+      local ok, line = pcall(api.resting, name)
+      if ok and line then resting[#resting+1] = line end
+    end
     for k, w in pairs(s.wakes) do
       if type(w) ~= 'table' or #w == 0 or game.tick - w[#w] > M.WAKE_EVERY then s.wakes[k] = nil end
     end
     local not_woken = {}
     return {seq=t.seq, to=team and 'team' or names, cut=cut, away=#away > 0 and table.concat(away, '; ') or nil,
-      ignoring=#ignoring > 0 and table.concat(ignoring, '; ') or nil, woken=#woken > 0 and woken or nil, not_woken=#not_woken > 0 and not_woken or nil,
+      ignoring=#ignoring > 0 and table.concat(ignoring, '; ') or nil, resting=#resting > 0 and table.concat(resting, '; ') or nil, woken=#woken > 0 and woken or nil, not_woken=#not_woken > 0 and not_woken or nil,
       note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat'}
   end
   local function read(a, me)

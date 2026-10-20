@@ -441,6 +441,8 @@ class Director:
             body["map"] = True  # cameras.lua: Factorio's map (the remote controller's chart), not the world
         if target is not None and target.get("jump"):
             body["smooth"] = False  # cameras.lua teleports at once (and sets the zoom) instead of easing over
+        elif target is not None and target.get("glide") and "position" in target:
+            body["speed"] = target["glide"]  # (d20 batch50 A2) a detail pan: cameras.lua moves at most this many tiles/s
         if target is not None and target.get("exact_zoom"):
             # a zoom that fits (a fight, a platform): sent as computed
             body["zoom"] = round(min(self.cfg["max_zoom"], target["zoom"]), 2)

@@ -15528,7 +15528,19 @@ end
 M.owed=require('owed'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,read_tells=function(index,seqs) return M.board.tells_read(index,seqs) end}
 M.board.owed=M.owed
 for name,handler in pairs(M.owed.handlers) do handlers[name]=handler end
-M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
+-- Rests between turns (rests.lua; d20 batch50 B1, viewer Aurora): pushed by the agent's loop as the operator (rest),
+-- shown on the teammates line and in tell replies; over at the agent's own next request.
+local function agent_index(name)
+  for _,a in ipairs(M.board.agents()) do if a.name==name then return a.index end end
+end
+M.rests=require('rests'){state=state,resolve=M.board.resolve,
+  reviews_between=function(name,t0,t1) return M.board.reviews_between(name,t0,t1) end,
+  last_call=function(name)
+    local index=agent_index(name)
+    local c=index and (state().clocks or {})[index]
+    return c and not c.peeked and c.call_tick or nil
+  end}
+M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
@@ -15641,6 +15653,11 @@ function handlers.lookahead(p,a) return M.lookahead.read(p,a) end
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
+  resting=function(index)
+    for _,a in ipairs(M.board.agents()) do
+      if a.index==index then local r=M.rests.get(a.name); return r and M.rests.label(r) or nil end
+    end
+  end,
   pronouns=function(index) local pr=M.profiles.get(index); return pr and pr.pronouns or nil end,
   human=function(index) return not M.bots.is_index(index) and not (state().controlled and state().controlled[index]) end}
 -- Why an underground belt or pipe-to-ground is unpaired (underpass.lua).
@@ -16444,7 +16461,7 @@ function M.dispatch_inner(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
-        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.bplibrary_operator[request.action]
+        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
