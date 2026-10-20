@@ -63,8 +63,18 @@ return function(api)
     local cruise = M.cruise and M.cruise(pl)
     local at_cruise = cruise and type(speed) == 'number' and speed < cruise * 0.9
     local v = at_cruise and cruise or speed
+    -- (d20 batch54 N5, Sol #1390) a leg under way at its own measured speed once it has one, the cruise only while it
+    -- speeds up (engine.lua leg_speed); speed_from says which
+    local speed_from
+    if api.leg_speed and type(speed) == 'number' then
+      local segs = M.segments and M.segments(pl) or {}
+      local sg = segs[#segs]
+      local since = sg and sg.kind == 'leg' and not sg['end'] and sg.start and game.tick - sg.start or nil
+      local s, by, own = api.leg_speed(pl, since, cruise, cruise and string.format('its cruise on the legs before, %.0f km/s', cruise * 60))
+      if s then v, at_cruise, speed_from = s, not own, by end
+    end
     return {from=back and to or from, to=back and from or to, flown=flown, length=length, left_km=left,
-      eta_ticks=type(v) == 'number' and v > 0 and left / v or nil, back=back,
+      eta_ticks=type(v) == 'number' and v > 0 and left / v or nil, back=back, speed_from=speed_from,
       eta_from=at_cruise and string.format('about: it speeds up (%.0f km/s now), the rest at its cruise of %.0f km/s', speed * 60, cruise * 60) or nil}
   end
   -- {at (a space location, when there), stopped (there and not on its path),
@@ -587,7 +597,7 @@ return function(api)
       secs = leg.eta_ticks / 60
       speed = speed or (leg.left_km > 0 and leg.left_km / leg.eta_ticks) or nil
       parts[#parts+1] = string.format('flying %s->%s: %d km left at %s: %ds', leg.from, leg.to, math.floor(leg.left_km + 0.5),
-        leg.eta_from and 'its cruise (it speeds up now)' or 'its speed now', math.floor(secs + 0.5))
+        leg.speed_from or (leg.eta_from and 'its cruise (it speeds up now)' or 'its speed now'), math.floor(secs + 0.5))
       at = leg.to
       if leg.to == location then
         return {eta_s=math.ceil(secs), after_s=math.ceil(secs), line=string.format('ETA %ds: %s', math.ceil(secs), table.concat(parts, '; '))}

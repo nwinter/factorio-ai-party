@@ -9345,3 +9345,17 @@ fh watch    # deploy on every change
   under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
   limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
   tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).
+- N5 (Sol, board #1390: Limestone-spare-unbuilt's pump duty cut from 10% to 5%; the engine read 48.9 km/s over the
+  last 60 s while platform_endurance kept 5940 km/min, the last leg's, and an ETA of 14m57s for 88883 km, more than
+  3 min into the leg). The cause: endurance's speed (and freight.lua's leg ETA, from the cruise) took a past leg's speed
+  whenever the speed now was under 90% of it, as if still speeding up after the departure (A4). engine.lua leg_speed
+  is now the rule for both: once the engine's last 60 s are all of this leg and the speed is not rising (last over
+  first by more than 5% or 1 km/s), this leg's own, their mean; speeding up (rising, or in the leg's first minute
+  with no samples) and under 90% of a past leg's speed, that one; else the speed now. It says which:
+  `this leg: its last 60 s mean, 48.9 km/s (lowest 48.9, highest 48.9)`, `the last leg nauvis->vulcanus: 59400 km
+  flown in 10m00s (it speeds up now: 49 km/s)`, `this leg: its speed now, 30 km/s`. platform_endurance's speed_from,
+  its legs' minutes, the fuel outlook (`about 30m17s at 2934 km/min (this leg: ...)`) and the resource forecast use
+  it; the platforms row's leg (eta_ticks, speed_from) and its ETA line (`flying vulcanus->nauvis: 88883 km left at
+  this leg: ...`) too. Tests: tests/d20_batch54.lua N5 (Sol's case: 14m57s by the old rule, 30m17s now; a leg 30 s in
+  and still speeding up; a leg faster than the last; freight's leg); tests/d15_batch3.lua (the outlook names its
+  speed).

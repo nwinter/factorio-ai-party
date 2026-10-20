@@ -143,6 +143,28 @@ return function(api)
         or npumps > 0 and string.format('; %d pumps, not sampled yet', npumps) or '; no pumps')
     return out
   end
+  -- The speed a leg under way is estimated at (d20 batch54 N5, Sol #1390: Limestone-spare-unbuilt flew at 49 km/s after
+  -- its pump duty was halved while platform_endurance kept the last leg's 99 km/s and an ETA of 15 min for 30, more
+  -- than 3 min into the leg): once the last 60 s are all of this leg and the speed is not rising, this leg's own: the
+  -- 60 s mean; speeding up (rising over the last 60 s, or in the leg's first minute with no samples) and under 90% of
+  -- a past leg's speed, that one; else the speed now. since: ticks since the leg began (nil: unknown); past, past_by:
+  -- a past leg's speed (km a tick) and what it is. Returns km a tick, what it is, and whether it is this leg's own.
+  function M.leg_speed(pl, since, past, past_by)
+    local v = try(function() return pl.speed end)
+    if type(v) ~= 'number' then return nil end
+    local rec = store()[pl.index]
+    local w = rec and rec.samples and #rec.samples >= 2 and window(rec, 60) or nil
+    local inleg = w and w.seconds >= 60 and (since == nil or since >= 3600)
+    local rising = w and (w.speed_last - w.speed_first) > math.max(1, 0.05 * math.abs(w.speed_last))
+    if not w and since and since < 3600 then rising = true end
+    if inleg and not rising and w.speed_mean > 0 then
+      return w.speed_mean / 60, string.format('this leg: its last 60 s mean, %g km/s (lowest %g, highest %g)', w.speed_mean, w.speed_low, w.speed_high), true
+    end
+    if past and past > 0 and v < past * 0.9 and (rising or (since and since < 3600)) then
+      return past, string.format('%s (it speeds up now: %g km/s)', past_by or string.format('a past leg\'s %g km/s', r1(past * 60)), r1(v * 60)), false
+    end
+    return v, string.format('this leg: its speed now, %g km/s', r1(v * 60)), true
+  end
   -- The windows for a platform: {lines, windows}, nil before its first two samples.
   function M.read(pl)
     local rec = store()[pl.index]

@@ -17566,7 +17566,7 @@ M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.b
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
-M.freight=require('freight'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
+M.freight=require('freight'){leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
@@ -17633,7 +17633,8 @@ M.endurance=require('endurance'){platform=function(p,name) return space.platform
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
-  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end}
+  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end,
+  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}
