@@ -9385,3 +9385,24 @@ fh watch    # deploy on every change
   uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
   phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
   tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
+
+- N4 (Sol, board #1389, shift47 ticks 38355977-38363365, Aquilo's west silo). (a) `load_silo first` began with the
+  rocket building (36/50 parts, nothing aboard); robots sent by the silo's automatic requests before the load
+  switched them off put 3 decider combinators in, and the silo launched them at 38357969 (chronicle: rocket to
+  Limestone-spare-unbuilt, cargo decider-combinator*3); at the next stop (38358146) the walk ended rocket_launched,
+  "the rocket this load was filling launched 2 s ago". The abort keyed on any launch of the silo after the start
+  (rocketload.lua launched_since: the launch known at the start, and one within 600 ticks of a start with a rocket
+  leaving, excepted). That rocket held decider-combinator, an item of the list, so "held none of the manifest" does not
+  tell them apart; what does is that it held nothing of this load. Now a launch ends the walk only when the rocket
+  held some of the load: what the load put in, or what the rocket held of the list when the load began (counted
+  toward its targets). Otherwise the stop's row says `a rocket launched 2 s ago (cargo: decider-combinator*3) held
+  nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; the load goes
+  on for the silo's next rocket; that rocket carried decider-combinator 3 of this list (not counted toward it)`, the
+  load goes on (what the next rocket holds counts, as before), and the reply's last.passed_launches keeps the line.
+  (b) Sol's own trash unrequested was on with no personal request for the gathered items; robots took them from the
+  trash slots on the walk (loaded 0). The dry run's line and personal_trash, and the walk's reply personal_trash, now
+  say `your trash unrequested is on and no personal request names bulk-inserter, assembling-machine-3: what you
+  carry of them the game moves to your trash slots, where logistic robots take it` and `your personal request max is
+  under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
+  limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
+  tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).

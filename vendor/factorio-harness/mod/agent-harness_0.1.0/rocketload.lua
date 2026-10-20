@@ -684,6 +684,30 @@ return function(api)
     out.line = #parts > 0 and table.concat(parts, '; ') or nil
     return out
   end
+  -- (d20 batch54 N4 b, Sol #1389: Sol's trash unrequested sent the gathered manifest back to the robots on the walk,
+  -- and the rocket got 0 of it) what the character's personal logistics do with the list as it is carried: with trash
+  -- unrequested on, the items no personal request names; and the items whose personal request max is under what the
+  -- load carries. list: {{name, quality, count}}. {line, unrequested, over} or nil.
+  function M.trash_note(p, list)
+    local T = api.trash
+    local lim = T and try(function() return T.limits(p) end)
+    if not lim then return nil end
+    local none, over = {}, {}
+    for _, r in ipairs(list or {}) do
+      local k = T.key(r.name, r.quality)
+      local max = lim.max[k]
+      if max and max < (r.count or 0) then over[#over+1] = string.format('%s max %d of the %d this load carries', label(r), max, r.count)
+      elseif not max and lim.unrequested and not lim.requested[k] then none[#none+1] = label(r) end
+    end
+    local parts = {}
+    if #none > 0 then
+      parts[#parts+1] = 'your trash unrequested is on and no personal request names ' .. table.concat(none, ', ')
+        .. ': what you carry of them the game moves to your trash slots, where logistic robots take it'
+    end
+    if #over > 0 then parts[#parts+1] = 'your personal request max is under the load for ' .. table.concat(over, ', ') .. ': the rest goes to your trash slots' end
+    if #parts == 0 then return nil end
+    return {line=table.concat(parts, '; '), unrequested=#none > 0 and none or nil, over=#over > 0 and over or nil}
+  end
   function M.plan(p, a, silo, lift, slots)
     local list = M.items(a.items, 'items')
     local inv = M.rocket_inventory(silo)
@@ -742,10 +766,12 @@ return function(api)
         or string.format('over what this rocket takes now (%s aboard): to_total, a smaller list, or unload first', list_text(contents(inv)))))
     local up = M.goes_up_with(silo, list)
     if up.line then line = line .. '; ' .. up.line end
+    local trash = M.trash_note(p, list)
+    if trash then line = line .. '; ' .. trash.line end
     if hub_room and not hub_room.fits then line = line .. '; ' .. hub_room.line end
     return {dry_run=true, platform_hub_room=hub_room and hub_room.line or nil, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
       free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
-      platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, line=line}
+      platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, personal_trash=trash and trash.line or nil, line=line}
   end
   -- Each goal still short in the rocket: {goal, need (to load), held (you), take (from the chests: no more than fits
   -- under the rocket's lift now, less what you hold)}.
@@ -908,6 +934,12 @@ return function(api)
       chests=#chests > 0 and chests_text(action, rows) or nil,
       trip=#chests == 0 and 'to the silo with what you hold (no from)' or #first .. ' chest' .. (#first == 1 and '' or 's') .. ', then the silo', rocket=rk and rk.rocket or nil,
       note=a.launch and 'launch: at the silo the tour waits for the rocket to be ready before it loads, then loads and launches in that tick' or nil}
+    do
+      local carry = {}
+      for _, n in ipairs(rows) do carry[#carry+1] = {name=n.goal.name, quality=n.goal.quality, count=n.need} end
+      local trash = M.trash_note(p, carry)
+      reply.personal_trash = trash and trash.line or nil
+    end
     return {entities=entities, fields=fields, reply=reply}
   end
   -- One stop of the tour: a chest (take) or the silo (load, then another trip, the end, or the launch).
@@ -934,6 +966,38 @@ return function(api)
     if action.launch_before and r.tick == action.launch_before then return nil end
     if action.leaving and r.tick <= action.started_tick + 600 then return nil end
     return r
+  end
+  -- (d20 batch54 N4 a, Sol #1389: a load on Aquilo's west silo ended rocket_launched when the silo's own launch of 3
+  -- decider combinators, which robots sent before the load switched its automatic requests off, left 33 s into the
+  -- gather) a launch is this load's only when the rocket held something of it: what the load put in, or what the
+  -- rocket held of the list when the load began (counted toward its targets). Otherwise the load goes on for the
+  -- silo's next rocket: what is aboard that rocket counts as before.
+  local function held_of_load(action)
+    if (action.loaded or 0) > 0 then return true end
+    for _, n in pairs(action.loaded_items or {}) do if n > 0 then return true end end
+    for _, g in ipairs(action.goals or {}) do if (g.before or 0) > 0 then return true end end
+    return false
+  end
+  local function passed_launch(action, gone)
+    action.launch_before = gone.tick
+    local inlist = {}
+    local cargo = tostring(gone.cargo or '')
+    for _, g in ipairs(action.goals or {}) do
+      local n = cargo:match('%f[%w%-]' .. g.name:gsub('%-', '%%-') .. '%*(%d+)') or cargo:match('%f[%w%-]' .. g.name:gsub('%-', '%%-') .. ' (%d+)')
+      if n then inlist[#inlist+1] = g.name .. ' ' .. n end
+    end
+    local line = string.format('a rocket launched %d s ago%s (cargo: %s) held nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; the load goes on for the silo\'s next rocket%s',
+      math.floor((game.tick - gone.tick) / 60), gone.by and ' by ' .. gone.by or '', cargo ~= '' and cargo or 'empty',
+      #inlist > 0 and '; that rocket carried ' .. table.concat(inlist, ', ') .. ' of this list (not counted toward it)' or '')
+    action.passed = action.passed or {}
+    action.passed[#action.passed+1] = line
+    return line
+  end
+  -- The silo's launch since the load began: this load's (the rocket held some of it), or one it passed. gone, passed line.
+  function M.launch_check(action)
+    local gone = launched_since(action)
+    if gone and not held_of_load(action) then return nil, passed_launch(action, gone) end
+    return gone, nil
   end
   -- What this load took and did not load, still held, back to the chests it came from (d17 batch21 A3, Grok: 350 packs
   -- went up with a launch mid-gather and 7 stayed with him): at a chest, the give of what was taken from it; the
@@ -963,7 +1027,8 @@ return function(api)
       action.rows[#action.rows+1] = {position=e.position, name=e.name, returned=#back > 0 and table.concat(back, '; ') or 'nothing to give back here'}
       return {transferred=0}
     end
-    local gone = launched_since(action)
+    local gone, passed = M.launch_check(action)
+    if passed then action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, passed=passed} end
     if gone then
       action.final = 'rocket_launched'
       action.why = string.format('the rocket this load was filling launched %d s ago%s (cargo: %s); the load ends: what it took and did not load goes back to the chests it came from',
@@ -1200,6 +1265,7 @@ return function(api)
     last.cargo_note = last.cargo and 'cargo: everything in the rocket, what was aboard before your load included (aboard_before); loaded_items: what you put in' or nil
     last.freshness = action.freshness or last.freshness
     last.why = last.why or action.why
+    last.passed_launches = action.passed
     -- (batch24 A2, Grok: a 560-pack rocket sat loaded three minutes after a tour timed out; Sol: a paused queue left a
     -- railgun aboard as loaded) a launch asked for and none made, with the list's items in the rocket: said plainly.
     if action.load and action.load.launch and not action.launch and action.final ~= 'rocket_launched' and action.silo and action.silo.valid then
@@ -1738,7 +1804,7 @@ all_or_nothing='with launch: true: the launch goes only when every listed item i
       launch_split='with launch: true, a list over one rocket\'s lift (1000 kg) or cargo slots is split in list order into rockets, each a load_silo step appended to your queue (rocket 1 of N ...) that loads and launches in turn; split says how (not with to_total or up_to)',
       wait_min='optional 1..60: the wait for the rocket goes on this many minutes with no new part (a queue step waiting for an ingredient on its way); waiting.parts_short and, when it runs out, last.why name each rocket-part ingredient the silo lacks: short of the next part and of the parts left, and what its input holds',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the idle window grows to at least 3 times the longest observed interval to a part increase; the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
-      returns='silo, freshness (each loaded spoilable item\'s spread, a line each), loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
+      returns='silo, freshness (each loaded spoilable item\'s spread, a line each), loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused. A walking load (walk, first) and dry_run add personal_trash: with your trash unrequested on, the items of the load no personal request names, and those over a personal request max (the game moves what you carry of them to your trash slots); a walking load ends rocket_launched only when the rocket that launched held some of it (what it loaded, or what the rocket held of the list when it began); another launch is said in its last.passed_launches and the load goes on for the next rocket'},
     preflight = {from='with items: one chest position or 1..16, readable in sight or remote view; per-chest stock, order.from_held, from_short (less what is aboard), short (also less you_hold); repeated chests counted once; nothing moved',position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
       surface='optional planet name (default yours); platform remains the rocket destination',
       items='optional item list (as load_silo items): what each rocket still lacks against the cargo aboard, and how much of that fits',

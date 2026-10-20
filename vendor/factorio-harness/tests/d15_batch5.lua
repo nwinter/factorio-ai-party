@@ -58,7 +58,9 @@ do
   local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=15.5,y=59.5},unit_number=9}
   local launched
   local R=dofile('mod/agent-harness_0.1.0/rocketload.lua'){last_launch=function(s) return launched end}
-  local action={silo=silo,started_tick=500,goals={{name='agricultural-science-pack',quality='normal',target=885}},rows={},trips=1,items={},load={}}
+  -- (d20 batch54 N4) the tour had loaded 350 of its packs on an earlier trip: the launch took this load's rocket
+  local action={silo=silo,started_tick=500,goals={{name='agricultural-science-pack',quality='normal',target=885}},rows={},trips=1,items={},load={},
+    loaded=350,loaded_items={['agricultural-science-pack']=350}}
   launched={tick=900,by='astra',cargo='agricultural-science-pack 885'}
   local out=R.walk_visit({},action,{position={x=3,y=4},name='steel-chest'})
   eq(out.stop,'rocket_launched'); eq(action.final,'rocket_launched')
