@@ -238,7 +238,11 @@ fh call status
   nearest first, with distance and compass direction:
   `Sol on Vulcanus; opus 25 tiles S (offline); Luna 100 tiles NE`. `dead` and `offline` are marked; a bot is offline
   after 15 minutes with no request or sleep poll, an attached player when disconnected. Human players and directors are
-  left out.
+  left out. An agent whose loop rests between turns (d20 batch50 B1, viewer Aurora: Gemini paces its quota) shows
+  `resting until 07:34 (pace)` (or `(quota)`) in place of offline, as does its `players` teammates row (`resting`).
+  The loop (tools/agy-quota.py, beside resting.json) sends the operator request `rest {agent, until_clock: "HH:MM",
+  until_s, reason: pace|quota, ticks_per_s?}` (rests.lua); the rest ends with `rest {agent, done: true}` at its next
+  turn, the agent's own next request, or `until_s` of game time (at ticks_per_s, default 60).
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
@@ -4557,7 +4561,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   Sonnet sat in back-to-back 15-minute waits like that, and no freight tell reached it for about an hour).
   `tell {wake: true}` (`fh tell NAME --wake "text"`) ends such a wait as well (outcome `told`, `last.why` `told by
   astra (wake: true)`), each time (the reply lists `woken`, with the count of your wake tells to them in the last 10
-  minutes), with the recipient in `ignoring`. `wake` and `fyi`
+  minutes), with the recipient in `ignoring`. A recipient resting between turns (above, `teammates`) is in `resting`:
+  `gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler check (review in 3 min)`
+  (its active board items whose newest evidence `next_check` tick falls inside the rest, five at most). `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
@@ -5259,7 +5265,8 @@ fh watch    # deploy on every change
   never drives a character, interrupts an action, combat or queue, changes a machine, runs Lua or retries anything.
   Standing orders and `queue_repeat` stay the tools for actions, and alerts stay apart.
   - `reminder_add {message, every_ticks | due_tick | due_in_ticks, recipients?, name?, board_item?, surface?,
-    expires_tick? | for_ticks?, enabled?}`. `every_ticks` (3600 and up; 54000 is 15 min) is a cadence anchored at
+    serves?, expires_tick? | for_ticks?, enabled?}` (`serves`: the machine it is about, flagged when gone; see
+    "What an order or a reminder serves"). `every_ticks` (3600 and up; 54000 is 15 min) is a cadence anchored at
     the call. `due_tick` or `due_in_ticks` runs it once. `recipients` are names or `team`; the default is you. At most
     12 a teammate and 48 in all.
   - When it is due, each recipient gets one private line in their next reply, as a tell from `reminder #N`: `reminder
@@ -6385,6 +6392,15 @@ fh watch    # deploy on every change
 - A2 (Haiku moved 31 tiles by a standing order mid-sleep): `order_set {max_walk: N}`: the order waits while its place
   lies over N tiles from you (state: "waits: ... lies N tiles from you, over max_walk"); `sleep {orders: false}`
   starts no standing order during that sleep.
+- What an order or a reminder serves (d20 batch50 B2, viewer Aurora: "Could standing orders link to the system they
+  serve and flag when it is retired or superseded?"; Haiku's `boilerfuel`, set in shift06, stayed on watch until 170h
+  for boilers that had no use left): `order_set`, `reminder_add` and `reminder_edit` take `serves {name, position,
+  surface?, radius?}` (serves.lua): an entity of that name of ours within 1 tile of the position, or with radius
+  2..64 any within it, on `surface` (default yours); `reminder_edit {serves: false}` clears it. Checked when set,
+  about once a game minute and when read (one count in that circle). `orders` and `reminders` rows carry `serves
+  {count, checked_tick, last_seen_tick, gone, gone_tick, line}`; while none is there the orders line, the reminder's
+  line and each line it sends say so: `boilerfuel serves boiler within 20 of (8.5,42) on nauvis: none there since tick
+  T (checked tick C); last seen tick L, 12m30s ago` (`not seen since it was set at tick S` for one never found).
 - A3 (Muse: an unreachable walk with no hint): `unreachable` and `no_safe_route` replies add `staging`: from every
   agent's walked trails of the last 30 minutes, a trail within 16 tiles of you and 48 of the goal gives via points,
   else the trail point nearest the goal within 48 tiles is a staging spot (`staging_via`, `staging_spot`).

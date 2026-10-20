@@ -74,6 +74,68 @@ def rest(d, wait, reason, **extra):
     with open(tmp, "w") as f:
         json.dump(row, f)
     os.replace(tmp, os.path.join(d, REST))
+    push(d, {"until_clock": time.strftime("%H:%M", time.localtime(row["until"])), "until_s": max(1, int(wait)),
+             "reason": reason, "ticks_per_s": ticks_per_s(d)})
+
+
+# (d20 batch50 B1, viewer Aurora: "Could quota rests appear in team status and tell replies, with a return time") The
+# rest also goes to the runtime (rests.lua) as an operator `rest` request, so teammates see "resting until 07:34 (pace)"
+# on their teammates line and in a tell's reply; the next turn ends it (done). The world and the agent are the ones the
+# workspace's ./fh names (POG_WORLD, --bot); POG_REST_PUSH=off or no such fh: nothing is sent. Best effort: a failure
+# is a context.log line and the loop goes on.
+def agent_of(d):
+    """(world, bot name) from DIR/fh, or None."""
+    try:
+        text = open(os.path.join(d, "fh")).read()
+    except OSError:
+        return None
+    w, b = re.search(r"POG_WORLD=([\w-]+)", text), re.search(r"--bot ([\w-]+)", text)
+    return (w.group(1), b.group(1)) if w and b else None
+
+
+def ticks_per_s(d):
+    """The game's speed as fh last measured it (DIR/.fh-pace.json, within 10 min), else None (the runtime takes 60)."""
+    try:
+        path = os.path.join(d, ".fh-pace.json")
+        if time.time() - os.path.getmtime(path) > 600:
+            return None
+        v = float(json.load(open(path)).get("speed") or 0)
+        return round(v, 2) if 1 <= v <= 600 else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def send_operator(world, req):
+    """One operator dispatch over RCON (the operator's password, as tools/pog.py)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import pog
+    pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
+    body = json.dumps(req)
+    level = 0
+    while f"]{'=' * level}]" in body:
+        level += 1
+    cmd = ('/silent-command rcon.print(remote.call("agent_harness","dispatch",[' + "=" * level + "[" + body + "]"
+           + "=" * level + "]))")
+    reply = json.loads(pog.Rcon("127.0.0.1", pog.PORTS[world], pw, timeout=5).command(cmd) or "{}")
+    if not reply.get("ok"):
+        raise RuntimeError(str(reply.get("error") or reply)[:200])
+    return reply.get("result")
+
+
+def push(d, args):
+    if os.environ.get("POG_REST_PUSH", "").lower() == "off":
+        return
+    who = agent_of(d)
+    if not who:
+        return
+    req = {"id": f"rest-{who[1]}-{time.time_ns()}", "operator": True, "action": "rest",
+           "args": dict({k: v for k, v in args.items() if v is not None}, agent=who[1])}
+    try:
+        send_operator(who[0], req)
+    except Exception as e:
+        with open(os.path.join(d, "context.log"), "a") as f:
+            f.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M:%S"), "event": "rest-push-failed",
+                                "done": bool(args.get("done")), "error": f"{type(e).__name__}: {e}"[:200]}) + "\n")
 
 
 def woke(d, now=None):
@@ -87,6 +149,7 @@ def woke(d, now=None):
     now = now or time.time()
     mins = max(1, round((min(now, row.get("until") or now) - (row.get("since") or now)) / 60))
     os.replace(path, os.path.join(d, "resting-last.json"))
+    push(d, {"done": True})
     if row.get("reason") == "quota":
         return (f"You waited {mins} min for your quota to reset; the game went on meanwhile: check what changed "
                 f"(./fh call status, chat, board) before acting.")

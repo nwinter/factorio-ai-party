@@ -38,6 +38,9 @@ return function(api)
       local c = (api.state().clocks or {})[index]
       local last = c and math.max(not c.peeked and c.call_tick or 0, c.wait_tick or 0) or nil
       out.offline = not (last and game.tick - last <= OFFLINE) or nil
+      -- (d20 batch50 B1) a rest between turns pushed by its loop (rests.lua): said in place of offline
+      local r = api.resting and try(function() return api.resting(index) end)
+      if r then out.resting, out.offline = r, nil end
     else
       out.offline = not p.connected or nil
     end
@@ -68,7 +71,8 @@ return function(api)
     end
   end
   -- Full status: one line, agents elsewhere first (grouped by place), then
-  -- those on this surface, nearest first. Never fails status.
+  -- those on this surface, nearest first; dead and offline marked, a rest
+  -- among them ("opus 25 tiles S (resting until 07:34 (pace))"). Never fails status.
   local function line(p)
     local me = place(p.index)
     local groups, order, near = {}, {}, {}
@@ -79,6 +83,7 @@ return function(api)
           local tags = {}
           if w.dead then tags[#tags+1] = 'dead' end
           if w.offline then tags[#tags+1] = 'offline' end
+          if w.resting then tags[#tags+1] = w.resting end
           local name, tag = a.display_name or a.name, #tags > 0 and ' (' .. table.concat(tags, ', ') .. ')' or ''
           if me and w.key == me.key and w.position and me.position then
             local dx, dy = w.position.x - me.position.x, w.position.y - me.position.y
@@ -113,9 +118,10 @@ return function(api)
           local tags = {}
           if w.dead then tags[#tags+1] = 'dead' end
           if w.offline then tags[#tags+1] = 'offline' end
+          if w.resting then tags[#tags+1] = w.resting end
           local name = a.display_name or a.name
           rows[#rows+1] = {name=a.name, display_name=name ~= a.name and name or nil, where=w.text, surface=w.key, position=pos,
-            distance=d and math.floor(d * 10 + 0.5) / 10 or nil, dead=w.dead, offline=w.offline,
+            distance=d and math.floor(d * 10 + 0.5) / 10 or nil, dead=w.dead, offline=w.offline, resting=w.resting,
             line=string.format('%s %s%s%s', name, w.text, pos and string.format(' at (%.1f,%.1f)', pos.x, pos.y) or '',
               (here and ', ' .. bearing(me.position, pos) or '') .. (#tags > 0 and ' (' .. table.concat(tags, ', ') .. ')' or ''))}
         end
