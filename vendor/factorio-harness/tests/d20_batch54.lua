@@ -163,3 +163,79 @@ do
   game,defines=nil,nil
 end
 print('d20_batch54 N2 uptime samples at moving phases: ok')
+
+-- N4 (Sol, harness request #1389, shift47 ticks 38355977-38363365): load_silo on Aquilo's west silo.
+-- (a) the gather began at 38355977 with the rocket building (36/50 parts, nothing aboard); robots the silo's automatic
+-- requests had sent before the load switched them off put 3 decider combinators in, and the silo launched them at
+-- 38357969; the load ended rocket_launched with nothing of its own aboard. A launch is this load's only when the rocket
+-- held something of it.
+do
+  game={tick=38358146}
+  prototypes={item={}}
+  defines={inventory={rocket_silo_rocket=1},rocket_silo_status={rocket_ready=13}}
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=-18.5,y=17.5},unit_number=9}
+  local launched={tick=38357969,cargo='decider-combinator*3'}
+  local R=dofile('mod/agent-harness_0.1.0/rocketload.lua'){last_launch=function() return launched end}
+  local function load(extra)
+    local a={silo=silo,started_tick=38355977,launch_before=38354478,rows={},trips=1,items={},load={},loaded=0,taken=0,
+      goals={{name='bulk-inserter',quality='normal',before=0,target=2},{name='decider-combinator',quality='normal',before=0,target=3},
+        {name='fast-underground-belt',quality='normal',before=0,target=6}}}
+    for k,v in pairs(extra or {}) do a[k]=v end
+    return a
+  end
+  local action=load()
+  local gone,passed=R.launch_check(action)
+  eq(gone,nil)
+  eq(passed,'a rocket launched 2 s ago (cargo: decider-combinator*3) held nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; '
+    ..'the load goes on for the silo\'s next rocket; that rocket carried decider-combinator 3 of this list (not counted toward it)')
+  eq(action.launch_before,38357969)
+  -- once passed, the same launch is not news again
+  gone,passed=R.launch_check(action); eq(gone,nil); eq(passed,nil)
+  -- the next rocket launched by another hand after this load put some in: this load's, it ends
+  launched={tick=38359000,by='astra',cargo='bulk-inserter*2'}
+  action.loaded=2; action.loaded_items={['bulk-inserter']=2}
+  game.tick=38359060
+  gone,passed=R.launch_check(action); eq(gone.tick,38359000); eq(passed,nil)
+  -- the rocket held some of the list when the load began (counted toward its targets): this load's
+  launched={tick=38357969,cargo='bulk-inserter 2'}
+  local a2=load(); a2.goals[1].before=2
+  gone=R.launch_check(a2); eq(gone and gone.tick,38357969)
+  -- through the walk: the chest stop after the passed launch takes on (no rocket_launched), the row says why
+  launched={tick=38357969,cargo='decider-combinator*3'}
+  local took={}
+  local R2=dofile('mod/agent-harness_0.1.0/rocketload.lua'){last_launch=function() return launched end,give_sources=function() return {} end,
+    take=function(_,_,name,_,n) took[#took+1]=name..' '..n; return {transferred=n} end}
+  local a3=load()
+  local out=R2.walk_visit({},a3,{position={x=-16.5,y=-10.5},name='storage-chest'})
+  eq(a3.final,nil); eq(out.stop,nil); eq(out.transferred,11)
+  eq(table.concat(took,', '),'bulk-inserter 2, decider-combinator 3, fast-underground-belt 6')
+  has(a3.rows[1].passed,'held nothing of this load'); eq(a3.rows[2].taken,11)
+  game,prototypes,defines=nil,nil,nil
+end
+print('d20_batch54 N4a a launch under way before the load is not its own: ok')
+
+-- (b) Sol's personal logistics: trash unrequested on and no personal request for the gathered items; robots took them
+-- back from the trash slots on the walk and the rocket got 0. The dry run and the gather say so.
+do
+  local T=dofile('mod/agent-harness_0.1.0/trash.lua'){}
+  local rp={enabled=true,trash_not_requested=true,filters={{name='speed-module-2',quality='normal',count=0,max_count=2},{name='long-handed-inserter',quality='normal',count=0}}}
+  local p={character={valid=true,get_requester_point=function() return rp end}}
+  local R=dofile('mod/agent-harness_0.1.0/rocketload.lua'){trash=T}
+  local list={{name='bulk-inserter',quality='normal',count=2},{name='assembling-machine-3',quality='normal',count=1},
+    {name='speed-module-2',quality='normal',count=4},{name='long-handed-inserter',quality='normal',count=2}}
+  local n=R.trash_note(p,list)
+  eq(n.line,'your trash unrequested is on and no personal request names bulk-inserter, assembling-machine-3: what you carry of them the game moves to your trash slots, where logistic robots take it; '
+    ..'your personal request max is under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots')
+  eq(#n.unrequested,2); eq(#n.over,1)
+  -- trash unrequested off: only the max is said
+  rp.trash_not_requested=false
+  eq(R.trash_note(p,list).line,'your personal request max is under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots')
+  -- Sol's fix (personal requests with no max for each): nothing to say
+  rp.trash_not_requested=true
+  rp.filters={{name='bulk-inserter',count=0},{name='assembling-machine-3',count=0},{name='speed-module-2',count=0},{name='long-handed-inserter',count=0}}
+  eq(R.trash_note(p,list),nil)
+  -- personal logistics off: the game trashes nothing
+  rp.enabled=false; rp.filters={}
+  eq(R.trash_note(p,list),nil)
+end
+print('d20_batch54 N4b trash unrequested and the manifest: ok')
