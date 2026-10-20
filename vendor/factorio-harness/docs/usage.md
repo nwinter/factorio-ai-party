@@ -8998,3 +8998,21 @@ fh watch    # deploy on every change
   `wake_from` wins over `--wake-from`). `fh sleep` with flags was not affected. Tells reach a sleep one way
   (board.deliver): batch43's split tells (parts before the last fyi) and batch41's edit tells (from the editing agent)
   take it like any tell, so the sleep's wake filters apply to them. Test tests/waitevents.test.ts.
+
+## d19 batch48 (eng/d19-batch48)
+
+- 1 (Sol 17:29: `platform_schedule {platform: "Kestrel IV", current: 4}` left it at Aquilo with no effect and no
+  error): `current` without `stops` was ignored (the call read as a read). Now `current` alone is the GUI's go to
+  station on that record, the records and their waits kept: `sent_to: from stop 1 (nauvis) to stop 4 (aquilo): go to
+  station called (it was waiting at nauvis), the records and their waits kept`; `paused` may go with it. A `current`
+  that is already the current stop (it waits there, or flies there) is refused: `nothing changed: stop 1 (nauvis) is
+  already the current stop (it waits there); current 2 sends it to stop 2 now, next: true to the stop after the current
+  one, stops with current rewrites the schedule`.
+- 2 (Sol 17:29: a queued `wait_until platform_left` right after a platform_schedule step that departed at once began
+  after the departure and waited for a later one): a platform_schedule call that makes the platform leave its station
+  records the departure (from, tick, who; the reply says `departed: left aquilo at tick T ...`), and `platform_left`
+  counts it when the wait began in the same tick or up to 60 ticks after (a queue's previous step), from `location`
+  when given: `Kestrel IV left aquilo at tick T (platform_schedule by sol, 0 ticks before this wait began)`. A
+  departure by the game's own schedule (its waits met) is not recorded this way; a wait begun while the platform still
+  waits there is met when it leaves, as before. `platform_arrived` reads the state (stopped there), so it is met at
+  once when the platform arrived before the wait began: no such gap. Test tests/d19_batch48.lua.

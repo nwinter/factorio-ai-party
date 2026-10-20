@@ -84,6 +84,7 @@ return function(api)
   -- A condition's own memory where no wait record is given (queue step conditions, orders): kept while the condition
   -- table lives.
   local seen=setmetatable({},{__mode='k'})
+  local DEPART_GRACE=60  -- (d19 batch48 2) ticks: a platform_schedule departure this long before a platform_left wait began counts
   local function seen_by(c) seen[c]=seen[c] or {}; return seen[c] end
   -- An area or a list of them ({left_top, right_bottom} or [[x,y],[x,y]]), as {{x0,y0},{x1,y1}} boxes; {} for nil.
   function M.areas_of(v)
@@ -440,8 +441,16 @@ return function(api)
       end
       local holder=record or seen_by(c)
       local there=w.stopped==true and (c.location==nil or w.at==c.location)
+      holder.platform_began=holder.platform_began or game.tick
       if there then holder.platform_was_there=w.at; return false,c.platform..' '..w.text..' (met when it leaves)' end
       if holder.platform_was_there then return true,c.platform..' left '..holder.platform_was_there..'; now '..w.text end
+      -- (d19 batch48 2) a departure made by platform_schedule in the second before this wait began (the same tick, or
+      -- the previous step of the same queue) counts
+      local d=w.departed
+      if d and d.tick>=holder.platform_began-DEPART_GRACE and (c.location==nil or d.from==c.location) then
+        return true,string.format('%s left %s at tick %d (platform_schedule by %s, %d ticks before this wait began); now %s',c.platform,d.from,d.tick,
+          tostring(d.by),math.max(0,holder.platform_began-d.tick),w.text)
+      end
       return false,c.platform..' '..w.text..'; met when it stops '..(c.location and 'at '..c.location or 'somewhere')..' and leaves again (a departure before this wait does not count)'
     end,
     -- spoil_within {position, seconds, item?} (batch27 A6, Grok, dozens of times an hour: the copper cultivator dies when
