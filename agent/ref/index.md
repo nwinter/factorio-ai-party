@@ -19,7 +19,7 @@
 - `waits-queues`, waits, queues, standing orders, urgent wakes, harness updates: `wait_until`, `sleep
   --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
   `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,
-  `orders_resume`, `reminder_add`, `reminder_ack`, `reminders`.
+  `orders_resume`, `reminder_add`, `reminder_edit`, `reminder_ack`, `reminders`.
 - `team`, board items, claims, `team:` and `OPERATOR:` lines: `board projects`, `board_review`, `board_retire`,
   `board_progress`, `board_critical`, `board_focus`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`,
   `lesson_review`, `ground_rule_add`, `ground_rule_retire`, `ground_rules`, `review`, `lookahead`, `networks`,
@@ -29,6 +29,6 @@
 - `space-age`, rockets, platforms, planets, remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
   waits `platform_arrived` and `platform_left`, `platform_create`, `platform_schedule`, `platform_rename`,
   `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
-  `platform_rearm`, `platform_digest`, `platform_tiles`, `platform_lanes`, `circuit_audit`, `platform_gate`, `demolishers`, `shipment`,
+  `platform_rearm`, `platform_digest`, `platform_tiles`, `platform_lanes`, `platform_gate`, `demolishers`, `shipment`,
   `fleet`, `min_payload`, `launch`, `silo`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`,
   `freight_audit`, `where_is`, `agriculture`, `eggs`.
