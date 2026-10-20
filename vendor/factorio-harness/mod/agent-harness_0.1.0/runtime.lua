@@ -2118,6 +2118,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.damagelog and M.damagelog.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.upgrade and M.upgrade.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platrename and M.platrename.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.platdelete and M.platdelete.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.minpayload and M.minpayload.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platbom and M.platbom.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
@@ -16067,7 +16068,7 @@ passive.circuit_set=true; passive.wire=true
 -- Remote platform and hub settings (A0, Sol 01:59: min_payload {platforms, set} paused the body queue's running
 -- wait_until as interrupted, every time): min_payload names its platforms in platforms (M.away reads platform), and
 -- platform_rename; neither touches the character.
-passive.min_payload=true; passive.platform_rename=true
+passive.min_payload=true; passive.platform_rename=true; passive.platform_delete=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
@@ -17413,6 +17414,10 @@ M.launchwatch=require('launchwatch'){state=state,rocket=function(e) return M.sil
 M.platrename=require('platrename'){state=state,platform=function(p,name) return space.platform(p,name) end,
   name_of=function(i) local ok,r=pcall(M.bots.record,i); if ok and r and r.name then return r.name end local pl=game.get_player(i); return pl and pl.name or nil end}
 function handlers.platform_rename(p,a) return M.platrename.rename(p,a) end
+-- A platform deleted as its GUI does, with a dry run of what goes with it (platdelete.lua; d20 batch54 N7, Astra #1405).
+M.platdelete=require('platdelete'){platform=function(p,name) return space.platform(p,name) end,incoming=function(pl) return M.freight and M.freight.incoming(pl) end,
+  character_owner=function(c) return M.character_owner(c) end,who=function(p) return M.board.who(p) end}
+function handlers.platform_delete(p,a) return M.platdelete.handler(p,a) end
 -- Hub requests' custom minimum payload, read and set over platforms (minpayload.lua; Gemini 19:50).
 M.minpayload=require('minpayload'){editlog=function() return M.editlog end}
 function handlers.min_payload(p,a) return M.minpayload.handler(p,a) end

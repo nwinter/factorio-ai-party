@@ -9540,3 +9540,16 @@ fh watch    # deploy on every change
   built (build or place_ghosts with direction northeast)`; an entity with no direction says so. rotate's turns go up to
   8. On the copy with this runtime: a railgun ghost east -> northeast (2) and west -> northwest (14), direction 3
   refused, a built one refused as above, place_ghosts at 2 made a ghost facing 2. Tests: tests/round1520d.lua 6.
+- N7 (Astra, board #1405: retiring a stripped platform; the platform GUI deletes one, fh had no action). On the private
+  copy (2.0.77), on a test platform: LuaSpacePlatform.destroy() schedules the deletion 18000 ticks (5 min) ahead
+  (scheduled_for_deletion counts down), cancel_deletion() sets it back to 0, and when it runs the platform's surface goes
+  with everything on it; a character made to stand aboard was destroyed with it. What becomes of cargo pods on their way
+  was not checked. `platform_delete {platform, dry_run?, confirm?, cancel?}` (platdelete.lua): dry_run lists hub cargo
+  (main and trash), entities besides the hub (by name up to 200), ghosts, foundation tiles, characters aboard (whose)
+  and cargo pods on their way (freight's incoming) or on it, and says whether the call would be refused; a platform that
+  is not empty (hub cargo, entities besides the hub, pods) or is occupied is refused unless confirm is its exact name;
+  the deletion calls destroy() (the game's own 5 min) and says when it runs; a second call while scheduled is refused;
+  cancel: true cancels. Passive (the character and its queue are left alone). On the copy with this runtime: refused
+  without confirm (hub cargo and a character aboard), scheduled for 300 s with it, refused again while scheduled,
+  cancelled; the dry run on Swift (480 entities, 253 listed, 771 foundation tiles) read in 2.4 ms. agent/ref/space-age.md
+  and the index name it (the codex core 21997 bytes of 22000). Tests: tests/d20_batch54.lua N7.
