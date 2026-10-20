@@ -9359,3 +9359,16 @@ fh watch    # deploy on every change
   this leg: ...`) too. Tests: tests/d20_batch54.lua N5 (Sol's case: 14m57s by the old rule, 30m17s now; a leg 30 s in
   and still speeding up; a leg faster than the last; freight's leg); tests/d15_batch3.lua (the outlook names its
   speed).
+- N6 (viewers Foobator 14:43 and 14:49, shift47: "we're seeing grok do something to stay stationary on the belt").
+  Grok's load_silo (silo (65.5,14.5), 500 agricultural science packs for Petrel) held at the silo stop for 400+ s
+  standing on a west-facing transport belt: his status position stayed at y 0.36 with x between 60.16 and 60.30, the
+  edge of the 10-tile reach to the silo's box. What held him there: the tour (stock.lua) visits the silo each tick it
+  is in reach; the visit returns wait and the tour stops walking; the belt carries the character west out of reach;
+  the tour then walks its leg back east into reach, and the visit stops it again. On the stream that is a walk in
+  place against the belt. Now a tour's hold that begins on a belt or a rail steps first to the nearest free tile in
+  reach of the entity without a belt or rail (runtime.lua hold_off_belt, the same tile search as move_to's arrival,
+  within 4 tiles, at most 10 s), and the hold line and the gather's last.off_belt say it: `the hold began on a
+  transport-belt at (60.3,0.4); stepped to (60.5,1.5), the nearest free tile without a belt or rail in reach of
+  rocket-silo`; with no such tile `held on a transport-belt at (...): no free tile without a belt or rail within 4
+  tiles in reach of rocket-silo`. Tests: tests/round1520d.lua 5 (a hold that begins on a belt, one not on a belt, one
+  with no free tile, the hold line).

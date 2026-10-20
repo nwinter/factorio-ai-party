@@ -603,9 +603,12 @@ return function(api)
     local need = silo and try(function() return silo.prototype.rocket_parts_required end) or nil
     local parts = w.parts or (silo and try(function() return silo.rocket_parts end))
     local eta = need and parts and w.parts_per_min and w.parts_per_min > 0 and need > parts and math.floor((need - parts) / w.parts_per_min * 60 + 0.5) or nil
-    return string.format('at the silo stop (%g,%g), in reach: %s%s%s; held for it: %d; holding %ds (gives up at tick %s)', hold.position.x, hold.position.y,
+    local hb = action.hold_belt
+    local off = hb and (hb.line or (hb.spot and string.format('; stepping off a %s to (%g,%g), in reach', hb.on, hb.spot.x, hb.spot.y))) or nil
+    if off and off:sub(1, 2) ~= '; ' then off = '; ' .. off end
+    return string.format('at the silo stop (%g,%g), in reach: %s%s%s; held for it: %d; holding %ds (gives up at tick %s)%s', hold.position.x, hold.position.y,
       ((action.why or 'waiting for the rocket'):gsub('^waiting at the silo for', 'waiting for')), parts and need and string.format(' (rocket parts %d of %d', parts, need) .. (w.parts_per_min and string.format(', %.1f a minute', w.parts_per_min) or '') .. ')' or '',
-      eta and string.format(', the last part in about %ds at that rate', eta) or '', action.got or action.taken or 0, math.floor((game.tick - (hold.since or game.tick)) / 60), tostring(hold.give_up or w.gives_up_tick or '?'))
+      eta and string.format(', the last part in about %ds at that rate', eta) or '', action.got or action.taken or 0, math.floor((game.tick - (hold.since or game.tick)) / 60), tostring(hold.give_up or w.gives_up_tick or '?'), off or '')
   end
   function M.ready(p, action)
     local w = action.await_silo
@@ -1282,6 +1285,7 @@ return function(api)
       end
     end
     last.silo_wait = action.silo_hold and M.wait_report({await_silo=action.silo_hold}) or nil
+    last.off_belt = last.off_belt or (action.hold_belt and action.hold_belt.line) or nil
   end
 
   -- preflight ---------------------------------------------------------------------

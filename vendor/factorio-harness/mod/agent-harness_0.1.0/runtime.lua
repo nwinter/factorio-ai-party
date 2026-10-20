@@ -17748,7 +17748,42 @@ function M.last_drop(index)
   local last=state().last_drop and state().last_drop[index]
   return last and game.tick-last.tick<=3600 and last or nil
 end
-stock=stock_module{elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
+-- (d20 batch54 N6, viewers Foobator 14:43 and 14:49: "we're seeing grok do something to stay stationary on the belt")
+-- A tour's hold at an entity (a visit that waits: load_silo's silo stop) begun on a belt or rail: Grok's silo wait stood
+-- on a west belt 400+ s, the belt carrying him to the edge of reach and the tour's leg walking him back each time, a
+-- walk in place. The hold steps to the nearest free tile in reach of the entity without a belt or rail, as move_to's
+-- arrival does (last.off_belt), at most 10 s; action.hold_belt {line} says what it did. True while it steps.
+function M.hold_off_belt(p,action,e)
+  local hb=action.hold_belt
+  if hb and hb.done then return false end
+  if not hb then
+    if not (p.character and e and e.valid) then return false end
+    local pos=p.position
+    local belt=M.pathing.belt_at(p.surface,pos)
+    local rail=not belt and M.rail_under(p,pos)
+    if not (belt or rail) then return false end
+    local r=(p.reach_distance or 10)-0.5
+    local spot=M.pathing.off_belt_spot(p,pos,0,function(c) return M.box_distance(c,e)<=r end,function(c) return M.rail_under(p,c,0.35)~=nil end)
+    hb={on=belt and belt.name or 'rail',at={x=pos.x,y=pos.y},spot=spot,since=game.tick}
+    action.hold_belt=hb
+    if not spot then
+      hb.done=true
+      hb.line=string.format('held on a %s at (%.1f,%.1f): no free tile without a belt or rail within 4 tiles in reach of %s',hb.on,pos.x,pos.y,e.name)
+      return false
+    end
+  end
+  if distance(p.position,hb.spot)<=0.3 or game.tick-hb.since>600 then
+    hb.done=true
+    local there=distance(p.position,hb.spot)<=0.3
+    hb.line=there and string.format('the hold began on a %s at (%.1f,%.1f); stepped to (%g,%g), the nearest free tile without a belt or rail in reach of %s',
+      hb.on,hb.at.x,hb.at.y,hb.spot.x,hb.spot.y,e.name)
+      or string.format('the hold began on a %s at (%.1f,%.1f); the step to (%g,%g) did not get there in 10 s (now (%.1f,%.1f))',hb.on,hb.at.x,hb.at.y,hb.spot.x,hb.spot.y,p.position.x,p.position.y)
+    return false
+  end
+  steer(p,hb.spot,nil)
+  return true
+end
+stock=stock_module{hold_off_belt=function(p,action,e) return M.hold_off_belt(p,action,e) end,elsewhere=function(...) return M.elsewhere.line(...) end,on_ground=function(force,surface,item) return M.stores.on_ground(force,surface,item) end,give=function(p,e,item,quality,count,inv) return transfer_one(p,{direction='to_entity',item=item,quality=quality,count=count,inventory=inv},e.position,e) end,pods_deposit=function(p,action,chest) return M.pods_deposit(p,action,chest) end,pods_owed=function(p,action) return M.pods_owed(p,action) end,
   corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,stall_why=function(p,nav,goal) return M.pathing.stall_why(body(p) or p,nav,goal) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
