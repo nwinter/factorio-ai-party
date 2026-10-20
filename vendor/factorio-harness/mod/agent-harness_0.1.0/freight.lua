@@ -71,7 +71,9 @@ return function(api)
   -- leg (M.leg while flying), text}. The platforms row and platform_arrived
   -- both read this, so a wait is met exactly when the row says the platform is
   -- stopped there.
-  function M.where(pl)
+  -- departed (d19 batch48 2): the last departure a platform_schedule call caused, {from, tick, by} (space.lua), for
+  -- wait_until platform_left begun just after it
+  local function where_row(pl)
     local loc = try(function() return pl.space_location.name end)
     if loc then
       if on_path(pl) then return {at=loc, stopped=false, text='at ' .. loc .. ', on its path (not stopped)'} end
@@ -80,6 +82,12 @@ return function(api)
     local l = M.leg(pl)
     if l then return {leg=l, text=string.format('flying %s->%s %d%%', l.from, l.to, math.floor(l.flown * 100 + 0.5))} end
     return {text='nowhere'}
+  end
+  function M.where(pl)
+    local w = where_row(pl)
+    local st = api.state and try(function() return api.state() end)
+    w.departed = st and st.schedule_departures and st.schedule_departures[pl.name] or nil
+    return w
   end
 
   -- Counting -----------------------------------------------------------------
