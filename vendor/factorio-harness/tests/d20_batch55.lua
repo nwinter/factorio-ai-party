@@ -287,3 +287,39 @@ do
   defines,prototypes=nil,nil
 end
 print('d20_batch55 P5 platform_loss: ok')
+
+-- P6 (Grok #1413: a science rocket in flight to Kestrel IVa; its hub request read "holds 0 lacks 500" until the pod
+-- landed, and the silo launched a magazine rocket for Swiftlet). A request counts what rockets launched to the hub
+-- carry (the hub requester point's deliveries, the GUI's in-transit count); one they cover reads on_the_way.
+do
+  game={tick=38631343}
+  defines={inventory={hub_main=1},logistic_member_index={space_platform_hub_requester=0}}
+  prototypes={item={['agricultural-science-pack']={weight=1000,stack_size=200},['firearm-magazine']={weight=5000,stack_size=200}},utility_constants={rocket_lift_weight=1000000}}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return {} end}
+  local net={network_id=3,get_item_count=function(name,member) local n=name=='agricultural-science-pack' and 600 or 300; if member=='storage' then return 0 end return n end}
+  local function hub(held,way,filters)
+    return {valid=true,get_inventory=function() return {count_empty_stacks=function() return 30 end} end,get_item_count=function(n) return held[n] or 0 end,
+      get_logistic_point=function(i) eq(i,0); return {targeted_items_deliver=way} end,
+      get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters=filters} end} end}
+  end
+  local kestrel=hub({},{{name='agricultural-science-pack',quality='normal',count=500}},{{value={name='agricultural-science-pack'},min=500,import_from='gleba',minimum_delivery_count=500}})
+  local swiftlet=hub({['firearm-magazine']=246},{},{{value={name='firearm-magazine'},min=700,import_from='gleba',minimum_delivery_count=100}})
+  local force={platforms={{valid=true,name='Kestrel IVa',space_location={name='gleba'},hub=kestrel},{valid=true,name='Swiftlet',space_location={name='gleba'},hub=swiftlet}},logistic_networks={gleba={net}}}
+  local e={surface={name='gleba',planet={name='gleba'}},position={x=65.5,y=14.5}}
+  local way=S.on_the_way(kestrel)
+  eq(way['agricultural-science-pack@normal'],500)
+  local rows=S.request_rows(e,force,net)
+  eq(#rows,2)
+  eq(rows[1].platform,'Swiftlet'); eq(rows[1].flag,'matched'); eq(rows[1].on_the_way,0); eq(rows[1].lacks,454)
+  eq(rows[2].platform,'Kestrel IVa'); eq(rows[2].flag,'on_the_way'); eq(rows[2].holds,0); eq(rows[2].on_the_way,500); eq(rows[2].lacks,0)
+  assert(rows[2].line:find('on_the_way: Kestrel IVa asks agricultural-science-pack 500 (holds 0, 500 on the way in rockets launched to it, lacks 0), what is on the way covers it: the game launches for it again once those land',1,true),rows[2].line)
+  eq(rows[2].elsewhere,nil)
+  -- part on the way: the rest lacks, flagged as before
+  kestrel.get_logistic_point=function() return {targeted_items_deliver={{name='agricultural-science-pack',quality='normal',count=200}}} end
+  rows=S.request_rows(e,force,net)
+  local k
+  for _,r in ipairs(rows) do if r.platform=='Kestrel IVa' then k=r end end
+  eq(k.on_the_way,200); eq(k.lacks,300); eq(k.flag,'matched')
+  defines,prototypes=nil,nil
+end
+print('d20_batch55 P6 requests count what is on the way: ok')

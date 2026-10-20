@@ -9424,3 +9424,19 @@ fh watch    # deploy on every change
   revived and rearmed after). Tests: tests/d20_batch55.lua (P5: the one-shot loss of a fed turret with the others
   armed, another surface's loss, a loss before the guard began, names, at_least, a wait's record, ghosts_waiting, the
   lane checks).
+- P6 (Grok #1413: with a science rocket in flight to Kestrel IVa, its hub request read "holds 0 lacks 500" until the
+  pod landed, and the silo then launched a magazine rocket for Swiftlet). On 2.0.77 the hub's requester logistic point
+  (logistic_member_index.space_platform_hub_requester) gives what rockets launched to it carry in
+  `targeted_items_deliver`, the hub GUI's in-transit count: on the private copy a launch of 100 iron plates to Spindle
+  read 100 there from the launch until the pod landed about 35 s later, then nothing. The silo's next automatic launch
+  is the game's (transitional_request_target names the platform it fills for, with no reason); 2.0.77 has no priority
+  among platform requests, and the harness changes nothing it decides. Reads now count what is on the way:
+  silo platform_requests rows give `on_the_way` and `lacks` (asks less holds less on_the_way), a row the rockets on the
+  way cover reads the new flag `on_the_way` (listed last; the line says the game fills it again once they land), and
+  `auto_launch_rule` states the rule above with the requests covered on the way now; `requests` (a hub's sections) and
+  `platforms {platform}` give `imports`: "item from planet: asks N, holds H, W on the way, lacks L"; freight's
+  "expected up" at a stop counts what was on the way then. On the private copy, Spindle asking 300 iron plates with
+  204 held and 100 launched read `on_the_way: Spindle asks iron-plate 300 (holds 204, 100 on the way in rockets
+  launched to it, lacks 0)` in silo and the same in platforms' imports (the request and the plates were removed after).
+  Grok's case: Kestrel IVa's science request would read on_the_way, lacks 0, while the magazine request read matched,
+  which is why the game launched for it. Tests: tests/d20_batch55.lua (P6).

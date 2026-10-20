@@ -243,9 +243,14 @@ return function(api)
     return ask, hold
   end
   M.pads = pads
-  -- The hub's requests that import from this planet: {item={min, short}}.
+  -- The hub's requests that import from this planet: {item={min, short, way}}; (d20 batch55 P6) less what rockets
+  -- launched to the hub carry on the way (its requester point's deliveries, the hub GUI's in-transit count).
   local function hub_asks(pl, planet, counts)
     local out = {}
+    local way = {}
+    local pt = defines.logistic_member_index and defines.logistic_member_index.space_platform_hub_requester
+      and try(function() return pl.hub.get_logistic_point(defines.logistic_member_index.space_platform_hub_requester) end)
+    for _, it in ipairs(pt and try(function() return pt.targeted_items_deliver end) or {}) do way[it.name] = (way[it.name] or 0) + (it.count or 0) end
     local secs_ = try(function() return pl.hub.get_logistic_sections() end)
     for i = 1, secs_ and secs_.sections_count or 0 do
       local sec = secs_.get_section(i)
@@ -257,7 +262,8 @@ return function(api)
           if type(name) == 'string' and from == planet and (f.min or 0) > 0 then
             local r = out[name] or {min=0}
             r.min = r.min + f.min
-            r.short = math.max(0, r.min - (counts[name] or 0))
+            r.way = way[name] and way[name] > 0 and way[name] or nil
+            r.short = math.max(0, r.min - (counts[name] or 0) - (way[name] or 0))
             out[name] = r
           end
         end
@@ -1080,7 +1086,7 @@ return function(api)
         local dn, up = seg.down and seg.down[name], seg.up and seg.up[name]
         local bits = {}
         if dn then bits[#bits+1] = string.format('expected down %d (landing pads ask %d, hold %d)', dn.expected, dn.ask, dn.hold) end
-        if up then bits[#bits+1] = string.format('expected up %d (the hub asks %d from %s)', up.short, up.min, seg.at) end
+        if up then bits[#bits+1] = string.format('expected up %d (the hub asks %d from %s%s)', up.short, up.min, seg.at, up.way and string.format(', %d on the way then', up.way) or '') end
         if left > 0 or dn then bits[#bits+1] = string.format('left the hub %d', left) end
         if came > 0 or up then bits[#bits+1] = string.format('came aboard %d', came) end
         if k > 0 then
