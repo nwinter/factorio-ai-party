@@ -80,7 +80,7 @@ return function(api)
     return append('viewer ' .. name, text, nil, nil, true, nil, nil, source)
   end
   M.schema = {
-    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too). A viewer\'s line: your line is threaded under it on the stream\'s site and starts "@Name " in the game chat when it names them nowhere (the reply\'s reply_to {seq, to, addressed})',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
+    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too; a viewer\'s line only while it is their one open line). A viewer\'s line: your line is threaded under it on the stream\'s site and starts "@Name " in the game chat when it names them nowhere (the reply\'s reply_to {seq, to, addressed})',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
       aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do',
       look='optional: what the stream camera might show while the line is read out, a hint the director may take: {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
@@ -191,7 +191,10 @@ return function(api)
     -- Your own messages count as read (is_read); others' stay unread.
     -- The speech bubble is decoration: it never fails the message.
     if api.on_say then pcall(api.on_say, p, text) end
-    return {seq=seq, cut=cut, reply_to=re and {seq=re.seq, to=M.viewer_name(re.from), addressed=addressed and '@' .. addressed .. ' put in front' or nil} or nil}
+    -- (d20 batch57 S1) without reply_to: the named viewers whose several open lines it left open
+    local held = a.reply_to == nil and api.owed_held and api.owed_held(p.index, text) or nil
+    return {seq=seq, cut=cut, reply_to=re and {seq=re.seq, to=M.viewer_name(re.from), addressed=addressed and '@' .. addressed .. ' put in front' or nil} or nil,
+      left_open=held}
   end
   function M.handlers.chat(p, a)
     local c = log()
@@ -217,7 +220,7 @@ return function(api)
         out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, source=m.source, notice=m.notice, mention=how or nil, look=m.look,
           reply_to=m.reply_to,
           -- (d20 batch50 C1) a viewer's line to you: what answers it, as the unanswered line says
-          answer=m.viewer and how and string.format('a say naming %s (or reply_to: %d) answers it', M.viewer_name(m.from), m.seq) or nil}
+          answer=m.viewer and how and string.format('reply_to: %d answers it (a say naming %s does while it is their only open line)', m.seq, M.viewer_name(m.from)) or nil}
       end
     end
     if a.peek ~= true then

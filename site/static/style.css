@@ -468,6 +468,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat .c-src-agent { background: var(--ac, #6c7a89); color: #111; }
 .vchat .c-agent-name { color: var(--ac, var(--fx-heading)); }
 .vchat .c-to { font-size: 0.85em; }
+.vchat .c-link, .vchat .c-re { font-size: 0.8em; }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
 .vchat-filter label { display: inline-flex; align-items: center; gap: 6px; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }

@@ -1185,6 +1185,8 @@ class Model:
             entry["notice"] = True
         entry["lane"] = chat_lane(entry)
         self.chat.append(entry)
+        if viewer_replies.viewer_name(entry):  # (d20 batch57 S1) a say's reply_to finds it after it left self.chat
+            self.reply_threads.see(entry)
         if entry["lane"] not in ("viewer", "notice"):
             r = self.reply_threads.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
                                             self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
