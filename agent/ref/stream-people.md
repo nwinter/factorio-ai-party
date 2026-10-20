@@ -59,7 +59,9 @@
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
 - Stream viewers' chat (YouTube and the stream's site) arrives in the game chat after moderation as `viewer NAME: ...`
   (`viewer: true` in `./fh chat`; not a teammate). A viewer's @mention ends no sleep or wait (it comes in your next
-  reply); `--wake-on-viewers` makes it end them. Your `./fh say` lines show on the stream next to it.
+  reply); `--wake-on-viewers` makes it end them. Your `./fh say` lines show on the stream next to it. A viewer's line
+  to you shows its seq (`#16942: a say naming NickWinter, or reply_to: 16942, answers it`); `say {reply_to: 16942}`
+  shows your line under theirs on the stream's site and starts it with `@NickWinter` when you name them nowhere.
 - The stream's board widget shows the team plan.
 - A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
   library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket

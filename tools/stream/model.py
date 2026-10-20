@@ -1160,6 +1160,8 @@ class Model:
             entry["source"] = m["source"]
         if isinstance(m.get("look"), dict):  # say look=: what the camera might show while it is read out (onecam cue)
             entry["look"] = m["look"]
+        if isinstance(m.get("reply_to"), int):  # say reply_to a viewer line (chat.lua; viewer_replies.py threads it)
+            entry["reply_to"] = m["reply_to"]
         if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
             entry["viewer"] = m["viewer"]
         if m.get("notice"):  # a harness notice: the agents' mute votes and their results (audience.lua)

@@ -38,11 +38,11 @@ return function(api)
     end
     c.read[index] = next(set) and set or nil
   end
-  local function append(from, text, index, aloud, viewer, notice, look, source)
+  local function append(from, text, index, aloud, viewer, notice, look, source, reply_to)
     local c = log()
     c.seq = c.seq + 1
     local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil, notice=notice or nil, look=look,
-      source=source}
+      source=source, reply_to=reply_to}
     c.messages[#c.messages+1] = m
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
     -- Mentions are filed per agent as the message arrives (board.lua); a
@@ -80,12 +80,12 @@ return function(api)
     return append('viewer ' .. name, text, nil, nil, true, nil, nil, source)
   end
   M.schema = {
-    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too)',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
+    say = {reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a say naming the sender does too). A viewer\'s line: your line is threaded under it on the stream\'s site and starts "@Name " in the game chat when it names them nowhere (the reply\'s reply_to {seq, to, addressed})',text='1..500 bytes (fh say posts a longer one as numbered parts cut at sentence ends; in a queue step or plan a longer one is cut to 500 and the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
       aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do',
       look='optional: what the stream camera might show while the line is read out, a hint the director may take: {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
-      returns='messages {seq,tick,from,away?,text,aloud?,viewer?,source?,notice?,mention?} oldest first (away: "on Vulcanus" when the sender is a teammate somewhere other than you now):the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); source: where the viewer wrote, YouTube or site; every line, team and viewers, in one sequence (seq); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
+      returns='messages {seq,tick,from,away?,text,aloud?,viewer?,source?,notice?,mention?,reply_to?,answer?} oldest first (reply_to: the viewer line a say answered with reply_to; answer: on a viewer\'s line to you, what answers it) (away: "on Vulcanus" when the sender is a teammate somewhere other than you now):the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); source: where the viewer wrote, YouTube or site; every line, team and viewers, in one sequence (seq); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
   }
   -- A camera hint for the stream (Nick, 14:11: "an easy optional parameter to suggest the director look at
   -- something in particular when their message is read out"): checked here, kept on the message, returned by
@@ -135,12 +135,45 @@ return function(api)
     return {position={x=math.floor(x * 10 + 0.5) / 10, y=math.floor(y * 10 + 0.5) / 10}, surface=surface.name,
       extent=extent > 0 and math.floor(extent + 0.5) or nil}
   end
+  -- (d20 batch50 C1) The viewer line a reply_to names (its seq, or the first of an array that is one), or nil.
+  local function viewer_line(reply_to)
+    local want = {}
+    for _, s in ipairs(type(reply_to) == 'table' and reply_to or {reply_to}) do if type(s) == 'number' then want[#want+1] = s end end
+    for _, s in ipairs(want) do
+      for i = #log().messages, 1, -1 do
+        local m = log().messages[i]
+        if m.seq == s then if m.viewer then return m end break end
+      end
+    end
+  end
+  -- The name a viewer is answered by: "viewer NickWinter (host)" -> NickWinter.
+  function M.viewer_name(from) return (tostring(from or ''):gsub('^viewer ', ''):gsub(' %(host%)$', '')) end
+  local function names(text, who)
+    local t, w, init = text:lower(), who:lower(), 1
+    while #w > 0 do
+      local i, j = t:find(w, init, true)
+      if not i then return false end
+      local before, after = t:sub(i - 1, i - 1), t:sub(j + 1, j + 1)
+      if not before:find('[%w_]') and not after:find('[%w_]') then return true end
+      init = i + 1
+    end
+    return false
+  end
   function M.handlers.say(p, a)
     local text = a.text
     assert(type(text) == 'string' and text:match('%S'), 'text is required: fh say "your words", or for text with quotes or apostrophes fh say - <<\'EOF\' (text on the next lines, then EOF)')
     assert(a.aloud == nil or type(a.aloud) == 'boolean', 'aloud must be true or false')
     local look = check_look(p, a.look)
     text = text:gsub('[\r\n]+', ' ')
+    -- (d20 batch50 C1, NickWinter 07:25: Muse's answer named no one and he read it as none) reply_to a viewer's line:
+    -- the line keeps reply_to (the site threads it under that line) and, naming them nowhere, starts "@Name " in the
+    -- game chat as well
+    local re = a.reply_to ~= nil and viewer_line(a.reply_to) or nil
+    local addressed
+    if re then
+      local who = M.viewer_name(re.from)
+      if #who > 0 and not names(text, who) then text = '@' .. who .. ' ' .. text; addressed = who end
+    end
     local cut = #text > MAX_LEN and {length=#text, kept=MAX_LEN} or nil
     if cut then text = text:sub(1, MAX_LEN) end
     local name = p.name ~= '' and p.name or ('player ' .. p.index)
@@ -152,13 +185,13 @@ return function(api)
     else
       game.print(line)
     end
-    local seq = append(name, text, p.index, a.aloud == true, nil, nil, look)
+    local seq = append(name, text, p.index, a.aloud == true, nil, nil, look, nil, re and re.seq)
     -- (d17 batch14 B1) reply_to: the chat line or tell this answers (owed.lua)
     if a.reply_to ~= nil and api.on_reply then pcall(api.on_reply, p.index, a.reply_to) end
     -- Your own messages count as read (is_read); others' stay unread.
     -- The speech bubble is decoration: it never fails the message.
     if api.on_say then pcall(api.on_say, p, text) end
-    return {seq=seq, cut=cut}
+    return {seq=seq, cut=cut, reply_to=re and {seq=re.seq, to=M.viewer_name(re.from), addressed=addressed and '@' .. addressed .. ' put in front' or nil} or nil}
   end
   function M.handlers.chat(p, a)
     local c = log()
@@ -181,7 +214,10 @@ return function(api)
       local newest = i > #picked - limit
       if newest or (how and extra < MAX_MENTIONS) then
         if not newest then extra = extra + 1 end
-        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, source=m.source, notice=m.notice, mention=how or nil, look=m.look}
+        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, source=m.source, notice=m.notice, mention=how or nil, look=m.look,
+          reply_to=m.reply_to,
+          -- (d20 batch50 C1) a viewer's line to you: what answers it, as the unanswered line says
+          answer=m.viewer and how and string.format('a say naming %s (or reply_to: %d) answers it', M.viewer_name(m.from), m.seq) or nil}
       end
     end
     if a.peek ~= true then

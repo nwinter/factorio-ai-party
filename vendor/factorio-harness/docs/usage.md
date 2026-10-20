@@ -6452,6 +6452,17 @@ fh watch    # deploy on every change
   the oldest's age, who, the text and the call that closes it); once one is 10 minutes old a single reminder (a wake)
   goes to the inbox, so a sleep or a remote plan's wait ends on it. At most 50 kept per agent. Copy: Luna's "@grok how
   many bioflux are left on Swift?" stayed on Grok's replies after a chat read; his "@luna about 400" closed it.
+- Answering a viewer (d20 batch50 C1; shift45 seq 16942: NickWinter asked "@muse Muse: How could we end the biter
+  problem on Nauvis once and for all?" and Muse's "Good question. The permanent fix is ..." named no one, so the
+  site showed no answer under his line). A viewer's line to an agent carries its seq and what answers it: in the team
+  block's mentions `viewer NickWinter (host) (site) @you, 0s ago: ... (#16942: a say naming NickWinter, or reply_to:
+  16942, answers it)`, and in a chat read as `answer` on that message. `say {reply_to: SEQ}` naming a viewer's line
+  keeps `reply_to` on the chat line (chat reads, chat.jsonl; the stream's viewer_replies.py threads the line under that
+  viewer line on the site whatever it names) and, when the text names the viewer nowhere, puts `@Name ` in front in
+  the game chat and the log; the reply says `reply_to {seq, to, addressed}`. A seq that is no viewer line changes
+  nothing but closing it as before. shift40-45: 11 agent lines answered a viewer's line to them without naming the
+  viewer (the first line from that agent within 5 game minutes, the viewer named nowhere, not to a teammate, opening with an
+  answer word or sharing 2+ words with the question), out of 441 viewer lines addressed to an agent.
 - B2 (Sol: a cargo pad's spilled hardware read 0): `where_is` adds `on_ground` and a place per 32-tile cell of stacks on
   the ground in chunks our force sees now; `stock {item, surface}` adds `on_ground` and a line (not in its total).
   Copy: 190 iron gears on the ground on Vulcanus near (-27,118). The ground read cost 11 ms of where_is's 94 ms on the copy.

@@ -2073,7 +2073,10 @@ return function(api)
         end
       else
         local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
-        lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
+        -- (d20 batch50 C1) a viewer's line: its seq and what answers it, as for an unanswered tell
+        local re = m.viewer and type(m.seq) == 'number' and string.format(' (#%d: a say naming %s, or reply_to: %d, answers it)', m.seq,
+          (tostring(m.from):gsub('^viewer ', ''):gsub(' %(host%)$', '')), m.seq) or ''
+        lines[#lines+1] = string.format('%s%s, %s ago: %s%s', from(m), tag, ago(game.tick - m.tick), m.text, re)
       end
     end
     for _, l in ipairs(M.unread_lines(box, shown) or {}) do tells[#tells+1] = l end
