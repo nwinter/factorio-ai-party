@@ -9385,3 +9385,24 @@ fh watch    # deploy on every change
   uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
   phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
   tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
+- P2 (viewer Aurora 14:37: "Could task and blueprint checks show observed pass, fail or stale, and rerun after
+  relevant changes?"). What existed: board items' `evidence` (metric, decision, result as text, owner, next_check: a
+  tick past which status lists the item overdue; no pass or fail); progress.lua's check of each owned item every 10
+  game minutes in the background (progress seen, unchanged, stalled; not a pass or fail); board_focus `verify` (text:
+  your next verification); a lesson's `check` (a wait_until condition read every minute until it holds: resolved
+  with its tick, never read again after; a lesson not verified for 12 game hours reads stale); reminder checklists
+  (each step's result as text with its tick) and `serves` (the machine still there); blueprint_place's report of one
+  paste (not placed and why, settings that differ), with no record of where a paste put each entity.
+  Added: `checks` (checks.lua). A check is a wait_until condition, or a library blueprint's last placement
+  (blueprint_place {name} now records where the paste put each entity and its facing, the last 4 a name): each
+  entity built there, facing as placed. It may name a board item (its full view lists its checks) and an area (a
+  placement's box for a blueprint check). Its result is pass or fail with the tick, who ran it and what it saw; it
+  reads stale when, after that run, our entities in its area differ from what stood there at the run (built,
+  removed, turned: compared when the check is read, one bounded find each, up to 6 a listing; `checks {id}` compares
+  one), its blueprint was pasted there again, or the run is older than its stale age (stale_after_s, default 30 game
+  minutes). It runs when added and on `checks {run}`, never in the background. Cost on the private copy: a find over
+  a 96x96 box of the base (3221 of ours) took 5.3 ms, so each find stops at 601 entities (0.86 ms; an area holding
+  more is said not compared); a blueprint run reads at most 1201 (1.8 ms). Checked there: a 17-entity library paste
+  read fail (17 ghosts), pass once built, stale after an inserter was rotated (named), fail when run again (facing
+  otherwise). The index lists `checks`; agent/team.md has no line (the codex core is at its cap). Tests:
+  tests/d20_batch55.lua (P2).

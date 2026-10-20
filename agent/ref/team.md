@@ -26,6 +26,13 @@
   focus lines, a teammate's with `agent`. A focused project step not done across 2 checks reads so here and in
   board_progress. Example:
   `./fh call board_focus --args '{"id":12,"step":3,"verify":"item_count iron-plate>=400 at 10,39"}'`
+- `checks {add | run | remove | id | item | all}`: checks kept with their last observed result. `add: {name,
+  condition | blueprint, item?, area? | position+radius?, stale_after_s?}` adds one and runs it: a wait_until condition
+  (met or not), or a library blueprint's last placement by `blueprint_place {name}` (each entity built where the paste
+  put it, facing as placed). Each reads pass or fail with the run's tick, who ran it and what it saw, or stale: our
+  entities built, removed or turned in its area since that run, its blueprint pasted there again, or past its stale
+  age (default 30 game minutes). `run: N` runs it again; nothing runs it in the background. Example:
+  `./fh call checks --args '{"add":{"name":"mall row built","blueprint":"mall row","item":12}}'`
 - `lessons {item | recipe | entity | action | near | surface}`: the lessons matching, each with its rule, who recorded
   it, its evidence tick and when it was last verified. Lessons are short rules a teammate tested, board items of kind
   `lesson`, at most 150 active; one not verified for 12 game hours reads `stale`. A call on a lesson's item, recipe,
