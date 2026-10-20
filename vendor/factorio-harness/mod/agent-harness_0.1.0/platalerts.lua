@@ -445,7 +445,9 @@ return function(api)
         if sc.fuel and sc.fuel.short then
           local key = table.concat(sc.fuel.short, '|')
           if again(seen, 'fuel', key) then
-            lines[#lines+1] = string.format('platform %s: %s runs out before the leg ends: %s', name, table.concat(sc.fuel.short, ' and '), sc.fuel.line)
+            -- (d20 batch54 N1) with the time since it left its stop and the engine's 60 and 180 s samples side by side
+            lines[#lines+1] = string.format('platform %s: %s runs out before the leg ends: %s%s', name, table.concat(sc.fuel.short, ' and '), sc.fuel.line,
+              sc.fuel.since_line and '; ' .. sc.fuel.since_line or '')
           end
         else clear(seen, 'fuel') end
         -- No repair packs while it takes hits.
