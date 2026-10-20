@@ -6476,14 +6476,23 @@ fh watch    # deploy on every change
 - Answering a viewer (d20 batch50 C1; shift45 seq 16942: NickWinter asked "@muse Muse: How could we end the biter
   problem on Nauvis once and for all?" and Muse's "Good question. The permanent fix is ..." named no one, so the
   site showed no answer under his line). A viewer's line to an agent carries its seq and what answers it: in the team
-  block's mentions `viewer NickWinter (host) (site) @you, 0s ago: ... (#16942: a say naming NickWinter, or reply_to:
-  16942, answers it)`, and in a chat read as `answer` on that message. `say {reply_to: SEQ}` naming a viewer's line
+  block's mentions `viewer NickWinter (host) (site) @you, 0s ago: ... (#16942: reply_to: 16942 answers it; a say naming
+  NickWinter does while it is their only open line)`, and in a chat read as `answer` on that message. `say {reply_to: SEQ}` naming a viewer's line
   keeps `reply_to` on the chat line (chat reads, chat.jsonl; the stream's viewer_replies.py threads the line under that
   viewer line on the site whatever it names) and, when the text names the viewer nowhere, puts `@Name ` in front in
   the game chat and the log; the reply says `reply_to {seq, to, addressed}`. A seq that is no viewer line changes
   nothing but closing it as before. shift40-45: 11 agent lines answered a viewer's line to them without naming the
   viewer (the first line from that agent within 5 game minutes, the viewer named nowhere, not to a teammate, opening with an
   answer word or sharing 2+ words with the question), out of 441 viewer lines addressed to an agent.
+- Closing only the line a reply answers (d20 batch57 S1, viewer Aurora, shift47 15:24: "closing by name can hide other
+  unanswered requests"). A viewer's line closes by name only while it is that viewer's one open line to the agent; a
+  say with `reply_to` a viewer's line closes that line alone, whatever else it names. A say without `reply_to` that
+  names a viewer with two or more open lines closes none of them, and its reply says so: `left_open: "Enginerd has 2
+  open lines to you (#17472, #17483): a say naming them closes none; reply_to closes the one it names"`. The
+  `unanswered` line and the 10-minute reminder for a viewer's line name `reply_to: SEQ`. Teammates' mentions and tells
+  close by name as before. Shifts 46-47 (chat.jsonl, owed.lua's rules replayed): 6 says closed 14 viewer lines by
+  name; 4 of those lines got no answer from the say that closed them (Opus's 17572 about a roboport closed Enginerd's
+  17472 "add more power" and 17483 "another nuclear reactor").
 - B2 (Sol: a cargo pad's spilled hardware read 0): `where_is` adds `on_ground` and a place per 32-tile cell of stacks on
   the ground in chunks our force sees now; `stock {item, surface}` adds `on_ground` and a line (not in its total).
   Copy: 190 iron gears on the ground on Vulcanus near (-27,118). The ground read cost 11 ms of where_is's 94 ms on the copy.

@@ -379,7 +379,7 @@ t=astra('status'); eq(t.team,nil); eq(t.chat,nil)
 -- Viewer relay: chat from "viewer NAME" for every agent, rate-limited; a
 -- mention only for the agent it names with @ (grok and sol get none).
 r=op('viewer_say',{name='bob',text='@astra you are doing great, grok too'}); eq(r.posted,true)
-t=astra('status'); eq(t.team.mentions[1],'viewer bob @you, 0s ago: @astra you are doing great, grok too (#'..r.seq..': a say naming bob, or reply_to: '..r.seq..', answers it)')
+t=astra('status'); eq(t.team.mentions[1],'viewer bob @you, 0s ago: @astra you are doing great, grok too (#'..r.seq..': reply_to: '..r.seq..' answers it; a say naming bob does while it is their only open line)')
 eq(t.chat.latest,'viewer bob: @astra you are doing great, grok too')
 eq((grok('status').team or {}).mentions,nil)
 local msgs=grok('chat',{limit=100}).messages; eq(msgs[#msgs].viewer,true); eq(msgs[#msgs].from,'viewer bob'); eq(msgs[#msgs].mention,nil)

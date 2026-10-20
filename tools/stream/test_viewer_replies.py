@@ -67,12 +67,14 @@ def classify_tests():
     assert V.speaker(log[7]) == "operator" and V.speaker(log[9]) is None and V.speaker(log[0]) is None
     row = V.row(log[2], got[0][1])
     assert row == {"seq": 3, "t": 61200 / 60, "tick": 61200, "by": "grok", "text": log[2]["text"], "kind": "reply", "to": ["Foobator"],
-                   "answers": {"name": "Foobator", "text": "why is steel stopped?", "t": 1000.0, "tick": 60000, "source": "YouTube"}}, row
-    # an older line sharing two more words wins over the latest
+                   "link": "only_to", "answers": {"name": "Foobator", "text": "why is steel stopped?", "t": 1000.0, "tick": 60000, "source": "YouTube"}}, row
+    # (d20 batch57 S1) two open lines to sol: no guess by shared words (shift46 17037: Gemini's "that's a great tip"
+    # threaded under Caleb's earlier question); the reply is not linked
     log2 = [v(1, 1000, "Enginerd", "@sol is nauvis still using stone furnaces for smelting"),
             v(2, 1500, "Enginerd", "@sol hello again"),
             a(3, 1800, "sol", "Yes, Enginerd. Nauvis still uses stone furnaces for smelting")]
-    assert V.replies(log2)[0][1]["answers"]["seq"] == 1
+    r = V.replies(log2)[0][1]
+    assert r["answers"] is None and r["link"] == "none" and r["to"] == ["Enginerd"], r
 
 
 def model_tests():
@@ -222,9 +224,10 @@ def operator_elsewhere():
     ask = dict(foo, seq=11425, text="operator: do you keep every shift's end save?")
     r = V.classify(op, [foo, ask])
     assert r["answers"] is ask, r
+    # (d20 batch57 S1) a line to sol sharing words with the answer: not linked (no guess by shared words)
     near = dict(foo, seq=11426, text="@sol do you keep each shift save and logs?")
     r = V.classify(op, [foo, near])
-    assert r["answers"] is near, r
+    assert r["answers"] is None and r["link"] == "none", r
 
 
 def long_reply_parts():

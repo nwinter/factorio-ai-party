@@ -97,6 +97,21 @@
       : c.tick != null && m.tick != null ? c.tick <= m.tick : (c.t || 0) <= (m.t || 0) + 2);
     const recent = (c) => (c.tick != null && m.tick != null ? (m.tick - c.tick) / 60 : (m.t || 0) - (c.t || 0)) <= ANSWER_WINDOW_S;
     const names = [...new Set(copies.map((c) => c.vname).concat(viewers.map((v) => v.name)))];
+    const lineFor = (c) => {
+      const body = bare(c.text).toLowerCase();
+      // the same line in the viewers lane (its YT/SITE badge and key), else the game copy itself
+      const v = [...viewers].reverse().find((v) => {
+        const t = bare(v.text).toLowerCase();  // the viewer's own "@sol " too
+        return v.name === c.vname && body && (t.startsWith(body) || body.startsWith(t));
+      });
+      return v || { id: "c" + String(c.seq ?? c.tick), name: c.vname, text: bare(c.text), t: c.t, source: "youtube" };
+    };
+    // (d20 batch57 S1, viewer Aurora) a say with reply_to names its line: that one, or no pin when it is not in the
+    // snapshot (never another line of the same viewer by name)
+    if (typeof m.reply_to === "number") {
+      const c = copies.find((c) => seqOf(c) === m.reply_to);
+      return c ? lineFor(c) : null;
+    }
     const name = names.find((n) => answersViewer(m.text, n));
     if (!name) return null;
     const skip = new Set(viewerShortNames(name));
@@ -119,13 +134,7 @@
     const lane = viewers.filter((v) => v.name === name);
     if (cs.length) {
       const c = best(cs, (r) => bare(r.text), (r) => atAgent(r.text));
-      const body = bare(c.text).toLowerCase();
-      // the same line in the viewers lane (its YT/SITE badge and key), else the game copy itself
-      const v = [...lane].reverse().find((v) => {
-        const t = bare(v.text).toLowerCase();  // the viewer's own "@sol " too
-        return body && (t.startsWith(body) || body.startsWith(t));
-      });
-      return v || { id: "c" + String(c.seq ?? c.tick), name, text: bare(c.text), t: c.t, source: "youtube" };
+      return c && lineFor(c);
     }
     return best(lane.filter((v) => (v.t || 0) <= (m.t || 0) + 2 && (m.t || 0) - (v.t || 0) <= ANSWER_WINDOW_S), (r) => r.text,
       (r) => r.to === agent || (r.to_all || []).includes(agent) || atAgent(r.text));

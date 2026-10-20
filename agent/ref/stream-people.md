@@ -21,7 +21,9 @@
   Example: `./fh chronicle "The first rocket left Nauvis at 41h." --title "First launch"`
 - `chat_ack {seq}`: closes unanswered mentions (`seq`: one, an array, or "all"). A viewer's @mention, a teammate's
   @mention, and a mention or tell that asks stay open until you answer (a say or tell naming them, a tell to the asker,
-  or `reply_to: SEQ` on say or tell) or ack them; reading chat does not close them. Every reply's `unanswered` gives
+  or `reply_to: SEQ` on say or tell) or ack them; reading chat does not close them. A viewer's line closes by name only
+  while it is that viewer's one open line to you; `reply_to` closes only the line it names, and a say's `left_open`
+  lists a named viewer's open lines it closed none of. Every reply's `unanswered` gives
   the oldest; one reminder wakes you when one is 10 minutes old. It also marks those tells read (`read`: how many), which
   ends their `unread` lines in the team block.
 - `./fh operator "..."`: a request to the operator, the people running the harness and the stream: a tool that fails
@@ -60,8 +62,10 @@
 - Stream viewers' chat (YouTube and the stream's site) arrives in the game chat after moderation as `viewer NAME: ...`
   (`viewer: true` in `./fh chat`; not a teammate). A viewer's @mention ends no sleep or wait (it comes in your next
   reply); `--wake-on-viewers` makes it end them. Your `./fh say` lines show on the stream next to it. A viewer's line
-  to you shows its seq (`#16942: a say naming NickWinter, or reply_to: 16942, answers it`); `say {reply_to: 16942}`
-  shows your line under theirs on the stream's site; a line that names them nowhere starts with `@NickWinter`.
+  to you shows its seq (`#16942: reply_to: 16942 answers it; a say naming NickWinter does while it is their only open
+  line`); `say {reply_to: 16942}` shows your line under theirs on the stream's site; a line that names them nowhere
+  starts with `@NickWinter`. On the site, a reply without `reply_to` sits under a line only when it is that viewer's
+  one line in the 15 minutes before, or their one line to you; else it shows as not linked to a question.
 - The stream's board widget shows the team plan.
 - A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
   library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket
