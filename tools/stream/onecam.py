@@ -221,6 +221,11 @@ ONECAM = {
     "incoming_max": 240.0,  # following a group at most this long before contact
     "incoming_zoom": 0.7,   # a wide view: the group and what it heads for
     "incoming_contact": 12.0,  # tiles from our nearest building: contact (or the group attacking, or a fight there)
+    # a followed group that turns back or stops short ends the follow (Nick d20 07:14: a group came toward Nauvis,
+    # went back to the wilderness and sat there, and the camera stayed on it until incoming_max)
+    "incoming_away": 40.0,  # tiles farther from our nearest building than its closest approach: turned back
+    "incoming_still": 45.0,  # seconds the group has moved under incoming_still_tiles: stopped
+    "incoming_still_tiles": 8.0,
     "battle_near": 60.0,    # tiles (plus half the extents): fights this close are one battle
     # held until the battle has been quiet this long (no attack, no agent in combat) and no loss for battle_loss_after;
     # 14:19:30 Sol's demolisher died in ~5 s and the hold ran 52 s (45 s after the last loss). Shorter, with a battle
@@ -1409,20 +1414,21 @@ class OneCam(Director):
         self.urgent(self.group_target(g, now, self.incoming["until"]), f"incoming: {g.get('label')}", scores, now)
 
     def incoming_direct(self, snapshot, by_name, scores, now):
-        """The followed group: pan with it; at contact the battle hold takes over at the same place (no cut); gone
-        or past incoming_max: back to the story."""
+        """The followed group: pan with it; at contact the battle hold takes over at the same place (no cut); gone,
+        past incoming_max, turned back or stopped short (not while it gathers): back to the story."""
         inc = self.incoming
         g = next((x for x in snapshot.get("incoming") or [] if x.get("id") == inc["id"]), None)
         cur = self.state.get(self.onair) or {}
         if self.pending:
             return  # the cut to it comes within ready_s
-        if not g or now >= inc["until"]:
+        def over(why):
             self.incoming = None
             if cur.get("subject") == "@incoming":
                 cur["until"] = 0
-            print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} incoming over "
-                  f"({'gone' if not g else 'too long'}): {inc['label']}", flush=True)
-            return
+            print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} incoming over ({why}): {inc['label']}",
+                  flush=True)
+        if not g or now >= inc["until"]:
+            return over("gone" if not g else "too long")
         fight_near = any(now - self.fight_t(f) < self.cfg["fight_quiet"] and f.get("position") and
                          (f["position"].get("surface") or "nauvis") == (g.get("surface") or "nauvis") and
                          dist(f["position"], g["position"]) <= 40 for f in self.fight_list)
@@ -1438,6 +1444,19 @@ class OneCam(Director):
                 cur.pop("incoming", None)
             self.incoming = None
             return
+        # turned back (farther than incoming_away from its closest approach) or stopped (under incoming_still_tiles
+        # in incoming_still seconds) before contact: back to the story
+        near = g.get("nearest_distance")
+        if near is not None:
+            inc["closest"] = min(inc.get("closest", near), near)
+            if near - inc["closest"] >= self.cfg["incoming_away"]:
+                return over(f"turned back: {near:g} tiles from our nearest building, {inc['closest']:g} at closest")
+        trail = inc["trail"] = [q for q in inc.get("trail", []) if now - q[0] <= self.cfg["incoming_still"]]
+        trail.append((now, dict(g["position"])))
+        if not str(g.get("state") or "").startswith("gathering") and len(trail) >= 3 and \
+                now - trail[0][0] >= 0.8 * self.cfg["incoming_still"] and \
+                all(dist(q[1], g["position"]) <= self.cfg["incoming_still_tiles"] for q in trail):
+            return over(f"stopped: under {self.cfg['incoming_still_tiles']:g} tiles in {now - trail[0][0]:.0f} s")
         if cur.get("subject") == "@incoming":
             p = cur["position"]
             if dist(p, g["position"]) > 3:  # pan with it (cameras.lua eases a non-jump move)

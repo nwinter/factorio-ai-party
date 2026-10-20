@@ -177,8 +177,48 @@ def live_and_model():
     print("live and model: ok")
 
 
+def turned_back_or_stopped():
+    """Nick d20 07:14: a followed group came toward Nauvis, went back to the wilderness and sat there, and the camera
+    stayed on it until incoming_max (240 s). Turned back (incoming_away from its closest approach) or stopped
+    (under incoming_still_tiles in incoming_still s, not while gathering): the follow ends, back to the story."""
+    g = RECORDED[3]
+    for case in ("back", "still", "gathering"):
+        d, sent = world(map_every=0, platform_every=0)
+        d.log_path = os.path.join(tempfile.mkdtemp(), "director.jsonl")
+        team = [agent("astra", 0, 0, 5), agent("luna", 300, 0, 1), agent("sol", -300, 0, 1)]
+        t0 = 70000
+        for k in range(3):
+            d.step({"agents": team, "alerts": []}, t0 + k)
+        ended = None
+        for k in range(150):
+            t = t0 + 10 + k
+            if case == "back":  # 20 s in, 3 tiles a second, then back the way it came
+                j = k if k < 20 else 40 - k
+                pos, near, state = {"x": 140 - 3 * j, "y": 114 - 3.5 * j}, 120 - 4 * j, "moving"
+            else:  # 10 s in, then it sits at its target
+                j = min(k, 10)
+                pos, near = {"x": 140 - 3 * j, "y": 114 - 3.5 * j}, 120 - 4 * j
+                state = "gathering" if case == "gathering" else "moving"
+            pub = d.step({"agents": team, "alerts": [], "incoming": [live_row(g, 7, pos, state, near)]}, t)
+            on = (pub.get("main") or {}).get("incoming", "")
+            if k == 5:
+                assert on.startswith("Incoming · 37"), pub.get("main")
+            if k > 5 and not on and ended is None:
+                ended = k
+        if case == "back":  # closest 40 at k=20; 40 tiles farther at k=30
+            assert ended is not None and 30 <= ended <= 34, ended
+        elif case == "still":  # still from k=10; 0.8 x 45 s later
+            assert ended is not None and 46 <= ended <= 58, ended
+        else:  # a gathering group is kept (until incoming_max, 240 s)
+            assert ended is None, ended
+        assert d.incoming is None or case == "gathering"
+    print("turned back or stopped: ok (turned back: ends 40 tiles past its closest approach; stopped: ends after "
+          "about 36-45 s still; a gathering group is kept)")
+
+
 if __name__ == "__main__":
     scores()
     budget()
     director()
+    turned_back_or_stopped()
     live_and_model()
