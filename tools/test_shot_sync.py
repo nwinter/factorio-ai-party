@@ -2,7 +2,7 @@
 """Offline check for tools/shot-sync.sh against a fake game box: fake `ssh` and `scp` map D:\\pog\\inst to a temp
 folder. A director client's script-output\\pog\\WS\\NAME.png must land in RUN/WS/shots/NAME.png and leave the box,
 and a file is only copied once it was listed on an earlier pass. python3 tools/test_shot_sync.py"""
-import os
+import json, os
 import shutil
 import subprocess
 import sys
@@ -84,6 +84,15 @@ def wrapper():
         assert os.path.exists(os.path.join(ws, "shots", "belt_layout.png"))
         sent = open(os.path.join(tmp, "bin", "fh.log")).read()
         assert '"--bot", "grok"' in sent and '\\"path\\":\\"pog/grok/belt_layout-' in sent, sent
+        # (d20 batch56 R2) at= centres it by remote view; surface= or platform= names where
+        r = subprocess.run([os.path.join(ws, "shot"), "far", "640", "480", "at=150,-20.5", "platform=Swift Star"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0 and r.stdout.strip() == "shots/far.png", (r.returncode, r.stderr)
+        sent = json.loads(json.loads(open(os.path.join(tmp, "bin", "fh.log")).read().splitlines()[-1])[-1])
+        assert sent["width"] == 640 and sent["height"] == 480 and sent["position"] == {"x": 150, "y": -20.5}, sent
+        assert sent["platform"] == "Swift Star" and sent["path"].startswith("pog/grok/far-"), sent
+        r = subprocess.run([os.path.join(ws, "shot"), "far", "at=150"], capture_output=True, text=True)
+        assert r.returncode == 2 and "usage: ./shot NAME" in r.stderr, (r.returncode, r.stderr)
         r = subprocess.run([os.path.join(ws, "shot"), "x"], capture_output=True, text=True,
                            env=dict(os.environ, FAKE_FH_FAIL="1"))
         assert r.returncode == 1 and "no graphical client is connected" in r.stderr, (r.returncode, r.stderr)

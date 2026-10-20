@@ -52,7 +52,7 @@
   `--then ACTION [JSON]` runs one read action when the sleep ends and returns it with the wake; a sleep a newer one
   replaced runs none, and its `note` names the newer sleep. `sleep {orders: false}` starts no standing order during
   the sleep. A tell or board line shown in a sleep reply that your next sleep followed within 5 s comes again in
-  `team.missed_while_asleep`. Egg news ends a sleep that takes no messages only for eggs you carry. Example:
+  `team.missed_while_asleep`. `./fh call sleep SECONDS` is the same wait as `./fh sleep`. Egg news ends a sleep that takes no messages only for eggs you carry. Example:
   `./fh sleep 120 --until "item_count nutrients<50 at 4.5,15.5" --then inspect '{"position":{"x":4.5,"y":15.5}}'`
   `--require-met`: the wake's first line is `condition met after N s` or `condition not met: woke told after N s`
   (a tell, an urgent alert, the time up), and the exit status 0 when the condition held, 3 when not, 1 when the wait

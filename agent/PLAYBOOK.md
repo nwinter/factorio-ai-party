@@ -15,19 +15,21 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
 
 ## Your interface: `./fh`
 
-- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (It is
-  written at launch and after each harness update; `./fh help ACTION` reads the running harness.) Check it before guessing arguments.
-  `./fh help ACTION` prints one action's arguments (`./fh help transfer` shows calls that work).
+- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json` (written
+  at launch and after each harness update). `./fh help ACTION` prints one action's arguments from the running harness
+  (`./fh help transfer` shows calls that work).
 - Reference: every command's details are in `ref/`, one file per topic (listed at the end of this file with their
-  commands); `./fh help TOPIC` prints one. An argument refusal or an unknown action names the call's topic.
+  commands). An argument refusal or an unknown action names the call's topic.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
-  `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
+  `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`. Reads see what the map
+  shows, wherever you stand: `inspect`, `belt_flow`, `trace` in chunks our force sees now; `scan`, `observe`,
+  `nearest` at any charted centre; `surface=`, `platform=` elsewhere.
 - Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take `--wait`,
   which lasts until the action's own end tick (`--wait-timeout MS` cuts it shorter). `build` accepts a batch of up to
   64 placements.
 - Plans: `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no round trips.
-- Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot to
-  `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
+- Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot centred on
+  your character (`at=X,Y`: there, by remote view) to `shots/NAME.png` that you can open and look at.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace
@@ -56,10 +58,10 @@ Your character stands still while you think, and the clock does not.
   `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
   `--until "item_count iron-plate>=200"` (your inventory). It does not return when a machine starves, and never runs past your deadline. With no queue running, no
   action running and no `--until` it lasts at most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s
-  otherwise. `./fh call sleep SECONDS` is the same wait. A tell or mention wakes it once.
+  otherwise. A tell or mention wakes it once.
 - `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
   ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
-  after `--max` seconds (up to 900; 300 with nothing running and no condition); the team block comes with your next
+  after `--max` seconds; the team block comes with your next
   reply, and the line ends with `open for you: ...`.
 - A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)
   pauses your running queue at once; `./fh queue resume` continues it. A direct `wait_ticks` or `wait_until` while
@@ -104,7 +106,7 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 The deadline in `deadline.txt` is the only stop condition. The `clock:` line on every reply ends with the time left
 (`deadline in 12m`), which is easier to trust than arithmetic on `date` or the game clock. Deadlines differ by a few
 minutes between teammates, so yours passing says nothing about theirs. Play until the `clock:` line says the deadline
-has passed (a `sleep` ends there too). Then add a final summary to `notes.md` (milestones with game times, what slowed
+has passed. Then add a final summary to `notes.md` (milestones with game times, what slowed
 you down, harness problems you hit, the tool changes that would have helped most) and end your turn; a summary written
 earlier is a draft to finish then. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and
 `./fh board` show what is still open.
