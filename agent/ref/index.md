@@ -20,8 +20,8 @@
   --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
   `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,
   `orders_resume`, `reminder_add`, `reminder_edit`, `reminder_ack`, `reminders`.
-- `team`, board items, claims, `team:` and `OPERATOR:` lines: `board projects`, `board_review`, `board_retire`,
-  `board_progress`, `board_critical`, `board_focus`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`,
+- `team`, board items, claims, `team:`/`OPERATOR:` lines: `board projects`, `board_review`, `board_retire`,
+  `board_progress`, `board_critical`, `board_focus`, `checks`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`,
   `lesson_review`, `ground_rule_add`, `ground_rule_edit`, `ground_rule_retire`, `ground_rules`, `review`, `lookahead`, `networks`,
   `boilers`, `tells`.
 - `stream-people`, profile, viewers, players: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
