@@ -857,6 +857,16 @@ fh call status
     (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells`. The flare is made with
     the game's create_entity, as the capsule's flare (`artillery-flare`); this path was not run on a live world before
     the deploy.
+- A recipe change and a fluid the machine holds (d20 batch56 R6, Astra #1410: `configure {recipe, fluid: "drain"}`
+  failed "attempt to perform arithmetic on a table value": 2.0.77's `LuaFluidBox.flush` returns the fluid it removed by
+  name, a table). Read on 2.0.77 (private copy): a crafting machine's fluidbox has no fluid segment
+  (`get_fluid_segment_id` nil, with a pipe joined to it or not), so `flush` on it removes nothing and returns `{}`;
+  `set_recipe` drops a fluid the new recipe takes none of, from an input or an output box (cold fluoroketone 400 in
+  empty-fluoroketone-cold-barrel's output box, changed to the hot recipe: gone), and keeps one it takes (heavy oil
+  from lubricant to heavy-oil-cracking moved to the cracking recipe's box). `configure {recipe}` still refuses the
+  change by default, naming the fluid; `fluid: "drain"` (or `"keep"`, `force: true`) flushes any box that has a
+  segment, makes the change and reads the machine after: `fluid` (what left, anything still in it by box) and
+  `fluid_flushed` {fluid: amount gone}.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
   pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
