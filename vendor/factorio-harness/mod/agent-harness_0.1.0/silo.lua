@@ -66,16 +66,23 @@ return function(api)
     local unit = e.unit_number or -1
     local list = st.silo_made[unit] or {}
     st.silo_made[unit] = list
-    local n = try(function() return e.products_finished end)
-    if not n then return nil end
+    -- (d20 batch52 K8, Astra #1277: 0.3 parts a minute while a part came every 5 s) a silo's products_finished counts
+    -- rockets, not parts (2.0.77 on the private copy: 331 -> 332 as a rocket launched while rocket_parts went 0 -> 13
+    -- over 50 s): parts made are finished rockets times the parts a rocket takes, plus the parts of the one building
+    local fin = try(function() return e.products_finished end)
+    if not fin then return nil end
+    local req = try(function() return e.prototype.rocket_parts_required end) or 1
+    local n = fin * req + (try(function() return e.rocket_parts end) or 0)
     local last = list[#list]
     -- (d18 batch38 C3, Sonnet: 0.3 a minute idle against 55 while a load waits read as a contradiction) each sample with
     -- what the silo was doing: building parts, short of an ingredient, or holding a built rocket (parts are made only
     -- while it builds)
     local now_state = M.made_state(e)
+    -- (K8) samples kept before parts were counted held rockets: dropped
+    if last and not last.parts then for i = #list, 1, -1 do list[i] = nil end; last = nil end
     if not last or game.tick - last.tick >= 600 or n < last.n then
       if last and n < last.n then for i = #list, 1, -1 do list[i] = nil end end
-      list[#list+1] = {tick=game.tick, n=n, s=now_state}
+      list[#list+1] = {tick=game.tick, n=n, s=now_state, parts=true}
       while #list > 64 do table.remove(list, 1) end
     end
     local from, fi
@@ -480,8 +487,19 @@ return function(api)
       end
     end
     -- (B3) the next automatic launch: the request filled now, else the first a rocket's payload is there for
+    -- (d20 batch52 K8, Astra #1277: "rocket 25 filling" while the rocket held 56 magazines of the 100 the silo asked) of
+    -- the target's rows, the item the silo's own request asks or its rocket holds
     local nxt
-    for _, r in ipairs(okr and reqs or {}) do if r.filling then nxt = r end end
+    local asked = {}
+    local pt = defines.logistic_member_index and defines.logistic_member_index.rocket_silo_requester
+      and try(function() return e.get_logistic_point(defines.logistic_member_index.rocket_silo_requester) end)
+    for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
+      local name = type(f.name) == 'string' and f.name or try(function() return f.name.name end)
+      if name and (f.count or 0) > 0 then asked[name] = f.count end
+    end
+    for _, s in ipairs(contents(rocket_inv)) do asked[s.name] = asked[s.name] or true end
+    for _, r in ipairs(okr and reqs or {}) do if r.filling and asked[r.item] then nxt = r; break end end
+    if not nxt then for _, r in ipairs(okr and reqs or {}) do if r.filling then nxt = r; break end end end
     if not nxt then for _, r in ipairs(okr and reqs or {}) do if r.flag == 'matched' then nxt = r; break end end end
     if nxt and nxt.next_launch then
       row.next_auto_launch = string.format('%s %s: %s%s', nxt.platform, nxt.item, nxt.min_payload and 'under min_payload, ' .. nxt.min_payload or 'full, ' .. tostring(nxt.full_rocket),

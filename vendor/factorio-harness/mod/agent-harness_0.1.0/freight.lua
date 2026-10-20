@@ -317,6 +317,13 @@ return function(api)
     else
       seg.kind, seg.from, seg.to = 'leg', w.leg.from, w.leg.to
       seg.visited = try(function() return pl.last_visited_space_location.name end)
+      -- (d20 batch52 K4, Astra #955) where along the connection it was when the leg began, and the thrusters and hull
+      -- width it flew with: the leg's speed is the distance flown over its time, and an estimate from it says when
+      -- the ship has changed since
+      seg.km0 = w.leg.flown and w.leg.length and w.leg.flown * w.leg.length or nil
+      seg.km1 = seg.km0
+      local g = M.geometry(pl)
+      seg.thrusters, seg.width = g.thrusters, g.width
     end
     rec.segs[#rec.segs+1] = seg
     while #rec.segs > M.KEEP do table.remove(rec.segs, 1) end
@@ -425,6 +432,8 @@ return function(api)
     elseif seg and not seg['end'] and rec.prev then
       spoil_step(seg, rec.prev, counts)
     end
+    -- (K4) the distance along the connection, kept each look while the leg goes on
+    if seg and seg.kind == 'leg' and not seg['end'] and w.leg and w.leg.flown and w.leg.length then seg.km1 = w.leg.flown * w.leg.length end
     rec.prev, rec.tick = counts, tick
     M.phase_step(rec, pl, w)
     -- The last flying speed (the arrival estimate before a departure reads it).
@@ -440,6 +449,19 @@ return function(api)
       end
       rec.leg_top = math.max(rec.leg_top or 0, v)
     end
+  end
+  -- (K4) The ship as it flies: its thrusters (count) and its hull's width (the foundation's x extent, in tiles, within
+  -- 128 tiles of the hub: Swift's 771 tiles read in 0.46 ms on the private copy; read when a leg begins).
+  function M.geometry(pl)
+    local s = try(function() return pl.surface end)
+    local out = {thrusters=s and try(function() return s.count_entities_filtered{type='thruster', force=pl.force} end) or nil}
+    local tiles = s and try(function() return s.find_tiles_filtered{name='space-platform-foundation', area={{-128, -128}, {128, 128}}} end)
+    if tiles and #tiles > 0 then
+      local lo, hi = math.huge, -math.huge
+      for _, t in pairs(tiles) do local x = t.position.x; if x < lo then lo = x end; if x > hi then hi = x end end
+      out.width = hi - lo + 1
+    end
+    return out
   end
   -- The speed an estimate flies at: the higher of now and the cruise (km a tick); nil before any flight seen.
   function M.cruise(pl)

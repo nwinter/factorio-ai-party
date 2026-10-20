@@ -374,12 +374,14 @@ return function()
       end
     end
     local out, budget, unchecked = {}, {left=STEPS}, 0
+    -- (d20 batch52 K9) the ghosts the budget left unjudged, by key, for a read about one of them
+    local skipped = {}
     for _, g in ipairs(ghosts) do
       local k = key(g[1], g[2])
       if not built[k] and is_empty(s, g[1], g[2], cache) then
         local r = rule(g)
         local why
-        if type(r) == 'table' and budget.left <= 0 then r = nil; unchecked = unchecked + 1 end
+        if type(r) == 'table' and budget.left <= 0 then r = nil; unchecked = unchecked + 1; skipped[k] = true end
         if r == 'no foundation among the 8 tiles round it' then
           -- A ghost round it (one past those read too) may be built first.
           local beside = false
@@ -393,7 +395,7 @@ return function()
           -- A side that would be a hole: its tiles with no ghost; all ghosted, it waits for them (not named).
           for _, run in ipairs(r) do
             local region = enclosed(s, run[1][1], run[1][2], g[1], g[2], cache, budget)
-            if budget.left < 0 then why = nil; unchecked = unchecked + 1; break end
+            if budget.left < 0 then why = nil; unchecked = unchecked + 1; skipped[k] = true; break end
             if region then
               local bare = {}
               for _, c in ipairs(region) do if not ghost_at(s, c[1], c[2], ghosted) then bare[#bare+1] = c end end
@@ -414,7 +416,7 @@ return function()
     if unchecked > 0 then
       out[#out+1] = string.format('%d more tile ghost%s not checked (the check looks at most %d tiles per read)', unchecked, unchecked == 1 and '' or 's', STEPS)
     end
-    return #out > 0 and out or nil
+    return #out > 0 and out or nil, skipped
   end
   -- Lines naming each stalled tile ghost of a platform and its cause; nil when none.
   function M.stalled(pl)
@@ -452,10 +454,25 @@ return function()
         if w[1] == x and w[2] == y then return 'marked for removal: waits: ' .. w[3] end
       end
     elseif e.type == 'tile-ghost' then
-      for _, line in ipairs(M.stalled(pl) or {}) do
-        if line:find(at(x, y), 1, true) then return 'waits: ' .. line end
+      -- (d20 batch52 K9, Astra #928: Kestrel's tile ghost at (20.5,73.5) read "nothing ... holds it back" while it
+      -- stayed unbuilt with 34 foundation in the hub: the check read the platform's first 64 tile ghosts, not that one)
+      -- this ghost first, then those within 16 tiles of it; a ghost the budget left unjudged is said so
+      local list2 = {{x, y, try(function() return e.ghost_name end)}}
+      local seen = {[key(x, y)] = true}
+      for _, g in ipairs(try(function() return s.find_entities_filtered{type='tile-ghost', area={{x - 16, y - 16}, {x + 17, y + 17}}, limit=GHOSTS} end) or {}) do
+        local gx, gy = math.floor(g.position.x), math.floor(g.position.y)
+        if gx == x and gy == y then list2[1][3] = list2[1][3] or g.ghost_name
+        elseif not seen[key(gx, gy)] then seen[key(gx, gy)] = true; list2[#list2+1] = {gx, gy, g.ghost_name} end
       end
-      return 'nothing the foundation rules hold it back by'
+      local thrusters = try(function() return s.find_entities_filtered{type='thruster', limit=64} end) or {}
+      local lines, skipped = M.plan_builds(s, list2, pl.hub, thrusters, {})
+      for _, line in ipairs(lines or {}) do
+        if line:find('tile ghost ' .. at(x, y), 1, true) then return 'waits: ' .. line end
+      end
+      if skipped and skipped[key(x, y)] then
+        return string.format('not checked: the check ran out of its %d tile looks before deciding this one (a hole beside it larger than it follows); unknown, not clear', STEPS)
+      end
+      return string.format('nothing the foundation rules hold it back by (checked with the %d tile ghost%s within 16 tiles of it)', #list2, #list2 == 1 and '' or 's')
     end
   end
   -- platform_tiles (batch24 B3, Astra: learned by trial that a tile is deconstructed only beside empty space): each
