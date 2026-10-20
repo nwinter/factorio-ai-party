@@ -1962,6 +1962,18 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
   (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
   is out of it.
+  An `inspect {area}` (or `{position, radius}`) that finds nothing of ours says whether the area is in sight (d20
+  batch56 R3: 27 empty areas in shifts 45-47 read like a sight refusal): `no entity of ours with its centre in
+  (2,2)-(10,10); the area is in sight now (our force sees its chunk)`, `...; 3 of its 4 chunks in sight now, 1 out of
+  sight`, or `...; the area is out of sight now (its chunk is not one our force sees: ...); the nearest radar coverage
+  ...`.
+- `screenshot` (the `./shot` script: `./shot NAME [WIDTH HEIGHT] [at=X,Y] [surface=PLANET | platform=NAME]`) is centred
+  on the character without `position`. With `position` (d20 batch56 R2, Enginerd 14:42: 5 of 19 shots came 1-18 s after
+  a 143-606 tile walk) it is centred there by remote view, as a player's map shows it: the centre in a chunk our force
+  sees now (refused as inspect is, with the nearest radar coverage), and every chunk of the frame too (zoom 1, 32 px a
+  tile: 1280x720 spans 40x22.5 tiles), since the engine draws what stands there now; the refusal names the chunks out
+  of sight. `surface` (a planet, with `position`) and `platform` (platform coordinates, hub at 0,0) take it on another
+  surface. The reply has `position`, `surface` and `by: remote view` when out of the character's sight.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
   within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees, plants and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
