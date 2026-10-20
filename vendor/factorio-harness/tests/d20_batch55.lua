@@ -1,0 +1,168 @@
+-- Run from repository root: lua tests/d20_batch55.lua
+-- d20 batch55 P1 (viewer Aurora, shift47 13:59: "Could factory snapshots retain their capture time after refresh errors
+-- and reject older background results?"). The survey, threat's chart, game_alerts, the census and networks are tested
+-- in their own files (tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua); here snapfail.lua and
+-- the ground watch.
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+game={tick=0}
+
+-- snapfail: the failure kept, the next try counted from it, an older result dropped, the reply's line.
+do
+  local S=require('snapfail')
+  local f=S.failed('survey.lua:1: boom\nstack', 1000)
+  eq(f.tick,1000); eq(f.error,'survey.lua:1: boom stack','one line')
+  eq(#S.failed(string.rep('x',500),1).error,200,'bounded')
+  eq(S.since(400,nil),400); eq(S.since(400,f),1000); eq(S.since(1200,f),1200,'a read since the failure')
+  eq(S.older(500,600),true,'a job started before the read it would replace'); eq(S.older(700,600),false); eq(S.older(500,nil),false)
+  game.tick=1600
+  eq(S.line('the survey',400,f),'the last refresh of the survey failed 10s ago (survey.lua:1: boom stack); the survey is from 20s ago')
+  eq(S.line('the survey',400,nil),nil); eq(S.line('the survey',1200,f),nil,'a failure before the read held is not its')
+end
+print('d20_batch55 snapfail: ok')
+
+-- The ground watch (status alerts, reply hints): a pass that fails keeps the watch's tick, the alerts say its age and
+-- the failure, the next pass starts WATCH_EVERY after it; a pass finishing after a newer watch (a force's first,
+-- made in a reply) never replaces it.
+do
+  local st,boom={},nil
+  local force={name='player'}
+  local surface={index=1,name='nauvis',valid=true,count_entities_filtered=function() return 0 end,find_entities_filtered=function() return {} end}
+  game.surfaces={surface}; game.forces={player=force}
+  game.get_surface=function(i) return i==1 and surface or nil end
+  local bands=0
+  local G=dofile('mod/agent-harness_0.1.0/ground.lua'){state=function() return st end,distance=function() return 0 end,
+    walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
+      band=function(w) if boom then error(boom) end; bands=bands+1; if not w.went then w.went=true; return {} end end}}
+  local function pass() repeat game.tick=game.tick+1; G.watch_tick(game.tick) until not (st.ground_jobs or {}).player end
+  game.tick=10000
+  G.watch_tick(game.tick); assert(st.ground_jobs.player,'a pass'); pass()
+  local w=st.ground_watch.player
+  eq(w.tick,10000,'the pass\'s start')
+  game.tick=10000+1800; G.watch_tick(game.tick); assert(st.ground_jobs.player,'the next pass')
+  boom='band read broke'
+  game.tick=game.tick+1; G.watch_tick(game.tick)
+  eq(st.ground_jobs.player,nil,'the pass ended'); eq(st.ground_errors.count,1)
+  eq(st.ground_watch.player,w); eq(w.tick,10000,'the watch keeps its tick')
+  local failed_at=game.tick
+  game.tick=game.tick+600
+  local lines=G.alerts({force=force})
+  eq(#lines,1)
+  eq(lines[1],string.format('the last refresh of the ground watch failed 10s ago (%s); the ground watch is from %ds ago',w.refresh_failed.error,
+    math.floor((game.tick-10000)/60)))
+  assert(w.refresh_failed.error:find('band read broke',1,true))
+  boom=nil
+  game.tick=failed_at+1799; G.watch_tick(game.tick); eq(st.ground_jobs.player,nil,'no pass within WATCH_EVERY of the failure')
+  game.tick=game.tick+1; G.watch_tick(game.tick); assert(st.ground_jobs.player,'the pass after it')
+  local start=st.ground_jobs.player.start
+  -- the force's watch read at once in a reply (as before its first pass) while this pass runs
+  st.ground_watch.player=nil; st.ground_bg=nil
+  game.tick=game.tick+1
+  local newer=G.watch(force)
+  eq(newer.tick,game.tick); eq(G.alerts({force=force}),nil,'no pile, no failure')
+  pass()
+  assert(start<newer.tick)
+  eq(st.ground_watch.player,newer,'the pass\'s older watch was dropped')
+  -- Without a newer watch the next pass replaces it as before.
+  game.tick=newer.tick+1800; G.watch_tick(game.tick); pass()
+  assert(st.ground_watch.player~=newer and st.ground_watch.player.tick>newer.tick,'the next pass replaced it')
+  game.surfaces,game.forces,game.get_surface=nil,nil,nil
+end
+print('d20_batch55 ground watch: ok')
+
+-- P2 (viewer Aurora 14:37): checks with their last observed result, stale when their area changed since the run, their
+-- blueprint was pasted there again or past their stale age; run when added and on request only.
+do
+  local st={}
+  local force={name='player'}
+  local ents={}
+  local finds=0
+  local surface={index=1,name='nauvis'}
+  surface.find_entities_filtered=function(f)
+    finds=finds+1
+    assert(f.area and f.force==force,'one find over the area, ours')
+    local out={}
+    for _,e in ipairs(ents) do
+      local q=e.position
+      if e.valid and q.x>=f.area[1][1] and q.x<=f.area[2][1] and q.y>=f.area[1][2] and q.y<=f.area[2][2] then out[#out+1]=e end
+    end
+    return out
+  end
+  game.get_surface=function(i) return i==1 and surface or nil end
+  local unit=100
+  local function put(name,x,y,d,ghost)
+    unit=unit+1
+    local e={valid=true,name=ghost and 'entity-ghost' or name,ghost_name=ghost and name or nil,type=ghost and 'entity-ghost' or 'assembling-machine',
+      unit_number=unit,position={x=x,y=y},direction=d or 0,prototype={supports_direction=true}}
+    ents[#ents+1]=e
+    return e
+  end
+  local met,saw=true,'met: 400 iron-plate'
+  local C=dofile('mod/agent-harness_0.1.0/checks.lua'){state=function() return st end,position=function(q) return {x=q.x or q[1],y=q.y or q[2]} end,
+    who=function(p) return p.name end,condition=function(p,c) return met,saw end,validate=function(c) assert(c['until'],'until') end,
+    item_exists=function(id) return id==12 end}
+  local sol={name='sol',surface=surface,force=force}
+  local astra={name='astra',surface=surface,force=force}
+  game.tick=50000
+  for i=1,4 do put('assembling-machine-2',i*4,0) end
+  -- A condition check over an area, with a board item: run when added.
+  local r=C.handler(sol,{add={name='iron in the mall chest',condition={['until']='item_count',item='iron-plate',at_least=400},item=12,position={x=8,y=0},radius=10}})
+  eq(r.added,1); eq(r.check.state,'pass'); eq(r.check.result,'pass'); eq(r.check.result_tick,50000); eq(r.check.by,'sol'); eq(r.check.saw,'met: 400 iron-plate')
+  eq(r.check.line,'check #1 iron in the mall chest (sol, board #12, condition item_count): pass at tick 50000, 0s ago, by sol: met: 400 iron-plate')
+  game.tick=50600
+  r=C.handler(sol,{})
+  eq(r.count,1); eq(r.checks[1].state,'pass'); eq(r.checks[1].compared,'area compared now')
+  -- Something built, turned and removed in its area since: stale, naming what.
+  local new=put('inserter',6,2)
+  ents[1].direction=4
+  ents[4].valid=false
+  r=C.handler(astra,{id=1})
+  eq(r.check.state,'stale'); eq(r.check.result,'pass','the last result kept')
+  eq(r.check.stale_why[1],'since that run, in its area: 1 built, 1 removed, 1 turned (assembling-machine-2 (16,0) removed, assembling-machine-2 (4,0) turned, inserter (6,2) built)')
+  -- Run again: the result now, not stale.
+  met,saw=false,'not yet: 120 iron-plate'
+  game.tick=51000
+  r=C.handler(astra,{run=1})
+  eq(r.was,'pass'); eq(r.check.state,'fail'); eq(r.check.by,'astra'); eq(r.check.result_tick,51000); eq(#r.check.history,2)
+  eq(C.handler(sol,{id=1}).check.state,'fail')
+  -- Past its stale age (default 30 game minutes).
+  game.tick=51000+108001
+  r=C.handler(sol,{id=1})
+  eq(r.check.state,'stale'); eq(r.check.stale_why[1],'run 30m ago, past its stale age of 30m')
+  -- The board item's view lists it (no area read).
+  local before=finds
+  local lines=C.item_lines(12)
+  eq(#lines,1); eq(finds,before,'no find for the item view'); assert(lines[1]:find('area not compared in this read',1,true),lines[1])
+  -- A blueprint check: the last placement of a library blueprint, each entity built where the paste put it.
+  game.tick=200000
+  ents={}
+  local rec={surface=1,count=3,box={l=30,t=-2,r=42,b=2},entities={{name='assembling-machine-2',x=32,y=0,d=0},{name='assembling-machine-2',x=36,y=0,d=0},{name='inserter',x=40,y=0,d=4}}}
+  C.placed(sol,'mall row',rec)
+  put('assembling-machine-2',32,0); put('assembling-machine-2',36,0,0,true)
+  local nofit=pcall(C.handler,sol,{add={name='x',blueprint='other'}})
+  eq(nofit,false,'no placement of that blueprint remembered')
+  r=C.handler(sol,{add={name='mall row built',blueprint='mall row'}})
+  eq(r.check.state,'fail')
+  eq(r.check.saw,'1 of 3 built as placed; 1 still a ghost; 1 missing; first: assembling-machine-2 (36,0) a ghost, inserter (40,0) missing')
+  ents[2].valid=false; put('assembling-machine-2',36,0); put('inserter',40,0,8)
+  r=C.handler(sol,{run=r.added})
+  eq(r.check.saw,'2 of 3 built as placed; 1 facing otherwise; first: inserter (40,0) facing otherwise')
+  ents[#ents].direction=4
+  r=C.handler(sol,{run=r.ran})
+  eq(r.check.state,'pass'); eq(r.check.saw,'3 of 3 built as placed')
+  local id=r.ran
+  -- Pasted there again: stale until run, and the run reads the new placement.
+  game.tick=200600
+  C.placed(astra,'mall row',{surface=1,count=1,box={l=30,t=-2,r=34,b=2},entities={{name='assembling-machine-2',x=32,y=0,d=4}}})
+  r=C.handler(sol,{id=id})
+  eq(r.check.state,'stale'); eq(r.check.stale_why[1],'blueprint mall row pasted there again by astra 0s ago')
+  r=C.handler(sol,{run=id})
+  eq(r.check.state,'fail'); eq(r.check.saw,'0 of 1 built as placed; 1 facing otherwise; first: assembling-machine-2 (32,0) facing otherwise')
+  -- Listing: yours by default, all, by item; remove.
+  eq(C.handler(astra,{}).count,0); eq(C.handler(astra,{all=true}).count,2); eq(C.handler(astra,{item=12}).count,1)
+  eq(C.handler(astra,{remove=1}).removed,1); eq(C.handler(sol,{all=true}).count,1)
+  -- Nothing runs in the background: the module has no tick.
+  eq(C.tick,nil)
+  game.get_surface=nil
+end
+print('d20_batch55 P2 checks: ok')

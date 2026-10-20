@@ -226,3 +226,35 @@ do
   bot.character=saved;bot.travel=nil
 end
 print('bodiless platform observe: ok')
+-- (d20 batch55 P1, viewer Aurora) A pass that fails: the last pass keeps its as_of (the tick it started), the read says
+-- its age and the failure, and the next pass starts PERIOD after the failure.
+do
+  local st,boom={},nil
+  local C3=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return st end,
+    walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
+      band=function() if boom then error(boom) end end}}
+  local saved_tick,saved_surfaces=game.tick,game.surfaces
+  game.surfaces={surface}
+  game.tick=100000
+  C3.tick(game.tick)
+  st.census.job.stage='done'; st.census.job.base.x={}
+  game.tick=game.tick+1; C3.tick(game.tick)
+  local done=st.census.done
+  eq(done.start,100000)
+  game.tick=100000+1800; C3.tick(game.tick); assert(st.census.job,'the next pass')
+  boom='band read broke'
+  game.tick=game.tick+1; C3.tick(game.tick)
+  eq(st.census.job,nil,'the pass ended'); eq(st.census.errors.count,1)
+  eq(st.census.done,done); eq(done.start,100000,'the last pass keeps its as_of')
+  local failed_at=game.tick
+  game.tick=game.tick+600
+  local r=C3.read{part='extras'}
+  eq(r.as_of,100000); eq(r.age_s,math.floor((game.tick-100000)/60))
+  eq(r.refresh_failed,string.format('the last refresh of the census pass failed 10s ago (%s); the census pass is from %ds ago',done.refresh_failed.error,r.age_s))
+  assert(done.refresh_failed.error:find('band read broke',1,true))
+  boom=nil
+  game.tick=failed_at+1799; C3.tick(game.tick); eq(st.census.job,nil,'no pass within PERIOD of the failure')
+  game.tick=game.tick+1; C3.tick(game.tick); assert(st.census.job,'the next pass after it')
+  game.tick,game.surfaces=saved_tick,saved_surfaces
+end
+print('census failed pass: ok')

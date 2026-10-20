@@ -2081,6 +2081,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.uptime and M.uptime.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.checks and M.checks.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltupgrade and M.beltupgrade.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.alertdigest and M.alertdigest.schema or {}) do description.actions[name]=schema end
@@ -2122,7 +2123,7 @@ function handlers.describe(_,a)
     local d=description.actions[name]
     if d then d.clear_obstacles='optional true: the trees and rocks in the entries\' footprints are marked for deconstruction, those in reach mined by hand (a timed construct over them), the rest left to the construction robots; once all are gone the call runs again (watched 10 min; last.cleared); none in the way: the call runs at once (cleared says so); returns cleared, mining, robots, then_runs. The dry run lists them in trees_rocks' end
   end
-  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
+  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
@@ -2599,7 +2600,7 @@ function handlers.status(p,a)
   -- robots per planet from the kept network view (D4, Haiku 16:50)
   local okr,robots=pcall(M.networks.robot_lines,p.force)
   local okv,overdue=pcall(M.overdue_reviews,p)
-  return {overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
+  return {overdue_reviews=okv and overdue or nil,robots=okr and robots or nil,logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,factory_age_s=factory.age_s,factory_refresh_failed=factory.refresh_failed,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
@@ -12478,7 +12479,8 @@ do local blueprint_handlers=blueprint_module{contested=function(s,f,item,at) ret
   placed=function(p,e) return M.efficiency.built(M.board.who(p),e) end,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
-  who=function(p) return M.board.who(p) end,tunnels=function(s,force,ghosts,on) return M.platplan.tunnels(s,force,ghosts,on) end}
+  who=function(p) return M.board.who(p) end,tunnels=function(s,force,ghosts,on) return M.platplan.tunnels(s,force,ghosts,on) end,
+  checks_placed=function(p,name,rec) if M.checks then return M.checks.placed(p,name,rec) end end}
 for name,handler in pairs(blueprint_handlers) do if name~='plan' and name~='operator' then handlers[name]=handler end end
 -- The team blueprint library's operator read (tools/bplibrary.py mirrors it to runs/RUN/blueprints/).
 M.bplibrary_operator=blueprint_handlers.operator
@@ -15566,7 +15568,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){state=state,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -17620,6 +17622,12 @@ function handlers.board_progress(p,a) return M.progress.read(p,a) end
 function handlers.board_critical(p,a) return M.progress.critical(p,a) end
 function handlers.board_focus(p,a) return M.progress.focus(p,a) end
 -- Lessons scored, checked and reviewed; the team's ground rules (lessonbook.lua; d17 batch15 Group D).
+-- checks (checks.lua, d20 batch55 P2, viewer Aurora): a condition or a blueprint placement kept with its last result,
+-- stale when its area changed since, its blueprint was pasted there again, or past its age.
+M.checks=require('checks'){state=state,position=position,who=function(p) return M.board.who(p) end,
+  condition=function(p,c) return conditions.check(p,c) end,validate=function(c) return conditions.validate(c) end,
+  item_exists=function(id) return M.board.items()[id]~=nil end}
+function handlers.checks(p,a) return M.checks.handler(p,a) end
 M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
   condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,
   who=function(p) return M.board.who(p) end,

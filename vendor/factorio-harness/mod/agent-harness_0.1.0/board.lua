@@ -468,6 +468,7 @@ return function(api)
       areas=#i.areas > 0 and i.areas or nil,
       handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
       needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
+      checks=full and api.check_lines and api.check_lines(i.id) or nil,
       blocked_by=i.blocked_by, parent=i.parent, open_steps=i.open_steps, supersedes=i.supersedes, superseded_by=i.superseded_by,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
@@ -610,6 +611,7 @@ return function(api)
       requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent, supersedes=i.supersedes, superseded_by=i.superseded_by,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil, evidence=evidence_view(i, full),
+      checks=full and api.check_lines and api.check_lines(i.id) or nil,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
   -- (d19 batch41 B3) `name`'s active items (owned, or posted with no owner) whose newest evidence names a next check at a

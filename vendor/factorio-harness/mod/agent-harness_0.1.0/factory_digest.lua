@@ -41,6 +41,8 @@ return function(api)
         if g then
           g.survey_tick=entry.digest and entry.digest.tick or entry.tick
           g.survey_age_s=math.max(0,math.floor((game.tick-g.survey_tick)/60))
+          -- (d20 batch55 P1) its last background refresh failed: when and why (the survey keeps its tick)
+          if entry.refresh_failed and entry.refresh_failed.tick>=g.survey_tick then g.refresh_failed=entry.refresh_failed end
           if entry.digest then g.machines=entry.digest.machines;g.fuel=entry.digest.fuel;g.belts=entry.digest.belts
           else g.survey_unknown='cached survey predates digest fields' end
         end

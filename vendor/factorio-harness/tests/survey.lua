@@ -228,9 +228,41 @@ do
   extra[1]={valid=true,type='ammo-turret',name='gun-turret',position={x=0,y=0},status=0,get_inventory=function() error('broken turret') end}
   game.tick=game.tick+1800
   local kept=storage.survey_cache['player/1']
+  local kept_tick=kept.tick
   for _=1,3000 do game.tick=game.tick+1; S.tick(game.tick); if storage.survey_errors then break end end
   eq(storage.survey_errors.count,1); assert(storage.survey_errors.last:find('broken turret',1,true),storage.survey_errors.last)
   eq(storage.survey_jobs['player/1'],nil); eq(storage.survey_cache['player/1'],kept,'the last survey is kept')
+  -- (d20 batch55 P1, viewer Aurora) the survey keeps the tick it was taken at; the reply says its age and the failure.
+  local failed_at=storage.survey_errors.tick
+  eq(kept.tick,kept_tick,'the tick it was taken at, not the failure\'s'); eq(kept.refresh_failed.tick,failed_at)
+  game.tick=failed_at+600
+  local told=S.summary(p)
+  eq(told.as_of,kept_tick); eq(told.age_s,math.floor((game.tick-kept_tick)/60))
+  eq(told.refresh_failed,string.format('the last refresh of the factory survey failed 10s ago (%s); the factory survey is from %ds ago',
+    kept.refresh_failed.error,told.age_s))
+  assert(kept.refresh_failed.error:find('broken turret',1,true))
+  -- The next job waits BG_TICKS after the failure (not after the survey's own tick, long past).
+  for _=1,1199 do game.tick=game.tick+1; S.tick(game.tick) end
+  eq(storage.survey_jobs['player/1'],nil,'no job within 30 s of the failure')
+  extra[1]=nil
+  game.tick=game.tick+1; S.tick(game.tick)
+  assert(storage.survey_jobs['player/1'],'a job 30 s after the failure')
+  -- A slow job finishing after a forced read (machines=true) never replaces it.
+  local job=storage.survey_jobs['player/1']
+  game.tick=game.tick+5
+  local forced=S.summary(p,true)
+  local newer=storage.survey_cache['player/1']
+  eq(newer.tick,game.tick,'the forced read is now'); eq(forced.as_of,nil); eq(forced.refresh_failed,nil,'a new read carries no failure')
+  for _=1,3000 do game.tick=game.tick+1; S.tick(game.tick); if not storage.survey_jobs['player/1'] then break end end
+  eq(storage.survey_jobs['player/1'],nil,'the job ended')
+  assert(job.start<newer.tick)
+  eq(storage.survey_cache['player/1'],newer,'the job\'s older survey was dropped')
+  -- Without a newer read, a job's survey replaces the cache as before.
+  game.tick=newer.tick+1800
+  game.tick=game.tick+1; S.tick(game.tick)
+  assert(storage.survey_jobs['player/1'],'the next job')
+  for _=1,3000 do game.tick=game.tick+1; S.tick(game.tick); if not storage.survey_jobs['player/1'] then break end end
+  assert(storage.survey_cache['player/1'].tick>newer.tick,'the next job\'s survey replaced it')
   surface.find_entities_filtered=find
   game.forces=nil
 end
@@ -250,7 +282,7 @@ eq(S2.summary(p).factory.research,'automation 50% eta 1m15s (rate of the last 2m
 rate={nil}; game.tick=301200
 eq(S2.summary(p).factory.research,'automation 50% (queue ends)')
 local cached=storage.survey_cache['player/1']
-assert(cached.digest and cached.digest.tick<cached.tick,'survey failure retains original digest age')
+assert(cached.digest and cached.digest.tick==cached.tick,'the digest\'s tick is the survey\'s')
 eq(cached.digest.machines.lab.type,'lab')
 assert(cached.digest.fuel.boiler.empty>0 and cached.digest.fuel.boiler.low>0)
 print('survey: ok')
