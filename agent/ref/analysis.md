@@ -114,6 +114,10 @@
   robots and the item), and the items a rebuild needs (to carry, held, in the covering networks). A call checks the
   newest 100; older ones are counted by name and marked not checked (`unchecked`).
   Example: `./fh call losses --args '{"surface":"vulcanus","since":120}'`
+  `losses {incident, recovery: {checked, result?, check?}}` dates your recovery check on a loss incident (the id in
+  status alerts.incidents): its alert lines then say `handled by NAME, checked N ago: ...` (with a `checks` check's
+  state when named); a loss after it, joining the incident or within 2 tiles of its box, reopens it, and the lines say
+  what was lost and when. `recovery: false` clears it; `{incident}` alone reads its row.
 - `fields: [...]` on `inspect`, `status`, `platform` and `platforms`: only those fields of the reply (a row's, or
   `"hub.cargo"` one level down); an unknown name is refused with the names there are.
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:

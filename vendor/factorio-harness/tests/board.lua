@@ -1038,3 +1038,48 @@ do
   sol('board_update',{id=c.item.id,status='done'})
 end
 print('board: ok')
+-- (d20 batch55 P3, viewer Aurora 14:38) A loss incident's recovery check: who, when, what was checked; its lines say
+-- handled; a later loss in its box reopens it (said, with what), one far off does not.
+do
+  local since=tick-1
+  died('stone-wall',11000,11000,enemy_biter,{name='enemy'}); died('stone-wall',11004,11002,enemy_biter,{name='enemy'})
+  jump(60)
+  local function find(id)
+    for _,r in ipairs(astra('status',{since=since}).alerts.incidents or {}) do if r.box.x0==11000 and (not id or r.id==id) then return r end end
+  end
+  local row=find()
+  eq(row.recovery,nil,'none at first')
+  fails(function() sol('losses',{incident=99999,recovery={checked='x'}}) end,'no loss incident #99999 kept')
+  fails(function() sol('losses',{incident=row.id,recovery={}}) end,'recovery is {checked')
+  jump(600)
+  local r=sol('losses',{incident=row.id,recovery={checked='walls at the east gate',result='2 walls rebuilt'}})
+  eq(r.incident.recovery.by,'sol'); eq(r.incident.recovery.tick,tick)
+  assert(r.line:find('; handled by sol, checked 0s ago: walls at the east gate: 2 walls rebuilt$'),r.line)
+  eq(sol('losses',{incident=row.id}).incident.recovery.checked,'walls at the east gate','a read leaves it')
+  jump(720)
+  assert(has(astra('status',{since=since}).alerts.latest,'handled by sol, checked 12s ago: walls at the east gate: 2 walls rebuilt'))
+  -- 6 game minutes on: one lost 36 tiles off (a new incident, not in its box): still handled; one in its box: reopened.
+  jump(6*3600)
+  died('gun-turret',11040,11000,enemy_biter,{name='enemy'})
+  jump(60)
+  assert(find(row.id).line:find('handled by sol, checked 6m13s ago',1,true),find(row.id).line)
+  died('stone-wall',11002,11001,enemy_biter,{name='enemy'})
+  jump(60)
+  local now=find(row.id)
+  eq(now.recovery.reopened,true); eq(now.recovery.lost_since,1)
+  assert(now.line:find("; reopened: 1 lost there since sol's recovery check 6m14s ago (1 stone-wall; the first 1s ago; that check: walls at the east gate: 2 walls rebuilt)",1,true),now.line)
+  eq(now.total,2,'a new incident took the loss; this one is reopened')
+  -- A check of checks named with it: its state on the line; an unknown one refused.
+  fails(function() astra('losses',{incident=row.id,recovery={checked='walls',check=999}}) end,'recovery.check is a check number')
+  local c=astra('checks',{add={name='east gate walls',condition={['until']='researched',technology='automation'}}})
+  r=astra('losses',{incident=row.id,recovery={checked='walls rebuilt',check=c.added}})
+  assert(r.line:find('handled by astra, checked 0s ago: walls rebuilt; check #'..c.added..' east gate walls: ',1,true),r.line)
+  astra('losses',{incident=row.id,recovery={checked='walls',result='x'}})
+  r=astra('losses',{incident=row.id,recovery=false}); astra('checks',{remove=c.added})
+  -- A new check replaces it (said); false clears it.
+  sol('losses',{incident=row.id,recovery={checked='walls at the east gate',result='2 walls rebuilt'}})
+  r=astra('losses',{incident=row.id,recovery={checked='walls again'}})
+  eq(r.replaced,"sol's recovery check from 0s ago"); assert(r.line:find('handled by astra, checked 0s ago: walls again$'),r.line)
+  eq(astra('losses',{incident=row.id,recovery=false}).incident.recovery,nil)
+end
+print('board recovery checks: ok')
