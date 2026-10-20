@@ -184,7 +184,10 @@ map's edge (dashed, its distance in the tooltip).
 showed Nauvis only). `planets` lists them all, `[{surface, tick, buildings}]`. `planet_map` is one of them in turn
 each push (`{surface, tick, cell, x0, y0, w, h, rows, buildings}`, the same letters as `basemap`, cell 4 doubled until
 the planet's buildings fit 128 cells a side), so a push carries one planet's grid (at most about 17 KB); the page
-keeps the ones it has seen and drops a planet `planets` no longer lists. They come from the harness census's last
+keeps the ones it has seen. (d20 batch50 D1, viewer Aurora) A planet seen once keeps its tab and its last map, also
+when a push or the census read leaves it out (the stream service keeps the last map too); a map 10 game minutes or
+older says its age on its tab ("Gleba · 12 min old") and under the map ("map from 12 min ago", from the state's
+`tick`); the planet shown and the view (pan, zoom) stay across updates. They come from the harness census's last
 pass (`census {part: "planets"}` and `census {part: "basemap", surface}`, operator reads that answer from storage),
 one planet a minute in the stream service. The map card shows a tab per planet beside Nauvis; on a planet's tab its
 buildings are drawn, with the agents on it (the rest listed in the corner); no core, ore, terrain, nests or turret

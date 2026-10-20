@@ -12,7 +12,8 @@
 // {r, g, b, a}, cells [[cx, cy, amount]], max, reached [{x, y}]}] (the stream's pollution and spore layer per surface,
 // tools/stream/clouds.py: 32-tile chunks, drawn in the game's map colour, the amount on hover), surface (the surface
 // shown, default nauvis), planets {surface: grid} (another planet's coarse map, the census's; push_live sends one a
-// push and live.js keeps them). The map is Nauvis, with its base; a switch shows another planet with a map or a cloud
+// push and live.js keeps them; the viewer keeps every surface seen and its last map, remember()), now_tick (the state's
+// game tick: a kept map's age). The map is Nauvis, with its base; a switch shows another planet with a map or a cloud
 // (Gleba's spores) and only what is known there: its buildings, the cloud, the nests it reached, the agents on it. An agent elsewhere (another
 // planet, aboard a platform or in a cargo pod) is listed in the map's corner ("Sol · Vulcanus"), never drawn.
 (function (root) {
@@ -249,6 +250,52 @@
     return sec < 60 ? sec + ' s ago' : sec < 3600 ? Math.round(sec / 60) + ' min ago' : Math.round(sec / 3600) + ' h ago';
   }
   function cap(s) { s = String(s || '').replace(/[-_]/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
+  // (d20 batch50 D1, viewer Aurora: "Could partial map updates retain the last map with its age? Tabs sometimes disappear
+  // and reset the selected planet") A push brings one planet's map, and a planet or a cloud can be missing from one:
+  // every surface seen once keeps its switch and its last map (memo {planets, seen}, the viewer's own), the newer of
+  // two maps by tick. data.now_tick (the state's game tick) gives each kept map's age; OLD_S and older says it.
+  var OLD_S = 600;
+  function remember(memo, data) {
+    data = data || {};
+    memo.planets = memo.planets || {}; memo.seen = memo.seen || {};
+    var ps = data.planets && typeof data.planets === 'object' ? data.planets : {};
+    Object.keys(ps).sort().forEach(function (k) {
+      var m = ps[k];
+      if (k === 'nauvis' || !validGrid(m) || !m.rows.length) return;
+      var old = memo.planets[k];
+      if (!old || !(old.tick > m.tick)) memo.planets[k] = m;
+      if (!memo.seen[k]) memo.seen[k] = { text: cap(k), planet: true };
+    });
+    (Array.isArray(data.clouds) ? data.clouds : []).forEach(function (c) {
+      if (c && typeof c.surface === 'string' && c.surface !== 'nauvis' && !memo.seen[c.surface]) memo.seen[c.surface] = { text: c.label || cap(c.surface) };
+    });
+    var seen = {};
+    Object.keys(memo.seen).forEach(function (k) { seen[k] = memo.seen[k]; });
+    var planets = {};
+    Object.keys(memo.planets).forEach(function (k) { planets[k] = memo.planets[k]; });
+    return Object.assign({}, data, { planets: planets, seen: seen });
+  }
+  // A kept planet map's age in game seconds (null without both ticks), and how a switch or the scale line says it.
+  function mapAge(data, k) {
+    var m = data && data.planets && data.planets[k], now = data && (data.now_tick != null ? data.now_tick : null);
+    return m && isFinite(m.tick) && isFinite(now) && now >= m.tick ? (now - m.tick) / 60 : null;
+  }
+  function ageText(sec) {
+    var m = Math.floor(sec / 60);
+    return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min';
+  }
+  // The surface switch: Nauvis, then every surface seen (planets with a map by name, then cloud-only ones), each kept
+  // map OLD_S or older with its age ("Gleba · 12 min old"); [] while nothing but Nauvis is known.
+  function switchList(data) {
+    var seen = (data && data.seen) || {}, planets = [], clouds = [];
+    Object.keys(seen).sort().forEach(function (k) {
+      var age = mapAge(data, k);
+      var row = { surface: k, text: seen[k].text + (age != null && age >= OLD_S ? ' · ' + ageText(age) + ' old' : ''), age: age };
+      (data.planets && data.planets[k] ? planets : clouds).push(row);
+    });
+    var others = planets.concat(clouds);
+    return others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others) : [];
+  }
 
   // The cloud's chunk under a tile position: its amount, as the game's map shows it on hover.
   function cloudHit(d, x, y) {
@@ -587,10 +634,10 @@
     else window.addEventListener('resize', function () { self.draw(); });
   }
   Viewer.prototype.set = function (data) {
-    this.data = data || {};
-    var self = this, has = (this.data.clouds || []).some(function (c) { return c && c.surface === self.surface; }) ||
-      !!(this.data.planets && this.data.planets[this.surface]);
-    if (this.surface !== 'nauvis' && !has) this.surface = 'nauvis';  // its cloud and map are gone: back to the base
+    // (D1) every surface seen keeps its switch and last map: the surface shown and the view (pan, zoom) stay
+    this.memo = this.memo || {};
+    data = this.data = remember(this.memo, data);
+    if (this.surface !== 'nauvis' && !data.seen[this.surface]) this.surface = 'nauvis';
     this.d = prepareSafe(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
     this.renderLegend();
@@ -642,7 +689,9 @@
       return;
     }
     this.root.dataset.paintMs = Date.now() - t0;  // tools/site_shots.js reads how long a frame took
-    this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + gone;
+    var age = this.d.surface !== 'nauvis' ? mapAge(this.data, this.d.surface) : null;
+    var old = age != null && age >= OLD_S ? ' · map from ' + ageText(age) + ' ago' : '';
+    this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + old + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
   };
@@ -659,10 +708,8 @@
   Viewer.prototype.renderLayers = function () {
     var self = this, box = this.root.querySelector('.mapview-layers');
     // other surfaces with a map (another planet's buildings) or a cloud: a switch between them and Nauvis
-    var others = [], seenS = {};
-    this.d.planets.forEach(function (k) { seenS[k] = 1; others.push({ surface: k, text: cap(k) }); });
-    this.d.clouds.forEach(function (c) { if (c.surface !== 'nauvis' && !seenS[c.surface]) { seenS[c.surface] = 1; others.push({ surface: c.surface, text: c.label || cap(c.surface) }); } });
-    var surfaces = others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others) : [];
+    // (D1) every surface seen once, a kept map with its age
+    var surfaces = switchList(this.data);
     var sig = LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
       surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '');
     if (box.dataset.sig === sig) return;
@@ -825,6 +872,7 @@
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
     prepare: prepare, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
+    remember: remember, switchList: switchList, mapAge: mapAge, OLD_S: OLD_S,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);

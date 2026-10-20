@@ -810,9 +810,9 @@ class Model:
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
-        if obs.get("planet_names") is not None:  # a planet the census no longer lists has no buildings of ours now
-            keep = set(obs["planet_names"])
-            self.planet_maps = {k: v for k, v in self.planet_maps.items() if k in keep}
+        # (d20 batch50 D1, viewer Aurora: "Could partial map updates retain the last map with its age?") a planet the
+        # census read leaves out keeps its last map (its tick says how old; the site labels it), so a page loaded later
+        # still has its tab
         if isinstance(obs.get("planet_map"), dict) and obs["planet_map"].get("surface"):
             self.planet_maps[obs["planet_map"]["surface"]] = obs["planet_map"]
         if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
