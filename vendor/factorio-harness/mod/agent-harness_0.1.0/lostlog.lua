@@ -28,6 +28,9 @@ return function(api)
     local r = {f=e.force.name, s=e.surface.name, n=e.name, x=e.position.x, y=e.position.y,
       d=try(function() return e.supports_direction and e.direction or nil end), q=q ~= 'normal' and q or nil, t=game.tick, c=cause}
     m.rows[m.next] = r
+    -- (d20 batch55 P5) each force and surface's last loss tick: platform_loss reads nothing more while none is newer
+    m.last = m.last or {}
+    m.last[r.f .. '|' .. r.s] = r.t
     if m.pos then
       local key = r.f .. '|' .. r.s
       local by = m.pos[key]
@@ -46,6 +49,24 @@ return function(api)
       end
     end
     m.next = m.next % MAX + 1
+  end
+  -- (d20 batch55 P5) our losses on a surface after tick `since`, newest first (at most `max`, and how many in all): read
+  -- back from the newest row only when that surface's last loss is newer.
+  function M.since(force, surface, since, names, max)
+    local m = store()
+    local last = m.last and m.last[force .. '|' .. surface]
+    if not last or last <= since then return {}, 0 end
+    local out, n = {}, 0
+    for i = 0, MAX - 1 do
+      local slot = ((m.next - 2 - i) % MAX) + 1
+      local r = m.rows[slot]
+      if not r or r.t <= since then break end
+      if r.f == force and r.s == surface and (not names or names[r.n]) then
+        n = n + 1
+        if #out < (max or 8) then out[#out+1] = r end
+      end
+    end
+    return out, n
   end
   -- (d19 batch44 A2: rows_in read all 6000 slots a call, 9 ms on the private copy) by force and surface, each position's
   -- newest slot with the tick written, built once from the log; a slot written over since fails its tick
