@@ -864,6 +864,7 @@ class Relay:
         self.last, self.by_author, self.hold = 0.0, {}, 0.0
         self.state, self.error, self.sent, self.next_probe = "off", None, 0, 0.0
         self.muted, self.next_muted = set(), 0.0
+        self.voices = {}  # casefolded viewer name -> when that viewer last wrote in chat (to_viewer())
         self.dropped = collections.Counter()
         # Ids already relayed, kept across restarts and shifts (operator 08:56: at the 07:44 shift change the new
         # service re-read recent chat): runs/RUN/viewer-relayed.jsonl beside the switch, with the previous run's
@@ -881,10 +882,29 @@ class Relay:
     def set_team(self, team):
         self.team = team
 
-    def unaddressed(self, msg):
-        """A line address() would send by rotation: it names no agent, and is no staff line, @someone or to Nick."""
+    VOICE_WINDOW = 6 * 3600.0  # a viewer who wrote in chat this recently: "Name: ..." at a line's start answers them
+
+    def saw(self, name, t):
+        """A chat line by this viewer (every line the feed takes, relayed or not)."""
+        if name:
+            k = str(name).casefold()
+            self.voices[k] = max(self.voices.get(k, 0.0), float(t))
+
+    def to_viewer(self, text, now=None):
+        """(Nick d20 07:28: the host's "Caleb: yeah I'm mostly along for the ride too, ..." went to Muse, the agent of
+        his last line) a line that opens with a viewer's name and ":" or "," answers that viewer: like "@Caleb", it wakes
+        no agent. The viewer wrote in chat within VOICE_WINDOW; an agent's name is never a viewer's here."""
+        m = re.match(r"\s*([^:,@\n]{2,32}?)\s*[:,]", text or "")
+        if not m or self.named_agents(m.group(1)):
+            return False
+        t = self.voices.get(m.group(1).strip().casefold())
+        return t is not None and (now if now is not None else time.time()) - t <= self.VOICE_WINDOW
+
+    def unaddressed(self, msg, now=None):
+        """A line address() would send by rotation: it names no agent, and is no staff line, @someone, to Nick or an
+        answer to a viewer by name ("Caleb: ...")."""
         return not (self.named_agents(msg["text"]) or msg.get("staff") or re.search(r"@\w", msg["text"])
-                    or re.search(r"\bnick\b", msg["text"], re.I))
+                    or re.search(r"\bnick\b", msg["text"], re.I) or self.to_viewer(msg["text"], now))
 
     def prev_agent(self, author, now):
         """The agent this viewer's last line went to within the ask window."""
@@ -1063,7 +1083,8 @@ class Relay:
             return [n for n, _ in named], [n for n, at in named if not at]
         # the channel's staff answering viewers ("Sure, will add"), and lines to a viewer (@someone) or to Nick ("this is
         # great stuff nick"), are not for an agent: delivered as written, waking nobody
-        if msg.get("staff") or re.search(r"@\w", msg["text"]) or re.search(r"\bnick\b", msg["text"], re.I):
+        if msg.get("staff") or re.search(r"@\w", msg["text"]) or re.search(r"\bnick\b", msg["text"], re.I) \
+                or self.to_viewer(msg["text"], now):
             return [], []
         # (D4) by content: the claims' owners of a place it names, else Clef's pick (Feed.ingest); unsure: rotation
         r = msg.get("route") or {}
@@ -1288,6 +1309,8 @@ class Feed:
         passed = []
         for m in msgs:
             self.remember(m)
+            if self.relay and m.get("name"):
+                self.relay.saw(m["name"], m.get("t") or now)
             # the host's own commands ("!view": hostview.py), never shown or relayed; anyone else's "!view" is chat
             if m.get("host") and self.commands:
                 try:
@@ -1399,7 +1422,7 @@ class Feed:
             return {}
         out = {}
         for v in msgs:
-            if v.get("staff") or to_operator(v["text"]) or is_chatter(v["text"]) or not rl.unaddressed(v):
+            if v.get("staff") or to_operator(v["text"]) or is_chatter(v["text"]) or not rl.unaddressed(v, now):
                 continue
             hit = rl.team.place_owners(v.get("full") or v["text"])
             if hit:
