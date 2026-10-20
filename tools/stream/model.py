@@ -559,6 +559,17 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     return out
 
 
+def fmt_age(sec):
+    """An age for a card: 40 s, 12 min, 2 h, 2 h 15 min."""
+    sec = int(sec)
+    if sec < 90:
+        return f"{sec} s"
+    if sec < 90 * 60:
+        return f"{round(sec / 60)} min"
+    h, m = sec // 3600, sec // 60 % 60
+    return f"{h} h" + (f" {m} min" if m else "")
+
+
 def fmt_game_time(sec):
     sec = int(sec)
     return f"{sec // 3600}h{sec // 60 % 60:02d}m"
@@ -646,6 +657,7 @@ class Agent:
         self.platform = None
         self.wait = None  # latest measured sleep/body/queue wait from existing status and journal reads
         self.notes_job = None  # its notes.md "## Now" job line (live.py, notes_job), for the card
+        self.notes_job_t = None  # when that notes.md was saved (wall clock), for the card's age
         self.attention = None  # its latest request with a place (attention.py), with t: when it came in
 
     def bump(self, amount, now):
@@ -1027,6 +1039,8 @@ class Model:
             ag.wait = a["wait"]
         if "notes_job" in a:
             ag.notes_job = a["notes_job"]
+        if "notes_job_t" in a:
+            ag.notes_job_t = a["notes_job_t"]
         if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
             rest = a["resting"] if isinstance(a["resting"], dict) else None
             if rest and (not ag.resting or ag.resting.get("until") != rest.get("until")):
@@ -1307,6 +1321,9 @@ class Model:
             board["open_unowned"] = b["open_unowned"]
         if isinstance(b, dict) and "plan" in b:  # the team plan (board_plan): goals and who is on what
             board["plan"] = b["plan"] or None
+        if isinstance(b, dict) and "focus" in b:  # each agent's board_focus row by name; None: the runtime gave none
+            rows = b["focus"]
+            board["focus"] = {r["agent"]: r for r in rows if isinstance(r, dict) and r.get("agent")} if isinstance(rows, list) else None
         if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
             board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
         for it in items:
@@ -2148,6 +2165,35 @@ class Model:
             out = [sum(out[int(i * k):int((i + 1) * k)]) / max(1, int((i + 1) * k) - int(i * k)) for i in range(buckets)]
         return [round(v, 1) for v in out]
 
+    def job_card(self, ag, plan_rows, now):
+        """A card's job, labelled with where it comes from and its age (d20 batch54 N3): the agent's board_focus
+        (board_focus rows, game time since it was set), else its team-plan line (game time since that line was set),
+        else its notes.md "## Now" job line (wall time since the file was saved), else none. {job, job_from (focus,
+        plan, notes or None), job_tick (game tick set: focus and plan), job_age_s, job_label}."""
+        focus_rows = self.board.get("focus")
+        f = (focus_rows or {}).get(ag.name)
+        def game_age(tick):
+            return max(0, int((self.tick - tick) / 60)) if isinstance(tick, (int, float)) and self.tick else None
+        if f and f.get("id") is not None:
+            text = f"#{f['id']} {f.get('title') or '(item gone)'}" + (f"; {f['step']}" if f.get("step") else "") + \
+                (f"; blocker: {f['blocker']}" if f.get("blocker") else "")
+            age = game_age(f.get("tick"))
+            return {"job": clean_text(text), "job_from": "focus", "job_tick": f.get("tick"), "job_age_s": age,
+                    "job_label": "focus, " + (f"set {fmt_age(age)} ago" if age is not None else "age unknown") +
+                                 ("; its step shows no completion across checks" if f.get("stalled") else "")}
+        none_set = "; no focus set" if focus_rows is not None else ""
+        row = plan_rows.get(ag.name)
+        if row:
+            age = game_age(row.get("tick"))
+            return {"job": row["text"], "job_from": "plan", "job_tick": row.get("tick"), "job_age_s": age,
+                    "job_label": "plan line, " + (f"set {fmt_age(age)} ago" if age is not None else "age unknown") + none_set}
+        if ag.notes_job:
+            age = max(0, int(now - ag.notes_job_t)) if isinstance(ag.notes_job_t, (int, float)) else None
+            return {"job": ag.notes_job, "job_from": "notes", "job_tick": None, "job_age_s": age,
+                    "job_label": "notes.md Now line, " + (f"saved {fmt_age(age)} ago" if age is not None else "age unknown") + none_set}
+        return {"job": None, "job_from": None, "job_tick": None, "job_age_s": None,
+                "job_label": "no focus, plan line or notes job" if focus_rows is not None else "no plan line or notes job"}
+
     def snapshot(self, now, cameras=None):
         cams_by_agent = {}
         for slot, cam in (cameras or {}).items():
@@ -2156,18 +2202,17 @@ class Model:
         agents = []
         tok = {r["name"]: r for r in (self.tokens or {}).get("rows") or []}
         # each card's current job (shift05 07:57, a viewer: "displaying the current plan of each bot instead of the
-        # motto"): its line in the team plan, else its notes.md "## Now" job line; the page falls back to the motto
-        plan_lines = {d["agent"]: d["text"] for d in reversed((self.plan_snapshot() or {}).get("doing") or [])
-                      if d.get("agent") and d.get("text")}
+        # motto"; d20 batch54 N3, viewer Aurora: "Old plan text still shows ... after assignments change"): job_card
+        plan_rows = {d["agent"]: d for d in reversed((self.plan_snapshot() or {}).get("doing") or [])
+                     if d.get("agent") and d.get("text")}
         for ag in self.agents.values():
             ag.decay(now)
-            job, job_from = (plan_lines[ag.name], "plan") if ag.name in plan_lines else \
-                (ag.notes_job, "notes") if ag.notes_job else (None, None)
+            job = self.job_card(ag, plan_rows, now)
             wait_line = waitcard.line(ag.wait, self.tick, now)
             agents.append({
                 "wait_line": wait_line,
                 "wait_reason": waitcard.reason(self.chat, ag.name, self.tick, now) if wait_line else None,
-                "job": job, "job_from": job_from,
+                **job,
                 "name": ag.name, "kind": ag.kind, "display_name": ag.display_name, "color": ag.color,
                 "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),

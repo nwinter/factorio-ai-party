@@ -269,14 +269,16 @@
       // instead of the motto"; model.py job: its team-plan line, else its notes.md "## Now"); without one the motto
       // from `profiles` (an agent that never called `profile` gets a quiet note instead), else the role
       const unset = a.profile_set === false;
+      // (d20 batch54 N3, viewer Aurora) the job with where it comes from and its age: model.py job_card's label
       const job = a.job ? clean(a.job) : "";
+      const jobFrom = a.job ? clean(a.job_label || (a.job_from === "notes" ? "notes.md Now line" : a.job_from === "plan" ? "plan line" : a.job_from || "")) : "";
       const motto = job ? "" : unset ? "profile not set" : a.motto ? "“" + clean(a.motto) + "”" : "";
-      const msig = [a.model, a.role, job, motto].join("|");
+      const msig = [a.model, a.role, job, jobFrom, motto].join("|");
       if (c.model.dataset.sig !== msig) {
         c.model.dataset.sig = msig;
         c.model.textContent = "";
         c.model.append(el("b", "", a.model || "model ?"));
-        if (job) c.model.append(document.createTextNode(" · "), el("span", "job", job));
+        if (job) c.model.append(document.createTextNode(" · "), el("span", "job-from", jobFrom ? jobFrom + ": " : ""), el("span", "job", job));
         else if (motto) c.model.append(document.createTextNode(" · "), el(unset ? "span" : "i", unset ? "unset" : "", motto));
         else if (a.role) c.model.append(document.createTextNode(" · " + a.role));
         c.model.title = job && a.motto ? "“" + clean(a.motto) + "”" : "";

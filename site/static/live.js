@@ -560,8 +560,9 @@
         '<header>' + avatar(a, 48) + '<div><h3>' + esc(a.display_name || a.name) + (a.camera ? ' <span class="fx-chip fx-chip--orange cam-chip">' + esc(a.camera) + '</span>' : '') + '</h3>' +
         '<p class="fx-muted small">' + esc([a.model, a.role].filter(Boolean).join(' · ')) + '</p></div>' +
         '<span class="state" data-s="' + esc(act) + '">' + esc(ACT_LABEL[act] || act) + '</span></header>' +
-        // its current job: its team-plan line, else its notes.md "## Now" (tools/stream/model.py job)
-        (a.job ? '<p class="agent-job">' + esc(a.job) + '</p>' : '') +
+        // its current job: its board_focus, else its team-plan line, else its notes.md "## Now" (tools/stream/model.py
+        // job_card), always with where it comes from and its age (d20 batch54 N3, viewer Aurora)
+        jobHtml(a) +
         '<p class="agent-doing">' + esc(a.action || (act === 'thinking' ? 'thinking…' : '–')) + (a.location ? ' <span class="fx-muted">at ' + esc(a.location) + '</span>' : '') + '</p>' +
         (a.wait_line ? '<p class="agent-wait">' + esc(a.wait_line) + '</p>' +
           (a.wait_reason ? '<p class="agent-wait-reason">“' + esc(a.wait_reason) + '”</p>' : '') : '') +
@@ -682,6 +683,17 @@
   function gameAgo(s, tick) {
     if (tick == null || s.tick == null || !isFinite(tick) || !isFinite(s.tick)) return '';
     return ago(Math.max(0, (s.tick - tick) / 60));
+  }
+  // A card's job with its label (model.py job_card: "focus, set 5 min ago", "plan line, set 2 h ago; no focus set");
+  // a state from before job_label names the source alone.
+  function jobLabel(a) {
+    if (a.job_label) return a.job_label;
+    return a.job_from === 'plan' ? 'plan line' : a.job_from === 'notes' ? 'notes.md Now line' : a.job_from || '';
+  }
+  function jobHtml(a) {
+    var label = jobLabel(a);
+    if (!a.job) return label ? '<p class="agent-job fx-muted small">' + esc(label) + '</p>' : '';
+    return '<p class="agent-job"><span class="fx-muted small job-from">' + esc(label) + ':</span> ' + esc(a.job) + '</p>';
   }
   function planLine(plan, name) {
     var hit = null;
@@ -857,7 +869,7 @@
     var rows = '<div class="t-head">' + esc(a.display_name || name) + '</div>' +
       '<div class="t-line"><span class="fx-muted">Plan:</span> ' + (line ? esc(line.text) + (line.tick != null ? ' <span class="fx-muted">(set ' + esc(gameAgo(s, line.tick)) + ')</span>' : '')
         : '<span class="fx-muted">no line on the team plan</span>') + '</div>';
-    if (a.job && a.job_from === 'notes') rows += '<div class="t-line"><span class="fx-muted">Job (its notes):</span> ' + esc(a.job) + '</div>';
+    if (a.job && a.job_from !== 'plan') rows += '<div class="t-line"><span class="fx-muted">Job (' + esc(jobLabel(a)) + '):</span> ' + esc(a.job) + '</div>';
     rows += '<div class="t-line"><span class="fx-muted">Now:</span> ' + esc(a.action || ACT_LABEL[act] || act) + '</div>';
     rows += '<div class="t-foot fx-muted">' + (lastPointer === 'touch' ? 'Tap again' : 'Click') + ' for its line in the Team plan</div>';
     return rows;

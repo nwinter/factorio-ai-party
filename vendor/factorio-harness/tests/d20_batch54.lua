@@ -103,3 +103,30 @@ do
   defines=nil
 end
 print('d20_batch54 N2 pump duty at moving phases: ok')
+
+-- N3 (viewer Aurora, shift47 13:39: job cards from each agent's board_focus, with its age): a read of board_focus adds
+-- rows with the fields, the tick it was set among them, for the stream's cards.
+do
+  game={tick=600,get_surface=function() return nil end}
+  local st={}
+  local items={[7]={id=7,kind='project',title='Aquilo heat',status='doing',owner='sol',notes={},created_tick=0,updated_tick=0,
+    steps={{n=1,text='foundation',done_by='sol',done_tick=0},{n=2,text='heat pipes to the chest row'}}}}
+  local P=dofile('mod/agent-harness_0.1.0/progress.lua'){state=function() return st end,items=function() return items end,
+    owner_surface=function() return 'aquilo' end,total=function() return 0 end,since_request=function() return 60,3 end,
+    waiting=function() return nil end,who=function(p) return p.name end,agents=function() return {{name='sol',index=3},{name='astra',index=1}} end,QUIET=72000,PROJECT_QUIET=108000}
+  local r=P.focus({name='astra'},{})
+  eq(r.focus[1],'no focus set'); eq(#r.rows,0); eq(r.tick,600)
+  P.focus({name='sol'},{id=7,step=2,blocker='no heat pipes in the hub'})
+  game.tick=600+5*3600
+  r=P.focus({name='astra'},{})
+  eq(#r.rows,1)
+  local row=r.rows[1]
+  eq(row.agent,'sol'); eq(row.id,7); eq(row.title,'Aquilo heat'); eq(row.step,'step 2 heat pipes to the chest row'); eq(row.tick,600)
+  eq(row.blocker,'no heat pipes in the hub'); eq(row.verify,nil); eq(row.stalled,nil); eq(row.gone,nil)
+  has(r.focus[1],'sol focus (set 5m00s ago): #7 Aquilo heat')
+  items[7]=nil
+  row=P.focus({name='astra'},{agent='sol'}).rows[1]
+  eq(row.gone,true); eq(row.title,nil); eq(row.step,'step 2')
+  game=nil
+end
+print('d20_batch54 N3 board_focus rows: ok')
