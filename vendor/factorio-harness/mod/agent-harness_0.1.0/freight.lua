@@ -1156,6 +1156,10 @@ return function(api)
   -- Per ammo type over the last leg (flying: this leg so far; stopped: the leg before): made and used a minute, what the
   -- hub and the turrets hold now, and while flying what is left at the arrival at that rate (or when it runs out).
   -- A leg opened before this was counted (a runtime update) reads the game's last 10 minutes instead.
+  -- (d20 batch51 H1, viewer Aurora 09:36) The stock, what rockets bring and what is made on the way are platform_endurance's
+  -- (ammomodel.lua): what can reach no turret is left out, said; rockets on their way up count once; made is at most what
+  -- the ingredients aboard allow (Kestrel II's railgun rounds, shift45 12:05: made 145 by the rate against a cap of about
+  -- 30); each row says which limit binds.
   local function per_min(n, minutes)
     local v = minutes > 0 and n / minutes or 0
     return v >= 10 and string.format('%d', math.floor(v + 0.5)) or string.format('%.1f', math.floor(v * 10 + 0.5) / 10)
@@ -1168,8 +1172,11 @@ return function(api)
     end
     local now = ammo_counts(pl) or {}
     -- Every place aboard (the hub's main inventory: its trash goes down at the next stop): hub, turrets, belts, inserter
-    -- hands, machines' outputs (M.stock_places).
-    local sp = M.stock_places(pl)
+    -- hands, machines' outputs (M.stock_places); every item, for the ingredients the model counts.
+    local sp = M.stock_places(pl, setmetatable({}, {__index=function() return true end}))
+    local AM = api.ammomodel and api.ammomodel()
+    -- (the trace of what can reach a turret: its background read, so the platforms read and preflight trace nothing more)
+    local model = AM and try(function() return AM.new(pl, {places=sp, background=true}) end)
     local names, seen = {}, {}
     local function want(name) if not seen[name] then seen[name] = true; names[#names+1] = name end end
     for _, name in ipairs(ammo_names()) do if (sp.total[name] or 0) > 0 then want(name) end end
@@ -1197,7 +1204,12 @@ return function(api)
     local P = defines.flow_precision_index or {}
     local l = flying and M.leg(pl)
     local rows = {}
+    if model then
+      for name, n in pairs(model.received) do if n > 0 then want(name) end end
+    end
     table.sort(names)
+    -- the rates first: the model splits an ingredient two of them draw on by both
+    local counts = {}
     for _, name in ipairs(names) do
       local made, used
       if c0 then
@@ -1206,9 +1218,21 @@ return function(api)
       else
         made, used = flow(name, 'input', P.ten_minutes), flow(name, 'output', P.ten_minutes)
       end
+      counts[name] = {made, used}
+      if model and minutes > 0 then model.make(name, made / minutes) end
+    end
+    for _, name in ipairs(names) do
+      local made, used = counts[name][1], counts[name][2]
       local stock = sp.total[name] or 0
       local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s', name, per_min(made, minutes),
         per_min(used, minutes), window, stock, M.places_text(sp, name))
+      local stranded = model and model.stranded[name] or 0
+      if stranded > 0 then
+        stock = model.held[name] or 0
+        text = text .. string.format('; %d of it can reach no turret (stranded), not counted: %d', stranded, stock)
+      end
+      local rec = model and model.received[name] or 0
+      if rec > 0 then text = text .. string.format('; %d more on rockets on their way up, counted', rec) end
       -- Since the leg began, by place: what was loaded from the hub onto belts and into turrets is told from the firing.
       local moved = c0 and seg.places0 and M.moved_text(seg.places0, flying and sp or seg.places1, name)
       if moved then text = text .. '; since ' .. (flying and 'this leg began' or 'the last leg began') .. ': ' .. moved end
@@ -1223,14 +1247,22 @@ return function(api)
         end
       end
       if l and l.eta_ticks and minutes > 0 then
-        local net = (made - used) / minutes
         local eta_min = l.eta_ticks / 3600
-        local left = stock + net * eta_min
-        if left < 0 and net < 0 then
-          text = text .. string.format('; runs out in %s at that rate, before the arrival at %s in %s', secs(stock / -net * 3600), l.to, secs(l.eta_ticks))
+        local mr, ur = made / minutes, used / minutes
+        local left, lasts, b
+        if model then
+          left, lasts, b = model.left(name, mr, ur, eta_min, stock), model.lasts(name, mr, ur, stock), model.binds(name, mr, eta_min)
+        else
+          left = stock + (mr - ur) * eta_min
+          lasts = mr < ur and stock / (ur - mr) or nil
+        end
+        if left < 0 and lasts then
+          text = text .. string.format('; runs out in %s at that rate, before the arrival at %s in %s', secs(lasts * 3600), l.to, secs(l.eta_ticks))
         else
           text = text .. string.format('; at the arrival at %s in %s about %d at that rate', l.to, secs(l.eta_ticks), math.floor(left + 0.5))
         end
+        if b then text = text .. '; ' .. b.line end
+        if model and not model.feed and model.feed_why then text = text .. '; stranded ammunition not told apart yet: ' .. model.feed_why end
       end
       rows[#rows+1] = text
     end

@@ -9,6 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { RconClient, RconOutcomeUnknown, RconUnavailable } from './rcon.js';
 import { loadPace, savePace, seeTick, seeDown, slowNote, rolledBack, Pacer, overtime, slowGame, speedText, STALL_MS, type PaceState } from './pace.js';
 import { Harness, retryBudgetMs, type Reply } from './harness.js';
+import { rulesSection } from './rules.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
 import { splitSay, overLimit, SAY_BYTES, SAY_PARTS } from './saysplit.js';
@@ -499,8 +500,10 @@ function noteRules(reply: unknown) {
     && v.every(l => typeof l === 'string' && (/^rule \d+ \(by /.test(l) || l === 'no ground rules yet'));
   const list = isRules(shift.ground_rules) ? shift.ground_rules : isRules(result.rules) ? result.rules : undefined;
   if (!list) return;
-  try { writeFileSync(rulesFile, JSON.stringify({at:new Date().toISOString(), lines:list.filter(l => l !== 'no ground rules yet')}) + '\n'); }
+  const lines = list.filter(l => l !== 'no ground rules yet');
+  try { writeFileSync(rulesFile, JSON.stringify({at:new Date().toISOString(), lines}) + '\n'); }
   catch (error) { process.stderr.write(`ground rules file: ${String(error)}\n`); }
+  rulesSection(dirname(rulesFile), lines);
 }
 // The game's pace (pace.ts; world n 13:41: a crash, a restart from the 13:35 autosave, then 7-10 ticks/s): FH_PACE_FILE
 // (default .fh-pace.json next to the journal) keeps the last tick, the speed between calls and an outage in course.

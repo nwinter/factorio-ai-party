@@ -16461,7 +16461,7 @@ function M.dispatch_inner(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
-        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.bplibrary_operator[request.action]
+        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
         or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -16552,6 +16552,9 @@ function M.dispatch_inner(request)
     if p and p.valid and not peek and type(request.args)=='table' then
       local okl,ls=pcall(M.board.lessons_for,p,request.action,request.args)
       if okl and ls then result.lessons=ls end
+      -- (d20 batch50 E1) the ground rules whose applies_to names the call's args name (lessonbook.lua applies)
+      local okr,gr=pcall(M.lessonbook.applies,p.index,request.action,request.args,result)
+      if okr and gr then result.ground_rules=gr end
     end
     if p and p.valid and not M.is_director(p.index) then
       -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
@@ -17477,7 +17480,13 @@ M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.b
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
-M.freight=require('freight'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end}
+M.freight=require('freight'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
+  ammomodel=function() return M.ammomodel end}
+-- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
+-- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
+-- same way.
+M.ammomodel=require('ammomodel'){stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,ammofeed=M.ammofeed,
+  incoming=function(pl) return M.freight.incoming(pl) end}
 -- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
 M.shipment=require('shipment'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,drops_taken=function(f) return M.drops.taken(f) end,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
@@ -17528,6 +17537,8 @@ function handlers.board_focus(p,a) return M.progress.focus(p,a) end
 M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
   condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,
   who=function(p) return M.board.who(p) end,
+  quiet=function(name) local since=M.board.since_request(name); return name~='operator' and (not since or since>=M.board.QUIET) end,
+  QUIET=M.board.QUIET,owner_state=function(name) return M.board.owner_state(name) end,
   player_of=function(name) for _,ag in ipairs(M.board.agents()) do if ag.name==name then local pl=M.lookup(ag.index); return pl and pl.valid and pl or nil end end end}
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
@@ -17535,7 +17546,8 @@ for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
-  places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end}
+  places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
+  ammomodel=M.ammomodel}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}

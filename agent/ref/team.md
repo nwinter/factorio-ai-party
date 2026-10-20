@@ -52,6 +52,12 @@
   `supersedes` is retired. Example:
   `./fh call ground_rule_add --args '{"text":"every boiler line gets a feed chest","lessons":[88]}'`
 - `ground_rule_retire {id}`: retires one.
+- `ground_rule_edit {id, applies_to}` (or `applies_to` on `ground_rule_add`): the entity, item or recipe names a rule
+  is about. A build, place_ghosts, blueprint_place, paste (previews too), placements, craft, requests, configure or
+  queue step naming one carries the rule in its reply (`ground_rules`; a batch or blueprint with the count, `x8`),
+  once per agent and rule per 10 game minutes. Its writer edits it, or anyone
+  once the writer has made no request for 20 min. Example:
+  `./fh call ground_rule_edit --args '{"id":8,"applies_to":["electric-mining-drill"]}'`
 - `ground_rules`: the active rules with their lessons' evidence.
 - `review`: your last 2 hours: your requests and queue steps by kind, the share of your character's time by kind (the
   time before a request counts toward that request's kind), the hand hauls you repeated 5 or more times, what failed
