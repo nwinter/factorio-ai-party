@@ -69,3 +69,100 @@ do
   game.surfaces,game.forces,game.get_surface=nil,nil,nil
 end
 print('d20_batch55 ground watch: ok')
+
+-- P2 (viewer Aurora 14:37): checks with their last observed result, stale when their area changed since the run, their
+-- blueprint was pasted there again or past their stale age; run when added and on request only.
+do
+  local st={}
+  local force={name='player'}
+  local ents={}
+  local finds=0
+  local surface={index=1,name='nauvis'}
+  surface.find_entities_filtered=function(f)
+    finds=finds+1
+    assert(f.area and f.force==force,'one find over the area, ours')
+    local out={}
+    for _,e in ipairs(ents) do
+      local q=e.position
+      if e.valid and q.x>=f.area[1][1] and q.x<=f.area[2][1] and q.y>=f.area[1][2] and q.y<=f.area[2][2] then out[#out+1]=e end
+    end
+    return out
+  end
+  game.get_surface=function(i) return i==1 and surface or nil end
+  local unit=100
+  local function put(name,x,y,d,ghost)
+    unit=unit+1
+    local e={valid=true,name=ghost and 'entity-ghost' or name,ghost_name=ghost and name or nil,type=ghost and 'entity-ghost' or 'assembling-machine',
+      unit_number=unit,position={x=x,y=y},direction=d or 0,prototype={supports_direction=true}}
+    ents[#ents+1]=e
+    return e
+  end
+  local met,saw=true,'met: 400 iron-plate'
+  local C=dofile('mod/agent-harness_0.1.0/checks.lua'){state=function() return st end,position=function(q) return {x=q.x or q[1],y=q.y or q[2]} end,
+    who=function(p) return p.name end,condition=function(p,c) return met,saw end,validate=function(c) assert(c['until'],'until') end,
+    item_exists=function(id) return id==12 end}
+  local sol={name='sol',surface=surface,force=force}
+  local astra={name='astra',surface=surface,force=force}
+  game.tick=50000
+  for i=1,4 do put('assembling-machine-2',i*4,0) end
+  -- A condition check over an area, with a board item: run when added.
+  local r=C.handler(sol,{add={name='iron in the mall chest',condition={['until']='item_count',item='iron-plate',at_least=400},item=12,position={x=8,y=0},radius=10}})
+  eq(r.added,1); eq(r.check.state,'pass'); eq(r.check.result,'pass'); eq(r.check.result_tick,50000); eq(r.check.by,'sol'); eq(r.check.saw,'met: 400 iron-plate')
+  eq(r.check.line,'check #1 iron in the mall chest (sol, board #12, condition item_count): pass at tick 50000, 0s ago, by sol: met: 400 iron-plate')
+  game.tick=50600
+  r=C.handler(sol,{})
+  eq(r.count,1); eq(r.checks[1].state,'pass'); eq(r.checks[1].compared,'area compared now')
+  -- Something built, turned and removed in its area since: stale, naming what.
+  local new=put('inserter',6,2)
+  ents[1].direction=4
+  ents[4].valid=false
+  r=C.handler(astra,{id=1})
+  eq(r.check.state,'stale'); eq(r.check.result,'pass','the last result kept')
+  eq(r.check.stale_why[1],'since that run, in its area: 1 built, 1 removed, 1 turned (assembling-machine-2 (16,0) removed, assembling-machine-2 (4,0) turned, inserter (6,2) built)')
+  -- Run again: the result now, not stale.
+  met,saw=false,'not yet: 120 iron-plate'
+  game.tick=51000
+  r=C.handler(astra,{run=1})
+  eq(r.was,'pass'); eq(r.check.state,'fail'); eq(r.check.by,'astra'); eq(r.check.result_tick,51000); eq(#r.check.history,2)
+  eq(C.handler(sol,{id=1}).check.state,'fail')
+  -- Past its stale age (default 30 game minutes).
+  game.tick=51000+108001
+  r=C.handler(sol,{id=1})
+  eq(r.check.state,'stale'); eq(r.check.stale_why[1],'run 30m ago, past its stale age of 30m')
+  -- The board item's view lists it (no area read).
+  local before=finds
+  local lines=C.item_lines(12)
+  eq(#lines,1); eq(finds,before,'no find for the item view'); assert(lines[1]:find('area not compared in this read',1,true),lines[1])
+  -- A blueprint check: the last placement of a library blueprint, each entity built where the paste put it.
+  game.tick=200000
+  ents={}
+  local rec={surface=1,count=3,box={l=30,t=-2,r=42,b=2},entities={{name='assembling-machine-2',x=32,y=0,d=0},{name='assembling-machine-2',x=36,y=0,d=0},{name='inserter',x=40,y=0,d=4}}}
+  C.placed(sol,'mall row',rec)
+  put('assembling-machine-2',32,0); put('assembling-machine-2',36,0,0,true)
+  local nofit=pcall(C.handler,sol,{add={name='x',blueprint='other'}})
+  eq(nofit,false,'no placement of that blueprint remembered')
+  r=C.handler(sol,{add={name='mall row built',blueprint='mall row'}})
+  eq(r.check.state,'fail')
+  eq(r.check.saw,'1 of 3 built as placed; 1 still a ghost; 1 missing; first: assembling-machine-2 (36,0) a ghost, inserter (40,0) missing')
+  ents[2].valid=false; put('assembling-machine-2',36,0); put('inserter',40,0,8)
+  r=C.handler(sol,{run=r.added})
+  eq(r.check.saw,'2 of 3 built as placed; 1 facing otherwise; first: inserter (40,0) facing otherwise')
+  ents[#ents].direction=4
+  r=C.handler(sol,{run=r.ran})
+  eq(r.check.state,'pass'); eq(r.check.saw,'3 of 3 built as placed')
+  local id=r.ran
+  -- Pasted there again: stale until run, and the run reads the new placement.
+  game.tick=200600
+  C.placed(astra,'mall row',{surface=1,count=1,box={l=30,t=-2,r=34,b=2},entities={{name='assembling-machine-2',x=32,y=0,d=4}}})
+  r=C.handler(sol,{id=id})
+  eq(r.check.state,'stale'); eq(r.check.stale_why[1],'blueprint mall row pasted there again by astra 0s ago')
+  r=C.handler(sol,{run=id})
+  eq(r.check.state,'fail'); eq(r.check.saw,'0 of 1 built as placed; 1 facing otherwise; first: assembling-machine-2 (32,0) facing otherwise')
+  -- Listing: yours by default, all, by item; remove.
+  eq(C.handler(astra,{}).count,0); eq(C.handler(astra,{all=true}).count,2); eq(C.handler(astra,{item=12}).count,1)
+  eq(C.handler(astra,{remove=1}).removed,1); eq(C.handler(sol,{all=true}).count,1)
+  -- Nothing runs in the background: the module has no tick.
+  eq(C.tick,nil)
+  game.get_surface=nil
+end
+print('d20_batch55 P2 checks: ok')

@@ -1900,7 +1900,7 @@ function handlers.describe(_,a)
       describe={if_bundle='optional: the bundle id of a describe you hold; when it is this runtime\'s, the reply is {bundle, unchanged=true} only'}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): spoiling (each spoilable stack of the main inventory, soonest first, 24: its slot, the time left and how spoiled it is; one that triggers when it spoils, a pentapod egg, hatches in; spoiling_more), inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={surface='optional planet name: that planet by remote view (with position, or area for grid: your character stands elsewhere), within what our force has charted there',position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={surface='optional planet name: that planet by remote view (with position, or area for grid: your character stands elsewhere), within what our force has charted there',tile_runs='optional true: the charted tiles in the radius as runs along x, [{x,y,count,name}] row by row, and tile_count (a lake\'s shore from afar: with tile_names)',tile_names='with tile_runs: 1..32 tile names to keep (e.g. water, deepwater)',tiles_limit='tiles 1..4096 (default 4096); tile_runs 1..4096 runs (default 1024)',platform='optional owned platform: bounded schematic tile_runs [{x,y,count,name}], tile_count, entities with footprints and directions, centred on its hub or position; works aboard',position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',urgent_since='with peek (fh --wait polls): an urgent alert since this tick is given as urgent (one line), as a sleep wakes on it',urgent_radius='with urgent_since: 1..200 tiles',since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
-        reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
+        reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line, recovery {by, tick, checked, result, check, reopened, reopened_tick, lost_since} (losses {incident, recovery})}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (walked to with the pathfinder when out of reach; hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal), and blocked for one no path leads to'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival. Or {to: {x,y}, health_below, shield_below} (and the standing retreat_guard): the generic retreat, as move_to\'s (kite\'s own min_health stop then off unless given); false: none',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={platform='optional platform name: the same as surface= that platform (a remote lane of its hub\'s robots builds it; foundation only, underground pairs never under empty space)',eject='optional true or an inserter name (default inserter), with to near a hull edge: the line ends on the belt tile nearest to (within 6 tiles) where that inserter, on foundation, picks from it and drops onto empty space off the hull; the inserter\'s ghost is laid with the line (eject says where)',surface='optional planet or platform name: plan and place the ghosts there by remote view (charted chunks), as place_ghosts surface=; that surface\'s robots build them',avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
@@ -2104,6 +2104,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.uptime and M.uptime.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.checks and M.checks.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.beltupgrade and M.beltupgrade.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.alertdigest and M.alertdigest.schema or {}) do description.actions[name]=schema end
@@ -2182,7 +2183,7 @@ end
 -- (while the box stays under 192 tiles), it has an id, and a reader is told it once and then its running total at most
 -- once a game minute while it grows (shift 5: 839 loss lines for about 30 raids, each growth repeated).
 -- One table: runtime.lua's main chunk is near Lua's 200-local limit (tests/locals.lua).
-local LOSS={cell=64,max=64,join=32,span=192,again=3600,first=18000}
+local LOSS={cell=64,max=64,join=32,span=192,again=3600,first=18000,near=2}
 -- Entities the game removes on its own are no losses (Luna, 08:56: a cargo pod's container emptied of its 50 rocket
 -- fuel vanished and was told as incident #183, friendly fire from an unknown source): a landed pod's container
 -- (temporary-container) and the pod itself, items on the ground, corpses, ghosts and request proxies.
@@ -2218,6 +2219,13 @@ local function record_loss(tick,e,cause,friendly,cause_at)
     end
   end
   s.loss_seq=(s.loss_seq or 0)+1
+  -- (d20 batch55 P3) a loss after an incident's recovery check, joining it or within LOSS.near of its box, reopens it
+  for _,i in ipairs(s.losses) do
+    local r,q=i.recovery,i.box
+    if r and i.surface==surface and tick>r.tick and (i==incident or x>=q[1]-LOSS.near and x<=q[3]+LOSS.near and y>=q[2]-LOSS.near and y<=q[4]+LOSS.near) then
+      r.lost=(r.lost or 0)+1; r.reopened=r.reopened or tick; r.names=r.names or {}; r.names[e.name]=(r.names[e.name] or 0)+1
+    end
+  end
   local b=incident.box
   b[1],b[2],b[3],b[4]=math.min(b[1],e.position.x),math.min(b[2],e.position.y),math.max(b[3],e.position.x),math.max(b[4],e.position.y)
   incident.last=tick; incident.seq=s.loss_seq; incident.total=incident.total+1
@@ -2377,7 +2385,7 @@ local function describe_incident(i,reader,before)
   elseif i.surface and i.surface~=(reader or 'nauvis') then on=' on '..i.surface end
   return string.format('#%d%s in %s%s %d destroyed%s: %s%s, %s',LOSS.id(i),on,where,before and ' continue:' or '',i.total,
     before and string.format(' (+%d since you were told)',i.total-before) or '',names,
-    causes and ' by '..causes or '',span)..(i.platform and LOSS.platform_places(i) or '')
+    causes and ' by '..causes or '',span)..(i.platform and LOSS.platform_places(i) or '')..LOSS.recovery_text(i)
 end
 -- A platform incident's lost entities by place: a ghost of the same entity there now (the hub rebuilds it, given the
 -- item) or nothing (it needs a new placement), as the platform's map shows.
@@ -2400,13 +2408,53 @@ function LOSS.platform_places(i)
     ..(#bare>0 and string.format('; no ghost at %d (a new placement each): %s',#bare,list(bare)) or '')
     ..(i.total>#i.lost_at and string.format('; the first %d of %d listed',#i.lost_at,i.total) or '')
 end
+-- (d20 batch55 P3, viewer Aurora 14:38: "Could alerts include the owner's dated recovery check?") An incident's recovery
+-- check (losses {incident, recovery}): who, when, what was checked and the result, and a check of checks.lua with its
+-- state now; a loss after it, joining the incident or within LOSS.near tiles of its box, reopens it (said, with what).
+function LOSS.recovery_text(i)
+  local r=i.recovery
+  if not r then return '' end
+  local what=r.checked..(r.result and ': '..r.result or '')
+  local check=''
+  if r.check and M.checks then
+    local ok,v=pcall(M.checks.state_of,r.check)
+    check=ok and v and '; '..v or ''
+  end
+  if r.reopened then
+    local names=counted(r.names or {})
+    while #names>4 do table.remove(names) end
+    return string.format('; reopened: %d lost there since %s\'s recovery check %s ago (%s; the first %s ago; that check: %s)',r.lost,r.by,ago(game.tick-r.tick),
+      table.concat(names,', '),ago(game.tick-r.reopened),what)..check
+  end
+  return string.format('; handled by %s, checked %s ago: %s',r.by,ago(game.tick-r.tick),what)..check
+end
+-- losses {incident, recovery?}: an incident by id (kept: the last 64), its row; recovery {checked, result?, check?} sets
+-- its recovery check (yours, now), false clears it.
+function LOSS.recover(p,a)
+  local found
+  for _,i in ipairs(state().losses or {}) do if LOSS.id(i)==a.incident then found=i end end
+  assert(found,'no loss incident #'..tostring(a.incident)..' kept (status alerts.incidents lists them; the last 64 are kept)')
+  local r=a.recovery
+  local was=found.recovery
+  if r==false then found.recovery=nil
+  elseif r~=nil then
+    assert(type(r)=='table' and type(r.checked)=='string' and r.checked:find('%S') and #r.checked<=200,'recovery is {checked (what you checked, 1..200 characters), result? (up to 200), check? (a check number)}')
+    assert(r.result==nil or (type(r.result)=='string' and #r.result<=200),'recovery.result is text, at most 200 characters')
+    if r.check~=nil then assert(type(r.check)=='number' and M.checks and M.checks.state_of(r.check),'recovery.check is a check number (checks lists them)') end
+    found.recovery={by=M.board.who(p),tick=game.tick,checked=(r.checked:gsub('[%c]+',' ')),result=r.result and (r.result:gsub('[%c]+',' ')) or nil,check=r.check}
+  end
+  local row=LOSS.row(found,p.surface and p.surface.name)
+  return {incident=row,replaced=r~=nil and was and string.format('%s\'s recovery check from %s ago',was.by,ago(game.tick-was.tick)) or nil,line=row.line}
+end
 -- status alerts.incidents: one row per loss incident for programs (the stream's loss banners and cuts): where (surface,
 -- platform, box), how many, what, by what, when; the text line beside it.
 function LOSS.row(i,reader)
   local names,causes=LOSS.parts(i)
   local b=i.box
   return {id=LOSS.id(i),surface=i.surface,platform=i.platform,box={x0=math.floor(b[1]),y0=math.floor(b[2]),x1=math.ceil(b[3]),y1=math.ceil(b[4])},
-    total=i.total,names=names,by=causes,first_tick=i.first,last_tick=i.last or i.first,line=describe_incident(i,reader)}
+    total=i.total,names=names,by=causes,first_tick=i.first,last_tick=i.last or i.first,line=describe_incident(i,reader),
+    recovery=i.recovery and {by=i.recovery.by,tick=i.recovery.tick,checked=i.recovery.checked,result=i.recovery.result,check=i.recovery.check,
+      reopened=i.recovery.reopened and true or nil,reopened_tick=i.recovery.reopened,lost_since=i.recovery.lost} or nil}
 end
 -- Losses in the reply's team alerts: each incident once, then its running total at most once a game minute while it
 -- grows. A reader never told anything starts with the incidents of the last 5 minutes. s.losses_told[index] holds
@@ -12523,7 +12571,8 @@ do local blueprint_handlers=blueprint_module{contested=function(s,f,item,at) ret
   placed=function(p,e) return M.efficiency.built(M.board.who(p),e) end,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
-  who=function(p) return M.board.who(p) end,tunnels=function(s,force,ghosts,on) return M.platplan.tunnels(s,force,ghosts,on) end}
+  who=function(p) return M.board.who(p) end,tunnels=function(s,force,ghosts,on) return M.platplan.tunnels(s,force,ghosts,on) end,
+  checks_placed=function(p,name,rec) if M.checks then return M.checks.placed(p,name,rec) end end}
 for name,handler in pairs(blueprint_handlers) do if name~='plan' and name~='operator' then handlers[name]=handler end end
 -- The team blueprint library's operator read (tools/bplibrary.py mirrors it to runs/RUN/blueprints/).
 M.bplibrary_operator=blueprint_handlers.operator
@@ -15611,7 +15660,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){state=state,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -17236,7 +17285,7 @@ M.lostlog=require('lostlog'){platform_blocker=function(s,g,item,n) return M.ghos
 M.fogmem=require('fogmem'){state=state,direction_name=function(d) return M.direction_name and M.direction_name(d) or d end,
   belt_chunk=function(f,s,cx,cy) local m=state().belt_memory; return m and m.chunks[f..'|'..s..'|'..cx..','..cy] end,
   lost_in=function(f,s,box) return M.lostlog.rows_in(f,s,box) end}
-function handlers.losses(p,a) return M.lostlog.read(p,a) end
+function handlers.losses(p,a) if a and a.incident~=nil then return LOSS.recover(p,a) end return M.lostlog.read(p,a) end
 -- alerts_digest (alertdigest.lua, batch26 B1): attacks, losses and groups by surface and place, each once, since a tick.
 M.alertdigest=require('alertdigest'){state=state}
 function handlers.alerts_digest(p,a) return M.alertdigest.read(p,a) end
@@ -17665,6 +17714,12 @@ function handlers.board_progress(p,a) return M.progress.read(p,a) end
 function handlers.board_critical(p,a) return M.progress.critical(p,a) end
 function handlers.board_focus(p,a) return M.progress.focus(p,a) end
 -- Lessons scored, checked and reviewed; the team's ground rules (lessonbook.lua; d17 batch15 Group D).
+-- checks (checks.lua, d20 batch55 P2, viewer Aurora): a condition or a blueprint placement kept with its last result,
+-- stale when its area changed since, its blueprint was pasted there again, or past its age.
+M.checks=require('checks'){state=state,position=position,who=function(p) return M.board.who(p) end,
+  condition=function(p,c) return conditions.check(p,c) end,validate=function(c) return conditions.validate(c) end,
+  item_exists=function(id) return M.board.items()[id]~=nil end}
+function handlers.checks(p,a) return M.checks.handler(p,a) end
 M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
   condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,
   who=function(p) return M.board.who(p) end,

@@ -691,6 +691,26 @@ return function(api)
           local e=library_entry(a.name)
           e.last_used=game.tick; e.last_user=api.who(p); e.uses=(e.uses or 0)+1
           local lib=library(); lib.revision=lib.revision+1
+          -- (d20 batch55 P2) where the paste put each entity, for a blueprint check (checks.lua): position and facing
+          -- (none compared on a flipped paste), the first 400
+          if api.checks_placed then pcall(function()
+            local at_of=locate(p,a,entities,pos,direction,box,c)
+            local flipped=a.flip_horizontal or a.flip_vertical
+            local rec={surface=p.surface.index,entities={},count=#entities}
+            local l,t,r,b
+            for i,be in ipairs(entities) do
+              if i>400 then rec.capped=true; break end
+              local q=at_of(be)
+              local d=((be.direction or 0)+direction)%16
+              rec.entities[#rec.entities+1]={name=be.name,x=q.x,y=q.y,d=not flipped and d or nil}
+              local proto=prototypes.entity[be.name]
+              local w,h=proto and proto.tile_width or 1,proto and proto.tile_height or 1
+              if d%8==4 then w,h=h,w end
+              l,t=math.min(l or q.x-w/2,q.x-w/2),math.min(t or q.y-h/2,q.y-h/2)
+              r,b=math.max(r or q.x+w/2,q.x+w/2),math.max(b or q.y+h/2,q.y+h/2)
+            end
+            if l then rec.box={l=l,t=t,r=r,b=b}; api.checks_placed(p,a.name,rec) end
+          end) end
         end
         return out
       end)
