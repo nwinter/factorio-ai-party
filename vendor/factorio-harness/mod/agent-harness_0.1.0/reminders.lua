@@ -19,7 +19,9 @@ return function(api)
   local MAX_JOBS, MAX_OWN, MAX_TEXT, MAX_RESULT = 48, 12, 300, 1000
   local Ev_
   local function Ev() Ev_ = Ev_ or require('evidence')(); return Ev_ end
-  local Sv = require('serves')()  -- (d20 batch50 B2) what a reminder serves, flagged when none is left
+  -- (d20 batch50 B2) what a reminder serves, flagged when none is left (serves.lua; loaded when first used)
+  local Sv_
+  local function Sv() Sv_ = Sv_ or require('serves')(); return Sv_ end
   local MIN_EVERY, MAX_EVERY = 3600, 7 * 24 * 216000
   local MAX_STEPS, MIN_STEP_EVERY = 12, 1800
   local CHECK = 60
@@ -129,7 +131,7 @@ return function(api)
       next_due_tick=job.enabled and job.next_due or nil, next_due_in_s=job.enabled and math.max(0, math.floor((job.next_due - game.tick) / 60)) or nil,
       last_fired_tick=job.last_fired, last_result=job.last_result, result_by=job.result_by, result_tick=job.result_tick,
       result_age_s=job.result_tick and math.floor((game.tick - job.result_tick) / 60) or nil,
-      board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=job.done or nil, serves=Sv.view(job.serves)}
+      board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=job.done or nil, serves=job.serves and Sv().view(job.serves) or nil}
     -- (B2) the evidence given with acknowledgments, newest last
     if job.evidence and #job.evidence > 0 then
       r.evidence = {}
@@ -160,7 +162,7 @@ return function(api)
     if job.steps then parts[#parts+1] = string.format('checklist of %d steps%s', #job.steps, r.next_step and ', yours next: ' .. r.next_step or '') end
     if job.last_result then parts[#parts+1] = string.format('last result %s ago: %s', ago(game.tick - job.result_tick), job.last_result) end
     if r.evidence then parts[#parts+1] = 'evidence ' .. r.evidence[#r.evidence] end
-    if Sv.gone(job.serves) then parts[#parts+1] = Sv.line(job.serves) end
+    if job.serves and Sv().gone(job.serves) then parts[#parts+1] = Sv().line(job.serves) end
     parts[#parts+1] = r.states
     r.line = table.concat(parts, '; ')
     return r
@@ -200,7 +202,7 @@ return function(api)
       job.board_item = a.board_item or nil
     end
     if a.surface ~= nil then job.surface = a.surface ~= false and one_line(a.surface, 40, 'surface') or nil end
-    if a.serves ~= nil then job.serves = a.serves ~= false and Sv.parse(a.serves, p) or nil end
+    if a.serves ~= nil then job.serves = a.serves ~= false and Sv().parse(a.serves, p) or nil end
     -- steps: a checklist (B1); a change starts every recipient's progress again
     if a.steps ~= nil then
       if a.steps == false then job.steps = nil
@@ -401,7 +403,7 @@ return function(api)
       local to_me = false
       for _, n in ipairs(targets(job)) do if n == me then to_me = true end end
       if a.all or job.owner == me or to_me or me == 'operator' then
-        if job.serves then pcall(Sv.check, job.serves) end
+        if job.serves then pcall(Sv().check, job.serves) end
         local r = row(job, me)
         out[#out+1] = r; lines[#lines+1] = r.line
       end
@@ -419,7 +421,7 @@ return function(api)
         job.name or 'review', job.owner, cadence(job), job.board_item and ', board #' .. job.board_item or '', job.message, step_text(job, nx),
         steps_done(job, name), #job.steps, job.id)
     end
-    if Sv.gone(job.serves) then text = text .. '; ' .. Sv.line(job.serves) end
+    if job.serves and Sv().gone(job.serves) then text = text .. '; ' .. Sv().line(job.serves) end
     api.deliver(index, {seq='reminder', tick=game.tick, from='reminder #' .. job.id, text=text, fyi=job.quiet or nil})
   end
   local function fire(job)
@@ -478,7 +480,7 @@ return function(api)
       if job.last_fired and job.last_fired > game.tick then job.last_fired = nil end
       if job.every and job.next_due and job.next_due > game.tick + job.every then job.next_due = next_after(job, game.tick) end
       if job.enabled and job.expires and game.tick >= job.expires then job.enabled = false; job.expired = game.tick end
-      if job.enabled and job.serves then pcall(Sv.due, job.serves) end
+      if job.enabled and job.serves then pcall(Sv().due, job.serves) end
       if job.enabled and job.next_due and game.tick >= job.next_due then fire(job) end
       if job.steps and job.pending and next(job.pending) then nudge(job) end
     end
@@ -487,7 +489,7 @@ return function(api)
   M.schema = {
     reminder_add = {message='1..300 characters: what to review (the line recipients get)', every_ticks=WHEN, due_tick='a game tick (once)', due_in_ticks='ticks from now (once)',
       recipients='optional: names (sol, luna) or "team"; default yourself', name='optional 1..40 characters', board_item='optional board item number',
-      surface='optional surface name', serves=Sv.SCHEMA .. ' (the job\'s line and the line it sends name one whose machine is gone)', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
+      surface='optional surface name', serves='optional {name, position, surface?, radius?}: the machine it serves (an entity of that name of ours within 1 tile of position, on surface, default yours), or with radius 2..64 any such machine within it; checked about once a game minute and when read: serves {count, last_seen_tick, gone, gone_tick, line} in the read, and a line naming it when none is there (the job\'s line and the line it sends name one whose machine is gone)', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
       wake='optional false: its line waits for the recipient\'s next reply and wakes no sleep or wait (a routine check; urgent alerts are apart and still wake)',
       steps='optional checklist: 1..12 steps, each a name (1..80 characters) or {name, every_ticks? (1800..: its line again that often while it is a recipient\'s next step)}; a run goes out with the next unfinished step, each recipient records steps with reminder_ack (the run is done for them when every step is recorded; a one-time job is done when every recipient\'s is)',
       returns='added (its id), reminder {id, owner, recipients, message, cadence, next_due_tick, next_due_in_s, states, line}. A reminder only sends lines: when due, each recipient gets one private line in their next reply (a tell from "reminder #N", waking a sleep as a tell does); while one has not acknowledged it, later runs fold into it (missed); at 2 runs missed its owner gets one line naming who, the last result and the reminder_edit call that changes the recipients (once until that recipient acknowledges or the recipients change). It never acts in the game; at most 12 a teammate, 48 in all'},

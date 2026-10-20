@@ -81,8 +81,5 @@ return function()
       last_seen_tick=sv.last_seen_tick, gone=(sv.count or 0) == 0 or nil, gone_tick=sv.gone_tick, line=M.line(sv)}
   end
   function M.gone(sv) return sv ~= nil and (sv.count or 0) == 0 end
-  M.SCHEMA = 'optional {name, position, surface?, radius?}: the machine it serves (an entity of that name of ours within 1 tile of position, '
-    .. 'on surface, default yours), or with radius 2..64 any such machine within it; checked about once a game minute and when read: '
-    .. 'serves {count, last_seen_tick, gone, gone_tick, line} in the read, and a line naming it when none is there'
   return M
 end
