@@ -9523,3 +9523,18 @@ fh watch    # deploy on every change
   productivity completions (productivity +54%): 106 completions, 39.5/min against 39.7/min at full speed; working
   100%` (tests/d20_batch55.lua P4). On the private copy an EM plant on electronic circuits (+50%) read 54 crafts and 27
   productivity completions of 81 in 20 s, working 62% (full output 38%).
+- P5 (Sol #1400: Edge5 lost a railgun turret in one shot while every other turret was fed, so the ammo_below guard did
+  not fire; ghosts_waiting with platform was refused on the remote lane). New wait_until condition `platform_loss
+  {platform, at_least?, names?, since_tick?}`: met when at_least (default 1) of our entities on that platform, of names
+  when given, were destroyed since the wait or guard began (since_tick, default its first check: kept on the wait's
+  record, or on the guard's condition in the queue, so a save or a runtime deploy keeps it). Its saw names each loss:
+  `platform Swift: 1 of ours lost since tick 26228220: gun-turret (-2,-11) 0s ago` (with `by CAUSE` when the game names
+  one). It reads lostlog.lua's death rows (each building of ours that dies), which now keep each force and surface's
+  last loss tick, so a check is one comparison while nothing new died there and the rows since are read back only
+  when something did. `ghosts_waiting` takes `platform` (every ghost aboard, or those in `area`). Both are taken by
+  the remote and platform lanes, as waits and as guards' when. On the private copy, a platform lane queue on Swift
+  with guards ammo_below count 1 and platform_loss: a fed gun turret (11 magazines) killed while four others held
+  10-11; the ammo_below guard stayed quiet, platform_loss fired 5 ticks later with that line (the turrets were
+  revived and rearmed after). Tests: tests/d20_batch55.lua (P5: the one-shot loss of a fed turret with the others
+  armed, another surface's loss, a loss before the guard began, names, at_least, a wait's record, ghosts_waiting, the
+  lane checks).
