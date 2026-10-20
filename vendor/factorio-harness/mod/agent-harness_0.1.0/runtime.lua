@@ -43,6 +43,44 @@ function M.direction_of(v)
   if type(v) == 'number' then return (v % 1 == 0 and v >= 0 and v < 16) and v or nil end
   return directions[v]
 end
+-- (d20 batch54 N8, Sol #1406: rotate to 2 on a railgun turret ghost said "faces east after 0 turns") the directions an
+-- entity is built in, from its prototype as 2.0.77 gives it: building-direction-16-way all 16, building-direction-8-way
+-- the 8 even ones (the railgun turret, on the private copy: rotate and direction set refuse it, create_entity at 3 made
+-- 2), else the 4 compass ones; nil when it has no direction (a gun turret: the game sets 0 whatever is asked) or is a
+-- rail, signal or ramp (their own rules). An inserter asked for 2 was built facing 0 with no word.
+function M.allowed_directions(proto)
+  if not proto or proto.supports_direction==false or tostring(proto.type):find('rail',1,true) then return nil end
+  local f=proto.flags or {}
+  if f['building-direction-16-way'] then return nil end
+  local step=f['building-direction-8-way'] and 2 or 4
+  local list,set={},{}
+  for d=0,15,step do list[#list+1]=d; set[d]=true end
+  return set,list
+end
+function M.check_direction(proto,dir)
+  local set,list=M.allowed_directions(proto)
+  if not set or dir==nil or set[dir] then return end
+  local names={}
+  for _,d in ipairs(list) do names[#names+1]=string.format('%s (%d)',M.direction_name(d),d) end
+  error(string.format('%s is built facing %s only; %s (%d) is not one',proto.name,table.concat(names,', '),M.direction_name(dir),dir),0)
+end
+-- A ghost facing another way (N8): the game's rotate does not turn a railgun turret's ghost; a player removes it and
+-- places a new one. The new ghost keeps the name, quality, tags and item requests; one with circuit wires is refused.
+function M.reghost(e,dir)
+  local wired=false
+  pcall(function() for _,c in pairs(e.get_wire_connectors(false) or {}) do if c.connection_count and c.connection_count>0 then wired=true end end end)
+  assert(not wired,string.format('the ghost of %s at (%g,%g) has circuit wires; a new ghost facing %s would not keep them',e.ghost_name,e.position.x,e.position.y,M.direction_name(dir)))
+  local s,pos,name,force=e.surface,e.position,e.ghost_name,e.force
+  local q=e.quality and e.quality.name or nil
+  local okt,tags=pcall(function() return e.tags end)
+  local okp,plan=pcall(function() return e.insert_plan end)
+  e.destroy()
+  local g=s.create_entity{name='entity-ghost',inner_name=name,position=pos,direction=dir,force=force,quality=q}
+  assert(g,'the new ghost could not be placed')
+  if okt and tags then pcall(function() g.tags=tags end) end
+  if okp and plan and #plan>0 then pcall(function() g.insert_plan=plan end) end
+  return g
+end
 -- A water tile by what a character can do there: 'lava', 'walkable' (its collision layers meet none of the
 -- character's: Nauvis shallow water, Gleba's wetland, Fulgora's oil ocean, deep too: on a copy of world n a character
 -- walked across 6 tiles of oil-ocean-deep at half speed) or 'water'; nil for a tile that is not water. Friction1300:
@@ -6326,6 +6364,7 @@ local function build_one(p,a)
     end
   end
   local direction=M.direction_of(a.direction or 'north'); assert(direction,'invalid direction: a compass name (north, east, south, west) or 0..15')
+  if a.direction~=nil then M.check_direction(place,direction) end
   if place.type=='rail-ramp' then
     pos,direction=M.placewhy.ramp_position(pos,direction)
     build_reach(p,pos,'snapped position')
@@ -7534,23 +7573,39 @@ function handlers.rotate(p,a)
   local function name(d) return d and (names[d] or tostring(d)) or nil end
   local before=e.direction
   local turns=0
+  -- (d20 batch54 N8) the directions its prototype is built in; a ghost the game's rotate does not turn (a railgun
+  -- turret's) is replaced by one facing the target; a built one the game does not turn is said so
+  local ghost=e.type=='entity-ghost'
+  local proto=ghost and e.ghost_prototype or e.prototype
+  local kind=ghost and e.ghost_name or e.name
+  if target~=nil then
+    assert(not (proto and proto.supports_direction==false) or before==target,string.format('%s at (%g,%g) has no direction: the game builds it facing north whatever is asked, and does not turn it',kind,e.position.x,e.position.y))
+    M.check_direction(proto,target)
+  end
+  local replaced
   if target==nil then
     if e.rotate{reverse=a.reverse==true,by_player=real(p)} then turns=1 end
   elseif before~=target then
     -- The shorter way round: clockwise up to 180 degrees, else counter-clockwise.
     local back=(target-before)%16>8
-    for _=1,4 do
+    for _=1,8 do
       if not e.rotate{reverse=back,by_player=real(p)} then break end
       turns=turns+1
       if e.direction==target then break end
     end
-    assert(e.direction==target,string.format('%s at (%g,%g) faces %s after %d turn%s from %s; rotating does not bring it to %s',
-      e.name,e.position.x,e.position.y,name(e.direction),turns,turns==1 and '' or 's',name(before),name(target)))
+    if e.direction~=target and turns==0 and ghost then
+      e=M.reghost(e,target)
+      replaced=string.format('the game does not turn a %s ghost (its rotate, as R, refuses it): replaced by a ghost facing %s, as removing it and placing a new one does',kind,name(target))
+    end
+    assert(e.direction==target,turns==0 and string.format('%s at (%g,%g) faces %s: the game does not turn a placed %s (its rotate, as R, refuses it); it faces another way only as built (build or place_ghosts with direction %s)',
+      kind,e.position.x,e.position.y,name(e.direction),kind,name(target))
+      or string.format('%s at (%g,%g) faces %s after %d turn%s from %s; rotating does not bring it to %s',
+      kind,e.position.x,e.position.y,name(e.direction),turns,turns==1 and '' or 's',name(before),name(target)))
   end
   -- Rotating an underground flips its end (and its partner's): show the result.
   -- As after a build: a turned inserter's engine targets come a tick later.
-  return {rotated=turns>0,before=name(before),after=name(e.direction),turns=turns,by=remote and 'remote view' or nil,
-    note=target~=nil and turns==0 and 'it faces '..name(target)..' already' or nil,entity=built_summary(e)}
+  return {rotated=turns>0 or replaced~=nil,before=name(before),after=name(e.direction),turns=turns,by=remote and 'remote view' or nil,replaced=replaced,
+    note=target~=nil and turns==0 and not replaced and 'it faces '..name(target)..' already' or nil,entity=built_summary(e)}
 end
 -- Changing a recipe works as it does for a player: machine contents and the
 -- ingredients of an interrupted craft go to the inventory, spilling at the
@@ -13677,6 +13732,7 @@ local function place_ghost(p,spec)
   local pos=position(spec.position)
   local direction=spec.direction and M.direction_of(spec.direction)
   assert(spec.direction==nil or direction,'direction must be a compass name (north, east, south, west) or 0..15')
+  M.check_direction(proto,direction)
   assert(spec.type==nil or proto.type=='underground-belt' and (spec.type=='input' or spec.type=='output'),'type is input|output for underground belts only')
   if proto.type=='rail-ramp' then pos,direction=M.placewhy.ramp_position(pos,direction) end
   assert(charted(p,pos),'position is not charted')
@@ -15059,6 +15115,7 @@ function handlers.dry_run(p,a)
           else
             local dir=spec.direction and M.direction_of(spec.direction)
             assert(spec.direction==nil or dir,'direction must be a compass name (north, east, south, west) or 0..15')
+            M.check_direction(prototypes.entity[spec.name or ''],dir)
             if k==0 then M.ghost_quality(q,spec.quality) end
             plan.entities[#plan.entities+1]={index=i,copy=copy,name=spec.name,position=pos,direction=dir or 0,ug_type=spec.type,recipe=spec.recipe,circuit=spec.circuit,wires=spec.wires,quality=spec.quality}
           end
@@ -15098,6 +15155,7 @@ function handlers.dry_run(p,a)
           end
           assert(place,item..' places no entity here')
           local dir=M.direction_of(b.direction or inner.direction or 'north'); assert(dir,'invalid direction: a compass name (north, east, south, west) or 0..15')
+          if (b.direction or inner.direction)~=nil then M.check_direction(place,dir) end
           -- An entry's recipe, else the call's for an entry that places an assembling machine (as the real call).
           local recipe=b.recipe
           if recipe==nil and inner.recipe~=nil and (place.type=='assembling-machine' or not inner.builds) then recipe=inner.recipe end

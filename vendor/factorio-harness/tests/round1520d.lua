@@ -413,4 +413,69 @@ do
   eq(runtime.hold_off_belt(pg,boxed,silo),false)
   has(boxed.hold_belt.line,'held on a transport-belt at (60.3,0.4): no free tile without a belt or rail within 4 tiles in reach of rocket-silo')
 end
+
+-- 6. (d20 batch54 N8, Sol #1406: rotate to 2 on a railgun turret ghost said "faces east after 0 turns") the private copy
+-- (2.0.77): railgun-turret has building-direction-8-way; LuaEntity.rotate returns false for its ghost and for a built
+-- one and a direction set is ignored. rotate replaces the ghost by one facing the target, refuses a direction the
+-- prototype is not built in, and says a built one does not turn.
+do
+  local rg={name='railgun-turret',type='ammo-turret',supports_direction=true,flags={['building-direction-8-way']=true,['placeable-player']=true}}
+  local ins={name='inserter',type='inserter',supports_direction=true,flags={}}
+  prototypes.entity['railgun-turret']=rg; prototypes.entity['inserter']=ins
+  local made={}
+  local function ghost(x,y,dir)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='railgun-turret',ghost_prototype=rg,position={x=x,y=y},direction=dir,
+      force=force,surface=surface,quality={name='rare'},tags={keep='me'},unit_number=7000+#ents}
+    g.rotate=function() return false end
+    g.destroy=function() g.valid=false end
+    g.get_wire_connectors=function() return {} end
+    ents[#ents+1]=g
+    return g
+  end
+  local saved_create=surface.create_entity
+  surface.create_entity=function(args)
+    if args.name=='entity-ghost' then
+      local g=ghost(args.position.x,args.position.y,args.direction); g.ghost_name=args.inner_name; g.quality={name=args.quality or 'normal'}; g.tags=nil
+      made[#made+1]=args
+      return g
+    end
+    return saved_create(args)
+  end
+  local g=body('opus'); g.position={x=20,y=10}
+  local east=ghost(22.5,10.5,4)
+  local r=opus('rotate',{position={x=22.5,y=10.5},direction=2})
+  eq(r.after,'northeast'); eq(r.before,'east'); eq(r.turns,0); eq(r.rotated,true); eq(r.note,nil)
+  has(r.replaced,'the game does not turn a railgun-turret ghost (its rotate, as R, refuses it): replaced by a ghost facing northeast')
+  eq(east.valid,false); eq(made[1].direction,2); eq(made[1].quality,'rare'); eq(made[1].inner_name,'railgun-turret')
+  local new=ents[#ents]; eq(new.tags.keep,'me','its tags kept'); new.valid=false
+  local west=ghost(22.5,14.5,12)
+  r=opus('rotate',{position={x=22.5,y=14.5},direction=14})
+  eq(r.after,'northwest'); eq(made[2].direction,14); ents[#ents].valid=false
+  -- a direction the railgun turret is not built in: refused, naming the 8
+  local three=ghost(22.5,18.5,4)
+  local ok,err=pcall(opus,'rotate',{position={x=22.5,y=18.5},direction=3})
+  assert(not ok,'odd direction refused')
+  has(err,'railgun-turret is built facing north (0), northeast (2), east (4), southeast (6), south (8), southwest (10), west (12), northwest (14) only; eastnortheast (3) is not one')
+  eq(three.valid,true); three.valid=false
+  -- a built railgun turret: the game does not turn it, said so
+  local built={valid=true,name='railgun-turret',type='ammo-turret',prototype=rg,position={x=22.5,y=10.5},direction=4,force=force,surface=surface,unit_number=7900}
+  built.rotate=function() return false end
+  ents[#ents+1]=built
+  ok,err=pcall(opus,'rotate',{position={x=22.5,y=10.5},direction=2})
+  assert(not ok)
+  has(err,'railgun-turret at (22.5,10.5) faces east: the game does not turn a placed railgun-turret (its rotate, as R, refuses it); it faces another way only as built (build or place_ghosts with direction northeast)')
+  built.valid=false
+  -- the rule by prototype: an inserter (4 ways) asked for 2 is refused; a gun turret has no direction
+  ok,err=pcall(runtime.check_direction,ins,2)
+  assert(not ok); has(err,'inserter is built facing north (0), east (4), south (8), west (12) only; northeast (2) is not one')
+  eq(runtime.allowed_directions({name='gun-turret',type='ammo-turret',supports_direction=false,flags={}}),nil)
+  local gun={valid=true,name='gun-turret',type='ammo-turret',prototype={name='gun-turret',type='ammo-turret',supports_direction=false,flags={}},
+    position={x=26.5,y=10.5},direction=0,force=force,surface=surface,unit_number=7901,rotate=function() return false end}
+  ents[#ents+1]=gun
+  ok,err=pcall(opus,'rotate',{position={x=26.5,y=10.5},direction=4})
+  assert(not ok); has(err,'gun-turret at (26.5,10.5) has no direction: the game builds it facing north whatever is asked, and does not turn it')
+  gun.valid=false
+  eq(runtime.allowed_directions({name='straight-rail',type='straight-rail',supports_direction=true,flags={['building-direction-8-way']=true}}),nil)
+  surface.create_entity=saved_create
+end
 print('round1520d: ok')

@@ -9511,3 +9511,20 @@ fh watch    # deploy on every change
   productivity completions (productivity +54%): 106 completions, 39.5/min against 39.7/min at full speed; working
   100%` (tests/d20_batch55.lua P4). On the private copy an EM plant on electronic circuits (+50%) read 54 crafts and 27
   productivity completions of 81 in 20 s, working 62% (full output 38%).
+- N8 (Sol, board #1406: `rotate {platform: Limestone-spare-unbuilt, position: (22.5,10.5), direction: 2}` on a railgun
+  turret ghost said "faces east after 0 turns"). On the private copy (2.0.77): railgun-turret's flags hold
+  building-direction-8-way (supports_direction true), so it is built facing any of the 8 even directions; its
+  LuaEntity.rotate (what a player's R does) returns false for a built one and for its ghost, and a direction set on
+  either is ignored; create_entity at 3 made 2. A gun turret has no direction (asked 2, built 0); an inserter asked 2
+  was built 0 with no word. Entities flagged building-direction-16-way: rail signals and rail supports; rails carry the
+  8-way flag. Now (runtime.lua allowed_directions, check_direction): build and place_ghosts (and their dry runs)
+  take the directions the prototype is built in and refuse others naming them (`inserter is built facing north (0),
+  east (4), south (8), west (12) only; northeast (2) is not one`); rails, signals and ramps keep their own rules.
+  rotate with a direction: refused the same way; a ghost the game's rotate does not turn is replaced by a ghost facing
+  the target (name, quality, tags and item requests kept; a ghost with circuit wires is refused), `replaced: the game
+  does not turn a railgun-turret ghost (its rotate, as R, refuses it): replaced by a ghost facing northeast, as
+  removing it and placing a new one does`; a built one the game does not turn: `railgun-turret at (22.5,10.5) faces
+  east: the game does not turn a placed railgun-turret (its rotate, as R, refuses it); it faces another way only as
+  built (build or place_ghosts with direction northeast)`; an entity with no direction says so. rotate's turns go up to
+  8. On the copy with this runtime: a railgun ghost east -> northeast (2) and west -> northwest (14), direction 3
+  refused, a built one refused as above, place_ghosts at 2 made a ghost facing 2. Tests: tests/round1520d.lua 6.
