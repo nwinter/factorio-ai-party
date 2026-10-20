@@ -1,6 +1,6 @@
 ## Reference topics
 
-`./fh help TOPIC` prints a topic; `./fh help ACTION` an action's arguments.
+`./fh help TOPIC` prints a topic; `./fh help ACTION` its arguments.
 
 - `moving-items`, items by hand: `transfer`, `collect`, `feed`, `refuel`, `pickup`, `mine`, `rotate`, `repair`,
   `inventory`, `craft`, `cancel_craft`, `deliver`.
