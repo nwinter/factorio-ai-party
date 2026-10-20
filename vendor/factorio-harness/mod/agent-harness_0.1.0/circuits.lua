@@ -74,7 +74,9 @@ return function(api)
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
       settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line). A belt\'s read_contents_mode (with read_contents: true): pulse (each item as it enters this tile), hold (what this tile holds now), entire_belt_hold (what the whole belt holds: inspect\'s circuit.belt_segment names the physical segment and the whole belt apart, with the wires\' read)',
-      signals='constant combinator: [{signal, count}] (first section; [] clears)', on='constant combinator: on/off',
+      signals='constant combinator: [{signal, count}] (first section; [] clears)',
+      description='an arithmetic, decider, selector or constant combinator (or its ghost): the description its GUI shows (LuaEntity.combinator_description), up to 500 bytes, newlines kept; "" or false clears it; reads show it as description; blueprints keep it',
+      on='constant combinator: on/off',
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
       decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}: conditions rows "carbon < 150" (a row after the first begins with and / or: "and sulfur < 100"), {signal, comparator, value|signal2, compare: and|or (compare_type too), first_networks, second_networks: red|green|both}, or the game\'s own rows {first_signal, comparator, constant|second_signal, compare_type}; a row after the first must say and or or; outputs {signal, copy_input: true (the input count) | constant N, networks}; the read shows each row\'s networks and each output as copy or constant',
       selector='{operation (select|count|random|stack-size|...), its fields}',
@@ -865,8 +867,9 @@ return function(api)
   function M.read(e, cb)
     if cb == nil then cb = try(function() return e.get_control_behavior() end) end
     local wires, nets = wires_of(e)
-    if not cb and not wires then return nil end
-    local out = {wires=wires, networks=nets}
+    local description = M.description(e)
+    if not cb and not wires then return description and {description=description} or nil end
+    local out = {wires=wires, networks=nets, description=description}
     if not cb then out.settings_note = 'no circuit settings changed from the game defaults'; return out end
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
@@ -1028,6 +1031,29 @@ return function(api)
     end
     return kept, refused
   end
+  -- The description a player writes in a combinator's GUI (d20 batch56 R4, Astra #1399 for viewer Foobator), read on
+  -- 2.0.77: LuaEntity.combinator_description, on arithmetic, decider, selector and constant combinators and their ghosts
+  -- (any other entity raises "Entity is not arithmetic-combinator or ..."); the game keeps the first 500 bytes of a
+  -- longer one, even mid-character. A blueprint stores it as player_description; a ghost built from one has it, and
+  -- the combinator the ghost becomes keeps it.
+  M.DESCRIBED = {['arithmetic-combinator']=true, ['decider-combinator']=true, ['selector-combinator']=true, ['constant-combinator']=true}
+  local function described_type(e) return e.type == 'entity-ghost' and try(function() return e.ghost_type end) or e.type end
+  function M.description(e)
+    if not M.DESCRIBED[described_type(e)] then return nil end
+    local d = try(function() return e.combinator_description end)
+    return d ~= '' and d or nil
+  end
+  -- description as configure and circuit_set take it: a string up to 500 bytes; "" or false clears it.
+  function M.check_description(e, d)
+    if not M.DESCRIBED[described_type(e)] then
+      error(string.format('description: %s takes none; the game keeps a description on arithmetic, decider, selector and constant combinators (and their ghosts)',
+        e.type == 'entity-ghost' and 'a ghost of ' .. tostring(try(function() return e.ghost_name end)) or e.name), 0)
+    end
+    if d == false then d = '' end
+    if type(d) ~= 'string' then error('description is a string up to 500 bytes ("" or false clears it)', 0) end
+    if #d > 500 then error(string.format('description is %d bytes; the game keeps at most 500 (a longer one is cut at 500, even mid-character)', #d), 0) end
+    return d
+  end
   -- circuit_set's arguments for this entity (an unknown argument's reply names them).
   function M.takes(e)
     local cb = try(function() return e.get_control_behavior() or e.get_or_create_control_behavior() end)
@@ -1040,6 +1066,7 @@ return function(api)
     list[#list+1] = 'settings (' .. settings_list(kind, props) .. ')'
     if kind == 'constant_combinator' then list[#list+1] = 'signals, on' end
     if kind == 'arithmetic_combinator' or kind == 'decider_combinator' or kind == 'selector_combinator' then list[#list+1] = (kind:gsub('_combinator', '')) end
+    if M.DESCRIBED[described_type(e)] then list[#list+1] = 'description' end
     return table.concat(list, ', ')
   end
   local function setting(kind, props, name, v, e)
@@ -1262,6 +1289,11 @@ return function(api)
         local c = condition(a.logistic, 'logistic')
         step('logistic', function() cb.connect_to_logistic_network = true; cb.logistic_condition = c end)
       end
+    end
+    if a.description ~= nil then
+      local d = M.check_description(e, a.description)
+      out.description_before = M.description(e) or ''
+      step('description', function() e.combinator_description = d end)
     end
     if a.read ~= nil then
       local aliases, short = READ_ALIASES[kind] or {}, {}

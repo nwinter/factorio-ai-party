@@ -264,6 +264,15 @@ fh call status
   `circuit_set {position, ...}` changes what the entity's circuit GUI holds; `circuit` is its old name (a direct call
   runs as `circuit_set` and says so in `corrected`). `platform: "Sunward"` acts on that platform (platform coordinates,
   hub at 0,0); `surface: "vulcanus"` (a planet, a platform's name or its surface name) on another surface by remote view.
+- A combinator's description (d20 batch56 R4, Astra #1399 for viewer Foobator): in 2.0.77 the description a player
+  writes in the GUI is `LuaEntity.combinator_description`, read and written on arithmetic, decider, selector and
+  constant combinators and their ghosts only (any other entity raises "Entity is not arithmetic-combinator or ..."). The
+  game keeps the first 500 bytes of a longer one, cutting mid-character, so `configure {position, description}` and
+  `circuit_set {position, description}` refuse over 500 bytes; `""` or `false` clears it; newlines are kept. The reply:
+  `description`, `description_before`, `line`. `inspect` (top level and `circuit.description`), an area's rows,
+  `circuit` and `circuit_set` show it. A blueprint stores it as the entity's `player_description` (blueprint_capture,
+  blueprint_save and the exported string keep it, read on the private copy); a ghost placed from that blueprint has it
+  and the combinator the ghost becomes keeps it.
 - `place_ghosts`, its `dry_run` and `scan` take `surface: "vulcanus"` too (Astra 12:33: laying out a Vulcanus chain
   while Sonnet builds there by hand): in 2.0 a player places ghosts on another planet from the map, on charted
   chunks, and that planet's construction robots build them. `scan` there needs `position`, `area` or `positions`.
@@ -1962,6 +1971,18 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
   (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
   is out of it.
+  An `inspect {area}` (or `{position, radius}`) that finds nothing of ours says whether the area is in sight (d20
+  batch56 R3: 27 empty areas in shifts 45-47 read like a sight refusal): `no entity of ours with its centre in
+  (2,2)-(10,10); the area is in sight now (our force sees its chunk)`, `...; 3 of its 4 chunks in sight now, 1 out of
+  sight`, or `...; the area is out of sight now (its chunk is not one our force sees: ...); the nearest radar coverage
+  ...`.
+- `screenshot` (the `./shot` script: `./shot NAME [WIDTH HEIGHT] [at=X,Y] [surface=PLANET | platform=NAME]`) is centred
+  on the character without `position`. With `position` (d20 batch56 R2, Enginerd 14:42: 5 of 19 shots came 1-18 s after
+  a 143-606 tile walk) it is centred there by remote view, as a player's map shows it: the centre in a chunk our force
+  sees now (refused as inspect is, with the nearest radar coverage), and every chunk of the frame too (zoom 1, 32 px a
+  tile: 1280x720 spans 40x22.5 tiles), since the engine draws what stands there now; the refusal names the chunks out
+  of sight. `surface` (a planet, with `position`) and `platform` (platform coordinates, hub at 0,0) take it on another
+  surface. The reply has `position`, `surface` and `by: remote view` when out of the character's sight.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
   within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees, plants and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
@@ -9366,6 +9387,108 @@ fh watch    # deploy on every change
     background job).
   Tests: tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua (a failure mid-refresh; a job
   finishing after a newer read) and tests/d20_batch55.lua (snapfail.lua, the ground watch).
+- N3 (viewer Aurora, shift47 13:39 PDT: "Could job cards use each agent's current board_focus, with its age and a
+  labelled fallback? Old plan text still shows manual top-ups or availability after assignments change"). The stream
+  state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read
+  (no id) now adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled, gone}] and the tick. The
+  stream service reads `board_focus {}` with its board reads (live.py read_focus; a runtime without rows or the action
+  is asked again after 10 minutes, so a deploy needs no restart of the service) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
+  job_age_s and job_label: the focus `focus, set 5 min ago: #1355 Steel line coal; step 2 ...; blocker: ...`; no focus,
+  the team-plan line `plan line, set 2 h ago; no focus set: ...`; then notes.md's Now line `notes.md Now line, saved
+  12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the
+  plan line, the file's age for notes. The site's agent cards and portrait tip and the stream overlay's cards show the
+  label before the job. Tests: tools/stream/test_jobcard.py, site/test_jobcard.py, tests/d20_batch54.lua.
+- L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
+  wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
+  anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
+  {name, quality} or false}, the slots not named kept; `bar` is the usable slots (0..40) or false for none. On
+  2.0.77 the engine took an iron-plate filter on a slot holding coal; the GUI filters an occupied slot to what it
+  holds, so a filter on a slot holding another item is refused, naming it, and nothing is set. The reply adds
+  `wagon_slots {wagon, carriage, set, slot_filters ["2 low-density-structure@uncommon"], bar, line}`; `{wagon}` alone
+  reads them. No cargo moves. Checked on a wagon on the private copy (filters with quality, bar 30, cleared).
+- L6 (Astra #1205): assembler_batch reads the requester's trash unrequested. On, the plan switches it off before the
+  requester's requests are cleared and staged (`keep staged (trash unrequested off)`) and on again after the output
+  is released (`trash unrequested on again`); the dry run's `trash_unrequested` and plan line say so, and that a
+  plan stopped between leaves it off. Tests tests/d20_batch53.lua (L5, L6), tests/d17_batch19_rt.lua (the steps pass
+  the queue's checks).
+- M1 (Sol #932): belt_gaps read ghost belts as part of the line (`{line}` walked through them; `{from, to}` listed them
+  apart from `missing`, which read none). Each stretch of the line standing only as ghosts is now a break:
+  `ghost_breaks [{from, to, tiles, materials, robots, line}]` (`{line}`: in the line's text; `{from, to}`: `ghost_line`
+  too). `robots` says how many of its ghosts a roboport's construction area covers (up to 64 lookups a call), and each
+  network's count of the items and its idle construction robots. ghostbreaks.lua; checked on the private copy (a row
+  of 12 belts, 4 of them ghosts, both forms).
+- M2 (Sol #1297): `supply {item, makers: "all"}` (the census pass's makers) rated a breeder at 3 eggs a craft (2 x
+  1.5) where inspect gives 2.5 (the returned egg is ignored_by_productivity). makersall.lua now takes inspect's
+  figure (craftrate.lua) and gives `net_per_min` with the line `26 a minute (net 15.6: 10.4 a minute goes back in)`.
+  The other rate reads (rates, chain, ratechain, craftrate) already left that egg out.
+- M3 (Sol #1304): `uptime {positions (1..16), seconds? (10..3600, default 600), surface?, platform?}` watches
+  crafting machines in the background: the status each second (as the GUI's status line), and at each sample that
+  reads short of ingredients, each ingredient under one craft in its input. Crafts are counted from the game's
+  products_finished, read at the start and the end, which is what watching the machine's crafts finish gives. `uptime {}`
+  reads it so far (`watching`) or `done`: per machine crafts, crafts_per_min against full_speed_per_min, samples by
+  status, short, recipe_changed (an idle furnace's missing recipe is not a change), gone. `left_out` says what it does
+  not see: stops shorter than a second, exact ticks per status, why an ingredient is short upstream. One watch an
+  agent. Checked on the private copy (4 machines, 20 s).
+- M4 (Astra #1200): damage_log names no source by inference: its source was always the game's event.cause. For fire,
+  the cause is the turret whose stream lit the first fire, kept as the fire spreads, which is how an 86-tile-away
+  turret was named. Rows now add the event's `source` (what dealt the hit: fire-flame, a stream, a projectile) and
+  the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
+  from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
+  its cause read that way; event.source is set on 2.0.77.
+- N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
+  7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
+  read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;
+  uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
+  phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
+  tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
+
+- N4 (Sol, board #1389, shift47 ticks 38355977-38363365, Aquilo's west silo). (a) `load_silo first` began with the
+  rocket building (36/50 parts, nothing aboard); robots sent by the silo's automatic requests before the load
+  switched them off put 3 decider combinators in, and the silo launched them at 38357969 (chronicle: rocket to
+  Limestone-spare-unbuilt, cargo decider-combinator*3); at the next stop (38358146) the walk ended rocket_launched,
+  "the rocket this load was filling launched 2 s ago". The abort keyed on any launch of the silo after the start
+  (rocketload.lua launched_since: the launch known at the start, and one within 600 ticks of a start with a rocket
+  leaving, excepted). That rocket held decider-combinator, an item of the list, so "held none of the manifest" does not
+  tell them apart; what does is that it held nothing of this load. Now a launch ends the walk only when the rocket
+  held some of the load: what the load put in, or what the rocket held of the list when the load began (counted
+  toward its targets). Otherwise the stop's row says `a rocket launched 2 s ago (cargo: decider-combinator*3) held
+  nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; the load goes
+  on for the silo's next rocket; that rocket carried decider-combinator 3 of this list (not counted toward it)`, the
+  load goes on (what the next rocket holds counts, as before), and the reply's last.passed_launches keeps the line.
+  (b) Sol's own trash unrequested was on with no personal request for the gathered items; robots took them from the
+  trash slots on the walk (loaded 0). The dry run's line and personal_trash, and the walk's reply personal_trash, now
+  say `your trash unrequested is on and no personal request names bulk-inserter, assembling-machine-3: what you
+  carry of them the game moves to your trash slots, where logistic robots take it` and `your personal request max is
+  under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
+  limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
+  tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).
+- N5 (Sol, board #1390: Limestone-spare-unbuilt's pump duty cut from 10% to 5%; the engine read 48.9 km/s over the
+  last 60 s while platform_endurance kept 5940 km/min, the last leg's, and an ETA of 14m57s for 88883 km, more than
+  3 min into the leg). The cause: endurance's speed (and freight.lua's leg ETA, from the cruise) took a past leg's speed
+  whenever the speed now was under 90% of it, as if still speeding up after the departure (A4). engine.lua leg_speed
+  is now the rule for both: once the engine's last 60 s are all of this leg and the speed is not rising (last over
+  first by more than 5% or 1 km/s), this leg's own, their mean; speeding up (rising, or in the leg's first minute
+  with no samples) and under 90% of a past leg's speed, that one; else the speed now. It says which:
+  `this leg: its last 60 s mean, 48.9 km/s (lowest 48.9, highest 48.9)`, `the last leg nauvis->vulcanus: 59400 km
+  flown in 10m00s (it speeds up now: 49 km/s)`, `this leg: its speed now, 30 km/s`. platform_endurance's speed_from,
+  its legs' minutes, the fuel outlook (`about 30m17s at 2934 km/min (this leg: ...)`) and the resource forecast use
+  it; the platforms row's leg (eta_ticks, speed_from) and its ETA line (`flying vulcanus->nauvis: 88883 km left at
+  this leg: ...`) too. Tests: tests/d20_batch54.lua N5 (Sol's case: 14m57s by the old rule, 30m17s now; a leg 30 s in
+  and still speeding up; a leg faster than the last; freight's leg); tests/d15_batch3.lua (the outlook names its
+  speed).
+- N6 (viewers Foobator 14:43 and 14:49, shift47: "we're seeing grok do something to stay stationary on the belt").
+  Grok's load_silo (silo (65.5,14.5), 500 agricultural science packs for Petrel) held at the silo stop for 400+ s
+  standing on a west-facing transport belt: his status position stayed at y 0.36 with x between 60.16 and 60.30, the
+  edge of the 10-tile reach to the silo's box. What held him there: the tour (stock.lua) visits the silo each tick it
+  is in reach; the visit returns wait and the tour stops walking; the belt carries the character west out of reach;
+  the tour then walks its leg back east into reach, and the visit stops it again. On the stream that is a walk in
+  place against the belt. Now a tour's hold that begins on a belt or a rail steps first to the nearest free tile in
+  reach of the entity without a belt or rail (runtime.lua hold_off_belt, the same tile search as move_to's arrival,
+  within 4 tiles, at most 10 s), and the hold line and the gather's last.off_belt say it: `the hold began on a
+  transport-belt at (60.3,0.4); stepped to (60.5,1.5), the nearest free tile without a belt or rail in reach of
+  rocket-silo`; with no such tile `held on a transport-belt at (...): no free tile without a belt or rail within 4
+  tiles in reach of rocket-silo`. Tests: tests/round1520d.lua 5 (a hold that begins on a belt, one not on a belt, one
+  with no free tile, the hold line).
 - P2 (viewer Aurora 14:37: "Could task and blueprint checks show observed pass, fail or stale, and rerun after
   relevant changes?"). What existed: board items' `evidence` (metric, decision, result as text, owner, next_check: a
   tick past which status lists the item overdue; no pass or fail); progress.lua's check of each owned item every 10

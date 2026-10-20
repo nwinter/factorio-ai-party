@@ -239,3 +239,52 @@ do
   eq(R.trash_note(p,list),nil)
 end
 print('d20_batch54 N4b trash unrequested and the manifest: ok')
+
+-- N5 (Sol, harness request #1390): Limestone-spare-unbuilt's pump duty cut from 10% to 5%: the engine read 48.9 km/s
+-- over the last 60 s while platform_endurance kept 5940 km/min (the last leg's, about 99 km/s) and an ETA of 14m57s for
+-- 88883 km, more than 3 min into the leg. A leg under way at its own measured speed once it has one.
+do
+  defines={entity_status={working=1},flow_precision_index={one_minute=1}}
+  local pl={valid=true,index=9,name='Limestone-spare-unbuilt',speed=0,space_connection={},force={},
+    surface={find_entities_filtered=function() return {} end}}
+  local st={}
+  local EN=require('engine'){state=function() return st end}
+  -- the leg began at tick 0: 30 s speeding up to 49 km/s, then flat
+  local function fly(t0,t1,at)
+    for t=t0,t1,60 do pl.speed=at(t)/60; EN.sample(pl,t) end
+  end
+  fly(0,30*60,function(t) return 49*t/1800 end)
+  -- 30 s in, still speeding up: the past leg's 99 km/s, said so
+  game={tick=30*60}
+  local v,by,own=EN.leg_speed(pl,30*60,99/60,'the last leg nauvis->vulcanus: 59400 km flown in 10m00s')
+  eq(v,99/60); eq(own,false); eq(by,'the last leg nauvis->vulcanus: 59400 km flown in 10m00s (it speeds up now: 49 km/s)')
+  fly(31*60,200*60,function() return 48.9 end)
+  game={tick=200*60}
+  v,by,own=EN.leg_speed(pl,200*60,99/60,'the last leg nauvis->vulcanus: 59400 km flown in 10m00s')
+  eq(own,true); eq(math.floor(v*3600+0.5),2934); eq(by,'this leg: its last 60 s mean, 48.9 km/s (lowest 48.9, highest 48.9)')
+  -- no past speed and in the first minute with no samples: the speed now
+  local fresh={valid=true,index=10,name='Fresh',speed=0.5,space_connection={}}
+  v,by,own=EN.leg_speed(fresh,600,nil,nil); eq(v,0.5); eq(by,'this leg: its speed now, 30 km/s'); eq(own,true)
+  -- a leg flying faster than the last one, settled: its own
+  v,by,own=EN.leg_speed(pl,200*60,30/60,'the last leg'); eq(own,true); eq(math.floor(v*60*10+0.5)/10,48.9)
+  -- the platforms row's leg ETA (freight.lua leg) by the same rule: this leg's speed, said, not the cruise
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end,leg_speed=function(p,since,past,pby) return EN.leg_speed(p,since,past,pby) end}
+  st.freight={[9]={cruise=99/60,segs={{kind='leg',from='vulcanus',to='nauvis',start=0}}}}
+  pl.space_connection={from={name='vulcanus'},to={name='nauvis'},length=100000}; pl.distance=0.11117; pl.schedule={records={{station='nauvis'}},current=1}
+  local leg=F.leg(pl)
+  eq(leg.eta_from,nil); eq(leg.speed_from,'this leg: its last 60 s mean, 48.9 km/s (lowest 48.9, highest 48.9)')
+  eq(math.floor(leg.eta_ticks/60+0.5),math.floor(88883/48.9+0.5))
+  -- platform_endurance's fuel outlook and route speed, at this leg's speed, saying so
+  local segs={{kind='leg',from='nauvis',to='vulcanus',start=-20*3600,['end']=-10*3600,km0=0,km1=59400},
+    {kind='stop',at='vulcanus',start=-10*3600,['end']=0},{kind='leg',from='vulcanus',to='nauvis',start=0}}
+  local E=require('endurance'){leg=function() return {from='vulcanus',to='nauvis',left_km=88883} end,segments=function() return segs end,
+    leg_speed=function(p,since,past,pby) return EN.leg_speed(p,since,past,pby) end}
+  local o=E.fuel_outlook(pl)
+  has(o.line,'leg vulcanus->nauvis, 88883 km left, about 30m17s at 2934 km/min (this leg: its last 60 s mean, 48.9 km/s (lowest 48.9, highest 48.9))')
+  eq(o.leg_left_min,30.3)
+  -- without the engine's samples (an older runtime's api): the old rule, the last leg's while under 90% of it
+  local E0=require('endurance'){leg=function() return {from='vulcanus',to='nauvis',left_km=88883} end,segments=function() return segs end}
+  has(E0.fuel_outlook(pl).line,'about 14m57s at 5940 km/min (the last leg nauvis->vulcanus: 59400 km flown in 10m00s (it speeds up now, 2934 km/min))')
+  game,defines=nil,nil
+end
+print('d20_batch54 N5 a leg at its own measured speed: ok')
