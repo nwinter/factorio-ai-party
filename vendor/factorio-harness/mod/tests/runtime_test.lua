@@ -4755,7 +4755,7 @@ end)()
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
   fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
   list={far}
-  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no entity of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no entity of ours with its centre in (0,0)-(64,10); 1 of its 3 chunks in sight now, 2 out of sight; 1 more there in chunks out of sight (not listed)')
   list={}
   for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
   -- over the 64 rows: one shape, a page of entities with by_name beside them (d17 batch13 A3)
