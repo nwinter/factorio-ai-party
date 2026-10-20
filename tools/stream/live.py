@@ -23,6 +23,7 @@ from waitcard import WaitFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
+FOCUS_RETRY = 600  # board_focus with no rows (a runtime before d20 batch54 N3): asked again after 10 min
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
@@ -389,6 +390,7 @@ class LiveSource:
                 a["dead_until_tick"] = st.get("dead_until_tick")
             if self.journals:
                 a["notes_job"] = self.notes_job(name)
+                a["notes_job_t"] = (self.notes_cache.get(name) or (None,))[0]  # when notes.md was saved (the card's age)
                 # a rest between turns (tools/agy-quota.py resting.json: Gemini pacing its weekly quota), or None
                 a["resting"] = pacing.resting(os.path.join(self.journals, name))
             obs["agents"].append(a)
@@ -414,6 +416,26 @@ class LiveSource:
         return obs
 
     # ---- work away from the body ----------------------------------------------------------------------------
+    def read_focus(self, errors):
+        """Each agent's board_focus (d20 batch54 N3, viewer Aurora: job cards from the focus, with its age): the read's
+        rows [{agent, id, title, step, blocker, verify, tick, stalled}]; None when the runtime gives no rows (an older
+        one: asked again after FOCUS_RETRY seconds, so a deploy needs no restart here) or the read fails."""
+        if getattr(self, "focus_ok", None) is False and time.time() < getattr(self, "focus_retry_t", 0):
+            return None
+        try:
+            fr, _ = self.read("board_focus", {}, **self.reader())
+        except Exception as e:
+            if "unsupported action" in str(e) or "unknown action" in str(e):
+                self.focus_ok, self.focus_retry_t = False, time.time() + FOCUS_RETRY
+            else:
+                errors["board_focus"] = str(e)
+            return None
+        rows = fr.get("rows") if isinstance(fr, dict) else None
+        self.focus_ok = isinstance(rows, list)
+        if not self.focus_ok:
+            self.focus_retry_t = time.time() + FOCUS_RETRY
+        return rows if self.focus_ok else None
+
     def notes_job(self, name):
         """The agent's job line from runs/RUN/AGENT/notes.md "## Now" (model.notes_job), or None."""
         path = os.path.join(self.journals, name, "notes.md")
@@ -751,7 +773,8 @@ class LiveSource:
                     active = None
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
                          + (projects.get("items") or []) + ((active or {}).get("items") or [])}
-                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"),
+                focus = self.read_focus(errors)
+                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
                                 "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)

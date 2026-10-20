@@ -486,7 +486,7 @@ def map_tests():
         assert t["click"] == {"hidden": True, "flash": True}, t  # the click scrolls to Sol's line and marks it
         # a tap shows Muse's tip (no line on the plan; its job from its notes); a second tap goes to the plan card
         assert t["tap1"]["hidden"] is False and "no line on the team plan" in t["tap1"]["html"], t
-        assert "Job (its notes):</span> refill the furnace row" in t["tap1"]["html"] and "Tap again" in t["tap1"]["html"], t
+        assert "Job (notes.md Now line):</span> refill the furnace row" in t["tap1"]["html"] and "Tap again" in t["tap1"]["html"], t
         assert t["tap2"] == {"hidden": True, "plan_card": True}, t
         # watchers: the sample shows its YouTube reading; no heartbeat without an API
         assert lv["watching"] == {"text": "Watching: 41 YouTube", "hidden": False} and lv["posts"] == [], (lv["watching"], lv["posts"])
