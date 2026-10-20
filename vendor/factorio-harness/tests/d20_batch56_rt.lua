@@ -124,3 +124,33 @@ do
   fails(function() astra('screenshot',{path='pog/astra/e.png',surface='vulcanus',position={x=10,y=10}}) end,'(remote view needs radar coverage there)')
 end
 print('d20_batch56_rt R2 screenshot by remote view: ok')
+
+-- R4 (Astra #1399 for viewer Foobator): a combinator's description, LuaEntity.combinator_description in 2.0.77, on
+-- arithmetic, decider, selector and constant combinators and their ghosts; up to 500 bytes.
+do
+  local C=runtime.circuits
+  local cc={valid=true,name='constant-combinator',type='constant-combinator',combinator_description=''}
+  local chest={valid=true,name='iron-chest',type='container'}
+  setmetatable(chest,{__index=function(_,k) if k=='combinator_description' then error('Entity is not arithmetic-combinator or decider-combinator or selector-combinator or constant-combinator.',0) end end})
+  local ghost={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='decider-combinator',ghost_type='decider-combinator',combinator_description='dec'}
+  eq(C.description(cc),nil); eq(C.description(ghost),'dec'); eq(C.description(chest),nil)
+  eq(C.check_description(cc,'Iron plate threshold\nfor the mall'),'Iron plate threshold\nfor the mall')
+  eq(C.check_description(cc,false),'')
+  fails(function() C.check_description(cc,string.rep('x',501)) end,'description is 501 bytes; the game keeps at most 500')
+  fails(function() C.check_description(chest,'x') end,'description: iron-chest takes none')
+  fails(function() C.check_description(cc,7) end,'description is a string up to 500 bytes')
+  eq(C.check_description(ghost,string.rep('x',500)),string.rep('x',500))
+  -- configure by remote view sets it and reads it back
+  local placed={valid=true,name='constant-combinator',type='constant-combinator',position={x=150.5,y=20.5},force=force,surface=surface,
+    combinator_description='',get_control_behavior=function() return nil end,get_wire_connectors=function() return {} end,
+    prototype={selectable_in_game=true},quality={name='normal'}}
+  surface.find_entities_filtered=function(f) if f.position and math.abs(f.position.x-150.5)<1 and math.abs(f.position.y-20.5)<1 then return {placed} end return {} end
+  local r=astra('configure',{position={x=150.5,y=20.5},description='Iron plate threshold'})
+  eq(placed.combinator_description,'Iron plate threshold'); eq(r.description,'Iron plate threshold'); eq(r.description_before,'')
+  eq(r.line,'constant-combinator (150.5,20.5): description "Iron plate threshold" (was none)')
+  r=astra('configure',{position={x=150.5,y=20.5},description=''})
+  eq(placed.combinator_description,''); eq(r.line,'constant-combinator (150.5,20.5): description none (was "Iron plate threshold")')
+  fails(function() astra('configure',{position={x=150.5,y=20.5},description='x',recipe='y'}) end,'description goes alone')
+  surface.find_entities_filtered=function() return {} end
+end
+print('d20_batch56_rt R4 combinator description: ok')
