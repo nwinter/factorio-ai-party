@@ -9243,3 +9243,17 @@ fh watch    # deploy on every change
   read "nothing the foundation rules hold it back by". Now that ghost and those within 16 tiles of it: `waits: ...`, or
   `not checked: the check ran out of its 4096 tile looks before deciding this one ...; unknown, not clear`, or `nothing
   the foundation rules hold it back by (checked with the N tile ghosts within 16 tiles of it)`. Tests: tests/d20_batch52.lua.
+
+## d20 batch54 (eng/d20-batch54)
+
+- N1 (viewer Aurora, shift46 12:25 PDT: Kestrel II's thruster fuel alert fired at the start of a leg and cleared with no
+  edit). The team alert `platform X: thruster-fuel and thruster-oxidizer runs out before the leg ends: ...` compares
+  the fluid statistics' last minute with the rest of the leg. It now ends with how long since the platform left its
+  stop and the engine's two samples (engine.lua, one a second) side by side, with the seconds of each sample spent at
+  the stop before it left (thrusters burn nothing there): `; left aquilo 0m40s ago; samples last 60 s (20 s of it at
+  the stop before it left): thruster-fuel used 5333/min, made 1000/min, thruster tanks 25000 -> 20667, ... | last 180 s
+  (140 s of it at the stop before it left): thruster-fuel used 1778/min, ...`. A leg first seen under way says `under
+  way 0m40s since first seen (the departure was before the runtime counted)`. endurance.fuel_outlook adds
+  since_departure_s, samples [{seconds, at_stop_s, fluids {name: {used_per_min, made_per_min, tanks_first,
+  tanks_last}}}] and since_line; its line (platform_endurance, platform_digest) is unchanged. Tests:
+  tests/d20_batch54.lua, tests/platalerts.lua.

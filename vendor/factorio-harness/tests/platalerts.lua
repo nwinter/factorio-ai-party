@@ -219,10 +219,13 @@ do
   -- batch27 B1 (Luna): flying, thruster fuel that runs out before the leg ends is told once to those the platform's
   -- alerts go to, with the outlook line; again after 5 minutes.
   local kept_outlook=runtime.endurance.fuel_outlook
-  runtime.endurance.fuel_outlook=function() return {short={'thruster-fuel'},line='leg nauvis->gleba, 9000 km left; thruster-fuel 900 held, made 0/min, used 300/min: runs out in 3m00s, 3m00s before the leg ends'} end
+  runtime.endurance.fuel_outlook=function() return {short={'thruster-fuel'},line='leg nauvis->gleba, 9000 km left; thruster-fuel 900 held, made 0/min, used 300/min: runs out in 3m00s, 3m00s before the leg ends',
+    since_line='left nauvis 0m40s ago; samples last 60 s (20 s of it at the stop before it left): thruster-fuel used 5333/min'} end
   jump(601)
   local fl=has(alerts(astra),'runs out before the leg ends')
   assert(fl and fl:find('thruster-fuel runs out before the leg ends: leg nauvis->gleba',1,true),tostring(fl))
+  -- d20 batch54 N1: with the time since it left its stop and the engine's samples
+  assert(fl:find('before the leg ends; left nauvis 0m40s ago; samples last 60 s (20 s of it at the stop before it left)',1,true),tostring(fl))
   jump(601); eq(has(alerts(astra),'runs out before the leg ends'),nil,'told once')
   runtime.endurance.fuel_outlook=function() return {line='lasts'} end
   jump(601); eq(has(alerts(astra),'runs out before the leg ends'),nil)

@@ -17627,7 +17627,7 @@ M.endurance=require('endurance'){platform=function(p,name) return space.platform
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
-  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end}
+  ammomodel=M.ammomodel,geometry=function(pl) return M.freight.geometry(pl) end,engine=function(pl) return M.engine and M.engine.read(pl) end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}
