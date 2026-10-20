@@ -5,9 +5,13 @@
 -- its first and last; each thruster fluid used and made; the thrusters' tanks at the window's start and end; the
 -- pumps' duty (the share of pump-seconds working). Kept in storage, KEEP samples a platform; the thrusters and pumps
 -- are found again every minute.
+-- (d20 batch54 N2, viewer Aurora: "Sampling every 60 ticks can miss a 20-tick pulse entirely") the pumps are read once
+-- a second at a phase that moves STRIDE ticks each second (pump_tick), so a minute of samples meets every tick of a
+-- second once and a pump working 20 ticks of every 60 reads a third of the time whatever its phase. The game keeps no
+-- count of a pump's working ticks (LuaEntity has products_finished for crafting machines only).
 return function(api)
   local M = {}
-  local KEEP, REFRESH, WINDOWS = 181, 3600, {60, 180}
+  local KEEP, REFRESH, WINDOWS, STRIDE = 181, 3600, {60, 180}, 7
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local st = api.state()
@@ -42,7 +46,8 @@ return function(api)
     for _, e in ipairs(list or {}) do if not e.valid then return false end end
     return true
   end
-  -- One sample: {tick, km/s, {used}, {made}, {in tanks}, pumps working, pumps}.
+  -- One sample: {tick, km/s, {used}, {made}, {in tanks}, pumps working, pumps, the pumps' phase}; the pumps' fields
+  -- are filled by pump_tick later in the same second.
   function M.sample(pl, tick)
     local all = store()
     local rec = all[pl.index]
@@ -65,11 +70,9 @@ return function(api)
         end
       end
     end
-    local on = 0
-    for _, e in ipairs(rec.pumps) do if e.status == working then on = on + 1 end end
     local speed = try(function() return pl.speed end) or 0
     local s = rec.samples
-    s[#s+1] = {tick, speed * 60, used, made, tank, on, #rec.pumps}
+    s[#s+1] = {tick, speed * 60, used, made, tank}
     while #s > KEEP do table.remove(s, 1) end
     rec.name = pl.name
   end
@@ -84,24 +87,44 @@ return function(api)
     local all = store()
     for index in pairs(all) do if not seen[index] then all[index] = nil end end
   end
+  -- Every tick: at this second's phase ((second * STRIDE) % 60), each platform's pumps into its sample of this second.
+  function M.pump_tick(tick)
+    local sec = math.floor(tick / 60)
+    local phase = tick - sec * 60
+    if phase ~= (sec * STRIDE) % 60 then return end
+    for _, rec in pairs(store()) do
+      local s = rec.samples and rec.samples[#rec.samples]
+      if s and s[1] == sec * 60 then
+        local on, n = 0, 0
+        for _, e in ipairs(rec.pumps or {}) do
+          if e.valid then n = n + 1; if e.status == working then on = on + 1 end end
+        end
+        s[6], s[7], s[8] = on, n, phase
+      end
+    end
+  end
   -- One window: the samples within `seconds` of the last one.
   local function window(rec, seconds)
     local s = rec.samples
     local last = s[#s]
     local first, n = nil, 0
-    local sum, low, high, on, pumps = 0, math.huge, -math.huge, 0, 0
+    local sum, low, high, on, pumps, ps = 0, math.huge, -math.huge, 0, 0, 0
     for i = #s, 1, -1 do
       local x = s[i]
       if last[1] - x[1] > seconds * 60 then break end
+      -- the pumps: a sample a second over the window's seconds (its first sample, at the window's start, left out)
+      if first and first[7] then on, pumps, ps = on + first[6], pumps + first[7], ps + 1 end
       first = x
       n = n + 1
       sum = sum + x[2]
       low, high = math.min(low, x[2]), math.max(high, x[2])
-      on, pumps = on + x[6], pumps + x[7]
     end
+    if n == 1 and last[7] then on, pumps, ps = last[6], last[7], 1 end
+    local npumps = last[7] or #(rec.pumps or {})
     local span = math.floor((last[1] - first[1]) / 60 + 0.5)
     local out = {seconds=span, samples=n, speed_mean=r1(sum / n), speed_low=r1(low), speed_high=r1(high), speed_first=r1(first[2]),
-      speed_last=r1(last[2]), fluids={}, pumps=last[7], pump_duty=pumps > 0 and math.floor(on / pumps * 100 + 0.5) or nil}
+      speed_last=r1(last[2]), fluids={}, pumps=npumps, pump_duty=pumps > 0 and math.floor(on / pumps * 100 + 0.5) or nil,
+      pump_samples=ps}
     local parts = {}
     for i, name in ipairs(rec.fluids or {}) do
       local u = (last[3][i] or 0) - (first[3][i] or 0)
@@ -115,7 +138,9 @@ return function(api)
     out.line = string.format('%s: speed mean %g km/s (lowest %g, highest %g; %g -> %g)', head, out.speed_mean, out.speed_low, out.speed_high,
       out.speed_first, out.speed_last)
       .. (#parts > 0 and '; ' .. table.concat(parts, '; ') or '; no thrusters')
-      .. (out.pump_duty and string.format('; %d pumps working %d%% of the time', out.pumps, out.pump_duty) or '; no pumps')
+      .. (out.pump_duty and string.format('; %d pumps working %d%% of the time (%d samples, one a second at a phase %d ticks later each second: %s)',
+        out.pumps, out.pump_duty, ps, STRIDE, ps >= 60 and 'every tick of a second sampled once a minute' or string.format('%d of the 60 ticks of a second sampled', ps))
+        or npumps > 0 and string.format('; %d pumps, not sampled yet', npumps) or '; no pumps')
     return out
   end
   -- The windows for a platform: {lines, windows}, nil before its first two samples.

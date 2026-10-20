@@ -18649,6 +18649,7 @@ function M.tick_body(event)
   if event.tick%60==37 and state().artillery_checks then pcall(M.artillery.tick) end  -- a flare's shot confirmed (artillery.lua)
   if event.tick%60==41 and state().decon_went then pcall(M.deconwent.tick) end  -- where a deconstructed item went (deconwent.lua)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
+  if M.engine then pcall(M.engine.pump_tick,event.tick) end  -- its pumps once a second at a moving phase (engine.lua)
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
     local ok,err=pcall(M.spoil.tick,event.tick)
