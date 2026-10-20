@@ -288,3 +288,50 @@ do
   game,defines=nil,nil
 end
 print('d20_batch54 N5 a leg at its own measured speed: ok')
+
+-- N7 (Astra, harness request #1405): platform_delete as the platform GUI deletes (LuaSpacePlatform.destroy: the game
+-- schedules it 18000 ticks ahead; cancel_deletion), with a dry run; a platform not empty or occupied refused unless
+-- confirm is its name.
+do
+  game={tick=1000}
+  defines={inventory={hub_main=1,hub_trash=2}}
+  local cargo={{name='iron-plate',count=100,quality='normal'}}
+  local hub={valid=true,get_inventory=function(id) return {get_contents=function() return id==1 and cargo or {} end} end}
+  local char={valid=true,type='character',unit_number=5,position={x=2,y=2}}
+  local chars={char}
+  local surface={count_entities_filtered=function(f)
+      if f.type and f.type[1]=='entity-ghost' then return 1 end
+      if f.type=='cargo-pod' then return 0 end
+      return 1+1+#chars+2 end,
+    find_entities_filtered=function(f)
+      if f.type=='character' then return chars end
+      return {hub,{valid=true,name='gun-turret'},{valid=true,name='gun-turret'}} end,
+    count_tiles_filtered=function() return 100 end}
+  local pl={name='Bastion',surface=surface,hub=hub,scheduled_for_deletion=0}
+  pl.destroy=function() pl.scheduled_for_deletion=18000 end
+  pl.cancel_deletion=function() pl.scheduled_for_deletion=0 end
+  local D=dofile('mod/agent-harness_0.1.0/platdelete.lua'){platform=function() return pl end,character_owner=function() return 'astra' end,
+    incoming=function() return {rockets=1,lines={'a rocket from aquilo launched 5s ago (tick 700): repair-pack*50 (rising over aquilo)'}} end}
+  local r=D.handler({},{platform='Bastion',dry_run=true})
+  eq(r.hub_cargo,'iron-plate*100'); eq(r.entities,2); eq(r.entity_names,'gun-turret*2'); eq(r.ghosts,1); eq(r.foundation_tiles,100)
+  eq(r.characters[1],'astra at (2,2)'); eq(r.occupied,true); eq(r.empty,false)
+  has(r.line,'Bastion: would be refused without confirm: not empty (hub cargo, 2 entities besides the hub, cargo pods on their way or on it); occupied (astra at (2,2))')
+  has(r.lines[4],'cargo pods on their way: a rocket from aquilo launched 5s ago')
+  eq(pl.scheduled_for_deletion,0,'a dry run deletes nothing')
+  local ok,err=pcall(D.handler,{},{platform='Bastion'})
+  assert(not ok); has(err,'nothing deleted; confirm: "Bastion" deletes it with them')
+  ok,err=pcall(D.handler,{},{platform='Bastion',confirm='bastion'}); assert(not ok,'confirm is the exact name')
+  r=D.handler({},{platform='Bastion',confirm='Bastion'})
+  eq(r.scheduled_ticks,18000); eq(r.due_tick,19000); has(r.line,'Bastion: scheduled for deletion in 300s (tick 19000), the game\'s own delay')
+  ok,err=pcall(D.handler,{},{platform='Bastion',confirm='Bastion'}); assert(not ok); has(err,'scheduled for deletion already, in 300s')
+  r=D.handler({},{platform='Bastion',cancel=true}); eq(r.cancelled,true); eq(pl.scheduled_for_deletion,0)
+  -- emptied: no cargo, only the hub, no pods, nobody aboard: deleted without confirm
+  cargo={}; chars={}
+  surface.count_entities_filtered=function(f) if f.type then return 0 end return 1 end
+  surface.find_entities_filtered=function(f) if f.type=='character' then return {} end return {hub} end
+  D=dofile('mod/agent-harness_0.1.0/platdelete.lua'){platform=function() return pl end}
+  r=D.handler({},{platform='Bastion',dry_run=true}); eq(r.empty,true); eq(r.occupied,false); has(r.line,'empty and unoccupied: platform_delete deletes it')
+  r=D.handler({},{platform='Bastion'}); eq(r.scheduled_ticks,18000)
+  game,defines=nil,nil
+end
+print('d20_batch54 N7 platform_delete: ok')
