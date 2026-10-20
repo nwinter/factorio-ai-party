@@ -1545,12 +1545,33 @@ return function(api)
     if st=='no_schedule' and not cleared then return 'no_schedule: it follows no schedule and goes nowhere; '..M.STUCK_RULE end
     if st=='no_path' then return 'no_path: it has no way from where it is to its next stop and goes nowhere' end
   end
+  -- (d19 batch48 cp2, Sol 18:01: Kestrel IV at Nauvis read no_schedule after stops+current 2 and a queue step failed at
+  -- 305 ticks) the game keeps a platform at its station until the rockets launched to it arrive, and it reads
+  -- no_schedule meanwhile: on shift42 Kestrel IV left Nauvis 2129 and 2116 ticks after a rocket was launched to it
+  -- (33991951 -> 33994080, 34340264 -> 34342380) and left Aquilo at once with none on the way (34251660). The rockets
+  -- on their way (freight.lua incoming): until when the recheck waits for them, at most ROCKET_HOLD after the call.
+  M.ROCKET_UP,M.ROCKET_HOLD,M.ROCKET_MARGIN=2200,3600,180
+  local function rockets_coming(pl)
+    local inc=api.freight and api.freight.incoming and try(function() return api.freight.incoming(pl) end)
+    if not (inc and inc.rockets and inc.rockets>0) then return nil end
+    local last=game.tick
+    for _,r in ipairs(inc.rows or {}) do
+      local left=r.eta_ticks or math.max(0,M.ROCKET_UP-(game.tick-(r.tick or game.tick)))
+      last=math.max(last,game.tick+left+M.ROCKET_MARGIN)
+    end
+    return {arrive_tick=last,line=string.format('%d rocket%s launched to it %s still on the way (%s); the game keeps a platform at its station until the rockets launched to it arrive, reading no_schedule meanwhile (Kestrel IV on shift42 left 2129 and 2116 ticks after a launch to it)',
+      inc.rockets,inc.rockets==1 and '' or 's',inc.rockets==1 and 'is' or 'are',(inc.lines or {})[1] or inc.cargo)}
+  end
+  M.rockets_coming=rockets_coming
   stuck=function(pl,a,rebuilt,cleared)
     local st=platform_states[pl.state]
     if stuck_why(pl,st,cleared) then
-      return {platform=pl.name,first=st,tick=game.tick,ends_tick=game.tick+M.RECHECK_TICKS,cleared=cleared or nil,rebuilt=rebuilt,
-        line=string.format('%s read %s in the tick of this call (the game updates a platform in a later tick); read again every %d ticks for up to %d: a queue step waits for that read and fails only when it still reads no_schedule or no_path; a direct call gets the second read in a tell',
-          pl.name,st,M.RECHECK_EVERY,M.RECHECK_TICKS)}
+      local hold=st=='no_schedule' and rockets_coming(pl) or nil
+      local ends=game.tick+M.RECHECK_TICKS
+      if hold then ends=math.min(game.tick+M.ROCKET_HOLD,math.max(ends,hold.arrive_tick)) end
+      return {platform=pl.name,first=st,tick=game.tick,ends_tick=ends,cleared=cleared or nil,rebuilt=rebuilt,rockets=hold and hold.line or nil,
+        line=string.format('%s read %s in the tick of this call (the game updates a platform in a later tick); read again every %d ticks for up to %d: a queue step waits for that read and fails only when it still reads no_schedule or no_path; a direct call gets the second read in a tell%s',
+          pl.name,st,M.RECHECK_EVERY,ends-game.tick,hold and '; '..hold.line or '')}
     end
     if pl.paused and a.paused~=true then
       error(string.format('%s reads paused: it goes nowhere until unpaused (paused: false)%s after this call, so the call failed; the schedule stays as set: %s%s',pl.name,
@@ -1567,10 +1588,18 @@ return function(api)
     local why=stuck_why(pl,st,rc.cleared)
     local after=game.tick-rc.tick
     if not why then
-      return {ok=true,state=st,after_ticks=after,line=string.format('%s read %s at tick %d (the call\'s tick) and %s %d ticks later, at %s',rc.platform,rc.first,rc.tick,tostring(st),after,tostring(location(pl) or "?"))}
+      return {ok=true,state=st,after_ticks=after,line=string.format('%s read %s at tick %d (the call\'s tick) and %s %d ticks later, at %s%s',rc.platform,rc.first,rc.tick,tostring(st),after,tostring(location(pl) or "?"),
+        rc.rockets and ' (it waited for the rockets launched to it)' or '')}
     end
     if game.tick<rc.ends_tick then return nil end
-    local line=string.format('%s read %s at tick %d (the call\'s tick) and still %s %d ticks later',rc.platform,rc.first,rc.tick,st,after)
+    -- rockets launched to it still on the way (a later launch, or a slower rocket): wait on, up to ROCKET_HOLD
+    local hold=st=='no_schedule' and rockets_coming(pl) or nil
+    if hold and game.tick<rc.tick+M.ROCKET_HOLD then
+      rc.ends_tick=math.min(rc.tick+M.ROCKET_HOLD,math.max(game.tick+M.RECHECK_EVERY,hold.arrive_tick)); rc.rockets=hold.line
+      return nil
+    end
+    local line=string.format('%s read %s at tick %d (the call\'s tick) and still %s %d ticks later%s',rc.platform,rc.first,rc.tick,st,after,
+      hold and '; '..hold.line..' (waited the longest it waits, '..M.ROCKET_HOLD..' ticks)' or '')
     return {ok=false,state=st,after_ticks=after,line=line,
       error=string.format('%s; the call failed: it reads %s; the schedule stays as set: %s%s',line,why,schedule_text(pl),rc.rebuilt and '; '..rc.rebuilt or '')}
   end
