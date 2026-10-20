@@ -250,7 +250,7 @@ do
   local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st end,remote_entity=function() return m end,
     status_name=function(e) return e.status end,craftrate=function() return {crafts_per_min=12} end}
   local r=U.handler({index=1},{positions={{x=10.5,y=20.5}},seconds=10})
-  eq(r.watching,true); eq(r.baseline[1],'assembling-machine-2 (10.5,20.5) chemical-science-pack: 100 finished so far')
+  eq(r.watching,true); eq(r.baseline[1],'assembling-machine-2 (10.5,20.5) chemical-science-pack: 100 completions so far (the game\'s count, productivity\'s included)')
   -- (d20 batch54 N2) the samples at a moving phase: 1067, 1134, 1201 short; from 1268 working; the last at 1600
   for t=1001,1600 do
     game.tick=t

@@ -9283,7 +9283,6 @@ fh watch    # deploy on every change
   the foundation rules hold it back by (checked with the N tile ghosts within 16 tiles of it)`. Tests: tests/d20_batch52.lua.
 
 ## d20 batch54 (eng/d20-batch54)
-
 - N1 (viewer Aurora, shift46 12:25 PDT: Kestrel II's thruster fuel alert fired at the start of a leg and cleared with no
   edit). The team alert `platform X: thruster-fuel and thruster-oxidizer runs out before the leg ends: ...` compares
   the fluid statistics' last minute with the rest of the leg. It now ends with how long since the platform left its
@@ -9308,8 +9307,44 @@ fh watch    # deploy on every change
   drill's or lab's output from its status at each visit of its walk (a credit estimate marked "about", not a duty
   figure); the rest of the "working" counts in the reads are the status now. Tests: tests/engine.lua,
   tests/d20_batch54.lua.
+- N3 (viewer Aurora, shift47 13:39 PDT: "Could job cards use each agent's current board_focus, with its age and a
+  labelled fallback? Old plan text still shows manual top-ups or availability after assignments change"). The stream
+  state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read
+  (no id) now adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled, gone}] and the tick. The
+  stream service reads `board_focus {}` with its board reads (live.py read_focus; a runtime without rows or the action
+  is asked again after 10 minutes, so a deploy needs no restart of the service) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
+  job_age_s and job_label: the focus `focus, set 5 min ago: #1355 Steel line coal; step 2 ...; blocker: ...`; no focus,
+  the team-plan line `plan line, set 2 h ago; no focus set: ...`; then notes.md's Now line `notes.md Now line, saved
+  12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the
+  plan line, the file's age for notes. The site's agent cards and portrait tip and the stream overlay's cards show the
+  label before the job. Tests: tools/stream/test_jobcard.py, site/test_jobcard.py, tests/d20_batch54.lua.
+- N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
+  7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
+  read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;
+  uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
+  phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
+  tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
+- N4 (Sol, board #1389, shift47 ticks 38355977-38363365, Aquilo's west silo). (a) `load_silo first` began with the
+  rocket building (36/50 parts, nothing aboard); robots sent by the silo's automatic requests before the load
+  switched them off put 3 decider combinators in, and the silo launched them at 38357969 (chronicle: rocket to
+  Limestone-spare-unbuilt, cargo decider-combinator*3); at the next stop (38358146) the walk ended rocket_launched,
+  "the rocket this load was filling launched 2 s ago". The abort keyed on any launch of the silo after the start
+  (rocketload.lua launched_since: the launch known at the start, and one within 600 ticks of a start with a rocket
+  leaving, excepted). That rocket held decider-combinator, an item of the list, so "held none of the manifest" does not
+  tell them apart; what does is that it held nothing of this load. Now a launch ends the walk only when the rocket
+  held some of the load: what the load put in, or what the rocket held of the list when the load began (counted
+  toward its targets). Otherwise the stop's row says `a rocket launched 2 s ago (cargo: decider-combinator*3) held
+  nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; the load goes
+  on for the silo's next rocket; that rocket carried decider-combinator 3 of this list (not counted toward it)`, the
+  load goes on (what the next rocket holds counts, as before), and the reply's last.passed_launches keeps the line.
+  (b) Sol's own trash unrequested was on with no personal request for the gathered items; robots took them from the
+  trash slots on the walk (loaded 0). The dry run's line and personal_trash, and the walk's reply personal_trash, now
+  say `your trash unrequested is on and no personal request names bulk-inserter, assembling-machine-3: what you
+  carry of them the game moves to your trash slots, where logistic robots take it` and `your personal request max is
+  under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
+  limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
+  tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).
 ## d20 batch55 (eng/d20-batch55)
-
 - P1 (viewer Aurora, shift47 13:59: "Could factory snapshots retain their capture time after refresh errors and
   reject older background results?"). Both were true in every cached read refreshed by a background job, and both are
   fixed there (snapfail.lua):
@@ -9331,81 +9366,6 @@ fh watch    # deploy on every change
     background job).
   Tests: tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua (a failure mid-refresh; a job
   finishing after a newer read) and tests/d20_batch55.lua (snapfail.lua, the ground watch).
-- N3 (viewer Aurora, shift47 13:39 PDT: "Could job cards use each agent's current board_focus, with its age and a
-  labelled fallback? Old plan text still shows manual top-ups or availability after assignments change"). The stream
-  state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read
-  (no id) now adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled, gone}] and the tick. The
-  stream service reads `board_focus {}` with its board reads (live.py read_focus; a runtime without rows or the action
-  is asked again after 10 minutes, so a deploy needs no restart of the service) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
-  job_age_s and job_label: the focus `focus, set 5 min ago: #1355 Steel line coal; step 2 ...; blocker: ...`; no focus,
-  the team-plan line `plan line, set 2 h ago; no focus set: ...`; then notes.md's Now line `notes.md Now line, saved
-  12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the
-  plan line, the file's age for notes. The site's agent cards and portrait tip and the stream overlay's cards show the
-  label before the job. Tests: tools/stream/test_jobcard.py, site/test_jobcard.py, tests/d20_batch54.lua.
-- L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
-  wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
-  anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
-  {name, quality} or false}, the slots not named kept; `bar` is the usable slots (0..40) or false for none. On
-  2.0.77 the engine took an iron-plate filter on a slot holding coal; the GUI filters an occupied slot to what it
-  holds, so a filter on a slot holding another item is refused, naming it, and nothing is set. The reply adds
-  `wagon_slots {wagon, carriage, set, slot_filters ["2 low-density-structure@uncommon"], bar, line}`; `{wagon}` alone
-  reads them. No cargo moves. Checked on a wagon on the private copy (filters with quality, bar 30, cleared).
-- L6 (Astra #1205): assembler_batch reads the requester's trash unrequested. On, the plan switches it off before the
-  requester's requests are cleared and staged (`keep staged (trash unrequested off)`) and on again after the output
-  is released (`trash unrequested on again`); the dry run's `trash_unrequested` and plan line say so, and that a
-  plan stopped between leaves it off. Tests tests/d20_batch53.lua (L5, L6), tests/d17_batch19_rt.lua (the steps pass
-  the queue's checks).
-- M1 (Sol #932): belt_gaps read ghost belts as part of the line (`{line}` walked through them; `{from, to}` listed them
-  apart from `missing`, which read none). Each stretch of the line standing only as ghosts is now a break:
-  `ghost_breaks [{from, to, tiles, materials, robots, line}]` (`{line}`: in the line's text; `{from, to}`: `ghost_line`
-  too). `robots` says how many of its ghosts a roboport's construction area covers (up to 64 lookups a call), and each
-  network's count of the items and its idle construction robots. ghostbreaks.lua; checked on the private copy (a row
-  of 12 belts, 4 of them ghosts, both forms).
-- M2 (Sol #1297): `supply {item, makers: "all"}` (the census pass's makers) rated a breeder at 3 eggs a craft (2 x
-  1.5) where inspect gives 2.5 (the returned egg is ignored_by_productivity). makersall.lua now takes inspect's
-  figure (craftrate.lua) and gives `net_per_min` with the line `26 a minute (net 15.6: 10.4 a minute goes back in)`.
-  The other rate reads (rates, chain, ratechain, craftrate) already left that egg out.
-- M3 (Sol #1304): `uptime {positions (1..16), seconds? (10..3600, default 600), surface?, platform?}` watches
-  crafting machines in the background: the status each second (as the GUI's status line), and at each sample that
-  reads short of ingredients, each ingredient under one craft in its input. Crafts are counted from the game's
-  products_finished, read at the start and the end, which is what watching the machine's crafts finish gives. `uptime {}`
-  reads it so far (`watching`) or `done`: per machine crafts, crafts_per_min against full_speed_per_min, samples by
-  status, short, recipe_changed (an idle furnace's missing recipe is not a change), gone. `left_out` says what it does
-  not see: stops shorter than a second, exact ticks per status, why an ingredient is short upstream. One watch an
-  agent. Checked on the private copy (4 machines, 20 s).
-- M4 (Astra #1200): damage_log names no source by inference: its source was always the game's event.cause. For fire,
-  the cause is the turret whose stream lit the first fire, kept as the fire spreads, which is how an 86-tile-away
-  turret was named. Rows now add the event's `source` (what dealt the hit: fire-flame, a stream, a projectile) and
-  the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
-  from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
-  its cause read that way; event.source is set on 2.0.77.
-- N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
-  7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
-  read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;
-  uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
-  phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
-  tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
-
-- N4 (Sol, board #1389, shift47 ticks 38355977-38363365, Aquilo's west silo). (a) `load_silo first` began with the
-  rocket building (36/50 parts, nothing aboard); robots sent by the silo's automatic requests before the load
-  switched them off put 3 decider combinators in, and the silo launched them at 38357969 (chronicle: rocket to
-  Limestone-spare-unbuilt, cargo decider-combinator*3); at the next stop (38358146) the walk ended rocket_launched,
-  "the rocket this load was filling launched 2 s ago". The abort keyed on any launch of the silo after the start
-  (rocketload.lua launched_since: the launch known at the start, and one within 600 ticks of a start with a rocket
-  leaving, excepted). That rocket held decider-combinator, an item of the list, so "held none of the manifest" does not
-  tell them apart; what does is that it held nothing of this load. Now a launch ends the walk only when the rocket
-  held some of the load: what the load put in, or what the rocket held of the list when the load began (counted
-  toward its targets). Otherwise the stop's row says `a rocket launched 2 s ago (cargo: decider-combinator*3) held
-  nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; the load goes
-  on for the silo's next rocket; that rocket carried decider-combinator 3 of this list (not counted toward it)`, the
-  load goes on (what the next rocket holds counts, as before), and the reply's last.passed_launches keeps the line.
-  (b) Sol's own trash unrequested was on with no personal request for the gathered items; robots took them from the
-  trash slots on the walk (loaded 0). The dry run's line and personal_trash, and the walk's reply personal_trash, now
-  say `your trash unrequested is on and no personal request names bulk-inserter, assembling-machine-3: what you
-  carry of them the game moves to your trash slots, where logistic robots take it` and `your personal request max is
-  under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
-  limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
-  tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).
 - P2 (viewer Aurora 14:37: "Could task and blueprint checks show observed pass, fail or stale, and rerun after
   relevant changes?"). What existed: board items' `evidence` (metric, decision, result as text, owner, next_check: a
   tick past which status lists the item overdue; no pass or fail); progress.lua's check of each owned item every 10
@@ -9439,3 +9399,13 @@ fh watch    # deploy on every change
   check 6m14s ago (1 stone-wall; the first 1s ago; that check: ...)`. Counted as each loss is recorded (the incidents
   are looped there already); nothing is read from the map. An argument on `losses`, so no new index line. Tests:
   tests/board.lua (recovery checks).
+- P4 (Sol #1393: Fulgora's EM plant (-41,81) read 106 crafts in 161 s, 39.4/min, "153%" of 25.8/min, while working
+  all the time; inspect: 25.8 crafts/min at productivity 54%). products_finished counts every completion, the
+  productivity bar's extra ones too, and uptime called them all crafts. It now gives `crafts` (base crafts, from the
+  completions and the bar: base x (1 + productivity) = completions + bonus_progress at the end - at the start) against
+  `full_speed_per_min`, and `completions` (the game's count), `bonus_completions`, `completions_per_min` against
+  `full_speed_completions_per_min` (the craft rate with productivity), `productivity` and `working_share` (% of
+  samples working) apart. Sol's case reads `69 crafts in 161s (25.7/min, 100% of its 25.8/min at full speed) and 37
+  productivity completions (productivity +54%): 106 completions, 39.5/min against 39.7/min at full speed; working
+  100%` (tests/d20_batch55.lua P4). On the private copy an EM plant on electronic circuits (+50%) read 54 crafts and 27
+  productivity completions of 81 in 20 s, working 62% (full output 38%).
