@@ -346,11 +346,32 @@ for _, pl in pairs(f.platforms) do
     end
     local hp = nil
     pcall(function() if pl.hub and pl.hub.valid and pl.hub.max_health > 0 then hp = math.floor(100 * pl.hub.health / pl.hub.max_health) end end)
+    local guns = {}
+    for _, e in pairs(s.find_entities_filtered{force = f, type = {"ammo-turret", "electric-turret", "fluid-turret", "turret"}, limit = 300}) do
+      guns[#guns + 1] = {n = e.name, q = e.quality and e.quality.name or "normal", x = e.position.x, y = e.position.y}
+    end
     out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
-      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp}
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns}
   end
 end
 rcon.print(helpers.table_to_json{platforms = out})
+"""
+
+# (d20 batch50 A1) A turret's range as its tooltip shows it: the prototype's range times its quality's range_multiplier,
+# for the (name, quality) pairs NAMES lists; read once per pair (Harness.turret_ranges caches them).
+TURRET_RANGE_LUA = r"""
+local out = {}
+for _, k in pairs(NAMES) do
+  local r = nil
+  pcall(function()
+    local p = prototypes.entity[k.n]
+    r = p.turret_range or (p.attack_parameters and p.attack_parameters.range)
+    local q = prototypes.quality[k.q]
+    if r and q and q.range_multiplier then r = r * q.range_multiplier end
+  end)
+  out[#out + 1] = {n = k.n, q = k.q, range = r}
+end
+rcon.print(helpers.table_to_json{ranges = out})
 """
 
 # The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05: the live map showed Nauvis only): the
@@ -514,9 +535,36 @@ class Harness:
         return self.lua(PROBE_LUA)
 
     def platform_views(self):
-        """{platform name: {surface, hub, bounds}} for the platforms that have a surface (PLATFORM_LUA)."""
+        """{platform name: {surface, hub, bounds, guns}} for the platforms that have a surface (PLATFORM_LUA). guns
+        (d20 batch50 A1): each turret's position and range, the range from turret_ranges."""
         rows = self.lua(PLATFORM_LUA).get("platforms")
-        return {r["name"]: r for r in (rows if isinstance(rows, list) else [])}
+        rows = rows if isinstance(rows, list) else []
+        turrets = [t for r in rows for t in (r.get("turrets") if isinstance(r.get("turrets"), list) else [])]
+        try:
+            ranges = self.turret_ranges({(t.get("n"), t.get("q") or "normal") for t in turrets if t.get("n")})
+        except Exception as e:  # no ranges: no guns key, the shot frames the ship as before
+            print(f"[harness] turret ranges failed: {e}", flush=True)
+            ranges = None
+        for r in rows:
+            if ranges is None:
+                r.pop("turrets", None)
+            elif isinstance(r.get("turrets"), list):
+                r["guns"] = [{"x": t["x"], "y": t["y"], "range": ranges[(t["n"], t.get("q") or "normal")]}
+                             for t in r.pop("turrets") if ranges.get((t.get("n"), t.get("q") or "normal"))]
+        return {r["name"]: r for r in rows}
+
+    def turret_ranges(self, keys):
+        """{(name, quality): range} for these turret kinds; each pair read from the prototypes once (TURRET_RANGE_LUA)
+        and cached, so a platforms read asks only for kinds it has not seen."""
+        cache = self.__dict__.setdefault("_turret_ranges", {})
+        new = sorted(k for k in keys if k not in cache)
+        if new:
+            names = "{" + ", ".join("{n = %s, q = %s}" % (lua_string(n), lua_string(q)) for n, q in new) + "}"
+            for row in self.lua(TURRET_RANGE_LUA.replace("NAMES", names)).get("ranges") or []:
+                cache[(row.get("n"), row.get("q"))] = row.get("range")
+            for k in new:
+                cache.setdefault(k, None)
+        return {k: cache.get(k) for k in keys}
 
     def camera(self, body):
         return json.loads(self.command("/silent-command " + one_line(CAMERA_LUA.replace("BODY", lua_string(json.dumps(body))))))

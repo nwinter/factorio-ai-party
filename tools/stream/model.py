@@ -484,6 +484,26 @@ def notes_job(md, limit=90):
     return pick if len(pick) <= limit else pick[:limit - 1].rsplit(" ", 1)[0] + "…"
 
 
+DETAIL_ZOOM = (0.55, 1.0)  # (d20 batch50 A2) a detail pan's zoom: at least 0.55 (gun turrets ~35 px, small asteroids
+#                            ~18 px at 1080p), at most 1.0
+DETAIL_CROSS_S = 15.0       # a detail pan moves one view height in this long (~70 px/s at 1080p)
+DETAIL_BOW_S = 8.0          # a detail pan rests this long on the bow first, where asteroids come from in flight
+
+
+def gun_reach(view):
+    """(d20 batch50 A1) The box the platform's guns reach: each turret's position +- its range (view guns, from the
+    prototypes with quality), with the ship's bounds; None when the view has no guns read (an older read: the shot
+    frames as before) or no turrets."""
+    guns = view.get("guns")
+    if not guns:
+        return None
+    left = min(g["x"] - g["range"] for g in guns)
+    top = min(g["y"] - g["range"] for g in guns)
+    right = max(g["x"] + g["range"] for g in guns)
+    bottom = max(g["y"] + g["range"] for g in guns)
+    return left, top, right, bottom
+
+
 def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
     its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
@@ -491,17 +511,43 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     director sends it as is (no main/side scaling, which would crop the platform). In flight, include 32 extra
     tiles ahead and 8 aft and on each side for approaching asteroids. Forward on the platform surface is north
     on either leg of a space connection; reversing the route does not turn the build around. frac is the width
-    the on-air crop actually shows."""
+    the on-air crop actually shows.
+    (d20 batch50 A1, Nick: "we only need to be zoomed out far enough to see asteroids get destroyed, so no more than
+    max gun range") With the view's guns read: in flight the frame is the ship and the box its turrets reach (each
+    one's range; at most the ship plus its longest range all round) with a 2-tile margin; a ship without turrets is
+    its bounds plus that margin. `fit_zoom` is that whole-ship zoom.
+    (A2, "shots that slowly pan over their targets ... a better detail view at more zoom") In flight with turrets,
+    when the whole frame is wider than a detail view: the shot is the detail view, `zoom` the one that fits the guns'
+    reach across (DETAIL_ZOOM), starting at the bow (the top of the reach) and panning to the stern at DETAIL_CROSS_S
+    per view height after DETAIL_BOW_S on the bow (`pan` with speed and bow_s; OneCam's pan_step). Docked: a still
+    shot."""
     b = view.get("bounds") or {}
     hub = view.get("hub") or {"x": 0, "y": 0}
     left, top = b.get("left", hub["x"] - 6), b.get("top", hub["y"] - 6)
     right, bottom = b.get("right", hub["x"] + 6), b.get("bottom", hub["y"] + 6)
-    if travelling:
+    hull = (left, top, right, bottom)
+    reach = gun_reach(view)
+    if travelling and "guns" in view:
+        margin = 4.0
+        if reach:
+            left, top, right, bottom = min(left, reach[0]), min(top, reach[1]), max(right, reach[2]), max(bottom, reach[3])
+    elif travelling:
         left, top, right, bottom = left - 8, top - 32, right + 8, bottom + 8
     w, h = right - left + margin, bottom - top + margin
     zoom = max(0.3, min(2.0, 60.0 * frac / w, 34.0 / h))
     out = {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
            "zoom": round(zoom, 2), "exact_zoom": True}
+    if "guns" in view:
+        out["fit_zoom"] = out["zoom"]
+    if travelling and reach:
+        detail = max(DETAIL_ZOOM[0], min(DETAIL_ZOOM[1], 60.0 * frac / w))
+        if detail > zoom + 0.05:
+            dh = 34.0 / round(detail, 2)
+            y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
+            out.update(zoom=round(detail, 2), position={"x": out["position"]["x"], "y": round(y0, 1)},
+                       pan={"y0": round(y0, 1), "y1": round(y1, 1), "speed": round(dh / DETAIL_CROSS_S, 2),
+                            "bow_s": DETAIL_BOW_S, "detail": True})
+            return out
     # (d19 batch42 C2, viewer Foobator: "see all of Bastion when it flies") taller than the view at the zoom that fits
     # (the least zoom 0.3 shows ~113 tiles; Bastion in flight needs ~174): `pan`, the view's centre from the bow (north,
     # forward) to the stern; OneCam starts the shot at the bow and moves it (pan_step), a camera without that keeps the

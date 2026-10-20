@@ -124,4 +124,17 @@ do
   eq(cams.alert_reader({players={cam,nick}},isdir),nick)
   eq(cams.alert_reader({players={{index=9,valid=true,connected=false}}},isdir),nil)
 end
+-- d20 batch50 A2: a pan sends `speed` (tiles/s); a smooth camera then moves at most speed/60 a tick toward its spot
+-- (steps sent once a second glide evenly), a call without it eases as before.
+do
+  cams2.set{player=2,position={x=0,y=0},zoom=0.6}
+  eq(c2.position.x,0)
+  cams2.set{player=2,position={x=10,y=0},zoom=0.6,speed=3}
+  assert(math.abs(c2.position.x-0.05)<1e-9,c2.position.x)
+  game.tick=603; cams2.tick()
+  assert(math.abs(c2.position.x-0.1)<1e-9,c2.position.x)
+  cams2.set{player=2,position={x=10,y=0},zoom=0.6}
+  assert(c2.position.x>0.8,c2.position.x) -- no speed: EASE of the distance
+  assert(not pcall(cams2.set,{player=2,position={x=0,y=0},speed=0}),'speed 0 accepted')
+end
 print('cameras ok ('..assertions..' assertions)')
