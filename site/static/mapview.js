@@ -27,10 +27,16 @@
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
-    ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, nests: true, agents: true, attention: true, alerts: true };
+    ['readiness', 'Turret state'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
+  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, nests: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
-    range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)' };
+    range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
+  // (d20 batch50 G1, viewer Aurora: "Could the map flag turrets lacking ammo, fuel or energy and mark stale or unknown
+  // readings?") basemap.turret_state (tools/stream/turretstate.py): counts per state and the turrets not armed now as
+  // [x, y, state (e empty, p no power, u unknown), name, age_s at as_of], read once a minute.
+  var READY = { e: 'empty (no ammo, shells or fluid)', p: 'no power (less than one shot\'s energy)', u: 'unknown' };
+  function turretName(n) { return n ? cap(String(n).replace(/-turret$/, ' turret')) : 'Turret'; }
+  function agoText(s) { s = Math.max(0, Math.round(s)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h'; }
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
   var TERRAIN_DESAT = 0.6, TERRAIN_DIM = 0.45;  // how much colour the terrain loses, and how far it fades to the ground
 
@@ -162,6 +168,12 @@
     d.fights = home ? (data.fights || []).filter(function (f) { return f && ok(f.position); }) : [];
     d.pins = home ? (data.pins || []).filter(function (p) { return p && ok(p.position); }) : [];
     d.nests = (home && Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
+    // (G1) each turret's readiness; ages from the state's game tick (now_tick) when it has one
+    var ts = home && data.base && data.base.turret_state;
+    d.tstate = ts && typeof ts === 'object' && ts.counts && typeof ts.counts === 'object' ? {
+      counts: ts.counts, more: ts.more || 0, every: ts.every_s || 60,
+      late: isFinite(data.now_tick) && isFinite(ts.as_of) && data.now_tick >= ts.as_of ? (data.now_tick - ts.as_of) / 60 : 0,
+      flagged: (Array.isArray(ts.flagged) ? ts.flagged : []).filter(function (f) { return f && isFinite(f[0]) && isFinite(f[1]) && READY[f[2]]; }) } : null;
     d.turrets = (home && Array.isArray(data.turrets) ? data.turrets : []).filter(function (t) { return t && isFinite(t[0]) && isFinite(t[1]) && t[2] > 0 && t[2] < 80; });
     // (d19 batch42 B2, viewer Aurora) what the turret list is: every turret read in the map's defence cells (the stream's
     // sweep, tools/stream/turretsweep.py), or the basemap's first 600 only (capped: more stand that are not drawn)
@@ -355,6 +367,13 @@
     sc.coverage = on.coverage ? d.turrets.filter(function (t) {
       return Math.abs(t[0] - v.cx) <= hw + t[2] && Math.abs(t[1] - v.cy) <= hh + t[2];
     }).map(function (t) { return { x: px(t[0]), y: py(t[1]), r: t[2] * k }; }) : [];
+    sc.ready = on.readiness && d.tstate ? d.tstate.flagged.filter(function (f) { return inView({ x: f[0], y: f[1] }); }).map(function (f) {
+      var m = { x: px(f[0] + 0.5), y: py(f[1] + 0.5), st: f[2] };
+      var age = f[4] != null && isFinite(f[4]) ? f[4] + d.tstate.late : null;
+      sc.hits.push({ x: m.x, y: m.y, r: 6, text: turretName(f[3]) + ': ' + READY[f[2]] +
+        (age == null ? (f[2] === 'u' ? ' (never read)' : '') : f[2] === 'u' ? ' (last read ' + agoText(age) + ' ago)' : ' (read ' + agoText(age) + ' ago)') });
+      return m;
+    }) : [];
     sc.nests = on.nests ? d.nests.filter(function (n) { return inView({ x: n[0], y: n[1] }); }).map(function (n) {
       var m = { x: px(n[0]), y: py(n[1]), kind: n[2] === 's' ? 'spawner' : 'worm' };
       sc.hits.push({ x: m.x, y: m.y, r: 6, text: n[2] === 's' ? 'Enemy spawner' : 'Worm' });
@@ -513,6 +532,13 @@
       ctx.strokeStyle = C.range + '.55)'; ctx.lineWidth = 1;
       ctx.beginPath(); sc.coverage.forEach(function (t) { ctx.moveTo(t.x + t.r, t.y); ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2); }); ctx.stroke();
     }
+    // (G1) turrets that cannot fire: red (empty), amber (no power) dots ringed in black; unknown ones a grey ring
+    (sc.ready || []).forEach(function (m) {
+      ctx.lineWidth = 1.2;
+      if (m.st === 'u') { ctx.strokeStyle = C.unknown; circle(ctx, m.x, m.y, 3); ctx.stroke(); return; }
+      ctx.fillStyle = m.st === 'e' ? C.empty : C.nopower; ctx.strokeStyle = '#000';
+      circle(ctx, m.x, m.y, 3.2); ctx.fill(); ctx.stroke();
+    });
     sc.nests.forEach(function (n) {
       ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
       if (n.kind === 'spawner') { ctx.fillStyle = C.nest; ctx.fillRect(n.x - 3, n.y - 3, 6, 6); ctx.strokeRect(n.x - 3, n.y - 3, 6, 6); }
@@ -584,7 +610,7 @@
   function has(d, layer) {
     return layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
       layer === 'cloud' ? !!d.cloud :
-      layer === 'coverage' ? d.turrets.length > 0 : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
+      layer === 'coverage' ? d.turrets.length > 0 : layer === 'readiness' ? !!d.tstate : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
       layer === 'alerts' ? d.fights.length + d.pins.length > 0 : false;
   }
@@ -741,6 +767,12 @@
     }
     if (d.turrets.length && on.coverage) h += '<li' + (d.turretsCapped ? ' class="mv-incomplete"' : '') + '><i class="mv-range"></i>Turret range' +
       (d.turretNote ? ' (' + esc(d.turretNote) + ')' : '') + '</li>';
+    if (d.tstate && on.readiness) {
+      var c = d.tstate.counts, n = function (k) { return +c[k] || 0; };
+      h += '<li><i class="mv-ready-e"></i>Turrets: ' + esc(n('armed') + ' armed, ' + n('empty') + ' empty, ' + n('no_power') + ' no power') +
+        '</li><li><i class="mv-ready-u"></i>' + esc(n('unknown') + ' unknown (not read since the last refresh, every ' + d.tstate.every + ' s; newest reading ' +
+        agoText(d.tstate.late) + ' ago)' + (d.tstate.more ? '; ' + d.tstate.more + ' more not marked' : '')) + '</li>';
+    }
     if (d.nests.length && on.nests) h += '<li><i class="nest"></i>Enemy nests</li>';
     if (d.fights.length && on.alerts) h += '<li><i class="mv-fight"></i>Fights</li>';
     var box = this.root.querySelector('.mapview-legend');

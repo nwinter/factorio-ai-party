@@ -154,10 +154,16 @@ browser sends no preflight. The Worker keeps ids in memory only (a restart count
 shows `Watching: 41 YouTube · 3 site` beside the Live badge, each part only when known, nothing while offline.
 
 The map is `static/mapview.js` (the run page's time-lapse uses it too): one canvas with pan (drag), zoom (wheel,
-pinch, + and −), Reset, Full screen, layers to toggle (terrain, ore, pollution, buildings, turret range, nests, agents,
+pinch, + and −), Reset, Full screen, layers to toggle (terrain, ore, pollution, buildings, turret range, turret state, nests, agents,
 attention, fights; turret range starts off; the choice is kept per browser), and a click or tap on an agent to centre on it and
-follow it; hover or tap names a mark. `basemap.turrets` draws the turret-range layer (the union of every turret's reach)
-and `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
+follow it; hover or tap names a mark. `basemap.turrets` draws the turret-range layer (the union of every turret's reach).
+`basemap.turret_state` (d20 batch50 G1, viewer Aurora; tools/stream/turretstate.py) draws the "Turret state" layer (on
+by default): `{as_of, every_s, counts {armed, empty, no_power, unknown}, flagged [[x, y, state, name, age_s]], more?}`,
+a marker at each turret that is empty (`e`: no ammo, shells or fluid; red), without power (`p`: a laser or tesla turret
+under one shot's energy; amber) or unknown (`u`: not read since the last full pass, or never; a grey ring), at most 500
+(`more` counts the rest); the tip says the turret, its state and how long ago it was read, the legend the counts. The
+stream service reads every Nauvis turret in the basemap's defence cells, a pass at most once a minute, one command an
+observe of at most 120 turrets (2.4 ms on world n, 7.0 ms on the d17 headless copy). `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
 left, `x1`, `y1` its bottom right), older frames first, under everything else; `src` must be a site path or an https URL.
 The map is Nauvis: an agent whose `surface` is another planet, or with `on_platform` or `travel` set (a cargo pod), is
 listed in its bottom-left corner instead ("Luna · Vulcanus", "Opus · Solstice (platform)") and takes no part in

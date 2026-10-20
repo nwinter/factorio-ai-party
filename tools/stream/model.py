@@ -711,6 +711,7 @@ class Model:
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.connected_players = None  # the game's connected player names, as last read (hostview.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
+        self.turret_state = None  # (d20 batch50 G1) turretstate.py public(): counts, the turrets not armed, as_of
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
@@ -807,6 +808,8 @@ class Model:
             self.darkness = obs["darkness"]
         if obs.get("connected_players") is not None:
             self.connected_players = list(obs["connected_players"])
+        if isinstance(obs.get("turret_state"), dict):  # (d20 batch50 G1) each turret's readiness (turretstate.py)
+            self.turret_state = obs["turret_state"]
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
@@ -2206,7 +2209,7 @@ class Model:
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
             "connected_players": self.connected_players,
-            "basemap": self.basemap,
+            "basemap": dict(self.basemap, turret_state=self.turret_state) if self.basemap and self.turret_state else self.basemap,
             "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
             "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],

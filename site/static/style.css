@@ -594,6 +594,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mm-legend i.mv-range { background: rgba(120, 200, 255, .35); border-radius: 50%; box-shadow: 0 0 0 1px rgba(120, 200, 255, .8); }
 .mm-legend i.mv-cloud { width: 22px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
 .mm-legend i.mv-reached { background: transparent; border-radius: 50%; box-shadow: 0 0 0 2px #ff5a44; }
+.mm-legend i.mv-ready-e { background: linear-gradient(90deg, #ff3b30 0 50%, #f2c94c 50%); border-radius: 50%; }
+.mm-legend i.mv-ready-u { background: transparent; border-radius: 50%; box-shadow: 0 0 0 1.5px #9a9a9a; }
 .mm-legend i.mv-fight { background: rgba(224, 78, 58, .25); border-radius: 50%; box-shadow: 0 0 0 1.5px #ff5a44; }
 .map-research { margin: 0 0 6px; color: var(--fx-text); }
 .map-research strong { color: var(--fx-heading); }
