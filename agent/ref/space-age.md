@@ -77,6 +77,11 @@
 - `platform_rename {platform, name}`: renames one, listing the queues, orders, plans and board items still naming the
   old name (`still_named`; none changed).
   Example: `./fh call platform_rename --args '{"platform":"Sunward","name":"Kestrel"}'`
+- `platform_delete {platform, dry_run?, confirm?, cancel?}`: deletes one as its GUI does: the game schedules it 5 min
+  ahead, and then the platform goes with everything on it (hub cargo, entities, foundation, a character aboard).
+  `dry_run: true` lists hub cargo, entities besides the hub, ghosts, foundation tiles, characters aboard and cargo pods
+  on their way. One not empty or occupied is refused unless `confirm` is its name; `cancel: true` cancels a scheduled one.
+  Example: `./fh call platform_delete --args '{"platform":"Bastion","dry_run":true}'`
 - `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
   ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
   hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
