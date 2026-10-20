@@ -237,11 +237,13 @@
   deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled; a job gone by then (built,
   removed or done) is skipped and named in `ended`.
   Example: `./fh call robot_losses --args '{"cancel":true,"near":{"x":200,"y":40}}'`
-- `ingredient_gap {position | positions | area, all?}`: per crafting machine (up to 32), each ingredient of its next
-  craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the places
-  within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer only
-  over its request), with how many. `area` (up to 128x128) lists the machines short of something (`all: true`: every
-  one). Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`
+- `ingredient_gap {position | positions | area, all?, skip?}`: per crafting machine (16 a call), each ingredient of its
+  next craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the
+  places within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer
+  only over its request), with how many; donors for the first 8 short items a call (`donors_skipped`); the ground as
+  the ground watch last binned it. `area` (up to 128x128) lists the machines short of something (`all: true`: every
+  one, those short of nothing as a line); `more` says how many are there, `skip` reads on. `positions` past 16 come
+  back in `left`. Example: `./fh call ingredient_gap --args '{"area":{"left_top":{"x":-40,"y":10},"right_bottom":{"x":0,"y":40}}}'`
 - `ores {resource?, surface?, min_amount?, limit?, position?, patch?, forecast?}`: `forecast: true` with `patch`: our
   drills' depletion there: each working drill's share of the ore under it (a tile under several shared) at what it
   takes a minute (speed with bonus, mining time, drain), the minutes until half and all of the working ones stop

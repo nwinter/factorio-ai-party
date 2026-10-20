@@ -29,6 +29,41 @@ return function(api)
     for _,product in ipairs(recipe.products or {}) do if product.name==item then return true end end
     return false
   end
+  -- (d19 batch45) for a caller scanning many items round centres in one box (ingredient_gap): our holders there found
+  -- once and each one's output read once (normal quality, by item: held), landed pods, and ground(item) for the
+  -- stacks on the ground (the ground watch's cells, or nil). A box over MAX_NEAR a side: holders nil (each scan finds).
+  local MAX_NEAR=320
+  -- (each holder's type read cost as much as its inventory: crafters, chests and pads found apart)
+  local NEAR_FINDS={{{'assembling-machine','furnace','agricultural-tower'},'output'},{{'container','logistic-container','temporary-container'},defines and defines.inventory.chest,true},
+    {{'cargo-landing-pad'},defines and defines.inventory.cargo_landing_pad_main}}
+  function M.near(p,box,ground)
+    local near={ground=ground,held={}}
+    if box.right_bottom.x-box.left_top.x<=MAX_NEAR and box.right_bottom.y-box.left_top.y<=MAX_NEAR then
+      local holders,held={},near.held
+      for _,find in ipairs(NEAR_FINDS) do
+        for _,e in ipairs(p.surface.find_entities_filtered{force=p.force,type=find[1],area=box}) do
+          holders[#holders+1]=e
+          local ok,inv
+          if find[2]=='output' then ok,inv=pcall(e.get_output_inventory) else ok,inv=pcall(e.get_inventory,find[2]) end
+          local okc,list=false,nil
+          if ok and inv then okc,list=pcall(inv.get_contents) end
+          if okc and #list>0 then
+            -- what a scan needs of a holder, read once: {e, inv, name, position, chest, count (normal quality)}
+            local hn,hq=e.name,e.position
+            for _,c in ipairs(list) do
+              if c.quality=='normal' or c.quality==nil then
+                local l=held[c.name]; if not l then l={}; held[c.name]=l end
+                l[#l+1]={e=e,inv=inv,name=hn,position=hq,chest=find[3],count=c.count}
+              end
+            end
+          end
+        end
+      end
+      near.holders=holders
+      near.pods=M.try(function() return p.surface.find_entities_filtered{name='cargo-pod-container',area=box} end) or {}
+    end
+    return near
+  end
   -- Every own entity within radius of centre holding the item, nearest first,
   -- plus the crafters set to make it (whether or not they hold any now).
   -- opts.surface: another surface than the character's (stock {surface, position}; Sonnet 12:20: the surface was
@@ -41,16 +76,25 @@ return function(api)
     local spoils=api.spoil and api.spoil.spoils(item)
     local f={force=p.force,type=opts.types or TYPES}
     if not opts.whole then f.position=centre; f.radius=opts.radius or 128 end
-    for _,e in pairs((opts.surface or p.surface).find_entities_filtered(f)) do
-      if e.valid then
-        if makes(e,item) then makers[e.name]=(makers[e.name] or 0)+1 end
-        local inv=output_of(e)
-        local n=inv and inv.get_item_count{name=item,quality=quality} or 0
+    -- (d19 batch45, ingredient_gap {area}: 21 scans were 240 ms, 10 ms each the ground's whole-surface read) opts.near
+    -- (M.near): what a caller scanning many items round nearby centres found once; each place kept within the radius
+    -- here. Its makers are only the holders holding some.
+    local near=opts.near
+    local held=near and near.holders and quality=='normal' and not opts.whole and not opts.types
+    local far=opts.radius or 128
+    for _,x in pairs(held and (near.held[item] or {}) or (opts.surface or p.surface).find_entities_filtered(f)) do
+      local h=held and x or nil
+      local e=h and h.e or x
+      if e.valid and not (h and api.distance(centre,h.position)>far) then
+        if not h and makes(e,item) then makers[e.name]=(makers[e.name] or 0)+1 end
+        local inv=h and h.inv or output_of(e)
+        local n=h and h.count or inv and inv.get_item_count{name=item,quality=quality} or 0
         if n>0 then
           total=total+n
-          local g=groups[e.name] or {name=e.name,entities=0,count=0,chest=CHEST[e.type] or nil}
-          groups[e.name]=g; g.entities=g.entities+1; g.count=g.count+n
-          local place={entity=e,name=e.name,position=e.position,count=n,distance=api.distance(centre,e.position)}
+          local name,pos=h and h.name or e.name,h and h.position or e.position
+          local g=groups[name] or {name=name,entities=0,count=0,chest=h and h.chest or not h and CHEST[e.type] or nil}
+          groups[name]=g; g.entities=g.entities+1; g.count=g.count+n
+          local place={entity=e,name=name,position=pos,count=n,distance=api.distance(centre,pos)}
           -- A spoilable item: this place's first stack to spoil (spoil.lua).
           if spoils then
             -- (C7) what of it spoils within 2 minutes here
@@ -79,8 +123,8 @@ return function(api)
       for _,x in ipairs(places) do if x.entity then seen[key(x.entity)]=true end end
       local pf={name='cargo-pod-container'}
       if not opts.whole then pf.position=centre; pf.radius=opts.radius or 128 end
-      for _,e in pairs(M.try(function() return (opts.surface or p.surface).find_entities_filtered(pf) end) or {}) do
-        if e.valid and e.name=='cargo-pod-container' and not seen[key(e)] then
+      for _,e in pairs(near and near.pods or M.try(function() return (opts.surface or p.surface).find_entities_filtered(pf) end) or {}) do
+        if e.valid and e.name=='cargo-pod-container' and not seen[key(e)] and not (near and not opts.whole and api.distance(centre,e.position)>far) then
           local inv=output_of(e)
           local n=inv and inv.get_item_count{name=item,quality=quality} or 0
           if n>0 then
@@ -91,7 +135,8 @@ return function(api)
           end
         end
       end
-      local g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item) end)
+      local g
+      if near then g=near.ground(item) else g=api.on_ground and M.try(function() return api.on_ground(p.force,opts.surface or p.surface,item) end) end
       for _,c in ipairs(g and g.cells or {}) do
         local d=api.distance(centre,c.position)
         if opts.whole or d<=(opts.radius or 128) then

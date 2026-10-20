@@ -2070,6 +2070,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.lanecheck and M.lanecheck.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.robotloss and M.robotloss.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.spoil and M.spoil.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gates and M.gates.schema or {}) do description.actions[name]=schema end
@@ -13413,8 +13414,12 @@ handlers.placements=M.shore.handlers.placements
 M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
   seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) or distance(p.position,pos)<=32 end,
   scan=function(p,item,opts) return stock.scan(p,item,opts) end,where_kept=function(p,item,need,scan) return M.where_kept(p,item,need,scan) end,
+  near=function(p,box,ground) return stock.near(p,box,ground) end,ground_index=function(f,s,item) return M.ground.on_ground_index(f,s,item) end,
   status=function(e) return M.machine_status(e) end}
 function handlers.ingredient_gap(p,a) return M.gap.read(p,a) end
+-- platform_lanes: each belt line's end on a platform, lane by lane (lanecheck.lua; d19 batch45, batch40 D1, Sol).
+M.lanecheck=require('lanecheck'){platform=function(p,name) return space.platform(p,name) end}
+function handlers.platform_lanes(p,a) return M.lanecheck.read(p,a) end
 -- gates: every circuit and logistic condition there, what it reads now, and the ones the network can never meet
 -- (gates.lua; d17 batch22 B3, Muse).
 M.gates=require('gates'){position=position,integer=integer,circuit_read=function(e,cb) return M.circuits.conditions(e,cb) end,
@@ -15504,7 +15509,7 @@ M.landed=require('landed'){state=state,position=position}
 function handlers.pods(p,a) return M.landed.read(p,a) end
 -- where a deconstructed item went (deconwent.lua; d18 batch37 D3, Astra)
 M.deconwent=require('deconwent'){state=state}
-M.stores=require('stores'){where_index=function(f,s) return M.census and M.census.where_index(f,s) end,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,deconstructed=function(item,surface) return M.deconwent.lines(item,surface) end,pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
+M.stores=require('stores'){spoil=function() return M.spoil end,where_index=function(f,s) return M.census and M.census.where_index(f,s) end,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,deconstructed=function(item,surface) return M.deconwent.lines(item,surface) end,pods=M.pods,agents=function() return M.board.agents() end,drops_taken=function(f) return M.drops and M.drops.taken(f) or {} end,
   character=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and p.character or nil end}
 function handlers.where_is(p,a) return M.stores.where_is(p,a) end
 -- The construction robots of a logistic network: each in the air, what holds it up (robots.lua; Astra, shift13).
@@ -15676,7 +15681,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
-M.platalerts=require('platalerts'){state=state,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+M.platalerts=require('platalerts'){state=state,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
@@ -15831,6 +15836,7 @@ reads.logistics_audit=true
 reads.platform_gate=true
 reads.fleet=true
 reads.ingredient_gap=true
+reads.platform_lanes=true
 reads.gates=true
 reads.demolishers=true
 reads.dependency=true
@@ -16859,7 +16865,7 @@ local function waypoint_goal(p,action,goal)
   return action.waypoint<=#action.waypoints and action.waypoints[action.waypoint].position or goal
 end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions,ammoslots=M.ammoslots}
-threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event)
+threat=threat_module{state=state,known=known,distance=distance,lookup=function(i) return M.lookup(i) end,on_character_hit=function(event)
   M.board.on_character_hit(event)
   -- a bot hit while nothing walks it walks away (round1950a item 2)
   local ok,err=pcall(M.idle_hit,event)
@@ -17377,6 +17383,20 @@ passive.robot_losses=true
 -- Every egg holder on a surface from the egg sweep (spoil.lua; d17 batch23 B1, Luna and Grok).
 function handlers.eggs(p,a) return M.spoil.read_eggs(p,a) end
 passive.eggs=true
+-- The belt, line-cut, robot-loss and power-cut alert groups of a force, kept (pushalerts belt_groups).
+function M.belt_groups_read(f)
+  M.belt_groups_kept=M.belt_groups_kept or {}
+  local out=M.beltgaps.alert_groups(f)
+  local ok,cuts=pcall(M.linecut.alert_groups,f)
+  for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
+  local okr,lost=pcall(M.robotloss.alert_groups,f)
+  for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
+  -- power cuts not joined again (powercut.lua; batch32 B3)
+  local okp,pc=pcall(M.powercut.alert_groups,f)
+  for _,g in ipairs(okp and pc or {}) do out[#out+1]=g end
+  M.belt_groups_kept[f.name]={tick=game.tick,list=out}
+  return out
+end
 M.pushalerts=require('pushalerts'){platform_eta=function(pl,loc)
     local leg=M.freight.leg(pl)
     if leg and leg.to==loc and leg.eta_ticks then return leg.eta_ticks/60 end
@@ -17385,20 +17405,11 @@ M.pushalerts=require('pushalerts'){platform_eta=function(pl,loc)
   end,mine_forecast=function(surface,force,q,cap) return M.ores.forecast(surface,force,q,cap) end,
   territory=function(surface,force,pos) return M.territory_line(surface,force,pos) end,belt_groups=function(f)
     -- (d19 batch44 A2: these four took about 4.6 ms in every reply of every agent on the private copy) the list is
-    -- kept 120 ticks per force
-    M.belt_groups_kept=M.belt_groups_kept or {}
-    local kept=M.belt_groups_kept[f.name]
-    if kept and game.tick-kept.tick<120 and game.tick>=kept.tick then return kept.list end
-    local out=M.beltgaps.alert_groups(f)
-    local ok,cuts=pcall(M.linecut.alert_groups,f)
-    for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
-    local okr,lost=pcall(M.robotloss.alert_groups,f)
-    for _,g in ipairs(okr and lost or {}) do out[#out+1]=g end
-    -- power cuts not joined again (powercut.lua; batch32 B3)
-    local okp,pc=pcall(M.powercut.alert_groups,f)
-    for _,g in ipairs(okp and pc or {}) do out[#out+1]=g end
-    M.belt_groups_kept[f.name]={tick=game.tick,list=out}
-    return out
+    -- kept per force; (d19 batch45: the first reply after it aged paid them) read again in the tick every 120 ticks
+    -- (M.belt_groups_read), here only when none is kept or the kept one is 600 ticks old
+    local kept=(M.belt_groups_kept or {})[f.name]
+    if kept and game.tick-kept.tick<600 and game.tick>=kept.tick then return kept.list end
+    return M.belt_groups_read(f)
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,silo_sample=function(e) return M.silo.sample_made(e) end,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
@@ -18493,6 +18504,11 @@ function M.tick_body(event)
   if M.ghosttally then pcall(M.timed,'ghosttally.tick',M.ghosttally.tick) end  -- platform ghost tallies across ticks (ghosttally.lua)
   pcall(M.platwait.tick,event.tick)  -- stop waits the harness keeps for platforms, every second (platwait.lua)
   if M.ammofeed then pcall(M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
+  -- (d19 batch45: 8-14 ms in the first call after a load) the argument sets check_args builds from describe
+  if not allowed_args then pcall(check_args,'describe',{}) end
+  -- the kept belt alert groups of each force a reply asked for (after a load, the player force's), read again every 120
+  -- ticks (d19 batch45)
+  if event.tick%120==60 then for name in pairs(M.belt_groups_kept or {player=true}) do if game.forces[name] then pcall(M.belt_groups_read,game.forces[name]) end end end
   pcall(M.chronicle.tick,event.tick)  -- the chronicle's events: research, launches, platform stops and platforms made
   pcall(M.ground.watch_tick,event.tick)  -- items on the ground for status alerts and reply hints, a band or a pile a step
   pcall(M.scienceline.tick,event.tick)

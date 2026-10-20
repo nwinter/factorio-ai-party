@@ -101,7 +101,9 @@ do
   force.logistic_networks={}
   local calls=0
   surface.find_entities_filtered=function(f)
-    if f.area then return {a1,a2} end
+    if f.area and #f.type==3 then return {a1,a2} end
+    -- (d19 batch45) the call's one holder find fails too: each donor search finds its own
+    if f.area then error('near find failed',0) end
     calls=calls+1
     if calls==1 then error("attempt to index local 'e' (a nil value)",0) end
     return {}

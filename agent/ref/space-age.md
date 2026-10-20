@@ -191,6 +191,10 @@
   there now (`build {now, why}`: foundation among the 8 tiles round it, at most one run of empty space beside it, not
   in a thruster's exhaust or over 200 tiles north of the hub). Example:
   `./fh call platform_tiles --args '{"platform":"Kestrel II","area":{"left_top":{"x":-4,"y":8},"right_bottom":{"x":4,"y":16}}}'`
+- `platform_lanes {platform, all?}`: each belt line's end on the platform, lane by lane: on the end tile, stopped (3 or
+  more), the front item, what is past the end (the hull edge, open foundation, an entity; an underground exit with no
+  entrance), the inserters picking on the 64 tiles back; flagged: a stopped lane none takes from, or one whose front
+  item none takes (lane choice, filter). Default the items for thruster fuel, oxidizer and ammunition; `all`: every item.
 - `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: each named turret (default every ammo turret
   aboard) holding under `ammo_below` of its ammunition (`item`, default what it holds now), counting an item request
   already on the way, gets an item request for the rest up to `target_count`; the hub fills it, as `deliver`'s, no
@@ -387,7 +391,9 @@
   lands (a pod that names no station yet: the planet's landing pad, said so); inserter hands and
   what our logistic and construction robots carry now (`robot_cargo`, up to 1024 robots read) count in the total. The
   places come from the background census (every 30 s) with their counts read now; belts, inserter hands and the ground
-  as that pass read them (`read_from`, `ground_read_from` say how old). A spoilable item adds
+  as that pass read them (`read_from`, `ground_read_from` say how old). `census: true` adds the count by holder (pads,
+  provider, storage, requester and plain chests, labs, machines, hands, robots), each with its spoil spread and a
+  pack's research units, and made and used a minute. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.

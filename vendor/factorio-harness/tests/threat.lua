@@ -42,7 +42,7 @@ local surface={index=1,name='nauvis',get_total_pollution=function() return 1234.
   end}
 local p={index=1,surface=surface,position={x=0,y=0},force=mine}
 local T=dofile('mod/agent-harness_0.1.0/threat.lua'){state=function() return storage end,distance=distance,
-  known=function(_,e) return not e.fogged end}
+  known=function(_,e) return not e.fogged end,lookup=function(i) return i==1 and p or nil end}
 local s=T.summary(p)
 eq(s.evolution.factor,0.25); eq(s.evolution.pollution,0.04); eq(s.evolution.delta,nil)
 eq(s.pollution.total,1234); eq(s.pollution.per_min,460); eq(s.pollution.absorbed_per_min,30)
@@ -116,10 +116,13 @@ polluted=function() return 0 end; game.tick=40000; T.summary(p,true)
 polluted=cloud; game.tick=41000; T.summary(p,true)
 eq(#T.news_lines(nil,39500),0)
 -- Replies rescan an agent's survey only when it is over a minute old.
-p.character={valid=true}
+p.character={valid=true}; p.valid=true
 local before=scans
-game.tick=41000+3000; T.watch(p); eq(scans,before)
-game.tick=41000+3600; T.watch(p); eq(scans,before+1)
+game.tick=41000+3000; T.watch(p); T.watch_step(storage,game.tick); eq(scans,before)
+-- (d19 batch45) asked in the reply, read in the background: listed one tick, clustered the next, then the news
+game.tick=41000+3600; T.watch(p); eq(scans,before); eq(storage.watch_jobs[1].asked,game.tick)
+T.watch_step(storage,game.tick); eq(scans,before+1)
+T.watch_step(storage,game.tick); eq(storage.watch_jobs[1],nil); eq(storage.watch_errors,nil)
 -- Incidents: a gathered group heading for the attacked point gives its size and kinds; the nearest charted spawner
 -- is the likely source, with distance and bearing from the attacked point.
 T.on_group{tick=45000,group={valid=true,force=enemy,surface=surface,position={x=60,y=20},members={{name='small-biter'},{name='small-biter'},{name='medium-biter'}},
