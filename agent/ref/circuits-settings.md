@@ -112,7 +112,9 @@
   ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
   input on; waits for the products in the machine; the input off again; the output released. The requester and both
   inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
-  (the machine would make more with it). The inserters need a logistic network for their logistic condition.
+  (the machine would make more with it). The inserters need a logistic network for their logistic condition. A
+  requester with trash unrequested on has it switched off before its requests are cleared and staged, and on again
+  after the output is released (`trash_unrequested` in the reply; a plan stopped between leaves it off).
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, clear_all?, section?, active?, add_section?, remove_section?, group?,
   trash_unrequested?, construction_requests?, keep?, dry_run?, force?, surface?}` or `{groups: true}`: a

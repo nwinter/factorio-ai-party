@@ -9270,3 +9270,40 @@ fh watch    # deploy on every change
   drill's or lab's output from its status at each visit of its walk (a credit estimate marked "about", not a duty
   figure); the rest of the "working" counts in the reads are the status now. Tests: tests/engine.lua,
   tests/d20_batch54.lua.
+- L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
+  wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
+  anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
+  {name, quality} or false}, the slots not named kept; `bar` is the usable slots (0..40) or false for none. On
+  2.0.77 the engine took an iron-plate filter on a slot holding coal; the GUI filters an occupied slot to what it
+  holds, so a filter on a slot holding another item is refused, naming it, and nothing is set. The reply adds
+  `wagon_slots {wagon, carriage, set, slot_filters ["2 low-density-structure@uncommon"], bar, line}`; `{wagon}` alone
+  reads them. No cargo moves. Checked on a wagon on the private copy (filters with quality, bar 30, cleared).
+- L6 (Astra #1205): assembler_batch reads the requester's trash unrequested. On, the plan switches it off before the
+  requester's requests are cleared and staged (`keep staged (trash unrequested off)`) and on again after the output
+  is released (`trash unrequested on again`); the dry run's `trash_unrequested` and plan line say so, and that a
+  plan stopped between leaves it off. Tests tests/d20_batch53.lua (L5, L6), tests/d17_batch19_rt.lua (the steps pass
+  the queue's checks).
+- M1 (Sol #932): belt_gaps read ghost belts as part of the line (`{line}` walked through them; `{from, to}` listed them
+  apart from `missing`, which read none). Each stretch of the line standing only as ghosts is now a break:
+  `ghost_breaks [{from, to, tiles, materials, robots, line}]` (`{line}`: in the line's text; `{from, to}`: `ghost_line`
+  too). `robots` says how many of its ghosts a roboport's construction area covers (up to 64 lookups a call), and each
+  network's count of the items and its idle construction robots. ghostbreaks.lua; checked on the private copy (a row
+  of 12 belts, 4 of them ghosts, both forms).
+- M2 (Sol #1297): `supply {item, makers: "all"}` (the census pass's makers) rated a breeder at 3 eggs a craft (2 x
+  1.5) where inspect gives 2.5 (the returned egg is ignored_by_productivity). makersall.lua now takes inspect's
+  figure (craftrate.lua) and gives `net_per_min` with the line `26 a minute (net 15.6: 10.4 a minute goes back in)`.
+  The other rate reads (rates, chain, ratechain, craftrate) already left that egg out.
+- M3 (Sol #1304): `uptime {positions (1..16), seconds? (10..3600, default 600), surface?, platform?}` watches
+  crafting machines in the background: the status each second (as the GUI's status line), and at each sample that
+  reads short of ingredients, each ingredient under one craft in its input. Crafts are counted from the game's
+  products_finished, read at the start and the end, which is what watching the machine's crafts finish gives. `uptime {}`
+  reads it so far (`watching`) or `done`: per machine crafts, crafts_per_min against full_speed_per_min, samples by
+  status, short, recipe_changed (an idle furnace's missing recipe is not a change), gone. `left_out` says what it does
+  not see: stops shorter than a second, exact ticks per status, why an ingredient is short upstream. One watch an
+  agent. Checked on the private copy (4 machines, 20 s).
+- M4 (Astra #1200): damage_log names no source by inference: its source was always the game's event.cause. For fire,
+  the cause is the turret whose stream lit the first fire, kept as the fire spreads, which is how an 86-tile-away
+  turret was named. Rows now add the event's `source` (what dealt the hit: fire-flame, a stream, a projectile) and
+  the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
+  from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
+  its cause read that way; event.source is set on 2.0.77.

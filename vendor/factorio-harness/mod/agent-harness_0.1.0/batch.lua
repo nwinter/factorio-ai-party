@@ -13,6 +13,10 @@
 -- The requester: the chest an inserter takes from to put into the machine (requester), that inserter (input), and the
 -- inserter that takes from the machine (output), found round it unless given. What the requester already holds over
 -- the batch's need is said (surplus): the machine would make more with it. dry_run: the read and the plan.
+-- (d20 batch53 L6, Astra #1205: an Aquilo batch's requester had trash unrequested on; once its requests were cleared
+-- robots took the staged ingredients back to storage and the batch stalled with 3 supercapacitors) a requester with
+-- trash unrequested on has it switched off before its requests are cleared and staged, and back on after the output
+-- is released; the dry run and the plan say so.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -86,8 +90,10 @@ return function(api)
     local rpos, mpos = {x=req.position.x, y=req.position.y}, {x=m.position.x, y=m.position.y}
     local steps = {}
     local ipos = {x=input.position.x, y=input.position.y}
+    local trash = try(function() return req.get_requester_point().trash_not_requested end)
     steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=product .. ' < 0'}, label='hold output'}
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. ' < 0'}, label='input held'}
+    if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=false}, label='keep staged (trash unrequested off)'} end
     steps[#steps+1] = {action='requests', args={position=rpos, clear_all=true}, label='clear requester'}
     if #sets > 0 then
       steps[#steps+1] = {action='requests', args={position=rpos, set=sets}, label='stage'}
@@ -100,15 +106,20 @@ return function(api)
     steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={mpos}, item=product, at_least=had + count, timeout=54000}, label='made'}
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. ' < 0'}, label='input off'}
     steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=false}, label='release output'}
+    if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=true}, label='trash unrequested on again'} end
     local plan = {
       string.format('%d %s: %d craft%s of %s in %s %s (it holds %d of it now)', count, product, crafts, crafts == 1 and '' or 's', recipe.name, m.name, at(m.position), had),
       string.format('output inserter %s held (logistic "%s < 0") until the batch is made; input inserter %s held while the requester fills', at(output.position), product, at(input.position)),
       string.format('requester %s cleared, then asked for exactly what is still to come', at(req.position))}
+    if trash then
+      plan[#plan+1] = string.format('requester %s has trash unrequested on: robots would take the staged ingredients back once its requests are cleared; it is switched off before the requests are cleared and on again after the output is released (a plan stopped between leaves it off: requests {position, trash_unrequested: true})', at(req.position))
+    end
     for _, l in ipairs(lines) do plan[#plan+1] = l end
     plan[#plan+1] = string.format('then: its requests cleared, the input on, wait for %d %s in the machine, the input off again (logistic "%s < 0"), the output released',
       had + count, product, first)
     local out = {machine=at(m.position), recipe=recipe.name, product=product, crafts=crafts, requester=at(req.position), input=at(input.position),
-      output=at(output.position), plan=plan, surplus=#surplus > 0 and surplus or nil}
+      output=at(output.position), plan=plan, surplus=#surplus > 0 and surplus or nil,
+      trash_unrequested=trash ~= nil and (trash and 'on: switched off for the batch and on again after' or 'off') or nil}
     if #surplus > 0 then
       out.surplus_line = 'the requester and the machine already hold more than the batch needs: ' .. table.concat(surplus, ', ')
         .. '; the machine makes more with it before the input goes off (take it out first: transfer to_player)'
@@ -123,6 +134,6 @@ return function(api)
     requester='optional {x,y}: the requester chest that feeds it (default: the one an inserter takes from into it)',
     input='optional {x,y}: that inserter', output='optional {x,y}: the inserter that takes from the machine (default: the one round it)',
     dry_run='true: the read and the plan (steps), nothing queued',
-    returns='plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
+    returns='trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after the output is released), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
   return M
 end

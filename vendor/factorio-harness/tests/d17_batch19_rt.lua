@@ -226,13 +226,15 @@ do
   local recipe={name='cargo-bay',products={{type='item',name='cargo-bay',amount=1}},ingredients={{type='item',name='steel-plate',amount=20}}}
   local m={valid=true,unit_number=1,name='assembling-machine-2',type='assembling-machine',position={x=107.5,y=-94.5},force=force,
     bounding_box={left_top={x=106,y=-96},right_bottom={x=109,y=-93}},get_recipe=function() return recipe end,get_inventory=function() return nil end}
-  local req={valid=true,unit_number=2,name='requester-chest',position={x=107.5,y=-97.5},prototype={logistic_mode='requester'},get_item_count=function() return 0 end}
+  local req={valid=true,unit_number=2,name='requester-chest',position={x=107.5,y=-97.5},prototype={logistic_mode='requester'},get_item_count=function() return 0 end,
+    get_requester_point=function() return {trash_not_requested=true} end}  -- (d20 batch53 L6) its trash unrequested steps too
   local input={valid=true,unit_number=3,type='inserter',position={x=107.5,y=-96.5},pickup_target=req,drop_target=m}
   local output={valid=true,unit_number=4,type='inserter',position={x=109.5,y=-94.5},pickup_target=m}
   m.surface={find_entities_filtered=function() return {input,output} end}
   local B=dofile('mod/agent-harness_0.1.0/batch.lua'){position=function(q) return q end,integer=function(v) return v end,
     entity=function() return m end,submit=function() end}
   local r=B.run({},{position={x=107.5,y=-94.5},count=8,dry_run=true})
+  eq(r.steps[3].args.trash_unrequested,false)
   local ok,q=pcall(sol,'queue_submit',{dry_run=true,steps=r.steps})
   assert(ok,tostring(q))
   for _,k in ipairs({'position','count','requester','input','output','dry_run'}) do assert(runtime.takes('assembler_batch',k),k) end

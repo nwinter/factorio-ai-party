@@ -363,7 +363,10 @@ return function(api)
     end
     local gaps, branches, ghosts = {}, {}, 0
     local visited = {}
+    -- (d20 batch53 M1) the tiles in the order walked, for the stretches that stand only as ghosts
+    local seqs = {outputs={}, inputs={}}
     local function walk(e, way)
+      local seq = seqs[way]
       local count, cur, why = 0, e, nil
       local d
       while count < M.LINE do
@@ -372,6 +375,7 @@ return function(api)
         visited[k] = true
         count = count + 1
         if cur.type == 'entity-ghost' then ghosts = ghosts + 1 end
+        seq[#seq+1] = {position=cur.position, ghost=cur.type == 'entity-ghost', name=cur.type == 'entity-ghost' and cur.ghost_name or cur.name}
         d = try(function() return cur.direction end) or 0
         local list = try(function() return cur.belt_neighbours[way] end) or {}
         local nxt = list[1]
@@ -411,6 +415,7 @@ return function(api)
               local blk = M.blocker(surface, q)
               rows[i] = blk and M.blocker_text(blk, 'on ' .. at(q)) or at(q) .. ' empty'
             end
+            seq[#seq+1] = {ghost=false}
             gaps[#gaps+1] = {from=missing[1], to=missing[#missing], tiles=#missing, between={at(cur.position), at(found.position)}, line=string.format('%d tile%s missing between %s and %s: %s',
               #missing, #missing == 1 and '' or 's', at(way == 'outputs' and cur.position or found.position), at(way == 'outputs' and found.position or cur.position), table.concat(rows, '; '))}
             cur = found
@@ -437,8 +442,17 @@ return function(api)
       gaps=#gaps > 0 and gaps or nil, branches=#branches > 0 and branches or nil}
     local gl = {}
     for i, g in ipairs(gaps) do if i <= 8 then gl[i] = g.line end end
-    out.line = string.format('the line through %s: %d belt tiles from %s to %s; %s', at(start.position), total, at(up.at), at(down.at),
-      #gaps == 0 and 'no gap in it' or string.format('%d gap%s: %s%s', #gaps, #gaps == 1 and '' or 's', table.concat(gl, ' | '), #gaps > 8 and ' | ...' or ''))
+    -- (d20 batch53 M1, Sol #932) a stretch standing only as ghosts carries nothing: a break, with what builds it
+    local whole = {}
+    for i = #seqs.inputs, 2, -1 do whole[#whole+1] = seqs.inputs[i] end
+    for _, t in ipairs(seqs.outputs) do whole[#whole+1] = t end
+    local okb, GB = pcall(require, 'ghostbreaks')
+    local brk, bline
+    if okb and ghosts > 0 then brk, bline = GB().breaks(whole, surface, force) end
+    out.ghost_breaks = brk
+    out.line = string.format('the line through %s: %d belt tiles from %s to %s; %s%s', at(start.position), total, at(up.at), at(down.at),
+      #gaps == 0 and (brk and 'no tile missing' or 'no gap in it') or string.format('%d gap%s: %s%s', #gaps, #gaps == 1 and '' or 's', table.concat(gl, ' | '), #gaps > 8 and ' | ...' or ''),
+      bline and '; ' .. bline or '')
     return out
   end
   return M
