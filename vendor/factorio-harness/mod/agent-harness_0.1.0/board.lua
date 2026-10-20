@@ -1912,7 +1912,7 @@ return function(api)
     local text = m.text:lower()
     local everyone = to_everyone(text)
     -- (d17 batch14 B1) an agent's say answers what it names the sender of (owed.lua)
-    if M.owed and m.player then pcall(M.owed.said, m.player, m.text) end
+    if M.owed and m.player then pcall(M.owed.said, m.player, m.text, m.reply_to) end  -- reply_to: a viewer line it is linked to
     local asks = m.text:find('?', 1, true) ~= nil
     for _, a in ipairs(agents()) do
       if a.index ~= m.player then
@@ -2076,8 +2076,9 @@ return function(api)
       else
         local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
         -- (d20 batch50 C1) a viewer's line: its seq and what answers it, as for an unanswered tell
-        local re = m.viewer and type(m.seq) == 'number' and string.format(' (#%d: a say naming %s, or reply_to: %d, answers it)', m.seq,
-          (tostring(m.from):gsub('^viewer ', ''):gsub(' %(host%)$', '')), m.seq) or ''
+        -- (d20 batch57 S1) by name only while it is their one open line
+        local re = m.viewer and type(m.seq) == 'number' and string.format(' (#%d: reply_to: %d answers it; a say naming %s does while it is their only open line)', m.seq,
+          m.seq, (tostring(m.from):gsub('^viewer ', ''):gsub(' %(host%)$', ''))) or ''
         lines[#lines+1] = string.format('%s%s, %s ago: %s%s', from(m), tag, ago(game.tick - m.tick), m.text, re)
       end
     end

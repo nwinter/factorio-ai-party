@@ -127,7 +127,8 @@
     var first = all.length ? all[0].t || 0 : 0;
     replyLines.slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); }).forEach(function (r) {
       if ((r.t || 0) < first) return;
-      var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind, history: r.history === true };
+      var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind, history: r.history === true,
+        link: r.link, answers: r.answers };
       var at = answered(all, r);
       if (at >= 0) {
         item.thread = true;
@@ -135,11 +136,31 @@
         all.splice(at + 1, 0, item);
         return;
       }
+      item.away = !!(r.answers && r.answers.name);  // linked to a line this list does not show
       var i = all.length;
       while (i > 0 && (all[i - 1].t || 0) > (item.t || 0)) i--;
       all.splice(i, 0, item);
     });
     return all;
+  }
+  // (d20 batch57 S1, viewer Aurora 15:24: "Could replies link to ... only the question they answer?") how a reply found
+  // its line (state.viewer_replies link: tools/stream/viewer_replies.py): reply_to (the agent named it), the viewer's only
+  // line in the 15 minutes before, their only one to this agent, or the time the Operator's reply names; "none": shown in
+  // time order, linked to no line. A line this list does not show is quoted.
+  function linkHtml(m) {
+    if (m.kind !== 'reply' || !m.link) return '';
+    var a = m.answers || {}, who = esc(a.name || '');
+    var how = m.link === 'none' ? 'not linked to a question'
+      : m.link === 'only_line' ? 'matched by name: ' + who + "'s only recent line"
+      : m.link === 'only_to' ? 'matched by name: ' + who + "'s only recent line to " + esc(m.by === 'operator' ? 'the Operator' : agentName(m.by))
+      : m.link === 'time' ? 'matched by the time it names'
+      : '';
+    var html = how ? ' <span class="c-link c-link-' + esc(m.link) + ' fx-muted">' + how + '</span>' : '';
+    if (m.away && a.text) {
+      var q = String(a.text);
+      html += ' <span class="c-re fx-muted">re “' + esc(q.length > 80 ? q.slice(0, 79) + '…' : q) + '”</span>';
+    }
+    return html;
   }
   function replyHtml(m, t) {
     var a = m.by === 'operator' ? { name: 'operator', display_name: 'Operator' } : (team[m.by] || { name: m.by });
@@ -149,6 +170,7 @@
     var to = m.to && m.to.length ? ' <span class="c-to fx-muted">↩ ' + esc(m.to.join(', ')) + '</span>' : '';
     // (d19 batch42 A5, viewer Aurora) a reply read again at a stream restart keeps its own time and says it is history
     if (m.history) to += ' <span class="c-history fx-muted" title="said before the stream service restarted">history</span>';
+    to += linkHtml(m);
     return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + '"' + (col ? ' style="--ac:' + col + '"' : '') +
       '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
       who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';

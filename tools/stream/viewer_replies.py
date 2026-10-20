@@ -11,12 +11,15 @@ when it names a viewer who wrote in the last WINDOW_S seconds of game time:
 A line speaks to the viewers when it starts with "Viewers," / "Chat," / "Everyone watching," and the like.
 Not counted (shifts 15-16, chat.jsonl): a viewer named in the third person ("Foobator is right that a belt ...", 2 lines),
 and an agent's next line after a viewer's @mention of it that names nobody (33 and 67 lines, nearly all team status).
-The viewer line a reply answers: the named viewer's latest line before it within the window, one addressed to the
-replying agent ("@sol ...") first; with several viewers named, the latest of their lines.
-The Operator's replies (Nick, d16 18:32: one threaded under the wrong line): a viewer line to the Operator ("Operator,
-..." / "@operator ...") goes to RUN/operator-inbox.jsonl and never into the game chat, so for the Operator the viewer
-lines include the run's inbox rows from viewers (`inbox_lines`), and a line addressed to the Operator ("Operator," /
-"Operator:" / "@operator" at the start, any case) is the one it answers first.
+The viewer line a reply answers (d20 batch57 S1, viewer Aurora 15:24: "Could replies link to and close only the question
+they answer?"; shift47: Muse's two replies with reply_to lines 90 and 110 minutes old threaded under Aurora's and
+Enginerd's newest lines): the line its reply_to names, at any age (Threads keeps every viewer line by seq); without
+reply_to, the named viewers' lines in the window: the only one; else the only one addressed to the replier (the relay's
+"@sol ..."); else none, and the site shows the reply as not linked to a question. `link` says which. The Operator's replies (Nick, d16 18:32: one threaded under the wrong line): a viewer line
+to the Operator ("Operator, ..." / "@operator ...") goes to RUN/operator-inbox.jsonl and never into the game chat, so for
+the Operator the viewer lines are the run's inbox rows from viewers (`inbox_lines`) and the game lines addressed to the
+Operator ("Operator," / "Operator:" / "@operator" at the start, any case), and "your HH:MM" in the reply names the line
+written at that minute, at any age.
 """
 import datetime, json, re
 
@@ -139,29 +142,54 @@ def bare(text):
     return re.sub(r"^@\S+\s+", "", str(text or "")).strip()
 
 
-STOP = set(("that this with your have what will from they them their there when where which would could should about "
-             "just also than then into only some more most very well were been being does doing over here").split())
+def to_speaker(v, who):
+    """The viewer line is addressed to `who`: the relay's "@sol ..." (or "@muse @sol ..."); for the Operator, an inbox
+    row or "Operator, ..."."""
+    text = str(v.get("text") or "")
+    if who == "operator":
+        return bool(v.get("inbox") or TO_OPERATOR.match(text))
+    return bool(re.match(r"^\s*(?:@\S+\s+)*@" + re.escape(who) + r"\b", text.lower()))  # "@muse @sol muse: ..."
 
 
-def words(text, skip=()):
-    """Words for matching an answer with its question (chatfeed.js words): 4+ letters, not common, first 5 letters."""
-    return {w[:5] for w in re.findall(r"[a-z0-9']{4,}", str(text or "").lower()) if w not in STOP and w not in skip}
+YOUR_TIME = re.compile(r"\byour (\d{1,2}):(\d{2})\b", re.I)
 
 
-def classify(line, viewer_lines, inbox=()):
+def local_hm(v):
+    t = wall_t(v)
+    return datetime.datetime.fromtimestamp(t).strftime("%H:%M") if t is not None else None
+
+
+def pick(pool, who):
+    """(line, link) for a reply that names the viewers of `pool` (their lines in the window, oldest first): the only
+    line, else the only one addressed to the replier. Whether a line was answered already does not count: several
+    agents answer one line, and one agent answers it again with progress (shift46-47: that rule linked 6 of 10
+    follow-ups to another line)."""
+    if len(pool) == 1:
+        return pool[0], "only_line"
+    mine = [v for v in pool if to_speaker(v, who)]
+    if len(mine) == 1:
+        return mine[0], "only_to"
+    return None, "none"
+
+
+def classify(line, viewer_lines, inbox=(), by_seq=None):
     """For an agent's or the Operator's line and the viewer lines before it (oldest first): None, or {kind: "reply"
-    | "to_viewers", to: [viewer names], answers: the viewer line it answers or None}. inbox: the run's inbox_lines,
-    for the Operator's lines only."""
+    | "to_viewers", to: [viewer names], answers: the viewer line it answers or None, link (replies): reply_to |
+    only_line | only_to | time | none}. inbox: the run's inbox_lines, for the Operator's lines only; by_seq: every
+    viewer line kept, by seq (for reply_to)."""
     who = speaker(line)
     if not who:
         return None
     lines = list(viewer_lines)
-    # (d20 batch50 C1) say reply_to a viewer line's seq (chat.lua keeps it on the line): that line, whatever the text names
+    # (d20 batch50 C1) say reply_to a viewer line's seq (chat.lua keeps it on the line): that line, whatever the text
+    # names; (batch57 S1) at any age
     rt = line.get("reply_to")
+    linked_elsewhere = False
     if isinstance(rt, int) and not isinstance(rt, bool):
-        v = next((v for v in reversed(lines) if v.get("seq") == rt and viewer_name(v)), None)
-        if v:
-            return {"kind": "reply", "to": [viewer_name(v)], "answers": v}
+        v = (by_seq or {}).get(rt) or next((v for v in reversed(lines) if v.get("seq") == rt and viewer_name(v)), None)
+        if v and viewer_name(v):
+            return {"kind": "reply", "to": [viewer_name(v)], "answers": v, "link": "reply_to"}
+        linked_elsewhere = True  # a line this log does not have: never another one by name
     if who == "operator" and inbox:
         lines = sorted(lines + list(inbox), key=lambda v: wall_t(v) or 0)
     recent = [v for v in lines if viewer_name(v) and 0 <= _age_s(line, v) <= WINDOW_S]
@@ -176,27 +204,24 @@ def classify(line, viewer_lines, inbox=()):
     if named:
         low = [n.lower() for n in named]
         pool = [v for v in recent if viewer_name(v).lower() in low]
-        to_me = [v for v in pool if re.match(r"^\s*@" + re.escape(who) + r"\b", str(v.get("text") or "").lower())
-                 or (who == "operator" and TO_OPERATOR.match(str(v.get("text") or "")))]
-        pick = None
-        if pool:
-            # the latest, unless an earlier one shares at least two more words with the answer (chatfeed.js questionFor)
-            rows = to_me or pool
-            skip = {k for n in named for k in short_names(n)}
-            aw = words(line.get("text"), skip)
-            pick = rows[-1]
-            score = len(aw & words(bare(pick.get("text")), skip))
-            for v in rows:
-                sc = len(aw & words(bare(v.get("text")), skip))
-                if sc >= score + 2:
-                    pick, score = v, sc
-            # The Operator often answers what a viewer asked elsewhere (YouTube lines that never reach the game, or
-            # the owner relaying it): without a line to the Operator, attach only to one sharing two words with the
-            # answer, else stand alone (d17 16:05: "@Foobator Operator: ... every shift's end save is kept" threaded
-            # under "@sol isnt spindle your space sci source?").
-            if who == "operator" and not to_me and score < 2:
-                pick = None
-        return {"kind": "reply", "to": named, "answers": pick}
+        if linked_elsewhere:
+            return {"kind": "reply", "to": named, "answers": None, "link": "none"}
+        if who == "operator":
+            # the Operator answers what was asked of it (d17 16:05: "@Foobator Operator: ... every shift's end save is
+            # kept" threaded under "@sol isnt spindle your space sci source?"); "your 13:59" names that line
+            m = YOUR_TIME.search(str(line.get("text") or ""))
+            if m:
+                hm = "%02d:%s" % (int(m.group(1)), m.group(2))
+                kept = list((by_seq or {}).values()) + [v for v in lines if not isinstance(v.get("seq"), int)]
+                at = [v for v in kept if viewer_name(v) and viewer_name(v).lower() in low and _age_s(line, v) >= 0
+                      and local_hm(v) == hm]
+                if at:
+                    return {"kind": "reply", "to": named, "answers": at[-1], "link": "time"}
+            pool = [v for v in pool if to_speaker(v, who)]
+        if not pool:
+            return {"kind": "reply", "to": named, "answers": None, "link": "none"}
+        v, link = pick(pool, who)
+        return {"kind": "reply", "to": named, "answers": v, "link": link}
     if ADDRESSED.match(str(line.get("text") or "")):
         return {"kind": "to_viewers", "to": [], "answers": None}
     return None
@@ -219,10 +244,22 @@ def part_of(text):
 
 
 class Threads:
-    """classify() that keeps a long reply's numbered parts in part 1's thread (model.py, replies())."""
+    """classify() that keeps a long reply's numbered parts in part 1's thread (model.py, replies()) and every viewer
+    line by seq (`see`: a reply_to finds its line at any age)."""
+
+    KEEP = 2000  # viewer lines kept by seq (a shift has a few hundred)
 
     def __init__(self):
         self.last = {}  # speaker -> ((k, n), line, result) of its latest numbered part that classified
+        self.by_seq = {}
+
+    def see(self, line):
+        """A viewer line (one a reply_to can name)."""
+        s = line.get("seq")
+        if isinstance(s, int) and not isinstance(s, bool) and viewer_name(line):
+            self.by_seq[s] = line
+            while len(self.by_seq) > self.KEEP:
+                self.by_seq.pop(next(iter(self.by_seq)))
 
     def classify(self, line, viewer_lines, inbox=()):
         who = speaker(line)
@@ -234,7 +271,7 @@ class Threads:
             # part 1 reads without its "(1/3) " ("(1/3) Foobator, the steel line ..." names Foobator as a vocative)
             m = PART.match(str(line.get("text") or "")) if p else None
             plain = dict(line, text=line["text"][:m.start(1) - 1] + line["text"][m.end():]) if m else line
-            r = classify(plain, viewer_lines, inbox)
+            r = classify(plain, viewer_lines, inbox, self.by_seq)
         if who:
             if p and r and p[0] < p[1]:
                 self.last[who] = (p, line, r)
@@ -250,7 +287,8 @@ def replies(lines, window_s=WINDOW_S, inbox=()):
     for line in lines:
         if viewer_name(line):
             viewers.append(line)
-            # only the window matters; keep the list short on a long log
+            threads.see(line)
+            # only the window matters for a reply without reply_to; keep the list short on a long log
             while viewers and _age_s(line, viewers[0]) > window_s:
                 viewers.pop(0)
             continue
@@ -261,13 +299,15 @@ def replies(lines, window_s=WINDOW_S, inbox=()):
 
 
 def row(line, result):
-    """The public row for the live page: {seq, t, tick, by, text, kind, to, history?, answers: {name, text, t, tick,
-    source}}."""
+    """The public row for the live page: {seq, t, tick, by, text, kind, to, history?, link?, answers: {name, text, t,
+    tick, source}}. link (a reply): how its line was found (classify), "none" when it is linked to no line."""
     a = result.get("answers")
     out = {"seq": line.get("seq"), "t": line.get("t"), "tick": line.get("tick"), "by": speaker(line),
            "text": str(line.get("text") or ""), "kind": result["kind"], "to": result["to"]}
     if line.get("history"):  # read again at a stream restart (model.py chat_time): its own time, shown as history
         out["history"] = True
+    if result.get("link"):
+        out["link"] = result["link"]
     if a:
         out["answers"] = {"name": viewer_name(a), "text": bare(a.get("text")), "t": a.get("t"), "tick": a.get("tick"),
                           "source": a.get("source")}

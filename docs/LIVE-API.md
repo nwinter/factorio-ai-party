@@ -207,13 +207,22 @@ first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves 
 
 `viewer_replies` (d15 08:07) is the agents' and the Operator's game-chat lines that answer a viewer or speak to the
 viewers, newest 40, oldest first: `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
-to [viewer names], answers? {name, text?, t, source}}]` (tools/stream/viewer_replies.py, kept by model.py so they
-outlive the chat window). A line said with `reply_to` a viewer line's seq answers that line (d20 batch50). Else a reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
-("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."); "Viewers, ..." and the like speak to the viewers. `answers`
-is the viewer line it answers (one addressed to the agent first); its `text` is left out when the site hides that line.
-The Chat pane shows each one, badged REPLY (or TO VIEWERS) in the agent's colour, right under the line it answers when
-that line is in the list, else in time order; "Show agents' replies to viewers" hides them (kept in localStorage
-`chatReplies`). The archived shift pages' Viewers section uses the same rule (site/longrun.py).
+to [viewer names], link?, answers? {name, text?, t, source}}]` (tools/stream/viewer_replies.py, kept by model.py so they
+outlive the chat window). A reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
+("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."), or was said with `reply_to` a viewer line's seq (d20
+batch50); "Viewers, ..." and the like speak to the viewers. `answers` is the one viewer line it answers, and `link` says
+how that line was found (d20 batch57 S1, viewer Aurora: "Could replies link to ... only the question they answer?"):
+`reply_to` (the line its reply_to names, at any age), `only_line` (the named viewer's only line in the 15 minutes before),
+`only_to` (their only line in that window addressed to the replier, the relay's "@sol ..."; for the Operator, an inbox
+row or "Operator, ..."), `time` (the Operator's "your 13:59" names the line written at that minute), or `none` (no
+`answers`: several lines fit and none was named). `answers.text` is left out when the site hides that line. The Chat
+pane shows each one, badged REPLY (or TO VIEWERS) in the agent's colour, right under the line it answers when that
+line is in the list, else in time order with the line quoted ("re “...”"); a reply says "matched by name: NAME's only
+recent line (to AGENT)", "matched by the time it names" or "not linked to a question" (nothing for `reply_to`). "Show
+agents' replies to viewers" hides them (kept in localStorage `chatReplies`). The archived shift pages' Viewers section
+threads by the same rule (site/longrun.py). Shifts 46-47: 145 replies were threaded by name only; 7 sat under a line
+they did not answer (2 of them Muse's, with reply_to lines 90 and 110 minutes old that the 15-minute list no longer
+held); with this rule 50 of 157 are not linked, and 2 of the 107 linked ones are under the wrong line.
 
 `clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
 each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or

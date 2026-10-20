@@ -176,11 +176,13 @@ def public_delivery(status, keep=150):
 
 
 REPLY_MAX = 40  # agents' replies to viewers in the state (newest kept); the live page's chat shows them
+LINKS = ("reply_to", "only_line", "only_to", "time", "none")  # viewer_replies.classify's link
 
 
 def public_replies(rows, hidden=None):
     """The agents' and the Operator's lines that answer a viewer or speak to the viewers (model.py viewer_replies,
-    tools/stream/viewer_replies.py), oldest first, the newest REPLY_MAX: {seq, t, tick, by, text, kind, to, answers?}.
+    tools/stream/viewer_replies.py), oldest first, the newest REPLY_MAX: {seq, t, tick, by, text, kind, to, link?,
+    answers?}.
     A reply to a line the site hides keeps its own words; that line and its viewer's name are left out."""
     out = []
     for r in rows or []:
@@ -190,6 +192,8 @@ def public_replies(rows, hidden=None):
                "kind": r.get("kind") or "reply", "to": [str(n) for n in r.get("to") or []]}
         if r.get("history"):  # (d19 batch42 A5) restored at a stream restart, with its own time
             row["history"] = True
+        if r.get("link") in LINKS:  # (d20 batch57 S1) how its viewer line was found; "none": linked to no line
+            row["link"] = r["link"]
         a = r.get("answers")
         if isinstance(a, dict) and a.get("name"):
             if hidden and hidden.hides(a.get("name"), a.get("text")):

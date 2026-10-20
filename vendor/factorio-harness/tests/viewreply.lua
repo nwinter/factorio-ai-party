@@ -68,9 +68,9 @@ for _,n in ipairs{'astra','muse','sol'} do runtime.dispatch{action='status',args
 local v=op('viewer_say',{name='NickWinter (host)',text='@muse Muse: How could we end the biter problem on Nauvis once and for all?',source='site'})
 -- the team block and the chat read say what answers it
 local st=muse('status')
-eq(st.team.mentions[1],'viewer NickWinter (host) (site) @you, 0s ago: @muse Muse: How could we end the biter problem on Nauvis once and for all? (#'..v.seq..': a say naming NickWinter, or reply_to: '..v.seq..', answers it)')
+eq(st.team.mentions[1],'viewer NickWinter (host) (site) @you, 0s ago: @muse Muse: How could we end the biter problem on Nauvis once and for all? (#'..v.seq..': reply_to: '..v.seq..' answers it; a say naming NickWinter does while it is their only open line)')
 local msgs=muse('chat',{since=v.seq-1}).messages
-eq(msgs[1].answer,'a say naming NickWinter (or reply_to: '..v.seq..') answers it')
+eq(msgs[1].answer,'reply_to: '..v.seq..' answers it (a say naming NickWinter does while it is their only open line)')
 eq(astra('chat',{since=v.seq-1}).messages[1].answer,nil) -- not to astra
 -- Muse's answer, naming no one, with reply_to
 local r=muse('say',{text='Good question. The permanent fix is killing the spawners inside our pollution cloud.',reply_to=v.seq})
@@ -88,4 +88,37 @@ eq(muse('chat',{since=r.seq-1}).messages[1].reply_to,v.seq)
 local s=sol('say',{text='@muse are the walls holding?'})
 r=muse('say',{text='Yes, both walls hold.',reply_to=s.seq})
 eq(r.reply_to,nil); eq(muse('chat',{since=r.seq-1}).messages[1].text,'Yes, both walls hold.'); eq(muse('chat',{since=r.seq-1}).messages[1].reply_to,nil)
+
+-- (d20 batch57 S1, viewer Aurora 15:24: "Could replies link to and close only the question they answer? ... closing by name
+-- can hide other unanswered requests"; shift47 17572: Opus's "Enginerd, fair. I hand-built those six panels ..." closed
+-- Enginerd's three open lines to Opus, two of them about power) a viewer's line closes by name only while it is their one
+-- open line; reply_to closes only the line it names
+local e1=op('viewer_say',{name='Enginerd',text='@muse Okay, so add more power.',source='site'})
+jump(1300) -- one line per viewer every 20 s
+local e2=op('viewer_say',{name='Enginerd',text='@muse did you know that bots can rebuild buildings for you?',source='site'})
+local un=muse('status').unanswered
+assert(un and un:find('2 unanswered',1,true) and un:find('reply_to: '..e1.seq..' answers it (a say naming Enginerd does while it is their only open line)',1,true),un)
+r=muse('say',{text='Enginerd, fair. I put a roboport there.'})
+eq(r.left_open,'Enginerd has 2 open lines to you (#'..e1.seq..', #'..e2.seq..'): a say naming them closes none; reply_to closes the one it names')
+assert(muse('status').unanswered:find('2 unanswered',1,true))
+-- reply_to the second: only that one closes, though the text names Enginerd
+r=muse('say',{text='Enginerd, fair. I put a roboport there.',reply_to=e2.seq})
+eq(r.left_open,nil)
+un=muse('status').unanswered
+assert(un:find('1 unanswered',1,true) and un:find('#'..e1.seq..':',1,true),un)
+-- now the one open line: a say naming them closes it
+r=muse('say',{text='Enginerd, more accumulators are going in.'})
+eq(r.left_open,nil); eq(muse('status').unanswered,nil)
+-- a teammate's mentions still close by name
+sol('say',{text='@muse wall status?'}); sol('say',{text='@muse and the north gate?'})
+muse('say',{text='@sol both hold.'})
+eq(muse('status').unanswered,nil)
+-- the reminder for a viewer's line names reply_to
+jump(1300)
+local e3=op('viewer_say',{name='Enginerd',text='@muse why coal?',source='site'})
+assert(runtime.owed,'runtime.owed'); jump(36100); runtime.owed.tick()
+local box=muse('status').team
+local found=false
+for _,l in ipairs(box and box.tells or {}) do if l:find('say reply_to: '..e3.seq..', or chat_ack',1,true) then found=true end end
+assert(found,'reminder names reply_to: '..tostring(box and table.concat(box.tells or {},' | ')))
 print('viewreply: ok')
