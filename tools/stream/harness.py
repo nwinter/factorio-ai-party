@@ -16,7 +16,9 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 # `board` and `board_events` (docs/BOARD-API.md) are only sent once `describe` (read-only) lists them.
 # `platforms` (Space Age) is a read in the runtime; the overlay sends it only once the score lists a platform.
 # `reminders` (reminders.lua) is a read in the runtime; live.py stops asking a runtime that refuses it.
-READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms", "reminders"}
+# `board_focus` with no id is a read (each agent's focus rows, d20 batch54 N3); with an id it sets a focus, so it is refused.
+READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms", "reminders",
+                "board_focus"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_live", "big_enemies_live", "hauling", "loadout", "clouds",
                   "efficiency", "chronicle", "artillery_live"}
@@ -458,6 +460,8 @@ class Harness:
             raise ValueError(f"{action} is not a read action; the stream service never sends gameplay actions")
         if action == "chat" and not (args or {}).get("peek"):
             raise ValueError("chat must be read with peek:true")
+        if action == "board_focus" and set(args or {}) - {"peek"}:
+            raise ValueError("board_focus is read with no arguments (with an id it sets a focus)")
         req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}}
         if bot:
             req["bot"] = bot
