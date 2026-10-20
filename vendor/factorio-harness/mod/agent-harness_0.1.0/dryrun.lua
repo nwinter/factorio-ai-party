@@ -1122,6 +1122,16 @@ return function(api)
             end
           end
           if manual and same and same.type == 'entity-ghost' then same = nil; rec.note = 'builds the ghost there' end
+          -- (d20 batch53 L1) the same entity at another quality: place_ghosts puts no ghost over it; the upgrade
+          -- planner changes its quality
+          if same and kind == 'ghosts' then
+            local q = try(function() return same.quality.name end) or 'normal'
+            if q ~= (rec.quality or 'normal') then
+              reasons[#reasons+1] = string.format('%s %s of %s quality stands there: upgrade {position, quality: "%s"} changes its quality in place',
+                same.type == 'entity-ghost' and 'a ghost of' or 'a built', e.name, q, rec.quality or 'normal')
+              same = nil
+            end
+          end
           -- Tiles count whatever the engine says now: on a platform it takes
           -- an entity ghost over empty space, which nothing builds until
           -- foundation is there.

@@ -267,7 +267,7 @@ do
     inserter={fast_replaceable_group='inserter',collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}}}}}
   local list={}
   local ghost={valid=true,type='entity-ghost',ghost_name='turbo-transport-belt',position={x=1.5,y=0.5}}
-  ghost.order_upgrade=function(o) ghost.ghost_name=o.target; return true end
+  ghost.order_upgrade=function(o) ghost.ghost_name=type(o.target)=='table' and o.target.name or o.target; return true end
   local built={valid=true,type='transport-belt',name='turbo-transport-belt',position={x=2.5,y=0.5}}
   built.order_upgrade=function() built.marked=true; return true end
   local ins={valid=true,type='inserter',name='inserter',position={x=3.5,y=0.5},order_upgrade=function() error('not called') end}
