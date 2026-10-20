@@ -2480,7 +2480,7 @@ local function crafting_line(p)
   return string.format('%d items, ~%ds left, head=%s x%d',items,math.ceil(seconds),queue[1].recipe,queue[1].count)
 end
 -- A paused plan still holding steps is easy to forget between sessions.
-local function queue_warning(index)
+do local function queue_warning(index)
   local q=state().queues and state().queues[index]
   if not (q and q.paused and #q.pending>0) then return nil end
   local first,last=q.pending[1],q.history[#q.history]
@@ -2608,7 +2608,7 @@ function handlers.status(p,a)
     alerts_new=M.alertdigest and (function() local ok,n=pcall(M.alertdigest.count,p); return ok and n>0 and string.format('%d place%s with enemy or structure news since your last alerts_digest read (alerts_digest {} lists them)',n,n==1 and '' or 's') or nil end)() or nil,
     surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=M.combat_row(p.index,p), hurt=alive and M.hurt_row(p) or nil, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
 end
--- Connected visible resource tiles are summarized separately from structures so a
+end -- Connected visible resource tiles are summarized separately from structures so a
 -- large ore patch cannot consume the entity budget and hide machines or enemies.
 local function resource_patches(entities)
   local remaining, patches = {}, {}
@@ -3039,7 +3039,7 @@ local scan_fields={
   end,
 }
 -- Fields that change over time; hidden for other forces' entities under fog.
-local live_fields={hp=true,fuel=true,inventory=true,output=true,spoil=true,status=true,ammo=true,target=true,amount=true,lanes=true,fluids=true,filters=true}
+do local live_fields={hp=true,fuel=true,inventory=true,output=true,spoil=true,status=true,ammo=true,target=true,amount=true,lanes=true,fluids=true,filters=true}
 -- Ore letters are stable per name within one reply: the first unused letter
 -- of the name, upper-cased.
 local function ore_letters(names)
@@ -3578,7 +3578,7 @@ function handlers.grid(p,a)
   if out_legend[','] then out_legend[',']='water a character walks through: '..out_legend[','] end
   return {origin={x=x0,y=y0},ruler=table.concat(ruler),ruler_note="'|' marks x%10==0",rows=rows,legend=out_legend}
 end
--- rates {recipe | item} with no area or positions (Gemini 02:36: rates filtered by recipe or item across a surface):
+end -- rates {recipe | item} with no area or positions (Gemini 02:36: rates filtered by recipe or item across a surface):
 -- every crafter of ours on the surface set to that recipe (or to one making the item), at most 512, as the rates read
 -- computes them, with the surface's statistics for the item beside it (made and used a minute over 10 min).
 M.RATES_SURFACE=512
@@ -4029,7 +4029,7 @@ handlers.launch=function(p,a)
   end)
   return out
 end
-local views={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+do local views={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -4174,7 +4174,7 @@ function handlers.observe(p,a)
     active=q.current and {id=q.current.id,action=q.current.action,started_tick=q.current.started_tick} or false} or false
   return out
 end
-function handlers.stop(p) if scheduler then scheduler.pause(p.index,'stop') end; finish(p.index,'stopped'); stop_combat(p.index,'stopped'); return {stopped=true} end
+end function handlers.stop(p) if scheduler then scheduler.pause(p.index,'stop') end; finish(p.index,'stopped'); stop_combat(p.index,'stopped'); return {stopped=true} end
 function handlers.walk(p,a)
   local direction=directions[a.direction]
   assert(direction,'invalid compass direction')
@@ -5393,7 +5393,7 @@ function M.where_kept(p,item,need,scan)
   if #nets>0 then return 'none to spare within 128 tiles; '..table.concat(nets,'; ') end
   return 'none of ours to spare within 128 tiles or in a logistic network on '..p.surface.name
 end
-local function craft_shortfall(p,name,count,notes)
+do local function craft_shortfall(p,name,count,notes)
   local have,short={},{}
   local inv=p.get_main_inventory()
   local function walk(recipe,n,depth)
@@ -5619,7 +5619,7 @@ function handlers.craft(p,a)
   return craft_facts(p,{started=started,nothing_queued=next(none) and none or nil,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,
     from_queue=next(fromq) and fromq or nil,hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},started)
 end
--- Hand-craftable counts from current inventory, including intermediates.
+end -- Hand-craftable counts from current inventory, including intermediates.
 function handlers.craftable(p,a)
   local names=type(a.recipes)=='string' and {a.recipes} or a.recipes
   local out={}
@@ -7534,7 +7534,7 @@ M.configure_filters=configure_filters
 -- Out of reach, 2.0's remote view still opens the machine: recipes and
 -- filters change the same way, but contents cannot come back to the
 -- character, so a remote recipe change needs an empty, idle machine.
-local function holds_items(e)
+do local function holds_items(e)
   if e.type=='entity-ghost' then return false end
   -- Modules stay through a recipe change unless the new recipe forbids one (M.modules_out; Astra, shift17 10:50).
   for _,name in ipairs({'assembling_machine_input','assembling_machine_output'}) do
@@ -8189,7 +8189,7 @@ function handlers.configure(p,a)
   return {recipe=current.name,quality=a.quality,remote=not near or nil,returned=next(returned) and returned or nil,spilled=next(spilled) and spilled or nil,fluid=fluid_note}
 end
 end
--- Omitted inventories are inferred the way a player's click is: fuel into the
+end -- Omitted inventories are inferred the way a player's click is: fuel into the
 -- burner, smeltables into the furnace, and results back out of it.
 local function infer_inventory(e,a)
   if a.outputs_only then
@@ -8945,7 +8945,7 @@ function M.find_kinds(p,base,kinds)
 end
 -- Nothing in the radius or area (Grok, shift12 13:50: a refuel 48 tiles from furnaces out of fuel placed 0 and said
 -- nothing): the nearest one outside it that would have been a target, within 512 tiles of the character.
-local NEAREST_OUT=512
+do local NEAREST_OUT=512
 function M.nearest_outside(p,kinds,inside,match,what)
   local list=M.find_kinds(p,{position=p.position,radius=NEAREST_OUT},kinds)
   local rows={}
@@ -8961,7 +8961,7 @@ function M.nearest_outside(p,kinds,inside,match,what)
   end
   return string.format('no %s within %d tiles of you',what,NEAREST_OUT)
 end
--- A tour that found nothing keeps what its reply said for its last (finish; fh --wait shows last.why).
+end -- A tour that found nothing keeps what its reply said for its last (finish; fh --wait shows last.why).
 function M.tour_note(p,out)
   local action=state().active[p.index]
   if action and action.kind=='gather' then
@@ -10621,7 +10621,7 @@ end
 -- An omitted direction follows where the item is, as a player's click would:
 -- no item takes everything; an item only the character holds (or will get
 -- from the hand-craft queue) is given; one only the targets hold is taken.
-local function infer_direction(p,a)
+do local function infer_direction(p,a)
   if a.item==nil then return 'to_player' end
   local mine=held(p,a.item,a.quality)+crafting_count(p,a.item)
   local theirs,feeding=0,true
@@ -11693,7 +11693,7 @@ transfer_directed=function(p,a)
   if a.partial then return short_facts(out,a,#targets) end
   return M.give_short(out,a,#targets)
 end
-local function queue_names(force)
+end local function queue_names(force)
   local names={}
   for i,technology in ipairs(force.research_queue or {}) do names[i]=technology.name end
   return names
@@ -11814,7 +11814,7 @@ local function set_research_queue(force,list)
   return {queue=queue,over_levels=#once>0 and once or nil,skipped=#skipped>0 and skipped or nil,pending=#pending>0 and pending or nil,
     pending_note=#pending>0 and 'the engine queue is full (or prerequisites are pending): these are fed in as it frees up' or nil,added_prerequisites=added}
 end
-local function array_of_names(list)
+do local function array_of_names(list)
   assert(type(list)=='table' and #list<=64 and (#list>0 or next(list)==nil),'research_queue requires an array of 0..64 names')
   return list
 end
@@ -11923,7 +11923,7 @@ function handlers.research(p,a)
   if not needs and out.queue[1]~=technology.name then out.queued=force.add_research(technology); out.queue=queue_names(force) end
   return out
 end
--- Who queued what (research.lua): names that were neither queued nor waiting
+end -- Who queued what (research.lua): names that were neither queued nor waiting
 -- before this agent's research call are this agent's.
 do
   local queue_research=handlers.research
@@ -11975,7 +11975,7 @@ function handlers.research_next(p,a)
   end
   return {started=false,current=false}
 end
-local function catalog(p,a,kind)
+do local function catalog(p,a,kind)
   local limit=integer(a.limit,64,1,256,'limit')
   local prefix=a.prefix or ''; assert(type(prefix)=='string','prefix must be a string')
   local names={}
@@ -12035,11 +12035,11 @@ local function catalog(p,a,kind)
 end
 function handlers.recipes(p,a) return catalog(p,a,'recipes') end
 function handlers.technologies(p,a) return catalog(p,a,'technologies') end
--- The client that renders a screenshot: a player's own. A bot has none, and
+end -- The client that renders a screenshot: a player's own. A bot has none, and
 -- without by_player every connected client rendered it into its own
 -- script-output (shake1/2: ./shot never delivered), so one is chosen: the
 -- first connected director, else the first connected player.
-local function screenshot_client(p)
+do local function screenshot_client(p)
   local own=real(p)
   if own then return own end
   local pick
@@ -12058,7 +12058,7 @@ function handlers.screenshot(p,a)
   game.take_screenshot{player=real(p),by_player=client,surface=p.surface,position=p.position,path=a.path,resolution={x=integer(a.width,1280,320,1920,'width'),y=integer(a.height,720,240,1080,'height')},zoom=1,show_entity_info=true}
   return {queued=true,path=a.path,client=client.name,requires_graphical_client=true}
 end
-function handlers.revive_ghost(p,a)
+end function handlers.revive_ghost(p,a)
   local e=entity(p,a); friendly(p,e)
   assert(e.type=='entity-ghost','target must be an entity ghost')
   local needed=e.ghost_prototype
@@ -12446,7 +12446,7 @@ M.outputstop=require('outputstop'){try=function(fn) local ok,v=pcall(fn); if ok 
 M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end,blocker=function(s,q) return M.linecut and M.linecut.blocker(s,q) end}
 -- Underground entrances fed from the side by an inserter or a belt (sidefeed.lua; Sol, shift10).
 M.sidefeed=require('sidefeed'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
-local blueprint_handlers=blueprint_module{contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
+do local blueprint_handlers=blueprint_module{contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
   build_notes=function(p,ents) return M.build_notes(p,ents) end,
   heat_loss=function(surface,force,list) return M.heating.loss(surface,force,list) end,
   placed=function(p,e) return M.efficiency.built(M.board.who(p),e) end,
@@ -12458,7 +12458,7 @@ for name,handler in pairs(blueprint_handlers) do if name~='plan' and name~='oper
 M.bplibrary_operator=blueprint_handlers.operator
 -- Where a paste would land, placing nothing (paste dry_run).
 M.paste_plan=blueprint_handlers.plan
--- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
+end -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.argshapes=require('argshapes')()
@@ -13513,7 +13513,7 @@ end
 -- the tile ghost (2.0.77), and construct mines them before it lays the tile.
 -- Anything else in the way refuses it, named. Returns the ghost and what it
 -- marked.
-local function place_tile_ghost(p,tile,pos)
+do local function place_tile_ghost(p,tile,pos)
   assert(charted(p,pos),'position is not charted')
   local x,y=math.floor(pos.x),math.floor(pos.y)
   local marked={}
@@ -14359,10 +14359,10 @@ function handlers.pipe_route(p,a)
   if out.dry_run then out.placed=nil end
   return out
 end
--- repeat={count,dx,dy} stamps the same placement count times, each shifted by
+end -- repeat={count,dx,dy} stamps the same placement count times, each shifted by
 -- (dx,dy) from the previous one: a row of furnaces or turrets in one call.
 -- Copies are independent; one that fails does not stop the rest.
-local function shifted(pos,dx,dy) local p0=position(pos); return {x=p0.x+dx,y=p0.y+dy} end
+do local function shifted(pos,dx,dy) local p0=position(pos); return {x=p0.x+dx,y=p0.y+dy} end
 local repeat_shift={
   paste=function(a,dx,dy) return {position=shifted(a.position,dx,dy)} end,
   blueprint_place=function(a,dx,dy) return {position=shifted(a.position,dx,dy)} end,
@@ -14411,7 +14411,7 @@ for name,shift in pairs(repeat_shift) do
     return total
   end
 end
--- Remember where the last paste put ghosts so `construct` can default to it.
+end -- Remember where the last paste put ghosts so `construct` can default to it.
 for _,name in ipairs({'paste','blueprint_place','place_ghosts','belt_route','pipe_route','rail_route','train_stop'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
@@ -14474,7 +14474,7 @@ function handlers.trace(p,a) return M.readmemory.read(p,a,'trace',M.trace.trace)
 -- Remote building on our space platforms: the same ghost and view actions,
 -- run against the platform's surface (hub at its centre). The hub builds
 -- the ghosts from its own inventory, as in the game.
-local function on_platform(p,name)
+do local function on_platform(p,name)
   local pl=space.platform(p,name)
   assert(pl.surface,'platform '..pl.name..' has no surface yet (waiting for its starter pack)')
   local hub=pl.hub and pl.hub.valid and pl.hub.position or {x=0,y=0}
@@ -15055,7 +15055,7 @@ function handlers.dry_run(p,a)
   end
   return out
 end
-for name in pairs(M.dryrun.ACTIONS) do
+end for name in pairs(M.dryrun.ACTIONS) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     if type(a)=='table' and a.dry_run==true then return handlers.dry_run(p,{action=name,args=a}) end
@@ -15259,13 +15259,13 @@ do
     return M.dry_verdict(out,judged)
   end
 end
-local equipment_handler=handlers.equipment
+do local equipment_handler=handlers.equipment
 handlers.equipment=function(p,a)
   local input=a.operation=='remove' and 'take_equipment' or 'place_equipment'
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action[input]),'permission denied: '..input)
   return equipment_handler(p,a)
 end
--- Actions whose handler can start a timed action: as a queue step they wait for its end (Sol 22:45: a clear_cliffs step
+end -- Actions whose handler can start a timed action: as a queue step they wait for its end (Sol 22:45: a clear_cliffs step
 -- began and ended in the same tick, and the next step, a move_to, stopped its throw; vehicle drives the same).
 -- tests/queuetimed.lua lists every timed action and checks each is here.
 local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true,
@@ -15276,14 +15276,14 @@ local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,
   launch=true}
 -- The active action kind a step's handler starts, where it differs from its name (use_item: cliff explosives only;
 -- vehicle: a drive, or a drive's dry run).
-local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true,gather=true},
+do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true,gather=true},
   recover={gather=true},use_item={clear_cliffs=true},vehicle={drive=true},launch={wait_until=true}}
 -- Whether a queue step of `action` waits while an active action of `kind` runs (shoot and drop are read apart: the
 -- combat channel and drop jobs).
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-local conditions=conditions_module{receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
@@ -16044,7 +16044,7 @@ function M.refusal_example(action,args,call)
   return ok and text or nil
 end
 -- An argument refusal from inside a handler (a required argument missing, a wrong shape) ends with the example too.
-local ARG_WORDS={'is required','requires ','must be ','go with ','out of range','needs ','give ','takes '}
+do local ARG_WORDS={'is required','requires ','must be ','go with ','out of range','needs ','give ','takes '}
 function M.with_example(action,args,msg)
   msg=tostring(msg)
   if msg:find('fh call ',1,true) or msg:find('unknown argument',1,true) or msg:find('is a tile corner',1,true) then return msg end
@@ -16053,7 +16053,7 @@ function M.with_example(action,args,msg)
   if not hit then return msg end
   return msg..M.example_text(action,args)
 end
--- launch without its silo (Luna, shift11 17:43: launch {platform:"Sunward"} failed as "position requires x and y",
+end -- launch without its silo (Luna, shift11 17:43: launch {platform:"Sunward"} failed as "position requires x and y",
 -- twice): the silos on the surface, a ready rocket first, and the call that works.
 function M.launch_needs_silo(p,a,action)
   local list={}
@@ -16356,7 +16356,7 @@ local function idle_tick()
   -- (idle.lua idle_report: the operator's idle nudge).
   if game.tick%60==0 then M.idle.stand_tick(); pcall(M.selfview.tick) end
 end
-local dispatch_request
+do local dispatch_request
 -- A failed request is counted for the agent's review (selfview.lua) and
 -- raised again unchanged (control.lua reads it as before).
 -- Action-name aliases (d17 lean D1): names agents called that are no action, where the action meant is plain (the d17
@@ -16836,7 +16836,7 @@ dispatch_request=function(request)
   if now and now~=before and not now.queued then now.call={action=request.action,args=request.args or {},seated=M.seated_ok} end
   return result
 end
--- Choose the 8-way direction closest to the heading, but keep the previous
+end -- Choose the 8-way direction closest to the heading, but keep the previous
 -- one while it stays within 30 degrees. Re-choosing every tick flips between
 -- neighbours and makes the client camera jitter.
 local compass={'north','northeast','east','southeast','south','southwest','west','northwest'}
@@ -17820,7 +17820,7 @@ end
 -- one exists, else steers directly. A stall of a few ticks first sidesteps
 -- perpendicular to the heading, then re-paths with a wider goal radius, and
 -- only gives up after repeated failures. Diagnostics stay on `nav`.
-local STALL_TICKS,SIDESTEP_TICKS,MAX_STALLS,MAX_REPLANS,PROGRESS_TICKS=8,12,15,5,90
+do local STALL_TICKS,SIDESTEP_TICKS,MAX_STALLS,MAX_REPLANS,PROGRESS_TICKS=8,12,15,5,90
 navigate=function(p,nav)
   local pos,goal=p.position,nav.position
   -- waiting for enemies that move to clear the way (M.unit_wait), then planned again
@@ -18055,7 +18055,7 @@ navigate=function(p,nav)
   end
   steer(p,wp,nav)
 end
--- Trains (Opus, shift12 15:20: killed by our own train at (195,-150) walking to a locomotive). Every 10 ticks of a
+end -- Trains (Opus, shift12 15:20: killed by our own train at (195,-150) walking to a locomotive). Every 10 ticks of a
 -- walk, the next 4 tiles of its way are checked for rails (elevated rails pass overhead and are left out). A train that
 -- moves and would reach them within 6 s at its speed (its path goes over one of them; a train with no path, within 30
 -- tiles), or whose wagons are on them now, stops the character short of the rail until it has passed. Standing on a
@@ -18211,7 +18211,7 @@ construction=construction_module{position=position,distance=distance,integer=int
   avoid_mode=function(v) return M.avoid.mode(v) end,avoid_start=function(p,nav,mode) return M.avoid.start(p,nav,mode) end,
   leg_done=function(p,nav,outcome) return M.avoid.leg_done(p,nav,outcome) end,goal_inside=function(p,goal,mode) return M.avoid.inside(p,goal,mode) end,
   margin_discs=function(p,point,mode,R) return M.avoid.margin_discs(p,point,mode,R) end}
-local function blocked_product(p,action)
+do local function blocked_product(p,action)
   for _,name in ipairs(action.products or {}) do
     if not p.can_insert{name=name} then return name end
   end
@@ -18679,7 +18679,7 @@ M.operator={
     local shift=M.research.shift_start(n,progress)
     return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0}
   end}
-local MAX_ALERTS=64
+end do local MAX_ALERTS=64
 function M.on_event(event)
   -- The player log must never quarantine the runtime: its faults are counted.
   if M.players.events[event.name] then
@@ -18844,7 +18844,7 @@ function M.on_event(event)
     if not okl then s.lostlog_errors={count=((s.lostlog_errors or {}).count or 0)+1,last=tostring(errl),tick=game.tick} end
   end
 end
--- A placement inside a demolisher territory says so (territory.lua; d17 batch14 B5, Sonnet): each building call's
+end -- A placement inside a demolisher territory says so (territory.lua; d17 batch14 B5, Sonnet): each building call's
 -- reply, dry runs too, gets demolisher_territory when its box's chunks lie in one.
 M.territory=require('territory'){state=function(surface,force,t) return M.demolishers.state(surface,force,t) end}
 ;(function()
