@@ -765,10 +765,18 @@ return function(api)
     table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
   end
-  local function pod_done(rec, p, tick)
+  local function pod_done(rec, p, tick, hub_dead)
     local seg = seg_at(rec, p.seg) or {}
     seg.pods = seg.pods or {}
     local here = p.last and p.last.surface
+    -- (d20 batch52 K3, Sol #1323) 2.0.77 on the private copy: a cargo pod still on its platform's surface (waiting to launch, rising, or passing to the planet: its first 400 ticks or so) is removed with the platform when its hub is destroyed, and what it carried is gone; one already coming down over the planet lands as usual
+    if hub_dead and (not here or here == p.from) then
+      local where = 'lost: the platform\'s hub was destroyed before the pod left the platform\'s surface, which removes the pod and what it carried'
+      tally(seg.pods, 'lost', p.cargo)
+      receipt(rec, p, tick, 'lost', where)
+      seg.pods.last_tick = tick
+      return
+    end
     if here and here ~= p.from then
       if p.dest and p.dest.pad then
         local where = string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here)
@@ -845,6 +853,7 @@ return function(api)
     pcall(M.up_settle, rec, tick)
     -- The pods followed: where they are, and the ones gone.
     local keep = {}
+    local hub_dead = not try(function() return pl.hub.valid end)
     for _, p in ipairs(rec.pods or {}) do
       if try(function() return p.pod.valid end) then
         local where = try(function() return {surface=p.pod.surface.name, position=xy(p.pod.position)} end)
@@ -854,7 +863,7 @@ return function(api)
         keep[#keep+1] = p
       else
         p.pod = nil
-        pod_done(rec, p, tick)
+        pod_done(rec, p, tick, hub_dead)
       end
     end
     rec.pods = keep
@@ -912,7 +921,7 @@ return function(api)
   local function pods_text(seg, flying, now)
     local d = seg.pods or {}
     local sent = {n=0, cargo={}}
-    for _, k in ipairs({'received', 'landed', 'gone'}) do
+    for _, k in ipairs({'received', 'landed', 'gone', 'lost'}) do
       local r = d[k]
       if r then sent.n = sent.n + r.n; for name, n in pairs(r.cargo) do sent.cargo[name] = (sent.cargo[name] or 0) + n end end
     end
@@ -937,6 +946,7 @@ return function(api)
     if d.received then bits[#bits+1] = part(d.received, 'received by landing pads') end
     if d.landed then bits[#bits+1] = part(d.landed, 'landed as cargo pod containers (no landing pad)') end
     if d.gone then bits[#bits+1] = part(d.gone, 'gone before leaving the platform') end
+    if d.lost then bits[#bits+1] = part(d.lost, 'lost: the hub was destroyed before they left the platform (delivered nothing)') end
     if fly.n > 0 then bits[#bits+1] = string.format('in flight %d (%s): %s', fly.n, items_text(fly.cargo) or 'empty', table.concat(fly.units, ', ')) end
     return table.concat(bits, ', '), {sent=sent.n, sent_items=sent.cargo, received=d.received and d.received.n or 0,
       received_items=d.received and d.received.cargo or nil, landed=d.landed and d.landed.n or nil, gone=d.gone and d.gone.n or nil,
@@ -1276,7 +1286,7 @@ return function(api)
     for i = #rec.receipts, math.max(1, #rec.receipts - (limit or 8) + 1), -1 do
       local r = rec.receipts[i]
       out[#out+1] = string.format('%s %s %s, %s ago (pod %s, left the hub %s ago, from the stop at %s)', items_text(r.cargo) or 'empty',
-        r.kind == 'received' and 'received by' or r.kind == 'landed' and 'landed as' or 'was', r.where, secs(game.tick - r.tick),
+        r.kind == 'received' and 'received by' or r.kind == 'landed' and 'landed as' or r.kind == 'lost' and 'was' or 'was', r.where, secs(game.tick - r.tick),
         r.unit and '#' .. r.unit or '?', secs(game.tick - r.sent), tostring(r.stop))
     end
     return out
