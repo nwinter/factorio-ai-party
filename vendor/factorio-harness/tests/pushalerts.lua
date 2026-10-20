@@ -3,6 +3,7 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path  -- (walk.lua)
 -- pushed to the agents they concern (pushalerts.lua). Viewer Enginerd,
 -- shift07 15:30: "The agents would be a lot more efficient if they'd react to
 -- the alerts in the UI, like reacting to unpowered buildings."
+local find_fail  -- (d20 batch55: a find that raises)
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 defines={entity_status={working=0,no_power=1,low_power=2,no_fuel=3},inventory={turret_ammo=7},
   alert_type={entity_destroyed=1,no_material_for_construction=2,turret_out_of_ammo=3,not_enough_repair_packs=4,custom=5}}
@@ -24,6 +25,7 @@ local function surface(name,index,platform)
     local types={}
     for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
     finds[#finds+1]=f.type
+    if find_fail then error(find_fail) end
     if not f.area then wholes=wholes+1 end
     local a=f.area
     local out={}
@@ -241,6 +243,33 @@ eq(kinds.no_fuel,3); eq(kinds.no_ammo,2)
 game.tick=game.tick+5000; finds={}
 eq(#C.read(astra,{}).groups,2); eq(#finds,0,'no read in the reply')
 run(1); assert(st5.push_jobs.player,'a new job')
+-- (d20 batch55 P1, viewer Aurora) A job that fails: the last read keeps the tick it was scanned at, the reply says its
+-- age and the failure, and the next job starts SCAN_TICKS after the failure.
+local held=st5.push_alerts.player
+local scanned_at=held.tick
+find_fail='chunk find broke'
+repeat game.tick=game.tick+1; C.tick(game.tick) until not st5.push_jobs.player
+eq(st5.push_errors.count,1); eq(held.tick,scanned_at,'the read keeps its tick'); eq(st5.push_alerts.player,held)
+local failed_at=game.tick
+find_fail=nil
+game.tick=game.tick+600
+local told=C.read(astra,{})
+eq(told.scanned,string.format('%ds ago',math.floor((game.tick-scanned_at)/60)))
+eq(told.refresh_failed,string.format('the last refresh of the alert scan failed 10s ago (%s); the alert scan is from %ds ago',held.refresh_failed.error,
+  math.floor((game.tick-scanned_at)/60)))
+assert(held.refresh_failed.error:find('chunk find broke',1,true))
+game.tick=failed_at+1799; C.tick(game.tick); eq(st5.push_jobs.player,nil,'no job within SCAN_TICKS of the failure')
+game.tick=game.tick+1; C.tick(game.tick); assert(st5.push_jobs.player,'the next job')
+-- A job finishing after a newer read (a force's first read, made in a reply) never replaces it.
+local job_start=st5.push_jobs.player.start
+run(8)
+st5.push_alerts.player=nil
+local first=C.read(astra,{})
+local newer=st5.push_alerts.player
+eq(newer.tick,game.tick); eq(first.refresh_failed,nil)
+repeat game.tick=game.tick+1; C.tick(game.tick) until not st5.push_jobs.player
+assert(job_start<newer.tick)
+eq(st5.push_alerts.player,newer,'the job\'s older read was dropped')
 force.players={}; game.forces=nil
 
 -- 6. Lost sources (Haiku, 04:52: "a chest gone alert when a feed chest disappears, since an inserter with no source

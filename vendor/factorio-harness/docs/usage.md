@@ -3965,10 +3965,10 @@ fh --bot astra call status                                                      
 - Where the time goes (operator): `/silent-command rcon.print(remote.call("agent_harness","profile_ticks",{seconds=60}))` (1..600 s; `{stop=true}` ends a run early) times every dispatch by action (`observe/sleep_check` with its scope; operator relays marked `(operator)`), the encoding of each reply (`encode <action>`, timed once more beside control.lua's own), every forwarded event by name, the harness tick and parts of the reply and tick (`part board.team`, `part threat.on_damaged`, ...; inside their dispatch or tick). The server log gets `agent-harness profile second tick=T n=N key=K time=...` per key per game second (`key=*` is all harness work in that second, parts excluded), then `profile total` per key and `profile done`. A LuaProfiler reading cannot be compared in Lua, so rank them offline: `python3 tools/profile_log.py factorio-current.log` prints the worst keys (count, total, average, worst second) and the busiest game seconds. Runtime-only; nothing runs while no profile is on. Parts timed (task-statuscost): a full status's `survey.summary`, `threat.summary`, `pipes.overlong`, `ground.alerts`, `threat.alerts`, `where.team`, `belt.note`, `orders.brief`; every reply's `board.team` and inside it `research.lines`, `threat.watch`, `platalerts.lines`, `drops.lines`, `pushalerts.lines` (its scan, with `networks.alert_groups`), then `chat.unread`, `research.shift_block`, `networks.lines`, `selfview.retro`, `selfview.review_due`, `idle.request`, `selfview.request`, `tells.operator_lines`, `orders.line`, `platalerts.note`, `visuals.worked`, `claims.worked`, `carry.carry`; the heavy reads' `supply.scan`, `supply.chain`, `networks.read`; the background jobs' `pushalerts.tick`, `survey.tick`, `threat.tick`, `networks.tick`. Inside them (eng/spikes): each step of a background job by kind (`pushalerts.band`, `pushalerts.slice`, `pushalerts.alerts`, `pushalerts.networks` (with `networks.alert_step`), `pushalerts.merge`; `networks.view.walk_band`, `.walk_slice`, `.boilers`, `.supply`, `.rows`, `.logistic`, `.orders`, `.turrets`, `.done`; `survey.band`, `survey.slice`, `survey.done`); the scheduler's `scheduler.step <action>` and `scheduler.wait_until`; `bots.look`, `bots.respawn`, `bots.note_corpse`, `bots.travel_tick`, `crafting.tick`; `drops.tick`, `drop_jobs_tick`, `ores.tick`, `spoil.tick`, `tick_action`; an inspect's `inspect.entity`, `.summary`, `.power`, `.fluids`, `.spoil`, `.details`, `.circuits`, `.logistic`, `.craftrate`, `.inputs`; a supply scan's `supply.find`, `.crafters`, `.requesters`, `.stock`, `.chests`, `.belts`, `.inserters`, `.robots`. Each second also gets `agent-harness profile heap tick=T kb=K grew_kb=G fell_kb=F`: the harness's Lua heap, read once a tick, and how much it grew and fell (a fall is a garbage collection finishing); `profile_log.py` notes a fall beside the busiest seconds and ends with a heap summary.
 - Background reads (task-statuscost; the 01:15 profile on world n had single calls of 60-150 ms in status and the team block): the surface-wide reads run in the harness tick as jobs of small steps, their state in storage so every peer runs the same, and replies read the last finished one.
   - Walks and pacing (walk.lua; operator 04:00: in the 03:58 profile a step that found one type over a whole surface burst to 138 ms in a game second). A job covers a surface's box of chunks one band a step, every type it needs in one find; a band is rows by columns of chunks sized from the band before so it finds about 250 entities, and an entity is kept by the band its position falls in. A job reads 150 found entities a step. Its steps are spaced so a pass spreads over 80% of its period, by the number of steps its last pass took (4 ticks a step before any pass; a pass past 80% goes on every 4 ticks). The box is where the force built, kept in storage and grown by every walk from what it finds, plus 4 chunks, plus 4 chunks around every player on the surface; with none yet, the generated chunks the threat chart saw; with neither, one whole-surface find (once per surface). A building more than 4 chunks from every other building and every player is found once one of them comes near.
-  - The factory survey (`status` factory, machines, warnings): per force and surface read in the last 5 minutes, redone when 30 s old: one walk of the survey's types, undergrounds and belts, then the summary. `factory_as_of` says when that survey started. `machines=true` still surveys at once.
+  - The factory survey (`status` factory, machines, warnings): per force and surface read in the last 5 minutes, redone when 30 s old: one walk of the survey's types, undergrounds and belts, then the summary. `factory_as_of` says when that survey started (`factory_age_s` its age; a failed refresh leaves both and adds `factory_refresh_failed`). `machines=true` still surveys at once.
   - The chart (`status` chart, cloud extent): redone when 60 s old as a sweep of the box of generated chunks the last chart saw, grown by 4 chunks and to every player on the surface, 2000 chunk positions a tick. `threats=true` still walks every chunk at once.
   - The nests (`status` enemies, nest news): each agent's spawner search stays its own (10 s, 60 s from replies); a base's nearest building of ours and its cloud gap are kept per surface and base chunk for everyone (5 min, 1 min), at most 2 searches a call, so a base found for the first time can read `? tiles` until a later call.
-  - The push alerts' read: redone when 30 s old, one walk of every alert type per planet, then the game's alerts, the network groups (where the boiler alert looks for fuel, bounded) and the merge; the digest and `game_alerts` read the last finished one (`scanned` says its age).
+  - The push alerts' read: redone when 30 s old, one walk of every alert type per planet, then the game's alerts, the network groups (where the boiler alert looks for fuel, bounded) and the merge; the digest and `game_alerts` read the last finished one (`scanned` says its age; `refresh_failed` when its last refresh failed).
   - The networks view: redone when 60 s old, per surface one walk of generators, machines, boilers and turrets, then the boilers to their networks, their feeders 2 boilers a step (one read per belt lane), the rows, the logistic networks, the turret line. The pole map is its own walk, redone when 60 s old; a new network can take up to about 3 minutes to show.
   - The science line (`team.science`): every 5 minutes, labs per planet and crafters walked the same way.
   - A step that fails ends its job and is noted (`push_errors`, `survey_errors`, `view_errors`, `map_errors`, `chart_errors`, `science_line_errors` in the harness state); the last result is kept and the next job starts after the usual age. A force's or surface's very first read (after a deploy) is still made at once.
@@ -9132,6 +9132,44 @@ fh watch    # deploy on every change
   too. A dry run that joins or makes a group puts the section back (group first, then its requests) and drops a group
   it made. The GUI's picker shows each group's member count; the members are the entities whose logistics GUI shows
   the group.
+- L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
+  wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
+  anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
+  {name, quality} or false}, the slots not named kept; `bar` is the usable slots (0..40) or false for none. On
+  2.0.77 the engine took an iron-plate filter on a slot holding coal; the GUI filters an occupied slot to what it
+  holds, so a filter on a slot holding another item is refused, naming it, and nothing is set. The reply adds
+  `wagon_slots {wagon, carriage, set, slot_filters ["2 low-density-structure@uncommon"], bar, line}`; `{wagon}` alone
+  reads them. No cargo moves. Checked on a wagon on the private copy (filters with quality, bar 30, cleared).
+- L6 (Astra #1205): assembler_batch reads the requester's trash unrequested. On, the plan switches it off before the
+  requester's requests are cleared and staged (`keep staged (trash unrequested off)`) and on again after the output
+  is released (`trash unrequested on again`); the dry run's `trash_unrequested` and plan line say so, and that a
+  plan stopped between leaves it off. Tests tests/d20_batch53.lua (L5, L6), tests/d17_batch19_rt.lua (the steps pass
+  the queue's checks).
+- M1 (Sol #932): belt_gaps read ghost belts as part of the line (`{line}` walked through them; `{from, to}` listed them
+  apart from `missing`, which read none). Each stretch of the line standing only as ghosts is now a break:
+  `ghost_breaks [{from, to, tiles, materials, robots, line}]` (`{line}`: in the line's text; `{from, to}`: `ghost_line`
+  too). `robots` says how many of its ghosts a roboport's construction area covers (up to 64 lookups a call), and each
+  network's count of the items and its idle construction robots. ghostbreaks.lua; checked on the private copy (a row
+  of 12 belts, 4 of them ghosts, both forms).
+- M2 (Sol #1297): `supply {item, makers: "all"}` (the census pass's makers) rated a breeder at 3 eggs a craft (2 x
+  1.5) where inspect gives 2.5 (the returned egg is ignored_by_productivity). makersall.lua now takes inspect's
+  figure (craftrate.lua) and gives `net_per_min` with the line `26 a minute (net 15.6: 10.4 a minute goes back in)`.
+  The other rate reads (rates, chain, ratechain, craftrate) already left that egg out.
+- M3 (Sol #1304): `uptime {positions (1..16), seconds? (10..3600, default 600), surface?, platform?}` watches
+  crafting machines in the background: the status each second (as the GUI's status line), and at each sample that
+  reads short of ingredients, each ingredient under one craft in its input. Crafts are counted from the game's
+  products_finished, read at the start and the end, which is what watching the machine's crafts finish gives. `uptime {}`
+  reads it so far (`watching`) or `done`: per machine crafts, crafts_per_min against full_speed_per_min, samples by
+  status, short, recipe_changed (an idle furnace's missing recipe is not a change), gone. `left_out` says what it does
+  not see: stops shorter than a second, exact ticks per status, why an ingredient is short upstream. One watch an
+  agent. Checked on the private copy (4 machines, 20 s).
+- M4 (Astra #1200): damage_log names no source by inference: its source was always the game's event.cause. For fire,
+  the cause is the turret whose stream lit the first fire, kept as the fire spreads, which is how an 86-tile-away
+  turret was named. Rows now add the event's `source` (what dealt the hit: fire-flame, a stream, a projectile) and
+  the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
+  from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
+  its cause read that way; event.source is set on 2.0.77.
+
 ## d20 batch51 (eng/d20-batch51)
 
 - H1 (viewer Aurora, shift46 09:36: "Could departure and route forecasts use the same ingredient limits as endurance,
@@ -9270,6 +9308,29 @@ fh watch    # deploy on every change
   drill's or lab's output from its status at each visit of its walk (a credit estimate marked "about", not a duty
   figure); the rest of the "working" counts in the reads are the status now. Tests: tests/engine.lua,
   tests/d20_batch54.lua.
+## d20 batch55 (eng/d20-batch55)
+
+- P1 (viewer Aurora, shift47 13:59: "Could factory snapshots retain their capture time after refresh errors and
+  reject older background results?"). Both were true in every cached read refreshed by a background job, and both are
+  fixed there (snapfail.lua):
+  - A failed refresh set the cached read's tick to the failure's, so it read as new: the factory survey (`status`
+    factory and warnings), threat's chart, game_alerts' scan, the ground watch (status ground alerts), the census
+    pass (its `as_of`, used by where_is, supply makers, gates, fuel_budget and silo reads) and networks' view and pole
+    map. Each now keeps the tick it was captured at and notes the failure beside it (when, the error); the next try
+    starts a period after the failure, as before. Replies say its age and that the last refresh failed, with the
+    error: `status` `factory_age_s`, `factory_refresh_failed` and `chart.refresh_failed`; `game_alerts`
+    `refresh_failed`; the ground alert line; census `age_s` and `refresh_failed` (also in where_is's index);
+    `networks` `refresh_failed` (the view's, else the pole map's); the operator factory_digest's `refresh_failed`.
+  - A finished background job replaced the cached read whatever was there, so a job started before a newer read
+    (status `machines=true` or `threats=true`; a force's first game_alerts, ground watch, networks view or pole map,
+    made at once in a reply) overwrote it with older data. A job's result is now dropped when the read held was
+    captured after the job started.
+  - Checked and not affected: ores.lua (each chunk read keeps its own read tick; a failed pass records `error`),
+    beltgaps.lua (its multi-step refresh keeps tile sightings newer than its find), the spawner index (threat.lua;
+    nothing else writes it), ghosttally.lua, defense, drill_sites, elsewhere and fuel_budget (made in the reply, no
+    background job).
+  Tests: tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua (a failure mid-refresh; a job
+  finishing after a newer read) and tests/d20_batch55.lua (snapfail.lua, the ground watch).
 - N3 (viewer Aurora, shift47 13:39 PDT: "Could job cards use each agent's current board_focus, with its age and a
   labelled fallback? Old plan text still shows manual top-ups or availability after assignments change"). The stream
   state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read

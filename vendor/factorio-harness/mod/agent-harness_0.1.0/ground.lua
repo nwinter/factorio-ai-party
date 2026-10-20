@@ -3,6 +3,7 @@
 -- pods spill, large piles near our buildings), marking them for deconstruction
 -- as a planner does (robots take them to storage), and picking them up over an
 -- area, walking from one to the next as a player holding the pickup key.
+local snapfail = require('snapfail')
 return function(api)
   local M = {handlers={}}
   local WATCH_EVERY = 1800      -- ticks between watch passes (shared by every agent)
@@ -136,7 +137,7 @@ return function(api)
     local job = s.ground_jobs[force.name]
     if not job then
       local w = s.ground_watch and s.ground_watch[force.name]
-      if w and tick - w.tick < WATCH_EVERY then return end
+      if w and tick - snapfail.since(w.tick, w.refresh_failed) < WATCH_EVERY then return end
       local list = {}
       for _, surface in pairs(game.surfaces) do list[#list+1] = surface.index end
       table.sort(list)
@@ -181,7 +182,9 @@ return function(api)
     if not job.surfaces[job.si] then
       table.sort(job.w.piles, function(x, y) return x.stacks > y.stacks end)
       s.ground_watch = s.ground_watch or {}
-      s.ground_watch[force.name] = job.w
+      -- (a watch made since the pass started, a force's first in a reply, is newer: the pass's is dropped)
+      local held = s.ground_watch[force.name]
+      if not snapfail.older(job.start, held and held.tick) then s.ground_watch[force.name] = job.w end
       s.ground_steps[force.name] = job.steps
       s.ground_jobs[force.name] = nil
       return
@@ -243,7 +246,8 @@ return function(api)
         if not ok then
           if s.ground_jobs then s.ground_jobs[name] = nil end
           s.ground_errors = {count=((s.ground_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
-          if s.ground_watch and s.ground_watch[name] then s.ground_watch[name].tick = tick end
+          -- (the watch keeps the tick it was made at; the next pass starts WATCH_EVERY after the failure, snapfail.lua)
+          if s.ground_watch and s.ground_watch[name] then s.ground_watch[name].refresh_failed = snapfail.failed(err, tick) end
         end
       end
     end
@@ -277,6 +281,7 @@ return function(api)
       if i > 3 then lines[#lines+1] = string.format('+%d more piles of 100+ item stacks', #w.piles - 3); break end
       lines[#lines+1] = pile_line(pile)
     end
+    lines[#lines+1] = snapfail.line('the ground watch', w.tick, w.refresh_failed)
     return #lines > 0 and lines or nil
   end
   -- Reply hints: a pad or pile once when first seen by this player, again

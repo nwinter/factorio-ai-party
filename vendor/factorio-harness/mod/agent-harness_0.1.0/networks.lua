@@ -19,6 +19,7 @@
 -- Draw comes from the network's statistics, sampled every 5 s (the 5-second
 -- average, J per tick as handlers.power reads it): the game's own windows are
 -- 5 s, 1 min and 10 min.
+local snapfail = require('snapfail')
 return function(api)
   local M = {}
   local SAMPLE, WATCH_TICKS, WINDOW = 300, 1800, 18000
@@ -116,7 +117,7 @@ return function(api)
     n.map_bg = true
     local job = n.map_job
     if not job then
-      if n.map_tick and tick - n.map_tick < VIEW_TICKS then return end
+      if n.map_tick and tick - snapfail.since(n.map_tick, n.map_failed) < VIEW_TICKS then return end
       local todo = {}
       for _, f in ipairs(forces()) do for _, s in ipairs(surfaces()) do todo[#todo+1] = {force=f.name, surface=s.index} end end
       n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, every=walk.every(n.map_steps, VIEW_TICKS)}
@@ -126,7 +127,10 @@ return function(api)
     job.steps = job.steps + 1
     local pr = job.todo[job.i]
     if not pr then
-      n.map, n.map_tick, n.map_steps, n.map_job = job.map, job.start, job.steps, nil
+      n.map_steps, n.map_job = job.steps, nil
+      -- (a map made since the walk started is newer: the walk's is dropped)
+      if snapfail.older(job.start, n.map_tick) then return end
+      n.map, n.map_tick = job.map, job.start
       for id in pairs(n.samples) do if not n.map[id] then n.samples[id] = nil end end
       return
     end
@@ -300,7 +304,7 @@ return function(api)
     if not ok then
       n.map_job = nil
       n.map_errors = {count=((n.map_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
-      n.map_tick = tick   -- the last map is kept another VIEW_TICKS
+      n.map_failed = snapfail.failed(err, tick)   -- the last map keeps its tick; the next walk starts VIEW_TICKS after this
     end
     if tick % SAMPLE ~= 0 then return end
     if not n.map_tick then map_poles(n) end
@@ -1258,12 +1262,13 @@ return function(api)
     n.view_bg = true
     n.view_jobs = n.view_jobs or {}
     for _, f in ipairs(forces()) do
-      -- A step that fails ends its job (noted in view_errors); the view is kept another VIEW_TICKS.
+      -- A step that fails ends its job (noted in view_errors and on the view, snapfail.lua); the view keeps the tick it
+      -- was made at and the next job starts VIEW_TICKS after the failure.
       local ok, err = pcall(M.view_step, n, f, tick)
       if not ok then
         n.view_jobs[f.name] = nil
         n.view_errors = {count=((n.view_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
-        if n.views[f.name] then n.views[f.name].tick = tick end
+        if n.views[f.name] then n.views[f.name].refresh_failed = snapfail.failed(err, tick) end
       end
     end
   end
@@ -1276,7 +1281,7 @@ return function(api)
   function M.view_step(n, f, tick)
     local job = n.view_jobs[f.name]
     local v = n.views[f.name]
-    if not job and (not v or tick - v.tick >= VIEW_TICKS) then
+    if not job and (not v or tick - snapfail.since(v.tick, v.refresh_failed) >= VIEW_TICKS) then
       -- (with no pole map yet the first is made here at once)
       if not n.map_tick then fresh_map(n) end
       local steps = {}
@@ -1307,7 +1312,9 @@ return function(api)
         end
       end
       orders_seen(n, f)
-      n.views[f.name] = v2
+      -- (a view made since the job started, a force's first in a reply, is newer: the job's is dropped)
+      local held = n.views[f.name]
+      if not snapfail.older(job.start, held and held.tick) then n.views[f.name] = v2 end
       n.view_steps[f.name] = job.n
       n.view_jobs[f.name] = nil
       return
@@ -1621,6 +1628,7 @@ return function(api)
     local none = named and #out == 0 and string.format('no electric network over 2 poles or with a generator, no logistic network and no turret of ours on %s as of %ds ago',
       label(named) .. (try(function() return named.platform end) and ' (' .. named.name .. ')' or ''), math.floor((game.tick - v.tick) / 60)) or nil
     return {surfaces=out, none=none, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)),
+      refresh_failed=snapfail.line('the networks view', v.tick, v.refresh_failed) or snapfail.line('the pole map', n.map_tick or v.tick, n.map_failed),
       read_now=a.fresh and 'accumulators (acc_mj, acc_pct, the line\'s part) and draw_now_kw (the last 5 s of each network\'s statistics); the rest as of the view' or 'accumulators (acc_mj, acc_pct, the line\'s part); the rest as of the view, rebuilt every 60 s (fresh: true reads the draw now too)',
       note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now '
         .. '(on a platform, solar at the solar power where it is: no night in space); solar power: a planet\'s solar-power against 100%, '

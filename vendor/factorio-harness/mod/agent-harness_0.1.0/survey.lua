@@ -4,6 +4,7 @@
 -- the production GUI, the machines' status icons and the inventory show.
 -- The entity survey is cached because status is polled several times a second.
 local flameroil=require('flameroil')
+local snapfail=require('snapfail')
 return function(api)
   local M={}
   local CACHE_TICKS,MINUTE,HAND_MINUTES,HOARD_TICKS,ETA_SAMPLES=600,3600,10,36000,12
@@ -462,12 +463,13 @@ return function(api)
     for key in pairs(cache) do keys[#keys+1]=key end
     table.sort(keys)
     for _,key in ipairs(keys) do
-      -- A step that fails ends its job (noted in survey_errors); the survey is kept another CACHE_TICKS.
+      -- A step that fails ends its job (noted in survey_errors and on the survey, snapfail.lua); the survey keeps the tick
+      -- it was taken at and the next job starts BG_TICKS after the failure.
       local ok,err=pcall(M.step,st,cache,key,tick)
       if not ok then
         st.survey_jobs[key]=nil
         st.survey_errors={count=((st.survey_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
-        if cache[key] then cache[key].tick=tick end
+        if cache[key] then cache[key].refresh_failed=snapfail.failed(err,tick) end
       end
     end
   end
@@ -478,7 +480,7 @@ return function(api)
       local read=st.survey_read[key]
       if not job and (not read or tick-read>=KEEP_TICKS) then
         if tick-entry.tick>=KEEP_TICKS then cache[key]=nil; st.survey_read[key]=nil end
-      elseif not job and tick-entry.tick>=BG_TICKS then
+      elseif not job and tick-snapfail.since(entry.tick,entry.refresh_failed)>=BG_TICKS then
         local force_name,index=key:match('^(.*)/(%d+)$')
         st.survey_steps=st.survey_steps or {}
         st.survey_jobs[key]={start=tick,force=force_name,surface=tonumber(index),a=acc_new(),b={unpaired={},stuck={},ends={}},
@@ -495,10 +497,13 @@ return function(api)
     local surface=force and game.get_surface(job.surface)
     if not (force and surface) then st.survey_jobs[key]=nil
     elseif job.done then
-      local entry2=acc_done(job.a,job.b,force,surface)
-      entry2.tick=job.start
-      entry2.digest.tick=job.start
-      cache[key]=entry2
+      -- (a survey taken since the job started, a forced read, is newer: the job's is dropped)
+      if not snapfail.older(job.start,cache[key] and cache[key].tick) then
+        local entry2=acc_done(job.a,job.b,force,surface)
+        entry2.tick=job.start
+        entry2.digest.tick=job.start
+        cache[key]=entry2
+      end
       st.survey_steps[key]=job.steps
       st.survey_jobs[key]=nil
     elseif not job.list then
@@ -540,7 +545,8 @@ return function(api)
     for _,w in ipairs(entry.warnings) do warnings[#warnings+1]=w end
     return {inv=inv,factory=entry.factory,machines=next(entry.machines) and entry.machines or nil,
       machine_positions=detail and entry.positions or nil,warnings=#warnings>0 and warnings or nil,
-      as_of=entry.tick<game.tick and entry.tick or nil}
+      as_of=entry.tick<game.tick and entry.tick or nil,age_s=entry.tick<game.tick and math.floor((game.tick-entry.tick)/60) or nil,
+      refresh_failed=snapfail.line('the factory survey',entry.tick,entry.refresh_failed)}
   end
   return M
 end
