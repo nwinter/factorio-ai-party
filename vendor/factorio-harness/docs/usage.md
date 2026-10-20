@@ -9028,3 +9028,18 @@ fh watch    # deploy on every change
   station until the rockets launched to it arrive, reading no_schedule meanwhile ...`; the second read adds `(it waited
   for the rockets launched to it)`. Without a rocket on the way the recheck is 300 ticks as before. It applies to
   stops, stop + wait, next and current alone (one recheck). Test tests/d19_batch48.lua.
+
+## d19 batch49 (eng/d19-batch49)
+
+- 1 (viewer Foobator 19:39, Sol's two alarm speakers on Aquilo at (29.5,31.5) and (31.5,19.5)): configure's
+  `speaker_alert` takes `speaker_sound: {volume? (0..1), mode? (local|surface|global), polyphony? (true|false),
+  instrument?, note?}`, the speaker GUI's sound settings; the rest kept. `instrument` and `note` are names
+  (`"alarms"`, `"siren"`) or their numbers from 0 as the game keeps them (instrument 0 note 0 is alarms/alarm-1); a
+  new instrument without `note` takes its first note; an unknown name is refused with the speaker's list. Playback
+  mode local is heard near the speaker, surface on its surface, global everywhere. Every value is checked before
+  anything is written. The view (`speaker_alert` in the reply, and a circuit read of a speaker) adds `speaker_sound
+  {volume, mode, polyphony, instrument, note, instrument_id, note_id, line}` and its line ends `; sound:
+  alarms/alarm-1 at volume 100%, local` (`, polyphony on` when on; `sound: off (volume 0)`; a volume or note set by a
+  signal says so). `speaker_sound` goes inside `speaker_alert` (`fh call configure '{"position":[29.5,31.5],
+  "surface":"aquilo","speaker_alert":{"speaker_sound":{"volume":0.5,"note":"siren"}}}'`) because configure's own keys
+  are in runtime.lua, which was not edited. Test tests/d19_batch49.lua; the writes checked on the private copy (2.0.77).

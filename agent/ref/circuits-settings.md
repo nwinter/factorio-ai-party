@@ -96,7 +96,10 @@
   - A programmable speaker: `speaker_alert {show_alert?, show_on_map?, message?, icon?, condition?}` sets its GUI's
     alert part (the rest kept; `icon: false` clears it) and its circuit condition (`"rocket-part < 1"`); the reply
     reads them back with whether the condition holds now. It alerts while the condition holds: `game_alerts {kind:
-    "speaker"}`, the team block and `fh wait --until "alert speaker"` tell it.
+    "speaker"}`, the team block and `fh wait --until "alert speaker"` tell it. `speaker_alert {speaker_sound: {volume?
+    (0..1), mode? (local|surface|global), polyphony?, instrument?, note?}}` sets its GUI's sound settings (instrument and
+    note by name, `"alarms"`, `"siren"`, or number from 0); the reply's line ends `sound: alarms/alarm-1 at volume 100%,
+    local` or `sound: off (volume 0)`.
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
     there by remote view where our force sees the chunk. Switching automatic requests on moves cargo loaded by hand
     into the silo's trash slots, which never launch: `auto_requests: true` is refused while the rocket holds cargo no
