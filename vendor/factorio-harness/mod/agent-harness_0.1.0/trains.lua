@@ -18,6 +18,7 @@ return function(api)
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
       current='train: 1-based schedule entry to head for (default 1)',
       automatic='train: true runs the schedule, false is manual mode',
+      wagon_slots='train: a cargo wagon\'s slot filters and red-X bar, as its GUI: {wagon? (its carriage number from the front, 1..; default the wagon at position), filters? {"N": item name, {name, quality} or false, ...} (the slots named; the others kept), bar? (usable slots 0..40, or false for none)}; a filter on a slot holding another item is refused, naming it; {} or {wagon} reads them. The reply\'s wagon_slots: wagon, carriage, set, slot_filters ["N item"], bar, line (as the wagons lines)',
       path_to='train: a stop name: whether the rails lead there from the train as it drives, and where not (rail_break); a train in no_path gets it for the stop it heads for unasked',
       returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: id, front {name, position, surface}, schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive); rail_break {to, line, train_side, stop_side, gap_tiles, ghosts, signals} (no_path, or path_to): the rails followed from the train (its front, and its back with a locomotive facing back) through every connection: whole (and when the engine still finds no path, the signals on that way), reaching the stop only facing the other way, or broken: the end of the rails from the train and of those into the stop nearest each other, the tiles between and the rail ghosts there'},
   }
@@ -228,6 +229,69 @@ return function(api)
       #fl > 0 and '; slot filters: ' .. table.concat(fl, ', ') or '; no slot filters', free == 0 and used > 0 and '; full: nothing else loads into it' or '')
     return {used=used, total=total, free=free, limit=limit, by_item=by, filters=next(filters) and filters or nil, line=line}
   end
+  -- (d20 batch53 L5, Sol #1331 for viewer Foobator) a cargo wagon's slot filters and red-X bar set as its GUI sets them
+  -- (in reach or by remote view, as the train handler finds it). On 2.0.77 the engine set a filter on a slot holding
+  -- another item (coal under an iron-plate filter); the GUI filters an occupied slot to what it holds, so that is
+  -- refused here. The bar is the first locked slot (41 on a 40-slot wagon: none).
+  function M.set_wagon_slots(train, e, ws)
+    assert(type(ws) == 'table', 'wagon_slots is {wagon?, filters?, bar?}')
+    for k in pairs(ws) do assert(k == 'wagon' or k == 'filters' or k == 'bar', 'wagon_slots takes wagon, filters and bar (not ' .. tostring(k) .. ')') end
+    local w, n = e, nil
+    for i, c in ipairs(train.carriages) do if c == e then n = i end end
+    if ws.wagon ~= nil then
+      n = api.integer(ws.wagon, nil, 1, #train.carriages, 'wagon (a carriage number from the front, 1..' .. #train.carriages .. ')')
+      w = train.carriages[n]
+    end
+    assert(w.type == 'cargo-wagon', string.format('carriage %s is a %s: slot filters and the bar are a cargo wagon\'s (its carriages: %s)', tostring(n), w.name,
+      (function() local t = {} for i, c in ipairs(train.carriages) do t[#t+1] = i .. ' ' .. c.name end return table.concat(t, ', ') end)()))
+    local inv = w.get_inventory(defines.inventory.cargo_wagon)
+    local total = #inv
+    local want = {}
+    if ws.filters ~= nil then
+      assert(type(ws.filters) == 'table', 'filters is {"N": item, ...} (slot numbers 1..' .. total .. ')')
+      for k, v in pairs(ws.filters) do
+        local i = tonumber(k)
+        assert(i and i == math.floor(i) and i >= 1 and i <= total, 'filters: slot ' .. tostring(k) .. ' is not one of 1..' .. total)
+        local f
+        if v ~= false and v ~= 'none' then
+          local name, q = v, 'normal'
+          if type(v) == 'table' then name, q = v.name, v.quality or 'normal' end
+          assert(type(name) == 'string' and prototypes.item[name], 'filters: slot ' .. i .. ': unknown item ' .. tostring(name))
+          assert(type(q) == 'string' and prototypes.quality[q], 'filters: slot ' .. i .. ': unknown quality ' .. tostring(q))
+          local st = inv[i]
+          if st.valid_for_read and (st.name ~= name or (st.quality and st.quality.name or 'normal') ~= q) then
+            error(string.format('filters: slot %d holds %s*%d: a slot filter goes on an empty slot or one holding that item (unload it first)', i, st.name, st.count), 0)
+          end
+          f = {name=name, quality=q}
+        end
+        want[#want+1] = {i, f}
+      end
+    end
+    local bar
+    if ws.bar ~= nil then
+      bar = ws.bar == false and total + 1 or api.integer(ws.bar, nil, 0, total, 'bar (usable slots 0..' .. total .. ', or false)') + 1
+    end
+    local set = 0
+    for _, x in ipairs(want) do
+      local ok = inv.set_filter(x[1], x[2])
+      assert(ok ~= false, 'the game refused the filter on slot ' .. x[1])
+      set = set + 1
+    end
+    if bar then inv.set_bar(bar) end
+    local filters = {}
+    for i = 1, total do
+      local f = try(function() return inv.get_filter(i) end)
+      if f then
+        local q = type(f) == 'table' and f.quality
+        q = type(q) == 'table' and q.name or q
+        filters[#filters+1] = i .. ' ' .. (type(f) == 'string' and f or f.name) .. (q and q ~= 'normal' and '@' .. q or '')
+      end
+    end
+    local read = M.wagon_slots(w)
+    local b = inv.get_bar()
+    return {wagon=w.unit_number, carriage=n, position=w.position, set=set > 0 and set or nil, slot_filters=#filters > 0 and filters or nil,
+      bar=b <= total and b - 1 or 'none', line=read and read.line}
+  end
   local function condition(c, what)
     if c == nil then return nil end
     assert(type(c) == 'table' and type(c.signal) == 'string', what .. '.condition is {signal, comparator, value}')
@@ -340,6 +404,7 @@ return function(api)
     end
     -- A read (no setting given) needs the target in sight, not in reach.
     local read = a.station == nil and a.limit == nil and a.schedule == nil and a.current == nil and a.automatic == nil
+      and (a.wagon_slots == nil or (type(a.wagon_slots) == 'table' and a.wagon_slots.filters == nil and a.wagon_slots.bar == nil))
     local function lookup(names)
       local ok, e = pcall(api.entity, p, {position=a.position, name=names}, read)
       if ok then return e end
@@ -367,7 +432,7 @@ return function(api)
     end
     api.friendly(p, e)
     if e.type == 'train-stop' then
-      assert(a.schedule == nil and a.automatic == nil and a.current == nil, 'schedule, current and automatic are for a train: give a locomotive or wagon position')
+      assert(a.schedule == nil and a.automatic == nil and a.current == nil and a.wagon_slots == nil, 'schedule, current, automatic and wagon_slots are for a train: give a locomotive or wagon position')
       if a.station ~= nil then
         assert(type(a.station) == 'string' and #a.station >= 1 and #a.station <= 100, 'station is 1..100 characters')
         e.backer_name = a.station
@@ -414,7 +479,9 @@ return function(api)
       assert(type(a.automatic) == 'boolean', 'automatic must be boolean')
       train.manual_mode = not a.automatic
     end
+    local slots = a.wagon_slots ~= nil and M.set_wagon_slots(train, e, a.wagon_slots) or nil
     local view = M.train_view(train)
+    view.wagon_slots = slots
     -- Where its way is broken (railbreak.lua; d17 batch12 B1, Opus): no_path, or asked for a stop name (path_to).
     assert(a.path_to == nil or (type(a.path_to) == 'string' and #a.path_to > 0), 'path_to is a train stop name')
     local name = a.path_to

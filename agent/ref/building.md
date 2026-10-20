@@ -183,7 +183,11 @@
   heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
   read gives its `id` and `front` (name, position, surface). `wagons` (a train read; inspect of a cargo wagon:
   `wagon_slots`): each cargo wagon's slots used per item with the count, free slots, slot filters and the red-X limit,
-  and `full: nothing else loads into it` when no slot is free.
+  and `full: nothing else loads into it` when no slot is free. `wagon_slots: {wagon?, filters?, bar?}` sets a cargo
+  wagon's slot filters and red-X bar as its GUI (in reach or by remote view): `wagon` its carriage number from the
+  front (default the wagon at position), `filters: {"1": "low-density-structure", "2": {"name": ..., "quality": ...},
+  "3": false}` (other slots kept), `bar` usable slots 0..40 or false; a filter on a slot holding another item is
+  refused; the reply's `wagon_slots` reads back `slot_filters` and `bar`.
   Example: `./fh call train --args '{"position":{"x":40,"y":-30},"path_to":"iron-pickup"}'`
 - `clear_cliffs {positions}`: throws cliff explosives you hold at those cliffs, walking into their 10-tile range
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the
