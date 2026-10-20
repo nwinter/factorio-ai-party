@@ -372,4 +372,45 @@ g2.position={x=act.rail_exit.position.x,y=act.rail_exit.position.y}; advance(1)
 eq(last('grok').outcome,'collected')
 has(last('grok').off_rails,'the tour ended on a rail at (0.1,3.0): walked off the rails to')
 eq(last('grok').on_rails,nil)
+
+-- 5. (d20 batch54 N6, viewers Foobator 14:43 and 14:49: Grok held a load_silo silo wait on a west belt for 400+ s, the
+-- belt carrying him to the edge of reach and the tour walking him back, a walk in place) a tour's hold at an entity
+-- that begins on a belt steps to the nearest free tile in reach of it without a belt or rail, and says so.
+do
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=65.5,y=14.5},surface=surface,
+    bounding_box={left_top={x=61,y=10},right_bottom={x=70,y=19}}}
+  ents[#ents+1]=silo
+  local belts={}
+  for x=55,64 do
+    local b={valid=true,name='transport-belt',type='transport-belt',position={x=x+0.5,y=0.5},surface=surface,direction=12}
+    ents[#ents+1]=b; belts[#belts+1]=b
+  end
+  local g=body('grok'); local pg=runtime.lookup(index('grok'))
+  g.position={x=60.27,y=0.36}
+  local hold={}
+  eq(runtime.hold_off_belt(pg,hold,silo),true,'on the belt: it steps')
+  local spot=hold.hold_belt.spot
+  eq(spot.y,1.5,'the tile south of the belt row'); assert(runtime.box_distance(spot,silo)<=9.5,'in reach of the silo')
+  eq(g.walking_state.walking,true)
+  -- arrived there: the hold stands, and its line says so
+  g.position={x=spot.x,y=spot.y}
+  eq(runtime.hold_off_belt(pg,hold,silo),false)
+  eq(hold.hold_belt.line,string.format('the hold began on a transport-belt at (60.3,0.4); stepped to (%g,%g), the nearest free tile without a belt or rail in reach of rocket-silo',spot.x,spot.y))
+  eq(runtime.hold_off_belt(pg,hold,silo),false,'done: not again')
+  -- not on a belt: nothing to do
+  local plain={}
+  eq(runtime.hold_off_belt(pg,plain,silo),false); eq(plain.hold_belt,nil)
+  -- the hold line of load_silo's silo stop carries it
+  local line=runtime.rocketload.hold_line({silo_hold={position=silo.position,since=game.tick,give_up=99},hold_belt=hold.hold_belt,why='waiting for the rocket to be ready'})
+  has(line,'; the hold began on a transport-belt at (60.3,0.4); stepped to')
+  -- no free tile in reach: said, and it holds where it is
+  for _,b in ipairs(belts) do b.valid=false end
+  for x=50,75 do for y=-6,9 do ents[#ents+1]={valid=true,name='stone-wall',type='wall',position={x=x+0.5,y=y+0.5},surface=surface} end end
+  local b2={valid=true,name='transport-belt',type='transport-belt',position={x=60.5,y=0.5},surface=surface,direction=12}
+  ents[#ents+1]=b2
+  g.position={x=60.27,y=0.36}
+  local boxed={}
+  eq(runtime.hold_off_belt(pg,boxed,silo),false)
+  has(boxed.hold_belt.line,'held on a transport-belt at (60.3,0.4): no free tile without a belt or rail within 4 tiles in reach of rocket-silo')
+end
 print('round1520d: ok')
