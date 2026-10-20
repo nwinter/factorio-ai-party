@@ -9016,3 +9016,15 @@ fh watch    # deploy on every change
   departure by the game's own schedule (its waits met) is not recorded this way; a wait begun while the platform still
   waits there is met when it leaves, as before. `platform_arrived` reads the state (stopped there), so it is met at
   once when the platform arrived before the wait began: no such gap. Test tests/d19_batch48.lua.
+- cp2 (Sol 18:01: Kestrel IV at Nauvis, `platform_schedule {stops: [6 stops], current: 2}` read no_schedule and the
+  queue step failed after 305 ticks; a 2-stop [nauvis, fulgora] current 2 too): the game keeps a platform at its
+  station until the rockets launched to it arrive, and it reads no_schedule meanwhile. On shift42 Kestrel IV left
+  Nauvis 2129 and 2116 ticks after a rocket was launched to it (33991951 -> 33994080, 34340264 -> 34342380; the 2-stop
+  call's own recheck read on_the_path 284 ticks after the call) and left Aquilo at once with none on the way. The
+  harness's records and current were as asked (the reply's schedule read `nauvis | >fulgora`). Now a no_schedule read
+  while rockets launched to it are on the way (freight.lua's incoming, with their arrival estimate) is read again until
+  about 3 s after the last one's expected arrival, at most 3600 ticks from the call, and the lines say so: `1 rocket
+  launched to it is still on the way (a rocket from nauvis launched 10s ago ...); the game keeps a platform at its
+  station until the rockets launched to it arrive, reading no_schedule meanwhile ...`; the second read adds `(it waited
+  for the rockets launched to it)`. Without a rocket on the way the recheck is 300 ticks as before. It applies to
+  stops, stop + wait, next and current alone (one recheck). Test tests/d19_batch48.lua.

@@ -85,6 +85,43 @@ do
   eq((C.check(who,{['until']='platform_left',platform='Swiftlet'},nil,rec)),false)
   pl.state=3; pl.space_location=nil
   eq((C.check(who,{['until']='platform_left',platform='Swiftlet'},nil,rec)),true)
+
+  -- cp2 (Sol 18:01): no_schedule while rockets launched to it are on the way: the recheck waits for them (up to 3600)
+  local coming={rockets=1,rows={{tick=8000,eta_ticks=1500}},lines={'a rocket from nauvis launched 10s ago (tick 8000): bulk-inserter*1 (rising over nauvis)'},cargo='bulk-inserter*1'}
+  local incoming=coming
+  local space3=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,editlog=E,
+    integer=function(v,d,lo,hi) v=v==nil and d or v; return v end,
+    keep=function() return {set_construction=function(_,on) return on end,construction=function() return nil end} end,
+    circuit_condition=function(c) return c end,
+    freight={where=function() return {stopped=true,at='nauvis'} end,pads=function() return {},{} end,leg=function() return nil end,incoming=function() return incoming end}}
+  game.tick=8600
+  sol.force.name='player'; game.forces={player=sol.force}
+  pl.state=4; pl.space_location={name='nauvis'}; pl.paused=false
+  sch.go_to_station=function(i) pl.schedule.current=i; pl.state=1 end  -- the game reads no_schedule while it holds
+  local r2=space3.platform_schedule(sol,{platform='Swiftlet',stops={{station='nauvis'},{station='fulgora'}},current=2})
+  eq(r2.state,'no_schedule')
+  local rc=r2.recheck
+  eq(rc.ends_tick,8600+1500+180,'waits to the rocket\'s arrival and 3 s')
+  has(rc.line,'1 rocket launched to it is still on the way (a rocket from nauvis launched 10s ago')
+  has(rc.line,'the game keeps a platform at its station until the rockets launched to it arrive')
+  game.tick=8600+300
+  eq(space3.recheck_read(rc),nil,'past 300 ticks it still waits')
+  -- the rocket arrived, the platform left
+  incoming=nil; pl.state=3; pl.space_location=nil
+  game.tick=10100
+  local ok=space3.recheck_read(rc)
+  eq(ok.ok,true); has(ok.line,'and on_the_path 1500 ticks later'); has(ok.line,'(it waited for the rockets launched to it)')
+  -- still no_schedule past the longest hold: failed, saying so
+  incoming=coming; pl.state=1
+  rc=space3.platform_schedule(sol,{platform='Swiftlet',stops={{station='nauvis'},{station='fulgora'}},current=2}).recheck
+  game.tick=rc.tick+3600
+  local bad=space3.recheck_read(rc)
+  eq(bad.ok,false); has(bad.line,'(waited the longest it waits, 3600 ticks)')
+  -- no rocket on the way: the 300 ticks as before
+  incoming=nil; pl.state=4; pl.space_location={name='nauvis'}
+  game.tick=20000
+  rc=space3.platform_schedule(sol,{platform='Swiftlet',stops={{station='nauvis'},{station='fulgora'}},current=2}).recheck
+  eq(rc.ends_tick,20300); eq(rc.rockets,nil)
   game,defines,prototypes=nil,nil,nil
 end
-print('d19_batch48 platform_schedule current alone, and platform_left counting the departure the step before it caused: ok')
+print('d19_batch48 platform_schedule current alone, platform_left counting the departure the step before it caused, the recheck waiting for rockets on the way: ok')
