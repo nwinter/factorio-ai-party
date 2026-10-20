@@ -347,6 +347,8 @@ return function(api)
     losses = {surface='optional surface name (default yours)', area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]], up to 512 a side',
       position='optional centre with radius (1..256, default 64), instead of area', since='optional minutes back (1..100800)',
       name='optional entity name', limit='1..64 rows a page (default 32)', page='1..',
+      incident='optional loss incident id (status alerts.incidents): that incident\'s row instead of the rows, with recovery to set its recovery check',
+      recovery='with incident: {checked (what you checked, up to 200 characters), result? (up to 200), check? (a check number of checks: its state shown)}, yours and dated now; false clears it. The incident\'s alert lines then say "handled by NAME, checked N ago: ..."; a loss after it, joining the incident or within 2 tiles of its box, reopens it (the lines say what and when)',
       returns='count, line, by_name [{name, lost, ghosts, robots (ghosts robots can build), outside}], items [{item, need, robots_build, to_carry, '
         .. 'you_hold, in_covering_networks}], losses [{name, position, quality, lost_s_ago, cause, ghost, robots (a ghost: the covering network, '
         .. 'its idle robots and the item, or that no construction area covers it), now (no ghost: rebuilt or gone in sight; out of sight unknown)}], '
