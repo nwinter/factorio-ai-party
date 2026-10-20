@@ -308,15 +308,29 @@ return function(api)
       step and '; ' .. step or '', f.blocker and '; blocker: ' .. f.blocker or '', f.verify and '; next verification: ' .. f.verify or '',
       (f.unchanged or 0) >= M.STALL and string.format('; the focused step shows no completion across %d checks', f.unchanged) or '')
   end
+  -- (d20 batch54 N3, viewer Aurora: job cards from each agent's focus, with its age) the focus as fields, for the
+  -- stream's cards: {agent, id, title, step, blocker, verify, tick, stalled}.
+  function M.focus_row(name)
+    local f = focus_store()[name]
+    if not f then return nil end
+    local i = api.items()[f.id]
+    local s = i and step_of(i, f.step)
+    return {agent=name, id=f.id, title=i and i.title or nil, gone=i == nil or nil, tick=f.tick,
+      step=s and string.format('step %d %s%s', s.n, tostring(s.text), s.done_by and ' (done)' or '') or (f.step and 'step ' .. tostring(f.step) or nil),
+      blocker=f.blocker, verify=f.verify, stalled=(f.unchanged or 0) >= M.STALL or nil}
+  end
   function M.focus(p, a)
     local me = api.who(p)
     if a.id == nil then
       -- a read: one agent's, or every agent's
-      local lines = {}
+      local lines, rows = {}, {}
       for _, ag in ipairs(api.agents()) do
-        if a.agent == nil or ag.name == a.agent then local l = M.focus_line(ag.name); if l then lines[#lines+1] = l end end
+        if a.agent == nil or ag.name == a.agent then
+          local l = M.focus_line(ag.name)
+          if l then lines[#lines+1] = l; rows[#rows+1] = M.focus_row(ag.name) end
+        end
       end
-      return {focus=#lines > 0 and lines or {'no focus set'}}
+      return {focus=#lines > 0 and lines or {'no focus set'}, rows=rows, tick=game.tick}
     end
     assert(type(a.id) == 'number' and api.items()[a.id], 'id is a board item number')
     local i = api.items()[a.id]
@@ -330,7 +344,7 @@ return function(api)
   M.schema = {
     board_focus = {id='a board item number (task, request or project): your current one; without id: a read of the focus lines (agent: only theirs)',
       step='a project step number, or text', blocker='optional text: what blocks it', verify='optional text: your next verification',
-      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a focused project step not done across 2 checks reads so here and in board_progress'},
+      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress'},
     board_progress = {owner='optional agent name: only their items (and what changed since each one\'s last check, read now)',id='optional item number: only that item, read now as with owner',
       returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written. rows'},
     board_critical = {returns='blocked: each blocked item (status blocked, or an open item in its blocked_by), those the team plan names (#id) first, then by how many open items wait on it through blocked_by and parent chains, with what it waits on (status, owner, last change); agents_idle_or_waiting: agents standing a minute or more or in a wait, with what they own'},

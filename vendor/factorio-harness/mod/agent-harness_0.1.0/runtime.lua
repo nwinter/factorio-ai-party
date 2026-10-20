@@ -18646,7 +18646,7 @@ function M.tick_body(event)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
-  if event.tick%60==7 and state().uptime then pcall(M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua)
+  if state().uptime then pcall(M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops

@@ -103,3 +103,63 @@ do
   defines=nil
 end
 print('d20_batch54 N2 pump duty at moving phases: ok')
+
+-- N3 (viewer Aurora, shift47 13:39: job cards from each agent's board_focus, with its age): a read of board_focus adds
+-- rows with the fields, the tick it was set among them, for the stream's cards.
+do
+  game={tick=600,get_surface=function() return nil end}
+  local st={}
+  local items={[7]={id=7,kind='project',title='Aquilo heat',status='doing',owner='sol',notes={},created_tick=0,updated_tick=0,
+    steps={{n=1,text='foundation',done_by='sol',done_tick=0},{n=2,text='heat pipes to the chest row'}}}}
+  local P=dofile('mod/agent-harness_0.1.0/progress.lua'){state=function() return st end,items=function() return items end,
+    owner_surface=function() return 'aquilo' end,total=function() return 0 end,since_request=function() return 60,3 end,
+    waiting=function() return nil end,who=function(p) return p.name end,agents=function() return {{name='sol',index=3},{name='astra',index=1}} end,QUIET=72000,PROJECT_QUIET=108000}
+  local r=P.focus({name='astra'},{})
+  eq(r.focus[1],'no focus set'); eq(#r.rows,0); eq(r.tick,600)
+  P.focus({name='sol'},{id=7,step=2,blocker='no heat pipes in the hub'})
+  game.tick=600+5*3600
+  r=P.focus({name='astra'},{})
+  eq(#r.rows,1)
+  local row=r.rows[1]
+  eq(row.agent,'sol'); eq(row.id,7); eq(row.title,'Aquilo heat'); eq(row.step,'step 2 heat pipes to the chest row'); eq(row.tick,600)
+  eq(row.blocker,'no heat pipes in the hub'); eq(row.verify,nil); eq(row.stalled,nil); eq(row.gone,nil)
+  has(r.focus[1],'sol focus (set 5m00s ago): #7 Aquilo heat')
+  items[7]=nil
+  row=P.focus({name='astra'},{agent='sol'}).rows[1]
+  eq(row.gone,true); eq(row.title,nil); eq(row.step,'step 2')
+  game=nil
+end
+print('d20_batch54 N3 board_focus rows: ok')
+
+-- N2 also in uptime (uptime.lua, d20 batch53 M3, merged into main after N2's checkpoint): its status samples were at
+-- tick 7 of each second (runtime.lua called it at tick % 60 == 7); now sample k at start + 60 k + (7 k mod 60). A machine
+-- working 20 ticks of every 60, from the old phase (ticks 0-19, sampled at 7: 100%) and out of it (ticks 30-49: 0%):
+-- 33% either way over 60 s.
+do
+  defines={inventory={assembling_machine_input=2,furnace_source=2}}
+  local function run(from)
+    game={tick=0}
+    local st={}
+    local recipe={name='iron-gear-wheel',ingredients={{type='item',name='iron-plate',amount=2}}}
+    local m=setmetatable({valid=true,name='assembling-machine-2',type='assembling-machine',position={x=0.5,y=0.5},products_finished=0,
+      get_recipe=function() return recipe end,get_inventory=function() return {get_item_count=function() return 10 end} end},
+      {__index=function(_,k) if k=='status' then local ph=game.tick%60; return (ph>=from and ph<from+20) and 'working' or 'waiting_for_space_in_destination' end end})
+    local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st end,remote_entity=function() return m end,
+      status_name=function(e) return e.status end}
+    U.handler({index=1},{positions={{x=0.5,y=0.5}},seconds=60})
+    for t=1,60*60 do game.tick=t; U.tick(t) end
+    return U.handler({index=1},{})
+  end
+  for _,from in ipairs({0,30}) do
+    local out=run(from)
+    eq(out.done,true); eq(out.phase_step_ticks,7)
+    -- 61 samples: the start's and 60 more, the last at the window's end (tick 3600, phase 0)
+    eq(out.samples,61)
+    local w=out.machines[1].samples.working
+    assert(w==20 or w==21,'from '..from..': '..tostring(w))
+    has(out.machines[1].line,'working 3')
+  end
+  has(run(0).left_out,'at a phase 7 ticks later each second')
+  game,defines=nil,nil
+end
+print('d20_batch54 N2 uptime samples at moving phases: ok')

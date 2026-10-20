@@ -251,11 +251,12 @@ do
     status_name=function(e) return e.status end,craftrate=function() return {crafts_per_min=12} end}
   local r=U.handler({index=1},{positions={{x=10.5,y=20.5}},seconds=10})
   eq(r.watching,true); eq(r.baseline[1],'assembling-machine-2 (10.5,20.5) chemical-science-pack: 100 finished so far')
-  for t=1,10 do
-    game.tick=1000+t*60
-    m.status=t<=3 and 'item_ingredient_shortage' or 'working'
-    m.products_finished=100+math.max(0,t-3)
-    U.tick(game.tick)
+  -- (d20 batch54 N2) the samples at a moving phase: 1067, 1134, 1201 short; from 1268 working; the last at 1600
+  for t=1001,1600 do
+    game.tick=t
+    m.status=t<=1201 and 'item_ingredient_shortage' or 'working'
+    m.products_finished=100+math.min(7,math.max(0,math.ceil((t-1201)/60)))
+    U.tick(t)
   end
   local out=U.handler({index=1},{})
   eq(out.done,true); eq(out.samples,11)
@@ -263,7 +264,7 @@ do
   eq(row.crafts,7); eq(row.samples.working,8); eq(row.samples.item_ingredient_shortage,3)
   eq(row.short[1],'advanced-circuit short in 3 samples (least 1 of 3 a craft)')
   has(row.line,'7 crafts in 10s (42/min, 350% of its 12/min at full speed); working 73%, item ingredient shortage 27%')
-  has(out.left_out,'a stop shorter than that may not be seen')
+  has(out.left_out,'a stop shorter than a second may not be seen')
   fails(function() U.handler({index=1},{positions={{x=1,y=1}},seconds=5}) end,'seconds: 10..3600')
   defines=nil
 end

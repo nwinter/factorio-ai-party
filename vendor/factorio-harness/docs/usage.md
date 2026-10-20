@@ -9270,6 +9270,17 @@ fh watch    # deploy on every change
   drill's or lab's output from its status at each visit of its walk (a credit estimate marked "about", not a duty
   figure); the rest of the "working" counts in the reads are the status now. Tests: tests/engine.lua,
   tests/d20_batch54.lua.
+- N3 (viewer Aurora, shift47 13:39 PDT: "Could job cards use each agent's current board_focus, with its age and a
+  labelled fallback? Old plan text still shows manual top-ups or availability after assignments change"). The stream
+  state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read
+  (no id) now adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled, gone}] and the tick. The
+  stream service reads `board_focus {}` with its board reads (live.py read_focus; a runtime without rows or the action
+  is asked again after 10 minutes, so a deploy needs no restart of the service) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
+  job_age_s and job_label: the focus `focus, set 5 min ago: #1355 Steel line coal; step 2 ...; blocker: ...`; no focus,
+  the team-plan line `plan line, set 2 h ago; no focus set: ...`; then notes.md's Now line `notes.md Now line, saved
+  12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the
+  plan line, the file's age for notes. The site's agent cards and portrait tip and the stream overlay's cards show the
+  label before the job. Tests: tools/stream/test_jobcard.py, site/test_jobcard.py, tests/d20_batch54.lua.
 - L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
   wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
   anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
@@ -9307,3 +9318,9 @@ fh watch    # deploy on every change
   the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
   from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
   its cause read that way; event.source is set on 2.0.77.
+- N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
+  7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
+  read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;
+  uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
+  phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
+  tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
