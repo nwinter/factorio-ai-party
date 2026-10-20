@@ -2025,7 +2025,9 @@ class OneCam(Director):
             text = f"{name} · leaving {route['from']} for {route['to']}"
         elif route:
             text = f"{name} · travelling to {route['to']}" + (f" ({route['pct']}%)" if route.get("pct") else "")
-        elif self.travelling(row) or not row.get("where"):
+        # (d20 batch50 F1, shift46 08:50:28 "Grok · Petrel · in orbit of in transit") between stops with no route read,
+        # `where` is "in transit" (model.platform_where) while the state may still read as at a stop
+        elif self.travelling(row) or row.get("where") in (None, "", "in transit"):
             text = f"{name} · in transit"
         else:
             text = f"{name} · in orbit of {row['where']}" + (" · paused" if row.get("paused") else "")

@@ -9,6 +9,7 @@ import math, os, re, time
 
 import basemap_log
 import turretsweep
+import turretstate
 import efficiency
 import hauling
 import chronicle_log
@@ -153,6 +154,10 @@ class LiveSource:
         # (d19 batch42 B2) the turrets past the basemap's 600, read in its defence cells, a command an observe (1.4 ms
         # for 40 areas on world n, 2026-10-19 13:30; a pass of 6 read 1459 turrets)
         self.turrets = turretsweep.TurretSweep()
+        # (d20 batch50 G1, viewer Aurora) whether each turret can fire: a pass over the same defence areas at most once a
+        # minute, a command an observe when the sweep has none (at most 120 turrets a command: 2.4 ms on world n,
+        # 2026-10-20; 7.0 ms on the d17 headless copy)
+        self.tstate = turretstate.TurretState()
         self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
         self.next_ore = 0
         # the other planets' coarse maps (census.lua): one planet a minute, in turn (each a census read from storage)
@@ -280,6 +285,7 @@ class LiveSource:
                 obs["basemap"] = self.h.basemap(ore=ore)
                 self.turrets.seen(obs["basemap"])
                 obs["basemap"] = self.turrets.apply(obs["basemap"])
+                self.tstate.seen(obs["basemap"])
                 if ore and obs["basemap"].get("ore") is not None:  # (the harness census reads ore on its next pass)
                     self.next_ore = time.time() + self.ore_every
                 try:  # the site's time-lapse: a snapshot per 10 game minutes in runs/RUN/basemap/
@@ -293,6 +299,12 @@ class LiveSource:
                 self.turrets.step(self.h)
             except Exception as e:
                 errors["turrets"] = str(e)
+        elif self.tstate.due(time.time()):
+            try:
+                self.tstate.step(self.h, time.time())
+                obs["turret_state"] = self.tstate.public()
+            except Exception as e:
+                errors["turret_state"] = str(e)
         if time.time() >= self.next_planet:
             self.next_planet = time.time() + self.planet_every
             try:
