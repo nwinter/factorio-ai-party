@@ -9905,3 +9905,33 @@ fh watch    # deploy on every change
   paused; the end tick passed while paused, `kept_wait` said so, and `queue_resume` at 26655644 ended the wait that tick
   and ran the next step at 26655645. Tests: tests/d20_batch62.lua; tests/scheduler.lua (ahead) and tests/orders.lua
   (a resumed order's kept wait) updated.
+- T2 (Astra #1461: a 20-furnace bank took two 16-machine windows). uptime takes up to 64 machines in `positions`, or
+  `area` {left_top, right_bottom} (up to 200 tiles a side) with an optional `recipe` (and `quality`): the crafting
+  machines of ours in it, each still in sight. With 2 or more machines the reply gives `groups` per recipe and quality
+  (machines, completions and completions_per_min against full_speed_completions_per_min, crafts against
+  full_speed_per_min when every machine's are known, status_shares of all their samples, line) first in `lines`, with
+  the per-machine lines after. Still one finite watch per agent. A reply's numbers are what its encoding pays for: on the
+  private copy helpers.table_to_json took 23 ms for 64 rows of 15 fields, 0.07 ms for 64 lines of text, and 6.2 ms for
+  16 rows. So above 16 machines the rows are left out (`machine_rows` says so; `lines` has each machine), group rows
+  above 8 groups and flow rows above 10. Cost on a private copy (its own container, 64 assembling machines, half
+  short of plates, one with quality modules; Factorio x86 under Rosetta): a sample of 64 machines 1.0-1.5 ms (seconds
+  with two samples up to 2.9 ms); the seconds in which a garbage collection of the harness heap finished (it fell 100-190
+  MB) read 4.3-8.1 ms, and one 84.6 ms (a 55 MB fall; the collector runs in whatever code allocates then). The start
+  of a 64-machine area watch: 5.7 ms of its own (area 0.25, machines 4.3 with machines alike sharing one craftrate read,
+  items 0.1, first sample 1.0; the reply's team block comes on top); a read so far 7.4 ms with 1.2 ms encoding. The
+  profiler (profile_ticks) names the parts: uptime.tick, uptime.area, uptime.machines, uptime.flows, uptime.sample.
+- T3 (Sol #1460: produced and consumed by quality over a window). 2.0.77's production statistics keep counts by quality:
+  `get_input_count`/`get_output_count`/`get_flow_count` take `{name, quality}`, and the name alone counts normal (on the
+  private copy an uncommon gear recipe's 9 crafts read 9 uncommon gears produced and 20 uncommon plates consumed, the
+  name alone 0 of either), as the production statistics window shows a player by quality. uptime's `items` (1..8, a
+  name read at every quality, or {name, quality}) reads them on the watch's surface: `items_recent` at the start (the
+  last 10 minutes) and `flows` over the watch (produced, consumed, net, per minute, for every machine and hand on the
+  surface; qualities with nothing are left out unless named); `uptime {items}` alone is a statistics-only watch. Stock
+  change is never counted. Each machine also gives its outputs by quality as its output slot shows them
+  (`outputs_by_quality`): between two samples the slot's gain must equal its completions times the product's amount,
+  every quality gaining or level, for the gain to count; otherwise products were taken out (or spoiled) between samples
+  and the interval is unknown (`outputs_unknown_intervals` of `outputs_intervals`); a product by chance or in a range
+  has no fixed amount and gives none. On the private copy a gear bank read `outputs by quality in its output slot:
+  iron-gear-wheel normal 39` for 39 crafts; with a fast inserter taking every gear, 35 of 35 intervals read unknown;
+  the statistics read 10 uncommon gears from a machine with legendary quality modules. A fact seen there: an assembler
+  has one output slot, so an uncommon gear in it stops the next normal one (status full output) until it is taken.

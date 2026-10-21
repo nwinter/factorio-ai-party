@@ -213,9 +213,12 @@
   nothing: `ghost_breaks` (and `ghost_line`) give each with its tiles, the items that build it and whether a roboport's
   construction area covers it (the network's count of each item, its idle construction robots).
   Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
-- `uptime {positions, seconds?}`: up to 16 crafting machines watched for seconds (10..3600, default 600), a status sample
-  a second, in the background; `uptime {}` reads it so far or done: each machine's crafts finished and crafts a minute
-  against its full speed, status shares, the ingredients short at the samples that read short, `left_out`.
+- `uptime {positions, seconds?}`: up to 64 crafting machines or labs (or `area` {left_top, right_bottom} with an optional
+  `recipe`) watched for seconds (10..3600, default 600), a status sample a second, in the background; `uptime {}` reads it
+  so far or done: each machine's crafts finished and crafts a minute against its full speed, status shares, the
+  ingredients short at the samples that read short (at the recipe's quality), outputs by quality from its output slot,
+  totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
+  name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
 - `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
