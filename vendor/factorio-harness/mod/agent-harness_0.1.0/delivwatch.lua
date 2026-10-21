@@ -22,6 +22,11 @@
 -- none of the item; the consumer gone. The setter hears in team.alerts each blocker once, a blocker gone, the deadline
 -- passed while not reached (the last confirmed stage and the blocker), and the arrival. A watch is kept KEEP ticks
 -- after it ends; at most MAX open a force.
+-- (d21 batch66 AB6, Aurora 16:02: "Nauvis's obsolete CF500 request diverted K2 cargo intended for Aquilo before it
+-- reached the named consumer") down, while the carrier's hub holds the item: a landing pad of ours asking it on a planet
+-- the platform stops at before the destination (pad, its request and count, which stop) is a blocker while it is
+-- stopped there and a risk before (the setter told once each), unless the hub's own request keeps all it holds; a pod
+-- of it received by a pad (or landed) on another planet is a diversion, kept with the pad's request then.
 return function(api)
   local M = {}
   local EVERY, PER_PASS, KEEP, MAX, EVENTS = 60, 4, 36000, 16, 64
@@ -80,18 +85,84 @@ return function(api)
     end
     return string.format('the consumer, %s chest %s, asks none of %s: robots bring it nothing', mode, at(e.position), item)
   end
+  -- (AB6) A planet's landing pads of ours asking the item: {{pad, min, held}}, by their active sections as the pad shows
+  -- them. 2.0.77 on the private copy: a platform paused at Fulgora with gears, cable and pipe in its hub sent pods of
+  -- 20 to the pad's requests of 20 imported from nauvis, nauvis and fulgora alike, and again each time robots emptied
+  -- the pad (its request counts what the pad holds): a pad request's import planet does not stop it.
+  local function pad_asks(force, planet, item)
+    local s = try(function() return game.planets[planet].surface end)
+    local out = {}
+    if not s then return out end
+    local pads = api.census_typed and try(function() return api.census_typed(force, s, 'cargo-landing-pad') end)
+      or try(function() return s.find_entities_filtered{type='cargo-landing-pad', force=force} end) or {}
+    for _, pad in ipairs(pads) do
+      local min = 0
+      local secs_ = try(function() return pad.get_logistic_sections() end)
+      for i = 1, secs_ and secs_.sections_count or 0 do
+        local sec = secs_.get_section(i)
+        if sec and sec.active ~= false then
+          for _, f in ipairs(sec.filters or {}) do
+            local v = f.value
+            if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 then min = min + f.min end
+          end
+        end
+      end
+      if min > 0 then out[#out+1] = {pad=pad, min=min, held=try(function() return pad.get_item_count(item) end) or 0} end
+    end
+    return out
+  end
+  -- (AB6) What the hub keeps of the item by its own requests: each slot's max, all of it with no max; 0 with none.
+  -- On the copy the hub asking pipe 10 (no max) or 200 kept all 60 it held from the pad's request; asking 10..20 it
+  -- sent 40 down and kept 20.
+  local function hub_keeps(pl, item)
+    local keep = 0
+    local secs_ = try(function() return pl.hub.get_logistic_sections() end)
+    for i = 1, secs_ and secs_.sections_count or 0 do
+      local sec = secs_.get_section(i)
+      if sec and sec.active ~= false then
+        for _, f in ipairs(sec.filters or {}) do
+          local v = f.value
+          if (type(v) == 'table' and v.name or v) == item and ((f.min or 0) > 0 or f.max) then keep = keep + (f.max or math.huge) end
+        end
+      end
+    end
+    return keep
+  end
+  -- (AB6) Where the platform stops from now until the destination's stop: {{index (its schedule record; nil when it
+  -- is stopped at a planet that is not its current stop), station, now (stopped there now)}}.
+  local function stops_before(pl, dest)
+    local recs = try(function() return pl.schedule.records end) or {}
+    local cur = try(function() return pl.schedule.current end) or 1
+    local here = not try(function() return pl.space_connection end) and try(function() return pl.space_location.name end)
+    local out = {}
+    if here == dest then return out end
+    if here and (not recs[cur] or recs[cur].station ~= here) then out[1] = {station=here, now=true} end
+    for k = 0, #recs - 1 do
+      local i = (cur - 1 + k) % #recs + 1
+      local st = recs[i].station
+      if st == dest then break end
+      out[#out+1] = {index=i, station=st, now=(k == 0 and here == st)}
+    end
+    return out
+  end
   local function seen(w, stage, text, tick)
     if not w.stages[stage] then
       w.stages[stage] = {tick=tick, text=text}
       if not w.last or RANK[stage] > RANK[w.last] then w.last = stage end
     end
   end
-  local function block(w, key, text)
+  -- sig: what makes it new to the setter (default the text; a pad's count changing is not new)
+  local function block(w, key, text, sig)
     w.now_blocks[key] = text
+    w.now_sigs[key] = sig or text
+  end
+  local function risk(w, key, text, sig)
+    w.now_risks[key] = text
+    w.now_rsigs[key] = sig or text
   end
   -- One watch read now (tick): stages seen, blockers now, its events.
   function M.check(w, tick)
-    w.now_blocks = {}
+    w.now_blocks, w.now_sigs, w.now_risks, w.now_rsigs = {}, {}, {}, {}
     local e = w.consumer
     if not (e and e.valid) then
       block(w, 'gone', string.format('the consumer %s %s on %s is gone', w.to.name, at(w.to.position), w.to.where))
@@ -142,17 +213,60 @@ return function(api)
         end
         if pl.paused then block(w, 'paused', string.format('%s is paused: it goes nowhere until unpaused', pl.name)) end
         if not stops_at(pl, w.to.where) then block(w, 'route', string.format('%s\'s schedule has no stop at %s', pl.name, w.to.where)) end
-        -- its cargo pods with the item since the watch was set: received by a pad, or landed with no pad
+        -- (AB6, Aurora 16:02: "Nauvis's obsolete CF500 request diverted K2 cargo intended for Aquilo") a landing pad
+        -- asking the item on a planet it stops at before the destination: a blocker while it is stopped there, a risk
+        -- before; none when the hub's own request keeps all it holds
+        if n > 0 and stops_at(pl, w.to.where) then
+          local keep = hub_keeps(pl, w.item)
+          if keep < n then
+            local kept = keep > 0 and string.format('; its hub\'s own request keeps %d of it aboard', keep) or ''
+            for _, stop in ipairs(stops_before(pl, w.to.where)) do
+              local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
+              for _, a in ipairs(pad_asks(force, stop.station, w.item)) do
+                local key = 'demand ' .. stop.station .. ' ' .. at(a.pad.position)
+                if stop.now then
+                  block(w, key, string.format('%s is stopped at %s (%s) with %d %s in its hub, before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends pods of it down to that pad%s',
+                    pl.name, stop.station, which, n, w.item, w.to.where, at(a.pad.position), a.min, w.item, a.held, kept), key .. ' ' .. a.min)
+                else
+                  risk(w, key, string.format('%s stops at %s (%s) before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends pods of it down to that pad (the hub holds %d now%s)',
+                    pl.name, stop.station, which, w.to.where, at(a.pad.position), a.min, w.item, a.held, n, kept), key .. ' ' .. a.min)
+                end
+              end
+            end
+          end
+        end
+        -- its cargo pods with the item since the watch was set: received by a pad, or landed with no pad; (AB6) on
+        -- another planet, a diversion
+        local seen_div = {}
         for _, r in ipairs(api.freight and try(function() return api.freight.receipts_since(pl, w.start) end) or {}) do
           local n2 = r.cargo and r.cargo[w.item]
-          if n2 and n2 > 0 and r.dest and r.dest.surface == w.to.where and r.kind == 'received' then
+          local onto = r.dest and r.dest.surface or r.stop
+          if n2 and n2 > 0 and onto and onto ~= w.to.where and (r.kind == 'received' or r.kind == 'landed') then
+            local key = r.tick .. ' ' .. tostring(r.where)
+            seen_div[key] = true
+            if not (w.div_seen or {})[key] then
+              local ask = ''
+              for _, a in ipairs(r.dest and r.dest.position and pad_asks(force, onto, w.item) or {}) do
+                if a.pad.position.x == r.dest.position.x and a.pad.position.y == r.dest.position.y then ask = string.format(', which asks %d of it (holds %d now)', a.min, a.held) end
+              end
+              local d = {tick=r.tick, count=n2, planet=onto, where=r.where,
+                text=string.format('%d %s %s %s%s, before %s', n2, w.item, r.kind == 'received' and 'received by' or 'landed with no pad:', r.where, ask, w.to.where)}
+              w.diversions = w.diversions or {}
+              w.diversions[#w.diversions+1] = d
+              if #w.diversions > 8 then table.remove(w.diversions, 1) end
+              w.diverted = (w.diverted or 0) + n2
+              -- the running total keeps each line new to the board's repeat filter (alerts_seen: the same text once in REPEAT_SHOWN)
+              push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): diverted: %s; %d of it diverted since the watch was set', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, d.text, w.diverted))
+            end
+          elseif n2 and n2 > 0 and r.dest and r.dest.surface == w.to.where and r.kind == 'received' then
             seen(w, 'landed', string.format('%d %s received by %s', n2, w.item, r.where), r.tick)
             w.pad = w.pad or {position=r.dest.position, name=r.dest.pad}
-          elseif n2 and n2 > 0 and r.kind == 'landed' then
+          elseif n2 and n2 > 0 and r.kind == 'landed' and (not onto or onto == w.to.where) then
             seen(w, 'landed', string.format('%d %s landed with no pad: %s', n2, w.item, r.where), r.tick)
             block(w, 'nopad', string.format('a pod with %d %s landed with no pad, %s: robots do not take from it', n2, w.item, r.where))
           end
         end
+        w.div_seen = seen_div
       end
       -- the pad's network against the consumer's
       if w.pad and e and e.valid then
@@ -194,14 +308,18 @@ return function(api)
       end
     end
     -- events: a blocker new, a blocker gone, the arrival, the deadline
-    w.blocks = w.blocks or {}
+    w.blocks, w.sigs, w.rsigs = w.blocks or {}, w.sigs or {}, w.rsigs or {}
     for k, text in pairs(w.now_blocks) do
-      if w.blocks[k] ~= text then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): blocked: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, text)) end
+      if (w.sigs[k] or w.blocks[k]) ~= w.now_sigs[k] then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): blocked: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, text)) end
     end
     for k, text in pairs(w.blocks) do
       if not w.now_blocks[k] then push(w, string.format('delivery watch #%d: no longer blocked: %s', w.id, text)) end
     end
-    w.blocks, w.now_blocks = w.now_blocks, nil
+    for k, text in pairs(w.now_risks) do
+      if w.rsigs[k] ~= w.now_rsigs[k] then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): at risk: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, text)) end
+    end
+    w.blocks, w.sigs, w.risks, w.rsigs = w.now_blocks, w.now_sigs, w.now_risks, w.now_rsigs
+    w.now_blocks, w.now_sigs, w.now_risks, w.now_rsigs = nil, nil, nil, nil
     if w.stages.reached and w.state ~= 'reached' then
       w.state, w.ended = 'reached', tick
       push(w, string.format('delivery watch #%d: reached: %s, %s %s', w.id, w.stages.reached.text, tick <= w.deadline and 'in time,' or 'late,',
@@ -217,7 +335,13 @@ return function(api)
     local b = {}
     for _, text in pairs(w.blocks or {}) do b[#b+1] = text end
     table.sort(b)
-    return string.format('%s; the consumer holds %d (%d at the start)%s', last, w.held or w.base, w.base, #b > 0 and '; blocked: ' .. table.concat(b, '; ') or '')
+    local rk = {}
+    for _, text in pairs(w.risks or {}) do rk[#rk+1] = text end
+    table.sort(rk)
+    local dv = {}
+    for _, d in ipairs(w.diversions or {}) do dv[#dv+1] = d.text end
+    return string.format('%s; the consumer holds %d (%d at the start)%s%s%s', last, w.held or w.base, w.base, #b > 0 and '; blocked: ' .. table.concat(b, '; ') or '',
+      #rk > 0 and '; at risk: ' .. table.concat(rk, '; ') or '', #dv > 0 and string.format('; diverted %d: %s', w.diverted or 0, table.concat(dv, '; ')) or '')
   end
   function M.row(w)
     local stages = {}
@@ -230,9 +354,13 @@ return function(api)
     local b = {}
     for _, text in pairs(w.blocks or {}) do b[#b+1] = text end
     table.sort(b)
+    local rk = {}
+    for _, text in pairs(w.risks or {}) do rk[#rk+1] = text end
+    table.sort(rk)
     local dl = w.deadline - game.tick
     return {id=w.id, item=w.item, count=w.count, to=w.to, from=w.from, direction=w.direction, setter=w.setter, state=w.state, deadline_tick=w.deadline,
-      stages=stages, last_confirmed=w.last, blockers=#b > 0 and b or nil, held=w.held or w.base, at_start=w.base, carrier=w.carrier,
+      stages=stages, last_confirmed=w.last, blockers=#b > 0 and b or nil, risks=#rk > 0 and rk or nil,
+      diversions=w.diversions and #w.diversions > 0 and w.diversions or nil, diverted=w.diverted, held=w.held or w.base, at_start=w.base, carrier=w.carrier,
       line=string.format('delivery watch #%d: %d %s to %s %s on %s, %s; deadline %s; %s; stages: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where,
         w.state, dl >= 0 and 'in ' .. secs(dl) or secs(-dl) .. ' ago', M.status(w), #parts > 0 and table.concat(parts, ', ') or 'none yet')}
   end
@@ -332,6 +460,6 @@ return function(api)
     to='{position {x, y}, surface (a planet; default yours) | platform (a name)}: the consumer, a silo, chest or machine of ours within 2 tiles of position, in a chunk our force has charted',
     deadline_min='minutes from now (up to 1440)', from='optional: the platform that carries it down, or the planet whose silos launch it up',
     id='with clear: true, the watch to end; alone, read that watch', clear='true, with id: end it',
-    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, reached), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), reached (the consumer holds count more than at the start)), last_confirmed, blockers (the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), held, at_start, carrier, line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker once, a blocker gone, the deadline passed while not reached (with the last confirmed stage and the blocker) and the arrival; a watch is kept 10 minutes after it ends'}}
+    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, reached), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), reached (the consumer holds count more than at the start)), last_confirmed, blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), held, at_start, carrier, line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, a blocker gone, the deadline passed while not reached (with the last confirmed stage and the blocker) and the arrival; a watch is kept 10 minutes after it ends'}}
   return M
 end

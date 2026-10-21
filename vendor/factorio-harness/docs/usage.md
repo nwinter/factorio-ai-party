@@ -10779,3 +10779,44 @@ silo.").
     consumer wooden-chest (-43.5,134.5) is in no logistic network". The silo: in #243, no blocker.
   - The events were stored for the setter in order (blocked, no longer blocked, blocked by network). The copy's
     replies to that bot carried no team block, so team.alerts delivery is checked by the fake engine only.
+
+## d21 batch66 AB6 (eng/d20-batch66)
+
+AB6 (viewer Aurora, 16:02 PDT: "Could delivery watches flag competing pad demand along the route? Nauvis's obsolete
+CF500 request diverted K2 cargo intended for Aquilo before it reached the named consumer.").
+- Game rules read on the headless copy (2.0.77), with a test platform AB6t at Fulgora:
+  - A platform stopped above a planet (paused or waiting) sends pods from its hub to that planet's landing pad
+    requests. Fulgora's pad requests of 20 gears (import from nauvis, the default), 20 cable (nauvis) and 20 pipe
+    (fulgora), and its standing request of 10 cliff explosives imported from vulcanus, all drew from the hub. A pad
+    request's import planet does not stop it.
+  - Robots took each landing out of the pad, so the pad held 0 again and the hub sent again: 10 cliff explosives
+    each 30 s until the hub had none.
+  - The hub's own request for the item keeps it aboard: asking pipe 10 (no max) or 200, the hub kept all 60 it held;
+    asking 10..20, it sent 40 down and kept 20.
+- delivery_watch, down, while the carrier's hub holds the item and its schedule stops at the destination (delivwatch.lua;
+  runtime deploy needed):
+  - each planet it stops at from now until the destination's stop (and the planet it is stopped at, if that is not
+    its current stop) is read for landing pads of ours asking the item (active sections, min > 0; the census pass's
+    pad list);
+  - stopped there now: a blocker, "K is stopped at nauvis (stop 2 of its schedule) with 600 carbon-fiber in its hub,
+    before aquilo; the landing pad (52,54) there asks 500 carbon-fiber (holds 0): while it is stopped there its hub
+    sends pods of it down to that pad";
+  - a stop ahead: `risks`, "K stops at nauvis (stop 2 of its schedule) before aquilo; the landing pad (52,54) there
+    asks 500 carbon-fiber (holds 0): ... (the hub holds 600 now)";
+  - none when the hub's own requests keep all it holds; "its hub's own request keeps N of it aboard" when they keep
+    part;
+  - a pod of the item received by a pad (or landed) on another planet: `diversions` [{tick, count, planet, where,
+    text}] and `diverted` (their sum), with the pad's request then ("10 cliff-explosives received by
+    cargo-landing-pad (74,208) on fulgora, which asks 10 of it (holds 0 now), before gleba"). It is not the landed
+    stage.
+  - The setter hears each blocker and risk once (a pad's count changing is not new), and each diversion with the
+    running total ("; 40 of it diverted since the watch was set": the board shows the same alert text once in its
+    repeat window). The status line (the deadline alert, the row's line) names risks and diversions.
+  - freight's receipts_since rows carry `stop` (where the platform was).
+  - Cost on the copy: the added reads, 0.05 ms a check with the census pad list (5 ms on the fallback path that finds
+    pads on two planets).
+- Headless copy: watch #5 (30 cliff explosives from AB6t to Gleba's pad) read the blocker at Fulgora, then four
+  diversions of 10 to Fulgora's pad (74,208), each in team.alerts. Watch #6 (200 processing units to Aquilo's pad)
+  read the risk at Gleba (stop 2), whose pad asks 1000, and team.alerts carried it. Watches cleared, pad slots 2 to 4
+  removed, AB6t destroyed.
+
