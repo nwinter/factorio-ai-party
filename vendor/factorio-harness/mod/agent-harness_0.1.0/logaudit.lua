@@ -334,10 +334,53 @@ return function(api)
     return {network=ln.network_id, surface=surface.name, requests=rows, lines=lines, robots=robots, robots_line=robots_line,
       requests_short=short_n, more_short=short_n > #rows and short_n - #rows or nil, line=line}
   end
+  -- (d20 batch59 U3, Astra #1502: finding where robots queue took 274 roboports read by inspect, 8 a call) the
+  -- roboports with the most robots waiting to charge, then charging, each as its GUI shows it (its own cell): two
+  -- counts read per roboport, the rows' slots and energy only for those listed.
+  function M.charging(p, a, surface, ln)
+    local limit = math.floor(tonumber(a.limit) or 5)
+    assert(limit >= 1 and limit <= 20, 'limit with charging is 1..20 roboports (default 5)')
+    local rows, ports, charging, waiting, queued = {}, 0, 0, 0, 0
+    for _, c in ipairs(try(function() return ln.cells end) or {}) do
+      if not try(function() return c.mobile end) then
+        ports = ports + 1
+        local cc = try(function() return c.charging_robot_count end) or 0
+        local cw = try(function() return c.to_charge_robot_count end) or 0
+        charging, waiting = charging + cc, waiting + cw
+        if cw > 0 then queued = queued + 1 end
+        if cc + cw > 0 then rows[#rows+1] = {c=c, charging=cc, waiting=cw} end
+      end
+    end
+    table.sort(rows, function(x, y) if x.waiting ~= y.waiting then return x.waiting > y.waiting end return x.charging > y.charging end)
+    local out, slots_of = {}, {}
+    for i = 1, math.min(limit, #rows) do
+      local r = rows[i]
+      local o = try(function() return r.c.owner end)
+      if o and o.valid then
+        local name = o.name
+        if slots_of[name] == nil then slots_of[name] = try(function() return o.prototype.logistic_parameters.charging_station_count end) or false end
+        local buf = try(function() return o.electric_buffer_size end) or 0
+        local energy = buf > 0 and math.floor((try(function() return o.energy end) or 0) / buf * 100 + 0.5) or nil
+        local row = {position={x=o.position.x, y=o.position.y}, name=name, unit_number=o.unit_number, waiting=r.waiting, charging=r.charging,
+          slots=slots_of[name] or nil, energy=energy}
+        row.line = string.format('%s (%g,%g): %d waiting to charge, %d charging%s%s', name, o.position.x, o.position.y, r.waiting, r.charging,
+          row.slots and string.format(' of %d charging slots', row.slots) or '', energy and string.format('; energy %d%%', energy) or '')
+        out[#out+1] = row
+      end
+    end
+    local id = try(function() return ln.network_id end)
+    return {network=id, roboports=ports, charging=charging, waiting=waiting, roboports_with_queue=queued, rows=out,
+      line=string.format('network #%s: %d roboports; %d robots charging, %d waiting to charge in all, at %d roboports%s', tostring(id), ports, charging, waiting, queued,
+        #out > 0 and string.format('; the %d with the most: %s', #out, (function() local t = {}; for i, r in ipairs(out) do t[i] = string.format('(%g,%g) %d waiting, %d charging', r.position.x, r.position.y, r.waiting, r.charging) end; return table.concat(t, ', ') end)()) or '')}
+  end
   function M.read(p, a)
     a = a or {}
     local surface = (a.surface or a.platform) and api.surface_named and api.surface_named(p.force, a) or p.surface
     local ln = network(p, a, surface)
+    if a.charging ~= nil then
+      assert(a.charging == true, 'charging is true')
+      return M.charging(p, a, surface, ln)
+    end
     if a.storage ~= nil then
       assert(a.storage == true, 'storage is true')
       return M.storage(p, a, surface, ln)
@@ -437,7 +480,7 @@ return function(api)
     return {far=#far > 0 and far or nil, network=ln.network_id, surface=surface.name, looked=looked, blocked=#rows, coming=coming, filled=ok, counts=counts, requesters=out,
       shown=#out, lines=lines, summary=summary, next_from=more}
   end
-  M.schema = {logistics_audit = {backlog='optional true: why requests wait (the backlog): the oldest unfilled requests first (chest, item, short, how long the networks watch has seen it short, the provider the game picks with what robots reserve there, and held_by: the first that holds it now: on the way, no room, none in the network, no provider, all reserved, no idle robot (with what the busy ones do: orders by type, cargo with no order and what, queued to charge), robots queued with every charging slot taken, or not sent yet); robots {total, idle, on_orders, carrying, cargo_no_order, cargo_no_order_items, charging, queued_to_charge, charging_slots, free_charging_slots}; requests, lines, robots_line, line',storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 2048 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
+  M.schema = {logistics_audit = {charging='optional true: the network\'s roboports with the most robots waiting to charge, then charging (each roboport\'s own queue, as its GUI shows it; limit 1..20, default 5): rows [{position, name, unit_number, waiting, charging, slots (its charging slots), energy (%), line}], roboports, charging, waiting (the network\'s totals), roboports_with_queue, line. Read only',backlog='optional true: why requests wait (the backlog): the oldest unfilled requests first (chest, item, short, how long the networks watch has seen it short, the provider the game picks with what robots reserve there, and held_by: the first that holds it now: on the way, no room, none in the network, no provider, all reserved, no idle robot (with what the busy ones do: orders by type, cargo with no order and what, queued to charge), robots queued with every charging slot taken, or not sent yet); robots {total, idle, on_orders, carrying, cargo_no_order, cargo_no_order_items, charging, queued_to_charge, charging_slots, free_charging_slots}; requests, lines, robots_line, line',storage='optional true: the network\'s storage room instead (the no_storage alert): storage chests, free slots, full ones, filters; robots holding cargo with no order to put it anywhere (logistic and construction, 2048 read) and their items, each with whether a storage chest can take it now: network, storage_chests, free_slots, full_chests, filtered, robots_stuck, stuck_items, line',network='optional logistic network id (networks lists them)', position='optional {x, y}: the network covering it (default: where you stand)',
     surface='optional surface name (default yours)', limit='optional rows, default 12, up to 48', from='optional: start at this requester (next_from of the last call)',far='optional tiles (default 200): far lists each ask short or with a delivery on the way whose pickup the network would pick now lies farther off (the first 128 asks read, 16 lines)',
     returns='every requester of the network (256 a call; next_from for more) by what keeps it short, worst first: full_unrequested (every slot taken while a short item has no room, by items it does not request; spoilage named), full (the same, by its own items), spoiled (spoilage it does not request takes slots, 4 or fewer free; with more room the summary names them), waiting (a delivery on the way 5+ min while under its count), not_sent (short, the item free in providers or storage, nothing on the way), shortage (short, none free in the network); the rest under their count have deliveries on the way under 5 min (coming). requesters [{name, position, distance, block, asks [{item, want, have, on_way, short, free, waited_s, short_s, no_room, from {name, position, distance, count}: the provider robots would take it from}], slots, empty_slots, spoilage, unrequested, holds}], counts, blocked, coming, filled, lines, summary, far (requesters served from over far tiles away: the ask, on the way, short, the chest robots would take it from and how far). Characters left out. Read only'}}
   return M

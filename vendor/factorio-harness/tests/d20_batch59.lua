@@ -102,3 +102,58 @@ do
   eq(r.changed[1],'slot 2 filter wood -> none')
 end
 print('d20_batch59 U1 character settings: ok')
+
+-- U3 (Astra #1502): the status line says the network's total and where one of its roboports stands, then the
+-- roboports with the most waiting; logistics_audit {charging} ranks them; inspect reads a network's view once a tick.
+do
+  defines={inventory={roboport_material=7}}
+  prototypes={item={}}
+  game={tick=500}
+  local function cell(x,y,charging,waiting)
+    local o={valid=true,name='roboport',unit_number=x*1000+y,position={x=x,y=y},energy=50,electric_buffer_size=100,
+      prototype={logistic_parameters={charging_station_count=4}},get_inventory=function() return {get_contents=function() return {} end} end}
+    return {owner=o,charging_robot_count=charging,to_charge_robot_count=waiting,logistic_radius=25,construction_radius=55}
+  end
+  local cells={cell(37,38,0,0)}
+  for i=1,40 do cells[#cells+1]=cell(i*10,-100,1,i%7) end
+  cells[#cells+1]=cell(273,-194,4,15); cells[#cells+1]=cell(386,-244,3,15); cells[#cells+1]=cell(5,5,4,0)
+  cells[#cells+1]={mobile=true,owner={valid=true,position={x=0,y=0}},charging_robot_count=0,to_charge_robot_count=30}
+  local ln={network_id=243,valid=true,all_logistic_robots=500,available_logistic_robots=100,all_construction_robots=0,available_construction_robots=0,cells=cells,
+    get_item_count=function() return 0 end}
+  local st={}
+  local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return st end}
+  local v=N.logistic_view(ln)
+  eq(#v.hot,5)
+  eq(N.hot_text(v.hot[1]),'(273,-194) 15 waiting, 4 charging'); eq(N.hot_text(v.hot[2]),'(386,-244) 15 waiting, 3 charging')
+  eq(v.hot[3].waiting,6,'then the next most waiting'); eq(v.waiting,15+15+120+30,'the network total counts every cell')
+  -- The status line from the kept view.
+  st.networks={views={player={tick=500,surfaces={{name='nauvis',logistic={{id=243,view=v}}}}}}}
+  local lines=N.robot_lines({name='player'})
+  has(lines[1],'waiting to charge most: network #243 180 in all (a roboport of it at (37,38))')
+  has(lines[1],'; roboports with the most: (273,-194) 15 waiting, 4 charging, (386,-244) 15 waiting, 3 charging, ')
+  -- inspect of two roboports of one network in one tick: the view is read once.
+  local reads=0
+  local real=N.logistic_view
+  N.logistic_view=function(x) reads=reads+1; return real(x) end
+  local e1={type='roboport',position={x=273,y=-194},logistic_network=ln,logistic_cell=cells[42]}
+  local e2={type='roboport',position={x=386,y=-244},logistic_network=ln,logistic_cell=cells[43]}
+  N.of_entity(e1); N.of_entity(e2)
+  eq(reads,1,'one view a network a tick')
+  game.tick=501; N.of_entity(e1); eq(reads,2,'a new tick reads it again')
+  has(N.of_entity(e1).port.line,'15 waiting to charge')
+  N.logistic_view=real
+
+  -- logistics_audit {charging}
+  local L=dofile('mod/agent-harness_0.1.0/logaudit.lua'){state=function() return {} end}
+  local surface={name='nauvis',find_logistic_network_by_position=function() return ln end}
+  local p={position={x=0,y=0},surface=surface,force={}}
+  local r=L.read(p,{charging=true})
+  eq(r.network,243); eq(r.roboports,44,'personal roboports left out'); eq(r.waiting,150); eq(#r.rows,5)
+  eq(r.rows[1].line,'roboport (273,-194): 15 waiting to charge, 4 charging of 4 charging slots; energy 50%')
+  eq(r.rows[2].position.x,386)
+  has(r.line,'network #243: 44 roboports; 51 robots charging, 150 waiting to charge in all, at 37 roboports; the 5 with the most: (273,-194) 15 waiting, 4 charging')
+  eq(#L.read(p,{charging=true,limit=20}).rows,20)
+  fails(function() L.read(p,{charging=true,limit=21}) end,'limit with charging is 1..20')
+  fails(function() L.read(p,{charging='yes'}) end,'charging is true')
+end
+print('d20_batch59 U3 charging hotspots: ok')

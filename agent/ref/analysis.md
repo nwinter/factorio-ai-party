@@ -124,7 +124,7 @@
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
   returns dated last-seen memory. `inspect {position}` with nothing there lists what stands within 3 tiles (`not_at`
-  says so). `positions`: up to 32 entities in one call (`compact: true`: one line each). What it shows:
+  says so). `positions`: up to 8 entities in one call (`positions_limit` says 8; more is refused; `compact: true`: one line each). What it shows:
   - a machine: its `rate` (crafts and output per minute, net of what goes back in), `output_fill` (and `full`) and
     `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an
     ingredient holding a few crafts' worth (the game reads it so);
@@ -292,7 +292,11 @@
   storage chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no
   room when every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are
   idle, orders to a chest with no room for the item). Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
-- `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?}` (read only; default: the network where you stand):
+- `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?, charging?}` (read only; default: the network where you stand):
+  `charging: true`: the network's roboports with the most robots waiting to charge, then charging, each as its own
+  GUI shows it (`limit` 1..20, default 5): position, waiting, charging, its charging slots, energy; with the network's
+  totals and how many roboports have a queue. The status `robots` line gives a network's total over all its roboports
+  with the position of one of them, then the 5 roboports of the planet with the most.
   `backlog: true`: why requests wait: the oldest unfilled first (chest, item, short, how long it has been short, the
   provider the game picks with what robots reserve there) and `held_by`, the first that holds each now (on the way, no
   room, none in the network, no provider, all reserved, no idle robot with what the busy ones do, robots queued with
