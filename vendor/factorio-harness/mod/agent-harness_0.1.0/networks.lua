@@ -933,8 +933,35 @@ return function(api)
       out.port.line = string.format('this roboport: logistic area %s, construction area %s; stationed: %d logistic, %d construction robots; %d charging%s, %d waiting to charge%s',
         box_text(out.port.logistic_area), box_text(out.port.construction_area), out.port.stationed.logistic, out.port.stationed.construction,
         out.port.charging, split(out.port.charging_by_kind), out.port.waiting, split(out.port.waiting_by_kind))
+      out.port.power = M.port_power(e)
     end
     return out
+  end
+  -- (d20 batch59 U5, Sol #1566) a roboport's charging numbers at its quality, as 2.0.77 uses them (checked on the private
+  -- copy with a normal and a legendary roboport): each slot charges at the prototype's charging_energy times the
+  -- quality's logistic_cell_charging_energy_multiplier (500 kW, legendary 1250 kW a robot); the slots are the
+  -- prototype's charging_station_count (4 at legendary too: the quality's logistic_cell_charging_station_count_bonus
+  -- gave no fifth, 4 charging and 8 waiting); the buffer is the entity's (100 MJ either); the buffer refills at up to
+  -- the input flow limit at its quality (5 MW, legendary 12.5 MW, less the 50 kW drain).
+  local function kw_of(j) return math.floor(j * 60 / 1000 * 10 + 0.5) / 10 end
+  local function g(v) return v and string.format('%g', v) or '?' end
+  function M.port_power(e)
+    local proto, q = e.prototype, try(function() return e.quality end)
+    local lp = try(function() return proto.logistic_parameters end)
+    local src = try(function() return proto.electric_energy_source_prototype end)
+    if not (lp and lp.charging_energy and lp.charging_station_count and src) then return nil end
+    local mult = q and try(function() return q.logistic_cell_charging_energy_multiplier end) or 1
+    local slot = kw_of(lp.charging_energy * mult)
+    local slots = lp.charging_station_count
+    local input = try(function() return src.get_input_flow_limit(q) end) or try(function() return src.input_flow_limit end)
+    local drain = try(function() return src.drain end) or 0
+    local buffer, energy = try(function() return e.electric_buffer_size end), try(function() return e.energy end)
+    local r = {quality=q and q.name or 'normal', charging_stations=slots, charging_kw_per_slot=slot,
+      charging_kw_max=slot * slots, drain_kw=kw_of(drain), input_flow_limit_kw=input and kw_of(input) or nil,
+      buffer_mj=buffer and math.floor(buffer / 1e5 + 0.5) / 10 or nil, energy_mj=energy and math.floor(energy / 1e5 + 0.5) / 10 or nil}
+    r.line = string.format('%s roboport: %d charging slots at %g kW a robot, %g kW at most with all charging (and its %g kW drain); buffer %s of %s MJ, refilled at up to %s kW (input flow limit)',
+      r.quality, slots, slot, r.charging_kw_max, r.drain_kw, g(r.energy_mj), g(r.buffer_mj), g(r.input_flow_limit_kw))
+    return r
   end
   -- Robot delays (Nick 12:35: world n had 1 construction robot against 325 logistic robots while Astra's 75-entity
   -- layout waited as ghosts). Construction backlog: the ghosts, deconstruction and upgrade orders in a network's

@@ -148,7 +148,9 @@
   - a machine, solar panel or accumulator: its maximum under `electricity`; poles and machines their
     `electric_network_id`, wired entities `circuit.wires`;
   - a roboport or logistic chest: its network (the number `stock {network}` and `reservations` take) and, for a
-    roboport, its own area and robots, or that no roboport's logistic area covers the chest;
+    roboport, its own area and robots, or that no roboport's logistic area covers the chest, and `port.power` at its
+    quality: charging slots, kW a slot and with all charging, drain, buffer and input flow limit (a legendary
+    roboport: 4 slots at 1250 kW, 12.5 MW input);
   - an agricultural tower: its `empty_cells` and why; any entity its `damage_history`;
   - a burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` (in scan, supply,
     bottleneck and the status warning too), with what fills it, whatever the game's status reads.
