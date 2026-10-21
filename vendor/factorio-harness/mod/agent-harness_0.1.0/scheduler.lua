@@ -124,7 +124,7 @@ return function(api)
   end
   local function copy_steps(items)
     local out={}
-    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan} end
+    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan,ends_tick=step.ends_tick} end
     return out
   end
   -- Plans (Grok, shift14 22:50: queue status showed hours of standing-order history, and a finished pickup plan read
@@ -209,6 +209,26 @@ return function(api)
     if q.plan_seq==nil or e.plan==nil then return q.plan_seq==nil end
     return e.plan==q.plan_seq
   end
+  -- A wait_ticks requeued with its end tick (pause_inner): one line, for queue_status and its finished entry. paused:
+  -- the queue is paused now (the steps after it wait for queue_resume).
+  local function kept_line(step,paused)
+    local id=step.id and tostring(step.id)..' ' or ''
+    local left=step.ends_tick-game.tick
+    if step.started_tick and game.tick>=step.ends_tick then
+      -- finished: at its end tick, or as the queue resumed after it
+      if step.started_tick<=step.ends_tick then
+        return string.format('%swait_ticks was interrupted and kept its end tick %d: it ended there',id,step.ends_tick)
+      end
+      return string.format('%swait_ticks was interrupted; its end tick %d passed while your queue was paused, %d s before the queue resumed at tick %d; the steps after it ran from then',
+        id,step.ends_tick,math.floor((step.started_tick-step.ends_tick)/60),step.started_tick)
+    end
+    if left>0 then
+      return string.format('%swait_ticks was interrupted and keeps its end tick %d (%d s left); the steps after it run from then%s',
+        id,step.ends_tick,math.ceil(left/60),paused and ', once queue_resume runs the queue' or '')
+    end
+    return string.format('%swait_ticks was interrupted; its end tick %d passed %d s ago%s',id,step.ends_tick,math.floor(-left/60),
+      paused and ' while your queue is paused: queue_resume runs the steps after it' or ': it ends as the queue runs next')
+  end
   -- orders: true lists the standing orders' entries too (every entry, as before plans); else the plan's own entries,
   -- the orders' counted.
   local function snapshot(q,recent,orders,with_args)
@@ -253,6 +273,8 @@ return function(api)
       plan={id=q.plan.id,kind=q.plan.kind,name=q.plan.name,submitted_s_ago=math.floor((game.tick-q.plan.tick)/60),steps=q.plan.steps,
         done=done,ok=ok_n,failed=failed,pending=left,running=q.current and q.current.plan==q.plan.id or nil}
     end
+    local head=not q.current and q.pending[1]
+    local kept=head and head.action=='wait_ticks' and head.ends_tick and kept_line(head,q.paused) or nil
     local current=q.current
     local waiting=current and current.action=='wait_until' and {condition=current.args,saw=current.saw,until_tick=current.until_tick} or nil
     if waiting and api.wait_info then
@@ -265,7 +287,7 @@ return function(api)
       order=q.order and {name=q.order.name,reason=q.order.reason,steps=q.order.total} or nil,
       orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
       history_total=trimmed and #q.history or nil,
-      waiting=waiting,
+      waiting=waiting,kept_wait=kept,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       paused_why=q.paused and q.paused_why and string.format('%s (tick %d, %ds ago); queue_resume runs the rest',q.paused_why.line,q.paused_why.tick,math.floor((game.tick-q.paused_why.tick)/60)) or nil,
@@ -526,8 +548,8 @@ return function(api)
   -- An interrupted step goes back to the head of pending work (restarting from
   -- scratch), so resuming retries it instead of running later steps without it.
   -- Steps toward an absolute goal restart cleanly; relative ones (walk N
-  -- ticks, wait N ticks) would repeat what already happened, so they are not
-  -- requeued.
+  -- ticks) would repeat what already happened, so they are not requeued; a
+  -- wait_ticks is requeued with its end tick (below).
   local RESTARTABLE={move_to=true,construct=true,build_path=true,mine=true,repair=true,kite=true,wait_until=true,rearm=true,refuel=true,collect=true,recover=true}
   -- (d17 batch35 A5, Muse 14:16: rocket launches stalled 5+ minutes after a failed direct call paused the queue, until a
   -- queue_status read showed it) The job and step a failed direct call would pause now, or nil when nothing runs.
@@ -619,6 +641,14 @@ return function(api)
         again=true
         q.requeued_load={id=step.id,tick=game.tick}
       end
+      -- (d20 batch62 X1, Aurora: Sol's 600 s wait_ticks ended at 433 s when he equipped a gun, and the circuit_set after
+      -- it ran then) A wait_ticks keeps its end tick: requeued at the head with it, it ends at that tick, or as the
+      -- queue resumes when the tick passed while it was paused; the steps after it never run sooner.
+      local ends
+      if not again and step.action=='wait_ticks' and type(step.until_tick)=='number' then
+        again=true; ends=step.until_tick
+        resumed=string.format('keeps its end tick %d (%d ticks left)',ends,math.max(0,ends-game.tick))
+      end
       record(q,step,false,{reason='interrupted',requeued=again or nil,resumed_from=resumed}); q.current=nil
       -- A walk through via points goes on from the first one it had not reached (runtime: via_done).
       if again and step.via_done and type(args)=='table' and type(args.via)=='table' then
@@ -628,7 +658,7 @@ return function(api)
         rest.via=#left>0 and left or nil
         args=rest
       end
-      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan}) end
+      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan,ends_tick=ends}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -817,7 +847,7 @@ return function(api)
       error('queue_submit queued nothing: repeating job "'..loop..'" ('..active..'); mode="replace" stops its active step and removes the loop; mode="ahead" runs before its remaining steps (restarts an active absolute-goal step); mode="append" waits behind the current round',0)
     end
     if a.mode=='ahead' and q.current then
-      assert(RESTARTABLE[q.current.action],'mode="ahead" cannot restart active '..q.current.action..'; mode="replace" stops it and replaces the repeating plan')
+      assert(RESTARTABLE[q.current.action] or q.current.action=='wait_ticks','mode="ahead" cannot restart active '..q.current.action..'; mode="replace" stops it and replaces the repeating plan')
     end
     local replacing=a.mode=='replace'
     local extra=a.mode=='ahead' and q.current and 1 or 0
@@ -997,10 +1027,22 @@ return function(api)
   function M.handlers.queue_cancel(p,a)
     local q=queue(p.index); revision(q,a)
     preempt(p,q)
+    -- (d20 batch62 X1) a cancel ends a running wait_ticks (a pause keeps it with its end tick); with clear false the
+    -- steps after it stay held, paused, and the reply says so
+    local dropped
+    if q.current and q.current.action=='wait_ticks' and not q.order then
+      local step=q.current
+      q.current=nil
+      record(q,step,false,{reason='cancelled by queue_cancel',until_tick=step.until_tick})
+      dropped=string.format('%s wait_ticks cancelled %d s before its end tick %d',tostring(step.id),math.max(0,math.ceil(((step.until_tick or game.tick)-game.tick)/60)),step.until_tick or game.tick)
+    end
     api.stop(p)
     M.pause(p.index)
     if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil; q.condition=nil; q.condition_error=nil end
-    return snapshot(q,RECENT)
+    local out=snapshot(q,RECENT)
+    if dropped and #q.pending>0 then out.cancelled_wait=dropped..'; the steps after it are held: your queue is paused, and queue_resume runs them now'
+    elseif dropped then out.cancelled_wait=dropped end
+    return out
   end
   function M.handlers.queue_resume(p,a)
     local q=queue(p.index); revision(q,a)
@@ -1081,6 +1123,7 @@ return function(api)
               local success=not outcome or SUCCESS[outcome]==true
               local result={accepted=step.result,outcome=outcome or 'completed',completion=api.completion and api.completion(p,step.action)}
               q.current=nil
+              if step.action=='wait_ticks' and step.ends_tick then result.kept=kept_line(step) end
               local partial,nfailed=entries_failed(step,result)
               if partial then result.reason=partial; result.entries_failed=nfailed end
               if success and not partial and minimum(step,result) then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
@@ -1129,7 +1172,7 @@ return function(api)
             if not allowed then
               fail(q,p,step,{reason=api.reason and api.reason(why) or tostring(why)})
             elseif step.action=='wait_ticks' then
-              step.until_tick=game.tick+step.args.ticks
+              step.until_tick=step.ends_tick or game.tick+step.args.ticks
               q.current=step
             elseif step.action=='wait_until' then
               -- Checked from the next tick, so a wait placed after an action
@@ -1201,15 +1244,15 @@ return function(api)
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps (a wait_ticks resumes after them with its end tick), preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)',
       guards='{remove=[guard ids], replace=[{id, when, goto|steps}], add=[guards as queue_submit takes them]} with expected_revision, nothing else: the guards only, all or none; the active step (its wait too) and the pending steps go on, and each guard not named keeps its baseline (platform_loss counts from the tick it did; one replaced or added counts from its since_tick or the edit). Returns revision, guards [{id, until, set_tick, since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines, line'},
-    queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
+    queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses (a running wait_ticks ends here; cancelled_wait says so)',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     queue_pause={expected_revision='optional',returns='the queue paused by you: the running step stops and goes back to the head of pending; it holds until queue_resume (or a queue_submit or queue_repeat that starts it); direct calls between never resume it (held)'},
-    wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
+    wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait); a queue step that a pause interrupts (a direct call that drives your character, queue_pause, a harness update) keeps its end tick: it ends there, or as the queue resumes if that tick passed while paused, and the steps after it never run sooner (queue_status kept_wait; its history entry kept)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     wait_until={names='platform_loss: optional 1..16 entity names: only losses of those',since_tick='platform_loss: optional game tick the losses count from (default the wait\'s or guard\'s first check)',level='researched, a technology with levels (an infinite one too): met once level N is researched (its level reads past N); default: the level it was on when the wait began, so the next level done meets it',drop_id='pod_landed: one drop\'s number (drop and drops give it): met once it has landed',last_drop='pod_landed: true: the platform\'s latest drop when the wait begins, met once it has landed',quality='item_count: the quality counted (normal, uncommon, rare, epic, legendary), or "any" for every quality summed; the item\'s name alone counts normal quality only. No other condition takes it',['until']='no_enemy_structures|no_enemies|units_clear (enemy units only, as no_enemies counts them: worms and spawners stay)|turrets_idle|ammo_below|health_below|health_above|item_count|pod_landed (platform, item?, at_least?: pods sent down from it that landed since the wait began, freight\'s receipts: pods, or with item how many of it; default 1)|spoil_within (position, seconds 1..3600, item?: the assembler or furnace there, met when its input\'s first stack of item, or any, spoils or hatches within seconds)|fluid_count (platform, fluid, at_least|below: the fluid in every tank, pipe, thruster and machine of ours there; saw says each kind)|circuit_signal (platform, signal, at_least|below: the hub\'s red and green wires)|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss (platform, at_least?, names?, since_tick?: our entities on that platform destroyed since the wait or guard began (since_tick, default its first check), at_least of them (default 1), of names when given; saw names each with where, by what and when; a remote lane wait and guard too)|all (silo_parts is rocket_parts; all: conditions=[...], met when every one holds; queue_done is a sleep\'s); a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
