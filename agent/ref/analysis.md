@@ -174,7 +174,8 @@
   `power` is also an observe scope.
 - `fuel_budget {surface?, boilers?}`: each fuel made and used per minute, and each group of fuel users (boilers,
   furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its
-  own fuel lasts, fewest first. `boilers: true`: each boiler group's burn against the fuel in reach and the drills
+  own fuel lasts, fewest first. Reactors one by one: temperature, the fuel burning and what is left of it, fuel slots,
+  the feeding inserters' circuit condition and stock, minutes left from heat, burning fuel and feed. `boilers: true`: each boiler group's burn against the fuel in reach and the drills
   supplying it, with the hours left, and each boiler under 5 fuel with its feeding inserters (burner fuel, no power,
   not connected; one taking from a belt: that belt line's length, its head and why it stops there, and its gaps, so a
   broken link reads apart from a shortage), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from}` call
