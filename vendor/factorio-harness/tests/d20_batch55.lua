@@ -323,3 +323,72 @@ do
   defines,prototypes=nil,nil
 end
 print('d20_batch55 P6 requests count what is on the way: ok')
+
+-- P7 (Astra #1426: a crusher on advanced-carbonic with +40% asteroid productivity read 20.3 crafts/min against 19.2,
+-- productivity 0, "106%"). 2.0.77's LuaEntity.productivity_bonus leaves out the recipe's research (the private copy: 0
+-- at +40%, the bar filling 0.4 a craft); the game adds the two, capped at the recipe's maximum (+300%). The bar fills
+-- with crafting progress. A recipe with research productivity and none from modules.
+do
+  game={tick=5000}
+  defines={inventory={assembling_machine_input=2,furnace_source=2}}
+  local CR=dofile('mod/agent-harness_0.1.0/craftrate.lua'){}
+  local force={recipes={['advanced-carbonic-asteroid-crushing']={productivity_bonus=0.4}}}
+  local recipe={name='advanced-carbonic-asteroid-crushing',energy=5,ingredients={{name='carbonic-asteroid-chunk',amount=1}},
+    products={{name='carbon',amount=5},{name='sulfur',amount=2},{name='carbonic-asteroid-chunk',amount=1,probability=0.05}},prototype={maximum_productivity=3}}
+  local m={valid=true,name='crusher',type='assembling-machine',position={x=-6,y=9},force=force,prototype={},productivity_bonus=0,crafting_speed=3.84,
+    products_finished=200,bonus_progress=0.7,crafting_progress=0.5,status='working',get_recipe=function() return recipe end,
+    get_inventory=function() return {get_item_count=function() return 0 end} end}
+  -- inspect's rate: the research in, the machine's own 0
+  local rt=CR.machine(m)
+  eq(rt.productivity,0.4); eq(rt.productivity_machine,0); eq(rt.productivity_research,0.4); eq(rt.crafts_per_min,46.1)
+  eq(rt.products[1].per_min,322.6,'carbon 46.08 x 5 x 1.4')
+  assert(rt.line:find('productivity +40% (research +40%)',1,true),rt.line)
+  -- the cap: +350% research makes +300%
+  force.recipes[recipe.name].productivity_bonus=3.5
+  local pr=CR.productivity(m,recipe); eq(pr.total,3); eq(pr.capped,true)
+  rt=CR.machine(m); eq(rt.productivity,3)
+  assert(rt.line:find('productivity +300% (research +350%, capped at the recipe\'s +300%)',1,true),rt.line)
+  force.recipes[recipe.name].productivity_bonus=0.4
+  -- uptime over 495 s, working throughout, starting and ending partway through a craft
+  local st={}
+  local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st end,remote_entity=function() return m end,
+    status_name=function(e) return e.status end,craftrate=function(e) return CR.machine(e) end,productivity=function(e,r) return CR.productivity(e,r) end}
+  local function run(seconds,at_tick)
+    local base=0
+    for t=game.tick+1,game.tick+seconds*60 do
+      game.tick=t
+      local p=m.productivity_bonus+force.recipes[recipe.name].productivity_bonus
+      local step=m.crafting_speed/recipe.energy/60
+      m.crafting_progress=m.crafting_progress+step; m.bonus_progress=m.bonus_progress+p*step
+      if m.crafting_progress>=1 then m.crafting_progress=m.crafting_progress-1; base=base+1; m.products_finished=m.products_finished+1 end
+      while m.bonus_progress>=1 do m.bonus_progress=m.bonus_progress-1; m.products_finished=m.products_finished+1 end
+      if at_tick and t==at_tick[1] then at_tick[2]() end
+      U.tick(t)
+    end
+    return base
+  end
+  U.handler({index=1},{position={x=-6,y=9},seconds=495})
+  local base=run(495)
+  local row=U.handler({index=1},{}).machines[1]
+  eq(row.crafts,base,'the base crafts'); eq(row.crafts,380); eq(row.bonus_completions,row.completions-base); eq(row.bonus_completions,152)
+  eq(row.productivity,0.4); eq(row.productivity_research,0.4); eq(row.full_speed_per_min,46.1); eq(row.full_speed_completions_per_min,64.5); eq(row.crafts_unknown,nil)
+  assert(row.line:find('380 crafts in 495s (46.1/min, 100% of its 46.1/min at full speed) and 152 productivity completions (productivity +40%: the machine\'s +0%, research +40%): 532 completions',1,true),row.line)
+  -- the craft in progress: 5 crafts and 0.9 of a sixth at +300% fill 17.7 bar, 17 completions and 0.7 left; without
+  -- the progress term the split would read 6
+  eq(U.split(22,0,0.7,3,0,0.9),5); eq(U.split(22,0,0.7,3),6)
+  -- research finishing during the watch: the base crafts unknown, the completions kept
+  U.handler({index=1},{position={x=-6,y=9},seconds=60})
+  run(60,{game.tick+1800,function() force.recipes[recipe.name].productivity_bonus=0.5 end})
+  row=U.handler({index=1},{}).machines[1]
+  eq(row.crafts,nil); eq(row.bonus_completions,nil); eq(row.crafts_per_min,nil); assert(row.completions>0)
+  eq(row.crafts_unknown,'base crafts unknown: its productivity changed during the watch (+40% -> +50%)')
+  assert(row.line:find(': '..row.completions..' completions in 60s (',1,true) and row.line:find('base crafts unknown: its productivity changed during the watch (+40% -> +50%); working 100%',1,true),row.line)
+  -- productivity that cannot be read
+  local st2={}
+  local U2=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st2 end,remote_entity=function() return m end,
+    status_name=function(e) return e.status end,craftrate=function() return nil end}
+  U2.handler({index=1},{position={x=-6,y=9},seconds=10})
+  eq(U2.handler({index=1},{}).machines[1].crafts_unknown,'base crafts unknown: its productivity could not be read')
+  defines=nil
+end
+print('d20_batch55 P7 uptime and rates with research productivity: ok')

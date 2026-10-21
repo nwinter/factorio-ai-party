@@ -47,9 +47,12 @@ return function(api)
   -- pentapod egg a craft returns is exempt from productivity, 1 + 1 x 1.5 = 2.5 a craft) the rate is inspect's
   -- (craftrate.lua: ignored_by_productivity, the productivity cap), with net per minute when the item goes back in.
   local CR
-  local function rates_of(e)
+  local function cr()
     if CR == nil then local ok, mod = pcall(require, 'craftrate'); CR = ok and mod({}) or false end
-    return CR and try(function() return CR.machine(e) end) or nil
+    return CR
+  end
+  local function rates_of(e)
+    return cr() and try(function() return CR.machine(e) end) or nil
   end
   -- One machine's row.
   function M.row(e, recipe, item)
@@ -75,7 +78,9 @@ return function(api)
     -- rate now: crafts a minute at its speed and productivity, while working
     local speed = try(function() return e.crafting_speed end) or 0
     local energy = try(function() return recipe.energy end) or 0
-    local prod = 1 + (try(function() return e.productivity_bonus end) or 0)
+    -- (d20 batch55 P7) with the recipe's research, capped (craftrate.productivity)
+    local pt = cr() and try(function() return CR.productivity(e, recipe) end)
+    local prod = 1 + (pt and pt.total or (try(function() return e.productivity_bonus end) or 0))
     local each = per_craft(recipe, item)
     if status == 'working' and speed > 0 and energy > 0 then
       local pr

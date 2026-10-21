@@ -9559,3 +9559,21 @@ fh watch    # deploy on every change
   launched to it, lacks 0)` in silo and the same in platforms' imports (the request and the plates were removed after).
   Grok's case: Kestrel IVa's science request would read on_the_way, lacks 0, while the magazine request read matched,
   which is why the game launched for it. Tests: tests/d20_batch55.lua (P6).
+- P7 (Astra #1426: a crusher on advanced-carbonic with +40% asteroid productivity research read 20.3 crafts/min
+  against 19.2 at full speed, productivity 0, "106%"). On 2.0.77 LuaEntity.productivity_bonus is the machine's own
+  (its base effect, modules, beacons) without the recipe's research: on the private copy a crusher at +40% research
+  read 0 while its productivity bar filled 0.4 a craft. The game adds the recipe's research (LuaRecipe.productivity_bonus)
+  and caps the sum at the recipe's maximum_productivity: at +350% research the bar filled 3 a craft (+300%). A mining
+  drill's figure has the force's mining productivity in it already (0.5 read 0.5). craftrate (inspect's `rate`, supply
+  makers, the silo's parts estimate) now adds the research to the machine's figure, capped, and gives
+  `productivity_machine` and `productivity_research`; the line names research and a cap. uptime uses that sum for base
+  crafts, bonus_completions and full_speed_completions_per_min, gives `productivity_research`, and counts the craft in
+  progress at both ends (the bar fills with crafting progress, so base x (1 + p) = completions + bar1 - bar0 - p x
+  (progress1 - progress0)). When productivity changed during the watch, could not be read, or the recipe changed with
+  productivity above 0, `crafts` and `bonus_completions` are left out and `crafts_unknown` says why; the completions stay.
+  The silo's rocket ETA and wait ETAs on rocket parts add rocket part research too. rates, chain and ratechain already
+  added it; census takes no productivity. On the private copy the crusher at +40% research read `8 crafts in 40s
+  (12/min, 100% of its 12/min at full speed) and 4 productivity completions (productivity +40%: the machine's +0%,
+  research +40%): 12 completions, 18/min against 16.8/min at full speed` (the old read: 12 crafts, 150%), and research
+  raised to +50% during a watch read `base crafts unknown: its productivity changed during the watch (+40% -> +50%)`.
+  Tests: tests/d20_batch55.lua (P7), tests/craftrate.lua.
