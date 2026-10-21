@@ -145,6 +145,14 @@ class LiveSource:
         self.has_library_areas = False
         self.next_library_areas = 0
         self.library_areas_every = 60.0
+        # (d21 batch68 AD3, viewer Aurora) each planet's electric and logistic networks and items' sources and consumers
+        # (netmap.lua `net_map`, made in the background a planet a minute): a read every net_map_every seconds, the
+        # planet whose map changed since this service last read it (the read's own listing says which)
+        self.has_net_map = False
+        self.next_net_map = 0
+        self.net_map_every = 20.0
+        self.net_map_seen = {}  # surface -> the tick of the map read
+        self.net_map_listed = []  # the last read's [{surface, tick}]
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -553,6 +561,7 @@ class LiveSource:
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
             self.has_library_areas = "library_areas" in (res.get("operator_reads") or [])
+            self.has_net_map = "net_map" in (res.get("operator_reads") or [])
             self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
             # artillery shells in flight: serve.py reads them on their own pace (artillery_poller)
             self.has_artillery = "artillery_live" in (res.get("operator_reads") or [])
@@ -682,12 +691,36 @@ class LiveSource:
         if isinstance(res.get("areas"), (list, dict)):
             obs["library_areas"] = dict(res, areas=res["areas"] if isinstance(res["areas"], list) else [])
 
+    def observe_net_map(self, obs, errors):
+        """A planet's networks map (operator read `net_map`), every net_map_every seconds: the first listed planet whose map
+        is newer than the one read (none: the listing only). obs["net_map"] is that map, obs["net_map_listed"] the planets
+        with a map."""
+        now = time.time()
+        if not getattr(self, "has_net_map", False) or now < self.next_net_map:
+            return
+        want = next((x["surface"] for x in self.net_map_listed if isinstance(x, dict) and isinstance(x.get("surface"), str)
+                     and (x.get("tick") or 0) > self.net_map_seen.get(x["surface"], -1)), None)
+        try:
+            res, _ = self.h.operator_read("net_map", {"surface": want} if want else {})
+        except Exception as e:
+            errors["net_map"] = str(e)
+            self.next_net_map = now + 120.0
+            return
+        self.next_net_map = now + self.net_map_every
+        self.net_map_listed = res.get("surfaces") if isinstance(res.get("surfaces"), list) else []
+        obs["net_map_listed"] = [x["surface"] for x in self.net_map_listed if isinstance(x, dict) and isinstance(x.get("surface"), str)]
+        m = res.get("map")
+        if isinstance(m, dict) and isinstance(m.get("surface"), str):
+            self.net_map_seen[m["surface"]] = m.get("tick") or 0
+            obs["net_map"] = m
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
         if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True) \
                 or not getattr(self, "has_loadout", True) or not getattr(self, "has_clouds", True) \
-                or not getattr(self, "has_chronicle", True) or not getattr(self, "has_library_areas", True):
+                or not getattr(self, "has_chronicle", True) or not getattr(self, "has_library_areas", True) \
+                or not getattr(self, "has_net_map", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
         self.observe_groups(obs, errors)
@@ -696,6 +729,7 @@ class LiveSource:
         self.observe_loadout(obs, errors)
         self.observe_clouds(obs, errors)
         self.observe_library_areas(obs, errors)
+        self.observe_net_map(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})

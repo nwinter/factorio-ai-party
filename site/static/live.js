@@ -550,11 +550,24 @@
     if (s.planet_maps && typeof s.planet_maps === 'object') Object.keys(s.planet_maps).forEach(function (k) { take(Object.assign({ surface: k }, s.planet_maps[k])); });
     return planetMaps;
   }
+  // (d21 batch68 AD3) each planet's networks map: state.net_map brings one a push (push_live.py), kept here by surface
+  var netMaps = {};
+  function keepNets(s) {
+    function take(m) {
+      if (!m || typeof m.surface !== 'string') return;
+      var old = netMaps[m.surface];
+      if (!old || !(old.tick > m.tick)) netMaps[m.surface] = m;
+    }
+    take(s.net_map);
+    if (s.net_maps && !Array.isArray(s.net_maps) && typeof s.net_maps === 'object') Object.keys(s.net_maps).forEach(function (k) { take(Object.assign({ surface: k }, s.net_maps[k])); });
+    return netMaps;
+  }
   function mapData(s) {
     var bm = s.basemap || {};
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, turrets_read: bm.turrets_read, terrain: bm.terrain,
       planets: keepPlanets(s), now_tick: s.tick,
       library_areas: s.library_areas && Array.isArray(s.library_areas.areas) ? s.library_areas.areas : [],  // (AD2) placed library areas
+      net_maps: keepNets(s),  // (AD3) electric and logistic networks, items' sources and consumers
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
       clouds: s.clouds || [] };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
