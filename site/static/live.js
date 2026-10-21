@@ -858,25 +858,59 @@
   // The team's reminder jobs (d15 batch5 group I; viewer Foobator's idea, Astra and Sol's design): who set each, its
   // message, when it is next due, the last result and its age, and each recipient's state (pending, acknowledged,
   // overdue). Reminders only send the agents a line; they never act in the game.
+  // (d20 batch65 AA4, viewer Aurora 08:56: "Could the reminder list expand beyond its first 12 entries? ... Active/overdue
+  // filters") The first REM_SHOWN; "Show all N" opens every job the state carries, with All / Active / Overdue filters
+  // (active: on and not done; overdue: a recipient overdue). The reader's choice stays across refreshes.
+  var REM_SHOWN = 12, remAll = store('remindersAll') === '1', remFilter = store('remindersFilter') || 'all';
+  var REM_FILTERS = [['all', 'All'], ['active', 'Active'], ['overdue', 'Overdue']];
+  function remStates(j) {
+    return splitStates(j.states).map(function (st) { var m = /^(\S+) (\S+)(.*)$/.exec(st) || []; return { who: m[1], state: m[2], rest: m[3] }; });
+  }
+  function remIs(j, f) {
+    if (f === 'active') return !!j.enabled && !j.done;
+    if (f === 'overdue') return remStates(j).some(function (x) { return x.state === 'overdue'; });
+    return true;
+  }
   function remindersHtml(rem, byName) {
     if (!rem || !(rem.jobs || []).length) return '';
     var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green' };
-    var rows = rem.jobs.map(function (j) {
+    var jobs = rem.jobs, total = Math.max(rem.total || 0, jobs.length), opened = remAll && total > REM_SHOWN;
+    var list = opened ? jobs.filter(function (j) { return remIs(j, remFilter); }) : jobs.slice(0, REM_SHOWN);
+    var rows = list.map(function (j) {
       var o = byName[j.agent] || {};
       var due = j.done ? 'done' : !j.enabled ? 'off' : j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : '';
-      var states = splitStates(j.states).map(function (st) {
-        var m = /^(\S+) (\S+)(.*)$/.exec(st) || [];
-        var who = byName[m[1]] || {};
-        return '<span class="fx-chip ' + (STATE[m[2]] || 'fx-chip--grey') + '">' + esc((who.display_name || m[1] || '') + ' ' + (m[2] || '') + (m[3] || '')) + '</span>';
+      var states = remStates(j).map(function (x) {
+        var who = byName[x.who] || {};
+        return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '')) + '</span>';
       }).join(' ');
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
         esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted">' + esc([j.cadence, due].filter(Boolean).join(', ')) + '</span>' +
         (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result' + (j.result_age_s != null ? ' ' + ago(j.result_age_s) : '') + ':') : '') +
         evidenceHtml('rem' + j.id, j) + (states ? '<br>' + states : '') + '</span></li>';
     }).join('');
-    return '<h4>Reminders</h4><ul class="board-claims board-reminders">' + rows + '</ul>' +
-      (rem.total > rem.jobs.length ? '<p class="fx-muted small">+' + esc(rem.total - rem.jobs.length) + ' more</p>' : '');
+    var filters = !opened ? '' : '<div class="rem-filters" role="group" aria-label="Show reminders">' + REM_FILTERS.map(function (f) {
+      var n = jobs.filter(function (j) { return remIs(j, f[0]); }).length;
+      return '<button type="button" class="fx-btn fx-btn--small" data-rem-filter="' + f[0] + '" aria-pressed="' + (remFilter === f[0]) + '">' +
+        esc(f[1]) + ' (' + n + ')</button>';
+    }).join(' ') + '</div>';
+    var none = opened && !list.length ? '<p class="fx-muted small">No ' + esc(remFilter) + ' reminders.</p>' : '';
+    var unsent = opened && total > jobs.length ? '<p class="fx-muted small">+' + esc(total - jobs.length) + ' more not sent (the page\'s size limit)</p>' : '';
+    var toggle = total > REM_SHOWN ? '<button type="button" class="fx-btn fx-btn--small rem-all" data-action="reminders-all" aria-expanded="' + opened + '">' +
+      (opened ? 'Show the first ' + REM_SHOWN : 'Show all ' + total + ' reminders (+' + (total - Math.min(REM_SHOWN, jobs.length)) + ' more)') + '</button>' : '';
+    return '<div class="board-rem"><h4>Reminders</h4>' + filters + (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + unsent + toggle + '</div>';
   }
+  app.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-action="reminders-all"], [data-rem-filter]') : null;
+    if (!b) return;
+    if (b.dataset.remFilter) { remFilter = b.dataset.remFilter; store('remindersFilter', remFilter); }
+    else { remAll = !remAll; store('remindersAll', remAll ? '1' : '0'); }
+    var box = b.closest('.board-rem');
+    if (box && lastState) {
+      box.outerHTML = remindersHtml(lastState.reminders, team);
+      var again = app.querySelector(b.dataset.remFilter ? '[data-rem-filter="' + remFilter + '"]' : '[data-action="reminders-all"]');
+      if (again) again.focus();
+    }
+  });
   function projectsHtml(board, byName, card, withNext) {
     var shown = (board.projects || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');
     var more = (board.projects_more || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');

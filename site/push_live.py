@@ -260,14 +260,32 @@ def newest_evidence(row):
 REMINDER_BYTES = 24 * 1024  # the reminders' share of the state: results up to 1000 characters, evidence lines
 
 
+REMINDERS_SHOWN = 12  # the panel's first view (live.js REM_SHOWN); "Show all" opens the rest
+
+
 def public_reminders(rem):
     """(d19 batch43 A2) the reminder jobs with their results and evidence whole, within REMINDER_BYTES: over it, each
-    job keeps its newest evidence line (evidence_more says how many older)."""
+    job keeps its newest evidence line (evidence_more says how many older). (d20 batch65 AA4, viewer Aurora 08:56) The
+    whole list rides along for the panel's "Show all" (25 jobs on world n at 09:10: 21 KB); still over, jobs past the
+    first REMINDERS_SHOWN go, finished ones first, then the last; total keeps the count, and the page says how many
+    were not sent."""
     if not isinstance(rem, dict) or not isinstance(rem.get("jobs"), list):
         return rem
     out = dict(rem)
-    if len(json.dumps(out, ensure_ascii=False)) > REMINDER_BYTES:
+    size = lambda: len(json.dumps(out, ensure_ascii=False))  # noqa: E731
+    if size() > REMINDER_BYTES:
         out["jobs"] = [newest_evidence(j) for j in out["jobs"]]
+    if size() > REMINDER_BYTES:
+        head, tail = out["jobs"][:REMINDERS_SHOWN], list(out["jobs"][REMINDERS_SHOWN:])
+        drop = [i for i in reversed(range(len(tail))) if isinstance(tail[i], dict) and tail[i].get("done")] + \
+            [i for i in reversed(range(len(tail))) if not (isinstance(tail[i], dict) and tail[i].get("done"))]
+        gone = set()
+        for i in drop:
+            if size() <= REMINDER_BYTES:
+                break
+            gone.add(i)
+            out["jobs"] = head + [j for k, j in enumerate(tail) if k not in gone]
+        out.setdefault("total", len(rem["jobs"]))
     return out
 
 
