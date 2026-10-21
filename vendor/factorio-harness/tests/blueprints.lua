@@ -684,6 +684,50 @@ do
   eq(L.blueprint_import(luna,{name='chest-row-copy',blueprint=ex.blueprint,description='mine'}).replaced,'luna')
   -- Without name: your own slot, as before.
   eq(L.blueprint_import(p,{blueprint=ex.blueprint,slot='mine'}).slot,'mine')
+  -- (d20 batch59 U4, viewer Aurora) a retired entry: the mark kept beside its description, said wherever the entry is
+  -- listed, exported or pasted (dry run or real); nothing is refused for it.
+  L.blueprint_save(p,{name='u4-old',area=area,description='as written'})
+  L.blueprint_save(p,{name='u4-new',area=area})
+  local rev=lib.revision
+  local rt=L.blueprint_retire(p,{name='u4-old',reason='belts  jam\nat the third furnace',replaced_by='u4-new'})
+  local line='retired by sol: belts jam at the third furnace; replaced by u4-new'
+  eq(rt.retired,line); eq(rt.was,nil); eq(lib.revision,rev+1,'the operator mirror sees the change')
+  eq(lib.entries['u4-old'].description,'as written','the description stays as written')
+  local function row_of(name) for _,r in ipairs(L.blueprint_list(p,{limit=256}).library) do if r.name==name then return r end end end
+  eq(row_of('u4-old').retired,line); eq(row_of('u4-new').retired,nil); eq(L.blueprint_list(p,{}).library_retired,1)
+  local full=L.blueprint_list(p,{name='u4-old'})
+  eq(full.retired,line); eq(full.retired_at,'0m ago'); eq(full.description,'as written')
+  local ex4=L.blueprint_export(p,{name='u4-old'})
+  eq(ex4.retired,line); eq(sources[ex4.blueprint].blueprint_description,'as written')
+  eq(L.plan(p,{name='u4-old',position={x=30.5,y=10.5}}).retired,line,'a dry run says it')
+  local pl4=L.blueprint_place(p,{name='u4-old',position={x=30.5,y=10.5}})
+  eq(pl4.retired,line); eq(lib.entries['u4-old'].uses,1,'placed all the same')
+  eq(L.blueprint_place(p,{name='u4-new',position={x=40.5,y=10.5}}).retired,nil)
+  local op=L.operator.blueprint_library({})
+  for _,r in ipairs(op.entries) do if r.name=='u4-old' then eq(r.retired,line); eq(r.retired_tick,game.tick) end end
+  -- Refusals: the replacement is an entry of the library, not the entry itself, not retired itself; the author rules.
+  fails(function() L.blueprint_retire(p,{name='u4-old',reason='x',replaced_by='nope'}) end,'no library entry nope')
+  fails(function() L.blueprint_retire(p,{name='u4-old',reason='x',replaced_by='bad name'}) end,'replaced_by must be')
+  fails(function() L.blueprint_retire(p,{name='u4-new',reason='x',replaced_by='u4-new'}) end,'replaced_by names u4%-new itself')
+  fails(function() L.blueprint_retire(p,{name='u4-new',reason='x',replaced_by='u4-old'}) end,'u4%-old is retired itself: retired by sol')
+  fails(function() L.blueprint_retire(p,{name='u4-old',reason=' ',replaced_by='u4-new'}) end,'reason must be text of 1..200 characters')
+  fails(function() L.blueprint_retire(p,{name='u4-old',clear=true,reason='x'}) end,'clear: true takes name only')
+  fails(function() L.blueprint_retire(luna,{name='u4-new',reason='x',replaced_by='chest-row'}) end,"u4%-new is sol's entry; another agent may retire it after 24 game hours unused")
+  fails(function() L.blueprint_retire(luna,{name='u4-old',clear=true}) end,'another agent may clear the retired mark of it')
+  -- The replacement renamed: the mark follows; retired too: the line says by what; deleted: the line says so.
+  eq(L.blueprint_rename(p,{name='u4-new',new_name='u4-new2'}).replacement_for[1],'u4-old')
+  eq(lib.entries['u4-old'].retired.replaced_by,'u4-new2')
+  L.blueprint_save(p,{name='u4-v3',area=area})
+  L.blueprint_retire(p,{name='u4-new2',reason='slow',replaced_by='u4-v3'})
+  eq(L.blueprint_export(p,{name='u4-old'}).retired,'retired by sol: belts jam at the third furnace; replaced by u4-new2 (retired too; replaced by u4-v3)')
+  eq(L.blueprint_delete(p,{name='u4-new2'}).replacement_for[1],'u4-old')
+  eq(row_of('u4-old').retired,'retired by sol: belts jam at the third furnace; replaced by u4-new2 (no entry of that name now)')
+  -- A new mark replaces the old (was); clear; a save under the name drops the mark with the old design.
+  eq(L.blueprint_retire(p,{name='u4-old',reason='see v3',replaced_by='u4-v3'}).was,'retired by sol: belts jam at the third furnace; replaced by u4-new2 (no entry of that name now)')
+  eq(L.blueprint_retire(p,{name='u4-old',clear=true}).cleared,'retired by sol: see v3; replaced by u4-v3')
+  eq(lib.entries['u4-old'].retired,nil); eq(L.blueprint_retire(p,{name='u4-old',clear=true}).unchanged,'u4-old is not retired')
+  L.blueprint_retire(p,{name='u4-old',reason='r',replaced_by='u4-v3'})
+  eq(L.blueprint_save(p,{name='u4-old',area=area}).retired_cleared,'retired by sol: r; replaced by u4-v3'); eq(lib.entries['u4-old'].retired,nil)
   _G.capture_world=nil; p.name=nil
 end
 -- blueprint_save and blueprint_capture with platform=NAME (Astra, d15 18:35): the platform handler's view of the

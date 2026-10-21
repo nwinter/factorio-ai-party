@@ -133,6 +133,17 @@ return function(api)
     end
     return e
   end
+  -- (d20 batch59 U4, viewer Aurora) a retired entry: who retired it, why, and the entry that replaces it, kept beside
+  -- the description (which stays as written). A list row, an export and a paste (dry run or real) of it say so and go
+  -- on; nothing is refused for it.
+  local MAX_REASON = 200
+  local function retired_line(e)
+    local r = e and e.retired
+    if not r then return nil end
+    local new = library().entries[r.replaced_by]
+    return string.format('retired by %s: %s; replaced by %s%s', r.by, r.reason, r.replaced_by,
+      not new and ' (no entry of that name now)' or new.retired and ' (retired too; replaced by ' .. new.retired.replaced_by .. ')' or '')
+  end
   local function load(p, a, fn)
     local value
     if a.name ~= nil then
@@ -714,6 +725,7 @@ return function(api)
           local e=library_entry(a.name)
           e.last_used=game.tick; e.last_user=api.who(p); e.uses=(e.uses or 0)+1
           local lib=library(); lib.revision=lib.revision+1
+          out.retired=retired_line(e)
           -- (d20 batch55 P2) where the paste put each entity, for a blueprint check (checks.lua): position and facing
           -- (none compared on a flipped paste), the first 400
           if api.checks_placed then pcall(function()
@@ -817,7 +829,8 @@ return function(api)
         anchored.aligned=math.abs(anchored.anchor_landed.x-anchored.anchor.x)<0.01 and math.abs(anchored.anchor_landed.y-anchored.anchor.y)<0.01
       end
       return {entities=list,tiles=tlist,mode=mode,origin_at=shift,center_at={x=shift.x+cx,y=shift.y+cy},anchor=anchored,
-        slot=a.name==nil and slot_name(a) or nil,name=a.name,label=stack.label~='' and stack.label or nil}
+        slot=a.name==nil and slot_name(a) or nil,name=a.name,label=stack.label~='' and stack.label or nil,
+        retired=a.name~=nil and retired_line(library_entry(a.name)) or nil}
     end)
   end
 
@@ -1197,9 +1210,11 @@ return function(api)
     local r={name=e.name,author=e.author,entities=e.entities,tiles=e.tiles>0 and e.tiles or nil,
       footprint=string.format('%gx%g',e.footprint.w,e.footprint.h),counts=counts_line(e.counts,not full and 4 or nil),
       saved=ago(game.tick-e.saved_tick),last_used=e.last_used and ago(game.tick-e.last_used)..' by '..e.last_user or 'never',
-      uses=e.uses or 0,surface=e.surface,anchor=e.anchor~=nil or nil,size_kb=kb(#(e.string or '')),imported=e.imported}
+      uses=e.uses or 0,surface=e.surface,anchor=e.anchor~=nil or nil,size_kb=kb(#(e.string or '')),imported=e.imported,
+      retired=retired_line(e)}
     if full then
       r.description=e.description; r.anchor=e.anchor; r.captured=e.captured
+      r.retired_at=e.retired and ago(game.tick-e.retired.tick) or nil
       r.changeable_by_anyone=game.tick-(e.last_used or e.saved_tick)>=STALE
     elseif e.description then r.description=#e.description>60 and e.description:sub(1,57)..'...' or e.description end
     return r
@@ -1292,6 +1307,7 @@ return function(api)
       lib.entries[name]=entry
       local out=row(entry)
       out.replaced=old and old.author or nil
+      out.retired_cleared=retired_line(old)
       out.ghosts=ghosts>0 and ghosts or nil
       if a.tiles==true then
         local tg=p.surface.count_entities_filtered{area=box,type='tile-ghost',force=p.force}
@@ -1313,8 +1329,10 @@ return function(api)
     local all={}
     for _,e in pairs(library().entries) do all[#all+1]=e end
     table.sort(all,function(x,y) return x.name<y.name end)
-    local rows={}
+    local rows,retired={},0
     for i=from,math.min(#all,from+limit-1) do rows[#rows+1]=row(all[i]) end
+    for _,e in ipairs(all) do if e.retired then retired=retired+1 end end
+    out.library_retired=retired>0 and retired or nil
     local bytes=library_bytes()
     out.library=rows; out.library_limit=MAX_LIBRARY
     out.library_bytes=bytes; out.library_bytes_limit=MAX_LIBRARY_BYTES
@@ -1332,7 +1350,10 @@ return function(api)
     may_change(p,e,'delete')
     local lib=library()
     lib.entries[e.name]=nil; lib.revision=lib.revision+1
-    return {name=e.name,deleted=true,author=e.author}
+    local named={}
+    for n,x in pairs(lib.entries) do if x.retired and x.retired.replaced_by==e.name then named[#named+1]=n end end
+    table.sort(named)
+    return {name=e.name,deleted=true,author=e.author,replacement_for=#named>0 and named or nil}
   end
   -- (d20 batch59 U2, Astra #1446) a string into the team library, as a player imports one into theirs: the importer is
   -- its author, and the same name replaces an entry under blueprint_save's rules. One blueprint (not a book), within
@@ -1373,6 +1394,7 @@ return function(api)
       lib.entries[name]=entry
       local out=row(entry)
       out.replaced=old and old.author or nil
+      out.retired_cleared=retired_line(old)
       out.library_size=string.format('%d of %d entries; %g of %g KB of strings',select(2,library_bytes()),MAX_LIBRARY,kb((library_bytes())),kb(MAX_LIBRARY_BYTES))
       return out
     end)
@@ -1392,7 +1414,7 @@ return function(api)
     return load(p,a,function(stack)
       if e.description then pcall(function() stack.blueprint_description=e.description end) end
       local out={name=e.name,author=e.author,kind='blueprint',entities=e.entities,tiles=e.tiles,description=e.description,anchor=e.anchor,
-        size_kb=kb(#e.string),blueprint=stack.export_stack()}
+        size_kb=kb(#e.string),retired=retired_line(e),blueprint=stack.export_stack()}
       return out
     end)
   end
@@ -1404,7 +1426,36 @@ return function(api)
     local lib,was=library(),e.name
     lib.entries[was]=nil; e.name=new; lib.entries[new]=e
     lib.revision=lib.revision+1; e.rev=lib.revision
-    return {name=new,was=was,author=e.author}
+    local named={}
+    for n,x in pairs(lib.entries) do if x.retired and x.retired.replaced_by==was then x.retired.replaced_by=new; named[#named+1]=n end end
+    table.sort(named)
+    return {name=new,was=was,author=e.author,replacement_for=#named>0 and named or nil}
+  end
+  -- blueprint_retire {name, reason, replaced_by} marks an entry retired (replaced_by an entry of the library that is not
+  -- retired itself); {name, clear: true} clears the mark. Who may, as blueprint_rename: its author any time, anyone
+  -- after 24 game hours unused.
+  function H.blueprint_retire(p,a)
+    local e=library_entry(a.name)
+    local lib=library()
+    if a.clear~=nil then
+      assert(a.clear==true,'clear must be true')
+      assert(a.reason==nil and a.replaced_by==nil,'clear: true takes name only')
+      if not e.retired then return {name=e.name,author=e.author,unchanged=e.name..' is not retired'} end
+      may_change(p,e,'clear the retired mark of')
+      local was=retired_line(e)
+      e.retired=nil; lib.revision=lib.revision+1
+      return {name=e.name,author=e.author,cleared=was}
+    end
+    assert(type(a.reason)=='string' and a.reason:match('%S') and #a.reason<=MAX_REASON,'reason must be text of 1..'..MAX_REASON..' characters')
+    local new=library_entry(entry_name(a.replaced_by,'replaced_by'))
+    assert(new~=e,'replaced_by names '..e.name..' itself')
+    assert(not new.retired,new.name..' is retired itself: '..(retired_line(new) or ''))
+    may_change(p,e,'retire')
+    local was=retired_line(e)
+    e.retired={by=api.who(p),reason=(a.reason:gsub('%s+',' ')),replaced_by=new.name,tick=game.tick}
+    lib.revision=lib.revision+1
+    return {name=e.name,author=e.author,retired=retired_line(e),was=was,
+      note='the description is kept as written; blueprint_list, blueprint_export and a paste of '..e.name..' say it is retired'}
   end
   -- Operator read (tools/bplibrary.py): every entry's facts, and the string of each changed after `since`.
   H.operator={}
@@ -1419,7 +1470,7 @@ return function(api)
     local rows,sent,last,held={},0,nil,false
     for _,e in pairs(lib.entries) do
       local r=row(e,true)
-      r.rev=e.rev; r.saved_tick=e.saved_tick; r.last_used_tick=e.last_used
+      r.rev=e.rev; r.saved_tick=e.saved_tick; r.last_used_tick=e.last_used; r.retired_tick=e.retired and e.retired.tick or nil
       rows[#rows+1]=r
     end
     table.sort(rows,function(x,y) return x.name<y.name end)

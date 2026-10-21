@@ -4267,6 +4267,8 @@ eq(pcall(runtime.check_args,'blueprint_save',{name='row',area={left_top={x=0,y=0
 eq(pcall(runtime.check_args,'blueprint_save',{name='row',positions={{x=1,y=1}}}),true)
 eq(pcall(runtime.check_args,'blueprint_save',{name='row',blueprint='0eNq...'}),false)
 eq(pcall(runtime.check_args,'blueprint_rename',{name='row',new_name='row2'}),true)
+eq(pcall(runtime.check_args,'blueprint_retire',{name='row',reason='jams',replaced_by='row2'}),true)
+eq(pcall(runtime.check_args,'blueprint_retire',{name='row',clear=true}),true)
 eq(pcall(runtime.check_args,'blueprint_list',{name='row'}),true)
 eq(pcall(runtime.check_args,'blueprint_delete',{name='row'}),true)
 eq(pcall(runtime.check_args,'blueprint_export',{name='row',layout=true}),true)
