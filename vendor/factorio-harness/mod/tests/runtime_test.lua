@@ -4068,7 +4068,7 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   drill.minable=true
   world={drill,{valid=true,name='iron-ore',type='resource',position={x=30.5,y=0.5},half=0.5,minable=false,force={name='neutral'}}}
   eq(call('inspect',{position={x=30.5,y=0.5}}).name,'burner-mining-drill')
-  fails(function() call('mine',{position={x=30.5,y=0.5}}) end,'entity is not mineable')
+  fails(function() call('mine',{position={x=30.5,y=0.5}}) end,'iron-ore at (30.5,0.5) is not mineable now: the game reads it not minable')
   -- A roboport and a logistic chest: their logistic network and a roboport's own cell (Luna, 22:53: a coverage gap
   -- told apart from a busy fleet); a logistic chest outside every logistic area has none.
   local cell={owner={valid=true,position={x=20,y=0}},logistic_radius=25,construction_radius=55,charging_robots={},to_charge_robots={},
