@@ -155,6 +155,51 @@ return function(api)
     end
     return out
   end
+  -- (d20 batch54 N9, Sol #1427: changing one guard took a full-plan replace, which ran the plan's first step again,
+  -- paused the queue 14 min with no guard and reset the guards' baselines) Each guard has an id (guard-N, by queue)
+  -- and set_tick; queue_edit guards adds, removes or replaces guards by id, and a guard left as it was keeps its own
+  -- table, so its baseline goes on (platform_loss's loss_since, the state a researched or platform_left guard first
+  -- saw). A guard added or replaced starts its own: platform_loss counts from its since_tick or the edit's tick.
+  local function seed(when)
+    if when['until']=='platform_loss' then when.loss_since=when.loss_since or when.since_tick or game.tick end
+    for _,m in ipairs(when['until']=='all' and when.conditions or {}) do seed(m) end
+  end
+  local function add_guard(q,g,id)
+    if id then g.id=id else q.guard_seq=(q.guard_seq or 0)+1; g.id='guard-'..q.guard_seq end
+    g.set_tick=game.tick
+    seed(g.when)
+    return g
+  end
+  -- guards set before ids (a runtime before batch54 N9) get theirs on the first read
+  local function guard_ids(q)
+    for _,g in ipairs(q.guards or {}) do if not g.id then q.guard_seq=(q.guard_seq or 0)+1; g.id='guard-'..q.guard_seq end end
+  end
+  -- What a guard counts from: platform_loss its since tick; the others read the game at each check against their
+  -- threshold, nothing counted from a start.
+  local function baseline(c)
+    local u=c['until']
+    if u=='platform_loss' then
+      return c.loss_since and string.format('losses on %s since tick %d%s',c.platform,c.loss_since,c.names and ' (of '..table.concat(c.names,', ')..')' or '')
+        or string.format('losses on %s from its first check',c.platform),c.loss_since
+    elseif u=='all' then
+      local parts,since={},nil
+      for _,m in ipairs(c.conditions or {}) do local t,n=baseline(m); parts[#parts+1]=t; since=since or n end
+      return 'all of: '..table.concat(parts,'; '),since
+    elseif u=='ammo_below' then return string.format('read at each check: a turret%s holding under %s',c.platform and ' on '..c.platform or '',tostring(c.count))
+    elseif u=='fluid_count' then return string.format('read at each check: %s on %s %s %s',tostring(c.fluid),tostring(c.platform),c.below and 'below' or 'at least',tostring(c.below or c.at_least))
+    elseif (u=='researched' and c.level==nil) or u=='platform_left' then return 'from what its first check saw, kept with the guard'
+    end
+    return 'read at each check'
+  end
+  local function guard_rows(q,status)
+    local rows={}
+    for _,g in ipairs(q.guards or {}) do
+      local text,since=baseline(g.when)
+      rows[#rows+1]={id=g.id,['until']=g.when['until'],set_tick=g.set_tick,since_tick=since,baseline=text,edit=status and status[g.id] or nil,
+        reaction=g['goto'] and ('goto '..g['goto']) or g.steps and (#g.steps..' step'..(#g.steps==1 and '' or 's')) or 'abort (the queue pauses)'}
+    end
+    return rows
+  end
   -- recent: keep only the newest entries of the history (the changing calls;
   -- shake3: Opus's queue cancel printed 60+ entries); queue_status takes a count.
   local RECENT,PLAN_RECENT=3,16
@@ -167,6 +212,7 @@ return function(api)
   -- orders: true lists the standing orders' entries too (every entry, as before plans); else the plan's own entries,
   -- the orders' counted.
   local function snapshot(q,recent,orders,with_args)
+    guard_ids(q)
     local list,from_orders=q.history,0
     if not orders then
       list={}
@@ -759,7 +805,7 @@ return function(api)
       local dropped=#q.pending
       q.pending=items
       q.guards=q.guards or {}
-      for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
+      for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=add_guard(q,g) end
       if a.start~=false then q.paused=false; q.held=nil end
       q.submission=string.format('pending replaced: %d dropped, %d queued; the active step goes on',dropped,#items)
       q.revision=q.revision+1
@@ -800,7 +846,7 @@ return function(api)
     end
     q.guards=q.guards or {}
     assert(#q.guards+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
-    for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
+    for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=add_guard(q,g) end
     if a.start~=false then q.paused=false; q.held=nil end
     q.revision=q.revision+1
     return with(snapshot(q,RECENT),corrected)
@@ -842,8 +888,66 @@ return function(api)
     if met then q.pending={}; q.cycle=0; end_loop(q,"condition met: "..tostring(saw or a.condition["until"])) end
     return with(snapshot(q,RECENT),corrected)
   end
+  -- queue_edit guards={remove=[ids], replace=[{id, when, goto|steps}], add=[guards]}: the guards only, at once or not
+  -- at all; the active step, its wait and the pending steps go on.
+  local function edit_guards(p,q,a)
+    assert(a.id==nil and a.index==nil and a.steps==nil and a.remove==nil and a.to==nil,'guards edits the guards only: id, index, steps, remove and to go in a call of their own')
+    assert(a.expected_revision~=nil,'queue_edit guards requires expected_revision (queue_status)')
+    revision(q,a)
+    local e=a.guards
+    assert(type(e)=='table','guards is {add=[guards], remove=[ids], replace=[{id, when, goto|steps}]}')
+    for k in pairs(e) do assert(k=='add' or k=='remove' or k=='replace','guards takes add, remove and replace (unknown: '..tostring(k)..')') end
+    assert(e.add or e.remove or e.replace,'guards is {add=[guards], remove=[ids], replace=[{id, when, goto|steps}]}')
+    guard_ids(q)
+    local by={}
+    for _,g in ipairs(q.guards or {}) do by[g.id]=g end
+    local function known(id,path)
+      if by[id] then return end
+      local ids={}
+      for _,g in ipairs(q.guards or {}) do ids[#ids+1]=g.id..' '..g.when['until'] end
+      error(path..': no guard '..tostring(id)..'; guards: '..(#ids>0 and table.concat(ids,', ') or 'none'),0)
+    end
+    local status={}
+    local remove=type(e.remove)=='string' and {e.remove} or e.remove or {}
+    assert(type(remove)=='table','guards.remove is a list of guard ids')
+    for i,id in ipairs(remove) do known(id,'guards.remove['..i..']'); status[id]='removed' end
+    local replace=e.replace or {}
+    assert(type(replace)=='table','guards.replace is a list of {id, when, goto|steps}')
+    for i,r in ipairs(replace) do
+      assert(type(r)=='table','guards.replace['..i..'] is {id, when, goto|steps}')
+      known(r.id,'guards.replace['..i..']')
+      assert(not status[r.id],'guards.replace['..i..']: '..r.id..' is '..(status[r.id]=='removed' and 'removed in this call too' or 'replaced twice'))
+      status[r.id]='replaced'
+    end
+    local function specs(list) local out={}; for _,r in ipairs(list) do out[#out+1]={when=r.when,['goto']=r['goto'],steps=r.steps} end return out end
+    local added=checked('guards.add',function() return guards({guards=e.add},p) end)
+    local swapped=checked('guards.replace',function() return guards({guards=specs(replace)},p) end)
+    assert(#(q.guards or {})-#remove+#added<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
+    local new_by={}
+    for i,r in ipairs(replace) do new_by[r.id]=swapped[i] end
+    local list={}
+    for _,g in ipairs(q.guards or {}) do
+      if new_by[g.id] then list[#list+1]=add_guard(q,new_by[g.id],g.id)
+      elseif status[g.id]~='removed' then list[#list+1]=g; status[g.id]='kept' end
+    end
+    for _,g in ipairs(added) do list[#list+1]=add_guard(q,g); status[g.id]='added' end
+    q.guards=list
+    q.revision=q.revision+1
+    local out=snapshot(q,RECENT)
+    out.guards=guard_rows(q,status)
+    local n={kept=0,added=0,replaced=0,removed=#remove}
+    for _,v in pairs(status) do if v~='removed' then n[v]=n[v]+1 end end
+    local lines={}
+    for _,r in ipairs(out.guards) do lines[#lines+1]=string.format('%s %s (%s): %s',r.id,r['until'],r.edit,r.baseline) end
+    out.line=string.format('guards edited (revision %d): %d kept, %d replaced, %d added, %d removed%s; the active step%s and the %d pending step%s go on',q.revision,
+      n.kept,n.replaced,n.added,n.removed,#remove>0 and ' ('..table.concat(remove,', ')..')' or '',q.current and ' ('..q.current.id..' '..q.current.action..')' or ' (none)',
+      #q.pending,#q.pending==1 and '' or 's')
+    out.guard_lines=lines
+    return out
+  end
   function M.handlers.queue_edit(p,a)
     local q=queue(p.index)
+    if a.guards~=nil then return edit_guards(p,q,a) end
     -- id (Astra, d15 09:20): a pending step by its job id (queue_status pending: "job-12"), without a revision; to: move
     -- it to that pending place (1-based) instead of editing; the active step is never touched.
     if a.id~=nil then
@@ -1100,7 +1204,8 @@ return function(api)
     queue_submit={resume_after_direct='optional true: from now on a direct call that pauses this queue resumes it when that call ends, success or failure (not one paused by queue_pause); false: off (the default; queue_resume_after: true on one call does it for that call)',steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
-      id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)'},
+      id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)',
+      guards='{remove=[guard ids], replace=[{id, when, goto|steps}], add=[guards as queue_submit takes them]} with expected_revision, nothing else: the guards only, all or none; the active step (its wait too) and the pending steps go on, and each guard not named keeps its baseline (platform_loss counts from the tick it did; one replaced or added counts from its since_tick or the edit). Returns revision, guards [{id, until, set_tick, since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines, line'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     queue_pause={expected_revision='optional',returns='the queue paused by you: the running step stops and goes back to the head of pending; it holds until queue_resume (or a queue_submit or queue_repeat that starts it); direct calls between never resume it (held)'},
@@ -1114,7 +1219,7 @@ return function(api)
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
-    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
+    guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step; each has an id (guard-N) and set_tick (queue_status guards); queue_edit guards adds, removes or replaces them by id without touching the plan',max=MAX_GUARDS}
   }
   return M
 end

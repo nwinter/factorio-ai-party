@@ -9481,6 +9481,27 @@ fh watch    # deploy on every change
   without confirm (hub cargo and a character aboard), scheduled for 300 s with it, refused again while scheduled,
   cancelled; the dry run on Swift (480 entities, 253 listed, 771 foundation tiles) read in 2.4 ms. agent/ref/space-age.md
   and the index name it (the codex core 21997 bytes of 22000). Tests: tests/d20_batch54.lua N7.
+- N9 (Sol, board #1427: a one-belt repair on Edge8 needed ghosts_waiting off while the platform_loss, ammo and fluid
+  guards stayed; queue_edit edited only pending steps, so Sol replaced the whole plan, which ran platform_schedule
+  current 2 again (failed: already current) and paused the queue from 39007306 to 39008146 with no guard, then needed
+  its first step removed and the wait baselines reset). `queue_edit {lane?, expected_revision, guards: {remove?,
+  replace?, add?}}` (scheduler.lua) edits the guards alone, all or nothing: remove a list of guard ids, replace
+  [{id, when, goto|steps}] (the id stays), add guards as queue_submit takes them (checked as the lane checks a guard's
+  when). The active step, its wait and the pending steps are not touched, and a guard left as it was keeps its own table,
+  so its baseline goes on: platform_loss's loss_since, and the start state a researched (no level) or platform_left
+  guard keeps. ammo_below and fluid_count have no start count; they read the game at each check against count or
+  at_least/below, and the reply says so. A guard added or replaced starts its own baseline: platform_loss counts from
+  its since_tick or the edit's tick, set at once. Every guard now carries an id (guard-N, counted per queue) and set_tick;
+  guards set before this runtime get ids on the first read; every queue write's brief reply names them (guard_ids:
+  `guard-1 ammo_below`, ...) and queue_status lists them in full. The reply: revision, guards [{id, until, set_tick,
+  since_tick (platform_loss), baseline, reaction, edit kept|replaced|added}], guard_lines and line, e.g. `guards edited
+  (revision 9): 2 kept, 0 replaced, 0 added, 1 removed (guard-3); the active step (job-2 wait_until) and the 1 pending
+  step go on`. It refuses: no expected_revision or a stale one; guards with id, index, steps, remove or to; an unknown
+  guard id (it lists the guards); a guard removed and replaced at once; past 8 guards. A full-plan replace is unchanged
+  (it still clears the guards). agent/ref/waits-queues.md has it. Tests: tests/round1520d.lua 7 (the brief reply), tests/d20_batch54.lua N9: a platform-lane
+  queue with platform_schedule, a platform_arrived wait and one pending step, guards ammo_below, platform_loss and
+  ghosts_waiting; ghosts_waiting removed at tick 2000; ghosts then appear and nothing fires, the wait and the pending
+  step stay, platform_schedule ran once; a loss at 2200 fires platform_loss counting from tick 1000 (the submit).
 ## d20 batch55 (eng/d20-batch55)
 - P1 (viewer Aurora, shift47 13:59: "Could factory snapshots retain their capture time after refresh errors and
   reject older background results?"). Both were true in every cached read refreshed by a background job, and both are

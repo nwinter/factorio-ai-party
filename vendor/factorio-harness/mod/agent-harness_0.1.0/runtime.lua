@@ -15706,10 +15706,13 @@ function M.queue_brief(q)
     recent[#recent+1]=step(r)..(r.ok and ' ok' or ' failed')..(why and ': '..tostring(why) or '')
   end
   local f=q.last_failure
-  return {lane=q.lane,revision=q.revision,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
+  -- (d20 batch54 N9) each guard by id, for queue_edit guards; a guard edit's reply in full (each guard's baseline)
+  local ids
+  if not q.guard_lines and q.guards and #q.guards>0 then ids={}; for _,g in ipairs(q.guards) do ids[#ids+1]=tostring(g.id)..' '..tostring(g.when and g.when['until']) end end
+  return {lane=q.lane,revision=q.revision,line=q.guard_lines and q.line or nil,guard_lines=q.guard_lines,guard_ids=ids,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
     pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
-    repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guards and #q.guards or nil,
+    repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guard_lines and q.guards or q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
     waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
