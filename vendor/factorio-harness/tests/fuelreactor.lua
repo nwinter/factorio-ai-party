@@ -10,9 +10,9 @@ local function has(text,part) assert(text and tostring(text):find(part,1,true),t
 defines={entity_status={disabled_by_control_behavior=7,working=1,no_fuel=2},inventory={chest=1}}
 prototypes={item={['uranium-fuel-cell']={fuel_value=8e9,fuel_category='nuclear'},['coal']={fuel_value=4e6,fuel_category='chemical'}},
   entity={['heat-exchanger']={heat_energy_source_prototype={min_working_temperature=500}}}}
-local R=dofile('mod/agent-harness_0.1.0/fuelreactor.lua'){status_name=function(e) return e.st end,
-  condition_parts=function(ins) return ins.parts end,
+local F=dofile('mod/agent-harness_0.1.0/feeders.lua'){condition_parts=function(ins) return ins.parts end,
   trace=function(ins) return {'red network 3: signal-S 0','  decider-combinator (191.5,-110) output side: signal-T < 800 and uranium-fuel-cell < 1 -> signal-S 1; puts out nothing'} end}
+local R=dofile('mod/agent-harness_0.1.0/fuelreactor.lua'){status_name=function(e) return e.st end,feeders=F}
 
 local function inv(t,size)
   local o={t=t or {},size=size or 1}
@@ -107,4 +107,27 @@ network.n=20
 exchangers=0
 r=R.group({reactor{position={x=360.5,y=0.5},temperature=515,status='no_fuel'}}).reactors[1]
 has(r.minutes.heat_above,'15 C (the reactor'); eq(r.minutes.heat,2.1)
+-- (Y2) feeders.held: a machine lacking an item is held by its feeder's condition when a feeder off by its condition has
+-- the item at its source and none running has it; with no stock, or a running feeder with stock, it is not.
+local function machine(feeds)
+  local e={valid=true,name='cryogenic-plant',position={x=8.5,y=-3.5},surface=surface,force={},
+    bounding_box={left_top={x=6,y=-6},right_bottom={x=11,y=-1}}}
+  local list={}
+  for _,fd in ipairs(feeds) do
+    local chest={valid=true,name='requester-chest',position={x=7.5,y=0.5}}
+    chest.get_output_inventory=function() return inv({ice=fd.ice},48) end
+    list[#list+1]={valid=true,name='fast-inserter',position={x=7.5,y=-0.5},drop_target=e,pickup_target=chest,held_stack={valid_for_read=false},
+      status=fd.off and 7 or 1,parts={fd.off and 'enabled when cryogenic-science-pack < 2000 (on its wires: cryogenic-science-pack 2140): false now; it is off by its condition' or open}}
+  end
+  REACTORS[#REACTORS+1]={e=e,list=list}
+  return e
+end
+REACTORS={}
+local h=F.held(machine({{ice=101,off=true}}),'ice',{traces=1})
+has(h.line,'held by its feeder\'s condition: fast-inserter (7.5,-0.5), enabled when cryogenic-science-pack < 2000'); has(h.line,'holding 101 ice'); eq(h.stock,101)
+has(h.set_by[1],'decider-combinator')
+REACTORS={}
+eq(F.held(machine({{ice=0,off=true}}),'ice',{}),nil,'no stock: a shortage')
+REACTORS={}
+eq(F.held(machine({{ice=50,off=true},{ice=20,off=false}}),'ice',{}),nil,'a running feeder with stock: not held')
 print('fuelreactor ok')
