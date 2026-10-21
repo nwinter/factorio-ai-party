@@ -571,6 +571,11 @@ fh call status
     - Measured on the copy (warm, foundations researched): the straight 86 tiles took 3 calls of 22, 22 and 5 pieces in
       9.1-9.8, 7.2-8.1 and 4.5-5.0 ms; 101 tiles with a 90 degree turn (search 774 checks, about 6 ms) 5 calls of 5-10
       pieces in 9-11 ms; the game built every piece from the ghosts. The first call after a runtime deploy ran 12-21 ms.
+    - Curves (cp3): the elevated search lays the same curve and half-diagonal pieces as on the ground; supports stand
+      on their joints too, facing the heading mod 8. On the copy (-122,281) to (-34,305) went `ESE54 E7` (2 curves, 11
+      half-diagonals) in one call, and (-122,281) to (-21,338) with `to_direction: "south"` went `ESE59 E15 ESE10 SE5
+      SSE5 S5` (4 curve-a, 2 curve-b, 13 half-diagonals) in 5 calls; with the research the game built all 19 and 31
+      pieces, without it the 7 and 5 half-diagonals over deep oil ocean stayed ghosts, the spans `unsupported` named.
     - The private copy (Fulgora x=-175, y 194 to 312: 86 tiles of oil ocean, 25 deep): 2 ramps, 43 rails, 4 supports with
       the research, and the game built all 49 from their ghosts; without it 2 supports, and the 15 rails over the deep
       part stayed ghosts. Planning took 1.7-1.9 ms; the dry run 12.6 ms and the ghosts 19 ms in all (a 22-piece ground
