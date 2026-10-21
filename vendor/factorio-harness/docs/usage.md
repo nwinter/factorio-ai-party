@@ -9394,103 +9394,6 @@ fh watch    # deploy on every change
   under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
   limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
   tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).
-## d20 batch55 (eng/d20-batch55)
-- P1 (viewer Aurora, shift47 13:59: "Could factory snapshots retain their capture time after refresh errors and
-  reject older background results?"). Both were true in every cached read refreshed by a background job, and both are
-  fixed there (snapfail.lua):
-  - A failed refresh set the cached read's tick to the failure's, so it read as new: the factory survey (`status`
-    factory and warnings), threat's chart, game_alerts' scan, the ground watch (status ground alerts), the census
-    pass (its `as_of`, used by where_is, supply makers, gates, fuel_budget and silo reads) and networks' view and pole
-    map. Each now keeps the tick it was captured at and notes the failure beside it (when, the error); the next try
-    starts a period after the failure, as before. Replies say its age and that the last refresh failed, with the
-    error: `status` `factory_age_s`, `factory_refresh_failed` and `chart.refresh_failed`; `game_alerts`
-    `refresh_failed`; the ground alert line; census `age_s` and `refresh_failed` (also in where_is's index);
-    `networks` `refresh_failed` (the view's, else the pole map's); the operator factory_digest's `refresh_failed`.
-  - A finished background job replaced the cached read whatever was there, so a job started before a newer read
-    (status `machines=true` or `threats=true`; a force's first game_alerts, ground watch, networks view or pole map,
-    made at once in a reply) overwrote it with older data. A job's result is now dropped when the read held was
-    captured after the job started.
-  - Checked and not affected: ores.lua (each chunk read keeps its own read tick; a failed pass records `error`),
-    beltgaps.lua (its multi-step refresh keeps tile sightings newer than its find), the spawner index (threat.lua;
-    nothing else writes it), ghosttally.lua, defense, drill_sites, elsewhere and fuel_budget (made in the reply, no
-    background job).
-  Tests: tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua (a failure mid-refresh; a job
-  finishing after a newer read) and tests/d20_batch55.lua (snapfail.lua, the ground watch).
-- N3 (viewer Aurora, shift47 13:39 PDT: "Could job cards use each agent's current board_focus, with its age and a
-  labelled fallback? Old plan text still shows manual top-ups or availability after assignments change"). The stream
-  state carried no focus: board_focus (progress.lua) kept it per agent and its read gave formatted lines only. A read
-  (no id) now adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled, gone}] and the tick. The
-  stream service reads `board_focus {}` with its board reads (live.py read_focus; a runtime without rows or the action
-  is asked again after 10 minutes, so a deploy needs no restart of the service) and model.py job_card gives each card job, job_from (focus, plan, notes or none), job_tick,
-  job_age_s and job_label: the focus `focus, set 5 min ago: #1355 Steel line coal; step 2 ...; blocker: ...`; no focus,
-  the team-plan line `plan line, set 2 h ago; no focus set: ...`; then notes.md's Now line `notes.md Now line, saved
-  12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the
-  plan line, the file's age for notes. The site's agent cards and portrait tip and the stream overlay's cards show the
-  label before the job. Tests: tools/stream/test_jobcard.py, site/test_jobcard.py, tests/d20_batch54.lua.
-- L5 (Sol #1331, viewer Foobator): `train {position | train_id, wagon_slots: {wagon?, filters?, bar?}}` sets a cargo
-  wagon's slot filters and red-X bar, as the wagon GUI (in reach, or by remote view as train finds it; train_id
-  anywhere). `wagon` is the carriage number from the front (default the wagon at position); `filters` is {"N": item,
-  {name, quality} or false}, the slots not named kept; `bar` is the usable slots (0..40) or false for none. On
-  2.0.77 the engine took an iron-plate filter on a slot holding coal; the GUI filters an occupied slot to what it
-  holds, so a filter on a slot holding another item is refused, naming it, and nothing is set. The reply adds
-  `wagon_slots {wagon, carriage, set, slot_filters ["2 low-density-structure@uncommon"], bar, line}`; `{wagon}` alone
-  reads them. No cargo moves. Checked on a wagon on the private copy (filters with quality, bar 30, cleared).
-- L6 (Astra #1205): assembler_batch reads the requester's trash unrequested. On, the plan switches it off before the
-  requester's requests are cleared and staged (`keep staged (trash unrequested off)`) and on again after the output
-  is released (`trash unrequested on again`); the dry run's `trash_unrequested` and plan line say so, and that a
-  plan stopped between leaves it off. Tests tests/d20_batch53.lua (L5, L6), tests/d17_batch19_rt.lua (the steps pass
-  the queue's checks).
-- M1 (Sol #932): belt_gaps read ghost belts as part of the line (`{line}` walked through them; `{from, to}` listed them
-  apart from `missing`, which read none). Each stretch of the line standing only as ghosts is now a break:
-  `ghost_breaks [{from, to, tiles, materials, robots, line}]` (`{line}`: in the line's text; `{from, to}`: `ghost_line`
-  too). `robots` says how many of its ghosts a roboport's construction area covers (up to 64 lookups a call), and each
-  network's count of the items and its idle construction robots. ghostbreaks.lua; checked on the private copy (a row
-  of 12 belts, 4 of them ghosts, both forms).
-- M2 (Sol #1297): `supply {item, makers: "all"}` (the census pass's makers) rated a breeder at 3 eggs a craft (2 x
-  1.5) where inspect gives 2.5 (the returned egg is ignored_by_productivity). makersall.lua now takes inspect's
-  figure (craftrate.lua) and gives `net_per_min` with the line `26 a minute (net 15.6: 10.4 a minute goes back in)`.
-  The other rate reads (rates, chain, ratechain, craftrate) already left that egg out.
-- M3 (Sol #1304): `uptime {positions (1..16), seconds? (10..3600, default 600), surface?, platform?}` watches
-  crafting machines in the background: the status each second (as the GUI's status line), and at each sample that
-  reads short of ingredients, each ingredient under one craft in its input. Crafts are counted from the game's
-  products_finished, read at the start and the end, which is what watching the machine's crafts finish gives. `uptime {}`
-  reads it so far (`watching`) or `done`: per machine crafts, crafts_per_min against full_speed_per_min, samples by
-  status, short, recipe_changed (an idle furnace's missing recipe is not a change), gone. `left_out` says what it does
-  not see: stops shorter than a second, exact ticks per status, why an ingredient is short upstream. One watch an
-  agent. Checked on the private copy (4 machines, 20 s).
-- M4 (Astra #1200): damage_log names no source by inference: its source was always the game's event.cause. For fire,
-  the cause is the turret whose stream lit the first fire, kept as the fire spreads, which is how an 86-tile-away
-  turret was named. Rows now add the event's `source` (what dealt the hit: fire-flame, a stream, a projectile) and
-  the cause's distance from the hit against its range (`86 tiles from the hit (its range 30: the fire spread there
-  from where its stream lit it)`). On the private copy a fire-flame made with a flamethrower turret 106 tiles away as
-  its cause read that way; event.source is set on 2.0.77.
-- N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
-  7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
-  read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;
-  uptime.tick runs every tick (one table check, then each job's next_tick against the tick). The reply adds
-  phase_step_ticks and its left_out says so. Tests: tests/d20_batch53.lua (its watch at the new sample ticks),
-  tests/d20_batch54.lua (a 20-of-60 machine in and out of the old phase: 33% either way).
-
-- N4 (Sol, board #1389, shift47 ticks 38355977-38363365, Aquilo's west silo). (a) `load_silo first` began with the
-  rocket building (36/50 parts, nothing aboard); robots sent by the silo's automatic requests before the load
-  switched them off put 3 decider combinators in, and the silo launched them at 38357969 (chronicle: rocket to
-  Limestone-spare-unbuilt, cargo decider-combinator*3); at the next stop (38358146) the walk ended rocket_launched,
-  "the rocket this load was filling launched 2 s ago". The abort keyed on any launch of the silo after the start
-  (rocketload.lua launched_since: the launch known at the start, and one within 600 ticks of a start with a rocket
-  leaving, excepted). That rocket held decider-combinator, an item of the list, so "held none of the manifest" does not
-  tell them apart; what does is that it held nothing of this load. Now a launch ends the walk only when the rocket
-  held some of the load: what the load put in, or what the rocket held of the list when the load began (counted
-  toward its targets). Otherwise the stop's row says `a rocket launched 2 s ago (cargo: decider-combinator*3) held
-  nothing of this load: it had loaded nothing and the rocket held none of the list when the load began; the load goes
-  on for the silo's next rocket; that rocket carried decider-combinator 3 of this list (not counted toward it)`, the
-  load goes on (what the next rocket holds counts, as before), and the reply's last.passed_launches keeps the line.
-  (b) Sol's own trash unrequested was on with no personal request for the gathered items; robots took them from the
-  trash slots on the walk (loaded 0). The dry run's line and personal_trash, and the walk's reply personal_trash, now
-  say `your trash unrequested is on and no personal request names bulk-inserter, assembling-machine-3: what you
-  carry of them the game moves to your trash slots, where logistic robots take it` and `your personal request max is
-  under the load for speed-module-2 max 2 of the 4 this load carries: the rest goes to your trash slots` (trash.lua's
-  limits: active personal sections; nothing when personal logistics are off). Tests: tests/d20_batch54.lua N4a-N4b,
-  tests/d15_batch5.lua (Grok's case: the tour had loaded 350 of its packs, so the launch is its own).
 - N5 (Sol, board #1390: Limestone-spare-unbuilt's pump duty cut from 10% to 5%; the engine read 48.9 km/s over the
   last 60 s while platform_endurance kept 5940 km/min, the last leg's, and an ETA of 14m57s for 88883 km, more than
   3 min into the leg). The cause: endurance's speed (and freight.lua's leg ETA, from the cruise) took a past leg's speed
@@ -9518,6 +9421,58 @@ fh watch    # deploy on every change
   rocket-silo`; with no such tile `held on a transport-belt at (...): no free tile without a belt or rail within 4
   tiles in reach of rocket-silo`. Tests: tests/round1520d.lua 5 (a hold that begins on a belt, one not on a belt, one
   with no free tile, the hold line).
+- N8 (Sol, board #1406: `rotate {platform: Limestone-spare-unbuilt, position: (22.5,10.5), direction: 2}` on a railgun
+  turret ghost said "faces east after 0 turns"). On the private copy (2.0.77): railgun-turret's flags hold
+  building-direction-8-way (supports_direction true), so it is built facing any of the 8 even directions; its
+  LuaEntity.rotate (what a player's R does) returns false for a built one and for its ghost, and a direction set on
+  either is ignored; create_entity at 3 made 2. A gun turret has no direction (asked 2, built 0); an inserter asked 2
+  was built 0 with no word. Entities flagged building-direction-16-way: rail signals and rail supports; rails carry the
+  8-way flag. Now (runtime.lua allowed_directions, check_direction): build and place_ghosts (and their dry runs)
+  take the directions the prototype is built in and refuse others naming them (`inserter is built facing north (0),
+  east (4), south (8), west (12) only; northeast (2) is not one`); rails, signals and ramps keep their own rules.
+  rotate with a direction: refused the same way; a ghost the game's rotate does not turn is replaced by a ghost facing
+  the target (name, quality, tags and item requests kept; a ghost with circuit wires is refused), `replaced: the game
+  does not turn a railgun-turret ghost (its rotate, as R, refuses it): replaced by a ghost facing northeast, as
+  removing it and placing a new one does`; a built one the game does not turn: `railgun-turret at (22.5,10.5) faces
+  east: the game does not turn a placed railgun-turret (its rotate, as R, refuses it); it faces another way only as
+  built (build or place_ghosts with direction northeast)`; an entity with no direction says so. rotate's turns go up to
+  8. On the copy with this runtime: a railgun ghost east -> northeast (2) and west -> northwest (14), direction 3
+  refused, a built one refused as above, place_ghosts at 2 made a ghost facing 2. Tests: tests/round1520d.lua 6.
+- N7 (Astra, board #1405: retiring a stripped platform; the platform GUI deletes one, fh had no action). On the private
+  copy (2.0.77), on a test platform: LuaSpacePlatform.destroy() schedules the deletion 18000 ticks (5 min) ahead
+  (scheduled_for_deletion counts down), cancel_deletion() sets it back to 0, and when it runs the platform's surface goes
+  with everything on it; a character made to stand aboard was destroyed with it. What becomes of cargo pods on their way
+  was not checked. `platform_delete {platform, dry_run?, confirm?, cancel?}` (platdelete.lua): dry_run lists hub cargo
+  (main and trash), entities besides the hub (by name up to 200), ghosts, foundation tiles, characters aboard (whose)
+  and cargo pods on their way (freight's incoming) or on it, and says whether the call would be refused; a platform that
+  is not empty (hub cargo, entities besides the hub, pods) or is occupied is refused unless confirm is its exact name;
+  the deletion calls destroy() (the game's own 5 min) and says when it runs; a second call while scheduled is refused;
+  cancel: true cancels. Passive (the character and its queue are left alone). On the copy with this runtime: refused
+  without confirm (hub cargo and a character aboard), scheduled for 300 s with it, refused again while scheduled,
+  cancelled; the dry run on Swift (480 entities, 253 listed, 771 foundation tiles) read in 2.4 ms. agent/ref/space-age.md
+  and the index name it (the codex core 21997 bytes of 22000). Tests: tests/d20_batch54.lua N7.
+## d20 batch55 (eng/d20-batch55)
+- P1 (viewer Aurora, shift47 13:59: "Could factory snapshots retain their capture time after refresh errors and
+  reject older background results?"). Both were true in every cached read refreshed by a background job, and both are
+  fixed there (snapfail.lua):
+  - A failed refresh set the cached read's tick to the failure's, so it read as new: the factory survey (`status`
+    factory and warnings), threat's chart, game_alerts' scan, the ground watch (status ground alerts), the census
+    pass (its `as_of`, used by where_is, supply makers, gates, fuel_budget and silo reads) and networks' view and pole
+    map. Each now keeps the tick it was captured at and notes the failure beside it (when, the error); the next try
+    starts a period after the failure, as before. Replies say its age and that the last refresh failed, with the
+    error: `status` `factory_age_s`, `factory_refresh_failed` and `chart.refresh_failed`; `game_alerts`
+    `refresh_failed`; the ground alert line; census `age_s` and `refresh_failed` (also in where_is's index);
+    `networks` `refresh_failed` (the view's, else the pole map's); the operator factory_digest's `refresh_failed`.
+  - A finished background job replaced the cached read whatever was there, so a job started before a newer read
+    (status `machines=true` or `threats=true`; a force's first game_alerts, ground watch, networks view or pole map,
+    made at once in a reply) overwrote it with older data. A job's result is now dropped when the read held was
+    captured after the job started.
+  - Checked and not affected: ores.lua (each chunk read keeps its own read tick; a failed pass records `error`),
+    beltgaps.lua (its multi-step refresh keeps tile sightings newer than its find), the spawner index (threat.lua;
+    nothing else writes it), ghosttally.lua, defense, drill_sites, elsewhere and fuel_budget (made in the reply, no
+    background job).
+  Tests: tests/survey.lua, threat.lua, pushalerts.lua, census.lua, networks.lua (a failure mid-refresh; a job
+  finishing after a newer read) and tests/d20_batch55.lua (snapfail.lua, the ground watch).
 - P2 (viewer Aurora 14:37: "Could task and blueprint checks show observed pass, fail or stale, and rerun after
   relevant changes?"). What existed: board items' `evidence` (metric, decision, result as text, owner, next_check: a
   tick past which status lists the item overdue; no pass or fail); progress.lua's check of each owned item every 10
@@ -9576,33 +9531,19 @@ fh watch    # deploy on every change
   revived and rearmed after). Tests: tests/d20_batch55.lua (P5: the one-shot loss of a fed turret with the others
   armed, another surface's loss, a loss before the guard began, names, at_least, a wait's record, ghosts_waiting, the
   lane checks).
-- N8 (Sol, board #1406: `rotate {platform: Limestone-spare-unbuilt, position: (22.5,10.5), direction: 2}` on a railgun
-  turret ghost said "faces east after 0 turns"). On the private copy (2.0.77): railgun-turret's flags hold
-  building-direction-8-way (supports_direction true), so it is built facing any of the 8 even directions; its
-  LuaEntity.rotate (what a player's R does) returns false for a built one and for its ghost, and a direction set on
-  either is ignored; create_entity at 3 made 2. A gun turret has no direction (asked 2, built 0); an inserter asked 2
-  was built 0 with no word. Entities flagged building-direction-16-way: rail signals and rail supports; rails carry the
-  8-way flag. Now (runtime.lua allowed_directions, check_direction): build and place_ghosts (and their dry runs)
-  take the directions the prototype is built in and refuse others naming them (`inserter is built facing north (0),
-  east (4), south (8), west (12) only; northeast (2) is not one`); rails, signals and ramps keep their own rules.
-  rotate with a direction: refused the same way; a ghost the game's rotate does not turn is replaced by a ghost facing
-  the target (name, quality, tags and item requests kept; a ghost with circuit wires is refused), `replaced: the game
-  does not turn a railgun-turret ghost (its rotate, as R, refuses it): replaced by a ghost facing northeast, as
-  removing it and placing a new one does`; a built one the game does not turn: `railgun-turret at (22.5,10.5) faces
-  east: the game does not turn a placed railgun-turret (its rotate, as R, refuses it); it faces another way only as
-  built (build or place_ghosts with direction northeast)`; an entity with no direction says so. rotate's turns go up to
-  8. On the copy with this runtime: a railgun ghost east -> northeast (2) and west -> northwest (14), direction 3
-  refused, a built one refused as above, place_ghosts at 2 made a ghost facing 2. Tests: tests/round1520d.lua 6.
-- N7 (Astra, board #1405: retiring a stripped platform; the platform GUI deletes one, fh had no action). On the private
-  copy (2.0.77), on a test platform: LuaSpacePlatform.destroy() schedules the deletion 18000 ticks (5 min) ahead
-  (scheduled_for_deletion counts down), cancel_deletion() sets it back to 0, and when it runs the platform's surface goes
-  with everything on it; a character made to stand aboard was destroyed with it. What becomes of cargo pods on their way
-  was not checked. `platform_delete {platform, dry_run?, confirm?, cancel?}` (platdelete.lua): dry_run lists hub cargo
-  (main and trash), entities besides the hub (by name up to 200), ghosts, foundation tiles, characters aboard (whose)
-  and cargo pods on their way (freight's incoming) or on it, and says whether the call would be refused; a platform that
-  is not empty (hub cargo, entities besides the hub, pods) or is occupied is refused unless confirm is its exact name;
-  the deletion calls destroy() (the game's own 5 min) and says when it runs; a second call while scheduled is refused;
-  cancel: true cancels. Passive (the character and its queue are left alone). On the copy with this runtime: refused
-  without confirm (hub cargo and a character aboard), scheduled for 300 s with it, refused again while scheduled,
-  cancelled; the dry run on Swift (480 entities, 253 listed, 771 foundation tiles) read in 2.4 ms. agent/ref/space-age.md
-  and the index name it (the codex core 21997 bytes of 22000). Tests: tests/d20_batch54.lua N7.
+- P6 (Grok #1413: with a science rocket in flight to Kestrel IVa, its hub request read "holds 0 lacks 500" until the
+  pod landed, and the silo then launched a magazine rocket for Swiftlet). On 2.0.77 the hub's requester logistic point
+  (logistic_member_index.space_platform_hub_requester) gives what rockets launched to it carry in
+  `targeted_items_deliver`, the hub GUI's in-transit count: on the private copy a launch of 100 iron plates to Spindle
+  read 100 there from the launch until the pod landed about 35 s later, then nothing. The silo's next automatic launch
+  is the game's (transitional_request_target names the platform it fills for, with no reason); 2.0.77 has no priority
+  among platform requests, and the harness changes nothing it decides. Reads now count what is on the way:
+  silo platform_requests rows give `on_the_way` and `lacks` (asks less holds less on_the_way), a row the rockets on the
+  way cover reads the new flag `on_the_way` (listed last; the line says the game fills it again once they land), and
+  `auto_launch_rule` states the rule above with the requests covered on the way now; `requests` (a hub's sections) and
+  `platforms {platform}` give `imports`: "item from planet: asks N, holds H, W on the way, lacks L"; freight's
+  "expected up" at a stop counts what was on the way then. On the private copy, Spindle asking 300 iron plates with
+  204 held and 100 launched read `on_the_way: Spindle asks iron-plate 300 (holds 204, 100 on the way in rockets
+  launched to it, lacks 0)` in silo and the same in platforms' imports (the request and the plates were removed after).
+  Grok's case: Kestrel IVa's science request would read on_the_way, lacks 0, while the magazine request read matched,
+  which is why the game launched for it. Tests: tests/d20_batch55.lua (P6).

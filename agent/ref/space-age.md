@@ -294,8 +294,12 @@
   below_min_payload, split_networks (another network holds it), hub_full, filling; each with what the silo's network
   can give now (provider and storage chests, less robots' reservations; requester and buffer chests not counted) and
   `next_launch` (an automatic launch for it goes under `min_payload N` or `full N` by weight); `next_auto_launch` names
-  the request the next automatic launch serves. The rows come in flag order (filling, matched, split_networks,
-  hub_full, below_min_payload), the first 8 with `platform_requests_count`, `platform_requests_flags` (each flag's
+  the request the next automatic launch serves. Each row has `on_the_way` (what rockets launched to that hub carry now,
+  the hub GUI's in-transit count) and `lacks` (asks less holds less on_the_way); one the rockets on the way cover reads
+  `on_the_way`, and the game fills it again only once they land. `auto_launch_rule` says what the game decides: it
+  picks the request (no reason given), and 2.0.77 has no priority among platform requests. `requests` and
+  `platforms {platform}` give each hub import request the same way (`imports`). The rows come in flag order (filling,
+  matched, split_networks, hub_full, below_min_payload, on_the_way), the first 8 with `platform_requests_count`, `platform_requests_flags` (each flag's
   count) and `platform_requests_more`; `requests: true` lists every one (48 a page, `page: N`). Only platforms in orbit
   of the silo's planet count; one flying here shows in `platforms_coming` (from where, share flown), its requests
   listed once it is in orbit. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
