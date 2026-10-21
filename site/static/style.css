@@ -539,6 +539,12 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .agent-job { margin: 6px 0 0; font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .agent-job .job-from { font-weight: 400; }  /* where the job comes from and its age (d20 batch54 N3) */
+/* (d20 batch70 AF3) the plan line beside the focus, stale flags and the agent's current work */
+.agent-plan-line { font-weight: 400; }
+.agent-stale, .agent-work { list-style: none; margin: 6px 0 0; padding: 0; font-size: .84rem; overflow-wrap: anywhere; }
+.agent-stale li, .agent-work li { margin: 2px 0; }
+.agent-work li { padding-left: 8px; border-left: 2px solid var(--line-strong); }
+.agent-stale .fx-chip { font-size: .75rem; padding: 0 5px; }
 .agent-said { list-style: none; margin: 6px 0 0; padding: 0 0 0 8px; border-left: 2px solid var(--ac); font-size: .84rem; color: #cfcfcf; }
 .agent-said li { margin: 2px 0; overflow-wrap: anywhere; }
 .state { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; align-items: center; gap: 4px; }

@@ -2215,6 +2215,8 @@ function handlers.describe(_,a)
   end
   description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
+  -- (d20 batch70 AF3, viewer Aurora: "Sonnet's plan still says free while sampling Cinder") the site's agent cards
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -2663,10 +2665,12 @@ function handlers.status(p,a)
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
       alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),
+      watches=a.work==true and M.measures.card(p.index) or nil,
       logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,
       supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
   end
   assert(a.alerts==nil,'alerts is an option of brief (a full status always has them)')
+  assert(a.work==nil,'work is an option of brief')
   local threats=alive and threat.summary(p,a.threats==true) or {}
   -- Status is the recovery channel; a survey fault is reported, not raised.
   local surveyed,factory=true,{}

@@ -347,7 +347,7 @@ return function(api)
   -- The running order for the stream overlay ("auto: name") and the operator's idle report.
   function M.brief(index)
     local running=api.scheduler.order(index)
-    return running and {name=running.name,reason=running.reason,step=running.step,steps=running.total} or nil
+    return running and {name=running.name,reason=running.reason,step=running.step,steps=running.total,started_tick=running.started_tick} or nil
   end
   function M.report(index)
     local b=book(index)

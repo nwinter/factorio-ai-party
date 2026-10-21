@@ -101,6 +101,13 @@ return function(api)
     local s=api.base.state()
     for name in pairs(s.platform_lanes or {}) do fn(name,platform_engine(name)) end
   end
+  -- (d20 batch70 AF3) the submission the active step came in: kind (submit or repeat), the repeating job's name, the
+  -- tick it was submitted and its step count; nil for a step from an earlier submission than the queue's latest.
+  local function run_of(q)
+    local r=q.plan
+    if not (r and q.current and q.current.plan==r.id) then return nil end
+    return {kind=r.kind,name=r.name,tick=r.tick,steps=r.steps}
+  end
   local function brief(q)
     if not q then return {paused=true,pending=0,active=false} end
     local step=q.current
@@ -110,7 +117,7 @@ return function(api)
     -- what paused it (d17 batch16 A4): "paused by you (queue_pause) ..." holds; any other pause says its cause
     local why=q.paused and q.paused_why and q.paused_why.line or nil
     return {revision=q.revision,paused=q.paused,paused_by=why,held=q.held and true or nil,pending=#q.pending,repeating=q.loop~=nil,waiting=waiting,
-      active=q.current and {id=q.current.id,action=q.current.action,started_tick=q.current.started_tick} or false,
+      active=q.current and {id=q.current.id,action=q.current.action,label=q.current.label,started_tick=q.current.started_tick,run=run_of(q)} or false,
       after_direct=q.after_direct}
   end
   local M={handlers={},schema=base.schema}

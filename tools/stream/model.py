@@ -20,6 +20,7 @@ import attention
 import chronicle_log
 import pacing
 import waitcard
+import workcard
 import viewer_replies
 import clouds as clouds_mod
 import loadout as loadouts_mod
@@ -686,6 +687,10 @@ class Agent:
         self.notes_job = None  # its notes.md "## Now" job line (live.py, notes_job), for the card
         self.notes_job_t = None  # when that notes.md was saved (wall clock), for the card's age
         self.attention = None  # its latest request with a place (attention.py), with t: when it came in
+        # (d20 batch70 AF3) its current work for the card (workcard.py): bounded watches, queue lanes, repeating requests
+        self.watches = None
+        self.queues = None
+        self.repeats = None
 
     def bump(self, amount, now):
         self.decay(now)
@@ -1094,6 +1099,9 @@ class Model:
             ag.notes_job = a["notes_job"]
         if "notes_job_t" in a:
             ag.notes_job_t = a["notes_job_t"]
+        for key in ("watches", "queues", "repeats"):
+            if key in a:
+                setattr(ag, key, a[key] or None)
         if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
             rest = a["resting"] if isinstance(a["resting"], dict) else None
             if rest and (not ag.resting or ag.resting.get("until") != rest.get("until")):
@@ -2283,6 +2291,26 @@ class Model:
         return {"job": None, "job_from": None, "job_tick": None, "job_age_s": None,
                 "job_label": "no focus, plan line or notes job" if focus_rows is not None else "no plan line or notes job"}
 
+    def work_card(self, ag, job, plan_rows):
+        """A card's current work beside its job (d20 batch70 AF3, viewer Aurora): work, its watches, queue steps,
+        standing order and repeating requests as lines (workcard.rows); plan_line, its team-plan line when the job
+        shows its focus; stale, a line for its plan line or focus set before its current work began or not naming a
+        test running (workcard.stale), with the times."""
+        work = workcard.rows(ag.watches, ag.queues, ag.auto, ag.repeats, self.tick)
+        row = plan_rows.get(ag.name)
+        out = {"work": [w["line"] for w in work[:workcard.ROWS]] or None}
+        texts = []
+        if job.get("job_from") == "focus":
+            texts.append(("focus", job.get("job_tick"), job.get("job")))
+            if row:
+                age = max(0, int((self.tick - row["tick"]) / 60)) if isinstance(row.get("tick"), (int, float)) and self.tick else None
+                out["plan_line"] = row["text"]
+                out["plan_line_label"] = "plan line, " + (f"set {fmt_age(age)} ago" if age is not None else "age unknown")
+        if row:
+            texts.append(("plan line", row.get("tick"), row["text"]))
+        out["stale"] = workcard.stale(texts, work, self.tick) or None
+        return out
+
     def snapshot(self, now, cameras=None):
         cams_by_agent = {}
         for slot, cam in (cameras or {}).items():
@@ -2300,8 +2328,10 @@ class Model:
             wait_line = waitcard.line(ag.wait, self.tick, now)
             agents.append({
                 "wait_line": wait_line,
-                "wait_reason": waitcard.reason(self.chat, ag.name, self.tick, now) if wait_line else None,
+                # the sleep's own reason (fh sleep --reason), else its last words about its own wait in chat
+                "wait_reason": ((ag.wait or {}).get("reason") or waitcard.reason(self.chat, ag.name, self.tick, now)) if wait_line else None,
                 **job,
+                **self.work_card(ag, job, plan_rows),
                 "name": ag.name, "kind": ag.kind, "display_name": ag.display_name, "color": ag.color,
                 "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),

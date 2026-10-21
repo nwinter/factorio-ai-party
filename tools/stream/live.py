@@ -232,11 +232,19 @@ class LiveSource:
         (eng/statusbrief). A runtime without them gets the full status from then on."""
         who = {"player": cfg["player"]} if cfg.get("player") else {"bot": name}
         if self.brief_ok is not False:
+            # work (d20 batch70 AF3): the agent's bounded watches for its card; a runtime without it is asked again
+            # after FOCUS_RETRY seconds, so a deploy needs no restart here
+            work = getattr(self, "work_ok", None) is not False or time.time() >= getattr(self, "work_retry_t", 0)
             try:
-                res = self.read("status", {"brief": True, "alerts": True}, **who)[0]
+                res = self.read("status", dict({"brief": True, "alerts": True}, **({"work": True} if work else {})), **who)[0]
                 self.brief_ok = True
+                if work:
+                    self.work_ok = True
                 return res
             except RuntimeError as e:
+                if work and re.search(r"argument work\b|work is an option", str(e)):
+                    self.work_ok, self.work_retry_t = False, time.time() + FOCUS_RETRY
+                    return self.agent_status(name, cfg)
                 if not re.search(r"argument (brief|alerts)\b|alerts is an option", str(e)):
                     raise
                 self.brief_ok = False
@@ -396,6 +404,9 @@ class LiveSource:
                 a["hurt"] = st.get("hurt")
                 # a standing order running in the agent's queue (orders.lua): {name, reason, step, steps}, or None
                 a["auto"] = st.get("order") or None
+                # (d20 batch70 AF3) the card's work: its bounded watches (status work) and each queue lane's active step
+                a["watches"] = st.get("watches") or None
+                a["queues"] = st.get("queues") if isinstance(st.get("queues"), dict) else None
                 # the director's look-ahead (onecam.py): the action running now as status reports it (kind, until_tick,
                 # total/placed/remaining, bounds, destination), from the status poll this service makes anyway
                 act = st.get("active")
@@ -415,6 +426,9 @@ class LiveSource:
             obs["work"] = self.observe_work(obs["agents"], errors)
             # where each agent is paying attention (attention.py): its latest request with a position, area or list
             obs["attention"] = self.work.take_attention()
+            now = time.time()
+            for a in obs["agents"]:  # the same request again and again: the agent's own sampling (workcard.py)
+                a["repeats"] = self.work.repeats.current(a["name"], now)
 
         for a in obs["agents"]:
             a["wait"] = self.waits.current(a["name"], obs.get("tick") or 0, time.time())

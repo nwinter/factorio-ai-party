@@ -23,7 +23,11 @@ AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profil
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
               "combat", "died_at", "job", "job_from", "attention", "wait_line", "wait_reason",  # job_from: focus, plan (its team-plan line) or notes
               "job_label", "job_age_s", "job_tick",  # where the job comes from and its age (d20 batch54 N3)
-              "surface", "where", "on_platform", "travel")  # where the body is: the map lists agents off Nauvis at its edge
+              "surface", "where", "on_platform", "travel",  # where the body is: the map lists agents off Nauvis at its edge
+              # (d20 batch70 AF3) its current work (watches, queue steps, standing order, repeating requests), its plan
+              # line beside its focus, and stale flags on either (tools/stream/workcard.py)
+              "work", "plan_line", "plan_line_label", "stale")
+AGENT_WORK_BYTES = 12 * 1024  # the cards' work rows across every agent (state at most 256 KB; about 178 KB in shift53)
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift",
             "reminders",  # the team's reminder jobs (d15 batch5 group I): owner, message, next due, last result, states
@@ -34,6 +38,18 @@ ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
 LOADOUT_KEYS = ("health", "vehicle", "guns", "ammo", "selected_gun", "armor", "items", "item_kinds", "slots", "crafting",
                 "building", "age_s")
 CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t", "source")  # source: a relayed viewer's YouTube or site
+
+
+def agent_work(agents, limit=AGENT_WORK_BYTES):
+    """The cards' work rows within limit bytes: the last row of the agent with the most goes first."""
+    size = lambda: sum(len(json.dumps(a.get("work") or [], ensure_ascii=False)) for a in agents)  # noqa: E731
+    while size() > limit:
+        a = max(agents, key=lambda a: len(a.get("work") or []))
+        if not a.get("work"):
+            break
+        a["work"] = a["work"][:-1] or None
+        a["work_cut"] = a.get("work_cut", 0) + 1
+    return agents
 
 
 def scrub(v):
@@ -532,6 +548,7 @@ def public_state(s):
     if "reminders" in out:
         out["reminders"] = public_reminders(out["reminders"])
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
+    agent_work(out["agents"])
     for a in out["agents"]:  # the map's line from the character to where it last looked or worked
         t = a.get("attention")
         if t:
