@@ -101,7 +101,9 @@ print('d20_batch56_rt R3 empty area in sight or not: ok')
 do
   local r=astra('screenshot',{path='pog/astra/a.png'})
   local me=shots[#shots].position
-  eq(r.position,nil); eq(r.by,nil)
+  eq(r.position.x,me.x); eq(r.by,nil)
+  -- (d21 batch66 AB2) every reply names where the engine renders it and what of ours stands in the frame
+  eq(r.surface,'nauvis'); eq(r.platform,nil); assert(r.line:find('rendered on nauvis centred (',1,true) and r.line:find(' (your character): frame (',1,true),r.line)
   r=astra('screenshot',{path='pog/astra/b.png',position={x=150,y=20}})
   eq(shots[#shots].position.x,150); eq(shots[#shots].position.y,20); eq(shots[#shots].resolution.x,1280)
   eq(r.by,'remote view'); eq(r.surface,'nauvis'); eq(r.position.x,150)
@@ -124,6 +126,32 @@ do
   fails(function() astra('screenshot',{path='pog/astra/e.png',surface='vulcanus',position={x=10,y=10}}) end,'(remote view needs radar coverage there)')
 end
 print('d20_batch56_rt R2 screenshot by remote view: ok')
+
+-- d21 batch66 AB2 (Sol #1602: ./shot at=0,0 platform=Solstice from Fulgora; the image, a platform's hub drawn at low
+-- resolution, was read as Fulgora round his body): the engine gets the platform's surface and the centre asked, the
+-- hub without one, and the reply names them, the frame and what of ours stands in it.
+do
+  local plsurf={name='platform-7',index=7,valid=true}
+  local ents={{type='space-platform-hub',name='space-platform-hub',position={x=0,y=0}},{type='ammo-turret',name='gun-turret',position={x=-6,y=3}},
+    {type='ammo-turret',name='gun-turret',position={x=6,y=3}},{type='entity-ghost',name='entity-ghost',position={x=8,y=0}}}
+  plsurf.find_entities_filtered=function(f) eq(f.area[1].x,-25,'the frame searched'); return ents end
+  force.platforms={{valid=true,name='Solstice',index=3,surface=plsurf,hub={valid=true,position={x=0,y=0}},force=force}}
+  local r=sol('screenshot',{path='pog/sol/p.png',width=1600,height=1080,platform='Solstice',position={x=0,y=0}})
+  eq(shots[#shots].surface,plsurf,'rendered on the platform'); eq(shots[#shots].position.x,0); eq(shots[#shots].position.y,0)
+  eq(r.surface,'platform-7'); eq(r.platform,'Solstice'); eq(r.position.x,0); eq(r.frame.left_top.x,-25); eq(r.frame.right_bottom.y,16.875)
+  eq(r.in_frame['gun-turret'],2); eq(r.ghosts_in_frame,1)
+  eq(r.line,'rendered on platform Solstice (surface platform-7) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret 2, space-platform-hub 1; 1 ghost')
+  -- platform only: centred on its hub
+  plsurf.find_entities_filtered=function() return ents end
+  r=sol('screenshot',{path='pog/sol/q.png',platform='Solstice'})
+  eq(shots[#shots].surface,plsurf); eq(shots[#shots].position.x,0)
+  assert(r.line:find('rendered on platform Solstice (surface platform-7) centred (0,0) (the hub): frame',1,true),r.line)
+  -- surface= a platform's surface name reads the same
+  r=sol('screenshot',{path='pog/sol/s.png',surface='platform-7',position={x=2,y=1}})
+  eq(shots[#shots].surface,plsurf); eq(r.platform,'Solstice'); eq(r.position.x,2)
+  force.platforms={}
+end
+print('d20_batch56_rt d21 batch66 AB2 screenshot of a platform: ok')
 
 -- R4 (Astra #1399 for viewer Foobator): a combinator's description, LuaEntity.combinator_description in 2.0.77, on
 -- arithmetic, decider, selector and constant combinators and their ghosts; up to 500 bytes.

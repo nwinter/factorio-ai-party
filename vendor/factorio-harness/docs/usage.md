@@ -10258,3 +10258,20 @@ and its request section asked for normal items only.
 - Seen on the copy, not changed: the hub's game-managed missing-materials section already asks the ghosts' items at
   their quality from the planet the platform is at (it did not ask the uncommon collector). `asks` sums every active
   section, the game's included: with `request: true` the row for 1 rare panel ghost read asks 2 (1 in each section).
+
+## d21 batch66 AB2 (eng/d20-batch66)
+
+AB2 (Sol #1602): `./shot solstice51-platform 1600 1080 at=0,0 platform=Solstice` from Fulgora was read as Fulgora round
+his body.
+- Checked: `./shot` sends `position` and `platform` to the harness `screenshot`; the platform wrapper hands it the
+  platform's surface, and `take_screenshot` gets `surface` = Solstice's surface and `position` = (0,0) (the hub without
+  `at=`). Nothing was dropped.
+- Sol's two images (runs/shift51/sol/shots/solstice51-platform.png and solstice51-progress.png) both show a platform:
+  the hub at the centre, foundation, turrets, solar panels and space with an asteroid at the edges. The director client
+  drew the sprites at low resolution.
+- Changed: every `screenshot` reply names where the engine renders it: `surface`, `platform` (when it is one),
+  `position` (the centre, also without `at=`), `frame` {left_top, right_bottom} (32 px a tile), `in_frame` (ours
+  standing in the frame by name; characters left out), `ghosts_in_frame`, and `line`: "rendered on platform Solstice
+  (surface platform-N) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret N, ...". The frame is one search of ours in it (at most 2000 entities, 1920x1080 px is 60x34 tiles).
+- `./shot` (tools/new-run.sh) prints that line under the file name. Runs made before this keep their old `shot` script
+  until they are made again.

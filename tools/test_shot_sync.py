@@ -55,7 +55,10 @@ runs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 for run in os.listdir(runs):
     if os.path.isdir(os.path.join(runs, run, ws, "shots")):
         open(os.path.join(runs, run, ws, "shots", f), "wb").write(b"PNG")
-print("tick: 1\nqueued: true\npath: " + path + "\nclient: pog-cam1")
+line = "rendered on nauvis centred (5,5) (your character): frame (-15,-6.25)-(25,16.25), 40x22.5 tiles; ours in it: nothing"
+if "platform" in json.loads(args[args.index("--args") + 1]):
+    line = "rendered on platform Swift Star (surface platform-3) centred (150,-20.5): frame (140,-28)-(160,-13), 20x15 tiles; ours in it: nothing"
+print("tick: 1\nqueued: true\npath: " + path + "\nclient: pog-cam1\nline: \"" + line + "\"")
 '''
 
 
@@ -80,14 +83,18 @@ def wrapper():
         assert ws.endswith("runs/t1/grok"), ws
         r = subprocess.run([os.path.join(ws, "shot"), "belt layout"], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
-        assert r.stdout.strip() == "shots/belt_layout.png", r.stdout
+        out = r.stdout.strip().splitlines()
+        assert out[0] == "shots/belt_layout.png", r.stdout
+        # (d21 batch66 AB2) then where the engine rendered it, from the reply's line
+        assert out[1].startswith("rendered on nauvis centred (5,5) (your character): frame "), r.stdout
         assert os.path.exists(os.path.join(ws, "shots", "belt_layout.png"))
         sent = open(os.path.join(tmp, "bin", "fh.log")).read()
         assert '"--bot", "grok"' in sent and '\\"path\\":\\"pog/grok/belt_layout-' in sent, sent
         # (d20 batch56 R2) at= centres it by remote view; surface= or platform= names where
         r = subprocess.run([os.path.join(ws, "shot"), "far", "640", "480", "at=150,-20.5", "platform=Swift Star"],
                            capture_output=True, text=True)
-        assert r.returncode == 0 and r.stdout.strip() == "shots/far.png", (r.returncode, r.stderr)
+        assert r.returncode == 0 and r.stdout.splitlines() == ["shots/far.png",
+            "rendered on platform Swift Star (surface platform-3) centred (150,-20.5): frame (140,-28)-(160,-13), 20x15 tiles; ours in it: nothing"], (r.returncode, r.stdout, r.stderr)
         sent = json.loads(json.loads(open(os.path.join(tmp, "bin", "fh.log")).read().splitlines()[-1])[-1])
         assert sent["width"] == 640 and sent["height"] == 480 and sent["position"] == {"x": 150, "y": -20.5}, sent
         assert sent["platform"] == "Swift Star" and sent["path"].startswith("pog/grok/far-"), sent
