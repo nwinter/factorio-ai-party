@@ -632,6 +632,11 @@ return function(api)
     return all,table.concat(saws,'; ')
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
+  local SURFACE_LIST='item_count, rocket_ready, rocket_parts and spoil_within'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_built, platform_ready, platform_arrived and platform_left'
+  local SURFACE_KINDS,PLATFORM_KINDS={},{}
+  for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
+  for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
   function M.validate(c)
     if type(c)=='table' and M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end
     -- queue_done (A1, Sonnet 22:50) is a sleep's: fh sleep/fh wait --until queue_done; in a queue the next step is that.
@@ -639,6 +644,13 @@ return function(api)
       error('until queue_done is a sleep\'s (fh sleep SECONDS --until queue_done, fh wait --until queue_done, sleep {seconds, condition: {until: "queue_done"}}): it wakes when your queue finishes or stalls; in a queue the next step runs when this one ends',0)
     end
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES..'; a sleep also takes queue_done')
+    -- (d20 batch62 X2, Sol #1529: a surface a read took and did not use) surface and platform only where the condition reads them
+    if c.surface~=nil then
+      assert(SURFACE_KINDS[c['until']],'surface applies to '..SURFACE_LIST..'; '..tostring(c['until'])..' reads no other surface')
+    end
+    if c.platform~=nil then
+      assert(PLATFORM_KINDS[c['until']],'platform applies to '..PLATFORM_LIST..'; '..tostring(c['until'])..' reads no platform')
+    end
     if c['until']=='all' then
       assert(type(c.conditions)=='table' and #c.conditions>=1 and #c.conditions<=8,'until=all takes conditions: 1..8 wait_until conditions, met when every one holds')
       for _,m in ipairs(c.conditions) do

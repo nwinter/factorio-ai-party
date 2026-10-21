@@ -607,6 +607,8 @@ return function(api)
     local w = watch()
     local sname = a.surface or try(function() return p.surface.name end)
     assert(type(sname) == 'string', 'surface must be a surface name')
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as an empty one
+    assert(game.get_surface(sname), 'no surface named ' .. sname)
     local limit = a.limit == nil and 64 or a.limit
     assert(type(limit) == 'number' and limit >= 1 and limit <= 256, 'limit is 1..256 (holders given turret cover)')
     local rows, lines, eggs, holders = {}, {}, 0, 0

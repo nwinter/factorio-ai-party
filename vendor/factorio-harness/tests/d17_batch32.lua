@@ -93,7 +93,7 @@ do
   defines={entity_status={},inventory={},alert_type={}}
   storage={board={items={}}}
   local force={name='player',players={}}
-  game={tick=36000,surfaces={}}
+  game={tick=36000,surfaces={},get_surface=function(n) return (n=='nauvis' or n=='vulcanus') and {name=n} or nil end}
   local function grp(kind,surface,n,x,name) return {key=kind..'|'..surface..'|'..x..',0',kind=kind,surface=surface,n=n,names={[name]=n},sx=x*n,sy=0,at={{x=x,y=0}},by={},center={x=x,y=0},observed_tick=35000} end
   storage.push_bg=true
   storage.push_alerts={player={tick=35400,groups={grp('no_power','nauvis',12,10,'assembling-machine-2'),grp('no_power','nauvis',3,200,'inserter'),

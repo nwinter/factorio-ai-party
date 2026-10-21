@@ -105,6 +105,8 @@ return function(api)
   end
   function M.read(p, a)
     local minutes = api.integer(a.minutes, 30, 1, 900, 'minutes')
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as an empty one
+    assert(a.surface == nil or (type(a.surface) == 'string' and game.get_surface(a.surface)), 'no surface named ' .. tostring(a.surface))
     local surface = a.surface or p.surface.name
     local list = groups(p.force, surface, game.tick - minutes * 3600)
     -- (d19 batch45, batch40 C2, Muse: the cancel's reply read as the groups table, the near filter unconfirmed) with

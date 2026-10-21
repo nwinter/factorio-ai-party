@@ -37,6 +37,7 @@ local function surface(name,index,platform)
 end
 local nauvis,vulcanus=surface('nauvis',1),surface('vulcanus',2)
 game={tick=100000,surfaces={nauvis,vulcanus,surface('platform-1',3,{name='Sunward'})}}
+game.get_surface=function(n) for _,s in pairs(game.surfaces) do if s.name==n then return s end end end
 local function user(name) return name and {name=name} or nil end
 local function ent(s,name,type,x,y,f)
   local e={valid=true,name=name,type=type,position={x=x,y=y},status=0,electric_network_id=7}

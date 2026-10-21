@@ -5,6 +5,7 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(text,part) assert(text and tostring(text):find(part,1,true),tostring(text)..' lacks '..part) end
 game={tick=1000,surfaces={},forces={}}
+game.get_surface=function(n) return game.surfaces[n] end
 defines={inventory={chest=1,assembling_machine_input=2,assembling_machine_output=3,character_main=4,character_trash=5,hub_main=6,
   furnace_source=7,furnace_result=8,cargo_wagon=9,car_trunk=10,spider_trunk=11,cargo_landing_pad_main=12,rocket_silo_rocket=13}}
 -- The real egg trigger's shape: create-entity as an enemy, with a fallback that creates the same.

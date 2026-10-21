@@ -81,8 +81,9 @@ return function(api)
   end
   function M.read(p, a)
     assert(type(a.item) == 'string' and prototypes.item[a.item], 'item is an item name')
-    local surface = type(a.surface) == 'string' and game.get_surface(a.surface) or p.surface
-    assert(surface, 'no surface ' .. tostring(a.surface))
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as yours
+    local surface = p.surface
+    if a.surface ~= nil then surface = type(a.surface) == 'string' and game.get_surface(a.surface); assert(surface, 'no surface named ' .. tostring(a.surface)) end
     local f = p.force
     local recipe = recipe_for(surface, f, a.item)
     local top = row_of(f, surface, a.item)

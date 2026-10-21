@@ -10023,3 +10023,32 @@ fh watch    # deploy on every change
   iron-gear-wheel normal 39` for 39 crafts; with a fast inserter taking every gear, 35 of 35 intervals read unknown;
   the statistics read 10 uncommon gears from a machine with legendary quality modules. A fact seen there: an assembler
   has one output slot, so an uncommon gear in it stops the next normal one (status full output) until it is taken.
+
+## d20 batch62 X2 (eng/d20-batch62b)
+
+- X2 (Sol #1529: `power {surface: fulgora, position: (-65,72)}` called on Nauvis read Nauvis network 2; on Fulgora the
+  same place is network 301). `power` was on the platform list (bots.lua PLATFORM_ACTIONS) and not on the surface list
+  (SURFACE_ACTIONS): without `by_cause` its `surface` was taken and dropped, and the read ran on the caller's surface.
+  Now `power {surface}` reads that planet's or platform's networks by remote view, as inspect does: round `position` or
+  `area` there (refused without one: the character stands elsewhere), or every network there with `by_cause`. The reply
+  names the surface read (`surface`). Entities count as the map shows them there (radar coverage, or charted for ours).
+- Every action's `surface` and `platform` were checked on the private copy: each was called from Nauvis with a name
+  that is no surface or platform, then with a real one, and its reply read. Position on reads was checked with a far
+  uncharted point against no position: every read that takes `position` used it. Those that took one and did not use it,
+  or read an unknown name as yours or as an empty place, now refuse it:
+  - Dropped: `power` surface without `by_cause` (above); `shipment` surface without `ledger`; `board_review` surface
+    without `ownership`; `uptime` surface and platform, and `belt_flow` platform, on the read of the watch so far (no
+    position); `wait_until` surface on a condition other than item_count, rocket_ready, rocket_parts and spoil_within,
+    and platform on one other than ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting,
+    pod_landed, platform_loss, platform_built, platform_ready, platform_arrived and platform_left (queue steps, orders,
+    sleeps and lessons validate conditions the same way).
+  - Read as yours: `pods`, `demolishers` and `dependency` with a surface name that is no surface.
+  - Read as an empty place: `robot_losses`, `eggs`, `alerts_digest` and `game_alerts` with a surface name that is no
+    surface; `platforms {platform}` and `platform {name}` with a name that is none of ours (now: the names of ours).
+  - Left as they are: `lessons {surface}` filters the lessons' own surface keys (none matching is said). The surface
+    and platform actions on the bots.lua lists go through runtime.lua's wrappers, which refuse an unknown name.
+- Checked on the private copy (its own container): Sol on Nauvis, `power {surface: fulgora, position: [14,187]}` read
+  network 523 there (29 poles, the same network Astra on Fulgora reads at that place); without position it is refused;
+  `by_cause` with surface fulgora read Fulgora's networks. Each refusal above was called there. Tests:
+  tests/d20_batch62b.lua; tests/alertdigest.lua, d17_batch32.lua, pushalerts.lua and spoil.lua give their fake game
+  `get_surface`.

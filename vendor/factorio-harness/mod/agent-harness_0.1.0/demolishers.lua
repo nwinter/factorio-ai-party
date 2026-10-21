@@ -166,8 +166,9 @@ return function(api)
     return 'not seen', 'no demolisher seen in it'
   end
   function M.read(p, a)
-    local surface = type(a.surface) == 'string' and game.get_surface(a.surface) or p.surface
-    assert(surface, 'no surface ' .. tostring(a.surface))
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as yours
+    local surface = p.surface
+    if a.surface ~= nil then surface = type(a.surface) == 'string' and game.get_surface(a.surface); assert(surface, 'no surface named ' .. tostring(a.surface)) end
     local f = p.force
     local here = a.near and api.position(a.near) or (surface == p.surface and p.position) or {x=0, y=0}
     local seen = memory()

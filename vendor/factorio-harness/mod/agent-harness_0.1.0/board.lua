@@ -1723,6 +1723,8 @@ return function(api)
   local REVIEW_STALE, REVIEW_ACTIVE = 2 * 216000, 30 * 3600
   M.handlers.board_review = function(p, a)
     -- ownership (batch33 B2): who covers each system (claims.lua)
+    -- (d20 batch62 X2, Sol #1529) surface is ownership's: without it it is refused, never dropped
+    assert(a.surface == nil or a.ownership ~= nil, 'surface goes with ownership: true (who covers each system on that surface)')
     if a.ownership ~= nil then
       assert(a.ownership == true, 'ownership is true')
       assert(a.id == nil, 'ownership reads every claim: no id')

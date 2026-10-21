@@ -278,6 +278,8 @@ return function(api)
   end
   function M.handler(p, a)
     if a.position == nil then
+      -- (d20 batch62 X2, Sol #1529) the sample so far is read where it was started: platform goes with position (a new sample there)
+      assert(a.platform == nil, 'platform goes with position (a belt there); belt_flow {} reads your sample where it began')
       local job = store()[p.index]
       assert(job, 'no belt_flow sampled yet: belt_flow {position, seconds?}')
       if job.result then return job.result end
