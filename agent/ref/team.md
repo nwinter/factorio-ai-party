@@ -5,7 +5,8 @@
   or a game tick); the item shows the newest (all 5 kept in a full read). Notes take up to 1000 characters; longer is
   refused with its size. `requests`, `platform NAME` and `platform_gate` show each request section's and stop's last
   edit (who, when, old -> new); whoever set one last is told once when someone else changes it.
-- `board_review {id?}`: flags board items naming gone platforms, stale handoffs, superseded items still active and
+- `board_review {id?}`: flags board items naming gone platforms (whole names, longest first: "Kestrel II" is not
+  "Kestrel"; each row's `platforms` gives the names matched and their index), stale handoffs, superseded items still active and
   conflicting needs. `board_review {ownership: true, surface?}`: per surface, each electric network's machines, each
   logistic network and each platform with the open claims covering it (how many of its machines or roboports lie in
   each area; overlaps; an open claim with no area on that surface when no area covers it; else none), each owner's

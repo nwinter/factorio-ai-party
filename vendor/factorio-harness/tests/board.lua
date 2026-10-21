@@ -970,6 +970,32 @@ do
   eq(sol('board',{id=old.id}).item.status,'dropped')
   storage.agent_harness.platform_alerts=nil
 end
+-- d20 batch67 AC1 (Astra #1609, tick 41860390): "Kestrel II" and "Kestrel IVc" fly while two platforms once named
+-- "Kestrel" and one "Kestrel IV" are gone; a title names the longest whole name, gone only when no live one matches.
+do
+  storage.agent_harness.platform_alerts={by={[8]={name='Kestrel'},[18]={name='Kestrel'},[33]={name='Kestrel IV'},
+    [23]={name='Kestrel II'},[36]={name='Kestrel IVc'},[40]={name='Heron'}}}
+  force.platforms={{valid=true,index=23,name='Kestrel II'},{valid=true,index=36,name='Kestrel IVc'},{valid=true,index=40,name='Egret'}}
+  for _,i in pairs(storage.agent_harness.board.items) do if i.status~='done' and i.status~='dropped' then i.status='done' end end
+  local a1=astra('board_post',{kind='project',title='Kestrel II ammo run',owner='astra'}).item
+  local a2=astra('board_post',{kind='project',title='Kestrel IVc refuel',owner='astra',steps={'kestrel ivc takes 200 rockets','Kestrel to Aquilo','Kestrel IV hub drained','Heron at Fulgora'}}).item
+  local rv=astra('board_review',{})
+  local rows={}
+  for _,f in ipairs(rv.flags) do if f.kind=='gone_platform' then rows[#rows+1]=f end end
+  eq(#rows,2,'only steps 2 and 3 of the second item name a gone platform')
+  for _,f in ipairs(rows) do eq(f.id,a2.id) end
+  assert(rows[1].line:find('open step 2 (Kestrel to Aquilo) names Kestrel (was #8, #18), no platform of ours now',1,true),rows[1].line)
+  eq(rows[1].platforms[1].name,'Kestrel'); eq(rows[1].platforms[1].gone,true); eq(rows[1].platforms[1].indexes[2],18)
+  assert(rows[2].line:find('open step 3 (Kestrel IV hub drained) names Kestrel IV (was #33)',1,true),rows[2].line)
+  eq(rv.gone_platforms[1],'Kestrel'); eq(rv.gone_platforms[2],'Kestrel IV'); eq(#rv.gone_platforms,2,'Heron is Egret now (#40)')
+  -- a step naming a live platform and a gone one: both in the row, the live one with its index
+  astra('board_update',{id=a1.id,step='Kestrel II meets Kestrel at Nauvis'})
+  rv=astra('board_review',{id=a1.id})
+  eq(#rv.flags,1); local pf=rv.flags[1].platforms
+  eq(pf[1].name,'Kestrel II'); eq(pf[1].index,23); eq(pf[1].gone,nil); eq(pf[2].name,'Kestrel'); eq(pf[2].gone,true)
+  force.platforms=nil; storage.agent_harness.platform_alerts=nil
+  for _,i in ipairs({a1,a2}) do storage.agent_harness.board.items[i.id].status='done' end
+end
 -- d16 batch6 G (lessons; Sol and Astra 10:51): a board item kind lesson with evidence and last_verified, edits keep
 -- history, supersedes retires, lessons {...} reads them, and a call matching a lesson's keys carries its line.
 do
