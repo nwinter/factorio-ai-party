@@ -1925,6 +1925,30 @@ bottleneck calls to find) gives, per surface:
   consumption bonus) over the fuel's value and the burner's effectivity; a fuel ingredient at the machine's crafting
   speed over the recipe's time. `minutes_left` counts only the fuel in the group's own slots (an ingredient user's
   input); fuel in chests, on belts and in inserter hands is not counted.
+- Reactors one by one (nuclear reactors and heating towers; d20 batch63 Y1, Astra #1512: 6 reactors each burning the
+  one fuel cell its circuit lets in read as "6 with empty fuel slots", 0 minutes left). Their group has `reactors`
+  (at most 12 a group; `reactors_more` counts the rest), each as its GUI and tooltip show it: `temperature`,
+  `max_temperature`, `neighbour_bonus`, `burning {item, left (of the item), minutes}`, `fuel_slots {slots, holds,
+  empty}`, `burnt {holds, full}`, `circuit_reads` (`its fuel and its temperature as signal-T onto its wires`), and
+  `feeders`: each inserter dropping into it, its `condition` as its GUI shows it with the values on its wires
+  (`enabled when signal-S > 0 (on its wires: signal-S 0): false now; it is off by its condition`), `holds_fuel_back`,
+  `set_by` (the combinators on its wires and their settings, for at most 3 feeders holding fuel back a read:
+  `decider-combinator (-41.5,203) output side: decider if signal-T < 800 ... AND uranium-fuel-cell < 1 ... then
+  signal-S = constant 1`), its hand and `takes_from` (the chest and the fuel it holds); `feed {in_reach, network}`
+  (the logistic network there and its stock of that fuel); `state` (`burning, its fuel slot empty`, `not burning: its
+  feed is held back by its circuit; heat left`, `fuel in its slots`, `stopped: its burnt result slot is full`, `cold
+  and idle: slot empty, no inserter feeds it`, `cold, slot empty; fuel to be had`, `no heat and no fuel to be had`);
+  `minutes_left` with `minutes {heat, burning, slots, feed, heat_above}`: the heat above the heat exchangers' minimum
+  (500 C; with no exchanger within 16 tiles, the reactor's own) at the reactor's full output (its energy use with the
+  neighbour bonus), and the fuel burning, in its slots and in reach of its feeders at its burn rate (the existing rate).
+  The group's `minutes_left` is the fewest of its reactors, `empty_slots` counts empty fuel slots (no emergency on their
+  own), `network_stock` the networks' fuel, and `emergency` names reactors fed by inserters with no heat left and no fuel
+  to be had (none burning, in the slots, the feeders' hands and chests, or the network). Its line: `heating towers and
+  reactors: 4 (3 no_fuel, 1 working); 1 burning, 4 with fuel slots empty, 2 with feed held back by a circuit; fewest
+  minutes left about N (heat, burning fuel, slots and feed); logistic network holds 15 uranium-fuel-cell`, and a
+  reactor's: `nuclear-reactor (-44.5,207.5): 904 C; burning, its fuel slot empty (uranium-fuel-cell, 0.4 of it left);
+  ...; feeders hold 11, network 15; about 39.7 min (heat 1.7, burning 1.3, slots 0, feed 36.7)`. On the private copy
+  the reactor rows took about 0.4 ms a reactor and 0.3 ms a combinator trace.
 - The users come from the census's last background pass (`as_of`; before its first pass none are listed and
   `pending` says so); their state is read at the call, at most 2048 a call (`capped`). The read is kept 10 seconds.
 
