@@ -136,8 +136,10 @@
   - inserters: pickup and drop tiles; a built inserter with no pickup or drop target is flagged (build replies too);
   - a fusion reactor: `fusion`: its neighbour reactors (those whose side points meet its own, plasma or coolant side,
     fluid connection or not) and the bonus at full, its most at its quality (coolant and plasma a second, fuel, electric,
-    plasma MW alone and with neighbours: formula), and once sampled, fuel burnt (measured) with coolant and plasma a
-    second derived from it and the plasma MW its neighbours give now (estimate); `power` lists it in `fusion_reactors`;
+    plasma MW alone and with neighbours: formula), and once sampled, fuel burnt over a rolling 30 s (measured) with
+    coolant and plasma a second derived from it and the plasma MW its neighbours give now (estimate), and `totals` since
+    sampling began (fuel MJ, average MW, seconds covered and burning, gaps where cells went in); sampling goes on 600 s
+    after the last read; `power` lists it in `fusion_reactors`;
   - a built turret, artillery turret or wagon: `kills` and `damage_dealt`, its tooltip's Kills and Damage dealt, its own
     since it was placed (area rows and compact lines too; `turret_tally` watches them over a window);
   - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,

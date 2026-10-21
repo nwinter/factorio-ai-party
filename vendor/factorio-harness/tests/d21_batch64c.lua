@@ -65,8 +65,22 @@ eq(a.measured.fuel_mw,100); eq(a.measured.running_pct,100); eq(a.measured.coolan
 eq(a.measured.bonus_estimate,0.21); eq(a.measured.plasma_mw_estimate,120.7)
 local b=F.read(r2)
 eq(b.measured.fuel_mw,20.7); eq(b.measured.coolant_per_s,0.828); eq(b.measured.plasma_mw_estimate,41.4)
-has(b.line,'measured over 30 s: 20.7 MW of fuel (21%), 0.828 coolant and plasma a second (derived), about 41.4 MW of plasma with the bonus its neighbours give now (estimate)')
+has(b.line,'measured over the last 30 s (rolling): 20.7 MW of fuel (21%), 0.828 coolant and plasma a second (derived), about 41.4 MW of plasma with the bonus its neighbours give now (estimate)')
+-- (Z7) the window is the last 30 s; totals cover the stretch since sampling began, the refuel second a gap
+eq(a.measured.window,'rolling: the last 30 s (31 samples 1 s apart)')
+eq(a.totals.since_s,30); eq(a.totals.covered_s,30); eq(a.totals.running_s,30); eq(a.totals.fuel_mj,3000); eq(a.totals.fuel_mw_avg,100); eq(a.totals.gaps,0)
+eq(b.totals.covered_s,29); eq(b.totals.gaps,1); eq(b.totals.gap_s,1); eq(b.totals.put_in_mj,40000-21); eq(b.totals.fuel_mj,600); eq(b.totals.fuel_mw_avg,20.7); eq(b.totals.running_pct,21)
+has(b.line,'since sampling began 30 s ago: 600 MJ of fuel over 29 s covered (20.7 MW average, 21%), burning 29 s, 1 gap (1 s, cells put in); sampling ends 600 s from now unless read again')
+eq(b.sampling.began_tick,0); eq(b.sampling.ends_tick,1800+36000)
+-- 600 s on: the window still 30 s, the totals the whole run
+for t=1801,1800+36000-60 do
+  game.tick=t
+  r2.burner.remaining_burning_fuel=r2.burner.remaining_burning_fuel-20.7e6/60
+  F.tick(t)
+end
+b=F.read(r2)
+eq(b.measured.over_s,30); eq(b.totals.since_s,629); eq(b.totals.covered_s,628); eq(b.totals.fuel_mw_avg,20.7)
 -- a reactor not read for 10 min is no longer sampled
-game.tick=1800+36000+60; F.tick(game.tick)
+game.tick=1800+36000+36000; F.tick(game.tick)
 eq(st.fusion.watch[r5.unit_number],nil)
 print('d21_batch64c Z6 fusion: ok')

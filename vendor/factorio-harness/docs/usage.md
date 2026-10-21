@@ -10258,6 +10258,19 @@ fh watch    # deploy on every change
   coolant and plasma a second (derived), about 120.7 MW of plasma with the bonus its neighbours give now (estimate)";
   (-150,6) 20.7 MW (21%), 0.828 a second, about 41.4 MW: together 162.1 MW, the generators' 162.1 MW. The reactor GUI and
   tooltip were not opened (headless copy). Tests: tests/d21_batch64c.lua.
+- Z7 (#1672, Astra: inspect's fusion `measured` read over_s 30 with 31 samples on Opus's pair at 197h38 and 197h48,
+  while sampling lasts 10 min after a read; the operator's note on #1655 said "measured over ... 10 min", which was
+  wrong). Main before (cp6): `measured` is a rolling window of the last 31 samples, 1 s apart (30 s); sampling goes on
+  600 s after the last read (each read extends it); nothing added up the stretch. Now: measured.window says "rolling:
+  the last 30 s (31 samples 1 s apart)"; `sampling` {began_tick, ends_tick, note}; `totals` over the whole stretch since
+  sampling began (measured): since_s, covered_s (seconds whose burn is counted), running_s (seconds it burnt fuel),
+  fuel_mj, fuel_mw_avg, running_pct, gaps and gap_s (seconds in which the fuel held rose, cells put in: their burn not
+  counted), put_in_mj; the line adds "since sampling began N s ago: X MJ of fuel over N s covered (A MW average, P%),
+  burning N s, G gaps (N s, cells put in); sampling ends N s from now unless read again". The estimate labels stay.
+  Sampling began before this runtime has its totals from the next read on. On the copy, a pair on 150 MW with a cell
+  put into the second reactor halfway: "measured over the last 30 s (rolling): 18.1 MW of fuel (18%) ...; since sampling
+  began 41 s ago: 1547 MJ of fuel over 39 s covered (39.5 MW average, 39%), burning 39 s, 1 gap (1 s, cells put in)".
+  Tests: tests/d21_batch64c.lua (a 629 s stretch: the window stays 30 s, the totals cover it).
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a
