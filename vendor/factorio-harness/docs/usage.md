@@ -5920,6 +5920,9 @@ fh watch    # deploy on every change
   default, 32 with `limit`): `holders` keeps only those kinds of place (provider, storage, requester, buffer, chest,
   machine, wagon, pad, vehicle); each place now says its `kind` and `reserved` (robots' pickup reservations there). On
   the copy: copper cable, providers and storage, 4 places in 3 ms in the container.
+  `holders_left_out` gives the kinds the filter left out (count and places each); when no place passes it the summary
+  says so with them ("no place of the holders asked (provider, storage, machine) holds it; by holder kind: requester 48
+  in 1 place"; before, Grok's call failed "attempt to index local 'near'", d20 batch65 AA7).
 - `reservations {network, item?, surface?}` (Luna 06:20: on Gleba 23 nutrients were all reserved across 14
   requesters, 245 short, while 44 robots sat idle; the cause was chests full of seeds and spoilage), read only: pickup
   reservations at each provider and storage chest; each requester or buffer short or with deliveries on the way (per

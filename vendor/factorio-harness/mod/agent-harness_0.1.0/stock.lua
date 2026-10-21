@@ -180,6 +180,13 @@ return function(api)
       if i>3 then parts[#parts+1]='...'; break end
       parts[#parts+1]=string.format('%d in %d %s',g.count,g.entities,g.name)
     end
+    -- (d20 batch65 AA7, Grok 22:15: stock {item: nutrients, places: "all", holders: [provider, storage, machine]} failed
+    -- "attempt to index local 'near'") a holders filter can leave no place: the line says what it left out
+    if #s.places==0 then
+      return string.format('%d %s held by our factory (%s); no %s holds it%s',s.total,s.item,table.concat(parts,', '),
+        s.holders and 'place of the holders asked ('..table.concat(s.holders,', ')..')' or 'place read',
+        s.left_out and '; by holder kind: '..s.left_out or '')
+    end
     local near,big=s.places[1],s.places[1]
     for _,x in ipairs(s.places) do if x.count>big.count then big=x end end
     local largest=big~=near and string.format('; largest %d in %s at (%g,%g) %d tiles away',big.count,big.name,big.position.x,big.position.y,math.floor(big.distance+0.5)) or ''
@@ -262,9 +269,20 @@ return function(api)
       assert(type(list)=='table' and #list>=1,'holders is a list of kinds: provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle')
       want={}
       for _,k in ipairs(list) do assert(KINDS[k],'holders: unknown kind '..tostring(k)..' (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle)'); want[k]=true end
-      local kept={}
-      for _,x in ipairs(s.places) do if want[M.holder_kind(x.entity)] then kept[#kept+1]=x end end
-      s={item=s.item,total=s.total,groups=s.groups,places=kept,makers=s.makers,on_ground=s.on_ground}
+      local kept,out,order={},{},{}
+      for _,x in ipairs(s.places) do
+        local k=M.holder_kind(x.entity)
+        if want[k] then kept[#kept+1]=x
+        else
+          local r=out[k]
+          if not r then r={kind=k,count=0,places=0}; out[k]=r; order[#order+1]=r end
+          r.count=r.count+x.count; r.places=r.places+1
+        end
+      end
+      table.sort(order,function(x,y) return x.count>y.count or (x.count==y.count and x.kind<y.kind) end)
+      local bits={}
+      for i,r in ipairs(order) do bits[i]=string.format('%s %d in %d place%s%s',r.kind,r.count,r.places,r.places==1 and '' or 's',r.kind=='ground' and ' (not in total)' or '') end
+      s={item=s.item,total=s.total,groups=s.groups,places=kept,makers=s.makers,on_ground=s.on_ground,holders=list,left_out=#bits>0 and table.concat(bits,', ') or nil}
     end
     -- page (A9, Muse: places past 128 tiles unfindable): places limit at a time, nearest first, from page 1.
     local pages=math.max(1,math.ceil(#s.places/limit))
@@ -326,7 +344,7 @@ return function(api)
       for _,x in ipairs(s.places) do soon2=soon2+(x.soon2 or 0) end
     end
     local h=api.spoil and api.spoil.hatch(a.item)
-    return {item=a.item,total=s.total,on_ground=s.on_ground,on_ground_note=s.on_ground and 'stacks on the ground in chunks our force sees now: places of kind ground, not in total' or nil,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
+    return {item=a.item,total=s.total,on_ground=s.on_ground,on_ground_note=s.on_ground and 'stacks on the ground in chunks our force sees now: places of kind ground, not in total' or nil,by_holder={provider_storage=split.free,requester_buffer=split.requested,chests=split.chest,machines=split.machine,other=split.other,line=split.text},by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,holders_left_out=s.left_out,
       spoils_within_2_min=soon2,
       page=pages>1 and page or nil,pages=pages>1 and pages or nil,
       covered=whole and string.format('every machine output and chest of ours on %s',surface.name)
