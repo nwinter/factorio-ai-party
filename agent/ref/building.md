@@ -114,7 +114,8 @@
   keeps recipe, modules and circuit settings). `quality` is the target quality (unlocked ones); with it `to` may be
   left out (the same entity at that quality); without it each keeps its own quality.
   Example: `./fh call upgrade --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":30,"y":30}},"map":{"transport-belt":"fast-transport-belt"}}'`
-- `paste {position, name?, direction?, mode?, preserve_existing_settings_and_wires?, dry_run?}`: pastes the clipboard,
+- `paste {position, name?, direction?, mode?, preserve_existing_settings_and_wires?, dry_run?, surface?}` (`surface`: a
+  planet by remote view, as place_ghosts there: position there, charted ground, its robots build; no flips): pastes the clipboard,
   or a library entry by `name`, as ghosts; turret ghosts request ammo as `place_ghosts`'s do.
   `preserve_existing_settings_and_wires: true` adds only what is missing. A paste leaves the requests of a hub or
   requester chest it lands on, a hub's construction requests too (`requests_kept`).
@@ -224,7 +225,7 @@
   `./fh blueprint import --file blueprints/smelter-row.txt --args '{"name":"smelter-row-2","anchor":{"x":0,"y":0}}'`
   puts a string into the library under `name`, you its author (`description` and `anchor` optional; the same name
   replaces an entry as `blueprint_save` does).
-- `blueprint_place {name, position, direction?, platform?, dry_run?}`: pastes a library entry, as `paste`; a platform's
+- `blueprint_place {name, position, direction?, platform? | surface?, dry_run?}`: pastes a library entry, as `paste`; a platform's
   layout goes on another platform with `platform: "Swift"`.
   Example: `./fh call blueprint_place --args '{"name":"smelter-row","position":{"x":90,"y":0},"dry_run":true}'`
 - `blueprint_rename {name, new_name}`: its author any time, anyone after 24 game hours unused.

@@ -617,11 +617,11 @@ return function(api)
           marked_before={}
           for _,e in pairs(marked()) do marked_before[mark_key(e)]=true end
         end
-        if type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot')) then
+        if type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot') or rawget(p,'__remote')) then
           -- A platform is built from remote view: place the blueprint's ghosts
           -- on its surface directly; the cursor lives on the player's surface.
-          -- A bot has no cursor at all.
-          assert(not a.flip_horizontal and not a.flip_vertical, 'flips are not supported when pasting on a platform or as a bot')
+          -- A bot has no cursor at all. Another planet by name (surface=, d20 batch62 X5) is built the same way.
+          assert(not a.flip_horizontal and not a.flip_vertical, 'flips are not supported when pasting on a platform, on another surface or as a bot')
           stack.build_blueprint{surface=p.surface,force=p.force,position=pos,direction=direction,
             build_mode=build_mode,skip_fog_of_war=true,by_player=real(p),raise_built=true}
         else
@@ -763,8 +763,8 @@ return function(api)
   function H.plan(p,a)
     local on_platform=type(p)=='table' and rawget(p,'__platform')~=nil
     -- As blueprint_place: a platform or a bot pastes without a cursor, unflipped.
-    assert(not (type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot')) and (a.flip_horizontal or a.flip_vertical)),
-      'flips are not supported when pasting on a platform or as a bot')
+    assert(not (type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot') or rawget(p,'__remote')) and (a.flip_horizontal or a.flip_vertical)),
+      'flips are not supported when pasting on a platform, on another surface or as a bot')
     assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center' or a.anchor=='saved','anchor must be hub, center or saved')
     local pos=a.position~=nil and api.position(a.position) or nil
     local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west (or 0, 4, 8, 12)')

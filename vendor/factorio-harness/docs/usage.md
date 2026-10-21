@@ -10155,3 +10155,18 @@ fh watch    # deploy on every change
   belt_flow {surface} alone, an uncharted heat_budget, an unknown surface name.
 - Tests: tests/d20_batch62d.lua (fails on main's beltsample.lua); tests/beltsample.lua gives its fake belts a surface
   and its fake player a force; tests/d20_batch62b.lua quotes the widened belt_flow refusal.
+- X5 (Astra #1557: blueprint_save took surface; blueprint_place and paste did not). `paste` and `blueprint_place` are on
+  bots.lua SURFACE_ACTIONS: with `surface` (a planet) they place the blueprint's ghosts there by remote view, as
+  place_ghosts there, and that planet's construction robots build them. `position` there is needed ("paste with surface
+  needs position there (your character stands on another surface)"). The paste is built on that surface with
+  build_blueprint (the cursor is on the character's surface), the way a platform's or a bot's paste already is, so flips
+  are refused ("flips are not supported when pasting on a platform, on another surface or as a bot"). The checks,
+  modes, settings, wires, anchor and dry runs are the same code; uncharted ground is refused ("area includes uncharted
+  chunks"); `dry_run` (and `dry_run {action: paste | blueprint_place, args: {surface, ...}}`) checks the plan there
+  and says no hand reach applies.
+- Checked on the private copy, Astra on Fulgora: blueprint_save of a Nauvis area (15 entities, 2 wires), then paste and
+  blueprint_place on Nauvis: 15 ghosts placed with their 2 wires; the dry runs gave the same rows as Sol's on Nauvis at
+  the same place; forced mode at a charted spot with a pipe in the way placed 12 and named 3 not placed; at uncharted
+  (3000,3000) refused, nothing placed; flips and a missing position refused.
+- Noted, not changed: the paste dry run of that blueprint calls 3 belts blocked by the planned assembler while the paste
+  itself places all 15; Sol's local dry run gives the same rows, so it predates X5.

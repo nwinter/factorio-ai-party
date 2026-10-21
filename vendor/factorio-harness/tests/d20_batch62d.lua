@@ -78,4 +78,12 @@ has(src,"if a.surface~=nil then return handlers.pipe_gaps(M.on_surface(p,a.surfa
 has(src,"circuit_audit with surface needs area or positions there")
 -- a remote proxy is never within 32 tiles of the character (heating.lua, ingredient_gap's seen)
 has(io.open('mod/agent-harness_0.1.0/heating.lua'):read('a'),"or not (type(p)=='table' and rawget(p,'__remote')) and p.position")
+-- X5 (Astra #1557): paste and blueprint_place on a planet by remote view, as place_ghosts there: on the list, a
+-- position there needed, built on that surface without the cursor (no flips), dry runs there too
+for _,name in ipairs({'paste','blueprint_place'}) do assert(on[name],name..' is not on SURFACE_ACTIONS') end
+has(src,"name..' with surface needs position there (your character stands on another surface)')")
+has(src,"action=='paste' or action=='blueprint_place','dry_run with surface checks place_ghosts, belt_route, paste or blueprint_place")
+local bp=io.open('mod/agent-harness_0.1.0/blueprints.lua'):read('a')
+has(bp,"if type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot') or rawget(p,'__remote')) then")
+has(bp,"'flips are not supported when pasting on a platform, on another surface or as a bot')")
 print('d20_batch62d: ok')
