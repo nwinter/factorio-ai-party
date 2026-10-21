@@ -312,3 +312,48 @@ do
   game=nil
 end
 print('d20_batch60 V3 turret kills and damage dealt: ok')
+
+-- d20 batch60 V4 (viewer Aurora: "Could artillery remote results use manual range?"). A flare reaches the automatic range
+-- (with the force's bonus) times manual_range_modifier, the minimum range holding too: on the private copy (2.0.77) a
+-- turret with automatic targeting off fired at 299.5 and 559 tiles and not at 561; with +30% at 726 and not at 730; at
+-- 34 and not at 20. The reply names the loaded piece nearest to reaching a flare out of reach, and why; the artillery
+-- read gives manual_range.
+do
+  defines={inventory={artillery_turret_ammo=1,artillery_wagon_ammo=2},flow_precision_index={one_minute=1,ten_minutes=3}}
+  game={tick=0,surfaces={}}
+  local bonus=0
+  local force={technologies={artillery={researched=true}},is_chunk_charted=function() return true end,valid=true,
+    get_item_production_statistics=function() return {get_flow_count=function() return 0 end} end}
+  local pforce={}
+  setmetatable(pforce,{__index=function(_,k) if k=='artillery_range_modifier' then return bonus end end})
+  local piece={valid=true,name='artillery-turret',type='artillery-turret',position={x=0.5,y=0.5},force=pforce,artillery_auto_targeting=false,unit_number=1,
+    prototype={manual_range_modifier=2.5,guns={{attack_parameters={range=224,min_range=32}}}},
+    get_inventory=function() return {get_contents=function() return {{name='artillery-shell',count=7}} end} end}
+  local surface={index=1,name='pogv4',create_entity=function() return {valid=true} end,
+    find_entities_filtered=function(f) if f.type=='artillery-turret' or (type(f.type)=='table' and f.type[1]=='artillery-turret') then return {piece} end return {} end}
+  piece.surface=surface
+  game.surfaces[1]=surface
+  local A=dofile('mod/agent-harness_0.1.0/artillery.lua'){position=function(q) return q end,held=function() return 0 end,state=function() return {} end}
+  local p={index=5,surface=surface,force=force}
+  local function at(x) return A.remote(p,{item='artillery-targeting-remote',position={x=x+0.5,y=0.5}},{}) end
+  local r=at(299.5)
+  has(r.in_range[1],'artillery-turret (0.5,0.5) 299.5 tiles, in its manual range only (560; automatic 224), 7 shells'); eq(r.nearest_out_of_range,nil)
+  eq(#at(559).in_range,1)
+  r=at(561)
+  eq(#r.in_range,0); eq(r.out_of_range,1)
+  eq(r.nearest_out_of_range,'artillery-turret (0.5,0.5) 561 tiles away, past its manual range 560 (automatic 224)')
+  eq(r.line,'flare at (561.5,0.5); no artillery of ours with shells reaches it (the nearest: artillery-turret (0.5,0.5) 561 tiles away, past its manual range 560 (automatic 224))')
+  r=at(20)
+  eq(r.nearest_out_of_range,'artillery-turret (0.5,0.5) 20 tiles away, inside its minimum range 32')
+  eq(#at(34).in_range,1)
+  bonus=0.3
+  has(at(726).in_range[1],'726 tiles, in its manual range only (728; automatic 291.2)')
+  eq(at(730).nearest_out_of_range,'artillery-turret (0.5,0.5) 730 tiles away, past its manual range 728 (automatic 291.2)')
+  local row=A.row(piece)
+  eq(row.range,291.2); eq(row.manual_range,728); eq(row.min_range,32)
+  has(row.line,'range 291.2 (minimum 32), a flare within 728')
+  bonus=0
+  eq(A.manual(piece),560)
+  defines,game=nil,nil
+end
+print('d20_batch60 V4 artillery flare reach: ok')
