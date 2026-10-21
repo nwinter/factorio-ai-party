@@ -271,7 +271,60 @@ def public_reminders(rem):
     return out
 
 
-PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings")
+PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings", "core")
+CORE_KEYS = ("cell", "x0", "y0", "w", "h", "rows")
+_RUN = re.compile(r"([^0-9])\1{2,}")
+
+
+def pack(g):
+    """A grid {cell, x0, y0, w, h, rows} with its rows run-length packed (d21 batch68 AD1, viewer Aurora: room in the
+    state for each planet's dense core): three or more of a letter as the count and the letter ("....AAAA" ->
+    "4.4A"), rle: 1; static/mapview.js unpacks it. Category and ore letters are never digits. Anything else as it is."""
+    if not isinstance(g, dict) or not isinstance(g.get("rows"), list) or g.get("rle"):
+        return g
+    return dict(g, rows=[_RUN.sub(lambda m: f"{len(m.group(0))}{m.group(1)}", r) if isinstance(r, str) else r for r in g["rows"]], rle=1)
+
+
+PLANET_CORE_BYTES = 12 * 1024  # (AD1) a planet's packed core a push at most; a bigger one is sent at twice the cell
+RANK = {"D": 12, "R": 11, "O": 10, "A": 9, "S": 8, "M": 7, "E": 6, "L": 5, "I": 4, "B": 3, "T": 2, "P": 1}  # census.lua's
+
+
+def coarser(g):
+    """A grid at twice its cell: each new cell the most telling of the four it covers (census.lua RANK)."""
+    c, c2 = g["cell"], g["cell"] * 2
+    nx0, ny0 = (g["x0"] // c2) * c2, (g["y0"] // c2) * c2
+    ox, oy = (g["x0"] - nx0) // c, (g["y0"] - ny0) // c
+    cells = {}
+    for j, row in enumerate(g["rows"]):
+        for i, ch in enumerate(row):
+            if ch == ".":
+                continue
+            k = ((i + ox) // 2, (j + oy) // 2)
+            if k not in cells or RANK.get(ch, 0) > RANK.get(cells[k], 0):
+                cells[k] = ch
+    w, h = (g.get("w", 0) + ox + 1) // 2, (len(g["rows"]) + oy + 1) // 2
+    rows = ["".join(cells.get((i, j), ".") for i in range(w)).rstrip(".") for j in range(h)]
+    return dict(g, cell=c2, x0=nx0, y0=ny0, w=w, h=h, rows=rows)
+
+
+def fitted(core, limit=PLANET_CORE_BYTES):
+    """core packed, at twice the cell until it fits limit bytes (at most 8 tiles a cell)."""
+    out = pack(core)
+    while len(json.dumps(out, separators=(",", ":"))) > limit and core["cell"] < 8:
+        core = coarser(core)
+        out = pack(core)
+    return out
+
+
+def public_basemap(bm):
+    """The basemap with its coarse grid, dense core and ore packed (pack)."""
+    if not isinstance(bm, dict):
+        return bm
+    out = pack(bm)
+    for k in ("core", "ore"):
+        if isinstance(bm.get(k), dict):
+            out[k] = pack(bm[k])
+    return out
 _planet_turn = {"i": 0}
 
 
@@ -288,7 +341,12 @@ def public_planets(maps):
     name = names[_planet_turn["i"] % len(names)]
     _planet_turn["i"] += 1
     m = maps[name]
-    return listing, {k: m[k] for k in PLANET_MAP_KEYS if k in m} | {"surface": name}
+    out = pack({k: m[k] for k in PLANET_MAP_KEYS if k in m} | {"surface": name})
+    if isinstance(m.get("core"), dict) and isinstance(m["core"].get("rows"), list) and m["core"]["rows"]:
+        out["core"] = fitted({k: m["core"][k] for k in CORE_KEYS if k in m["core"]})  # (AD1) its footprints, as Nauvis's core
+    else:
+        out.pop("core", None)
+    return listing, out
 
 
 def public_state(s):
@@ -296,6 +354,8 @@ def public_state(s):
     planets, planet_map = public_planets(s.get("planet_maps"))
     if planets:
         out["planets"], out["planet_map"] = planets, planet_map
+    if "basemap" in out:
+        out["basemap"] = public_basemap(out["basemap"])
     if "board" in out:
         out["board"] = public_board(out["board"])
     if "reminders" in out:

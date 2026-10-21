@@ -289,14 +289,27 @@ return function(api)
       row[st] = (row[st] or 0) + 1
     end
     -- Another planet's buildings, for its coarse map (viewers craigNZ830 and Foobator, d15 07:05: the live map showed
-    -- Nauvis only): each one's centre and category, at most PLANET_MAX a planet.
+    -- Nauvis only): each one's centre and category, at most PLANET_MAX a planet. (d21 batch68 AD1, viewer Aurora:
+    -- "Could Aquilo get a detailed base map using the Nauvis approach?") and its footprint and 32-tile block, for a
+    -- dense core as Nauvis's
     if s.name ~= 'nauvis' and CAT[t] and job.planets and is_planet(s) then
       local P = job.planets[s.name]
-      if not P then P = {x={}, y={}, c={}, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[s.name] = P end
+      if not P then P = {x={}, y={}, c={}, w={}, h={}, blocks={}, top=0, n=0, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[s.name] = P end
       if #P.x < PLANET_MAX then
         local p = e.position
         local i = #P.x + 1
-        P.x[i], P.y[i], P.c[i] = p.x, p.y, OIL[name] and 'O' or CAT[t]
+        local cat = OIL[name] and 'O' or CAT[t]
+        P.x[i], P.y[i], P.c[i] = p.x, p.y, cat
+        local sz = size(name)
+        local w, h = sz[1], sz[2]
+        if w ~= h and (e.direction == 4 or e.direction == 12) then w, h = h, w end
+        P.w[i], P.h[i] = w, h
+        if not LINE[cat] then
+          local k = math.floor(p.x / 32) .. ',' .. math.floor(p.y / 32)
+          P.blocks[k] = (P.blocks[k] or 0) + 1
+          if P.blocks[k] > P.top then P.top = P.blocks[k] end
+          P.n = P.n + 1
+        end
         if p.x < P.minx then P.minx = p.x end
         if p.x > P.maxx then P.maxx = p.x end
         if p.y < P.miny then P.miny = p.y end
@@ -393,6 +406,28 @@ return function(api)
     return {bx0=bx0, by0=by0, bx1=bx1, by1=by1, CC=CC, cx0=math.floor(bx0 / CC), cy0=math.floor(by0 / CC),
       cx1=math.floor((bx1 - 1) / CC), cy1=math.floor((by1 - 1) / CC), fine={}}
   end
+  -- Points i0..i1 of b (x, y, w, h, c) on core k's fine grid: each building's footprint, the most telling one a cell.
+  local function fine_fill(k, b, i0, i1)
+    local fine, CC = k.fine, k.CC
+    for i = i0, i1 do
+      local x, y = b.x[i], b.y[i]
+      if x >= k.bx0 - 8 and x <= k.bx1 + 8 and y >= k.by0 - 8 and y <= k.by1 + 8 then
+        local w, h = b.w[i], b.h[i]
+        local tx, ty = math.floor(x - w / 2 + 0.01), math.floor(y - h / 2 + 0.01)
+        for cy = math.max(k.cy0, math.floor(ty / CC)), math.min(k.cy1, math.floor((ty + h - 1) / CC)) do
+          local row = fine[cy]
+          if not row then row = {} fine[cy] = row end
+          for cx = math.max(k.cx0, math.floor(tx / CC)), math.min(k.cx1, math.floor((tx + w - 1) / CC)) do
+            local old = row[cx]
+            if not old or RANK[b.c[i]] > RANK[old] then row[cx] = b.c[i] end
+          end
+        end
+      end
+    end
+  end
+  local function core_out(k)
+    return {cell=k.CC, x0=k.cx0 * k.CC, y0=k.cy0 * k.CC, w=k.cx1 - k.cx0 + 1, h=k.cy1 - k.cy0 + 1, rows=rows_of(k.fine, k.cx0, k.cx1, k.cy0, k.cy1)}
+  end
   local function new_job(tick, st)
     local list = {}
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
@@ -477,29 +512,12 @@ return function(api)
       b.i = 1
       job.stage = 'fine'
     elseif job.stage == 'fine' then
-      local k = b.core
-      local fine, CC = k.fine, k.CC
       local last = math.min(#b.x, b.i + GRID - 1)
-      for i = b.i, last do
-        local x, y = b.x[i], b.y[i]
-        if x >= k.bx0 - 8 and x <= k.bx1 + 8 and y >= k.by0 - 8 and y <= k.by1 + 8 then
-          local w, h = b.w[i], b.h[i]
-          local tx, ty = math.floor(x - w / 2 + 0.01), math.floor(y - h / 2 + 0.01)
-          for cy = math.max(k.cy0, math.floor(ty / CC)), math.min(k.cy1, math.floor((ty + h - 1) / CC)) do
-            local row = fine[cy]
-            if not row then row = {} fine[cy] = row end
-            for cx = math.max(k.cx0, math.floor(tx / CC)), math.min(k.cx1, math.floor((tx + w - 1) / CC)) do
-              local old = row[cx]
-              if not old or RANK[b.c[i]] > RANK[old] then row[cx] = b.c[i] end
-            end
-          end
-        end
-      end
+      fine_fill(b.core, b, b.i, last)
       b.i = last + 1
       if b.i > #b.x then job.stage = 'crows' end
     elseif job.stage == 'crows' then
-      local k = b.core
-      b.core_out = {cell=k.CC, x0=k.cx0 * k.CC, y0=k.cy0 * k.CC, w=k.cx1 - k.cx0 + 1, h=k.cy1 - k.cy0 + 1, rows=rows_of(k.fine, k.cx0, k.cx1, k.cy0, k.cy1)}
+      b.core_out = core_out(b.core)
       b.core = nil
       local C, m = job.C, 96
       b.nest_bands, b.nests, b.ni = bands(b.x0 * C - m, b.y0 * C - m, (b.x1 + 1) * C + m, (b.y1 + 1) * C + m, NEST_BAND), {}, 1
@@ -576,19 +594,29 @@ return function(api)
       end
       local C, grid = P.cell, P.grid
       local last = math.min(#P.x, P.i + GRID - 1)
-      for i = P.i, last do
-        local cx, cy = math.floor(P.x[i] / C), math.floor(P.y[i] / C)
-        local row = grid[cy]
-        if not row then row = {} grid[cy] = row end
-        local old = row[cx]
-        if not old or RANK[P.c[i]] > RANK[old] then row[cx] = P.c[i] end
-      end
-      P.i = last + 1
-      if P.i > #P.x then
-        P.out = {tick=game.tick, cell=C, x0=P.cx0 * C, y0=P.cy0 * C, w=P.cx1 - P.cx0 + 1, h=P.cy1 - P.cy0 + 1,
-          rows=rows_of(grid, P.cx0, P.cx1, P.cy0, P.cy1), buildings=#P.x, capped=#P.x >= PLANET_MAX or nil}
-        P.x, P.y, P.c, P.grid = nil, nil, nil, nil
-        job.pi = job.pi + 1
+      if not P.core then
+        for i = P.i, last do
+          local cx, cy = math.floor(P.x[i] / C), math.floor(P.y[i] / C)
+          local row = grid[cy]
+          if not row then row = {} grid[cy] = row end
+          local old = row[cx]
+          if not old or RANK[P.c[i]] > RANK[old] then row[cx] = P.c[i] end
+        end
+        P.i = last + 1
+        if P.i > #P.x then
+          -- (AD1) then its dense core, as Nauvis's: the box round its densest blocks at 1-2 tiles a cell, up to CMAX cells
+          P.rows, P.grid, P.i = rows_of(grid, P.cx0, P.cx1, P.cy0, P.cy1), nil, 1
+          P.core = core_box({x0=P.cx0, x1=P.cx1, y0=P.cy0, y1=P.cy1, n=P.n, top=P.top, blocks=P.blocks}, C)
+        end
+      else
+        fine_fill(P.core, P, P.i, last)
+        P.i = last + 1
+        if P.i > #P.x then
+          P.out = {tick=game.tick, cell=C, x0=P.cx0 * C, y0=P.cy0 * C, w=P.cx1 - P.cx0 + 1, h=P.cy1 - P.cy0 + 1,
+            rows=P.rows, buildings=#P.x, capped=#P.x >= PLANET_MAX or nil, core=core_out(P.core)}
+          P.x, P.y, P.c, P.w, P.h, P.blocks, P.rows, P.core = nil, nil, nil, nil, nil, nil, nil, nil
+          job.pi = job.pi + 1
+        end
       end
     else
       -- The pass is complete: its parts replace the last ones.
