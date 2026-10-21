@@ -342,6 +342,8 @@ def main():
         assert "SECRET" not in json.dumps(idx) and "example.com" not in json.dumps(idx)
         # the time-lapse: all shifts' snapshots in order, on the run page
         lapse = json.loads((out / "runs" / "long" / "timelapse.json").read_text())
+        assert "frames" not in lapse and lapse["count"] == 3 and lapse["parts"] == ["/runs/long/timelapse-1.json"], lapse
+        lapse["frames"] = [f for src in lapse["parts"] for f in json.loads((out / src.lstrip("/")).read_text())["frames"]]
         assert [(f["n"], f["tick"]) for f in lapse["frames"]] == [(1, 36000), (1, 72000), (2, 400000)], lapse["frames"]
         assert lapse["frames"][0]["game"] == "10m00s", lapse["frames"][0]  # build.py's game_time
         assert lapse["frames"][2]["core"]["rows"] == ["AAS"] and len(lapse["box"]) == 4, lapse

@@ -294,6 +294,7 @@ return function(api)
   function M.num(v) if v >= 100 then return string.format('%d', math.floor(v + 0.5)) elseif v >= 1 then return string.format('%.1f', v) else return string.format('%.3g', v) end end
   function M.read(p, a)
     memo = {}
+    assert(a.ammo_use == nil or a.ammo_use == true or a.ammo_use == false or a.ammo_use == 'all', 'ammo_use is true, false or "all"')
     local pl = api.platform(p, a.platform)
     local s = pl.surface
     assert(s, 'platform ' .. pl.name .. ' has no surface yet')
@@ -474,6 +475,24 @@ return function(api)
         for _, l in ipairs(feed.lines) do lines[#lines+1] = l end
       else feed = {error=tostring(tr)} end
     end
+    -- (d20 batch60 V1, Sol #1470) ammunition use at full fire, per turret and ammunition (ammorate.lua): the ammunition
+    -- each holds, and the hub's of their categories; ammo_use "all": every ammo turret with every ammunition
+    local ammo_rows
+    if api.ammorate and a.ammo_use ~= false then
+      local hub_rows = {}
+      local inv = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+      for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+        if try(function() return prototypes.item[r.name].type end) == 'ammo' then hub_rows[#hub_rows+1] = r end
+      end
+      local ok, rows, alines = pcall(api.ammorate.rows, force, turrets, hub_rows, damages, a.ammo_use == 'all')
+      if ok then
+        ammo_rows = rows
+        if #alines > 0 then
+          lines[#lines+1] = 'ammunition use at full fire (' .. api.ammorate.NOTE .. '):'
+          for _, l in ipairs(alines) do lines[#lines+1] = '  ' .. l end
+        end
+      else ammo_rows = {{error=tostring(rows)}} end
+    end
     -- (B6) damage apart from reach, for the route asked or the schedule's next leg
     local conn = connection(pl, a)
     local dlines, drows
@@ -485,10 +504,10 @@ return function(api)
       end
     end
     return {platform=pl.name, lines=lines, collectors=collectors, sides=side_rows, turrets=trows, feed=feed, destroyed_by_ours=#own_rows > 0 and own_rows or nil,
-      route=conn and conn.name or nil, damage=drows and #drows > 0 and drows or nil,
+      route=conn and conn.name or nil, damage=drows and #drows > 0 and drows or nil, ammo_use=ammo_rows and #ammo_rows > 0 and ammo_rows or nil,
       kinds=kinds, note='a turret reaches what lies within its attack range of its centre and past its minimum range, and a turret whose base has a direction (railgun-turret: 72 degrees) only within its arc centred on its facing (outside_arc: in range, not counted); it engages what its priority list allows (ignore unprioritised targets on: only those listed), by size: small, medium, big, huge, each covered where every kind of that size (kinds) is engaged by a turret reaching it; a collector\'s front is the middle of its collection area; the hull\'s edge tiles are foundation tiles with empty space beside them'}
   end
-  M.schema = {platform_defense = {route='optional "FROM->TO" (planets) or a space connection name; default the schedule\'s next leg (or the connection it flies): damage per asteroid that spawns there: its health and resistances, per turret and the ammo it holds now the damage a second after them against its listed damage, together and the time to kill one; under 10% of listed: reached, little damage (damage [{asteroid, hp, dps, kill_s, little}], lines)',platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
+  M.schema = {platform_defense = {ammo_use='optional: default the ammo turrets aboard with each ammunition they hold and the hub\'s of their categories; "all": every ammo turret with every ammunition of its categories too (normal quality); false: none. ammo_use [{turret, quality, turrets, ammo, ammo_quality, where held|hub|any, category, cooldown_ticks (the turret\'s cooldown x the ammunition\'s cooldown modifier over 1 + shooting_speed_bonus), base_cooldown_ticks, shooting_speed_bonus, shots_per_min, rounds_per_shot, magazine_size, items_per_shot, items_per_min (one turret), items_per_min_all (the turrets counted), damage_per_shot, damage {type: amount} (the ammunition\'s x quality_multiplier x (1 + damage_bonus) x (1 + turret_attack_bonus), before resistances), damage_bonus, turret_attack_bonus, quality_multiplier, sources {shooting_speed, damage, turret_attack}: the technologies and levels researched, and any part not from research, line}]: at full fire, one target in reach',route='optional "FROM->TO" (planets) or a space connection name; default the schedule\'s next leg (or the connection it flies): damage per asteroid that spawns there: its health and resistances, per turret and the ammo it holds now the damage a second after them against its listed damage, together and the time to kill one; under 10% of listed: reached, little damage (damage [{asteroid, hp, dps, kill_s, little}], lines)',platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
     returns='cover is per asteroid size (small, medium, big, huge): a turret engages what its priority list allows (ignore unprioritised targets on: only those listed; every turret, asteroid and ammo prototype has the same target mask) and reaches within its range and past its minimum range, a turret whose base has a direction (railgun-turret) only within its arc (turn_range, 72 degrees, centred on its facing; turrets rows: facing, arc_degrees; a collector in range of one but outside its arc: outside_arc [{name, position, facing, arc_degrees, off_degrees}], not counted) (a rocket turret: 15 tiles); a size is covered where every kind of it (kinds: metallic, carbonic, oxide, promethium when a turret lists one) is engaged by a turret reaching it. lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (by size: turrets engaging that size, none for the kinds no turret engages; each turret\'s ammo, what it engages, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with, per size, the edge tiles no turret engaging it reaches as runs, the longest first; by their priority lists: the turrets engaging only part of the asteroids; the turrets (empty, fed by hand); then the ammunition: what can reach a turret (turrets, the belts on their ways, sources, the hub when an inserter takes from it toward one) against what is stranded (on belts no turret\'s way reaches, by group with their area), and each turret low or stopped: what it holds, what can reach it (each inserter and its way: the hub, a chest or machine, or a belt with the ammo on the belts upstream and who puts items on them) and what stops it (no feeder, an inserter or belt switched off by its circuit, a filter leaving its ammo out, belts nothing feeds: dry after what is on them). Every turret\'s reach in one line (ammunition that can reach each turret), and per stranded group the belts holding it (most first) and the call that would recover it: pickup {belt, area} when your character stands on that surface, else deconstruct {platform, area, entity_types: the belts} (the hub takes the belts and the items on them; the other belts of ours in that area named), and whether the hub\'s ammunition reaches a turret. feed {reaches, stranded, stranded_groups, stranded_recover [{count, belts, area, other_belts_in_area}], hub_reaches, via_hub (ammo on belts running back into the hub, counted as reaching when the hub feeds a turret), at_end and at_end_rows (ammo on a belt ending just past a pickup on a turret\'s way: not stranded), turrets [{position, holds, reaches, stopped, replenished (what refills its way: maker, a machine aboard making ammunition it takes; hub; chest, chests only; preload, nothing puts more on its way; none, no inserter feeds it)}], lines (with replenishment by turret, wrong ammunition on turrets\' ways, and inserters whose circuit sets more filters than their slots)}. collectors [{position, front, covered_by, by_size {size: {covered, turrets, missing}}, armed_by and by_size_armed (when a turret reaching it is not armed now: no ammo, energy or fluid)}], sides [{side, edge_tiles, uncovered (a size not covered), gaps, by_size {size: {uncovered, gaps, unarmed_only, unarmed_gaps (covered by reach only by turrets not armed now)}}}], turrets [{name, position, range, min_range, engages, ammo, armed, unarmed, feed, destroyed_ours}], kinds; destroyed_by_ours [{name, position, destroyed, loss, ago_s}]: what turrets of ours destroyed here, per turret (the loss incidents kept, apart from asteroid hits). Read only'}}
   return M
 end
