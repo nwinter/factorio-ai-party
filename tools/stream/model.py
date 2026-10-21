@@ -1487,7 +1487,9 @@ class Model:
             return
         cl.append({"text": text, "version": version, "request": None if version else text, "tick": tick, "t": t})
 
-    REMINDERS_MAX = 12
+    # (d20 batch65 AA4) every job for the site's "Show all" (push_live.public_reminders keeps them within its budget);
+    # a cap against a runaway list
+    REMINDERS_MAX = 100
 
     def reminders_snapshot(self):
         """The team's reminder jobs for the site's panel (d15 batch5 group I): owner, message, next due, the last result
