@@ -154,6 +154,30 @@ def main():
     t = N.nudge_text(row("sonnet", 12, open="open for you: 1 board item of yours (#425 purple science [doing])"))
     assert t.endswith("0 tells. Open for you: 1 board item of yours (#425 purple science [doing])."), t
     assert "Open for you" not in N.nudge_text(row("sonnet", 12))
+    # (d20 batch70 AF1) Haiku d21 12:11:50: nudged 72 s into a 120 s uptime watch Astra had asked of it. A harness
+    # that reports the watch running (measuring) is busy with it; one late, stalled, invalid or with its final unread
+    # is named in the tell, as the harness's line.
+    h = N.Nudger([], start=T0)
+    hk = row("haiku", 11, measuring="uptime@42660741", counted={"text": "last 10 min: 0 game actions; measuring 80% (uptime@42660741)"})
+    assert h.due(hk, T0 + 900) == "measuring (uptime@42660741)", h.due(hk, T0 + 900)
+    assert h.step({"agents": [hk]}, T0 + 900, lambda n, t: {"seq": 1}, lambda e: None) == []
+    late = {"id": "uptime@42744959", "state": "late", "end_tick": 42780959, "line": "uptime@42744959 1 machine (processing-unit 1) "
+            "from (-40,-91): late: its end tick 42780959 passed 20 s ago and no final result came; it is not counted as work; 590 samples."}
+    done_read = {"id": "turret_tally@1", "state": "done", "final_read": True, "line": "turret_tally@1 ..."}
+    unread = {"id": "belt_flow@2", "state": "done", "final_read": False, "line": "belt_flow@2 belt line (0.5,0.5) to (0.5,9.5) "
+              "(10 tiles) on nauvis: done at tick 900, its final not read yet (belt_flow {} reads it); 75 samples"}
+    t = N.nudge_text(row("haiku", 12, measures=[late, done_read, unread]))
+    assert ("Queue: none. Watches: uptime@42744959 1 machine (processing-unit 1) from (-40,-91): late: its end tick 42780959 "
+            "passed 20 s ago and no final result came; it is not counted as work; 590 samples; belt_flow@2 belt line") in t, t
+    assert "turret_tally@1" not in t and t.count("Watches:") == 1, t
+    assert "Watches" not in N.nudge_text(row("haiku", 12, measures=[done_read]))
+    logged = []
+    h.step({"agents": [row("haiku", 12, measures=[late])]}, T0 + 960, lambda n, t: {"seq": 2}, logged.append)
+    assert logged[0]["watches"] == [{"id": "uptime@42744959", "state": "late", "end_tick": 42780959, "final_read": None}], logged
+    # (operator d21 13:18) the agent's own reason to wait, given with its sleep, quoted as given; nothing suggested
+    t = N.nudge_text(row("haiku", 12, sleeping_s=60, sleep_reason="waiting for astra's go on the wall."))
+    assert "Queue: none. Your reason to wait (your sleep): waiting for astra's go on the wall. Unread for you:" in t, t
+    assert "reason" not in N.nudge_text(row("haiku", 12))
     # the run's members and deadline from its files
     d = tempfile.mkdtemp()
     open(os.path.join(d, "panes.txt"), "w").write("astra w1:1 codex\nsonnet w1:2 claude\n")

@@ -4913,7 +4913,30 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
   messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
   game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,
-  standing 21%"). `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
+  standing 21%").
+  A bounded watch running is measuring, not standing (measures.lua; d20 batch70 AF1, Aurora: d21 12:11:50 Haiku was
+  nudged 72 s into a 120 s `uptime` watch Astra had asked of it, and 12:51:53 74 s into another): an `uptime`,
+  `turret_tally` or `belt_flow` watch of the agent's, from its start to its end tick while its sampler reads it, its
+  sleeps and waits included. Standing ends while it runs (`stand_ended.why`: `measuring uptime@42660741`) and starts
+  again at its end. Each row has `measuring` (the running watch's id: kind@start tick) and `measures`: each watch it
+  keeps, `{id, kind, scope, start_tick, end_tick, state, samples, gone, of, latest {tick, s_ago, line}, final_read,
+  line}`. `state` is `running`, `done` (`final_read`: whether the agent read it after the end), `late` (its end tick
+  passed 5 s ago or more and no final result came: its sampler stopped), `stalled` (before its end, no sample for 10
+  s) or `invalid` (every machine, turret or belt point it reads gone or out of sight, or no sample); only `running` is
+  work. `counted.text` adds `measuring 80% (uptime@42660741)`, and `counted.measures` the ids. The agent's clock line
+  adds `, measuring uptime@42660741 for 1m10s of it`; a sleep begun while one runs says `no queue and no action:
+  measuring, your uptime@42660741 14 machines (copper-plate 13, none 1) from (-45,83) runs in the background until
+  tick 42667941 (110 s more; your actions meanwhile do not end it), then your character stands idle`; `sleep_check`
+  carries `measuring` (that watch's line, with its latest sample), and the sleep's start and its wake carry `watches`:
+  the lines of watches late, stalled, invalid or done with the final not read. The idle nudge does not nudge an agent
+  while it measures and names those watches in its tell (`Watches: ...`; `watches` in nudges.jsonl). Fusion reactors'
+  fuel sampling (inspect) belongs to no agent and is not counted.
+  The agent's own reason to wait (operator d21 13:18, Aurora; the operator suggests no work): `reason` (text, up to 200
+  characters) on `uptime`, `turret_tally` and `belt_flow` is kept with the watch (`measures[].reason`, `; your reason:
+  ...` in its line and `; its reason: ...` in the sleep line); on `sleep` (`fh sleep 120 --reason TEXT`, `fh wait
+  --until ... --reason TEXT`) it ends `while_asleep` (`; your reason to wait: ...`), the idle report has it as
+  `sleep_reason`, and the idle nudge quotes it (`Your reason to wait (your sleep): ...`). Shown as given, newlines
+  folded. `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
   waking a sleeper (woke=told), never in the game chat. It also rides on every reply to that agent as
   `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
   or message; in compact output fh prints each as an `OPERATOR:` line on stdout as soon as a reply carries it, once per

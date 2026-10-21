@@ -32,6 +32,9 @@ return function(api)
   -- 0 of 227 short walks by Grok and Muse counted under the old rule of 20 s
   -- of work in one go, nor Gemini's 108 transfers).
   -- A standing order running is work at once, its waits included (orders.lua).
+  -- A bounded watch running (uptime, turret_tally, belt_flow: measures.lua; d20 batch70 AF1: d21 12:11:50, Haiku was
+  -- told it stood idle 72 s into a 120 s uptime watch) is work too, its waits and sleeps included, until its end tick;
+  -- a late, stalled or invalid one is not.
   local WAITS = {wait_ticks=true, wait_until=true, sleep=true}
   local BRIEF, WINDOW = 20 * 60, 2 * 3600
   local MOVES = {walk=true, move_to=true, build_path=true, kite=true, drive=true}
@@ -42,9 +45,11 @@ return function(api)
     local act = s.active and s.active[index]
     local waiting = act and WAITS[act.kind]
     if act and not waiting then return true end
+    local watch = api.measure and api.measure(index)
+    if watch then return true, 'measure', watch end  -- a bounded watch running (measures.lua): its id
     local q = s.queues and s.queues[index]
     if not q or q.paused or waiting then return false end
-    if q.order then return true, true end  -- a standing order running (orders.lua), its waits included
+    if q.order then return true, 'order' end  -- a standing order running (orders.lua), its waits included
     -- A loop whose last round moved nothing is idle (scheduler.lua round_done; d15: Muse's empty courier rounds read as
     -- work, 0 nudges) until a round moves something.
     if q.loop and (q.empty_rounds or 0) >= 1 then return false end
@@ -72,7 +77,7 @@ return function(api)
     local id = math.floor(game.tick / BUCKET)
     local b = log[id]
     if not b then
-      b = {busy=0, waiting=0, asleep=0, stand=0, acts=0, noops=0, reads=0, talk=0, sleeps={}, waits={}}
+      b = {busy=0, measure=0, waiting=0, asleep=0, stand=0, acts=0, noops=0, reads=0, talk=0, sleeps={}, waits={}}
       log[id] = b
       for k in pairs(log) do if k <= id - BUCKETS then log[k] = nil end end
     end
@@ -105,11 +110,17 @@ return function(api)
           s.move_from[index] = nil
           if here and math.abs(here.x - from.x) + math.abs(here.y - from.y) >= NEW_SPOT then ended(index, 'moved') end
         end
-        local working, order = busy(s, index)
-        if working then
+        local working, why, watch = busy(s, index)
+        if why == 'measure' then
+          -- a bounded watch: measuring, named; standing ends while it runs
+          b.measure = (b.measure or 0) + 1
+          b.measures = b.measures or {}
+          b.measures[watch] = true
+          ended(index, 'measuring ' .. watch)
+        elseif working then
           b.busy = b.busy + 1
           work[#work+1] = game.tick
-          if order then ended(index, 'order') elseif #work * 60 >= BRIEF then ended(index, 'worked') end
+          if why == 'order' then ended(index, 'order') elseif #work * 60 >= BRIEF then ended(index, 'worked') end
         else
           local w = waiting(s, index)
           if w == 'sleep' then b.asleep = b.asleep + 1 elseif w then b.waiting = b.waiting + 1 else b.stand = b.stand + 1 end
@@ -166,11 +177,14 @@ return function(api)
     local s = api.state()
     local log = s.idle_log and s.idle_log[index] or {}
     local id = math.floor(game.tick / BUCKET)
-    local c = {minutes=minutes, busy_s=0, waiting_s=0, asleep_s=0, standing_s=0, watch_s=0, actions=0, no_effect=0, reads=0, messages=0, sleeps={}, waits={}}
+    local c = {minutes=minutes, busy_s=0, measure_s=0, waiting_s=0, asleep_s=0, standing_s=0, watch_s=0, actions=0, no_effect=0, reads=0, messages=0, sleeps={}, waits={}}
+    local measured = {}
     for k, b in pairs(log) do
       if k > id - minutes then
         c.busy_s, c.waiting_s, c.asleep_s, c.standing_s = c.busy_s + b.busy, c.waiting_s + b.waiting, c.asleep_s + b.asleep, c.standing_s + b.stand
         c.watch_s = c.watch_s + (b.watch or 0)
+        c.measure_s = c.measure_s + (b.measure or 0)
+        for id in pairs(b.measures or {}) do measured[id] = true end
         if b.watch_names and (not c.watch_k or k > c.watch_k) then c.watch_k, c.watch_names = k, b.watch_names end
         c.actions, c.no_effect, c.reads, c.messages = c.actions + b.acts, c.no_effect + b.noops, c.reads + b.reads, c.messages + b.talk
         for n, k2 in pairs(b.sleeps) do c.sleeps[n] = (c.sleeps[n] or 0) + k2 end
@@ -186,7 +200,11 @@ return function(api)
       if h.ok then steps = steps + 1 end
     end
     c.queue_steps = steps
-    local total = c.busy_s + c.waiting_s + c.asleep_s + c.standing_s  -- on watch overlaps asleep, waiting and standing
+    local total = c.busy_s + c.measure_s + c.waiting_s + c.asleep_s + c.standing_s  -- on watch overlaps asleep, waiting and standing
+    local ids = {}
+    for id in pairs(measured) do ids[#ids+1] = id end
+    table.sort(ids)
+    c.measures = #ids > 0 and ids or nil
     local function pct(n) return total > 0 and math.floor(100 * n / total + 0.5) or 0 end
     local sl = {}
     for n, k in pairs(c.sleeps) do sl[#sl+1] = {n, k} end
@@ -196,11 +214,11 @@ return function(api)
     local waits = {}
     for w, k in pairs(c.waits) do waits[#waits+1] = string.format('%s x%d', w, k) end
     table.sort(waits)
-    c.text = string.format('last %d min: %d game action%s%s%s, %d read%s, %d message%s; working %d%%, asleep %d%%%s, waiting %d%%%s, standing %d%%',
+    c.text = string.format('last %d min: %d game action%s%s%s, %d read%s, %d message%s; working %d%%%s, asleep %d%%%s, waiting %d%%%s, standing %d%%',
       minutes, c.actions, c.actions == 1 and '' or 's', c.no_effect > 0 and string.format(' (and %d with no effect)', c.no_effect) or '',
       steps > 0 and string.format(', %d queue step%s done', steps, steps == 1 and '' or 's') or '',
       c.reads, c.reads == 1 and '' or 's', c.messages, c.messages == 1 and '' or 's',
-      pct(c.busy_s), pct(c.asleep_s), #sleeps > 0 and ' (' .. table.concat(sleeps, ', ') .. ')' or '',
+      pct(c.busy_s), c.measure_s > 0 and string.format(', measuring %d%% (%s)', pct(c.measure_s), table.concat(ids, ', ')) or '', pct(c.asleep_s), #sleeps > 0 and ' (' .. table.concat(sleeps, ', ') .. ')' or '',
       pct(c.waiting_s), #waits > 0 and ' (' .. table.concat(waits, ', ') .. ')' or '', pct(c.standing_s))
       .. (c.watch_s > 0 and string.format(', on watch %d%% of it (standing orders armed: %s)', pct(c.watch_s), tostring(c.watch_names)) or '')
     c.watch_k = nil
@@ -231,18 +249,24 @@ return function(api)
         queue=queue_of(ag.index),
         sleeping_s=sleeping and math.floor((game.tick - sl.start_tick) / 60) or nil,
         sleep_left_s=sleeping and math.floor((sl.until_tick - game.tick) / 60) or nil,
+        sleep_reason=sleeping and sl.reason or nil,  -- (d20 batch70 AF1) the agent's own reason to wait, as given
         unread_chat=unread.unread or 0, unread_mentions=c.unread_mentions or 0, unread_tells=c.tells or 0,
         unread_board=c.unread_board or 0,
         last_request_s=clock_ and math.floor((game.tick - math.max(clock_.call_tick, clock_.seen_tick or 0)) / 60) or nil,
         -- Standing orders (orders.lua): {set, running, reason, paused}; a running order is a running queue, so not standing.
         orders=api.orders and api.orders(ag.index) or nil,
         counted=M.counted(ag.index, (a or {}).minutes),
+        -- (d20 batch70 AF1) its bounded watches (measures.lua): running ones keep it busy; late, stalled, invalid or
+        -- a final not read are flagged; measuring: the id of the one running
+        measures=api.measures and api.measures(ag.index) or nil,
+        measuring=api.measure and api.measure(ag.index) or nil,
         -- What is open for it (open.lua; d15 H3): the idle nudge quotes it.
         open=open_line,
         stand_ended=last_end and {s_ago=math.floor((game.tick - last_end.tick) / 60), why=last_end.why} or nil}
     end
     return {agents=out, tick=game.tick, idle='standing: no action and no running queue; a wait or sleep is standing; '
-      .. 'a game action that changed something, a move to a new spot or 20 s of work in 2 minutes ends it'}
+      .. 'a game action that changed something, a move to a new spot or 20 s of work in 2 minutes ends it; '
+      .. 'a bounded watch running (uptime, turret_tally, belt_flow) is measuring, not standing, until its end tick'}
   end
   return M
 end

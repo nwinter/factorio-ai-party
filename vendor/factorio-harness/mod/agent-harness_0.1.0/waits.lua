@@ -32,6 +32,7 @@ return function(api)
       returns='open: one line of what is open for you (your board items, alert groups and idle or starved machines in your fresh claims, requests and tells to you unanswered; counts and up to 3 examples), also on the reply that reads the wake; capped when cut to 300 s; wait_estimates: each condition ETA in game seconds with rate basis, or no_estimate reason; idle_s: character idle seconds in this wait; wait_line: one-line summary',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS, wake_from=WAKE_FROM, wake_local=WAKE_LOCAL, wake_on_operator=WAKE_OPERATOR, wake_on_urgent=WAKE_URGENT, wake=WAKE,
       wake_on_messages='boolean default true; false (fh sleep/wait --wait-through-tells): no tell or mention ends it (they stay for your next reply); a tell sent with wake: true still does, each time; urgent alerts, damage, your queue finishing or stalling and the condition still end it',
+      reason='optional text, up to 200 characters (fh sleep --reason): your own reason to wait; while_asleep, sleep_check and the operator\'s idle check show it as given',
       orders='optional false: no standing order starts while this sleep runs (one already running goes on; orders_pause {seconds} holds them for a set time)',wake_on_orders='boolean default false: a standing order\'s round finishing or stalling ends the sleep too (by default only your own plan\'s does; the order keeps running)',
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), an urgent alert (urgent, see wake_on_urgent), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|urgent|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), waited_now (woken by anything else than its condition: each waited condition as it reads now, met or not and its value, and for a platform where it is and its latest launch up with its age), board_held (wake_on_board: false), personal_requests (a sleep that ends before its time: your personal requests still unfilled, each "item: hold N of M (K on the way); why"), slept_s, health/lost when damaged, urgent (the urgent alert), alert (the alert that woke an until=alert sleep), mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep), wait_estimates (current ETA/rate basis or no_estimate for each condition), idle_s (character idle seconds in this wait), wait_line (one line)'},
@@ -91,11 +92,25 @@ return function(api)
     elseif active then
       return string.format('your %s keeps going, then your character stands idle%s', active.kind or 'action', held)
     end
+    -- (d20 batch70 AF1) a bounded watch running (measures.lua): measuring, not standing, until its end tick
+    local watch = api.measure and api.measure(p.index)
+    if watch then
+      local left = math.max(0, math.ceil((watch.end_tick - game.tick) / 60))
+      return string.format('no queue and no action: measuring, your %s %s runs in the background until tick %d (%d s more; your actions meanwhile do not end it)%s%s%s',
+        watch.id, watch.scope, watch.end_tick, left, seconds > left and ', then your character stands idle' or '', held,
+        watch.reason and '; its reason: ' .. watch.reason or '')
+    end
     local armed = api.armed and api.armed(p.index)
     if armed then
       return string.format('no queue and no action: your character stands idle for up to %d s, on watch: your standing orders (%s) run when a trigger holds%s', seconds, armed, held)
     end
     return string.format('no queue and no action: your character stands idle for up to %d s%s', seconds, held)
+  end
+  -- (d20 batch70 AF1) the agent's bounded watches that are late, stalled, invalid or done with the final not read
+  -- (measures.lua), or nil
+  local function watch_flags(index)
+    local ok, f = pcall(function() return api.watch_flags and api.watch_flags(index) end)
+    return ok and f and #f > 0 and f or nil
   end
   local function asleep_line(p,record,seconds)
     local line=body_asleep_line(p,record,seconds)
@@ -182,6 +197,7 @@ return function(api)
   function M.handlers.sleep(p, a)
     a = api.wake_arg and api.wake_arg(a) or a
     local seconds = api.integer(a.seconds, nil, 1, MAX_TICKS / 60, 'seconds (1..900)')
+    local reason = api.reason and api.reason(a.reason)  -- (d20 batch70 AF1) its own reason to wait
     -- A sleep with its own condition says what it waits for: never a repeat.
     local again = a.condition == nil and repeat_of(p, seconds)
     if again then return again end
@@ -309,8 +325,10 @@ return function(api)
       end
     end
     local out = {}
-    out.while_asleep = asleep_line(p, record, seconds)
+    record.reason = reason
+    out.while_asleep = asleep_line(p, record, seconds) .. (reason and '; your reason to wait: ' .. reason or '')
     record.while_asleep = out.while_asleep
+    out.watches = watch_flags(p.index)
     out.sleeping_s = seconds
     out.capped = capped
     out.until_tick = record.until_tick
@@ -516,6 +534,11 @@ return function(api)
     local out = {while_asleep=record.while_asleep, slept_s=math.floor((game.tick - record.start_tick) / 60), until_tick=record.until_tick}
     observe_conditions(p,record,out)
     out.woke = record.woke or why(p, record, out)
+    if out.woke then out.watches = watch_flags(p.index) end  -- (d20 batch70 AF1) late, stalled, invalid or unread watches
+    do  -- the watch it is measuring with: id, scope, end tick, latest sample (measures.lua)
+      local ok, w = pcall(function() return api.measure and api.measure(p.index) end)
+      out.measuring = ok and w and w.line or nil
+    end
     -- (d18 batch36 B1) urgent alerts a wake {near} held instead of waking it
     if record.urgent and record.urgent.held then out.held_alerts = record.urgent.held; out.held_alerts_count = record.urgent.held_n end
     -- (A1) board news a wake_on_board: false held

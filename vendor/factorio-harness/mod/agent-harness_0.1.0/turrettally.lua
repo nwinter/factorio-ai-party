@@ -68,6 +68,10 @@ return function(api)
       end
     end
     job.samples = job.samples + 1
+    -- (d20 batch70 AF1) when it was last read, and whether a turret is left to read (measures.lua: the idle count)
+    local live = false
+    for _, t in ipairs(job.turrets) do if not t.gone then live = true; break end end
+    job.sampled, job.all_gone = tick, not live or nil
   end
   local function secs(job, tick) return math.floor((tick - job.start) / 6 + 0.5) / 10 end
   function M.result(job, done)
@@ -126,10 +130,12 @@ return function(api)
     if a.positions == nil and a.position == nil and a.area == nil then
       local job = store()[p.index]
       assert(job, 'no turret_tally watch yet: turret_tally {positions, seconds?}')
+      if job.result then job.read_tick = game.tick end  -- its final read (measures.lua)
       return job.result or M.result(job, false)
     end
     local seconds = a.seconds == nil and 120 or a.seconds
     assert(type(seconds) == 'number' and seconds >= 5 and seconds <= 3600 and seconds == math.floor(seconds), 'seconds: 5..3600 (default 120)')
+    local reason = api.reason and api.reason(a.reason)  -- (d20 batch70 AF1) its own reason to wait (measures.lua)
     local q = a.surface ~= nil and api.on_surface(p, a.surface) or a.platform ~= nil and api.on_platform(p, a.platform) or p
     local list = a.positions or a.position and {a.position} or M.in_area(q, a)
     assert(type(list) == 'table' and #list >= 1 and #list <= M.MAX, 'positions: 1..' .. M.MAX .. ' turrets {x,y} (or area {left_top, right_bottom})')
@@ -145,7 +151,7 @@ return function(api)
       end
     end
     local replaced = store()[p.index] and not store()[p.index].result
-    local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick + 60, seconds=seconds, samples=1, turrets=turrets}
+    local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick + 60, seconds=seconds, samples=1, turrets=turrets, reason=reason}
     store()[p.index] = job
     local lines = {}
     for _, t in ipairs(turrets) do lines[#lines+1] = string.format('%s %s: %s so far', t.name, at(t.position), M.text({kills=t.k0, damage_dealt=t.d0})) end
@@ -153,7 +159,7 @@ return function(api)
       line=string.format('watching %d turret%s for %ds, their kills and damage dealt read once a second: turret_tally {} reads it so far, and in full once done', #turrets, #turrets == 1 and '' or 's', seconds),
       note=M.NOTE}
   end
-  M.schema = {turret_tally = {positions='1..64 turrets {x,y} (ammo, electric or fluid turrets, artillery turrets or wagons; in sight or by remote view)', position='or one',
+  M.schema = {turret_tally = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', positions='1..64 turrets {x,y} (ammo, electric or fluid turrets, artillery turrets or wagons; in sight or by remote view)', position='or one',
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the turrets of ours in it, up to 64', name='optional with area: only turrets of this name',
     seconds='optional 5..3600 (default 120): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',
     returns='a watch, one an agent (a new one replaces it): the start returns baseline (each turret\'s kills and damage dealt so far) and line; turret_tally {} reads it so far (watching) or done: turrets [{name, position, quality, kills_start, kills_end, kills_change, damage_start, damage_end, damage_change, first_change_s and last_change_s (seconds into the watch of the first and last read with a change), seconds_changing (one-second reads with a change), gone_s (destroyed or mined: its change up to its last read)}] with no change said as no change, groups (by name: turrets, changed, kills, damage), changed, unchanged, kills_change, damage_change, lines, line, note (what the counts take in and leave out). Read only; the counts are the ones the turret\'s tooltip shows'}}

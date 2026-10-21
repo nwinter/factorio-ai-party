@@ -401,6 +401,10 @@ test('a direct wait that ran as a sleep is followed to its wake; --wait-through-
     seen.length=0;
     await cli(port,['sleep','30','--wait-through-tells']);
     assert.equal(seen.find(r=>r.action==='sleep').args.wake_on_messages,false);
+    // (d20 batch70 AF1) --reason TEXT: the agent's own reason to wait, sent as given
+    seen.length=0;
+    await cli(port,['sleep','30','--reason','waiting on the copper uptime']);
+    assert.equal(seen.find(r=>r.action==='sleep').args.reason,'waiting on the copper uptime');
   });
 });
 // d15 batch5 B2 (Grok): craft --wait waits until the hand-craft queue is done (crafting_done), not until it starts.

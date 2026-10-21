@@ -151,6 +151,10 @@ return function(api)
         end
       else pt.gone = true end
     end
+    -- (d20 batch70 AF1) when it was last read, and whether a point is left to read (measures.lua: the idle count)
+    local live = false
+    for _, pt in ipairs(job.points) do if not pt.gone and (pt.unseen or 0) < job.samples then live = true; break end end
+    job.sampled, job.all_gone = game.tick, not live or nil
   end
   local function lane_text(pt, k, minutes)
     local by, n = {}, 0
@@ -309,17 +313,20 @@ return function(api)
       assert(a.platform == nil and a.surface == nil, 'surface and platform go with position (a belt there); belt_flow {} reads your sample where it began')
       local job = store()[p.index]
       assert(job, 'no belt_flow sampled yet: belt_flow {position, seconds?}')
-      if job.result then return job.result end
+      if job.result then job.read_tick = game.tick; return job.result end  -- its final read (measures.lua)
       return {sampling=true, until_tick=job.until_tick, seconds_left=math.max(0, math.ceil((job.until_tick - game.tick) / 60))}
     end
     local seconds = a.seconds == nil and 10 or a.seconds
     assert(type(seconds) == 'number' and seconds >= 2 and seconds <= 30 and seconds == math.floor(seconds), 'seconds: 2..30 (default 10)')
+    local reason = api.reason and api.reason(a.reason)  -- (d20 batch70 AF1) its own reason to wait (measures.lua)
     assert(a.platform == nil or a.surface == nil, 'give platform or surface, not both')
     local q = a.surface ~= nil and api.on_surface(p, a.surface) or a.platform ~= nil and api.on_platform(p, a.platform) or p
     local e = api.remote_entity(q, {position=a.position})
-    return M.start(p, e, seconds)
+    local out = M.start(p, e, seconds)
+    store()[p.index].reason = reason
+    return out
   end
-  M.schema = {belt_flow = {position='a belt, underground or splitter tile {x,y}', seconds='optional 2..30 (default 10): how long to sample',
+  M.schema = {belt_flow = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', position='a belt, underground or splitter tile {x,y}', seconds='optional 2..30 (default 10): how long to sample',
     platform='optional platform name (platform coordinates)',
     surface='optional planet, surface or platform name (default yours): the belt there by remote view (d20 batch62 X4): the start tile in a chunk our force sees now (radar coverage); the line is walked where the map is charted, and a point out of sight is not sampled (said per point: out_of_sight)',
     returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile), with what stands on the tile by name), on_tile}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). Read only'}}
