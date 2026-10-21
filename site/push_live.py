@@ -153,7 +153,8 @@ def public_haul(hauling):
 def public_delivery(status, keep=150):
     """(d17 batch35 D1, viewer Aurora: four lines received and never relayed, no reason shown) each site line's delivery
     from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?,
-    to_all?: every recipient of a line to several agents, op?: 1 when it is in the operator's inbox too}},
+    to_all?: every recipient of a line to several agents, op?: 1 when it is in the operator's inbox too, lost?: 1 relayed
+    with whom to lost at a stream service restart, at?: when it was sent, for a record read back after a restart}},
     the newest `keep`. YouTube lines are not keyed by a site seq and stay out."""
     out = {}
     for r in (status or {}).get("delivery") or []:
@@ -168,6 +169,10 @@ def public_delivery(status, keep=150):
             row["to_all"] = [str(n)[:40] for n in r["to_all"][:9]]
         if r.get("inbox"):
             row["op"] = 1
+        if r.get("lost"):  # (d20 batch57 S5) relayed; whom to, lost at a stream service restart
+            row["lost"] = 1
+        if isinstance(r.get("sent_t"), (int, float)):  # restored from the relayed files: when it was sent
+            row["at"] = round(r["sent_t"])
         if r.get("why"):  # (d19 batch43 A3) cut at a word end with "…" past 240 (it was cut mid-word at 120)
             why = str(r["why"])
             row["why"] = why if len(why) <= 240 else why[:239].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
