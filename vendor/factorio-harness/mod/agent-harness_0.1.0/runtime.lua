@@ -1822,6 +1822,9 @@ local inventories = {
   -- Trash slots: where the game puts items an entity will not use (a silo's
   -- hand-loaded cargo once automatic requests are on). Take-only.
   rocket_silo_trash = {'rocket-silo'}, cargo_landing_pad_trash = {'cargo-landing-pad'}, hub_trash = {'space-platform-hub'},
+  -- (d21 batch64 Z1) an assembling machine's dump slots: the old recipe's items after its circuit changed the recipe;
+  -- it has no recipe until they are empty (circrecipe.lua). Take-only.
+  assembling_machine_dump = {'assembling-machine'},
   turret_ammo = {'ammo-turret'}, artillery_turret_ammo = {'artillery-turret'}, artillery_wagon_ammo = {'artillery-wagon'},
   car_ammo = {'car'}, car_trunk = {'car'}, spider_ammo = {'spider-vehicle'}, spider_trunk = {'spider-vehicle'},
   cargo_wagon = {'cargo-wagon'}, roboport_robot = {'roboport'}, roboport_material = {'roboport'},
@@ -1832,7 +1835,7 @@ local inventories = {
 }
 -- Inference order when a transfer omits its inventory (see infer_inventory).
 -- Ammo and modules only go where the item's kind says, as a player's click does.
-local take_order={'character_corpse','rocket_silo_trash','cargo_landing_pad_trash','hub_trash','chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','agricultural_tower_output','burnt_result','fuel',
+local take_order={'character_corpse','rocket_silo_trash','cargo_landing_pad_trash','hub_trash','assembling_machine_dump','chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','agricultural_tower_output','burnt_result','fuel',
   'furnace_source','assembling_machine_input','agricultural_tower_input','lab_input','turret_ammo','artillery_turret_ammo','artillery_wagon_ammo','car_ammo','spider_ammo',
   'roboport_robot','roboport_material','rocket_silo_rocket'}
 local give_order={'chest','cargo_landing_pad_main','hub_main','cargo_wagon','car_trunk','spider_trunk','furnace_source','assembling_machine_input','agricultural_tower_input','lab_input','roboport_robot','roboport_material','fuel','rocket_silo_rocket'}
@@ -7160,6 +7163,8 @@ function handlers.inspect(p,a)
     local oks,sp=pcall(M.slots.input_spoilage,e)
     out.input_spoilage=oks and sp and sp.text or nil
     local recipe=e.get_recipe(); out.recipe=recipe and recipe.name or false
+    -- Set recipe on: what its wires give, and why it has no recipe when it has none (circrecipe.lua; Sol #1515).
+    if e.type=='assembling-machine' then local okc,cr=pcall(M.circrecipe.read,e); out.circuit_recipe=okc and cr or nil end
     out.crafting_progress=e.crafting_progress
     -- Crafts and output per minute at its speed and productivity now (craftrate.lua; Sol, 15:20).
     local okr,rate=pcall(M.timed,'inspect.craftrate',M.craftrate.machine,e)
@@ -7827,6 +7832,8 @@ local function configure_check(p,a,e,near)
   if ghost then return end
   local current,current_quality=e.get_recipe()
   if current and current.name==recipe.name and (a.quality or 'normal')==((current_quality and current_quality.name) or 'normal') then return end
+  -- (d21 batch64 Z1, Sol #1515) with Set recipe on the game ignores a recipe set by hand: say so, and what it takes
+  if M.circrecipe.set_recipe_on(e) then error(M.circrecipe.refusal(e,recipe.name,a.quality),0) end
   -- (fluids the new recipe takes none of: handlers.configure, batch26 A3; force=true is fluid "keep")
   -- Out of reach, it needs the character there: the refusal's text, for the caller to walk (M.configure_walk) or raise.
   -- On a platform the old ingredients and products go to the hub instead (Astra, d15 twice: a deconstruct and rebuild
@@ -13701,6 +13708,7 @@ function handlers.agriculture(p,a) return M.agriculture.read(p,a) end
 -- (spoil.lua; Sol, shift10 04:59: stored pentapod eggs hatched in his camp).
 -- A crafting machine's crafts and output per minute (inspect's rate, the recipes read; Sol, 15:20).
 M.craftrate=require('craftrate'){}
+M.circrecipe=require('circrecipe'){status_name=function(e) return entity_status_names[e.status] end}
 -- An inventory with every slot taken and what fills it; spoilage in a machine's input (slots.lua; Sol, 22:08).
 M.slots=require('slots')()
 M.spoil=require('spoil'){state=state,force=function() return game.forces.player end,

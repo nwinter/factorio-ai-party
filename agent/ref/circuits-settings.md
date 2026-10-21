@@ -78,6 +78,11 @@
     keeps one the new recipe takes; a machine's box has no pipe segment to flush. `fluid: "drain"` (or `"keep"`,
     `force: true`) makes the change; the reply's `fluid` and `fluid_flushed` say how much left the machine and anything
     still in it.
+  - Set recipe on (`circuit_set_recipe`): the game sets the recipe from the red and green wires and ignores one set by
+    hand, so `configure recipe` is refused saying so. It takes `recipe:NAME` above 0 at its quality (the lowest recipe
+    order among several), else an item signal picks a recipe making it. After the wires change the recipe, the old
+    recipe's items go to the machine's dump slots (`assembling_machine_dump`) and it has no recipe until they are
+    empty. inspect's `circuit_recipe` says what the wires give and why it has none.
   - `modules: ["speed-module-2","speed-module-2"]` sets a machine's module slots: the modules it already holds that
     the list names stay in their slots, the rest go into the other slots (past the list: empty);
     `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes only slot 2. In
