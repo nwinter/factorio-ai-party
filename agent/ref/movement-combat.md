@@ -39,6 +39,10 @@
     wall and leaves gaps beside it). A walk ending unreachable, blocked or near gives `last.across`: what stands across
     the straight line from where it ended to the goal (48 tiles), each wall with how many, the box it spans and its gates
     (ours, or another force's, which does not open for ours), or `no gate in it` (`last.across_walls`).
+  - Mech armor (armor that provides flight): the character takes off when it walks into something and lands when it
+    stops where it can stand; flying it crosses water, walls and buildings (only spidertrons and pentapods stop it), and
+    walks plan with that (status `flight` says flying or on the ground). A change to armor without flight while it
+    flies kills the character in 2.0.77: `equip` refuses it then.
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
     of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
