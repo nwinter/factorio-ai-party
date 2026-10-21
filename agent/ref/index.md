@@ -31,4 +31,4 @@
   `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
   `platform_rearm`, `platform_digest`, `platform_tiles`, `platform_lanes`, `platform_gate`, `demolishers`, `shipment`,
   `fleet`, `min_payload`, `launch`, `silo`, `cargo`, `load_silo`, `silo_stage`, `pods`, `preflight`, `land`, `drop`,
-  `freight_audit`, `where_is`, `agriculture`, `eggs`.
+  `freight_audit`, `delivery_watch`, `where_is`, `agriculture`, `eggs`.
