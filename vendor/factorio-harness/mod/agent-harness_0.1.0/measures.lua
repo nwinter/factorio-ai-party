@@ -43,8 +43,11 @@ return function(api)
     local parts = {}
     for i, r in ipairs(order) do if i <= 3 then parts[#parts+1] = r .. ' ' .. recipes[r] end end
     if #order > 3 then parts[#parts+1] = (#order - 3) .. ' more' end
-    local items = {}
-    for _, f in ipairs(job.flows and job.flows.items or {}) do items[#items+1] = type(f) == 'table' and (f.name or f[1]) or tostring(f) end
+    -- a statistics watch: its items (uptime.flows_start rows, one per item and quality)
+    local items, seen = {}, {}
+    for _, f in ipairs(job.flows and job.flows.rows or {}) do
+      if f.name and not seen[f.name] then seen[f.name] = true; items[#items+1] = f.name end
+    end
     local scope = n > 0 and string.format('%d machine%s (%s) from %s', n, n == 1 and '' or 's', table.concat(parts, ', '), at(first)) or ''
     if #items > 0 then scope = scope .. (n > 0 and '; ' or '') .. 'items ' .. table.concat(items, ', ') end
     local total, shares = 0, {}
@@ -79,7 +82,7 @@ return function(api)
       sample=string.format('%d of %d turrets with a change, kills %+d', changed, n, kills), empty=n == 0}
   end
   function DESCRIBE.belt_flow(job)
-    local scope = string.format('belt line %s to %s (%s tiles) on %s', at(job.path_from), at(job.path_to), tostring(job.tiles or '?'), tostring(job.surface_name or '?'))
+    local scope = string.format('belt line %s to %s (%s tiles) on %s', at(job.path_from), at(job.path_to), tostring(job.tiles or '?'), tostring(job.surface_name or job.surface or '?'))
     local n, gone, passed = 0, 0, 0
     if job.points then
       for _, pt in ipairs(job.points) do
@@ -125,14 +128,15 @@ return function(api)
       .. (job.reason and string.format('; your reason: %s', job.reason) or '')
     return r
   end
-  -- The agent's watches, running ones first then by start; done ones whose final was read and that ended over an hour
-  -- ago are left out.
+  -- The agent's watches, running ones first then by start; those that ended over KEEP ticks ago are left out, read or
+  -- not (d20 batch70 AF3: on the copy, a turret_tally final unread for 13 h still flagged).
+  M.KEEP = 216000
   function M.list(index, tick)
     tick = tick or game.tick
     local out = {}
     for _, kind in ipairs(M.KINDS) do
       local job = jobs(kind)[index]
-      if type(job) == 'table' and job.start and job.until_tick and not (job.result and job.read_tick and tick - job.until_tick > 216000) then
+      if type(job) == 'table' and job.start and job.until_tick and tick - job.until_tick <= M.KEEP then
         local ok, r = pcall(row, kind, job, tick)
         if ok then out[#out+1] = r end
       end
@@ -162,6 +166,18 @@ return function(api)
       if r.state ~= 'running' and (r.state ~= 'done' or not r.final_read) then out[#out+1] = r.line end
     end
     return out
+  end
+  -- (d20 batch70 AF3) status {brief, work}: the watches running or needing the agent (as flags reads them), in short
+  -- rows for the stream's agent cards; nil when there are none.
+  function M.card(index, tick)
+    local out = {}
+    for _, r in ipairs(M.list(index, tick)) do
+      if r.state ~= 'done' or not r.final_read then
+        out[#out+1] = {id=r.id, kind=r.kind, scope=r.scope, state=r.state, start_tick=r.start_tick, end_tick=r.end_tick,
+          latest=r.latest and r.latest.line and {tick=r.latest.tick, line=r.latest.line} or nil, reason=r.reason, line=r.line}
+      end
+    end
+    return #out > 0 and out or nil
   end
   return M
 end

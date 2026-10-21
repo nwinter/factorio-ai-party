@@ -4928,8 +4928,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   measuring, your uptime@42660741 14 machines (copper-plate 13, none 1) from (-45,83) runs in the background until
   tick 42667941 (110 s more; your actions meanwhile do not end it), then your character stands idle`; `sleep_check`
   carries `measuring` (that watch's line, with its latest sample), and the sleep's start and its wake carry `watches`:
-  the lines of watches late, stalled, invalid or done with the final not read. The idle nudge does not nudge an agent
-  while it measures and names those watches in its tell (`Watches: ...`; `watches` in nudges.jsonl). Fusion reactors'
+  the lines of watches late, stalled, invalid or done with the final not read (up to an hour after their end; AF3).
+  The idle nudge does not nudge an agent while it measures and names those watches in its tell (`Watches: ...`; `watches` in nudges.jsonl). Fusion reactors'
   fuel sampling (inspect) belongs to no agent and is not counted.
   The agent's own reason to wait (operator d21 13:18, Aurora; the operator suggests no work): `reason` (text, up to 200
   characters) on `uptime`, `turret_tally` and `belt_flow` is kept with the watch (`measures[].reason`, `; your reason:
@@ -9751,6 +9751,28 @@ fh watch    # deploy on every change
   12 min ago; no focus set: ...`; neither `no focus, plan line or notes job`. Ages are game time for the focus and the
   plan line, the file's age for notes. The site's agent cards and portrait tip and the stream overlay's cards show the
   label before the job. Tests: tools/stream/test_jobcard.py, site/test_jobcard.py, tests/d20_batch54.lua.
+- Current work and stale flags on the site's agent cards (d20 batch70 AF3, viewer Aurora, d21 15:07 PDT: "Could agent
+  cards show the engineer's own current task plus background tests/deadlines, and flag stale plan/focus text? Sonnet's
+  plan still says free while sampling Cinder"). Sonnet's sampling was a script of its own: `platform Cinder` every 60 s
+  from 14:53 PDT for a 2.5 h validation, under a plan line set at 14:13 ("... free for audits"); no harness watch saw it.
+  Beside the job each card now shows `work` (tools/stream/workcard.py, at most 4 lines):
+  - the agent's bounded watches (`status {brief, work}`, measures.card: running, or late, stalled, invalid or with a
+    final not read, for an hour after their end), with the end (`ends in 7 min`), the latest sample and its reason;
+  - each queue lane's active step (status brief queues: its label, when it started, how many more; with the
+    submission it came in, `run {kind, name, tick, steps}`) and a standing order (orders.brief adds started_tick);
+  - a request the agent sends again and again at a steady interval, from its journal (`repeating request: platform
+    Cinder every 60 s for 14 min (15 so far)`: 4 or more, gaps within 25% of their mean, 20 s to 30 min apart; the
+    agent's own loop and housekeeping such as sleep, status, chat and board reads, and a watch's own read, not counted).
+  The plan line shows under a focus (`plan_line`, `plan_line_label`). `stale` flags the plan line or focus with the
+  times: set before the current work began (a test running 2 min, a queue run or standing order 5 min) when it names
+  none of it (a watch's kind, the repeated request's target, a word of the step's label or job or order name), e.g.
+  `plan line set 54 min ago, before its repeating platform Cinder began 14 min ago`; or 10 min old while a test that has
+  run 2 min goes on and the text names none of it. A sleep's own reason (`fh sleep --reason`) is the card's wait reason
+  (before the agent's chat line about its wait). The stream reads no more than before: `work` rides on the status
+  read it makes (an older runtime refuses the argument and is asked again after 10 min); `status {brief, alerts,
+  work}` took 12 ms over RCON for Sol on the private copy (3.6 KB). push_live keeps the cards' work lines within
+  12 KB (the longest card's last line first; `work_cut` counts them). Tests: tools/stream/test_workcard.py,
+  tests/d21_batch70.lua.
 - N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
   7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
   read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;

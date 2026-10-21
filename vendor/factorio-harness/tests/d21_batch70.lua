@@ -73,3 +73,53 @@ do
   game=nil
 end
 print('d21_batch70 AF2 reminder backup and latest results: ok')
+
+-- AF3 (viewer Aurora, 15:07: "Could agent cards show the engineer's own current task plus background tests/deadlines,
+-- and flag stale plan/focus text?"): status {brief, work} gives the watches running or needing the agent
+-- (measures.card); a queue's active step names its label and the submission it came in (queue_lanes run).
+do
+  game={tick=10000}
+  local st={turret_tally={},uptime={}}
+  local Ms=dofile('mod/agent-harness_0.1.0/measures.lua'){state=function() return st end}
+  eq(Ms.card(1),nil,'no watches')
+  st.turret_tally[1]={start=9400,until_tick=12400,next_tick=10060,samples=10,sampled=10000,reason='Sol asked for 50 s',
+    turrets={{position={x=4,y=5},k0=1,k1=3,first=9500},{position={x=6,y=5},k0=0,k1=0}}}
+  st.uptime[1]={start=1000,until_tick=4600,samples=60,read_tick=4000,result={},machines={{position={x=1,y=1},recipe='iron-plate',status={working=60}}}}
+  local c=Ms.card(1)
+  eq(#c,2,'the running one and the done one with its final not read')
+  eq(c[1].id,'turret_tally@9400'); eq(c[1].state,'running'); eq(c[1].end_tick,12400); eq(c[1].start_tick,9400)
+  eq(c[1].scope,'2 turrets from (4,5)'); eq(c[1].latest.line,'1 of 2 turrets with a change, kills +2'); eq(c[1].latest.tick,10000)
+  eq(c[1].reason,'Sol asked for 50 s')
+  eq(c[2].id,'uptime@1000'); eq(c[2].state,'done')
+  st.uptime[1].read_tick=4700
+  eq(#Ms.card(1),1,'its final read: not on the card')
+  st.uptime[1].read_tick=nil
+  game.tick=4600+216001
+  st.turret_tally[1]=nil
+  eq(Ms.card(1),nil,'ended over an hour ago: off the card, read or not')
+  eq(#Ms.flags(1),0)
+  game.tick=10000
+  -- a statistics watch (items, no machines): its items are its scope; a belt_flow from before surface_name
+  st.uptime[1]={start=9900,until_tick=17100,samples=5,sampled=10000,machines={},flows={surface='nauvis',rows={{name='iron-plate',quality='normal'},{name='iron-plate',quality='rare'},{name='copper-cable',quality='normal'}}}}
+  st.belt_flow={[1]={start=9990,until_tick=10500,samples=2,sampled=10000,path_from={x=1,y=2},path_to={x=9,y=2},tiles=8,surface='nauvis',points={{left={{},{}}}}}}
+  c=Ms.card(1)
+  eq(c[1].id,'belt_flow@9990'); eq(c[1].scope,'belt line (1,2) to (9,2) (8 tiles) on nauvis')
+  eq(c[2].id,'uptime@9900'); eq(c[2].state,'running'); eq(c[2].scope,'items iron-plate, copper-cable'); eq(c[2].latest.line,'production statistics')
+  st.uptime[1]=nil; st.belt_flow=nil
+  -- the queue's active step: its label and the submission it came in
+  local qs={}
+  local base={state=function() return qs end,player=function() return {index=1,valid=true} end,handlers={},
+    condition=function() return false end,wait_check=function() return false end,validate_condition=function() end,
+    busy=function() return false end,stop=function() end,stop_index=function() end}
+  local factory=dofile('mod/agent-harness_0.1.0/scheduler.lua')
+  local S=dofile('mod/agent-harness_0.1.0/queue_lanes.lua'){scheduler=factory(base),factory=factory,base=base,is_read=function() return false end}
+  local p={index=1,valid=true}
+  S.handlers.queue_submit(p,{steps={{action='wait_ticks',args={ticks=600},label='hold the line'},{action='wait_ticks',args={ticks=60}}}})
+  for _=1,3 do game.tick=game.tick+1; S.tick() end
+  local b=S.lanes(1).body
+  eq(b.active.label,'hold the line'); eq(b.active.run.kind,'submit'); eq(b.active.run.tick,10000); eq(b.active.run.steps,2)
+  S.handlers.queue_submit(p,{steps={{action='wait_ticks',args={ticks=60}}}})
+  eq(S.lanes(1).body.active.run,nil,'a step from an earlier submission than the latest')
+  game=nil
+end
+print('d21_batch70 AF3 card watches and queue runs: ok')

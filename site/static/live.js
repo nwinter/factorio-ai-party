@@ -660,7 +660,7 @@
         '<span class="state" data-s="' + esc(act) + '">' + esc(ACT_LABEL[act] || act) + '</span></header>' +
         // its current job: its board_focus, else its team-plan line, else its notes.md "## Now" (tools/stream/model.py
         // job_card), always with where it comes from and its age (d20 batch54 N3, viewer Aurora)
-        jobHtml(a) +
+        jobHtml(a) + workHtml(a) +
         '<p class="agent-doing">' + esc(a.action || (act === 'thinking' ? 'thinking…' : '–')) + (a.location ? ' <span class="fx-muted">at ' + esc(a.location) + '</span>' : '') + '</p>' +
         (a.wait_line ? '<p class="agent-wait">' + esc(a.wait_line) + '</p>' +
           (a.wait_reason ? '<p class="agent-wait-reason">“' + esc(a.wait_reason) + '”</p>' : '') : '') +
@@ -802,6 +802,16 @@
     var label = jobLabel(a);
     if (!a.job) return label ? '<p class="agent-job fx-muted small">' + esc(label) + '</p>' : '';
     return '<p class="agent-job"><span class="fx-muted small job-from">' + esc(label) + ':</span> ' + esc(a.job) + '</p>';
+  }
+  // Beside the job (d20 batch70 AF3, viewer Aurora): the plan line when the job shows the focus, a stale flag on either
+  // with the times, and the agent's current work: watches with their end and latest sample, queue steps, a standing
+  // order, a request repeated at a steady interval (tools/stream/workcard.py).
+  function workHtml(a) {
+    var plan = a.plan_line ? '<p class="agent-job agent-plan-line"><span class="fx-muted small job-from">' + esc(a.plan_line_label || 'plan line') + ':</span> ' + esc(a.plan_line) + '</p>' : '';
+    var stale = (a.stale || []).map(function (x) { return '<li><span class="fx-chip fx-chip--orange step-tag">stale</span> ' + esc(x) + '</li>'; }).join('');
+    var work = (a.work || []).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+    return plan + (stale ? '<ul class="agent-stale">' + stale + '</ul>' : '') +
+      (work ? '<ul class="agent-work">' + work + '</ul>' : '') + (a.work_cut ? '<p class="fx-muted small">+' + esc(a.work_cut) + ' more</p>' : '');
   }
   function planLine(plan, name) {
     var hit = null;

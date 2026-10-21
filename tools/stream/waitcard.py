@@ -99,6 +99,7 @@ class WaitFeed:
     def __init__(self):
         self.requests = {}
         self.waits = {}
+        self.reasons = {}
 
     def reset(self, agent):
         self.requests.pop(agent, None)
@@ -149,7 +150,13 @@ class WaitFeed:
         result, tick = response["result"], response.get("tick")
         action, args = q.get("action"), q.get("args") or {}
         if "sleeping_s" in result or "slept_s" in result or action == "sleep_check" or action == "observe" and args.get("scope") == "sleep_check":
-            self.put(agent, "sleep", record(result, tick, at, "sleep"), tick, at)
+            value = record(result, tick, at, "sleep")
+            if action == "sleep":  # the agent's own reason to wait (fh sleep --reason), kept through its sleep_checks
+                why = args.get("reason")
+                self.reasons[agent] = short(why, 160) if isinstance(why, str) and why.strip() else None
+            if value and self.reasons.get(agent):
+                value["reason"] = self.reasons[agent]
+            self.put(agent, "sleep", value, tick, at)
         elif action == "status" or "active" in result and "position" in result:
             self.status(agent, result, tick, at)
         elif action == "queue_status":
