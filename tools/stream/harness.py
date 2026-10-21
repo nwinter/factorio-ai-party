@@ -22,7 +22,8 @@ READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "b
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_live", "big_enemies_live", "hauling", "loadout", "clouds",
                   "efficiency", "chronicle", "artillery_live",
-                  "library_areas"}  # (d21 batch68 AD2) the library's placed areas and their hookups, for the live map
+                  "library_areas",  # (d21 batch68 AD2) the library's placed areas and their hookups, for the live map
+                  "net_map"}  # (d21 batch68 AD3) a planet's electric and logistic networks and items' sources and consumers
 # Operator drawing for the camera clients only (highlights.lua): rings and labels on what agents act on, seen by the
 # director camera players alone; nothing in the game changes. A runtime without it refuses the operator request,
 # which stops nobody.

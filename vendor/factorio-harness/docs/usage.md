@@ -10601,6 +10601,21 @@ his body.
   with no hookups and +0.1-0.5 ms an area's (11 ms for a 448-belt area before the edge filter). The stream service reads it
   once a minute (live.py observe_library_areas), push_live sends `library_areas` (docs/LIVE-API.md), the live map draws it
   as the Blueprints layer on every surface. Tests: tests/d21_batch68.lua, tools/stream/test_libareas.py, site/test_libareas.py.
+- AD3 (viewer Aurora, d21 13:03: "Could maps show logistic/power network IDs and coverage, plus a selected item's
+  source-to-consumer blockers? K2 carbide and the lab spoilage provider exposed reachability gaps."). New operator read
+  `net_map {surface}` (netmap.lua; describe's operator_reads lists it): per planet, made in the background one planet a
+  minute (3 ticks a step, 200 poles or 100 entities a step) from the census pass's lists (census.lua now keeps our poles
+  too, `poles`, at most 20000 a surface): electric networks by pole count with a grid of their poles' supply areas (cell
+  1-2-4-... tiles from the middle 90% of the poles, at most 1024 cells a side, rows run-length packed), logistic networks
+  with their roboports, radii and robots, and each item's sources (crafters by recipe, drills, provider, storage and
+  buffer chests and cargo landing pads holding it, trash slots) and consumers (crafters, labs by the research's packs,
+  requester and buffer requests) grouped by kind and the logistic network at their spot, with members on no electric
+  network counted. Numbers go as strings (table_to_json takes about 28 us a number on the x86 copy): on the d17 copy a
+  Nauvis map is 23 KB and its read 1.6 ms in the game (10 ms when the groups were tables), the background 0.9-2.6 ms a
+  game second. The stream service reads the planet whose map changed every 20 s (live.py observe_net_map); push_live
+  sends one planet's map a push within 20 KB (docs/LIVE-API.md); the live map draws Power networks and Logistic
+  networks layers and an item picker with each group's gaps. Tests: tests/d21_batch68b.lua, tools/stream/test_netmap.py,
+  site/test_netmap.py.
 ## d21 batch66 AB3 (eng/d20-batch66)
 
 AB3 (Sol #1617): `platform_defense` read five of Solstice's turrets "preload only" while belt buffers capped near 10

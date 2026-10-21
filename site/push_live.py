@@ -323,8 +323,8 @@ PLANET_CORE_BYTES = 12 * 1024  # (AD1) a planet's packed core a push at most; a 
 RANK = {"D": 12, "R": 11, "O": 10, "A": 9, "S": 8, "M": 7, "E": 6, "L": 5, "I": 4, "B": 3, "T": 2, "P": 1}  # census.lua's
 
 
-def coarser(g):
-    """A grid at twice its cell: each new cell the most telling of the four it covers (census.lua RANK)."""
+def coarser(g, rank=RANK):
+    """A grid at twice its cell: each new cell the most telling of the four it covers (census.lua RANK, or rank)."""
     c, c2 = g["cell"], g["cell"] * 2
     nx0, ny0 = (g["x0"] // c2) * c2, (g["y0"] // c2) * c2
     ox, oy = (g["x0"] - nx0) // c, (g["y0"] - ny0) // c
@@ -334,7 +334,7 @@ def coarser(g):
             if ch == ".":
                 continue
             k = ((i + ox) // 2, (j + oy) // 2)
-            if k not in cells or RANK.get(ch, 0) > RANK.get(cells[k], 0):
+            if k not in cells or rank.get(ch, 0) > rank.get(cells[k], 0):
                 cells[k] = ch
     w, h = (g.get("w", 0) + ox + 1) // 2, (len(g["rows"]) + oy + 1) // 2
     rows = ["".join(cells.get((i, j), ".") for i in range(w)).rstrip(".") for j in range(h)]
@@ -381,6 +381,100 @@ def public_planets(maps):
     else:
         out.pop("core", None)
     return listing, out
+
+
+NET_MAP_BYTES = 20 * 1024  # (d21 batch68 AD3) a planet's networks map a push at most (one planet a push, in turn)
+NET_GRID_BYTES = 6 * 1024  # its electric grid's share: a bigger one is sent at twice the cell (up to 32 tiles)
+NET_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"  # netmap.lua's, most poles first; '*' the others
+NET_RANK = {c: len(NET_LETTERS) - i for i, c in enumerate(NET_LETTERS)}
+_UNRUN = re.compile(r"(\d+)(\D)")
+ELECTRIC_KEYS = ("cell", "x0", "y0", "w", "h", "rows", "rle", "nets", "poles", "more", "more_poles", "outside", "capped")
+LOGISTIC_KEYS = ("id", "lr", "cr", "n", "ports", "odd", "robots")
+_net_turn = {"i": 0}
+
+
+def unpacked(g):
+    """A grid's rows as one letter a cell (pack's runs spelt out)."""
+    if not g.get("rle"):
+        return g
+    out = dict(g, rows=[_UNRUN.sub(lambda m: m.group(2) * int(m.group(1)), r) for r in g["rows"]])
+    out.pop("rle", None)
+    return out
+
+
+def _trim_groups(text, keep):
+    """A netmap item's groups ("kind,net,count,amount,unpowered,x0,y0,x1,y1[,x,y]...;...") with at most keep positions."""
+    if not isinstance(text, str) or not text:
+        return ""
+    out = []
+    for grp in text.split(";"):
+        f = grp.split(",")
+        out.append(",".join(f[:7] if len(f) <= 7 else f[:9 + 2 * keep]))
+    return ";".join(out)
+
+
+def public_net_map(m, limit=NET_MAP_BYTES):
+    """A planet's networks map for the live page (netmap.lua via the stream service): electric {cell, x0, y0, w, h,
+    rows (packed), nets "id,letter,poles;...", poles, more, more_poles, outside, capped} (the grid at twice the cell until
+    it fits NET_GRID_BYTES: `cell_from` its own), logistic [{id, lr, cr, n, ports "x,y;...", odd, robots}], items [[name,
+    sources, consumers]] (each group's positions cut to 1, then none, then items left out, those no consumer here takes
+    first: `positions`, `left_out`), within limit bytes."""
+    if not isinstance(m, dict) or not isinstance(m.get("surface"), str):
+        return None
+    out = {k: m[k] for k in ("surface", "tick", "age_s", "research", "items_capped", "ports_capped") if m.get(k) is not None}
+    e = m.get("electric") if isinstance(m.get("electric"), dict) else {}
+    el = {k: e[k] for k in ELECTRIC_KEYS if e.get(k) is not None}
+    if isinstance(el.get("rows"), list) and el["rows"] and isinstance(el.get("cell"), int):
+        g, cell0 = unpacked(el), el["cell"]
+        packed = pack(g)
+        while len(json.dumps(packed, separators=(",", ":"))) > NET_GRID_BYTES and g["cell"] < 32:
+            g = coarser(g, NET_RANK)
+            packed = pack(g)
+        el = dict(packed, cell_from=cell0) if g["cell"] != cell0 else packed
+    else:
+        el.pop("rows", None)
+    if not isinstance(el.get("nets"), str):
+        el["nets"] = ""
+    out["electric"] = el
+    lg = m.get("logistic") if isinstance(m.get("logistic"), list) else []  # (table_to_json writes an empty list as {})
+    out["logistic"] = [{k: n[k] for k in LOGISTIC_KEYS if n.get(k) is not None} for n in lg if isinstance(n, dict)]
+    items = [i for i in (m.get("items") if isinstance(m.get("items"), list) else [])
+             if isinstance(i, list) and len(i) == 3 and isinstance(i[0], str)]
+    size = lambda x: len(json.dumps(x, separators=(",", ":")))
+    room = limit - size(out) - 64
+    keep = 4
+    rows = items
+    for keep in (4, 1, 0):
+        rows = [[i[0], _trim_groups(i[1], keep), _trim_groups(i[2], keep)] for i in items]
+        if size(rows) <= room:
+            break
+    if size(rows) > room:
+        # left out first: items no consumer here takes, then the last by name
+        order = sorted(range(len(rows)), key=lambda j: (bool(rows[j][2]), -j))
+        left = set()
+        total = size(rows)
+        for j in order:
+            if total <= room:
+                break
+            left.add(j)
+            total -= size(rows[j]) + 1
+        rows = [r for j, r in enumerate(rows) if j not in left]
+        out["left_out"] = len(left)
+    out["items"], out["positions"] = rows, keep
+    return out
+
+
+def public_net_maps(maps):
+    """Every planet's networks map listed [{surface, tick}], and one of them in full each push, in turn (the page keeps
+    the ones it has seen)."""
+    if not isinstance(maps, dict) or not maps:
+        return None, None
+    names = sorted(k for k, m in maps.items() if isinstance(m, dict))
+    if not names:
+        return None, None
+    name = names[_net_turn["i"] % len(names)]
+    _net_turn["i"] += 1
+    return [{"surface": n, "tick": maps[n].get("tick")} for n in names], public_net_map(dict(maps[name], surface=name))
 
 
 LIBRARY_AREAS_BYTES = 16 * 1024  # (AD2) the placed library areas' share of a push; the oldest areas go first
@@ -430,6 +524,9 @@ def public_state(s):
     areas = public_library_areas(s.get("library_areas"))
     if areas:
         out["library_areas"] = areas
+    nets, net_map = public_net_maps(s.get("net_maps"))
+    if nets:
+        out["net_maps"], out["net_map"] = nets, net_map
     if "board" in out:
         out["board"] = public_board(out["board"])
     if "reminders" in out:

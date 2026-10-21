@@ -1930,7 +1930,7 @@ function handlers.describe(_,a)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live','library_areas'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live','library_areas','net_map'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, and their reach and sight come from its position; reads see by remote view, as the map does: inspect, belt_flow, trace and screenshot with position in any chunk our force sees now on your surface, scan, observe and nearest centred on any charted chunk, surface= and platform= elsewhere',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -17111,7 +17111,7 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action])
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -18210,6 +18210,8 @@ M.checks=require('checks'){state=state,position=position,who=function(p) return 
   item_exists=function(id) return M.board.items()[id]~=nil end}
 -- The library's placed areas with their hookups, for the live map (libareas.lua; d21 batch68 AD2, viewer Aurora).
 M.libareas=require('libareas'){state=state,check_state=function(name,surface,box) return M.checks.area_state(name,surface,box) end}
+-- Each planet's electric and logistic networks and items' sources and consumers, for the live map (netmap.lua; d21 batch68 AD3, viewer Aurora).
+M.netmap=require('netmap'){state=state,poles=function(f,s) return M.census.poles(f,s) end,typed=function(f,s,t) return M.census.typed(f,s,t) end}
 function handlers.checks(p,a) return M.checks.handler(p,a) end
 M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
   condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,
@@ -19242,6 +19244,7 @@ function M.tick_body(event)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
+  if M.netmap then pcall(M.timed,'netmap.tick',M.netmap.tick,event.tick) end  -- the live map's networks, a slice a step (netmap.lua)
   if M.seeds then pcall(M.timed,'seeds.tick',M.seeds.tick,event.tick) end  -- seed loops running out (seeds.lua)
   if M.floorcheck then pcall(M.timed,'floorcheck.tick',M.floorcheck.tick) end  -- foundation checks across ticks (floorcheck.lua)
   if M.ghosttally then pcall(M.timed,'ghosttally.tick',M.ghosttally.tick) end  -- platform ghost tallies across ticks (ghosttally.lua)

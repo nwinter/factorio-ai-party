@@ -233,6 +233,31 @@ check, dashed orange when not verified (no passing check, or hookups not read), 
 hookup is joined; hover gives the facts in words. On the d17 copy: a read 2.5-3.7 ms in the game with no hookups,
 +0.1-0.5 ms an area's hookups (a 64x19 area of 448 belts included).
 
+`net_maps` and `net_map` (d21 batch68 AD3, viewer Aurora 13:03: "Could maps show logistic/power network IDs and
+coverage, plus a selected item's source-to-consumer blockers?"): `net_maps` lists every planet's networks map
+`[{surface, tick}]` and `net_map` is one of them in full each push, in turn (the page keeps each planet's last). The
+runtime makes one a planet a minute in the background from the census pass's lists (operator read `net_map {surface}`,
+netmap.lua); the stream service reads the planet whose map changed, one read every 20 s. A map: `electric` {`nets`
+"id,letter,poles;..." (the 52 networks with the most poles, most first), `more`/`more_poles` (the others, drawn `*`),
+`poles`, a grid `cell, x0, y0, w, h, rows` (rle 1) where a cell carries the letter of the network one of whose poles'
+supply area covers some of it (the bigger network where two do), `cell_from` when push_live sent it at a coarser cell
+to fit 6 KB, `outside` (poles beyond the grid)}; `logistic` [{`id` (0: roboports in no logistic network), `lr`, `cr`
+(the radius of its first roboport's logistic and construction areas, squares round the roboport), `n`, `ports` "x,y;...",
+`odd` "x,y,lr,cr;..." (other radii), `robots` "logistic,idle,construction,idle"}]; `items` [[name, sources, consumers]],
+each a string of groups "kind,network,count,amount,unpowered,x0,y0,x1,y1[,x,y]..." joined by `;` (a group of one:
+"kind,network,1,amount,unpowered,x,y"): by kind (A crafter, M drill, R lab, P provider chest, S storage, B buffer, Q
+requester, L cargo landing pad, T machines' trash slots) and by the logistic network at the members' spot (0: none);
+amount is the count held (sources) or asked (requests); unpowered counts members with an electric energy source on no
+electric network; `positions` (how many positions a group kept: 4, else 1 or 0 to fit) and `left_out` (items not sent,
+those no consumer takes first), `research` (the force's research the labs count for), within 20 KB a push. Sources:
+crafters whose recipe (a furnace's last) makes it, drills mining it, chests and landing pads holding it, trash slots
+holding it; consumers: crafters whose recipe takes it, labs (the research's packs), requester and buffer requests. The
+map's Power networks and Logistic networks layers (off at first) colour each network, hover names the networks under
+the pointer, and the item picker shows the item's groups (sources green, consumers blue) with a red ring where a group
+is outside every logistic network, its network holds no source (a consumer) or no consumer (a source) of it, or members
+are on no electric network. On the d17 copy: a map 3.2-19.6 KB in a push (Nauvis 19.6 KB with one position a group),
+a read 0.9-1.7 ms in the game.
+
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
 `rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
 plain. On world n's state at 08:45 PDT d21 that took the push from 200-205 KB to 187-188 KB (the basemap 46.0 KB to

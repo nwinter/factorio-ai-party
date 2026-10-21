@@ -27,8 +27,8 @@
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
-    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, nests: true, agents: true, attention: true, alerts: true };
+    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power networks'], ['robots', 'Logistic networks'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
+  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
   // (d20 batch50 G1, viewer Aurora: "Could the map flag turrets lacking ammo, fuel or energy and mark stale or unknown
@@ -52,7 +52,13 @@
     if (!data) return data;
     var planets = {};
     Object.keys(data.planets || {}).forEach(function (k) { planets[k] = unpack(data.planets[k]); });
-    return Object.assign({}, data, { base: unpack(data.base), core: unpack(data.core), ore: unpack(data.ore), planets: planets });
+    // (AD3) each planet's networks map: its electric grid packed as the others
+    var nets = {};
+    Object.keys(data.net_maps && typeof data.net_maps === 'object' ? data.net_maps : {}).forEach(function (k) {
+      var m = data.net_maps[k];
+      if (m && typeof m === 'object') nets[k] = Object.assign({}, m, { electric: unpack(m.electric) });
+    });
+    return Object.assign({}, data, { base: unpack(data.base), core: unpack(data.core), ore: unpack(data.ore), planets: planets, net_maps: nets });
   }
   function validGrid(g) {
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
@@ -157,6 +163,118 @@
     return box;
   }
 
+  // (d21 batch68 AD3, viewer Aurora: "Could maps show logistic/power network IDs and coverage, plus a selected item's
+  // source-to-consumer blockers?") a planet's networks map (netmap.lua via push_live): electric networks {id, letter,
+  // poles} and the grid of their poles' supply areas; logistic networks with their roboports [x, y, logistic radius,
+  // construction radius] and robots [logistic, idle, construction, idle]; per item its sources and consumers by kind
+  // and logistic network (0: outside every one) {kind, net, n, amount, unpowered, box [x0, y0, x1, y1], pos [[x, y]]}.
+  var NET_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  function netColour(i, a) { return 'hsla(' + Math.round((i * 137.508 + 48) % 360) + ', 70%, 58%, ' + (a == null ? 1 : a) + ')'; }
+  var POWER = NET_LETTERS.split('').map(function (c, i) { return [c, netColour(i)]; }).concat([['*', '#9a9a9a']]);
+  function nums(t, n) {
+    var f = String(t).split(',').map(Number);
+    return f.length >= n && f.every(isFinite) ? f : null;
+  }
+  var KIND = { A: ['crafter', 'crafters'], M: ['drill', 'drills'], R: ['lab', 'labs'], P: ['provider chest', 'provider chests'],
+    S: ['storage chest', 'storage chests'], B: ['buffer chest', 'buffer chests'], Q: ['requester chest', 'requester chests'], L: ['cargo landing pad', 'cargo landing pads'], T: ['machine trash slot', 'machines\' trash slots'] };
+  function itemGroups(text) {
+    return String(text || '').split(';').map(function (t) {
+      var kind = String(t).split(',')[0], f = nums(String(t).slice(kind.length + 1), 6);
+      if (!f || !KIND[kind]) return null;
+      var one = f.length < 8;
+      var g = { kind: kind, net: f[0], n: f[1], amount: f[2], unpowered: f[3], box: one ? [f[4], f[5], f[4], f[5]] : [f[4], f[5], f[6], f[7]], pos: [] };
+      if (one) g.pos.push([f[4], f[5]]);
+      else for (var i = 8; i + 1 < f.length; i += 2) g.pos.push([f[i], f[i + 1]]);
+      return g;
+    }).filter(Boolean);
+  }
+  function parseNet(m) {
+    if (!m || typeof m !== 'object') return null;
+    var e = m.electric && typeof m.electric === 'object' ? m.electric : {}, byLetter = {}, list = [];
+    String(e.nets || '').split(';').forEach(function (t) {
+      var f = String(t).split(',');
+      if (f.length === 3 && f[1] && isFinite(+f[0])) { var n = { id: +f[0], letter: f[1], poles: +f[2] }; byLetter[f[1]] = n; list.push(n); }
+    });
+    var logistic = (Array.isArray(m.logistic) ? m.logistic : []).map(function (n, i) {
+      var ports = [];
+      String(n.ports || '').split(';').forEach(function (t) { var f = nums(t, 2); if (f) ports.push([f[0], f[1], n.lr, n.cr]); });
+      String(n.odd || '').split(';').forEach(function (t) { var f = nums(t, 4); if (f) ports.push(f.slice(0, 4)); });
+      return { id: n.id, i: i, ports: ports, robots: nums(n.robots || '', 4) };
+    }).filter(function (n) { return n.ports.length > 0; });
+    var items = {}, names = [];
+    (Array.isArray(m.items) ? m.items : []).forEach(function (i) {
+      if (!Array.isArray(i) || typeof i[0] !== 'string') return;
+      items[i[0]] = { s: itemGroups(i[1]), c: itemGroups(i[2]) };
+      names.push(i[0]);
+    });
+    names.sort();
+    return { tick: m.tick, grid: validGrid(e) ? e : null, byLetter: byLetter, nets: list, poles: e.poles, more: e.more, more_poles: e.more_poles,
+      outside: e.outside, cellFrom: e.cell_from, logistic: logistic, items: items, names: names, left_out: m.left_out || 0,
+      research: m.research };
+  }
+  function netName(id) { return id ? 'logistic network #' + id : 'outside every logistic network'; }
+  // An item's groups in words, each with its gaps: a group outside every logistic network; a consumer whose network has
+  // no source of the item (or the planet none); a source whose network has no consumer of it; members with an electric
+  // energy source on no electric network.
+  function itemFacts(net, name) {
+    var it = net && net.items[name];
+    if (!it) return null;
+    var srcAt = {}, useAt = {};
+    it.s.forEach(function (g) { if (g.net) srcAt[g.net] = (srcAt[g.net] || 0) + g.n; });
+    it.c.forEach(function (g) { if (g.net) useAt[g.net] = (useAt[g.net] || 0) + g.n; });
+    var marks = [];
+    [['s', it.s], ['c', it.c]].forEach(function (rg) {
+      rg[1].forEach(function (g) {
+        var k = KIND[g.kind] || [g.kind, g.kind], what = g.n + ' ' + (g.n === 1 ? k[0] : k[1]), gaps = [];
+        if (rg[0] === 's') what += g.kind === 'A' ? ' making it' : g.kind === 'M' ? ' mining it' : g.kind === 'T' || g.kind === 'R' ? ' holding ' + g.amount + ' in trash slots' : ' holding ' + g.amount;
+        else what += g.kind === 'A' ? ' whose recipe takes it' : g.kind === 'R' ? ' the research takes it in' : ' asking for ' + g.amount;
+        if (!g.net) gaps.push('outside every logistic network');
+        else if (rg[0] === 'c' && !srcAt[g.net]) gaps.push(it.s.length ? 'no source of it in network #' + g.net : 'no source of it on this planet');
+        else if (rg[0] === 's' && it.c.length && !useAt[g.net]) gaps.push('no consumer of it in network #' + g.net);
+        if (g.unpowered) gaps.push(g.unpowered + ' on no electric network');
+        var where = g.n === 1 ? 'at (' + g.box[0] + ', ' + g.box[1] + ')' : 'in x ' + g.box[0] + '..' + g.box[2] + ', y ' + g.box[1] + '..' + g.box[3];
+        marks.push({ role: rg[0], g: g, gaps: gaps, text: (rg[0] === 's' ? 'Source of ' : 'Consumer of ') + name + ': ' + what + ' · ' +
+          (g.net ? netName(g.net) : 'its spot outside every logistic network') + ' · ' + where + (gaps.length ? ' · gap: ' + gaps.join('; ') : '') });
+      });
+    });
+    var count = function (list) { return list.reduce(function (a, g) { return a + g.n; }, 0); };
+    var lines = [name + ': ' + count(it.s) + ' source' + (count(it.s) === 1 ? '' : 's') + ' in ' + it.s.length + ' group' + (it.s.length === 1 ? '' : 's') + ', ' +
+      count(it.c) + ' consumer' + (count(it.c) === 1 ? '' : 's') + ' in ' + it.c.length + ' group' + (it.c.length === 1 ? '' : 's')];
+    if (!it.s.length) lines.push('no source of it on this planet (crafter, drill, chest, landing pad or trash slot)');
+    if (!it.c.length) lines.push('no consumer of it on this planet (crafter, lab or request)');
+    var gapped = marks.filter(function (m) { return m.gaps.length; });
+    lines.push(gapped.length ? gapped.length + ' group' + (gapped.length === 1 ? '' : 's') + ' with a gap: ' + gapped.map(function (m) {
+      return (m.role === 's' ? 'source ' : 'consumer ') + (KIND[m.g.kind] || [m.g.kind, m.g.kind])[1] + ' ' + (m.g.net ? '#' + m.g.net : '(no network)') + ': ' + m.gaps.join('; ');
+    }).join(' · ') : 'every source and consumer shares a logistic network with the other side');
+    return { marks: marks, lines: lines, gaps: gapped.length };
+  }
+  function hasGap(net, name) { var f = itemFacts(net, name); return !!(f && f.gaps); }
+  function netLabel(n) { return n.id ? 'Logistic network #' + n.id : 'In no logistic network'; }
+  function robotText(n) {
+    var r = n.robots;
+    return n.ports.length + ' roboport' + (n.ports.length === 1 ? '' : 's') + (r ? ', logistic robots ' + r[0] + ' (' + r[1] + ' idle), construction robots ' + r[2] + ' (' + r[3] + ' idle)' : '');
+  }
+  // The networks under a tile position, as the game's map shows them on hover: the electric network a pole of which
+  // supplies the cell, the logistic networks whose roboports' logistic (or only construction) area covers it.
+  function netHit(d, x, y, on) {
+    if (!d || !d.net) return null;
+    var parts = [];
+    if (on.power && d.net.grid) {
+      var g = d.net.grid, cx = Math.floor((x - g.x0) / g.cell), cy = Math.floor((y - g.y0) / g.cell), row = g.rows[cy];
+      var ch = row && cx >= 0 ? row.charAt(cx) : '';
+      if (ch && ch !== '.') {
+        var n = d.net.byLetter[ch];
+        parts.push(n ? 'Electric network #' + n.id + ': ' + n.poles + ' pole' + (n.poles === 1 ? '' : 's') : 'One of ' + (d.net.more || 'the') + ' smaller electric networks');
+      }
+    }
+    if (on.robots) d.net.logistic.forEach(function (n) {
+      var inside = function (r) { return n.ports.some(function (p) { return Math.abs(x - p[0]) <= p[r] && Math.abs(y - p[1]) <= p[r]; }); };
+      var inL = inside(2), inC = !inL && inside(3);
+      if (inL || inC) parts.push((inL ? 'Logistic area' : 'Construction area only') + ' of ' + (n.id ? 'logistic network #' + n.id : 'roboports in no logistic network') + ': ' + robotText(n));
+    });
+    return parts.length ? { text: parts.join(' · ') } : null;
+  }
+
   // What the data holds, normalised: grids, the core box with its outposts, and the automatic view {cx, cy, span}:
   // the base's core and the agents, alerts and fights near it (far ones are pinned to the edge), or data.box.
   function prepare(data) {
@@ -210,6 +328,8 @@
       return a && typeof a.name === 'string' && Array.isArray(a.box) && a.box.length === 4 && a.box.every(isFinite) && a.box[2] > a.box[0] && a.box[3] > a.box[1] &&
         (a.surface || 'nauvis') === surface;
     });
+    // (AD3) this planet's networks map
+    d.net = parseNet(data.net_maps && data.net_maps[surface]);
     d.cams = data.cams || {};
     d.box = null;
     if (core) {
@@ -305,7 +425,13 @@
     Object.keys(memo.seen).forEach(function (k) { seen[k] = memo.seen[k]; });
     var planets = {};
     Object.keys(memo.planets).forEach(function (k) { planets[k] = memo.planets[k]; });
-    return Object.assign({}, data, { planets: planets, seen: seen });
+    // (AD3) a push brings one planet's networks map: each kept, the newer by tick
+    memo.nets = memo.nets || {};
+    var nm = data.net_maps && typeof data.net_maps === 'object' ? data.net_maps : {};
+    Object.keys(nm).forEach(function (k) { var m = nm[k], old = memo.nets[k]; if (m && (!old || !(old.tick > m.tick))) memo.nets[k] = m; });
+    var nets = {};
+    Object.keys(memo.nets).forEach(function (k) { nets[k] = memo.nets[k]; });
+    return Object.assign({}, data, { planets: planets, seen: seen, net_maps: nets });
   }
   // A kept planet map's age in game seconds (null without both ticks), and how a switch or the scale line says it.
   function mapAge(data, k) {
@@ -461,6 +587,26 @@
       sc.hits.push({ x: m.x, y: m.y, r: 9, text: cap(p.kind) + ': ' + p.text });
       return m;
     }) : [];
+    // (AD3) power networks: each cell some pole of a network supplies, in its colour; logistic networks: each roboport's
+    // logistic area (and construction area, fainter); a picked item's sources and consumers, its gaps ringed
+    sc.power = on.power && d.net && d.net.grid ? place(d.net.grid) : null;
+    sc.robots = on.robots && d.net ? d.net.logistic.map(function (n) {
+      var ports = n.ports.filter(function (p) { return Math.abs(p[0] - v.cx) <= hw + p[3] && Math.abs(p[1] - v.cy) <= hh + p[3]; }).map(function (p) {
+        var m = { x: px(p[0]), y: py(p[1]), l: p[2] * k, c: p[3] * k };
+        if (inView({ x: p[0], y: p[1] })) sc.hits.push({ x: m.x, y: m.y, r: 6, text: 'Roboport at (' + p[0] + ', ' + p[1] + '), ' + (n.id ? 'logistic network #' + n.id : 'in no logistic network') + ': ' + robotText(n) });
+        return m;
+      });
+      return { i: n.i, ports: ports };
+    }) : [];
+    sc.item = [];
+    var facts = on.item && d.net ? itemFacts(d.net, on.item) : null;
+    if (facts) facts.marks.forEach(function (m) {
+      var b = m.g.box, mk = { role: m.role, gap: m.gaps.length > 0, one: m.g.n === 1, x0: px(b[0]), y0: py(b[1]), x1: px(b[2] + 1), y1: py(b[3] + 1),
+        pts: m.g.pos.map(function (p) { return [px(p[0] + 0.5), py(p[1] + 0.5)]; }) };
+      sc.item.push(mk);
+      mk.pts.forEach(function (q) { sc.hits.push({ x: q[0], y: q[1], r: 7, text: m.text }); });
+      if (!mk.one) sc.hits.push({ x: (mk.x0 + mk.x1) / 2, y: (mk.y0 + mk.y1) / 2, r: Math.max(8, Math.min(mk.x1 - mk.x0, mk.y1 - mk.y0) / 2), text: m.text });
+    });
     sc.areas = on.library ? d.areas.map(function (a) { return areaMark(a, d.now_tick, px, py); }).filter(function (m) {
       return m.x1 > 0 && m.y1 > 0 && m.x0 < W && m.y0 < H;
     }) : [];
@@ -600,6 +746,27 @@
       ctx.fillStyle = m.st === 'e' ? C.empty : C.nopower; ctx.strokeStyle = '#000';
       circle(ctx, m.x, m.y, 3.2); ctx.fill(); ctx.stroke();
     });
+    if (sc.power) fillRuns(ctx, sc.power, POWER, 0.3);
+    (sc.robots || []).forEach(function (n) {
+      if (!n.ports.length) return;
+      ctx.fillStyle = netColour(n.i + 7, 0.05); ctx.beginPath();
+      n.ports.forEach(function (p) { ctx.rect(p.x - p.c, p.y - p.c, 2 * p.c, 2 * p.c); }); ctx.fill();
+      ctx.fillStyle = netColour(n.i + 7, 0.14); ctx.beginPath();
+      n.ports.forEach(function (p) { ctx.rect(p.x - p.l, p.y - p.l, 2 * p.l, 2 * p.l); }); ctx.fill();
+      ctx.strokeStyle = netColour(n.i + 7); ctx.lineWidth = 1.2;
+      n.ports.forEach(function (p) { ctx.strokeRect(p.x - 3, p.y - 3, 6, 6); });
+    });
+    (sc.item || []).forEach(function (m) {
+      var col = m.role === 's' ? '#6fd36f' : '#5cb8ff';
+      if (!m.one) {
+        ctx.setLineDash(m.gap ? [4, 3] : []); ctx.strokeStyle = m.gap ? C.red : col; ctx.lineWidth = 1.5;
+        ctx.strokeRect(m.x0, m.y0, Math.max(3, m.x1 - m.x0), Math.max(3, m.y1 - m.y0)); ctx.setLineDash([]);
+      }
+      m.pts.forEach(function (q) {
+        ctx.fillStyle = col; circle(ctx, q[0], q[1], 3.5); ctx.fill();
+        ctx.strokeStyle = m.gap ? C.red : '#000'; ctx.lineWidth = m.gap ? 2 : 1; circle(ctx, q[0], q[1], m.gap ? 5.5 : 3.5); ctx.stroke();
+      });
+    });
     (sc.areas || []).forEach(function (m) {
       var col = m.state === 'bad' ? C.red : m.state === 'unverified' ? C.orange : '#6fd36f';
       ctx.fillStyle = m.state === 'bad' ? 'rgba(224, 78, 58, .10)' : 'rgba(255, 255, 255, .04)';
@@ -682,6 +849,7 @@
   function has(d, layer) {
     return layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
       layer === 'cloud' ? !!d.cloud : layer === 'library' ? d.areas.length > 0 :
+      layer === 'power' ? !!(d.net && d.net.grid) : layer === 'robots' ? !!(d.net && d.net.logistic.length) :
       layer === 'coverage' ? d.turrets.length > 0 : layer === 'readiness' ? !!d.tstate : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
       layer === 'alerts' ? d.fights.length + d.pins.length > 0 : false;
@@ -717,6 +885,13 @@
     this.font = '"Titillium Web", system-ui, sans-serif';
     try { this.font = getComputedStyle(el).fontFamily || this.font; } catch (e) { /* default */ }
     el.addEventListener('click', function (ev) { self.onClick(ev); });
+    // (AD3) the item picked: its sources and consumers on the planet shown
+    this.item = null;
+    el.addEventListener('change', function (ev) {
+      if (!ev.target || !ev.target.hasAttribute || !ev.target.hasAttribute('data-item')) return;
+      self.item = ev.target.value || null; self.showTip(null);
+      self.renderLayers(); self.renderLegend(); self.draw();
+    });
     this.canvas.addEventListener('wheel', function (ev) {
       ev.preventDefault();
       var p = self.point(ev);
@@ -770,7 +945,7 @@
     var ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     try {
-      this.sc = scene(this.d, v, sz.w, sz.h, this.on);
+      this.sc = scene(this.d, v, sz.w, sz.h, Object.assign({}, this.on, { item: this.item }));
       var follow = this.follow;
       this.sc.agents.forEach(function (a) { a.follow = a.name === follow; });
       paint(ctx, this.sc, function (src) { return self.image(src); }, this.font, function (w, h) {
@@ -809,7 +984,9 @@
     // other surfaces with a map (another planet's buildings) or a cloud: a switch between them and Nauvis
     // (D1) every surface seen once, a kept map with its age
     var surfaces = switchList(this.data);
-    var sig = LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
+    var names = this.d.net ? this.d.net.names : [];
+    if (this.item && names.indexOf(this.item) < 0) this.item = null;
+    var sig = 'item:' + (this.item || '') + ':' + names.length + ':' + (this.d.net ? this.d.net.tick : '') + '|' + LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
       surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
@@ -818,7 +995,10 @@
     }).join('') + LAYERS.filter(function (l) { return has(self.d, l[0]); }).map(function (l) {
       var text = l[0] === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : l[0] === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : l[1];
       return '<button type="button" class="fx-btn small mapview-layer" data-layer="' + l[0] + '" aria-pressed="' + (self.on[l[0]] ? 'true' : 'false') + '">' + esc(text) + '</button>';
-    }).join('');
+    }).join('') + (names.length ? '<select class="fx-select small mapview-item" data-item aria-label="An item: its sources and consumers on this planet">' +
+      '<option value="">Item: none</option>' + names.map(function (n) {
+        return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
+      }).join('') + '</select>' : '');
   };
   Viewer.prototype.renderLegend = function () {
     var d = this.d, on = this.on, h = '';
@@ -846,6 +1026,26 @@
       h += '<li><i class="mv-area" style="border: 2px solid ' + C.red + '"></i>' + esc('Blueprints: ' + n3.bad + ' with an open hookup or a failed check') + '</li>' +
         '<li><i class="mv-area" style="border: 2px dashed ' + C.orange + '"></i>' + esc(n3.unverified + ' not verified (no passing check, or hookups not read)') + '</li>' +
         '<li><i class="mv-area" style="border: 2px solid #6fd36f"></i>' + esc(n3.ok + ' check passed, every hookup joined') + '</li>';
+    }
+    var net = d.net, netAge = net && isFinite(d.now_tick) && isFinite(net.tick) && d.now_tick >= net.tick ? ', read ' + agoText((d.now_tick - net.tick) / 60) + ' ago' : '';
+    if (net && net.grid && on.power) {
+      h += net.nets.slice(0, 6).map(function (n) {
+        return '<li><i style="background: ' + netColour(NET_LETTERS.indexOf(n.letter), 0.6) + '"></i>' + esc('Electric network #' + n.id + ': ' + n.poles + ' pole' + (n.poles === 1 ? '' : 's')) + '</li>';
+      }).join('') + '<li>' + esc((net.nets.length > 6 ? (net.nets.length - 6) + ' more listed' + (net.more ? ', ' : '') : '') + (net.more ? net.more + ' smaller (grey, ' + net.more_poles + ' poles)' : '') +
+        (net.nets.length > 6 || net.more ? '; ' : '') + 'a cell of ' + net.grid.cell + ' tile' + (net.grid.cell === 1 ? '' : 's') + ' shows a network when some of it is in one of its poles\' supply area' + netAge +
+        (net.outside ? '; ' + net.outside + ' pole' + (net.outside === 1 ? '' : 's') + ' beyond the grid' : '')) + '</li>';
+    }
+    if (net && net.logistic.length && on.robots) {
+      h += net.logistic.slice(0, 6).map(function (n) {
+        return '<li><i style="background: ' + netColour(n.i + 7, 0.35) + '; box-shadow: 0 0 0 1px ' + netColour(n.i + 7) + '"></i>' + esc(netLabel(n) + ': ' + robotText(n)) + '</li>';
+      }).join('') + '<li>' + esc((net.logistic.length > 6 ? (net.logistic.length - 6) + ' more; ' : '') + 'each roboport\'s logistic area, its construction area fainter' + netAge) + '</li>';
+    }
+    var facts = this.item && net ? itemFacts(net, this.item) : null;
+    if (facts) {
+      h += '<li><i style="background: #6fd36f; border-radius: 50%"></i>Sources</li><li><i style="background: #5cb8ff; border-radius: 50%"></i>Consumers</li>' +
+        '<li><i style="border: 2px solid ' + C.red + '; border-radius: 50%"></i>A gap (other network, outside every one, or no power)</li>' +
+        facts.lines.map(function (t) { return '<li class="mv-item-line">' + esc(t) + '</li>'; }).join('') +
+        (net.left_out ? '<li>' + esc(net.left_out + ' items not sent this time (the map\'s share of the page)') + '</li>' : '');
     }
     if (d.tstate && on.readiness) {
       var c = d.tstate.counts, n = function (k) { return +c[k] || 0; };
@@ -910,7 +1110,7 @@
     if (!p) {
       if (ev.pointerType === 'mouse' && ev.target === this.canvas && this.sc) {
         var q = this.point(ev);
-        this.showTip(hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q), q.cx, q.cy);
+        this.showTip(hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q) || netHit(this.d, q.x, q.y, this.on), q.cx, q.cy);
         this.showCoords(q);
       }
       return;
@@ -934,7 +1134,7 @@
     delete this.ptrs[ev.pointerId];
     if (!p || p.moved > 4 || ev.type === 'pointercancel' || !this.sc || ev.target !== this.canvas) return;
     // a click or tap: an agent is followed; anything else shows its tip (a tap on nothing hides it)
-    var q = this.point(ev), hit = hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q);
+    var q = this.point(ev), hit = hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q) || netHit(this.d, q.x, q.y, this.on);
     if (hit && hit.agent) this.setFollow(hit.agent);
     this.showTip(hit, q.cx, q.cy);
     this.showCoords(q);
@@ -983,7 +1183,7 @@
   root.PogMap = {
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
-    prepare: prepare, areaMark: areaMark, hookText: hookText, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
+    prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
     remember: remember, switchList: switchList, mapAge: mapAge, OLD_S: OLD_S,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };

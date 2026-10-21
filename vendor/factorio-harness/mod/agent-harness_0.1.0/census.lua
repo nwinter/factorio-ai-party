@@ -178,6 +178,8 @@ return function(api)
     'assembling-machine', 'furnace', 'rocket-silo', 'car', 'cargo-wagon', 'spider-vehicle', 'cargo-landing-pad', 'space-platform-hub',
     'roboport', 'beacon', 'mining-drill', 'ammo-turret', 'electric-turret', 'fluid-turret', 'artillery-turret', 'artillery-wagon', 'radar'}
   local HOLDERS_MAX = 30000
+  -- (d21 batch68 AD3) our poles, entity references for the live map's electric networks (netmap.lua), at most POLES_MAX a surface
+  local POLES_MAX = 20000
   local function add_maker(job, s, kind, key, e)
     local c = job.makers[s.index]
     if not c then c = {n=0, craft={}, mine={}, pump={}}; job.makers[s.index] = c end
@@ -230,6 +232,11 @@ return function(api)
     if counts and SNAP[t] then counts.entities[name]=(counts.entities[name] or 0)+1 end
     -- (d18 batch37 B1) our chests, entity references (elsewhere.lua counts an item in them without a search: a whole-
     -- surface find of chests took 14-16 ms on Nauvis, world n), at most CRAFTERS_MAX a surface
+    if t == 'electric-pole' and job.poles then
+      local list = job.poles[s.index]
+      if not list then list = {}; job.poles[s.index] = list end
+      if #list < POLES_MAX then list[#list+1] = e end
+    end
     if (t == 'container' or t == 'logistic-container') and job.chests then
       local list = job.chests[s.index]
       if not list then list = {}; job.chests[s.index] = list end
@@ -434,7 +441,7 @@ return function(api)
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
       machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, chests={}, makers={}, building_counts={}, fuel={}, planets={},
-      by_type={}, walked={}, belt_items={}, hand_items={},
+      by_type={}, walked={}, belt_items={}, hand_items={}, poles={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -627,7 +634,7 @@ return function(api)
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
         where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel, gated=job.gated, crafters=job.crafters, chests=job.chests, makers=job.makers,
-        by_type=job.by_type, walked=job.walked, belt_items=job.belt_items, hand_items=job.hand_items,
+        by_type=job.by_type, walked=job.walked, belt_items=job.belt_items, hand_items=job.hand_items, poles=job.poles,
         planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -716,6 +723,15 @@ return function(api)
     local out = {}
     for _, e in ipairs(d.crafters[surface.index] or {}) do if e.valid and e.force == force then out[#out+1] = e end end
     return out, d.start
+  end
+  -- (d21 batch68 AD3) our poles the last pass found on a surface, still valid, its tick and whether it hit POLES_MAX; nil
+  -- before a pass that kept them or for a surface it did not walk.
+  function M.poles(force, surface)
+    local d = (api.state().census or {}).done
+    if not (d and d.poles and d.walked and d.walked[surface.index]) or force.name ~= 'player' then return nil end
+    local out = {}
+    for _, e in ipairs(d.poles[surface.index] or {}) do if e.valid then out[#out+1] = e end end
+    return out, d.start, #(d.poles[surface.index] or {}) >= POLES_MAX
   end
   function M.towers(force, surface)
     local d = (api.state().census or {}).done

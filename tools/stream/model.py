@@ -772,6 +772,7 @@ class Model:
         self.clouds_t = None
         self.library_areas = None  # (d21 batch68 AD2) the library's placed areas, the last read (live.py observe_library_areas)
         self.library_areas_t = None
+        self.net_maps = {}  # (d21 batch68 AD3) surface -> (its networks map, when read) (live.py observe_net_map)
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -878,6 +879,10 @@ class Model:
             self.planet_maps[obs["planet_map"]["surface"]] = obs["planet_map"]
         if isinstance(obs.get("library_areas"), dict):
             self.library_areas, self.library_areas_t = obs["library_areas"], now
+        if isinstance(obs.get("net_map"), dict) and isinstance(obs["net_map"].get("surface"), str):
+            self.net_maps[obs["net_map"]["surface"]] = (obs["net_map"], now)
+        if isinstance(obs.get("net_map_listed"), list):  # (a surface gone has no map in the runtime's listing)
+            self.net_maps = {k: v for k, v in self.net_maps.items() if k in obs["net_map_listed"]}
         if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
             self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
@@ -2345,6 +2350,8 @@ class Model:
             "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
             # the library's placed areas with their hookups (libareas.lua; push_live sends them, the live map draws them)
             "library_areas": dict(self.library_areas, age_s=round(now - self.library_areas_t)) if self.library_areas else None,
+            # each planet's networks and items' sources and consumers (netmap.lua; push_live sends one a push)
+            "net_maps": {k: dict(m, age_s=round(now - t)) for k, (m, t) in self.net_maps.items()},
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),
