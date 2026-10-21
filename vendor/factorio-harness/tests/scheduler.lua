@@ -349,10 +349,12 @@ do
   out=h.queue_submit(p,{mode='replace',steps={{action='craft',label='replacement'}}})
   check(not out.repeating and not out.active and #out.pending==1 and out.submission:find('stopped and replaced',1,true))
   tick(); check(h.queue_status(p).history[1].label=='replacement')
+  -- (d20 batch62 X1) an active wait_ticks keeps its end tick: ahead runs the new steps, then the wait to that tick
   h.queue_repeat(p,{name='relative',steps={{action='wait_ticks',args={ticks=50}}}}); tick()
-  revision=h.queue_status(p).revision
-  check(not pcall(h.queue_submit,p,{mode='ahead',steps={{action='craft'}}}))
-  check(h.queue_status(p).revision==revision and h.queue_status(p).active.action=='wait_ticks')
+  local ends=h.queue_status(p).active.until_tick
+  out=h.queue_submit(p,{mode='ahead',steps={{action='craft',label='first'}}})
+  check(out.pending[1].label=='first' and out.pending[2].action=='wait_ticks' and out.pending[2].ends_tick==ends)
+  tick(); check(h.queue_status(p).active.action=='wait_ticks' and h.queue_status(p).active.until_tick==ends)
   h.queue_cancel(p,{})
   world.stock=true
   out=h.queue_repeat(p,{condition={['until']='stock'},steps={{action='craft'}}})

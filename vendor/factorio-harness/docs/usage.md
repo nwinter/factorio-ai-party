@@ -2492,7 +2492,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   a nonempty submit without `mode` refuses without changing the queue, naming the loop and active job. `mode: "replace"`
   stops the active repeating step and replaces the loop; `mode: "ahead"` runs the new steps before its remaining
   steps, keeping the loop. Ahead interrupts and restarts an absolute-goal step (`wait_until`, `move_to`, etc. as
-  queue pause/resume does); a relative active step such as `transfer`, `walk` or `wait_ticks` refuses ahead.
+  queue pause/resume does); an active `wait_ticks` runs after the new steps to its own end tick (d20 batch62); a
+  relative active step such as `transfer` or `walk` refuses ahead.
   `mode: "append"` explicitly waits behind the current round. The reply's `submission` says which happened, and
   `repeat_name` names the loop. Ordinary nonrepeating plans still append by default.
 - A repeating plan's round whose item-moving steps (transfer, collect, feed, refuel, rearm, pickup, load_silo) moved
@@ -9806,6 +9807,27 @@ fh watch    # deploy on every change
   2.2, and spent 92 rockets on 13 kills that 78 would make by damage; railguns turn between targets) and resistances
   (the route's damage reads them); electric and fluid turrets (no ammunition items). The copy's test surface was deleted
   after. agent/ref/space-age.md has it. Tests: tests/d20_batch60.lua.
+- V2 (Sol, board #1499: IVc's asteroid collector ghosts at (-8.5,-14.5) and (-4.5,-14.5) read "no foundation under 3 of
+  its tiles" in `ghosts` while platform_plan floor:true said none was needed; the hub built them with row y=-15.5 still
+  empty space). ghostlist's platform blocker counted every tile of a ghost's box over empty space. It now reads the
+  floor as the game does (ghostlist.lua M.floor): each of the prototype's tile_buildability_rules, turned with the
+  entity, needs tiles with one of its required layers and none of its colliding ones, and a box tile no rule covers
+  needs a tile its collision mask does not meet (by name when the tile's mask is unread). Read on the private copy
+  (2.0.77): four prototypes have tile rules: asteroid-collector (foundation under its two rear rows; empty space under
+  its front row and 3 rows past it), thruster (foundation under its body; empty space from 2.7 tiles behind it to 90),
+  offshore-pump and rail-ramp (water rules). The empty-space tile's mask (doodad, empty_space, floor, ground_tile,
+  item, object, player, resource, water_tile) meets every placeable entity's but rolling stock, robots, elevated
+  rails and the spidertron. The verdicts: `no foundation under N of the tiles its tile rules need foundation on` (or `of
+  its tiles` without rules); `foundation (N tiles) where its tile rules need empty space: the game does not place it
+  there` (new, `not_empty`); a foundation ghost there, `waits for foundation`; tiles left over space by a rule are
+  `over_empty_space`. When a tile reads short, the game's placement check (can_place_entity, build_check_type
+  ghost_revive) has the last word: a ghost it takes reads `its floor as the game checks it ... takes it` (`floor_ok`).
+  On the copy's test platform (pog-v2-test, removed after), 8 ghosts: collectors north (front over space; a rear row
+  over space; front on foundation) and east (front over space), thrusters with space and with foundation behind, belts
+  over space and on foundation. The placement check, a revive of each and the deployed `ghosts` reply agreed in all 8
+  (the old read named foundation for the two collectors the game builds, and nothing for the two it refuses for
+  foundation in their front). 200 floor reads took 7.4 ms there. lostlog's alert uses the same blocker.
+  agent/ref/building.md has it. Tests: tests/d20_batch60.lua V2 (the copy's rules and cases).
 
 ## d20 batch58 (eng/d20-batch58)
 
@@ -9848,3 +9870,38 @@ fh watch    # deploy on every change
   is listed in inventories (assembling_machine_dump) and transfer takes from it (take-only). configure with Set recipe
   on is refused before any change, naming what the wires give and the two ways in the game's terms (Set recipe off,
   then configure; or the recipe signal on a wire). Tests: tests/d21_batch64.lua.
+## d20 batch62 (eng/d20-batch62)
+
+- X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a
+  weapon"). Sol's journal, shift49: at 04:31:30Z (line 1314) a body-lane `queue_submit` mode replace with
+  `wait_ticks 34458` then `circuit_set` on fulgora (23.5,184.5) (quality-module uncommon > 999999); the queue had
+  `resume_after_direct` on. At 04:39:13Z (line 2056) `equip {item: submachine-gun, slot: gun, index: 1}`, 463 s of
+  wall clock and 25985 ticks (433 game seconds) into the wait. equip is a direct call that drives the character, so it
+  paused the body queue; the pause requeued only absolute-goal steps, and `wait_ticks`, as a relative step, was
+  recorded `interrupted` and dropped; `resume_after_direct` ran the queue again as the equip ended, and the
+  `circuit_set` ran at that tick (39783165), 8473 ticks before the wait's end tick 39791638 (queue_status at 04:40:23Z,
+  line 2081). The 600 s run at 04:42:28Z (line 2168, `wait_ticks 35950`) ran in full: no direct call that drives the
+  character came during it, and the queue was done by tick 39830060 (end tick 39830043). `queue_pause` dropped a
+  running wait the same way, and the next step ran at `queue_resume`.
+- Now a queued `wait_ticks` that a pause interrupts (a direct call that drives the character, `queue_pause`, a harness
+  update, a standing order's preemption) is requeued at the head with its end tick: it ends at that tick, or at once
+  when the queue resumes after it, and the steps after it never run sooner. The interrupted history entry says
+  `resumed_from: keeps its end tick T (N ticks left)`; while the queue is paused, queue_status and the queue replies
+  give `kept_wait` (`job-5 wait_ticks was interrupted and keeps its end tick T (N s left); the steps after it run from
+  then, once queue_resume runs the queue`, or `... its end tick T passed N s ago while your queue is paused:
+  queue_resume runs the steps after it`); the finished entry's `kept` says whether it ended at its tick or as the queue
+  resumed after it. A resumed standing order keeps the end tick too. `mode: "ahead"` with an active wait_ticks now
+  runs the new steps first and then the wait to its end tick (it refused before). `queue_cancel` still ends a running
+  wait (the agent's own cancel); its reply's `cancelled_wait` says how long before its end tick, and with `clear: false`
+  that the steps after it are held in the paused queue until `queue_resume`.
+- Which calls pause a body-lane queue: every direct call except reads, talk (say, tell, chat), calls by remote view or
+  on another surface, queue calls and the passive list in runtime.lua (requests, circuit_set, wire, craft,
+  place_ghosts, blueprints, platform_schedule, launch, order and reminder calls, ...). equip, unequip, transfer,
+  move_to, build, mine, use_item, shoot and the like pause it. Equipping a gun stops no timer a player keeps; the
+  pause still stops the running step of the queue (a walk, a transfer), and the wait now keeps its end tick through it.
+- Checked on the private copy (2.0.77): Sol `queue_submit` body, resume_after_direct, wait_ticks 600 then wait_ticks 1;
+  `equip pistol` (already in gun slot 2: selected) 251 ticks in: the wait was requeued with end tick 26654117 and
+  ended there, and the next step started at 26654117. Without resume_after_direct, the same equip left the queue
+  paused; the end tick passed while paused, `kept_wait` said so, and `queue_resume` at 26655644 ended the wait that tick
+  and ran the next step at 26655645. Tests: tests/d20_batch62.lua; tests/scheduler.lua (ahead) and tests/orders.lua
+  (a resumed order's kept wait) updated.
