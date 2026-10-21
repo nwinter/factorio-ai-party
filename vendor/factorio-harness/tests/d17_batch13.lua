@@ -59,7 +59,9 @@ do
   -- switched off: the loader no longer counts, and it is said
   loader.get_control_behavior=function() return {disabled=true} end
   tr=F.trace(pl)
-  eq(tr.rows[1].reaches,7); has(tr.rows[1].stops[1],'the inserters putting items on are switched off')
+  -- (d21 batch66 AB3) a held-off loader is the current flow (gated), not a stop: the hub's 300 wait behind it
+  eq(tr.rows[1].reaches,7); eq(#tr.rows[1].stops,0); eq(tr.rows[1].behind_gate,300)
+  has(tr.rows[1].gated[1],'fast-inserter (0,-9): the inserters putting items on the belts upstream of transport-belt (0,-8) are gated closed now (fast-inserter (0,-5)): nothing more comes onto them until one opens; 5 on them now')
   defines,prototypes=nil,nil
   print('d17_batch13 B1 ammunition feed: ok')
 end
@@ -141,9 +143,14 @@ do
   local l2=ins(-11.5,-1.5,hub,rspine)
   tr=run({west},{lone,rspine},{f2,r2,l2})
   eq(#tr.rows[1].stops,0,'no stop: fed from the spine'); eq(tr.rows[1].reaches,8+50)
-  -- the relay switched off: stopped again, and said
+  -- the relay switched off: nothing comes now, and said; (d21 batch66 AB3) the route through it is traced to the hub: a
+  -- gate closed now, not a stop, with the spine's 8 and the hub's 50 behind it
   r2.get_control_behavior=function() return {disabled=true} end
   tr=run({west},{lone,rspine},{f2,r2,l2})
+  eq(#tr.rows[1].stops,0); eq(tr.rows[1].reaches,0); eq(tr.rows[1].behind_gate,58)
+  has(tr.rows[1].gated[1],'fast-inserter (-12.5,-4.5): the inserters putting items on the belts upstream of transport-belt (-12.5,-3.5) are gated closed now (fast-inserter (-12.5,-2.5)): nothing more comes onto them until one opens; 0 on them now')
+  -- the hub's loader gone too: no route to a source behind the relay: stopped
+  tr=run({west},{lone,rspine},{f2,r2})
   has(tr.rows[1].stops[1],'no inserter puts anything on the belts upstream of transport-belt (-12.5,-3.5)')
   defines,prototypes=nil,nil
   print('d17_batch13 B1 relays: ok')

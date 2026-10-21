@@ -143,8 +143,9 @@ do
   -- the bulk loader switched off too: nothing more comes, and both loaders are named as switched off
   loader.get_control_behavior=function() return {disabled=true} end
   tr=run({A},belts,{loader,old,back,fa})
-  has(tr.rows[1].stops[1],'the inserters putting items on are switched off')
-  has(tr.rows[1].ways[1],'bulk-inserter (4.5,1) from space-platform-hub (0,0) (holds 100 of its ammo) (switched off)')
+  has(tr.rows[1].gated[1],'the inserters putting items on the belts upstream of')
+  has(tr.rows[1].gated[1],'are gated closed now (')
+  has(tr.rows[1].ways[1],'bulk-inserter (4.5,1) from space-platform-hub (0,0) (holds 100 of its ammo) (gated closed now: its circuit or logistic condition holds it off)')
   loader.get_control_behavior=nil
   -- a long-handed bridge: M1 -> M2 (picked) -> M3 (the belt's end, 8 on it); the bridge drops onto N1 -> N2 -> the turret
   local M1,M2,M3=belt(25.5,57.5,{['firearm-magazine']=1}),belt(25.5,58.5,{['firearm-magazine']=8}),belt(25.5,59.5,{['firearm-magazine']=8})
