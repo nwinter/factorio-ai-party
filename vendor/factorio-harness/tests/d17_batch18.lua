@@ -172,7 +172,7 @@ do
   for _,n in ipairs(list.SURFACE_ACTIONS) do on[n]=true end
   assert(on.belt_route and on.pole_route,'belt_route and pole_route with surface=')
   local src=io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
-  has(src,"assert(action=='place_ghosts' or action=='belt_route','dry_run with surface checks place_ghosts or belt_route")
+  has(src,"assert(action=='place_ghosts' or action=='belt_route' or action=='paste' or action=='blueprint_place','dry_run with surface checks place_ghosts, belt_route, paste or blueprint_place")
 end
 -- C3 (Opus): after a feed, rearm or refuel walk, the enemy groups our force sees now heading for the places served.
 do
