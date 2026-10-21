@@ -24,6 +24,13 @@ return function(api)
     local bonus = try(function() return e.force.artillery_range_modifier end) or 0
     return (ap.range or 224) * (1 + bonus), ap.min_range or 0
   end
+  -- (d20 batch60 V4, viewer Aurora) how far a flare reaches: the automatic range (with the force's bonus) times the
+  -- prototype's manual_range_modifier. On the private copy (2.0.77; 224, minimum 32, modifier 2.5) a turret with
+  -- automatic targeting off fired at script flares at 299.5 and 559 tiles and not at 561 (bonus 0); a force with +30%
+  -- fired at 726 and not at 730 (728); at 34 and not at 20 (the minimum holds for a flare too).
+  function M.manual(e, range)
+    return (range or M.range(e)) * (try(function() return e.prototype.manual_range_modifier end) or 1)
+  end
   local function shells(e)
     local inv = try(function() return e.get_inventory(defines.inventory[INV[e.type]]) end)
     local n, names = 0, {}
@@ -126,19 +133,20 @@ return function(api)
   end
   function M.row(e)
     local range, min_range = M.range(e)
+    local manual = M.manual(e, range)
     local n, held = shells(e)
     local auto = try(function() return e.artillery_auto_targeting end)
     local near, count = M.targets(e.surface, e.force, e.position, range, min_range)
     local first = near[1]
-    local line = string.format('%s (%g,%g): %s; automatic targeting %s; range %g (minimum %g); %d enemy spawners and worms in range%s',
+    local line = string.format('%s (%g,%g): %s; automatic targeting %s; range %g (minimum %g), a flare within %g; %d enemy spawners and worms in range%s',
       e.name, e.position.x, e.position.y, n > 0 and (n .. ' shells') or 'no shells', auto == nil and 'unknown' or (auto and 'on' or 'off'),
-      r1(range), min_range, count, first and string.format(', the nearest %s (%g,%g) %g tiles away', first.name, first.position.x, first.position.y, first.distance) or '')
+      r1(range), min_range, r1(manual), count, first and string.format(', the nearest %s (%g,%g) %g tiles away', first.name, first.position.x, first.position.y, first.distance) or '')
     local units = try(function() return M.units_near(e) end)
     if units then line = line .. '; ' .. units.line .. ': ' .. table.concat(units.rows, '; ') end
     local fed = M.fed_by(e)
     if fed then line = line .. '; refilled by ' .. table.concat(fed, ', ') end
     return {name=e.name, position={x=e.position.x, y=e.position.y}, shells=n, held=held ~= '' and held or nil, auto_targeting=auto,
-      range=r1(range), min_range=min_range, in_range=count, nearest=near, units_near=units, fed_by=fed, line=line}
+      range=r1(range), min_range=min_range, manual_range=r1(manual), in_range=count, nearest=near, units_near=units, fed_by=fed, line=line}
   end
   -- artillery {position?, radius?, surface?}: our artillery pieces, nearest the centre first, at most MAX.
   function M.read(p, a)
@@ -239,11 +247,11 @@ return function(api)
     assert(made, 'the game did not create ' .. flare .. ' at (' .. pos.x .. ',' .. pos.y .. ')')
     -- (d18 batch37 C2, viewer Aurora 16:57) a flare is a manual target: a piece fires at it within its manual range (its
     -- prototype's manual_range_modifier times its automatic range); each piece in reach says which range holds it
-    local reach, out_of_reach, empty, watch = {}, 0, {}, {}
+    local reach, out_of_reach, empty, watch, miss = {}, 0, {}, {}, nil
     local pieces = api.census_typed and try(function() return api.census_typed(p.force, p.surface, TYPES) end)
     for _, e in ipairs(pieces or try(function() return p.surface.find_entities_filtered{type=TYPES, force=p.force} end) or {}) do
       local range, min_range = M.range(e)
-      local manual = range * (try(function() return e.prototype.manual_range_modifier end) or 1)
+      local manual = M.manual(e, range)
       local d = dist(e.position, pos)
       if d <= manual and d >= min_range then
         local n = shells(e)
@@ -254,7 +262,15 @@ return function(api)
             fed and ' (refilled by ' .. table.concat(fed, ', ') .. ': a shot fired leaves its count as it is; shells_used counts it)' or '')
           if #watch < 16 then watch[#watch+1] = {e=e, n=n} end
         else empty[#empty+1] = string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end
-      else out_of_reach = out_of_reach + 1 end
+      else
+        out_of_reach = out_of_reach + 1
+        -- the loaded piece nearest to reaching it, and why it does not
+        local short = d < min_range and min_range - d or d - manual
+        if shells(e) > 0 and (not miss or short < miss.short) then
+          miss = {short=short, line=string.format('%s (%g,%g) %g tiles away, %s', e.name, e.position.x, e.position.y, r1(d),
+            d < min_range and string.format('inside its minimum range %g', min_range) or string.format('past its manual range %g (automatic %g)', r1(manual), r1(range)))}
+        end
+      end
     end
     local used_line, m1, m10 = M.shells_used(p.surface, p.force)
     -- the shot confirmed (or not) CONFIRM ticks later, to the caller
@@ -266,10 +282,10 @@ return function(api)
     return {used=a.item, kind='artillery_remote', target=pos, flare=flare, by=held > 0 and 'held' or 'shortcut (artillery researched)',
       shells_used=used_line .. '; read artillery again after the shot to see it counted',
       already_coming=coming and coming.line or nil,
-      in_range=reach, in_range_no_shells=#empty > 0 and empty or nil, out_of_range=out_of_reach,
+      in_range=reach, in_range_no_shells=#empty > 0 and empty or nil, out_of_range=out_of_reach, nearest_out_of_range=miss and miss.line or nil,
       confirm=string.format('in %d s your team block says whether a shot followed: the flare taken, shells gone from these pieces, projectiles seen', M.CONFIRM / 60),
       line=string.format('flare at (%g,%g); %s', pos.x, pos.y, #reach > 0 and ('in range with shells: ' .. table.concat(reach, '; '))
-        or 'no artillery of ours with shells reaches it' .. (#empty > 0 and (' (in range, no shells: ' .. table.concat(empty, ', ') .. ')') or ''))}
+        or 'no artillery of ours with shells reaches it' .. (miss and ' (the nearest: ' .. miss.line .. ')' or '') .. (#empty > 0 and (' (in range, no shells: ' .. table.concat(empty, ', ') .. ')') or ''))}
   end
   -- (C2) CONFIRM ticks after a flare: whether a shot followed, told to whoever placed it.
   M.CONFIRM = 600
@@ -302,6 +318,6 @@ return function(api)
   end
   M.schema = {artillery = {position='optional {x,y}: the centre (default you)', radius='optional 1..4096 tiles round the centre (default the whole surface)',
     surface='optional planet name (default yours)',
-    returns='artillery [{name, position, shells, held, auto_targeting, range, min_range (the cannon\'s, with the force\'s range bonus), in_range (enemy spawners and worms in its range on charted chunks), nearest (the 3 nearest: name, position, distance), units_near (enemy units within 64 tiles our force sees now: count, by_name, rows for the 5 nearest: distance, its attack range and how far outside it the piece stands, how many of our turrets reach it), line}], nearest the centre first, at most 8 (more: how many past them); count; lines; already_coming (with position, as a flare\'s reply: our flares still waiting within 32 tiles, artillery projectiles in the air within 64 tiles, the team\'s flares there in the last 60 s and the pieces holding fewer shells since); read only. Switch automatic targeting with configure {position, auto_targeting: false}; fire at one spot with use_item {item: "artillery-targeting-remote", position}'}}
+    returns='artillery [{name, position, shells, held, auto_targeting, range, min_range (the cannon\'s, with the force\'s range bonus), manual_range (how far a flare reaches: range x the prototype\'s manual_range_modifier, 560 at no bonus; the minimum holds for it too), in_range (enemy spawners and worms in its range on charted chunks), nearest (the 3 nearest: name, position, distance), units_near (enemy units within 64 tiles our force sees now: count, by_name, rows for the 5 nearest: distance, its attack range and how far outside it the piece stands, how many of our turrets reach it), line}], nearest the centre first, at most 8 (more: how many past them); count; lines; already_coming (with position, as a flare\'s reply: our flares still waiting within 32 tiles, artillery projectiles in the air within 64 tiles, the team\'s flares there in the last 60 s and the pieces holding fewer shells since); read only. Switch automatic targeting with configure {position, auto_targeting: false}; fire at one spot with use_item {item: "artillery-targeting-remote", position}'}}
   return M
 end
