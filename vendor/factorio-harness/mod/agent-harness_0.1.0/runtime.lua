@@ -17269,24 +17269,8 @@ survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
--- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
--- the minutes only.
-function M.compact_supply(out)
-  if type(out)~='table' then return out end
-  local lines={out.flow,out.where and ('where: '..out.where) or nil,out.makers}
-  local function first(list,n,cut)
-    local parts={}
-    for i,l in ipairs(list or {}) do if i<=n then parts[#parts+1]=cut and (tostring(l):gsub(';.*$','')) or tostring(l) end end
-    return #parts>0 and table.concat(parts,' | ') or nil
-  end
-  local mk=first(out.makers_worst,3); if mk then lines[#lines+1]='makers stopped: '..mk end
-  local us=first(out.users_worst,3,true); if us then lines[#lines+1]='users stopped: '..us end
-  local ch=first(out.chests,3); if ch then lines[#lines+1]='chests: '..ch end
-  if out.surplus_chest and out.surplus_chest.line then lines[#lines+1]='surplus: '..(tostring(out.surplus_chest.line):gsub(';.*$','')) end
-  local kept={}
-  for _,l in ipairs(lines) do if l then kept[#kept+1]=l end end
-  return {item=out.item,surface=out.surface,compact=true,lines=kept,as_of=out.as_of,clock=out.clock,team=out.team,chat=out.chat}
-end
+-- compact: lines only (supply.lua M.compact).
+function M.compact_supply(out) return M.supply.compact(out) end
 function handlers.supply(p,a)
   if a.compact~=nil then
     assert(type(a.compact)=='boolean','compact must be true or false')
