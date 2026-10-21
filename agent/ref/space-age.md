@@ -267,7 +267,10 @@
   the start). `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
   with room there, a pod landed with no pad, the platform paused or not stopping there, a requester chest asking none
   of it. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
-  watches; `{id, clear: true}` ends one.
+  watches; `{id, clear: true}` ends one. Down, while the hub holds it: a landing pad asking the item on a planet the
+  platform stops at before the destination (pad, request, count, which stop) is a blocker while it is stopped there and
+  in `risks` before (a pad request's import planet does not stop it; the hub's own request for the item keeps up to its
+  max aboard, all with no max); a pod of it landing on another planet is in `diversions` (`diverted`: their sum).
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
