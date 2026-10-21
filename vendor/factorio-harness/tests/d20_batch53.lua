@@ -246,7 +246,7 @@ do
   local recipe={name='chemical-science-pack',ingredients={{type='item',name='advanced-circuit',amount=3},{type='item',name='engine-unit',amount=2}}}
   local held={['advanced-circuit']=1,['engine-unit']=4}
   local m={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=10.5,y=20.5},products_finished=100,status='working',
-    get_recipe=function() return recipe end,get_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end}
+    get_recipe=function() return recipe end,get_inventory=function() return {get_item_count=function(n) if type(n)=='table' then if n.quality~='normal' then return 0 end n=n.name end return held[n] or 0 end} end}
   local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st end,remote_entity=function() return m end,
     status_name=function(e) return e.status end,craftrate=function() return {crafts_per_min=12,productivity=0} end}
   local r=U.handler({index=1},{positions={{x=10.5,y=20.5}},seconds=10})

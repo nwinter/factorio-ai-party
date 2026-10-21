@@ -9636,3 +9636,15 @@ fh watch    # deploy on every change
   read `missing science packs 100%`, used 0, and agricultural packs spoiled in it read `used unknown for
   agricultural-science-pack in 1 of 22 intervals (packs spoiled); spoil results in its trash: spoilage 3`.
   Tests: tests/d20_batch55.lua (P8).
+
+## d20 batch58 (eng/d20-batch58)
+
+- T1 (Sol #1453: an EM plant (28,166) on rare quality-module-3, holding rare advanced circuits 12, processing units
+  10 and superconductors 4, read every ingredient short with least 0). A recipe runs at a quality and takes its item
+  ingredients at that quality, and 2.0.77's `get_item_count(name)` counts normal ones only: on the private copy an
+  assembler on uncommon iron gears holding 40 uncommon plates read 0 by name and 40 with `{name, quality}`. uptime
+  now reads the recipe's quality (`get_recipe()`'s second value; an idle furnace's previous_recipe quality), counts
+  item ingredients at it (fluids have none), names it in the short lines (`iron-plate (uncommon) short in 11 samples
+  (least 1 of 2 a craft)`), the baseline and the row line (`iron-gear-wheel (uncommon)`), and gives `recipe_quality`
+  on each machine row; the recipe's quality changing during the watch reads as a recipe change. Main did not do this
+  before (uptime's last change there was batch55 P8). Tests: tests/d20_batch58.lua (T1).
