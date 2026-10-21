@@ -409,6 +409,8 @@ return function(api)
         local bar = try(function() return inv.get_bar() end)
         local slots = free and string.format('; %d of %d slots', total - free, total) or ''
         if free and bar and bar <= total then slots = slots .. string.format(' (limited to %d)', bar - 1) end
+        -- (d21 batch64 Z2, Luna #1576) the bar as configure {bar} sets it: usable slots
+        if bar and bar <= total then out.bar = bar - 1 end
         out.holds = (#parts > 0 and table.concat(parts, ' ') or 'empty') .. slots
         M.requests(e, out, have)
         return

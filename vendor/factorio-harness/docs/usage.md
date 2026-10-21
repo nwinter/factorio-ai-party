@@ -10002,6 +10002,28 @@ fh watch    # deploy on every change
   is listed in inventories (assembling_machine_dump) and transfer takes from it (take-only). configure with Set recipe
   on is refused before any change, naming what the wires give and the two ways in the game's terms (Set recipe off,
   then configure; or the recipe signal on a wire). Tests: tests/d21_batch64.lua.
+- Z2 (Luna #1576: an assembling machine's output capped at 50 electric furnaces and 500 foundation; configure had no
+  argument; argshapes and builds entries already sent `bar` to configure, which refused it as unknown). Read on 2.0.77
+  (private copy): a chest's, logistic chest's, cargo wagon's and cargo landing pad's inventory has a bar
+  (LuaInventory.supports_bar); set_bar(n) leaves slots 1..n-1 usable; items already in slots past it stay and nothing
+  more goes in (an iron chest with plates in 5 slots and the bar at 2 usable took 0 of 10 copper plates). A crafting
+  machine's input, output and a furnace's result have none (supports_bar false; set_bar errors "Given inventory does
+  not have a bar."), and the machine GUI has no output limit. An assembler's output is one slot and it stops crafting
+  when a craft's products no longer fit in one stack there (copper cable stopped at 200 with 47 plates left): with
+  nothing taking from it, it holds at most a stack (electric-furnace 50, space-platform-foundation 100). An assembling
+  machine and a furnace (stone too) take a logistic condition: in logistic network 243 holding 223 gears, an
+  assembler 2 under `iron-gear-wheel < 50` and a stone furnace under `iron-gear-wheel < 1` read
+  disabled_by_control_behavior, and the assembler worked under `< 300`; an output inserter under `iron-gear-wheel < 1`
+  read disabled too (all set by circuit_set logistic, read back as logistic, logistic_met and logistic_reads). Now:
+  `configure {position, bar: N}` (usable slots 0..its slot count; false or "none" for none) on a chest, logistic
+  chest, cargo wagon or landing pad, in reach or by remote view; the reply: bar, bar_before, slots, slots_used,
+  slots_past_bar, line (`iron-chest (-221.5,-99.5): bar 1 usable of 32 slots (was 2 usable); 5 slots hold items, 4
+  past the bar: they keep their items, and new items go only into the slots under it`); inspect reads it back in holds
+  (`(limited to 1)`) and as `bar`. On a crafting machine it is refused with the game's reason, what it holds at most,
+  and what the game has: the bar of the chest its output inserters fill, its own logistic condition (circuit_set
+  {position, logistic: "ITEM < N"}, naming the logistic network where it stands), an output inserter's enable or
+  logistic condition; it names its output inserters and what each drops into with that one's bar. A ghost, an
+  inserter or anything else with no bar is refused naming what has one. Tests: tests/d21_batch64.lua.
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a

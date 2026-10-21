@@ -86,3 +86,51 @@ has(text,'For carbonic-asteroid-crushing by hand: circuit_set {settings: {circui
 crusher.get_control_behavior=function() return {circuit_set_recipe=false} end
 eq(C.read(crusher),nil); eq(C.set_recipe_on(crusher),false)
 print('d21_batch64 Z1 circuit Set recipe: ok')
+
+-- d21 batch64 Z2 (Luna #1576): configure {bar}. invbar.lua sets a chest's red-X bar with readback, and on a crafting
+-- machine gives the game's reason it has none (2.0.77: supports_bar false, "Given inventory does not have a bar.") and
+-- what the game has instead.
+defines.inventory.chest=1
+prototypes.item={['electric-furnace']={stack_size=50},['iron-plate']={stack_size=100}}
+local function integer(v,d,lo,hi,name) assert(type(v)=='number' and v==math.floor(v) and v>=lo and v<=hi,name..' out of range') return v end
+local B=dofile('mod/agent-harness_0.1.0/invbar.lua'){integer=integer}
+local function chest_inv(n,used)
+  local inv,bar={},n+1
+  for i=1,n do inv[i]={valid_for_read=i<=used} end
+  inv.supports_bar=function() return true end
+  inv.get_bar=function() return bar end
+  inv.set_bar=function(b) bar=b end
+  return inv
+end
+local cinv=chest_inv(32,5)
+local chest={name='iron-chest',type='container',position={x=-221.5,y=-99.5},get_inventory=function(i) return i==1 and cinv or nil end}
+local r=B.set(chest,1)
+eq(r.bar,1); eq(r.bar_before,'none'); eq(r.slots,32); eq(r.slots_used,5); eq(r.slots_past_bar,4)
+eq(r.line,'iron-chest (-221.5,-99.5): bar 1 usable of 32 slots (was none); 5 slots hold items, 4 past the bar: they keep their items, and new items go only into the slots under it')
+r=B.set(chest,false); eq(r.bar,'none'); eq(r.bar_before,1); eq(r.slots_past_bar,nil)
+r=B.set(chest,0); eq(r.bar,0)
+assert(not pcall(B.set,chest,33),'33 of 32 slots is refused')
+-- a machine: refused with the game's reason, what it holds at most, and what the game has
+local machine
+local out_inserter={name='fast-inserter',position={x=-222.5,y=-99.5}}
+machine={name='assembling-machine-2',type='assembling-machine',position={x=-224.5,y=-99.5},force=force,
+  bounding_box={left_top={x=-226,y=-101},right_bottom={x=-223,y=-98}},
+  get_recipe=function() return {name='electric-furnace',products={{type='item',name='electric-furnace',amount=1}}} end,
+  get_output_inventory=function() return {1} end,
+  get_inventory=function() return {supports_bar=function() return false end} end,
+  surface={find_logistic_network_by_position=function() return {network_id=243} end,find_entities_filtered=function() return {out_inserter} end}}
+out_inserter.pickup_target=machine; out_inserter.drop_target=chest
+local ok,err=pcall(B.set,machine,1)
+assert(not ok)
+has(err,'bar: assembling-machine-2 (-224.5,-99.5) has none: in 2.0.77 a crafting machine\'s input and output have no bar (the game: "Given inventory does not have a bar.") and its GUI has no output limit')
+has(err,'with nothing taking from it it holds at most a stack (electric-furnace: at most 50, a stack)')
+has(err,'circuit_set {position: {x=-224.5,y=-99.5}, logistic: "electric-furnace < N"}: it stops while logistic network 243, where it stands, holds N or more')
+has(err,'Its output inserters: fast-inserter (-222.5,-99.5) into iron-chest (-221.5,-99.5) (0 of 32 slots usable)')
+-- no logistic network there; an inserter; a ghost
+machine.surface.find_logistic_network_by_position=function() return nil end
+ok,err=pcall(B.set,machine,1); has(err,'the logistic network where it stands (none covers it now)')
+ok,err=pcall(B.set,{name='fast-inserter',type='inserter',position={x=1,y=2},get_inventory=function() return nil end},1)
+eq(err,'bar: fast-inserter (1,2) has no inventory with a bar in 2.0.77 (the red X is a chest\'s, logistic chest\'s, cargo wagon\'s or cargo landing pad\'s)')
+ok,err=pcall(B.set,{type='entity-ghost',ghost_name='steel-chest',position={x=3,y=4}},2)
+eq(err,'bar: ghost of steel-chest (3,4) holds no items: the bar is set on the built chest, cargo wagon or landing pad')
+print('d21_batch64 Z2 inventory bar: ok')
