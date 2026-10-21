@@ -9806,6 +9806,27 @@ fh watch    # deploy on every change
   2.2, and spent 92 rockets on 13 kills that 78 would make by damage; railguns turn between targets) and resistances
   (the route's damage reads them); electric and fluid turrets (no ammunition items). The copy's test surface was deleted
   after. agent/ref/space-age.md has it. Tests: tests/d20_batch60.lua.
+- V2 (Sol, board #1499: IVc's asteroid collector ghosts at (-8.5,-14.5) and (-4.5,-14.5) read "no foundation under 3 of
+  its tiles" in `ghosts` while platform_plan floor:true said none was needed; the hub built them with row y=-15.5 still
+  empty space). ghostlist's platform blocker counted every tile of a ghost's box over empty space. It now reads the
+  floor as the game does (ghostlist.lua M.floor): each of the prototype's tile_buildability_rules, turned with the
+  entity, needs tiles with one of its required layers and none of its colliding ones, and a box tile no rule covers
+  needs a tile its collision mask does not meet (by name when the tile's mask is unread). Read on the private copy
+  (2.0.77): four prototypes have tile rules: asteroid-collector (foundation under its two rear rows; empty space under
+  its front row and 3 rows past it), thruster (foundation under its body; empty space from 2.7 tiles behind it to 90),
+  offshore-pump and rail-ramp (water rules). The empty-space tile's mask (doodad, empty_space, floor, ground_tile,
+  item, object, player, resource, water_tile) meets every placeable entity's but rolling stock, robots, elevated
+  rails and the spidertron. The verdicts: `no foundation under N of the tiles its tile rules need foundation on` (or `of
+  its tiles` without rules); `foundation (N tiles) where its tile rules need empty space: the game does not place it
+  there` (new, `not_empty`); a foundation ghost there, `waits for foundation`; tiles left over space by a rule are
+  `over_empty_space`. When a tile reads short, the game's placement check (can_place_entity, build_check_type
+  ghost_revive) has the last word: a ghost it takes reads `its floor as the game checks it ... takes it` (`floor_ok`).
+  On the copy's test platform (pog-v2-test, removed after), 8 ghosts: collectors north (front over space; a rear row
+  over space; front on foundation) and east (front over space), thrusters with space and with foundation behind, belts
+  over space and on foundation. The placement check, a revive of each and the deployed `ghosts` reply agreed in all 8
+  (the old read named foundation for the two collectors the game builds, and nothing for the two it refuses for
+  foundation in their front). 200 floor reads took 7.4 ms there. lostlog's alert uses the same blocker.
+  agent/ref/building.md has it. Tests: tests/d20_batch60.lua V2 (the copy's rules and cases).
 
 ## d20 batch58 (eng/d20-batch58)
 
