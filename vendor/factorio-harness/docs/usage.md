@@ -10368,6 +10368,24 @@ his body.
   there: 2.66 ms a step (7167 steps) on this branch and 3.60 ms (7053) on main's census, the copy's GC and Rosetta
   swings larger than the 15 added steps a pass. The stream site side is in docs/LIVE-API.md (planet cores, packed
   rows, the map's age on every surface). Tests: tests/census.lua, site/test_planetcore.py.
+- AD2 (viewer Aurora, d20 18:33 and d21 09:45: "could installed blueprint areas show tested revision, required hookups
+  and last check, with failed or unverified hookups on every planet's map?"). New operator read `library_areas`
+  (libareas.lua; describe's operator_reads lists it): the library placements checks.lua remembers (blueprint_place
+  {name}: the last 4 of a name), newest first, one per name and spot, at most 48, on surfaces that still exist; each
+  with the entry's facts (description's start, saved_tick now, retired {by, reason, replaced_by, tick}, deleted), the
+  save placed (`placed_save`: blueprint_place now records the entry's saved_tick with its placement), the newest
+  blueprint check over it (checks.lua area_state: id, name, state, tick), and `hookups` at the area's edge as the world
+  shows them now: belts whose next tile is outside, fed from or into a belt there or not; fluid connections to a tile
+  outside, joined or open; inserters picking up or dropping outside, onto something or not; the area's poles wired to
+  poles outside and its machines on no or low power; ghosts and built counts; the first 4 open ones with positions.
+  Hookups are read for `hookups` areas a read (default 2, 0..4; the ones read longest ago first), each one find over the
+  area of at most 1500 of ours, looking only at what stands within reach of the edge, and kept with their tick. On the
+  d17 private copy (a test surface, removed after): a cell pasted, built and joined outside on some edges read belts in
+  0 joined 1 open and out 1 joined, a fluid connection 1 joined 1 open, an inserter dropping onto the ground outside, 1
+  pole wired out, 2 machines with no power, and its check fail (1 of 27 not placed); the read took 2.5-3.7 ms in the game
+  with no hookups and +0.1-0.5 ms an area's (11 ms for a 448-belt area before the edge filter). The stream service reads it
+  once a minute (live.py observe_library_areas), push_live sends `library_areas` (docs/LIVE-API.md), the live map draws it
+  as the Blueprints layer on every surface. Tests: tests/d21_batch68.lua, tools/stream/test_libareas.py, site/test_libareas.py.
 ## d21 batch66 AB3 (eng/d20-batch66)
 
 AB3 (Sol #1617): `platform_defense` read five of Solstice's turrets "preload only" while belt buffers capped near 10

@@ -367,6 +367,43 @@ def public_planets(maps):
     return listing, out
 
 
+LIBRARY_AREAS_BYTES = 16 * 1024  # (AD2) the placed library areas' share of a push; the oldest areas go first
+AREA_KEYS = ("name", "surface", "box", "tick", "by", "entities", "description", "saved_tick", "placed_save", "deleted")
+HOOK_KEYS = ("b", "p", "i", "e", "g", "n", "open", "t", "capped", "error", "too_big", "gone")
+
+
+def public_library_areas(la):
+    """The team library's placed areas for the live map (d21 batch68 AD2, viewer Aurora; libareas.lua via the stream
+    service): {tick, age_s, placements, areas [{name, surface, box [l, t, r, b], tick (placed), by, entities,
+    description, saved_tick (the entry's save now), placed_save (the save placed), deleted, retired {by, reason,
+    replaced_by, tick}, check {id, name, state, tick}, hookups {b [in joined, in open, out joined, out open],
+    p [joined, open], i [in joined, in open, out joined, out open], e [poles, wired out, no power, low power], g (ghosts), n (built),
+    open [[x, y, what]], t}}]}, newest first, at most LIBRARY_AREAS_BYTES (the oldest areas left out: `left_out`)."""
+    if not isinstance(la, dict) or not isinstance(la.get("areas"), list):
+        return None
+    rows = []
+    for a in la["areas"]:
+        if not isinstance(a, dict) or not isinstance(a.get("box"), list) or len(a["box"]) != 4:
+            continue
+        row = {k: a[k] for k in AREA_KEYS if a.get(k) is not None}
+        if isinstance(a.get("retired"), dict):
+            row["retired"] = {k: a["retired"][k] for k in ("by", "reason", "replaced_by", "tick") if a["retired"].get(k) is not None}
+        if isinstance(a.get("check"), dict):
+            row["check"] = {k: a["check"][k] for k in ("id", "name", "state", "tick") if a["check"].get(k) is not None}
+        if isinstance(a.get("hookups"), dict):
+            row["hookups"] = {k: a["hookups"][k] for k in HOOK_KEYS if a["hookups"].get(k) is not None}
+            if not isinstance(row["hookups"].get("open"), list):  # table_to_json writes an empty table as {}
+                row["hookups"]["open"] = []
+        rows.append(row)
+    out = {k: la[k] for k in ("tick", "age_s", "placements") if la.get(k) is not None}
+    while rows and len(json.dumps(rows, separators=(",", ":"))) > LIBRARY_AREAS_BYTES:
+        rows.pop()
+    out["areas"] = rows
+    if len(rows) < len(la["areas"]):
+        out["left_out"] = len(la["areas"]) - len(rows)
+    return out
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
     planets, planet_map = public_planets(s.get("planet_maps"))
@@ -374,6 +411,9 @@ def public_state(s):
         out["planets"], out["planet_map"] = planets, planet_map
     if "basemap" in out:
         out["basemap"] = public_basemap(out["basemap"])
+    areas = public_library_areas(s.get("library_areas"))
+    if areas:
+        out["library_areas"] = areas
     if "board" in out:
         out["board"] = public_board(out["board"])
     if "reminders" in out:

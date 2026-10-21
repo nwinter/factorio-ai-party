@@ -140,6 +140,11 @@ class LiveSource:
         self.has_clouds = False
         self.next_clouds = 0
         self.clouds_every = 60.0
+        # (d21 batch68 AD2, viewer Aurora) the library's placed areas with their hookups (libareas.lua `library_areas`):
+        # two areas' hookups read a minute (each one find over its area)
+        self.has_library_areas = False
+        self.next_library_areas = 0
+        self.library_areas_every = 60.0
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -547,6 +552,7 @@ class LiveSource:
             self.has_efficiency = "efficiency" in (res.get("operator_reads") or [])
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
+            self.has_library_areas = "library_areas" in (res.get("operator_reads") or [])
             self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
             # artillery shells in flight: serve.py reads them on their own pace (artillery_poller)
             self.has_artillery = "artillery_live" in (res.get("operator_reads") or [])
@@ -660,12 +666,28 @@ class LiveSource:
         if isinstance(res.get("clouds"), list):
             obs["clouds"] = res["clouds"]
 
+    def observe_library_areas(self, obs, errors):
+        """The team library's placed areas (operator read `library_areas`), every library_areas_every seconds:
+        obs["library_areas"] is the read {tick, areas, placements, shown}."""
+        now = time.time()
+        if not getattr(self, "has_library_areas", False) or now < self.next_library_areas:
+            return
+        try:
+            res, _ = self.h.operator_read("library_areas", {})
+        except Exception as e:
+            errors["library_areas"] = str(e)
+            self.next_library_areas = now + 120.0
+            return
+        self.next_library_areas = now + self.library_areas_every
+        if isinstance(res.get("areas"), (list, dict)):
+            obs["library_areas"] = dict(res, areas=res["areas"] if isinstance(res["areas"], list) else [])
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
         if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True) \
                 or not getattr(self, "has_loadout", True) or not getattr(self, "has_clouds", True) \
-                or not getattr(self, "has_chronicle", True):
+                or not getattr(self, "has_chronicle", True) or not getattr(self, "has_library_areas", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
         self.observe_groups(obs, errors)
@@ -673,6 +695,7 @@ class LiveSource:
         self.observe_efficiency(obs, errors)
         self.observe_loadout(obs, errors)
         self.observe_clouds(obs, errors)
+        self.observe_library_areas(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})

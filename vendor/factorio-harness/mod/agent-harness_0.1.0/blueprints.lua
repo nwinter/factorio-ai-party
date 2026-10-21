@@ -731,7 +731,7 @@ return function(api)
           if api.checks_placed then pcall(function()
             local at_of=locate(p,a,entities,pos,direction,box,c)
             local flipped=a.flip_horizontal or a.flip_vertical
-            local rec={surface=p.surface.index,entities={},count=#entities}
+            local rec={surface=p.surface.index,entities={},count=#entities,saved_tick=e.saved_tick}  -- (d21 batch68 AD2) the save placed
             local l,t,r,b
             for i,be in ipairs(entities) do
               if i>400 then rec.capped=true; break end
