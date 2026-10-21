@@ -92,6 +92,11 @@
   until it is)` (the nearest 512 entity ghosts checked); `blocked` counts them per ghost and entity name with the call
   that marks them (`upgrade {area, from, to}` for one of its kind, same fast-replace group and size, else
   `deconstruct {area, entity_names}`).
+- Who placed it: `inspect` gives `placed` for an entity or ghost: who placed it or its ghost, when, and through which
+  request (`belt_route, a call`; `place_ghosts, queue step 12 "walls"`; `paste, standing order "rebuild"`), from the
+  harness's record of the last 8192 ghost placements and hand builds; else `unknown` and why. `last_user` is the game's
+  Last user (a player's); a bot's ghost and what robots build from it have none. Area rows, compact lines and `ghosts`
+  rows say it in short.
 - `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut

@@ -408,6 +408,7 @@ return function(api)
           local ghost = surface.create_entity{name='entity-ghost', inner_name=item.name, position=item.position, direction=item.direction,
             force=p.force, quality=item.quality, type=item.belt_type, expires=false}
           if ghost and item.recipe then pcall(ghost.set_recipe, item.recipe) end
+          if ghost and api.ghost_placed then api.ghost_placed(p, ghost) end
           item.restored = game.tick
           out.ghosts = out.ghosts + 1
           placed[#placed+1] = item

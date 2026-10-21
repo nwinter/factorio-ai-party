@@ -1996,6 +1996,24 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   (2,2)-(10,10); the area is in sight now (our force sees its chunk)`, `...; 3 of its 4 chunks in sight now, 1 out of
   sight`, or `...; the area is out of sight now (its chunk is not one our force sees: ...); the nearest radar coverage
   ...`.
+- Who placed an entity or its ghost (d20 batch56 R7, Luna #1434: three Nauvis belts built by network 243's robots that
+  no teammate said they ordered; her own `belt_route` had placed their ghosts 4 s before she found them). What 2.0.77
+  keeps: `LuaEntity.last_user`, the entity tooltip's "Last user" line. A ghost placed with a player has that player,
+  and the entity robots (or a revive) build from it keeps it; the harness places a bot's ghosts with no player (a bot
+  is not one), so those ghosts and what robots build from them read nil (checked on a copy of world n). So the runtime
+  keeps its own record (ghostlog.lua): each ghost an agent places (place_ghosts and what goes through it: the belt,
+  pipe and pole routes; paste, blueprint_place; restore) and each entity it builds by hand (build, construct: the
+  ghost's record stays and adds the builder), by surface, entity name and position, with the agent, the tick and the
+  request (`belt_route, a call`; `place_ghosts, queue step 12 "walls"`; `paste, standing order "rebuild"`). The last
+  8192 are kept; a removal (mined by a player or robot) or a death drops the record, so a ghost the game puts there
+  for a destroyed entity reads unknown. Robot builds are not seen (control.lua forwards no on_robot_built_entity): an
+  entity on a spot where a ghost of its name was placed was built from it. `inspect` gives `placed {by, tick, ago,
+  through, built_by_hand, last_user, line}`: `its ghost placed by sol 4m ago (tick 26440320) through belt_route, a
+  call; built from it since (robots or a hand: the harness does not see which)`, or `unknown: no harness record of
+  placing it or its ghost here (the record began ...); placed before then, by the game (the ghost of a destroyed
+  entity) or by a player` with `the game's last user: NAME` when there is one. Area rows (`placed`), compact lines
+  (`placed: ghost by sol 8s ago (belt_route, a call)`) and `ghosts` rows and lines say it in short. Cost on the
+  private copy: 1.2-1.4 ms for a full 64-row page.
 - `screenshot` (the `./shot` script: `./shot NAME [WIDTH HEIGHT] [at=X,Y] [surface=PLANET | platform=NAME]`) is centred
   on the character without `position`. With `position` (d20 batch56 R2, Enginerd 14:42: 5 of 19 shots came 1-18 s after
   a 143-606 tile walk) it is centred there by remote view, as a player's map shows it: the centre in a chunk our force
