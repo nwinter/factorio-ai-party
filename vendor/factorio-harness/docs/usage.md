@@ -9763,3 +9763,15 @@ fh watch    # deploy on every change
   2.2, and spent 92 rockets on 13 kills that 78 would make by damage; railguns turn between targets) and resistances
   (the route's damage reads them); electric and fluid turrets (no ammunition items). The copy's test surface was deleted
   after. agent/ref/space-age.md has it. Tests: tests/d20_batch60.lua.
+
+## d20 batch58 (eng/d20-batch58)
+
+- T1 (Sol #1453: an EM plant (28,166) on rare quality-module-3, holding rare advanced circuits 12, processing units
+  10 and superconductors 4, read every ingredient short with least 0). A recipe runs at a quality and takes its item
+  ingredients at that quality, and 2.0.77's `get_item_count(name)` counts normal ones only: on the private copy an
+  assembler on uncommon iron gears holding 40 uncommon plates read 0 by name and 40 with `{name, quality}`. uptime
+  now reads the recipe's quality (`get_recipe()`'s second value; an idle furnace's previous_recipe quality), counts
+  item ingredients at it (fluids have none), names it in the short lines (`iron-plate (uncommon) short in 11 samples
+  (least 1 of 2 a craft)`), the baseline and the row line (`iron-gear-wheel (uncommon)`), and gives `recipe_quality`
+  on each machine row; the recipe's quality changing during the watch reads as a recipe change. Main did not do this
+  before (uptime's last change there was batch55 P8). Tests: tests/d20_batch58.lua (T1).
