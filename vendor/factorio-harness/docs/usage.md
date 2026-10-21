@@ -2492,7 +2492,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   a nonempty submit without `mode` refuses without changing the queue, naming the loop and active job. `mode: "replace"`
   stops the active repeating step and replaces the loop; `mode: "ahead"` runs the new steps before its remaining
   steps, keeping the loop. Ahead interrupts and restarts an absolute-goal step (`wait_until`, `move_to`, etc. as
-  queue pause/resume does); a relative active step such as `transfer`, `walk` or `wait_ticks` refuses ahead.
+  queue pause/resume does); an active `wait_ticks` runs after the new steps to its own end tick (d20 batch62); a
+  relative active step such as `transfer` or `walk` refuses ahead.
   `mode: "append"` explicitly waits behind the current round. The reply's `submission` says which happened, and
   `repeat_name` names the loop. Ordinary nonrepeating plans still append by default.
 - A repeating plan's round whose item-moving steps (transfer, collect, feed, refuel, rearm, pickup, load_silo) moved
@@ -9839,3 +9840,39 @@ fh watch    # deploy on every change
   (least 1 of 2 a craft)`), the baseline and the row line (`iron-gear-wheel (uncommon)`), and gives `recipe_quality`
   on each machine row; the recipe's quality changing during the watch reads as a recipe change. Main did not do this
   before (uptime's last change there was batch55 P8). Tests: tests/d20_batch58.lua (T1).
+
+## d20 batch62 (eng/d20-batch62)
+
+- X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a
+  weapon"). Sol's journal, shift49: at 04:31:30Z (line 1314) a body-lane `queue_submit` mode replace with
+  `wait_ticks 34458` then `circuit_set` on fulgora (23.5,184.5) (quality-module uncommon > 999999); the queue had
+  `resume_after_direct` on. At 04:39:13Z (line 2056) `equip {item: submachine-gun, slot: gun, index: 1}`, 463 s of
+  wall clock and 25985 ticks (433 game seconds) into the wait. equip is a direct call that drives the character, so it
+  paused the body queue; the pause requeued only absolute-goal steps, and `wait_ticks`, as a relative step, was
+  recorded `interrupted` and dropped; `resume_after_direct` ran the queue again as the equip ended, and the
+  `circuit_set` ran at that tick (39783165), 8473 ticks before the wait's end tick 39791638 (queue_status at 04:40:23Z,
+  line 2081). The 600 s run at 04:42:28Z (line 2168, `wait_ticks 35950`) ran in full: no direct call that drives the
+  character came during it, and the queue was done by tick 39830060 (end tick 39830043). `queue_pause` dropped a
+  running wait the same way, and the next step ran at `queue_resume`.
+- Now a queued `wait_ticks` that a pause interrupts (a direct call that drives the character, `queue_pause`, a harness
+  update, a standing order's preemption) is requeued at the head with its end tick: it ends at that tick, or at once
+  when the queue resumes after it, and the steps after it never run sooner. The interrupted history entry says
+  `resumed_from: keeps its end tick T (N ticks left)`; while the queue is paused, queue_status and the queue replies
+  give `kept_wait` (`job-5 wait_ticks was interrupted and keeps its end tick T (N s left); the steps after it run from
+  then, once queue_resume runs the queue`, or `... its end tick T passed N s ago while your queue is paused:
+  queue_resume runs the steps after it`); the finished entry's `kept` says whether it ended at its tick or as the queue
+  resumed after it. A resumed standing order keeps the end tick too. `mode: "ahead"` with an active wait_ticks now
+  runs the new steps first and then the wait to its end tick (it refused before). `queue_cancel` still ends a running
+  wait (the agent's own cancel); its reply's `cancelled_wait` says how long before its end tick, and with `clear: false`
+  that the steps after it are held in the paused queue until `queue_resume`.
+- Which calls pause a body-lane queue: every direct call except reads, talk (say, tell, chat), calls by remote view or
+  on another surface, queue calls and the passive list in runtime.lua (requests, circuit_set, wire, craft,
+  place_ghosts, blueprints, platform_schedule, launch, order and reminder calls, ...). equip, unequip, transfer,
+  move_to, build, mine, use_item, shoot and the like pause it. Equipping a gun stops no timer a player keeps; the
+  pause still stops the running step of the queue (a walk, a transfer), and the wait now keeps its end tick through it.
+- Checked on the private copy (2.0.77): Sol `queue_submit` body, resume_after_direct, wait_ticks 600 then wait_ticks 1;
+  `equip pistol` (already in gun slot 2: selected) 251 ticks in: the wait was requeued with end tick 26654117 and
+  ended there, and the next step started at 26654117. Without resume_after_direct, the same equip left the queue
+  paused; the end tick passed while paused, `kept_wait` said so, and `queue_resume` at 26655644 ended the wait that tick
+  and ran the next step at 26655645. Tests: tests/d20_batch62.lua; tests/scheduler.lua (ahead) and tests/orders.lua
+  (a resumed order's kept wait) updated.

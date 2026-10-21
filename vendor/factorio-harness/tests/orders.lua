@@ -112,7 +112,9 @@ advance(70)
 has(astra('status').orders,'patrol resumes in ')
 until_running('patrol',1300)
 name,q=running()
-eq(q.order.reason,'resumed'); eq(q.order.steps,1) -- the interrupted wait is relative, so it is not repeated; the walk is left
+-- (d20 batch62 X1) the interrupted wait keeps its end tick, which passed while the order waited: it ends at once, then
+-- the walk
+eq(q.order.reason,'resumed'); eq(q.order.steps,2)
 advance(40)
 eq(running(),nil)
 local list=astra('orders').list
