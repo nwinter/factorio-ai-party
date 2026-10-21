@@ -20,6 +20,9 @@
 --     how hard its neighbour ran, 20.7% and 100%); with 8 generators both burnt 100.0 MW, 8.0 plasma a second, and
 --     the generators made 392 MW on a 370 MW load plus the reactors' 20 MW (at most 400);
 --   * the force's fluid production statistics counted none of the coolant or plasma (0 a second).
+-- (Z7, Astra #1672: measured read over_s 30 with 31 samples while sampling lasts 10 min) measured is a rolling window
+-- of the last KEEP samples (30 s); totals add up the whole stretch since sampling began: fuel burnt, seconds covered,
+-- seconds burning, and gaps (seconds in which cells were put in, their burn unknown).
 -- Reads sample the reactors read (and those the harness builds) every SAMPLE ticks for WATCH ticks: the fuel each
 -- holds (burning plus cells) gives fuel burnt per second, measured; coolant in and plasma out follow from it at 25 MJ
 -- a unit (derived), and the bonus at full from the prototype and the connected reactors (formula).
@@ -59,10 +62,11 @@ return function(api)
       local n, oldest = 0, nil
       for k, r in pairs(w) do n = n + 1; if not oldest or r.until_tick < w[oldest].until_tick then oldest = k end end
       if n >= MAX_WATCH and oldest then w[oldest] = nil end
-      row = {e=e, samples={}}
+      row = {e=e, samples={}, total={since=game.tick, fuel=0, covered=0, running=0, gaps=0, gap_ticks=0, put_in=0}}
       w[e.unit_number] = row
       row.samples[1] = {tick=game.tick, fuel=fuel_j(e)}
     end
+    row.total = row.total or {since=game.tick, fuel=0, covered=0, running=0, gaps=0, gap_ticks=0, put_in=0}
     row.until_tick = game.tick + WATCH
     return row
   end
@@ -72,8 +76,21 @@ return function(api)
     for k, r in pairs(w) do
       if not r.e.valid or tick > r.until_tick then w[k] = nil
       else
-        r.samples[#r.samples+1] = {tick=tick, fuel=fuel_j(r.e)}
+        local last = r.samples[#r.samples]
+        local now = {tick=tick, fuel=fuel_j(r.e)}
+        r.samples[#r.samples+1] = now
         while #r.samples > KEEP do table.remove(r.samples, 1) end
+        -- (Z7) totals over the whole stretch since sampling began: a step where the fuel held rose (cells put in) is a
+        -- gap, its burn unknown; the rest is covered, and running where fuel fell
+        local t = r.total
+        if t and last and last.fuel and now.fuel then
+          local dt = tick - last.tick
+          if now.fuel > last.fuel then t.gaps, t.gap_ticks, t.put_in = t.gaps + 1, t.gap_ticks + dt, t.put_in + now.fuel - last.fuel
+          else
+            t.covered, t.fuel = t.covered + dt, t.fuel + last.fuel - now.fuel
+            if now.fuel < last.fuel then t.running = t.running + dt end
+          end
+        end
       end
     end
   end
@@ -169,7 +186,7 @@ return function(api)
     local m = measured(row)
     if m then
       local u = m.fuel_w / (hc * t0)
-      out.measured = {over_s=math.floor(m.secs + 0.5), samples=m.samples, fuel_mw=mw(m.fuel_w), running_pct=fuel_max > 0 and math.floor(100 * m.fuel_w / fuel_max + 0.5) or nil,
+      out.measured = {window=string.format('rolling: the last %d s (%d samples 1 s apart)', (KEEP - 1) * SAMPLE / 60, KEEP), over_s=math.floor(m.secs + 0.5), samples=m.samples, fuel_mw=mw(m.fuel_w), running_pct=fuel_max > 0 and math.floor(100 * m.fuel_w / fuel_max + 0.5) or nil,
         coolant_per_s=math.floor(u * 1000 + 0.5) / 1000, plasma_per_s=math.floor(u * 1000 + 0.5) / 1000,
         source=string.format('fuel_mw measured from the fuel it held, sampled every %d s; coolant and plasma a second derived from it at %g MJ a unit (one coolant unit makes one plasma unit)', SAMPLE / 60, hc * t0 / 1e6)}
       -- (formula) its bonus now: neighbour_bonus x each connected reactor's measured running share
@@ -187,14 +204,29 @@ return function(api)
       for _, r in ipairs(reactors) do M.watch(r.e) end
       out.measured = {note=string.format('sampling began at this read (every %d s, kept %d min after the last read): read again for fuel burnt, coolant and plasma a second', SAMPLE / 60, WATCH / 3600)}
     end
+    -- (Z7) sampling: when it began and ends, and the totals since it began (measured)
+    out.sampling = {began_tick=row.total and row.total.since, ends_tick=row.until_tick,
+      note=string.format('sampled every %d s while read: kept up %d s after the last read (each read extends it); measured is a rolling %d s window, totals cover the whole stretch since sampling began', SAMPLE / 60, WATCH / 60, (KEEP - 1) * SAMPLE / 60)}
+    local t = row.total
+    if t and t.covered + t.gap_ticks > 0 then
+      out.totals = {since_s=math.floor((game.tick - t.since) / 60 + 0.5), covered_s=math.floor(t.covered / 60 + 0.5), running_s=math.floor(t.running / 60 + 0.5),
+        fuel_mj=math.floor(t.fuel / 1e6 + 0.5), fuel_mw_avg=t.covered > 0 and mw(t.fuel / t.covered * 60) or nil,
+        running_pct=t.covered > 0 and fuel_max > 0 and math.floor(100 * t.fuel / t.covered * 60 / fuel_max + 0.5) or nil,
+        gaps=t.gaps, gap_s=math.floor(t.gap_ticks / 60 + 0.5), put_in_mj=t.gaps > 0 and math.floor(t.put_in / 1e6 + 0.5) or nil,
+        source='measured: fuel burnt over the covered seconds since sampling began; a gap is a second in which the fuel held rose (cells put in), its burn not counted; running: seconds in which it burnt fuel'}
+    end
     local nb = {}
     for _, p in ipairs(out.neighbours) do nb[#nb+1] = at(p) .. ' (' .. p.sides .. ')' end
     out.line = string.format('fusion-reactor %s: %s; %d generator%s on its plasma ports; at most %g coolant and plasma a second, %.1f MW of fuel, %.1f MW of plasma alone, %.1f MW with its neighbours running (formula); %s',
       at(e.position), #nb > 0 and ('neighbour reactor' .. (#nb > 1 and 's ' or ' ') .. table.concat(nb, ', ') .. string.format(', bonus %g at full', per * #reactors)) or 'no neighbour reactor (none whose side points meet its own), bonus 0',
       gens, gens == 1 and '' or 's', units, out.max.fuel_mw, out.max.plasma_mw_alone, out.max.plasma_mw_with_neighbours,
-      out.measured.fuel_mw and string.format('measured over %d s: %.1f MW of fuel (%d%%), %.3f coolant and plasma a second (derived)%s', out.measured.over_s, out.measured.fuel_mw, out.measured.running_pct or 0,
+      (out.measured.fuel_mw and string.format('measured over the last %d s (rolling): %.1f MW of fuel (%d%%), %.3f coolant and plasma a second (derived)%s', out.measured.over_s, out.measured.fuel_mw, out.measured.running_pct or 0,
         out.measured.coolant_per_s, out.measured.plasma_mw_estimate and string.format(', about %.1f MW of plasma with the bonus its neighbours give now (estimate)', out.measured.plasma_mw_estimate) or '')
         or 'no rates yet: sampling began at this read')
+      .. (out.totals and string.format('; since sampling began %d s ago: %d MJ of fuel over %d s covered (%s MW average, %s%%), burning %d s, %d gap%s (%d s, cells put in)',
+        out.totals.since_s, out.totals.fuel_mj, out.totals.covered_s, tostring(out.totals.fuel_mw_avg or 0), tostring(out.totals.running_pct or 0), out.totals.running_s,
+        out.totals.gaps, out.totals.gaps == 1 and '' or 's', out.totals.gap_s) or '')
+      .. string.format('; sampling ends %d s from now unless read again', math.max(0, math.floor((row.until_tick - game.tick) / 60))))
     return out
   end
   return M
