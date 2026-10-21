@@ -134,6 +134,8 @@
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
   - inserters: pickup and drop tiles; a built inserter with no pickup or drop target is flagged (build replies too);
+  - a built turret, artillery turret or wagon: `kills` and `damage_dealt`, its tooltip's Kills and Damage dealt, its own
+    since it was placed (area rows and compact lines too; `turret_tally` watches them over a window);
   - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
     a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
     holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);

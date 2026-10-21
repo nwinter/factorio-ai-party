@@ -9896,6 +9896,26 @@ fh watch    # deploy on every change
   (the old read named foundation for the two collectors the game builds, and nothing for the two it refuses for
   foundation in their front). 200 floor reads took 7.4 ms there. lostlog's alert uses the same blocker.
   agent/ref/building.md has it. Tests: tests/d20_batch60.lua V2 (the copy's rules and cases).
+- V3 (Astra, board #1521: a Tesla trial saw 17-18 attackers inside range, powered turrets and no breach, and nothing
+  said which turret fought; branch eng/d20-batch60b). Not in main before: no read gave a turret's counts. A turret's
+  tooltip shows Kills and Damage dealt (LuaEntity.kills, damage_dealt). inspect gives `kills` and `damage_dealt` for a
+  built ammo, electric or fluid turret, artillery turret or wagon (area rows and compact lines too). `turret_tally
+  {positions | position | area, name?, seconds?, surface? | platform?}` (turrettally.lua) watches up to 64 for 5..3600 s
+  (default 120): each one's counts at the start and the end and the change, zeros as `no change`, the first and last
+  one-second read with a change and how many reads changed, a turret gone during the watch with its change to its last
+  read, sums by name, and `note` (what the counts take in). One watch an agent; `turret_tally {}` reads it so far or
+  done. Read on the private copy (2.0.77) on a test surface (removed after): both counts read on every turret type there
+  (gun, laser, flamethrower, artillery; tesla, rocket on the test surface). damage_dealt is each hit after resistances,
+  overkill included (a gun turret on three 500-health medium worms: 66 hits of 23.8, 1570.8; a tesla on 15-health
+  biters: 120 a hit). A tesla's chain on four behemoth worms, an explosive rocket's splash on four and a flamethrower's
+  stream and fire on three were the turret's: each within 0.2% of the health its targets lost (their regeneration).
+  A gun and a laser on three worms: the gun 3 kills and 1166.2, the laser 0 kills and 384 (a kill is the last hit's).
+  One explosive rocket near a worm destroyed 3 trees (kills 3) and took 380 from a rock (in the damage). Two trees near
+  a flamethrower's worm caught fire and burned down after it died, with no change to its counts. A turret mined and
+  placed again from its item read 0 and 0. Through the deployed runtime: a 25 s watch of 6 turrets (gun, laser, tesla,
+  a gun and laser together, an idle tesla) read the same numbers as the raw reads, the idle one `no change`. Reading 64
+  turrets' counts takes 0.04 ms. agent/ref/movement-combat.md and analysis.md (inspect) have it. Tests:
+  tests/d20_batch60.lua V3.
 
 ## d20 batch58 (eng/d20-batch58)
 
