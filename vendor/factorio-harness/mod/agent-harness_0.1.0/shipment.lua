@@ -406,6 +406,8 @@ return function(api)
     return out
   end
   function M.read(p, a)
+    -- (d20 batch62 X2, Sol #1529) surface is the ledger's: without ledger it is refused, never dropped
+    assert(a.surface == nil or a.ledger ~= nil, 'surface goes with ledger: true (that surface\'s launches and drops)')
     -- (d18 batch36 D3) the surface's cargo ledger: launches up and drops down in time order (ledger.lua)
     if a.ledger ~= nil then
       assert(a.ledger == true, 'ledger is true')

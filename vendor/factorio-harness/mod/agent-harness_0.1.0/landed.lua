@@ -132,7 +132,9 @@ return function(api)
   -- pods {surface?, position?}
   function M.read(p, a)
     a = a or {}
-    local surface = a.surface ~= nil and game.get_surface(a.surface) or p.surface
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as yours
+    local surface = p.surface
+    if a.surface ~= nil then surface = type(a.surface) == 'string' and game.get_surface(a.surface); assert(surface, 'no surface named ' .. tostring(a.surface)) end
     assert(surface and not try(function() return surface.platform end), 'surface: a planet (nauvis, vulcanus, gleba, fulgora, aquilo)')
     local r = M.now(surface.name)
     local pos = a.position and api.position(a.position) or (surface == p.surface and p.position or nil)
