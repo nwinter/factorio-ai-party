@@ -6504,6 +6504,18 @@ fh watch    # deploy on every change
   nothing but closing it as before. shift40-45: 11 agent lines answered a viewer's line to them without naming the
   viewer (the first line from that agent within 5 game minutes, the viewer named nowhere, not to a teammate, opening with an
   answer word or sharing 2+ words with the question), out of 441 viewer lines addressed to an agent.
+- Focus after completion (d20 batch57 S2, viewer Aurora, shift47 16:46: "Could task completion refresh focus and offer
+  ready work toward the shared goal?"). A board_update (or board_retire) that marks an item done or dropped clears every
+  agent's board_focus on it, and marking a focused project step done clears that focus (progress.lua on_update). The
+  reply says so in `focus_cleared` ("your focus on #12 Wall the east lake gap cleared: #12 is done; no focus is set until
+  board_focus {id} sets one"; a teammate's: "astra's focus on ... cleared: #12 is dropped"). When the updater's own focus
+  was cleared, `ready` lists the ready work, at most 5 lines and "+N more": open unowned tasks and requests with no open
+  blocker ("#14 Rebuild NW coal (task, 1m00s old)"), and steps neither done nor taken of live, unblocked projects that
+  are the agent's, ownerless or open_steps ("#17 step 1: hull (project Edge route ship, step 1m00s old)"); those whose
+  item or parent the team plan names (#id) first, marked "(named in the team plan)", then by item number and step.
+  Until a new focus is set, `status` has `focus: "no focus set (cleared 3m00s ago: #12 is done, marked by sol)"` and the
+  same `ready` list. A status change to open, claimed, doing or blocked leaves the focus. The stream's job cards read
+  the focus rows as before (none after a clear).
 - Closing only the line a reply answers (d20 batch57 S1, viewer Aurora, shift47 15:24: "closing by name can hide other
   unanswered requests"). A viewer's line closes by name only while it is that viewer's one open line to the agent; a
   say with `reply_to` a viewer's line closes that line alone, whatever else it names. A say without `reply_to` that

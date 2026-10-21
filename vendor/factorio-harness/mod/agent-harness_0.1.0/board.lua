@@ -1008,7 +1008,9 @@ return function(api)
     for _, change in ipairs(changes) do event(by, item, change, text, extra) end
     for _, c in ipairs(done_changes) do event(by, item, c.change, c.text); changes[#changes+1] = c.change end
     if text and #changes == #done_changes then event(by, item, 'note', text) end
-    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil}
+    -- (d20 batch57 S2) a focus on it that this ends (progress.lua on_update): cleared, with the ready work
+    local fc = api.on_update and api.on_update(by, item) or nil
+    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil, focus_cleared=fc and fc.focus_cleared, ready=fc and fc.ready}
   end
 
   -- About how many bytes a value takes as JSON (brief listings stay near 3 KB).

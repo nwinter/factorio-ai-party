@@ -15772,7 +15772,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+M.board=require('board'){state=state,on_update=function(by,item) return M.progress and M.progress.on_update(by,item) end,check_lines=function(id) return M.checks and M.checks.item_lines(id) end,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
   lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
   lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
@@ -16894,6 +16894,15 @@ function M.dispatch_inner(request)
     -- The agent's board focus (progress.lua board_focus): on status, and in the team block once every 10 game minutes.
     if p and p.valid and M.progress and not M.is_director(p.index) then
       local okf,fl=pcall(M.progress.focus_line,M.board.who(p))
+      -- (d20 batch57 S2) a focus cleared by its item's completion: status says none is set, with the ready work
+      if okf and not fl and request.action=='status' then
+        local okc,cl=pcall(M.progress.cleared_line,M.board.who(p))
+        if okc and cl then
+          result.focus=cl
+          local okr,rd=pcall(M.progress.ready,M.board.who(p))
+          if okr then result.ready=rd end
+        end
+      end
       if okf and fl then
         if request.action=='status' then result.focus=fl end
         local s=state(); s.focus_told=s.focus_told or {}

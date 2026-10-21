@@ -33,6 +33,8 @@ return function(api)
     return s.progress
   end
   local function focus_store() local st = store(); st.focus = st.focus or {}; return st.focus end
+  -- (d20 batch57 S2) focuses cleared by their item's completion: {id, why, by, tick} until a new one is set
+  local function cleared_store() local st = store(); st.focus_cleared = st.focus_cleared or {}; return st.focus_cleared end
   local function step_of(i, step)
     if type(step) == 'number' and i.steps then
       for _, s in ipairs(i.steps) do if s.n == step then return s end end
@@ -339,12 +341,90 @@ return function(api)
     if type(a.step) == 'number' then assert(step_of(i, a.step), 'no step ' .. a.step .. ' on #' .. a.id) end
     for _, f in ipairs({'blocker', 'verify'}) do assert(a[f] == nil or (type(a[f]) == 'string' and #a[f] <= 200), f .. ' is text, at most 200 characters') end
     focus_store()[me] = {id=a.id, step=a.step, blocker=a.blocker, verify=a.verify, tick=game.tick, unchanged=0}
+    cleared_store()[me] = nil
     return {focus=M.focus_line(me)}
+  end
+  -- (d20 batch57 S2, viewer Aurora 16:46: "Could task completion refresh focus and offer ready work toward the shared
+  -- goal?") A focus whose item is marked done or dropped, or whose focused project step is marked done, is cleared; the
+  -- update's reply says so and lists the ready work (M.ready); the agent's status says no focus is set until one is.
+  local READY_MAX = 5
+  local function plan_text()
+    local plan = api.plan_item and api.plan_item()
+    if not plan then return '' end
+    local t = tostring(plan.goals or '')
+    for _, l in ipairs(plan.lines or {}) do t = t .. ' ' .. tostring(l.text) end
+    return t
+  end
+  local function unblocked(i, items)
+    if i.status == 'blocked' then return false end
+    for _, b in ipairs(i.blocked_by or {}) do
+      local bi = items[b]
+      if bi and LIVE[bi.status] then return false end
+    end
+    return true
+  end
+  -- The ready work for agent `name`: open unowned tasks and requests with no open blocker, and steps not done and
+  -- not taken of live unblocked projects that are theirs, ownerless or open_steps; those whose item (or its parent) the
+  -- team plan names (#id) first, then by number; at most READY_MAX lines "#id title (age)".
+  function M.ready(name)
+    local items, ptext, list = api.items(), plan_text(), {}
+    local function named(i) return ptext:find('#' .. i.id .. '%f[%D]') ~= nil or (i.parent and ptext:find('#' .. i.parent .. '%f[%D]') ~= nil) end
+    for _, i in pairs(items) do
+      if (i.kind == 'task' or i.kind == 'request') and i.status == 'open' and not i.owner and unblocked(i, items) then
+        list[#list+1] = {named=named(i), id=i.id, n=0, text=string.format('#%d %s (%s, %s old)', i.id, i.title, i.kind, ago(game.tick - (i.created_tick or game.tick)))}
+      elseif i.kind == 'project' and LIVE[i.status] and unblocked(i, items) and (not i.owner or i.owner == name or i.open_steps) then
+        for _, st in ipairs(i.steps or {}) do
+          if not st.done_by and not st.owner then
+            list[#list+1] = {named=named(i), id=i.id, n=st.n, text=string.format('#%d step %d: %s (project %s, step %s old)', i.id, st.n, tostring(st.text), i.title,
+              ago(game.tick - (st.tick or i.created_tick or game.tick)))}
+          end
+        end
+      end
+    end
+    table.sort(list, function(x, y)
+      if x.named ~= y.named then return x.named end
+      if x.id ~= y.id then return x.id < y.id end
+      return x.n < y.n
+    end)
+    local out = {}
+    for k, x in ipairs(list) do
+      if k > READY_MAX then out[#out+1] = string.format('+%d more', #list - READY_MAX); break end
+      out[#out+1] = x.text .. (x.named and ' (named in the team plan)' or '')
+    end
+    return #out > 0 and out or {'none: no open unowned task or request, and no free step of an unblocked project open to you'}
+  end
+  -- After a board update of item i by `by`: the focuses it ends. -> {focus_cleared = 'lines', ready = M.ready(by)} for
+  -- the reply, or nil.
+  function M.on_update(by, i)
+    local fs, lines, mine = focus_store(), {}, false
+    for name, f in pairs(fs) do
+      if f.id == i.id then
+        local s = step_of(i, f.step)
+        local why = (i.status == 'done' or i.status == 'dropped') and string.format('#%d is %s', i.id, i.status)
+          or (s and s.done_by and string.format('step %d of #%d is done', s.n, i.id)) or nil
+        if why then
+          fs[name] = nil
+          cleared_store()[name] = {id=i.id, why=why, by=by, tick=game.tick}
+          lines[#lines+1] = string.format('%s focus on #%d %s%s cleared: %s', name == by and 'your' or name .. '\'s', i.id, i.title,
+            s and string.format(' (step %d)', s.n) or '', why)
+          mine = mine or name == by
+        end
+      end
+    end
+    if #lines == 0 then return nil end
+    table.sort(lines)
+    return {focus_cleared=table.concat(lines, '; ') .. (mine and '; no focus is set until board_focus {id} sets one' or ''), ready=mine and M.ready(by) or nil}
+  end
+  -- Status without a focus after one was cleared: the line, and the ready work.
+  function M.cleared_line(name)
+    local c = cleared_store()[name]
+    if not c or focus_store()[name] then return nil end
+    return string.format('no focus set (cleared %s ago: %s, marked by %s)', ago(game.tick - c.tick), c.why, c.by)
   end
   M.schema = {
     board_focus = {id='a board item number (task, request or project): your current one; without id: a read of the focus lines (agent: only theirs)',
       step='a project step number, or text', blocker='optional text: what blocks it', verify='optional text: your next verification',
-      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress'},
+      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress. The item marked done or dropped (or the focused step done) clears it: that board_update\'s reply has focus_cleared and ready (open unowned tasks and requests, free steps of unblocked projects open to you; those the team plan names first; at most 5), and status says no focus is set until one is'},
     board_progress = {owner='optional agent name: only their items (and what changed since each one\'s last check, read now)',id='optional item number: only that item, read now as with owner',
       returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written. rows'},
     board_critical = {returns='blocked: each blocked item (status blocked, or an open item in its blocked_by), those the team plan names (#id) first, then by how many open items wait on it through blocked_by and parent chains, with what it waits on (status, owner, last change); agents_idle_or_waiting: agents standing a minute or more or in a wait, with what they own'},
