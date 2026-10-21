@@ -66,7 +66,8 @@ def previous_run_file(path):
 
 
 def load_relayed(path):
-    """{id: True} of the lines relayed in this run and the one before it, oldest first (the last RELAYED_MAX)."""
+    """{id: its record} of the lines relayed in this run and the one before it, oldest first (the last RELAYED_MAX): the
+    file's row, {id, t (when sent), name, to?, to_all?, why?} (d20 batch57 S5; a row written before has no to)."""
     done = collections.OrderedDict()
     if not path:
         return done
@@ -79,7 +80,7 @@ def load_relayed(path):
                     except ValueError:
                         continue
                     if isinstance(row, dict) and row.get("id"):
-                        done[row["id"]] = True
+                        done[row["id"]] = row
         except (OSError, TypeError):
             continue
     while len(done) > RELAYED_MAX:
@@ -915,16 +916,25 @@ class Relay:
         return bool(self.switch) and os.path.exists(self.switch)
 
     def remember_relayed(self, msg, now):
-        """A line the game took: never offered again, in this run or the next."""
+        """A line the game took: never offered again, in this run or the next. (d20 batch57 S5, Nick 19:05: "what's this
+        'relayed: before the restart'?") Its delivery record goes with it: who it was sent to, why (the route) and
+        when, so a restart's re-read shows that again (Feed.restored)."""
         if not msg.get("id"):
             return
-        self.done[msg["id"]] = True
+        row = {"id": msg["id"], "t": round(now, 1), "name": msg.get("name")}
+        if msg.get("to"):
+            row["to"] = msg["to"]
+        if msg.get("to_all"):
+            row["to_all"] = list(msg["to_all"])
+        if msg.get("route_why"):
+            row["why"] = msg["route_why"]
+        self.done[msg["id"]] = row
         while len(self.done) > RELAYED_MAX:
             self.done.popitem(last=False)
         if self.done_path:
             try:
                 with open(self.done_path, "a") as f:
-                    f.write(json.dumps({"id": msg["id"], "t": round(now, 1), "name": msg.get("name")}, ensure_ascii=False) + "\n")
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
             except OSError as e:
                 log(f"relay: {self.done_path}: {e}")
 
@@ -1221,12 +1231,12 @@ class Relay:
         self.sent += 1
         msg["relayed"] = True
         msg["delivery"] = "sent"
-        self.remember_relayed(msg, now)
         if to:
             for n in to:
                 self.addressed_to(n, author, now)
             self.asked[author] = (to[0], now)
             msg["to"], msg["to_all"] = to[0], to
+        self.remember_relayed(msg, now)  # (with to: d20 batch57 S5)
         return msg
 
 
@@ -1541,15 +1551,27 @@ class Feed:
     def backlog_status(self, m):
         """(d17 batch35 cp3, operator 16:03: after a restart the re-read backlog showed 47 lines not relayed, 37 of them in
         viewer-relayed.jsonl) an old line read again at a restart keeps what happened to it: relayed when its id is in the
-        relayed files (this run's and the last), its verdict when the verdict logs refused it, else no status."""
+        relayed files (this run's and the last), with its record there (restored), its verdict when the verdict logs
+        refused it, else no status."""
         if self.relay and m.get("id") in self.relay.done:
-            self.deliver(m, "relayed", "before the restart")
+            self.restored(m)
             return
         lg = self.logged.get(m.get("id"))
         if lg and not lg[0]:
             self.deliver(m, "not_relayed", ", ".join(lg[1]) or "refused")
 
-    def deliver(self, v, status, why=None, to=None):
+    def restored(self, m):
+        """(d20 batch57 S5, Nick 19:05: "what's this 'relayed: before the restart'?"; shifts 44-48: at each of the 11
+        stream service starts on d20, 17 to 46 of the 50 site lines re-read showed that instead of whom they went to) a
+        line relayed before this service started: its record in the relayed files (to, to_all, why, when sent); a row
+        without one (written before d20 batch57) is relayed with its details lost."""
+        rec = self.relay.done.get(m.get("id")) if self.relay else None
+        if isinstance(rec, dict) and (rec.get("to") or rec.get("to_all")):
+            self.deliver(dict(m, to_all=rec.get("to_all")), "relayed", rec.get("why"), rec.get("to"), sent_t=rec.get("t"))
+        else:
+            self.deliver(m, "relayed", lost=True)
+
+    def deliver(self, v, status, why=None, to=None, sent_t=None, lost=False):
         """(D1) a line's delivery for the site: relayed (to whom), held, operator, not_relayed (and why). (d19 batch42
         A3, A4) `to_all`: every agent the game took it for; `inbox`: it is in the operator's inbox too, whatever
         became of the agents' copy."""
@@ -1558,6 +1580,10 @@ class Feed:
         row = {"status": status, "why": why, "to": to, "t": round(v.get("t") or time.time(), 1)}
         if status == "relayed" and v.get("to_all"):
             row["to_all"] = list(v["to_all"])
+        if sent_t is not None:  # (d20 batch57 S5) restored from the relayed files: when it was sent
+            row["sent_t"] = sent_t
+        if lost:  # relayed, its record gone at a restart
+            row["lost"] = True
         if v.get("inbox"):
             row["inbox"] = True
         self.deliveries[v["id"]] = row
@@ -1604,8 +1630,8 @@ class Feed:
                     self.deliver(m, "relayed", m.get("route_why"), m.get("to"))
                 elif d in ("held", "waiting"):
                     self.deliver(m, "held", m.get("delivery_why") or "queued behind other viewers' lines")
-                elif d == "relayed_before":
-                    self.deliver(m, "relayed", "relayed before", m.get("to"))
+                elif d == "relayed_before":  # sent before this service started: its record (d20 batch57 S5)
+                    self.restored(m)
                 elif d and d not in ("operator",):
                     self.deliver(m, "not_relayed", m.get("delivery_why") or d)
             st["delivery"] = [dict(id=k, **v) for k, v in self.deliveries.items()]

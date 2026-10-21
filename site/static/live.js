@@ -183,7 +183,11 @@
     var d = m.src === 'site' ? delivery[m.seq] : null;
     if (!d || !d.s) return '';
     var who = Array.isArray(d.to_all) && d.to_all.length ? d.to_all : d.to ? [d.to] : [];
-    var txt = d.s === 'relayed' ? (who.length ? 'to ' + who.map(agentName).join(', ') : 'relayed') + (d.why ? ': ' + d.why : '')
+    // (d20 batch57 S5, Nick 19:05) a record lost at a stream service restart says so; one read back after a restart says
+    // when it was sent when that was a minute or more after the line
+    var sent = d.at && isFinite(d.at) && m.t && d.at - m.t >= 60 ? ' (sent ' + new Date(d.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')' : '';
+    var txt = d.s === 'relayed' && d.lost ? 'sent to the agents (details lost at a stream service restart)'
+      : d.s === 'relayed' ? (who.length ? 'to ' + who.map(agentName).join(', ') : 'relayed') + sent + (d.why ? ': ' + d.why : '')
       : d.s === 'held' ? 'held' + (d.why ? ': ' + d.why : '')
       : d.s === 'operator' ? 'to the operator'
       : 'not relayed' + (d.why ? ': ' + d.why : '');
