@@ -1375,6 +1375,15 @@ return function(api)
     return {compact=true,lines=lines}
   end
   function M.platforms(p,a)
+    -- (d20 batch62 X2, Sol #1529) a platform name that is none of ours is refused, never read as no platform
+    if a.platform~=nil then
+      local names={}
+      for _,pl in pairs(p.force.platforms) do if pl.valid then names[#names+1]=pl.name end end
+      local found=false
+      for _,n in ipairs(names) do if n==a.platform then found=true end end
+      table.sort(names)
+      assert(found,'no platform of ours named '..tostring(a.platform)..'; platforms: '..(#names>0 and table.concat(names,', ') or 'none'))
+    end
     if a.compact==true then return M.platforms_compact(p,a) end
     local out={platforms={}}
     for _,pl in pairs(p.force.platforms) do

@@ -134,6 +134,8 @@
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
   - inserters: pickup and drop tiles; a built inserter with no pickup or drop target is flagged (build replies too);
+  - a built turret, artillery turret or wagon: `kills` and `damage_dealt`, its tooltip's Kills and Damage dealt, its own
+    since it was placed (area rows and compact lines too; `turret_tally` watches them over a window);
   - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
     a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
     holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
@@ -171,7 +173,9 @@
   with how many machines and where (wires leaving the radius count as power). `by_cause: true` ranks each network's
   draw by entity name (last 5 s); when roboports draw, it adds the robots flying, charging and waiting, what the flying
   ones draw, their trip lengths and the requesters with the most on the way. `platform` reads a platform's networks;
-  `power` is also an observe scope.
+  `surface` (a planet or platform name) reads that surface's networks by remote view, round a `position` or `area`
+  there (needed there; `by_cause` reads all of them); the reply's `surface` names the one read. `power` is also an
+  observe scope.
 - `fuel_budget {surface?, boilers?}`: each fuel made and used per minute, and each group of fuel users (boilers,
   furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its
   own fuel lasts, fewest first. Reactors one by one: temperature, the fuel burning and what is left of it, fuel slots,

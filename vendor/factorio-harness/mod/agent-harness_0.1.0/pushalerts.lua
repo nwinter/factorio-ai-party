@@ -2266,6 +2266,8 @@ return function(api)
     -- its sub-kinds; compact: true: counts per kind first, then one line a group
     assert(a.compact == nil or type(a.compact) == 'boolean', 'compact must be true or false')
     assert(a.surface == nil or type(a.surface) == 'string', 'surface is a surface name')
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as an empty one
+    assert(a.surface == nil or game.get_surface(a.surface), 'no surface named ' .. tostring(a.surface))
     local kinds
     if a.kind ~= nil then
       kinds = {}

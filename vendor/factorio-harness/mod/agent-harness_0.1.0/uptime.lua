@@ -594,6 +594,8 @@ return function(api)
   end
   function M.handler(p, a)
     if a.positions == nil and a.position == nil and a.area == nil and a.items == nil then
+      -- (d20 batch62 X2, Sol #1529) the watch so far is read where it was started: surface and platform go with a new watch
+      assert(a.surface == nil and a.platform == nil, 'surface and platform go with positions, position, area or items (a new watch there); uptime {} reads your watch where it began')
       local job = store()[p.index]
       assert(job, 'no uptime watch yet: uptime {positions, seconds?}')
       return job.result or M.result(job, false)

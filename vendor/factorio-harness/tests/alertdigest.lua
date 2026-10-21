@@ -3,7 +3,7 @@
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
-game={tick=100000}
+game={tick=100000,get_surface=function(n) return (n=='nauvis' or n=='vulcanus') and {name=n} or nil end}
 local st={}
 st.damage={['nauvis:2,3']={id=7,at={x=70,y=100},surface='nauvis',first=99000,last=99800,hits=12,kinds={['big-spitter']=3},entities={['gun-turret']=8,['stone-wall']=4}},
   ['nauvis:2,4']={id=8,at={x=75,y=110},surface='nauvis',first=99500,last=99900,hits=2,kinds={['big-biter']=1},entities={['gun-turret']=2}},

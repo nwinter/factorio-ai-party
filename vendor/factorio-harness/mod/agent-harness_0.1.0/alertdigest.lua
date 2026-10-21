@@ -67,7 +67,8 @@ return function(api)
     since = since or reads()[p.index] or math.max(0, game.tick - FIRST)
     local limit = a.limit == nil and LIMIT or a.limit
     assert(type(limit) == 'number' and limit >= 1 and limit <= 64, 'limit: 1..64 places (default 32)')
-    if a.surface ~= nil then assert(type(a.surface) == 'string', 'surface: a surface name') end
+    -- (d20 batch62 X2, Sol #1529) a surface name that is no surface is refused, never read as an empty one
+    if a.surface ~= nil then assert(type(a.surface) == 'string' and game.get_surface(a.surface), 'no surface named ' .. tostring(a.surface)) end
     local cells = gather(since, a.surface)
     local list = {}
     for _, c in pairs(cells) do list[#list+1] = c end

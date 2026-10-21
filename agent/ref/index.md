@@ -11,7 +11,7 @@
 - `circuits-settings`, wires, settings: `circuit_set`, `wire`, `circuit_gate`, `gates`, `circuit_audit`, `configure`,
   `assembler_batch`, `requests`, `character_settings`.
 - `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
-  `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`, `turret_feeds`.
+  `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`, `turret_feeds`, `turret_tally`.
 - `analysis`, factory reads: `progress`, `research`, `research done`, `science`, `supply`,
   `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `belt_flow`,
   `pipe_gaps`, `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`,
@@ -24,7 +24,7 @@
   `board_progress`, `board_critical`, `board_focus`, `checks`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`,
   `lesson_review`, `ground_rule_add`, `ground_rule_edit`, `ground_rule_retire`, `ground_rules`, `review`, `lookahead`, `networks`,
   `boilers`, `tells`.
-- `stream-people`, profile, viewers, players: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
+- `stream-people`, viewers: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
   `operator`, `poll`, `players`, `vote`, `votes`, `restore`.
 - `space-age`, rockets, platforms, planets, remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
   `platform_arrived`/`platform_left` waits, `platform_create`, `platform_schedule`, `platform_rename`, `platform_delete`,

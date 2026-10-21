@@ -9898,6 +9898,26 @@ fh watch    # deploy on every change
   (the old read named foundation for the two collectors the game builds, and nothing for the two it refuses for
   foundation in their front). 200 floor reads took 7.4 ms there. lostlog's alert uses the same blocker.
   agent/ref/building.md has it. Tests: tests/d20_batch60.lua V2 (the copy's rules and cases).
+- V3 (Astra, board #1521: a Tesla trial saw 17-18 attackers inside range, powered turrets and no breach, and nothing
+  said which turret fought; branch eng/d20-batch60b). Not in main before: no read gave a turret's counts. A turret's
+  tooltip shows Kills and Damage dealt (LuaEntity.kills, damage_dealt). inspect gives `kills` and `damage_dealt` for a
+  built ammo, electric or fluid turret, artillery turret or wagon (area rows and compact lines too). `turret_tally
+  {positions | position | area, name?, seconds?, surface? | platform?}` (turrettally.lua) watches up to 64 for 5..3600 s
+  (default 120): each one's counts at the start and the end and the change, zeros as `no change`, the first and last
+  one-second read with a change and how many reads changed, a turret gone during the watch with its change to its last
+  read, sums by name, and `note` (what the counts take in). One watch an agent; `turret_tally {}` reads it so far or
+  done. Read on the private copy (2.0.77) on a test surface (removed after): both counts read on every turret type there
+  (gun, laser, flamethrower, artillery; tesla, rocket on the test surface). damage_dealt is each hit after resistances,
+  overkill included (a gun turret on three 500-health medium worms: 66 hits of 23.8, 1570.8; a tesla on 15-health
+  biters: 120 a hit). A tesla's chain on four behemoth worms, an explosive rocket's splash on four and a flamethrower's
+  stream and fire on three were the turret's: each within 0.2% of the health its targets lost (their regeneration).
+  A gun and a laser on three worms: the gun 3 kills and 1166.2, the laser 0 kills and 384 (a kill is the last hit's).
+  One explosive rocket near a worm destroyed 3 trees (kills 3) and took 380 from a rock (in the damage). Two trees near
+  a flamethrower's worm caught fire and burned down after it died, with no change to its counts. A turret mined and
+  placed again from its item read 0 and 0. Through the deployed runtime: a 25 s watch of 6 turrets (gun, laser, tesla,
+  a gun and laser together, an idle tesla) read the same numbers as the raw reads, the idle one `no change`. Reading 64
+  turrets' counts takes 0.04 ms. agent/ref/movement-combat.md and analysis.md (inspect) have it. Tests:
+  tests/d20_batch60.lua V3.
 
 ## d20 batch58 (eng/d20-batch58)
 
@@ -9911,6 +9931,35 @@ fh watch    # deploy on every change
   on each machine row; the recipe's quality changing during the watch reads as a recipe change. Main did not do this
   before (uptime's last change there was batch55 P8). Tests: tests/d20_batch58.lua (T1).
 
+## d21 batch64 (eng/d20-batch64)
+
+- Z1 (Sol #1515: the crusher on Petrel (-17,-10.5) read no_recipe at tick 40313975 with Set recipe on while its green
+  wire (network 1307, a decider's output) carried recipe:oxide-asteroid-crushing = 1; configure was refused as
+  "recipe incompatible with machine"). What 2.0.77's Set recipe takes, seen on a private copy with a crusher and a
+  constant combinator, each case from no recipe: a recipe signal above 0 sets that recipe at the signal's quality, on
+  red or green alike (the two summed); among several recipe signals the lowest recipe order wins whatever the counts
+  (metallic b-a-a, carbonic b-a-b, oxide b-a-c, advanced oxide f), normal before rare; a recipe the machine cannot
+  make or the force has not researched is skipped; recipe signals come before item signals, and an item signal alone
+  picks a recipe of the machine that has it as a product (ice and the oxide chunk: oxide-asteroid-crushing; calcite:
+  advanced-oxide; iron ore: metallic), at its quality; virtual signals are ignored. A constant combinator slot with no
+  quality sends nothing; circuit_set's signals are written with quality normal, which the game takes. When the wires
+  change the recipe, the running craft finishes, then the old recipe's ingredients and products go to the machine's
+  dump slots (defines.inventory.assembling_machine_dump) and it has no recipe until they are empty; an inserter taking
+  from it empties them (one with filters only its filter items), and the new recipe goes in. A recipe set by hand
+  (set_recipe) is ignored while Set recipe is on, which configure read as "recipe incompatible with machine"; with it
+  off, set_recipe works while the dump still holds items and returns none of them. Sol's case: Petrel's two deciders
+  switch the crusher between advanced-oxide (calcite < 20, or ice >= 100 and calcite < 100, read from a belt) and oxide
+  (ice < 100 and calcite >= 20); a switch put the old recipe's items in the dump, and the takers (a bulk inserter
+  filtered to ice and calcite, a fast inserter filtered to the oxide chunk, both onto belts) had not emptied it (what it
+  held then is not recorded: inspect did not list the dump; configure's change with Set recipe off left it, and it is
+  empty now). Now: inspect's `circuit_recipe` (an assembling machine with Set recipe on) gives what the wires give
+  (`wires_give`, `from`), `recipe_now`, the dump's contents, the inserters taking from it with their filters and what
+  each takes (`takers`, `dump_left`), the signals not used and why, the rule, and a line, e.g. `Set recipe is on: its
+  wires give oxide-asteroid-crushing (recipe:oxide-asteroid-crushing); it has no recipe: the new one waits until its
+  dump slots are empty: they hold carbon*20, carbonic-asteroid-chunk*2 (...); inserters taking from it: ...`; the dump
+  is listed in inventories (assembling_machine_dump) and transfer takes from it (take-only). configure with Set recipe
+  on is refused before any change, naming what the wires give and the two ways in the game's terms (Set recipe off,
+  then configure; or the recipe signal on a wire). Tests: tests/d21_batch64.lua.
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a
@@ -9976,3 +10025,32 @@ fh watch    # deploy on every change
   iron-gear-wheel normal 39` for 39 crafts; with a fast inserter taking every gear, 35 of 35 intervals read unknown;
   the statistics read 10 uncommon gears from a machine with legendary quality modules. A fact seen there: an assembler
   has one output slot, so an uncommon gear in it stops the next normal one (status full output) until it is taken.
+
+## d20 batch62 X2 (eng/d20-batch62b)
+
+- X2 (Sol #1529: `power {surface: fulgora, position: (-65,72)}` called on Nauvis read Nauvis network 2; on Fulgora the
+  same place is network 301). `power` was on the platform list (bots.lua PLATFORM_ACTIONS) and not on the surface list
+  (SURFACE_ACTIONS): without `by_cause` its `surface` was taken and dropped, and the read ran on the caller's surface.
+  Now `power {surface}` reads that planet's or platform's networks by remote view, as inspect does: round `position` or
+  `area` there (refused without one: the character stands elsewhere), or every network there with `by_cause`. The reply
+  names the surface read (`surface`). Entities count as the map shows them there (radar coverage, or charted for ours).
+- Every action's `surface` and `platform` were checked on the private copy: each was called from Nauvis with a name
+  that is no surface or platform, then with a real one, and its reply read. Position on reads was checked with a far
+  uncharted point against no position: every read that takes `position` used it. Those that took one and did not use it,
+  or read an unknown name as yours or as an empty place, now refuse it:
+  - Dropped: `power` surface without `by_cause` (above); `shipment` surface without `ledger`; `board_review` surface
+    without `ownership`; `uptime` surface and platform, and `belt_flow` platform, on the read of the watch so far (no
+    position); `wait_until` surface on a condition other than item_count, rocket_ready, rocket_parts and spoil_within,
+    and platform on one other than ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting,
+    pod_landed, platform_loss, platform_built, platform_ready, platform_arrived and platform_left (queue steps, orders,
+    sleeps and lessons validate conditions the same way).
+  - Read as yours: `pods`, `demolishers` and `dependency` with a surface name that is no surface.
+  - Read as an empty place: `robot_losses`, `eggs`, `alerts_digest` and `game_alerts` with a surface name that is no
+    surface; `platforms {platform}` and `platform {name}` with a name that is none of ours (now: the names of ours).
+  - Left as they are: `lessons {surface}` filters the lessons' own surface keys (none matching is said). The surface
+    and platform actions on the bots.lua lists go through runtime.lua's wrappers, which refuse an unknown name.
+- Checked on the private copy (its own container): Sol on Nauvis, `power {surface: fulgora, position: [14,187]}` read
+  network 523 there (29 poles, the same network Astra on Fulgora reads at that place); without position it is refused;
+  `by_cause` with surface fulgora read Fulgora's networks. Each refusal above was called there. Tests:
+  tests/d20_batch62b.lua; tests/alertdigest.lua, d17_batch32.lua, pushalerts.lua and spoil.lua give their fake game
+  `get_surface`.
