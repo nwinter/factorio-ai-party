@@ -452,8 +452,11 @@ def platform_where(p):
         route = {"from": planet_label(a), "to": planet_label(b), "pct": pct}
     where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
     speed = p.get("speed")
-    return {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
+    out = {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
             "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
+    if route:  # (d20 batch57 S3) the route's location names, origin first (edgedense.py: the edge legs' dense part)
+        out["route_ids"] = [a, b]
+    return out
 
 
 # notes.md "## Now" (the agents' own state for their next turn) opens with the clock more often than the job: shift05

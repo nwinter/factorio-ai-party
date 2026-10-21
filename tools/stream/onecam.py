@@ -59,6 +59,10 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
     `danger_max` (120 s); ammo holds `ammo_hold` (15 s); the same platform again after `danger_gap` (5 min) unless it got
     worse. It takes the camera from a visit, work or departure (a departure comes back after), never from an operator
     hold or follow, a battle, an incoming group, an urgent attack shot, a segment or a replay;
+  - a ship entering the dense asteroids of a leg to or from the solar system edge (d20 batch57 S3, viewer Foobator;
+    maybe_edge, edgedense.py: Aquilo to the edge from 39.7% of the way, back from 8.1%): once per leg, as a platform in
+    danger is shown, for `platform_hold`, labelled "Bastion · dense asteroids near the solar system edge"; a danger shot
+    takes it over;
   - POST /platform holds a whole ship for the operator's requested time (platformcam.py persists it). It overrides
     an agent follow; other urgent events are insets. A followed agent aboard also gets this whole-ship view.
     In flight it widens ahead of the ship for asteroids; held shots refresh when the bounds or flight state change.
@@ -427,6 +431,7 @@ class OneCam(Director):
         self.maiden_done = set()  # maiden_flight moment ids already taken (once per platform)
         self.work_shown = {}   # (agent, platform) -> when its work went on air
         self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
+        self.edge_legs = {}    # platform -> {leg: (origin, dest), shown}: an edge leg's dense part (maybe_edge)
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
         self.follow = None     # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
@@ -1016,10 +1021,12 @@ class OneCam(Director):
                     self.battle_direct(by_name, scores, now)
         elif self.mode == "trio":
             self.maybe_danger(scores, now, segment)
+            self.maybe_edge(scores, now, segment)
             self.maybe_departure(scores, now, segment)
             self.tiles(by_name, scores, now)
         else:
             self.maybe_danger(scores, now, segment)
+            self.maybe_edge(scores, now, segment)
             self.maybe_departure(scores, now, segment)
             self.direct(by_name, scores, ranked, now)
             self.maybe_work(snapshot, by_name, scores, now, segment)
@@ -2244,7 +2251,7 @@ class OneCam(Director):
         busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and now < cur.get("hold_until", 0)) or
                     (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0) and
-                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue"))))
+                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue", "edge"))))
         if busy:
             return
         def live(n):
@@ -2273,6 +2280,50 @@ class OneCam(Director):
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} platform danger: {d['reason']}", flush=True)
         self.show_platform(t, scores, now)
 
+    def maybe_edge(self, scores, now, segment=None):
+        """(d20 batch57 S3, viewer Foobator, shift48 17:40: "if a ship reaches the dense part of edge asteroids, can you
+        switch to it?") A platform flying a leg to or from the solar system edge that enters the leg's dense part
+        (edgedense.py: where big and huge asteroids' hit points per unit of travel reach 80% of the leg's peak; Aquilo
+        to the edge from 40% of the way) is shown once per leg as an urgent platform shot, as a platform in danger is:
+        platform_hold, framed for its guns' reach (model.platform_shot), labelled "Bastion · dense asteroids near the
+        solar system edge". It waits while the camera is busy as maybe_danger does, and a danger shot takes it over."""
+        import edgedense
+        cfg = self.cfg
+        due = []
+        for name, row in self.plat_rows.items():
+            lg = edgedense.leg(row)
+            if not lg:
+                self.edge_legs.pop(name, None)  # arrived, or another leg: the next edge leg counts again
+                continue
+            st = self.edge_legs.get(name)
+            if not st or st["leg"] != lg:
+                st = self.edge_legs[name] = {"leg": lg, "shown": False}
+            if not st["shown"] and edgedense.in_dense(row) and (row.get("view") or {}).get("surface"):
+                due.append(name)
+        if not due or len(self.slots) < 2:
+            return
+        cur = self.state.get(self.onair)
+        cp = (cur or {}).get("platform") or {}
+        busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
+                    (cur and now < cur.get("hold_until", 0)) or
+                    (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0) and
+                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue"))))
+        if busy:
+            return
+        name = sorted(due)[0]
+        label = f"{name} · dense asteroids near the solar system edge"
+        t = self.platform_target(name, "edge", now + cfg["ready_s"] + cfg["platform_hold"], label=label)
+        if not t:
+            return
+        t["platform"]["kind"] = "edge"
+        self.edge_legs[name]["shown"] = True
+        if cp.get("why") == "departure" and now < cur.get("until", 0):
+            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"],
+                              "maiden": cp.get("maiden")}
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} platform edge: {label} "
+              f"({self.plat_rows[name]['route'].get('pct')}%)", flush=True)
+        self.show_platform(t, scores, now)
+
     def maybe_departure(self, scores, now, segment=None):
         d = self.departure
         if not d or (len(self.slots) < 2 and not d.get("maiden")):  # one camera: only a maiden flight
@@ -2282,6 +2333,9 @@ class OneCam(Director):
             return
         cur = self.state.get(self.onair)
         if cur and cur.get("platform", {}).get("name") == d["name"] and now < cur.get("until", 0) and not self.pending:
+            if cur["platform"].get("why") == "edge" and not d.get("maiden"):
+                self.departure = None  # (d20 batch57 S3) its edge shot is on air: that label stays
+                return
             maiden = d.get("maiden") or cur["platform"].get("maiden")  # (a plain departure never relabels a maiden)
             cur["until"] = max(cur["until"], d["until"] if d.get("maiden") else now + self.cfg["depart_hold"])
             cur["platform"] = dict(cur["platform"], why="departure", maiden=maiden or None,
