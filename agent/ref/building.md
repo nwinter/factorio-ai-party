@@ -157,7 +157,7 @@
   that planet's construction robots build them. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
   Example: `./fh call pole_route --args '{"from":{"x":10.5,"y":10.5},"to":{"x":80.5,"y":10.5}}'`
-- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?, surface?}`: lays a belt line as ghosts
+- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?, surface?, item?, refuse_mixed?}`: lays a belt line as ghosts
   (legs up to 1000 tiles), over trees and wild plants it marks, water only with `"landfill": true`; `return` adds the
   line back beside it, crossing under it where its side is blocked. It goes round cliffs (an underground passes under
   one; `cliffs: true` passes over and marks them) and names what its ghosts mark for mining (`to_mine`: trees, rocks,
@@ -172,6 +172,9 @@
   `belt` (inspect, observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed
   from (-22.5,-30.5)`; at a line's end it names what stands on the tile it stops at: `(no belt takes them there:
   they stop at its end; medium-electric-pole (353.5,95.5) stands there)`.
+  `feeders` (dry runs, replies; build_path's too): our inserters whose drop point is on a planned belt or underground
+  end (what each holds, what it takes from and what is there) and belts, underground exits and splitters running into
+  the line; with `item`, feeders of other items are conflicts (the line is still placed; `refuse_mixed: true` refuses it).
   On a platform (`platform`): foundation only, no underground under empty space; `eject: true` (or an inserter name) ends
   it where that inserter, near `to`, picks from the last belt and drops off the hull (`eject` says where).
   Example: `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'`
