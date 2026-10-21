@@ -258,6 +258,16 @@ def newest_evidence(row):
     return dict(row, evidence=ev[-1:], evidence_more=len(ev) - 1)
 
 
+def latest_without_results(row, same_only):
+    """A reminder job with its recipients' latest results left out (same_only: only those equal to its last result)."""
+    latest = row.get("latest") if isinstance(row, dict) else None
+    if not isinstance(latest, list):
+        return row
+    keep = [dict(x, result=None) if isinstance(x, dict) and x.get("result") and (not same_only or x["result"] == row.get("last_result")) else x
+            for x in latest]
+    return dict(row, latest=keep)
+
+
 REMINDER_BYTES = 24 * 1024  # the reminders' share of the state: results up to 1000 characters, evidence lines
 
 
@@ -276,6 +286,11 @@ def public_reminders(rem):
     size = lambda: len(json.dumps(out, ensure_ascii=False))  # noqa: E731
     if size() > REMINDER_BYTES:
         out["jobs"] = [newest_evidence(j) for j in out["jobs"]]
+    # (d20 batch70 AF2) still over: each recipient's latest result goes where it repeats the job's last result, then
+    # every one (their state, ages and runs missed stay)
+    for same_only in (True, False):
+        if size() > REMINDER_BYTES:
+            out["jobs"] = [latest_without_results(j, same_only) for j in out["jobs"]]
     if size() > REMINDER_BYTES:
         head, tail = out["jobs"][:REMINDERS_SHOWN], list(out["jobs"][REMINDERS_SHOWN:])
         drop = [i for i in reversed(range(len(tail))) if isinstance(tail[i], dict) and tail[i].get("done")] + \

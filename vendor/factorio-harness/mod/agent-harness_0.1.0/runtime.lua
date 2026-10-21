@@ -15300,14 +15300,14 @@ M.platrearm=require('platrearm'){state=state,remote_entity=remote_entity,on_plat
   takes=function(proto) return M.turretammo.takes(proto) end,unusable=function(e) return M.turretammo.unusable(e) end}
 function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
 -- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
-M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
+M.beltsample=require('beltsample'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
-M.uptime=require('uptime'){state=state,timed=M.timed,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
+M.uptime=require('uptime'){state=state,reason=function(v) return M.measures.reason(v) end,timed=M.timed,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
   status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end,productivity_now=function(e,r) return M.craftrate.productivity_now(e,r) end}
 function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_tally (turrettally.lua, d20 batch60 V3, Astra #1521): turrets' kills and damage dealt over a window; inspect's too.
-M.turrettally=require('turrettally'){state=state,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
+M.turrettally=require('turrettally'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.turret_tally(p,a) return M.turrettally.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
@@ -16068,7 +16068,7 @@ function M.platform_recent(name)
   parts[#parts+1]=r and string.format('its latest launch up: #%d from %s %ds ago (%s)',r.id,surf,math.floor((game.tick-r.tick)/60),r.cargo) or 'no launch to it recorded since the harness was deployed'
   return table.concat(parts,'; ')
 end
-M.waits=require('waits'){state=state,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+M.waits=require('waits'){state=state,measure=function(index) return M.measure_row(index) end,reason=function(v) return M.measures.reason(v) end,watch_flags=function(index) return M.measures.flags(index) end,platform_recent=function(name) return M.platform_recent(name) end,personal_unfilled=function(p) return M.personal_unfilled_lines(p) end,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
@@ -16191,7 +16191,16 @@ for name,handler in pairs(M.reminders.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
+-- (d20 batch70 AF1) each agent's bounded watches: uptime, turret_tally, belt_flow (measures.lua)
+M.measures=require('measures'){state=state}
+-- the running watch's row (sleep line), or nil
+function M.measure_row(index)
+  local id=M.measures.running(index)
+  if not id then return nil end
+  for _,r in ipairs(M.measures.list(index)) do if r.id==id then return r end end
+end
 M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
+  measure=function(index) return (M.measures.running(index)) end,measures=function(index) return M.measures.list(index) end,
   open=function(index,name) local p=M.lookup(index); return p and M.open.line(name,p.force,p.valid and {surface=p.surface.name,position=p.position} or nil) or nil end,
   mention_counts=function() return M.board.operator('mention_counts',{}) end,
   unread=function(index) return M.chat.unread(index,'peek') end,
@@ -16971,6 +16980,7 @@ local function clock_line(p,peek)
   local waited=c and c.craft_wait or 0
   local in_waits=c and c.in_waits or 0
   local watch,watch_names=c and c.watch or 0,c and c.watch_names
+  local measured,measure_id=c and c.measure or 0,c and c.measure_id
   local kinds={}
   for kind in pairs(c and c.wait_kinds or {}) do kinds[#kinds+1]=kind end
   table.sort(kinds)
@@ -16987,14 +16997,17 @@ local function clock_line(p,peek)
   local waiting=waited>0 and string.format(', waiting on hand crafting %s of it (%d%%)',t(waited),share(waited)) or ''
   local slept=in_waits>0 and string.format(', %s of that in %s',t(in_waits),table.concat(kinds,'/')) or ''
   local watched=watch>0 and string.format(', on watch: %s for %s of that',tostring(watch_names),t(watch)) or ''
-  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s%s)%s; hand crafting %s queued',
-    t(game.tick),t(since),t(idle),share(idle),slept,watched,waiting,t(craft*60))
+  local measuring=measured>0 and string.format(', measuring %s for %s of it',tostring(measure_id),t(measured)) or ''
+  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s%s)%s%s; hand crafting %s queued',
+    t(game.tick),t(since),t(idle),share(idle),slept,watched,measuring,waiting,t(craft*60))
 end
 local function idle_tick()
   local s=state()
   for index,c in pairs(s.clocks or {}) do
     M.waiteta.idle_tick(index)
-    if not M.idle.busy(s,index) then
+    local working,why,watch=M.idle.busy(s,index)
+    if why=='measure' then c.measure=(c.measure or 0)+1; c.measure_id=watch end  -- a bounded watch running (measures.lua)
+    if not working then
       c.idle=c.idle+1
       local kind=M.idle.waiting(s,index)
       if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end

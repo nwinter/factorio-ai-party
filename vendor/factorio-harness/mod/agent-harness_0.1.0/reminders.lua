@@ -13,6 +13,11 @@
 -- default), and the run is done for them when every step is recorded (a one-time job is done when every recipient is).
 -- leave: true sets it aside (an emergency): no step lines while left; resume: true (or any step's ack) takes it up at
 -- the next unfinished step. reminders {pending: true} is the grouped read: what waits for you, each at its next step.
+-- Backup (d20 batch70 AF2, viewer Aurora: "Freight review shows 12 missed runs despite newer freight work in chat"; #107
+-- went to its owner alone, so no one was told): an optional teammate told once when a recipient misses a run (a second
+-- run comes while the first waits), until that recipient acknowledges; the backup (or the owner) records a result for a
+-- recipient with reminder_ack {id, for, result}. Each recipient's latest result is kept (results): acknowledged when and
+-- with what, by whom, or waiting since when with the runs missed.
 return function(api)
   local M = {}
   -- (d19 batch41 B2, Sol seq 865: "a 200-character ack hides outcomes") a result up to 1000 characters, kept whole
@@ -125,6 +130,28 @@ return function(api)
     if job.acked and job.acked[name] then return 'acknowledged' end
     return job.enabled and 'scheduled' or (job.done and 'done' or 'off')
   end
+  -- (AF2) one recipient's latest: acknowledged (when, with what, by whom) or waiting since when, runs missed.
+  local function latest(job, name)
+    local st, pd = status_of(job, name)
+    local res = job.results and job.results[name]
+    local acked = job.acked and job.acked[name]
+    -- a job from before results were kept: its last result when this recipient gave it
+    if not res and acked and job.result_by == name and job.result_tick == acked then res = {result=job.last_result, tick=acked} end
+    local r = {name=name, state=st, acked_tick=res and res.tick or acked, result=res and res.result or nil, by=res and res.by ~= name and res.by or nil}
+    r.acked_ago_s = r.acked_tick and math.floor((game.tick - r.acked_tick) / 60) or nil
+    if pd then
+      r.waiting_since_tick, r.waiting_s, r.missed = pd.tick, math.floor((game.tick - pd.tick) / 60), pd.missed > 0 and pd.missed or nil
+      r.first_missed_tick, r.backup_told_tick = pd.first_missed, pd.told_backup
+    end
+    local short = r.result and (#r.result > 120 and r.result:sub(1, 117) .. '...' or r.result)
+    local last = r.acked_tick and string.format('last acknowledged %s ago%s%s', ago(game.tick - r.acked_tick), r.by and ' by ' .. r.by .. ' for them' or '',
+      short and ': ' .. short or ' (no result given)') or 'never acknowledged'
+    if pd then
+      r.line = string.format('%s: waiting since tick %d (%s)%s; %s', name, pd.tick, ago(game.tick - pd.tick),
+        pd.missed > 0 and ', ' .. missed_text(pd) .. (pd.told_backup and ', backup ' .. tostring(job.backup) .. ' told' or '') or '', last)
+    else r.line = string.format('%s: %s; %s', name, st, last) end
+    return r
+  end
   local function row(job, me)
     local r = {id=job.id, name=job.name, owner=job.owner, recipients=table.concat(job.recipients, ', '), message=job.message,
       cadence=cadence(job), every_ticks=job.every, due_tick=not job.every and job.due or nil, enabled=job.enabled, wake=job.quiet and 'false: delivered with the next reply, wakes no wait' or nil,
@@ -140,12 +167,16 @@ return function(api)
     local states = {}
     for _, n in ipairs(targets(job)) do
       local st, pd = status_of(job, n)
-      states[#states+1] = n .. ' ' .. st .. (pd and pd.missed > 0 and string.format(' (%s%s)', missed_text(pd),
-        pd.told_owner and ', the owner told' or '') or '')
+      states[#states+1] = n .. ' ' .. st .. (pd and pd.missed > 0 and string.format(' (%s%s%s)', missed_text(pd),
+        pd.told_owner and ', the owner told' or '', pd.told_backup and ', backup ' .. tostring(job.backup) .. ' told' or '') or '')
       if pd and pd.missed > 0 then r.missed = r.missed or {}; r.missed[n] = pd.missed end
     end
     r.states = table.concat(states, '; ')
     if me then r.yours = status_of(job, me) end
+    -- (AF2) the backup, and each recipient's latest result or wait
+    r.backup = job.backup
+    r.latest = {}
+    for _, n in ipairs(targets(job)) do r.latest[#r.latest+1] = latest(job, n) end
     if job.steps then
       local pr = me and job.progress and job.progress[me]
       r.steps = {}
@@ -163,7 +194,11 @@ return function(api)
     if job.last_result then parts[#parts+1] = string.format('last result %s ago: %s', ago(game.tick - job.result_tick), job.last_result) end
     if r.evidence then parts[#parts+1] = 'evidence ' .. r.evidence[#r.evidence] end
     if job.serves and Sv().gone(job.serves) then parts[#parts+1] = Sv().line(job.serves) end
+    if job.backup then parts[#parts+1] = 'backup ' .. job.backup end
     parts[#parts+1] = r.states
+    local ll = {}
+    for _, l in ipairs(r.latest) do ll[#ll+1] = l.line end
+    parts[#parts+1] = 'latest: ' .. table.concat(ll, ' | ')
     r.line = table.concat(parts, '; ')
     return r
   end
@@ -202,6 +237,19 @@ return function(api)
       job.board_item = a.board_item or nil
     end
     if a.surface ~= nil then job.surface = a.surface ~= false and one_line(a.surface, 40, 'surface') or nil end
+    -- (AF2) backup: one teammate told when a recipient misses a run; false clears it
+    if a.backup ~= nil then
+      if a.backup == false then job.backup = nil
+      else
+        assert(type(a.backup) == 'string', 'backup: one teammate\'s name, or false for none')
+        local w = a.backup:gsub('^@', '')
+        assert(not TEAM[w:lower()], 'backup: one teammate\'s name')
+        local name = api.resolve(w)
+        assert(name ~= 'operator', 'backup: a teammate')
+        job.backup = name
+      end
+      for _, pd in pairs(job.pending or {}) do pd.told_backup = nil end
+    end
     if a.serves ~= nil then job.serves = a.serves ~= false and Sv().parse(a.serves, p) or nil end
     -- steps: a checklist (B1); a change starts every recipient's progress again
     if a.steps ~= nil then
@@ -281,6 +329,18 @@ return function(api)
   function M.handlers.reminder_ack(p, a)
     local job = find(a.id)
     local me = api.who(p)
+    -- (AF2) for: the backup (or the owner) records a result for a recipient
+    local by = me
+    if a['for'] ~= nil then
+      assert(type(a['for']) == 'string', 'for: a recipient\'s name')
+      local name = api.resolve((a['for']:gsub('^@', '')))
+      assert(me == job.backup or me == job.owner or me == 'operator', 'for: only reminder #' .. job.id .. '\'s backup (' .. tostring(job.backup or 'none') .. ') or its owner records a result for a recipient')
+      local listed = false
+      for _, n in ipairs(targets(job)) do if n == name then listed = true end end
+      assert(listed, name .. ' is not a recipient of reminder #' .. job.id)
+      assert(not job.steps, 'for: a checklist is recorded by each recipient')
+      me = name
+    end
     local result = a.result ~= nil and one_line(a.result, MAX_RESULT, 'result') or nil
     local evidence = a.evidence ~= nil and Ev().check(a.evidence, me) or nil
     job.pending = job.pending or {}; job.acked = job.acked or {}
@@ -309,6 +369,8 @@ return function(api)
         assert(step, 'every step of reminder #' .. job.id .. ' is recorded')
         pr.done[step] = {result=result, tick=game.tick}
         if result then job.last_result = string.format('step %d "%s": %s', step, job.steps[step].name, result); job.result_by = me; job.result_tick = game.tick end
+        job.results = job.results or {}
+        job.results[me] = {result=result and string.format('step %d "%s": %s', step, job.steps[step].name, result) or nil, tick=game.tick}
       end
       local nx = next_step(job, me)
       if nx then
@@ -329,7 +391,9 @@ return function(api)
     end
     assert(a.step == nil and a.leave == nil and a.resume == nil, 'step, leave and resume are for a checklist (reminder_add steps)')
     job.pending[me] = nil; job.acked[me] = game.tick
-    if result then job.last_result = result; job.result_by = me; job.result_tick = game.tick end
+    job.results = job.results or {}
+    job.results[me] = {result=result, tick=game.tick, by=by ~= me and by or nil}
+    if result then job.last_result = result; job.result_by = by; job.result_tick = game.tick end
     -- (A1) with the ack: the next run later (next_in_ticks: the next run only), or a slower cadence (every_ticks, its
     -- owner, anchored now)
     local note = 'the cadence stays as it is'
@@ -343,8 +407,8 @@ return function(api)
       job.next_due = game.tick + ticks_arg(a.next_in_ticks, 60, MAX_EVERY, 'next_in_ticks'); job.enabled = true; job.done = nil
       note = string.format('the next run in %s (that run only; the cadence goes on from its anchor after it)', ago(job.next_due - game.tick))
     end
-    return {acknowledged=job.id, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil, missed_runs=missed_text(was),
-      note=note, reminder=row(job, me)}
+    return {acknowledged=job.id, ['for']=by ~= me and me or nil, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil, missed_runs=missed_text(was),
+      note=note, reminder=row(job, by)}
   end
   -- (d19 batch41 B3, Astra seq 862 and 864: reminder misses piled up while notes kept hour-old results) what is past its
   -- review time for `name`: runs addressed to them waiting past their cadence (overdue), and recipients of their own
@@ -436,6 +500,16 @@ return function(api)
         -- (d17 batch35 D3, viewer Aurora and Sol 14:07: reminder 59, a shared review, reached 10 missed runs for Grok and
         -- 16 for Sonnet before a viewer asked) two runs missed: one line to the owner, once until that recipient
         -- acknowledges or the recipients change
+        -- (AF2) a run missed: one line to the backup, once until that recipient acknowledges
+        if job.backup and not pd.told_backup and name ~= job.backup and index[job.backup] then
+          pd.told_backup = game.tick
+          local res = job.results and job.results[name]
+          api.deliver(index[job.backup], {seq='reminder', tick=game.tick, from='reminder #' .. job.id,
+            text=string.format('%s missed a run of reminder #%d %s (%s\'s, %s; you are its backup): not acknowledged since tick %d (%s ago), %s; %s\'s last result: %s; reminder_ack {id: %d, for: "%s", result} records one for them',
+              name, job.id, job.name or 'review', job.owner, cadence(job), pd.tick, ago(game.tick - pd.tick), missed_text(pd), name,
+              res and res.result and string.format('%s (%s ago)', res.result, ago(game.tick - res.tick)) or (job.result_by == name and job.last_result and string.format('%s (%s ago)', job.last_result, ago(game.tick - (job.result_tick or game.tick)))) or 'none kept',
+              job.id, name)})
+        end
         if pd.missed >= 2 and not pd.told_owner and name ~= job.owner and index[job.owner] then
           pd.told_owner = game.tick
           local others = {}
@@ -489,21 +563,21 @@ return function(api)
   M.schema = {
     reminder_add = {message='1..300 characters: what to review (the line recipients get)', every_ticks=WHEN, due_tick='a game tick (once)', due_in_ticks='ticks from now (once)',
       recipients='optional: names (sol, luna) or "team"; default yourself', name='optional 1..40 characters', board_item='optional board item number',
-      surface='optional surface name', serves='optional {name, position, surface?, radius?}: the machine it serves (an entity of that name of ours within 1 tile of position, on surface, default yours), or with radius 2..64 any such machine within it; checked about once a game minute and when read: serves {count, last_seen_tick, gone, gone_tick, line} in the read, and a line naming it when none is there (the job\'s line and the line it sends name one whose machine is gone)', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
+      surface='optional surface name', backup='optional: one teammate told when a recipient misses a run (a second run comes while the first waits), once until that recipient acknowledges; it may record a result for them (reminder_ack {id, for, result})', serves='optional {name, position, surface?, radius?}: the machine it serves (an entity of that name of ours within 1 tile of position, on surface, default yours), or with radius 2..64 any such machine within it; checked about once a game minute and when read: serves {count, last_seen_tick, gone, gone_tick, line} in the read, and a line naming it when none is there (the job\'s line and the line it sends name one whose machine is gone)', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
       wake='optional false: its line waits for the recipient\'s next reply and wakes no sleep or wait (a routine check; urgent alerts are apart and still wake)',
       steps='optional checklist: 1..12 steps, each a name (1..80 characters) or {name, every_ticks? (1800..: its line again that often while it is a recipient\'s next step)}; a run goes out with the next unfinished step, each recipient records steps with reminder_ack (the run is done for them when every step is recorded; a one-time job is done when every recipient\'s is)',
       returns='added (its id), reminder {id, owner, recipients, message, cadence, next_due_tick, next_due_in_s, states, line}. A reminder only sends lines: when due, each recipient gets one private line in their next reply (a tell from "reminder #N", waking a sleep as a tell does); while one has not acknowledged it, later runs fold into it (missed); at 2 runs missed its owner gets one line naming who, the last result and the reminder_edit call that changes the recipients (once until that recipient acknowledges or the recipients change). It never acts in the game; at most 12 a teammate, 48 in all'},
     reminder_edit = {id='reminder number', message='as reminder_add', every_ticks='as reminder_add (sets the anchor now)', due_tick='as reminder_add', due_in_ticks='as reminder_add', recipients='as reminder_add', name='as reminder_add; false clears it',
-      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', serves='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', steps='as reminder_add; false clears them; a change starts every recipient\'s progress again', returns='edited, reminder; its owner only'},
+      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', backup='as reminder_add; false clears it', serves='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', steps='as reminder_add; false clears them; a change starts every recipient\'s progress again', returns='edited, reminder; its owner only'},
     reminder_remove = {id='reminder number', returns='removed, was; its owner only'},
-    reminder_ack = {id='reminder number', result='optional 1..1000 characters: what the review found, kept whole (shown with the job and on the site)',
+    reminder_ack = {id='reminder number', ['for']='optional, its backup or owner: the recipient this ack and result are for (not a checklist)', result='optional 1..1000 characters: what the review found, kept whole (shown with the job and on the site)',
       evidence='optional {metric?, tick?, decision?, result?, owner?, next_check?}, as board_post evidence: kept with the reminder (the newest 5) and shown with it',
       step='a checklist: the step number this records (default: your next unfinished step)', leave='a checklist: true sets it aside (an emergency): no step lines until resume; your progress kept',
       resume='a checklist: true takes it up again at your next unfinished step (any step\'s ack does too)',
       next_in_ticks='optional 60..: the next run that many ticks from now (that run only), with the ack', every_ticks='optional, its owner: a new cadence from now (e.g. 18000, 5 min), with the ack',
       returns='acknowledged, was_pending, missed (runs folded into the line), missed_runs (how many and the ticks of the first and last), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
     reminder_snooze = {id='reminder number', ticks='60..: the next run that many ticks from now (the next run only)', returns='snoozed, next_due_tick, reminder; its owner or a recipient'},
-    reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, serves {count, last_seen_tick, gone, gone_tick, line}, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed, the owner told; steps done), missed {name: runs}, yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
+    reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, serves {count, last_seen_tick, gone, gone_tick, line}, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed, the owner told, the backup told; steps done), missed {name: runs}, backup, latest [{name, state, acked_tick, acked_ago_s, result, by (the backup or owner who recorded it for them), waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick, line}] (each recipient\'s latest result or wait), yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
   }
   return M
 end

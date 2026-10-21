@@ -161,7 +161,9 @@
   often while it is your next one; each run goes out with your next unfinished step, and progress is per recipient.
   A run not acknowledged folds into the next; at 2 runs missed the owner gets one line naming who, the last result and
   the reminder_edit call that changes the recipients (again only after that recipient acknowledges or the recipients
-  change).
+  change). `backup: "NAME"` (add or edit; `false` clears): one teammate told once when a recipient misses a run, who
+  may record a result for them with `reminder_ack {id, for: "NAME", result}`; `reminders` rows give `latest`: each
+  recipient's last acknowledgment (when, with what, by whom) or how long it has waited, with runs missed.
   Example: `./fh call reminder_add --args '{"message":"check the boiler feed chests","every_ticks":54000}'`
 - `reminder_ack {id, result, next_in_ticks?, every_ticks?, step?, leave?, resume?}`: records what the review found;
   `next_in_ticks` puts the next run off; its owner's `every_ticks` there sets a new cadence. On a checklist it records

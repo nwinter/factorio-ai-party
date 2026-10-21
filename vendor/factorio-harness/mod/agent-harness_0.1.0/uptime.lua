@@ -325,6 +325,10 @@ return function(api)
         end
       end
     end
+    -- (d20 batch70 AF1) when it was last read, and whether anything is left to read (measures.lua: the idle count)
+    local live = #job.machines == 0
+    for _, m in ipairs(job.machines) do if not m.gone then live = true; break end end
+    job.sampled, job.all_gone = game.tick, not live or nil
   end
   local function r2(v) return math.floor(v * 100 + 0.5) / 100 end
   local function status_parts(m, samples)
@@ -598,10 +602,12 @@ return function(api)
       assert(a.surface == nil and a.platform == nil, 'surface and platform go with positions, position, area or items (a new watch there); uptime {} reads your watch where it began')
       local job = store()[p.index]
       assert(job, 'no uptime watch yet: uptime {positions, seconds?}')
+      if job.result then job.read_tick = game.tick end  -- its final read (measures.lua)
       return job.result or M.result(job, false)
     end
     local seconds = a.seconds == nil and 600 or a.seconds
     assert(type(seconds) == 'number' and seconds >= 10 and seconds <= 3600 and seconds == math.floor(seconds), 'seconds: 10..3600 (default 600)')
+    local reason = api.reason and api.reason(a.reason)  -- (d20 batch70 AF1) its own reason to wait (measures.lua)
     local q = a.surface ~= nil and api.on_surface(p, a.surface) or a.platform ~= nil and api.on_platform(p, a.platform) or p
     local list = a.positions or a.position and {a.position} or (a.area and timed('uptime.area', M.in_area, q, a)) or {}
     assert(type(list) == 'table' and (#list >= 1 or a.items) and #list <= M.MAX, 'positions: 1..' .. M.MAX .. ' crafting machines or labs {x,y} (or area {left_top, right_bottom} with recipe; or items alone)')
@@ -636,7 +642,7 @@ return function(api)
     end
     end)
     local replaced = store()[p.index] and not store()[p.index].result
-    local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick, seconds=seconds, samples=0, machines=machines}
+    local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick, seconds=seconds, samples=0, machines=machines, reason=reason}
     local flows_line
     if a.items then job.flows, flows_line = timed('uptime.flows', M.flows_start, q.force, q.surface, a.items) end
     if labs then
@@ -660,7 +666,7 @@ return function(api)
       line=#machines == 0 and string.format('watching the production statistics of %d item%s for %ds: uptime {} reads them so far, and in full once done', #a.items, #a.items == 1 and '' or 's', seconds)
         or string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)}
   end
-  M.schema = {uptime = {positions='1..64 crafting machines or labs {x,y} (an assembler, furnace, chemical plant, biochamber, lab, biolab, ...; in sight or by remote view)', position='or one',
+  M.schema = {uptime = {reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check', positions='1..64 crafting machines or labs {x,y} (an assembler, furnace, chemical plant, biochamber, lab, biolab, ...; in sight or by remote view)', position='or one',
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
     items='optional 1..8 items, a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch)',
     seconds='optional 10..3600 (default 600): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',

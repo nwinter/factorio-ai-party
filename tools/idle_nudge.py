@@ -16,8 +16,10 @@ game action that changed something, a move to a new spot, or 20 s of work summed
 short walks by Grok and Muse ended it under the old rule, so half the nudges were false and agents learned to dismiss
 them). Before such a harness, standing is the longer of the harness's count and this process's own, so an older
 harness that counts waits as work is covered too. A standing order running for the agent (orders.lua: the report's
-`orders.running`) is work, so never nudged. The tell holds facts only: how long, the wait, the queue and sleep state,
-the standing orders set, what was counted over the last 10 minutes and what idle means, what waits unread. At most
+`orders.running`) is work, so never nudged, and so is a bounded watch running (the report's `measuring`: uptime,
+turret_tally, belt_flow; d20 batch70 AF1: Haiku was nudged 72 s into a 120 s uptime watch at d21 12:11:50 and 74 s
+into another at 12:51:53); a watch late, stalled, invalid or done with its final not read is named in the tell
+(`measures`). The tell holds facts only: how long, the wait, the queue and sleep state, the standing orders set, what was counted over the last 10 minutes and what idle means, what waits unread. At most
 once per --every-min minutes per agent, never in the first --grace-min minutes after this process starts (the shift
 start), and not after the run's deadline. Each nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not),
 with since_last_nudge: whether a reply delivered the last nudge's tell (its unread tells went to 0) and whether the
@@ -99,8 +101,26 @@ def nudge_text(row, standing_s=None):
     counted = (f" Counted, {counted} (a wait or sleep is idle; a game action that changed something, a move to a new "
                f"spot or 20 s of work in 2 minutes ends idle).") if counted else ""
     return (f"Operator (automatic, facts only): your character has stood idle for {minutes(standing)} min "
-            f"({doing}).{counted} Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))} "
+            f"({doing}).{counted} Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))}"
+            f"{watches_text(row.get('measures'))}{reason_text(row.get('sleep_reason'))} "
             "Unread for you: " + ", ".join(unread) + "." + open_text(row.get("open")))
+
+
+def reason_text(reason):
+    """(d20 batch70 AF1, operator d21 13:18) the agent's own reason to wait, given with its sleep, quoted as given."""
+    return f" Your reason to wait (your sleep): {str(reason).strip().rstrip('.')}." if reason else ""
+
+
+def flagged(measures):
+    """The agent's bounded watches that need it (measures.lua): late, stalled, invalid, or done with the final not read."""
+    return [m for m in measures or [] if m.get("state") in ("late", "stalled", "invalid")
+            or m.get("state") == "done" and not m.get("final_read")]
+
+
+def watches_text(measures):
+    """(d20 batch70 AF1) its watches that are not running and need it, each the harness's line; '' with none."""
+    lines = [str(m.get("line") or m.get("id")).rstrip(".") for m in flagged(measures)]
+    return f" Watches: {'; '.join(lines)}." if lines else ""
 
 
 def open_text(line):
@@ -132,7 +152,7 @@ class Nudger:
         if not row.get("alive", True):
             self.idle_since.pop(name, None)
             self.busy_polls.pop(name, None)
-        elif working(row) or (row.get("orders") or {}).get("running"):
+        elif working(row) or (row.get("orders") or {}).get("running") or row.get("measuring"):
             self.busy_polls[name] = self.busy_polls.get(name, 0) + 1
             if self.busy_polls[name] >= 2:
                 self.idle_since.pop(name, None)
@@ -190,6 +210,8 @@ class Nudger:
             return "in an action"
         if (row.get("orders") or {}).get("running"):
             return "running a standing order"
+        if row.get("measuring"):  # (d20 batch70 AF1) a bounded watch running: uptime, turret_tally, belt_flow
+            return f"measuring ({row['measuring']})"
         if self.queue_work(row["name"], now):
             return "queued work in its journal"
         if now - self.start < self.grace_s:
@@ -219,6 +241,8 @@ class Nudger:
                                                              "unread_board")},
                      "last_request_min": minutes(row.get("last_request_s")) if row.get("last_request_s") is not None
                      else None, "counted": (row.get("counted") or {}).get("text"), "text": text}
+            if flagged(row.get("measures")):
+                entry["watches"] = [{k: m.get(k) for k in ("id", "state", "end_tick", "final_read")} for m in flagged(row.get("measures"))]
             if row["name"] in self.last:  # did a reply carry the last nudge, and has the agent asked anything since?
                 entry["since_last_nudge"] = dict(self.since.get(row["name"]) or {"tell_delivered": False,
                                                                                   "requests": False})

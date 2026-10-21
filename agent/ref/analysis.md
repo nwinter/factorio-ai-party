@@ -238,6 +238,11 @@
   ingredients short at the samples that read short (at the recipe's quality), outputs by quality from its output slot,
   totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
   name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
+  While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock
+  line: `measuring uptime@TICK`; the sleep line and `sleep_check` name it with its scope, end tick and latest sample; it
+  runs in the background, and your actions meanwhile do not end it); one late, stalled, invalid or done with its final
+  unread is listed in a sleep's `watches`. `reason` (up to 200 characters) on the watch or on `fh sleep --reason TEXT`
+  records your own reason to wait; it is shown back as given, and the operator's idle check shows it.
 - `pipe_gaps {from, to, via?}` or `{line}` (`surface`: those pipes on another planet by remote view): a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the

@@ -36,6 +36,19 @@ def main():
          "result_by": "sol", "states": "astra pending; sol acknowledged", "line": "not passed on"}]}})
     import time
     assert m.snapshot(time.time())["reminders"]["total"] == 1
+    assert m.reminders_snapshot()["jobs"][0]["latest"] is None and m.reminders_snapshot()["jobs"][0]["backup"] is None
+    # (d20 batch70 AF2, viewer Aurora) the backup and each recipient's latest; a long result cut for the panel
+    m.ingest({"reminders": {"tick": 300, "jobs": [{"id": 107, "owner": "astra", "message": "verify receipts", "enabled": True, "backup": "sol",
+              "latest": [{"name": "astra", "state": "overdue", "acked_tick": 42355277, "acked_ago_s": 8820, "result": "K2 " + "x" * 400,
+                          "waiting_since_tick": 42358560, "waiting_s": 8580, "missed": 15, "first_missed_tick": 42394560,
+                          "backup_told_tick": 42394560, "line": "not passed on"},
+                         {"name": "sol", "state": "acknowledged", "acked_ago_s": 60, "result": "ok", "by": "astra"}, "junk"]}]}})
+    j = m.reminders_snapshot()["jobs"][0]
+    assert j["backup"] == "sol" and len(j["latest"]) == 2, j
+    a, s_ = j["latest"]
+    assert a["agent"] == "astra" and a["missed"] == 15 and a["waiting_s"] == 8580 and a["backup_told"] is True and "line" not in a, a
+    assert len(a["result"]) == model.Model.LATEST_RESULT and a["result"].endswith("..."), a["result"]
+    assert s_["by"] == "astra" and s_["result"] == "ok" and s_["waiting_s"] is None and s_["backup_told"] is False, s_
     many = [{"id": i, "owner": "sol", "message": f"job {i}", "enabled": True} for i in range(120)]
     m.ingest({"reminders": {"jobs": many}})
     s = m.reminders_snapshot()

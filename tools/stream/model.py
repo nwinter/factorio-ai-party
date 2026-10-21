@@ -1513,9 +1513,32 @@ class Model:
                          "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states"),
                          # (d17 batch35 D3) runs each recipient missed ({name: runs}); states says when the owner was told
                          "missed": {str(k): v for k, v in (j.get("missed") or {}).items() if isinstance(v, int)} or None,
+                         # (d20 batch70 AF2, viewer Aurora) its backup, and each recipient's latest result or wait
+                         "backup": j.get("backup") or None, "latest": self._reminder_latest(j.get("latest")),
                          # (d19 batch43 A2) the evidence given with its acknowledgments (batch41 B2), whole
                          **with_evidence(j)})
         return {"jobs": rows, "total": len(r.get("jobs") or [])}
+
+    LATEST_RESULT = 240  # a recipient's latest result on the panel (the job's last result stays whole)
+
+    def _reminder_latest(self, rows):
+        """(d20 batch70 AF2) each recipient's latest as the runtime gives it (reminders.lua latest): acknowledged when,
+        with what and by whom (a backup's for them), or waiting how long with the runs missed; None from an older runtime."""
+        if not isinstance(rows, list):
+            return None
+        out = []
+        for x in rows[:12]:
+            if not isinstance(x, dict) or not x.get("name"):
+                continue
+            res = clean_text(x.get("result") or "") or None
+            if res and len(res) > self.LATEST_RESULT:
+                res = res[:self.LATEST_RESULT - 3].rstrip() + "..."
+            num = lambda k: x.get(k) if isinstance(x.get(k), (int, float)) and not isinstance(x.get(k), bool) else None  # noqa: E731
+            out.append({"name": x["name"], "agent": self._who(x["name"]), "state": x.get("state"),
+                        "acked_ago_s": num("acked_ago_s"), "result": res, "by": x.get("by") or None,
+                        "waiting_s": num("waiting_s"), "missed": num("missed"),
+                        "backup_told": bool(x.get("backup_told_tick"))})
+        return out or None
 
     def board_snapshot(self):
         b = self.board

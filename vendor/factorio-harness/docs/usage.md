@@ -4913,7 +4913,30 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
   messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
   game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,
-  standing 21%"). `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
+  standing 21%").
+  A bounded watch running is measuring, not standing (measures.lua; d20 batch70 AF1, Aurora: d21 12:11:50 Haiku was
+  nudged 72 s into a 120 s `uptime` watch Astra had asked of it, and 12:51:53 74 s into another): an `uptime`,
+  `turret_tally` or `belt_flow` watch of the agent's, from its start to its end tick while its sampler reads it, its
+  sleeps and waits included. Standing ends while it runs (`stand_ended.why`: `measuring uptime@42660741`) and starts
+  again at its end. Each row has `measuring` (the running watch's id: kind@start tick) and `measures`: each watch it
+  keeps, `{id, kind, scope, start_tick, end_tick, state, samples, gone, of, latest {tick, s_ago, line}, final_read,
+  line}`. `state` is `running`, `done` (`final_read`: whether the agent read it after the end), `late` (its end tick
+  passed 5 s ago or more and no final result came: its sampler stopped), `stalled` (before its end, no sample for 10
+  s) or `invalid` (every machine, turret or belt point it reads gone or out of sight, or no sample); only `running` is
+  work. `counted.text` adds `measuring 80% (uptime@42660741)`, and `counted.measures` the ids. The agent's clock line
+  adds `, measuring uptime@42660741 for 1m10s of it`; a sleep begun while one runs says `no queue and no action:
+  measuring, your uptime@42660741 14 machines (copper-plate 13, none 1) from (-45,83) runs in the background until
+  tick 42667941 (110 s more; your actions meanwhile do not end it), then your character stands idle`; `sleep_check`
+  carries `measuring` (that watch's line, with its latest sample), and the sleep's start and its wake carry `watches`:
+  the lines of watches late, stalled, invalid or done with the final not read. The idle nudge does not nudge an agent
+  while it measures and names those watches in its tell (`Watches: ...`; `watches` in nudges.jsonl). Fusion reactors'
+  fuel sampling (inspect) belongs to no agent and is not counted.
+  The agent's own reason to wait (operator d21 13:18, Aurora; the operator suggests no work): `reason` (text, up to 200
+  characters) on `uptime`, `turret_tally` and `belt_flow` is kept with the watch (`measures[].reason`, `; your reason:
+  ...` in its line and `; its reason: ...` in the sleep line); on `sleep` (`fh sleep 120 --reason TEXT`, `fh wait
+  --until ... --reason TEXT`) it ends `while_asleep` (`; your reason to wait: ...`), the idle report has it as
+  `sleep_reason`, and the idle nudge quotes it (`Your reason to wait (your sleep): ...`). Shown as given, newlines
+  folded. `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
   waking a sleeper (woke=told), never in the game chat. It also rides on every reply to that agent as
   `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
   or message; in compact output fh prints each as an `OPERATOR:` line on stdout as soon as a reply carries it, once per
@@ -5574,10 +5597,27 @@ fh watch    # deploy on every change
   - `reminders {all?}` lists yours and those addressed to you (`all: true`: the team's): owner, recipients, message,
     cadence, next due, the last result and its age, and per recipient `scheduled`, `pending`, `overdue` (pending for
     more than an interval), `acknowledged`, with runs missed.
+  - Backup and each recipient's latest (d20 batch70 AF2, viewer Aurora: "Freight review shows 12 missed runs despite
+    newer freight work in chat"; world n #107 verify-native-freight-receipts went to its owner Astra alone, every 10
+    min, so the owner line never fired). `backup: "sol"` on `reminder_add` or `reminder_edit` (`false` clears it): one
+    teammate told once when a recipient misses a run (a second run comes while the first waits), until that recipient
+    acknowledges: `astra missed a run of reminder #107 verify-native-freight-receipts (astra's, every 10m00s; you are
+    its backup): not acknowledged since tick 42358560 (10m00s ago), 1 run missed (...); astra's last result: ...;
+    reminder_ack {id: 107, for: "astra", result} records one for them`. The backup (or the owner) records a result
+    for a recipient with `reminder_ack {id, for, result}` (not a checklist): it clears that recipient's run, and the
+    result is theirs with `by`. The read's rows carry `backup` and `latest`, one per recipient: `{name, state,
+    acked_tick, acked_ago_s, result, by, waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick,
+    line}` (`astra: waiting since tick 42358560 (2h23m), 15 runs missed (...), backup sol told; last acknowledged
+    2h27m ago: K2 Fulgora ...`); the job's line ends with `latest: ...`, and `states` adds `backup sol told`. A job
+    from before keeps its last result for the recipient who gave it. Cost on the private copy: `reminders {all:
+    true}` over 47 jobs 9.6 ms against 7.4 ms before (54 KB against 36 KB).
   - The jobs live in the save, so a rollback restores them with the tick; a next run more than one interval past the
     tick is set again from it.
   - The site's Board card has a Reminders panel: owner, message, cadence and next due, the last result and its age,
-    and each recipient's state. tools/stream/live.py reads `reminders {all: true}` with the board, every board read.
+    and each recipient's state; with AF2 the backup and each recipient's latest (acknowledged how long ago, by whom
+    and with what, the result cut to 240 characters; or waiting how long, runs missed, backup told). Over the
+    reminders' 24 KB share push_live drops those results before any job (first the ones that repeat the job's last
+    result). tools/stream/live.py reads `reminders {all: true}` with the board, every board read.
 - The site (viewer Foobator, asked twice).
   - `/blueprints/`: the team's blueprint library from the newest shift's copy (tools/bplibrary.py writes
     runs/RUN/blueprints/index.json and NAME.txt each shift): per entry its name, author, footprint, entity counts,

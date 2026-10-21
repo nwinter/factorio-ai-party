@@ -114,6 +114,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wake-near N (the same waits: only an attack on ours or buildings of ours destroyed within N tiles of you wake it, 1..200; other urgent alerts come with the reply as held_alerts)
          --wake-on-orders (fh sleep, fh wait --until: a standing order's round finishing or stalling ends it; by default only your own plan's does)
          --no-board-wake (fh sleep, fh wait --until: a board item of yours assigned or changed does not end it; board_held lists them; an @-mention still does)
+         --reason TEXT (fh sleep, fh wait --until: your own reason to wait, up to 200 characters; the sleep line, sleep_check and the operator's idle check show it)
          --operator-repeat (FH_OPERATOR_REPEAT=1: print an operator message on every reply that carries it; by default once)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
          --full (after --wait: the whole status instead of outcome, position and inventory change)
@@ -726,8 +727,8 @@ function commandFlags(positionals: string[]): {label: string, own: string[], fla
     connect:['name','server','factorio','space-age','password-file','player-data','mods','niri'], 'stop-session':['session','name'], install:['mods'],
     deploy:[...FLAGS_GAME,'file'], watch:[...FLAGS_GAME,'file'], stream:FLAGS_GAME, run:[...FLAGS_GAME,...FLAGS_WAIT,'file'],
     view:[...FLAGS_GAME,'args','args-file','out'], doctor:FLAGS_GAME,
-    sleep:[...FLAGS_GAME,...FLAGS_WAIT,'args','args-file','until','then','require-met'],
-    wait:[...FLAGS_GAME,...FLAGS_WAIT,'args','args-file','until','then','max','require-met'],
+    sleep:[...FLAGS_GAME,...FLAGS_WAIT,'args','args-file','until','then','require-met','reason'],
+    wait:[...FLAGS_GAME,...FLAGS_WAIT,'args','args-file','until','then','max','require-met','reason'],
   };
   for (const m of ['say','confess','tell','operator','chronicle']) own[m] = [...FLAGS_CALL, ...MESSAGE_FLAGS];
   let label = `fh ${command}`, extra: string[] = [];
@@ -766,7 +767,7 @@ const CLI_OPTIONS = {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'no-wait':{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'require-met':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-near':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'no-board-wake':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'no-wait':{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'require-met':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-near':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'no-board-wake':{type:'boolean'}, reason:{type:'string'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -1642,9 +1643,12 @@ async function main() {
     // --no-board-wake (d18 batch39 A1, Luna and Grok: platform waits woke on board edits): a board item of yours assigned
     // or changed does not end it; the reply's board_held says them (a runtime from before it: said on stderr)
     let noBoard = values['no-board-wake'] === true;
+    let reasonOff = false;
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
       ...(noUrgent ? {wake_on_urgent:false} : near !== undefined ? {wake_on_urgent:{near}} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
-      ...(deaf ? {wake_on_messages:false} : {}), ...(noBoard ? {wake_on_board:false} : {}), ...wakeArgs(), ...call});
+      ...(deaf ? {wake_on_messages:false} : {}), ...(noBoard ? {wake_on_board:false} : {}),
+      // --reason TEXT (d20 batch70 AF1): the agent's own reason to wait, shown back in the sleep line and the idle report
+      ...(typeof values.reason === 'string' && !reasonOff ? {reason:values.reason} : {}), ...wakeArgs(), ...call});
     // A direct wait the runtime ran as a sleep (your queue runs: as_sleep) is followed from its reply.
     let started = begunReply ?? await harness.request('sleep',sleepArgs(quiet));
     if (!started.ok && deaf && /unknown argument wake_on_messages/.test(String(started.error?.message ?? ''))) {
@@ -1655,6 +1659,11 @@ async function main() {
     if (!started.ok && radius !== undefined && /wake_on_urgent must be true or false/.test(String(started.error?.message ?? ''))) {
       radius = undefined;
       process.stderr.write('--urgent-radius: this runtime has no urgent radius yet (it comes with the next harness deploy); urgent wakes use 40 tiles\n');
+      started = await harness.request('sleep',sleepArgs(quiet));
+    }
+    if (!started.ok && typeof values.reason === 'string' && /unknown argument reason/.test(String(started.error?.message ?? ''))) {
+      reasonOff = true;
+      process.stderr.write('--reason: this runtime\'s sleep takes no reason yet (it comes with the next harness deploy); slept without it\n');
       started = await harness.request('sleep',sleepArgs(quiet));
     }
     if (!started.ok && noBoard && /unknown argument wake_on_board/.test(String(started.error?.message ?? ''))) {

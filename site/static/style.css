@@ -833,5 +833,6 @@ html { scroll-padding-top: 76px; }
 .lt .lt-full { white-space: pre-wrap; overflow-wrap: anywhere; }
 .lt-short { display: block; }
 .evidence { display: grid; gap: 2px; font-size: .85em; margin-top: 2px; }
+.rem-latest { display: grid; gap: 2px; font-size: .85em; margin-top: 4px; }
 /* (d19 batch46 item 0) a reminder's state chip with batch41's missed-runs text is longer than the card: it wraps */
 .board-reminders .fx-chip { white-space: normal; overflow-wrap: anywhere; max-width: 100%; height: auto; }

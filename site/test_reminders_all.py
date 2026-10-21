@@ -47,6 +47,17 @@ def payload_tests():
     assert dropped and (all(big["jobs"][i]["done"] for i in dropped)  # finished ones go first
                         or all(i in dropped for i in range(12, 40) if big["jobs"][i]["done"])), ids
     assert ids == sorted(ids), ids  # the order kept
+    # (d20 batch70 AF2) the recipients' latest results go before any job: those repeating the last result first
+    lat = lambda r: [{"name": n, "state": "acknowledged", "acked_ago_s": 60, "result": r} for n in ("sol", "astra", "luna")]  # noqa: E731
+    mid = {"jobs": [job(i, last_result="a" * 300, latest=lat("a" * 300)) for i in range(25)], "total": 25}
+    pr = push_live.public_reminders(mid)
+    assert len(pr["jobs"]) == 25 and all(x["result"] is None for j in pr["jobs"] for x in j["latest"]), len(pr["jobs"])
+    other = {"jobs": [job(i, last_result="a" * 100, latest=lat("b" * 300)) for i in range(25)], "total": 25}
+    pr = push_live.public_reminders(other)
+    assert len(pr["jobs"]) == 25 and len(json.dumps(pr)) <= push_live.REMINDER_BYTES, len(json.dumps(pr))
+    assert pr["jobs"][0]["latest"][0]["state"] == "acknowledged" and pr["jobs"][0]["latest"][0]["result"] is None
+    small = {"jobs": [job(i, latest=lat("ok")) for i in range(3)], "total": 3}
+    assert push_live.public_reminders(small) == small
 
 
 JS_STUB = """
@@ -114,6 +125,25 @@ process.stdout.write(JSON.stringify(out));
     js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [job(i) for i in range(12)], "total": 12}) + ", team));"
     r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
     assert r.returncode == 0 and "reminders-all" not in r.stdout and r.stdout.count("<li>") == 12, r.stdout
+    # (d20 batch70 AF2, viewer Aurora) the backup and each recipient's latest: waiting with the runs missed and the
+    # last result, a result a backup recorded for them, acknowledged with none given, never acknowledged
+    j = job(107, name="verify-native-freight-receipts", backup="sol", latest=[
+        {"name": "astra", "agent": "astra", "state": "overdue", "acked_ago_s": 8820, "result": "K2 Fulgora PU777/1000", "waiting_s": 8580,
+         "missed": 15, "backup_told": True},
+        {"name": "sol", "agent": "sol", "state": "acknowledged", "acked_ago_s": 60, "result": "pod ledger: PU 346 landed", "by": "astra"},
+        {"name": "luna", "state": "acknowledged", "acked_ago_s": 120},
+        {"name": "grok", "state": "scheduled"}])
+    js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [j], "total": 1}) + ", team));"
+    r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
+    out = r.stdout
+    assert r.returncode == 0 and '<div class="rem-latest"><span class="fx-muted small">Backup: Sol</span>' in out, out + r.stderr
+    assert "Astra: waiting 143 min, 15 runs missed, backup told; last acknowledged 147 min ago:</span> K2 Fulgora PU777/1000" in out, out
+    assert "Sol: acknowledged 1 min ago by Astra for them:</span> pod ledger: PU 346 landed" in out, out
+    assert "luna: acknowledged 2 min ago, no result given" in out and "grok: scheduled, never acknowledged" in out, out
+    # an older state without them: nothing added
+    js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [job(1)], "total": 1}) + ", team));"
+    r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0 and "rem-latest" not in r.stdout, r.stdout
 
 
 def main():
