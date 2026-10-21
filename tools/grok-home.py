@@ -38,6 +38,10 @@ CONFIG = """# Written by tools/grok-home.py for a game workspace (not the owner'
 [cli]
 auto_update = false
 
+# Keep every session (Nick, d21): this home's sessions/ links to ~/.grok/sessions; unset or 0 disables Grok's idle cleanup.
+[storage]
+cleanup_ttl_days = 0
+
 # A fresh home opens the TUI with the "Help improve Grok [Opt out] [Opt in]" prompt; the owner's home has answered it.
 [privacy]
 privacy_banner_acked = "{acked}"
