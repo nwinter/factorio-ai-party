@@ -157,3 +157,28 @@ do
   fails(function() L.read(p,{charging='yes'}) end,'charging is true')
 end
 print('d20_batch59 U3 charging hotspots: ok')
+
+-- U5 (Sol #1566): a roboport's charging numbers at its quality, as 2.0.77 uses them (the private copy: 500 kW a slot,
+-- legendary 1250 kW; 4 slots either; input flow limit 5 MW, legendary 12.5 MW; buffer 100 MJ either).
+do
+  game={tick=900}
+  local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return {} end}
+  local function port(qname,mult)
+    return {valid=true,type='roboport',position={x=0,y=0},electric_buffer_size=1e8,energy=6.28e7,
+      quality={name=qname,logistic_cell_charging_energy_multiplier=mult},
+      prototype={logistic_parameters={charging_energy=25000/3,charging_station_count=4},
+        electric_energy_source_prototype={drain=2500/3,get_input_flow_limit=function(q) return (q.name=='legendary' and 2.5 or 1)*250000/3 end}}}
+  end
+  local n=N.port_power(port('normal',1))
+  eq(n.charging_kw_per_slot,500); eq(n.charging_stations,4); eq(n.charging_kw_max,2000); eq(n.input_flow_limit_kw,5000); eq(n.buffer_mj,100); eq(n.drain_kw,50)
+  local l=N.port_power(port('legendary',2.5))
+  eq(l.charging_kw_per_slot,1250); eq(l.charging_stations,4); eq(l.charging_kw_max,5000); eq(l.input_flow_limit_kw,12500); eq(l.buffer_mj,100)
+  eq(l.line,'legendary roboport: 4 charging slots at 1250 kW a robot, 5000 kW at most with all charging (and its 50 kW drain); buffer 62.8 of 100 MJ, refilled at up to 12500 kW (input flow limit)')
+  -- In inspect's roboport row (the cell's port).
+  local e=port('legendary',2.5)
+  e.logistic_cell={logistic_radius=25,construction_radius=55,charging_robot_count=4,to_charge_robot_count=8}
+  local r=N.of_entity(e)
+  eq(r.port.power.charging_kw_per_slot,1250); has(r.port.line,'4 charging')
+  eq(N.port_power({prototype={}}),nil,'no charging part: nothing')
+end
+print('d20_batch59 U5 roboport charging at quality: ok')

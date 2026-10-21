@@ -2661,6 +2661,24 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   roboport, `port` adds its own cell: `logistic_area`, `construction_area`, `stationed {logistic, construction}`,
   `charging`, `waiting` (by kind when the game lists them) and a `line` (`this roboport: logistic area (-5,-25)-(45,25),
   ...; stationed: 2 logistic, 1 construction robots; 0 charging, 0 waiting to charge`).
+  - `port.power` (d20 batch59 U5, Sol #1566): the roboport's charging numbers at its quality, as 2.0.77 uses them:
+    `quality`, `charging_stations`, `charging_kw_per_slot`, `charging_kw_max` (all slots charging), `drain_kw`,
+    `input_flow_limit_kw`, `buffer_mj`, `energy_mj` and a `line` (`legendary roboport: 4 charging slots at 1250 kW a
+    robot, 5000 kW at most with all charging (and its 50 kW drain); buffer 9.3 of 100 MJ, refilled at up to 12500 kW
+    (input flow limit)`).
+    - Sources: a slot is the prototype's `logistic_parameters.charging_energy` times the quality's
+      `logistic_cell_charging_energy_multiplier`; the slots are `logistic_parameters.charging_station_count`; the
+      buffer is the entity's `electric_buffer_size`; the input limit is the energy source's
+      `get_input_flow_limit(quality)`.
+    - Checked on the private copy (a peaceful lab surface, deleted after), normal and legendary roboports:
+      - Per slot, a robot gained 8,333 J a tick at normal (500 kW) and 20,833 J at legendary (1250 kW).
+      - With 12 robots at each, both showed 4 charging and 8 waiting. The quality's
+        `logistic_cell_charging_station_count_bonus` (5 at legendary) added no slot to a legendary roboport.
+      - Powered from empty, the buffer gained 82,500 J a tick at normal and 207,500 at legendary: the input flow
+        limit (5 MW, 12.5 MW) less the 50 kW drain. Both buffers are 100 MJ; both radii are 25 and 55.
+      - The game's `get_max_energy_usage` (2050 kW, legendary 5050 kW; `electricity.max_kw`) is the 4 slots plus
+        the drain.
+    - Cost: the reads take 0.49 ms over the copy's 54 roboports of network 243 (9 us a roboport).
 - An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
   reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
   `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,
