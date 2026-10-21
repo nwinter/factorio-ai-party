@@ -225,3 +225,72 @@ do
   defines,prototypes=nil,nil
   print('d21_batch66 AB3 ammunition routes through links gated closed now: ok')
 end
+
+-- AB4 (Sol #1681): Solstice at nauvis, schedule [nauvis, gleba] current 1, paused false, read no_schedule from 42819577 to
+-- 42828245 while its wait processing-unit >= 300 was false (246 in the hub), and left once 346 had come; the recheck
+-- said the call failed. Waiting at its current stop on conditions false now is said as the GUI shows it, apart from no
+-- schedule and no path, and is not failed.
+do
+  game={tick=42819577}
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,no_path=5,paused=7},inventory={hub_main=1,hub_trash=2},wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},gleba={}},fluid={},item={['processing-unit']={}}}
+  local pu=246
+  local hub={valid=true,get_inventory=function() return {get_item_count=function(x) local n=type(x)=='table' and x.name or x; return n=='processing-unit' and pu or 0 end,get_contents=function() return {} end} end,
+    get_logistic_sections=function() return {sections_count=0} end}
+  local pl={valid=true,name='Solstice',index=9,state=4,space_location={name='nauvis'},force={name='player'},paused=false,hub=hub}
+  local sch={get_record_count=function() return #(pl.schedule and pl.schedule.records or {}) end}
+  sch.go_to_station=function(i) pl.schedule.current=i; pl.state=1 end
+  sch.remove_record=function() end; sch.add_record=function() end
+  pl.get_schedule=function() return sch end
+  local p={force={platforms={pl},name='player'}}
+  game.forces={player=p.force}
+  local st={platform_stops={[9]={at='nauvis',tick=42815000}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    freight={where=function() return {at='nauvis',stopped=true} end,leg=function() return nil end},
+    circuit_condition=function(c) local a,cmp,n=c:match('^(%S+) (%S+) (%-?%d+)$'); return {first_signal={type='item',name=a},comparator=cmp,constant=tonumber(n)} end}
+  local waits={{type='time',ticks=3600},{type='item_count',condition='processing-unit >= 300',compare='and'}}
+  local r=space.platform_schedule(p,{platform='Solstice',stops={{station='nauvis',wait=waits},{station='gleba',wait={{type='time',ticks=10800}}}},current=1,paused=false})
+  eq(r.state,'no_schedule')
+  eq(r.recheck,nil,'waiting on conditions false now: no recheck, no failure')
+  local line='waiting at stop 1 (nauvis): conditions false now: time 60s: 0s left [holds] and item_count processing-unit >= 300: the hub holds 246, 54 to go [false]; the game reads no_schedule while it waits there and leaves when they hold (Solstice at Nauvis, shift52)'
+  eq(r.waiting,line)
+  eq(r.state_note,'state no_schedule: '..line..' (go to station 1 was called)')
+  has(r.current_note,'the current stop (1, nauvis) is the station it is at: waiting at stop 1 (nauvis): conditions false now:')
+  -- the stops read and the gate say it waits there
+  local stops=space.stops(pl)
+  has(stops[1],'1 nauvis (waiting here): time 60s: 0s left and item_count processing-unit >= 300: the hub holds 246, 54 to go')
+  has(stops[2],'2 gleba (next)')
+  local g=space.gate(p,{platform='Solstice'})
+  has(g.lines[1],'Solstice: at station nauvis (the game reads no_schedule); stop 1 of 2')
+  -- a recheck begun before (a queue step's) ends ok, with the waiting line
+  local v=space.recheck_read({platform='Solstice',first='no_schedule',tick=42819577,ends_tick=42819877,force='player'})
+  eq(v.ok,true); eq(v.waiting,line); has(v.line,'Solstice read no_schedule at tick 42819577 (the call\'s tick) and no_schedule 0 ticks later, at nauvis; waiting at stop 1 (nauvis)')
+  -- the conditions hold (346 came) and it still reads no_schedule: said, and the recheck goes on to fail as before
+  pu=346
+  local w=space.waiting_now(pl)
+  eq(w.met,true); has(w.line,'conditions hold now: time 60s: 0s left [holds] and item_count processing-unit >= 300: the hub holds 346 (met) [holds]; the game reads no_schedule')
+  game.tick=42819877
+  v=space.recheck_read({platform='Solstice',first='no_schedule',tick=42819577,ends_tick=42819877,force='player'})
+  eq(v.ok,false); has(v.error,'it reads no_schedule: waiting at stop 1 (nauvis): conditions hold now:')
+  -- an or: one group holding is enough
+  pu=0
+  pl.schedule.records[1].wait_conditions={{type='item_count',condition={first_signal={type='item',name='processing-unit'},comparator='>=',constant=300}},
+    {type='time',ticks=60,compare_type='or'}}
+  eq(space.waiting_now(pl).met,true)
+  -- the current stop elsewhere (Swiftlet at aquilo with the current on gleba): not waiting; the stuck text names the stop
+  pl.schedule.current=2
+  eq(space.waiting_now(pl),nil); eq(space.waiting_line(pl),nil)
+  v=space.recheck_read({platform='Solstice',first='no_schedule',tick=42819577,ends_tick=42819877,force='player'})
+  eq(v.ok,false); has(v.error,'it reads no_schedule with 2 stops set (current 2, gleba) while it is at nauvis: it has not left')
+  -- paused at its stop: not waiting (paused said apart)
+  pl.schedule.current=1; pl.paused=true
+  eq(space.waiting_now(pl),nil)
+  pl.paused=false
+  -- waiting_at_station reads the same line, without the no_schedule note
+  pl.state=4; pu=100
+  pl.schedule.records[1].wait_conditions={{type='item_count',condition={first_signal={type='item',name='processing-unit'},comparator='>=',constant=300}}}
+  eq(space.waiting_line(pl),'waiting at stop 1 (nauvis): conditions false now: item_count processing-unit >= 300: the hub holds 100, 200 to go [false]')
+  game,defines,prototypes=nil,nil,nil
+  print('d21_batch66 AB4 waiting at its stop on conditions false now: ok')
+end

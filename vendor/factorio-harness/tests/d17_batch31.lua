@@ -510,7 +510,7 @@ do
   end
   local v=later({platform='Kestrel II',stops={{station='nauvis'}},one_stop='as given'},true)
   eq(v.ok,false)
-  has(v.error,'Kestrel II read no_schedule at tick 100 (the call\'s tick) and still no_schedule 300 ticks later; the call failed: it reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule')
+  has(v.error,'Kestrel II read no_schedule at tick 100 (the call\'s tick) and still no_schedule 300 ticks later; the call failed: it reads no_schedule with 1 stop set (current 1, nauvis) while it is at ?: it has not left; seen across the journals: every one-stop schedule read no_schedule')
   eq(#pl.schedule.records,1)
   -- (A1, Cinder on shift36: next: true read no_schedule and it was flying 39 ticks later) a later read that goes on: both reads said
   v=later({platform='Kestrel II',stops={{station='nauvis'}},one_stop='as given'},false)

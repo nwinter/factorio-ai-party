@@ -1151,7 +1151,9 @@ return function(api)
       for _,pl in pairs(try(function() return f.platforms end) or {}) do
         if pl.valid then
           seen[pl.index]=true
-          local here=pl.state==defines.space_platform_state.waiting_at_station and try(function() return pl.space_location.name end) or false
+          -- (d21 batch66 AB4) stopped at a station reading no_schedule counts as there too (waiting_now)
+          local here=(pl.state==defines.space_platform_state.waiting_at_station or pl.state==defines.space_platform_state.no_schedule)
+            and not try(function() return pl.space_connection end) and try(function() return pl.space_location.name end) or false
           local r=st.platform_stops[pl.index]
           if not r then st.platform_stops[pl.index]={at=here,first=tick}
           elseif r.at~=here then st.platform_stops[pl.index]={at=here,tick=tick} end
@@ -1244,6 +1246,89 @@ return function(api)
     end
     return text
   end
+  -- (d21 batch66 AB4, Sol #1681: Solstice at Nauvis, current stop 1 nauvis, read no_schedule from tick 42819577 to
+  -- 42828245 while its wait processing-unit >= 300 was false (246 in the hub, none on the way at 42825293), and left by
+  -- 42829613 once 346 had come; the recheck said the call failed) a platform stopped at the station of its current
+  -- stop, not paused, reading waiting_at_station or no_schedule, waits there on that stop's conditions, as the schedule
+  -- GUI shows. Whether one condition holds now: true, false, or nil (not read).
+  local function cond_now(pl,w,arrived)
+    local t,c=w.type,w.condition
+    if t=='time' then
+      if not arrived.tick then return nil end
+      return (w.ticks or 0)-(game.tick-arrived.tick)<=0
+    elseif t=='inactivity' then
+      local last=try(function() return pl.get_schedule().tick_of_last_activity end) or 0
+      return game.tick-math.max(last,arrived.tick or arrived.first or 0)>=(w.ticks or 0)
+    elseif t=='item_count' and c and c.first_signal and not c.second_signal then
+      local inv=pl.hub and pl.hub.valid and try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+      local n=inv and try(function() return inv.get_item_count({name=c.first_signal.name,quality=c.first_signal.quality or 'normal'}) end) or 0
+      return compare(n,c.comparator or '<',c.constant or 0)
+    elseif t=='circuit' and c and c.first_signal then
+      if c.first_signal.name=='signal-dot' and c.constant==-2147483648 then return false end
+      local function wires(sig)
+        local n=0
+        for _,id in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+          local net=pl.hub and pl.hub.valid and try(function() return pl.hub.get_circuit_network(id) end)
+          if net then n=n+(try(function() return net.get_signal(sig) end) or 0) end
+        end
+        return n
+      end
+      return compare(wires(c.first_signal),c.comparator or '<',c.second_signal and wires(c.second_signal) or c.constant or 0)
+    elseif t=='all_requests_satisfied' then return #unmet(pl)==0
+    elseif t=='any_request_not_satisfied' then return #unmet(pl)>0
+    end
+    return nil
+  end
+  -- {stop, station, game_state, met (true, false, or nil: some not read), conditions [{text, holds, join}], line}, or nil
+  -- when it is not stopped at its current stop's station. The conditions are joined as the game joins them (and binds
+  -- before or).
+  function M.waiting_now(pl)
+    local st=platform_states[pl.state]
+    if st~='waiting_at_station' and st~='no_schedule' then return nil end
+    if try(function() return pl.paused end) or try(function() return pl.space_connection end) then return nil end
+    local sch=try(function() return pl.schedule end)
+    local records=sch and sch.records or {}
+    local cur=sch and sch.current or 1
+    local rec=records[cur]
+    local here=try(function() return pl.space_location.name end)
+    if not (rec and here and rec.station==here) then return nil end
+    local S=api.state and api.state()
+    local arrived=S and S.platform_stops and S.platform_stops[pl.index] or {}
+    if arrived.at~=here then arrived={} end
+    local g={ok=true,words={}}
+    local groups,conds={g},{}
+    for k,w in ipairs(rec.wait_conditions or {}) do
+      if k>1 and w.compare_type=='or' then g={ok=true,words={}}; groups[#groups+1]=g end
+      local ok=cond_now(pl,w,arrived)
+      local text=wait_text(pl,w,true,arrived)
+      conds[#conds+1]={text=text,holds=ok,join=k>1 and (w.compare_type=='or' and 'or' or 'and') or nil}
+      g.words[#g.words+1]=text..(ok==true and ' [holds]' or ok==false and ' [false]' or ' [not read]')
+      if ok==false then g.ok=false elseif ok==nil and g.ok then g.ok=nil end
+    end
+    local met=true
+    if #conds>0 then
+      local any,all_false=false,true
+      for _,x in ipairs(groups) do if x.ok==true then any=true end; if x.ok~=false then all_false=false end end
+      if any then met=true elseif all_false then met=false else met=nil end
+    end
+    local words={}
+    for _,x in ipairs(groups) do words[#words+1]=table.concat(x.words,' and ') end
+    local head=string.format('waiting at stop %d (%s): ',cur,here)
+    local line=#conds==0 and head..'no wait condition'
+      or head..(met==false and 'conditions false now: ' or met==true and 'conditions hold now: ' or 'conditions not all read: ')..table.concat(words,' or ')
+    if st=='no_schedule' then
+      line=line..(met==false and '; the game reads no_schedule while it waits there and leaves when they hold (Solstice at Nauvis, shift52)'
+        or '; the game reads no_schedule')
+    end
+    return {stop=cur,station=here,game_state=st,met=met,conditions=conds,line=line}
+  end
+  function M.waiting_line(pl) local w=M.waiting_now(pl); return w and w.line or nil end
+  -- the state note of a platform reading no_schedule while it waits at its current stop on conditions false now
+  function M.waiting_note(pl,state)
+    if state~='no_schedule' then return nil end
+    local w=M.waiting_now(pl)
+    return w and w.met==false and 'state no_schedule: '..w.line or nil
+  end
   -- Each stop of the schedule: its wait conditions, where the platform waits
   -- (with how far each condition is) or which stop it flies to, and the next one.
   function M.stops(pl)
@@ -1252,7 +1337,7 @@ return function(api)
     if #records==0 then return nil end
     local cur=sch.current or 1
     local here=try(function() return pl.space_location.name end)
-    local waiting=pl.state==defines.space_platform_state.waiting_at_station and records[cur] and records[cur].station==here
+    local waiting=M.waiting_now(pl)~=nil
     local st=api.state and api.state()
     local arrived=st and st.platform_stops and st.platform_stops[pl.index] or {}
     if arrived.at~=here then arrived={} end
@@ -1289,6 +1374,7 @@ return function(api)
         local state
         if try(function() return pl.paused end) then state='stopped (paused)'
         elseif pl.state==defines.space_platform_state.waiting_at_station then state='at station '..where
+        elseif M.waiting_now(pl) then state='at station '..where..' (the game reads no_schedule)'
         elseif pl.state==defines.space_platform_state.on_the_path then state='moving '..where
         else state='stopped ('..st:gsub('_',' ')..') at '..where end
         local gate
@@ -1389,7 +1475,7 @@ return function(api)
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) then
         local row={name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,
-          schedule=schedule_text(pl),stops=try(function() return M.stops(pl) end),departure=api.departure and try(function() return api.departure(pl.name) end) or nil,deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
+          schedule=schedule_text(pl),waiting=try(function() return M.waiting_line(pl) end),stops=try(function() return M.stops(pl) end),departure=api.departure and try(function() return api.departure(pl.name) end) or nil,deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
           weight=pl.weight and math.floor(pl.weight/1000) or nil}
         -- (d19 batch46 3) the latest edit of each setting: stops, paused, a request's minimum payload (min_payload)
         row.setting_edits=api.editlog and try(function() return api.editlog.lines('plat:'..pl.name) end) or nil
@@ -1629,7 +1715,12 @@ return function(api)
   -- (d17 batch31 C4, Astra and Sol 11:09: Kestrel II at Fulgora set to [nauvis] read no_schedule, the rebuild too, and
   -- the queue step said success, then waited) the state after the call: no_schedule, no_path, or paused when paused was
   -- not asked, fails the call (a failed queue step), with what the journals showed. The schedule stays as set.
-  M.STUCK_RULE='seen across the journals: every one-stop schedule read no_schedule (Sol\'s lone gleba, Luna\'s lone fulgora, Kestrel II at Fulgora set to [nauvis] current 1, Swiftlet), and so did schedules of two or more stops whose current is the stop it waits at (8 of 8, Sol at Aquilo, Luna at Fulgora); with current on another stop they left at once (Kestrel II [fulgora, nauvis] current 2)'
+  -- (d21 batch66 AB4) the cases behind the old rule ("8 of 8 with the current on the stop it waits at") read again in
+  -- the journals: Luna's 4 (shift32 05:38:14-05:38:34) had Spindle at gleba with the current on fulgora, and a rocket of
+  -- 120 carbon fiber launched to it at 05:38:10; it left by 05:38:46. Sol's (shift31 03:04:58-03:07:29) had Swiftlet at
+  -- aquilo with the current on aquilo (time 1 tick, held) or on gleba; no rocket was launched to it (aquilo's silo held a
+  -- ready rocket of 36 cryogenic science packs for it, not launched); it left at 03:07:54 after the GUI's go to station.
+  M.STUCK_RULE='seen across the journals: every one-stop schedule read no_schedule (Sol\'s lone gleba, Luna\'s lone fulgora, Kestrel II at Fulgora set to [nauvis] current 1, Swiftlet); with stops set, no_schedule was read while rockets launched to it were on their way (Spindle at gleba on shift32 left when the rocket arrived), while it waited at its current stop with its conditions false (Solstice at nauvis on shift52 left when they held), and with neither (Swiftlet at aquilo on shift31, current on aquilo or gleba, aquilo\'s silo holding a ready rocket for it, not launched; it left after the GUI\'s go to station)'
   -- (d18 batch38 A1, Sol 18:21: refused for no_schedule while the platform began flying moments later; duplicate edits
   -- and reversals followed) no_schedule and no_path are read again: the game updates a platform in a later tick. On
   -- shift36 Cinder (next: true at tick 29119760) was flying 39 ticks later, and Wayfarer (stop 2, go: true at 29611678)
@@ -1640,7 +1731,20 @@ return function(api)
   -- game sets it in the call).
   M.RECHECK_TICKS,M.RECHECK_EVERY=300,10
   local function stuck_why(pl,st,cleared)
-    if st=='no_schedule' and not cleared then return 'no_schedule: it follows no schedule and goes nowhere; '..M.STUCK_RULE end
+    if st=='no_schedule' and not cleared then
+      -- (AB4) waiting at its current stop on conditions false now: not stuck, said (waiting_now)
+      local w=M.waiting_now(pl)
+      if w and w.met==false then return nil end
+      local sch=try(function() return pl.schedule end)
+      local recs=sch and sch.records or {}
+      if w then return 'no_schedule: '..w.line..'; '..M.STUCK_RULE end
+      if #recs>0 then
+        local cur=sch.current or 1
+        return string.format('no_schedule with %d stop%s set (current %d, %s) while it is at %s: it has not left; %s',#recs,#recs==1 and '' or 's',cur,
+          tostring(recs[cur] and recs[cur].station or '?'),tostring(location(pl) or '?'),M.STUCK_RULE)
+      end
+      return 'no_schedule: it follows no schedule and goes nowhere; '..M.STUCK_RULE
+    end
     if st=='no_path' then return 'no_path: it has no way from where it is to its next stop and goes nowhere' end
   end
   -- (d19 batch48 cp2, Sol 18:01: Kestrel IV at Nauvis read no_schedule after stops+current 2 and a queue step failed at
@@ -1686,8 +1790,9 @@ return function(api)
     local why=stuck_why(pl,st,rc.cleared)
     local after=game.tick-rc.tick
     if not why then
-      return {ok=true,state=st,after_ticks=after,line=string.format('%s read %s at tick %d (the call\'s tick) and %s %d ticks later, at %s%s',rc.platform,rc.first,rc.tick,tostring(st),after,tostring(location(pl) or "?"),
-        rc.rockets and ' (it waited for the rockets launched to it)' or '')}
+      local w=st=='no_schedule' and M.waiting_now(pl)
+      return {ok=true,state=st,after_ticks=after,waiting=w and w.line or nil,line=string.format('%s read %s at tick %d (the call\'s tick) and %s %d ticks later, at %s%s%s',rc.platform,rc.first,rc.tick,tostring(st),after,tostring(location(pl) or "?"),
+        rc.rockets and ' (it waited for the rockets launched to it)' or '',w and '; '..w.line or '')}
     end
     if game.tick<rc.ends_tick then return nil end
     -- rockets launched to it still on the way (a later launch, or a slower rocket): wait on, up to ROCKET_HOLD
@@ -1744,7 +1849,7 @@ return function(api)
       local recs=pl.schedule and pl.schedule.records or {}
       local function name(i) return recs[i] and recs[i].station or '?' end
       local nxt=cur%n+1
-      local where=before=='waiting_at_station' and 'waiting at '..tostring(try(function() return pl.space_location.name end))
+      local where=(before=='waiting_at_station' or M.waiting_now(pl)) and 'waiting at '..tostring(try(function() return pl.space_location.name end))
         or pl.space_connection and 'flying to stop '..cur..' ('..name(cur)..')' or tostring(before)
       sch.go_to_station(nxt)
       local state=platform_states[pl.state]
@@ -1753,7 +1858,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),schedule=schedule_text(pl),recheck=rc,
         sent_to=string.format('from stop %d (%s) to stop %d (%s): go to station called (it was %s)%s',cur,name(cur),nxt,name(nxt),where,
           n==1 and '; its schedule has one stop, so the next stop is the same one' or ''),
-        state_note=rc and rc.line or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or nil}
+        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or M.waiting_note(pl,state)}
     end
     -- (d19 batch48 1, Sol 17:29: `current: 4` alone left Kestrel IV at Aquilo, no effect, no error) current alone: the
     -- GUI's go to station on that record, the records and their waits kept; current on the stop it is at or already
@@ -1769,6 +1874,8 @@ return function(api)
       local function name(i) return recs[i] and recs[i].station or '?' end
       local before=platform_states[pl.state]
       local here=try(function() return pl.space_location.name end)
+      -- (AB4) waiting at its current stop while the game reads no_schedule is waiting there too
+      if before=='no_schedule' and M.waiting_now(pl) then before='waiting_at_station' end
       if new==cur and (before=='waiting_at_station' or before=='on_the_path') then
         error(string.format('nothing changed: stop %d (%s) is already the current stop (%s); current %d sends it to stop %d now, next: true to the stop after the current one, stops with current rewrites the schedule',
           cur,name(cur),before=='waiting_at_station' and 'it waits there' or 'it flies there',cur%n+1,cur%n+1),0)
@@ -1781,7 +1888,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),recheck=rc,
         sent_to=string.format('from stop %d (%s) to stop %d (%s): go to station called (it was %s), the records and their waits kept',cur,name(cur),new,name(new),
           before=='waiting_at_station' and 'waiting at '..tostring(here) or tostring(before)),
-        state_note=rc and rc.line or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or nil}
+        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)' or M.waiting_note(pl,state)}
     end
     -- stop: N, wait: [...] (d17 batch31 B8, Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer
     -- >= 24000 she set current 2, since current = the stop it waits at had read no_schedule, and it left at once with
@@ -1806,7 +1913,7 @@ return function(api)
       local new_cur=a.current~=nil and api.integer(a.current,cur,1,n,'current') or cur
       local before=platform_states[pl.state]
       local here=try(function() return pl.space_location.name end)
-      local waiting=before=='waiting_at_station' and recs[cur] and recs[cur].station==here
+      local waiting=(before=='waiting_at_station' or before=='no_schedule' and M.waiting_now(pl)) and recs[cur] and recs[cur].station==here
       -- the new waits at the stop it waits at: true, false or nil (not read) each, joined as the game joins them
       -- (and binds before or)
       local st=api.state and api.state()
@@ -1893,7 +2000,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),schedule=schedule_text(pl),
         edited=string.format('stop %d (%s): %d wait condition%s set in place; the records and the current stop (%d) %s; state %s%s',idx,station,#waits,#waits==1 and '' or 's',
           new_cur,new_cur~=cur and string.format('changed from %d (current)',cur) or 'kept',state,state~=before and ' (was '..tostring(before)..')' or ' (kept)'),
-        leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,recheck=rc,state_note=rc and rc.line or nil,
+        leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,recheck=rc,waiting=M.waiting_line(pl),state_note=rc and rc.line or M.waiting_note(pl,state),
         launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil,
       wait_facts=api.wait_need and try(function() return api.wait_need(pl) end) or nil,
         harness_waits=W and W.line(pl.name) or nil}
@@ -1901,7 +2008,7 @@ return function(api)
     local circuit_note,sent,go_error,rebuilt,one_stop_note
     -- (d17 batch23 A0b) where it is before the edit: the station it waits at, or the leg it flies
     local before=platform_states[pl.state]
-    local waits_at=before=='waiting_at_station' and try(function() return pl.space_location.name end) or nil
+    local waits_at=(before=='waiting_at_station' or M.waiting_now(pl)) and try(function() return pl.space_location.name end) or nil
     local leg_before=pl.space_connection and try(function() return freight.leg(pl) end) or nil
     assert(a.keep_leg==nil or type(a.keep_leg)=='boolean','keep_leg must be true or false')
     if a.stops~=nil then
@@ -1994,9 +2101,11 @@ return function(api)
     -- said when it applies.
     local sch_now=a.stops~=nil and pl.schedule
     local cur_rec=sch_now and sch_now.records and sch_now.records[sch_now.current]
+    -- (AB4) it waits there on that stop's conditions: each with its value now (waiting_now)
+    local wnow=M.waiting_now(pl)
     local current_note=waits_at and cur_rec and cur_rec.station==waits_at and string.format(
-      'the current stop (%d, %s) is the station it waits at now: on world n 8 of 8 such edits (Sol at Aquilo, Luna at Fulgora) read no_schedule, the record by record rebuild too; with the current set to the next stop (current: %d) it departed at once',
-      sch_now.current,waits_at,sch_now.current % #sch_now.records + 1) or nil
+      'the current stop (%d, %s) is the station it is at: %s',sch_now.current,waits_at,
+      wnow and wnow.line or 'it waits there on that stop\'s conditions') or nil
     -- (A0b) the leg before and after an edit in flight
     local leg_note
     if leg_before and cur_rec then
@@ -2005,7 +2114,9 @@ return function(api)
         to==leg_before.to and ': the same destination' or to==leg_before.from and ': it turns back the way it came' or ': a new destination')
     end
     -- the states in which it is not going anywhere, said in the reply
-    local state_note=state=='no_schedule' and 'state no_schedule: the platform follows no schedule now and goes nowhere'..(sent and ' (go to station '..sent.index..' was called)' or '')..(current_note and '; '..current_note or '')
+    local state_note=state=='no_schedule' and wnow and wnow.met==false and 'state no_schedule: '..wnow.line..(sent and ' (go to station '..sent.index..' was called)' or '')
+      or state=='no_schedule' and 'state no_schedule: '..(pl.schedule and #(pl.schedule.records or {})>0 and 'the game reads no_schedule with stops set; it has not left' or 'the platform follows no schedule now and goes nowhere')
+        ..(sent and ' (go to station '..sent.index..' was called)' or '')..(current_note and '; '..current_note or '')
       or state=='no_path' and 'state no_path: the platform has no way from where it is to its next stop and goes nowhere'
       or state=='paused' and 'state paused: the platform goes nowhere until unpaused (paused: false)'
       or nil
@@ -2016,7 +2127,7 @@ return function(api)
     local rc
     if a.stops~=nil or a.paused~=nil then rc=stuck(pl,a,rebuilt,a.stops~=nil and #a.stops==0); M.recheck_start(p,rc) end
     if rc then state_note=state_note..'; '..rc.line end
-    return {name=pl.name,state=state,state_note=state_note,recheck=rc,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),one_stop=one_stop_note,
+    return {name=pl.name,state=state,state_note=state_note,waiting=wnow and wnow.line or nil,recheck=rc,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),one_stop=one_stop_note,
       sent_to=sent and string.format('stop %d (%s): go to station called',sent.index,sent.station) or nil,go_error=go_error,rebuilt=rebuilt,note=note,circuit_note=circuit_note,
       current_note=current_note,leg=leg_note,read_as=read_as and #read_as>0 and read_as or nil,waits_run=runs and #runs>0 and runs or nil,fluid_count_note=fluid_note,
       harness_waits=api.platwait and api.platwait().line(pl.name) or nil,
@@ -2055,7 +2166,7 @@ return function(api)
   function M.platform_schedule(p,a)
     local plw=select(2,pcall(M.platform,p,a.platform))
     if type(plw)~='table' then plw=nil end
-    local function waiting(x) return platform_states[x.state]=='waiting_at_station' end
+    local function waiting(x) return platform_states[x.state]=='waiting_at_station' or M.waiting_now(x)~=nil end
     local from=plw and waiting(plw) and try(function() return plw.space_location.name end) or nil
     local out1=M.platform_schedule_call(p,a)
     if from and plw.valid and not a.dry_run and not waiting(plw) then
@@ -2669,9 +2780,9 @@ return function(api)
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"], imports (a platform hub, a section switched on: each import request "item from planet: asks N, holds H, W on the way, lacks L", on the way being what rockets launched to the hub carry, the hub GUI\'s in-transit count)}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub that alters what its requests keep of an item it holds: what they would keep and kept, by import planet, and what goes down to the landing pads of its stops, where it waits first then its schedule\'s: at each stop their ask less what they hold, beyond what its requests from that planet keep; or that it stays aboard), sends_down_rule (the rule, with the two cases it comes from); call with no set/clear/active to just read'},
     platform={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',platform='optional platform name (or name): the platforms read of that one (as platforms {platform}); none: every platform',name='the same as platform',compact='as platforms',returns='as platforms'},
-    platforms={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='true: a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received, those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working, from a read of each pump once a second at a phase 7 ticks later each second, so a minute meets every tick of a second once), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), every place aboard now; in flight the reserve at the arrival at that rate, or when it runs out first, counted as platform_endurance counts it: ammunition that can reach a turret, rockets on their way up, made at most what the ingredients aboard allow, and binds: the limit that sets what is made; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, imports (each import request: asks, holds, on the way in rockets launched to the hub (the hub GUI\'s in-transit count), lacks), requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='true: a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received, those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working, from a read of each pump once a second at a phase 7 ticks later each second, so a minute meets every tick of a second once), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), every place aboard now; in flight the reserve at the arrival at that rate, or when it runs out first, counted as platform_endurance counts it: ammunition that can reach a turret, rockets on their way up, made at most what the ingredients aboard allow, and binds: the limit that sets what is made; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, waiting (stopped at the station of its current stop, not paused, the game reading waiting_at_station or no_schedule: \'waiting at stop N (station): conditions false now: each condition with its value [holds|false|not read]\', or hold now; the game reads no_schedule while a platform waits at a stop it was sent to while there), stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, imports (each import request: asks, holds, on the way in rockets launched to the hub (the hub GUI\'s in-transit count), lacks), requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
-    platform_schedule={one_stop='"as given": one stop written alone (default: one stop that is not where the platform is goes as [where it is, that stop], current 2, as every one-stop schedule in the journals read no_schedule; the reply\'s one_stop says so). Any call that changes the schedule or paused fails when the platform then reads paused without paused: true; no_schedule or no_path read in the call\'s tick are read again every 10 ticks for up to 300 (the game updates a platform in a later tick: Cinder flew 39 ticks after such a read): a queue step waits for that read and fails only when it still reads so; a direct call\'s reply has recheck and the second read comes as a tell from platform_schedule (the schedule stays as set; the error gives the rule seen)',stop='1-based record, with wait (B8): that stop\'s wait conditions replaced in place (the schedule\'s own wait condition calls), the records, the current stop and the state kept; current with it changes the current stop too. Refused, nothing changed, when the edit makes the platform leave now (current set to another stop while it waits; the stop it waits at left with no wait; its new waits holding now: time from its arrival, item_count against the hub, circuit against the hub\'s wires, all_requests_satisfied) unless go: true. Returns edited, leaves, may_leave (waits not read that may hold), read_as, waits_run, harness_waits',wait='with stop: that stop\'s waits, as a stops entry\'s wait ([] for none)',go='true, with stop: make an edit that sends the platform on now',next='true, alone: the game\'s go to station on the stop after the current one now (the records and their waits kept); sent_to says from which stop to which',platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_not_satisfied|any_request_zero|time|inactivity|item_count|fluid_count|circuit, ticks? (time, inactivity), condition? (item_count, fluid_count, circuit: "thruster-fuel >= 10000" or {signal, comparator, value | signal2}; item_count an item, fluid_count a fluid; circuit any signal on the hub\'s red and green wires; {item|fluid, count|at_least} reads as "NAME >= N", seconds as ticks, said in read_as; any other field is refused), compare=and|or, harness? (fluid_count: true: the harness reads the storage tanks and sends the platform on, the game\'s record holding a circuit wait that never holds; with time and item_count waits joined by and only)}]}; e.g. {"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}; [] clears; circuit_note when the hub has no wire',current='1-based stop to head for (default 1); alone (no stops): go to that stop now, the records and their waits kept (the GUI\'s go to station), refused when it is already the current stop',keep_leg='optional true, while flying: the current stop is the stop for the leg\'s destination (refused when the stops hold none; current goes without it)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)',returns='name, state (read after the change), state_note (no_schedule, no_path or paused: the platform goes nowhere), recheck (a no_schedule or no_path read: read again, its line), at, paused, schedule; with stops: sent_to (the GUI\'s go to station called for current), rebuilt (when the state read no_schedule after the records were set: written again record by record as the GUI does and sent again, with the state after), go_error; current_note (the current stop is the station it waits at now: on world n 8 of 8 such edits read no_schedule; with the current on the next stop it departed at once); leg (in flight: the leg before the edit and the current stop now: the same destination, back the way it came, or new); note, circuit_note'},
+    platform_schedule={one_stop='"as given": one stop written alone (default: one stop that is not where the platform is goes as [where it is, that stop], current 2, as every one-stop schedule in the journals read no_schedule; the reply\'s one_stop says so). Any call that changes the schedule or paused fails when the platform then reads paused without paused: true; no_schedule or no_path read in the call\'s tick are read again every 10 ticks for up to 300 (the game updates a platform in a later tick: Cinder flew 39 ticks after such a read): a queue step waits for that read and fails only when it still reads so; a direct call\'s reply has recheck and the second read comes as a tell from platform_schedule (the schedule stays as set; the error gives the rule seen)',stop='1-based record, with wait (B8): that stop\'s wait conditions replaced in place (the schedule\'s own wait condition calls), the records, the current stop and the state kept; current with it changes the current stop too. Refused, nothing changed, when the edit makes the platform leave now (current set to another stop while it waits; the stop it waits at left with no wait; its new waits holding now: time from its arrival, item_count against the hub, circuit against the hub\'s wires, all_requests_satisfied) unless go: true. Returns edited, leaves, may_leave (waits not read that may hold), read_as, waits_run, harness_waits',wait='with stop: that stop\'s waits, as a stops entry\'s wait ([] for none)',go='true, with stop: make an edit that sends the platform on now',next='true, alone: the game\'s go to station on the stop after the current one now (the records and their waits kept); sent_to says from which stop to which',platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_not_satisfied|any_request_zero|time|inactivity|item_count|fluid_count|circuit, ticks? (time, inactivity), condition? (item_count, fluid_count, circuit: "thruster-fuel >= 10000" or {signal, comparator, value | signal2}; item_count an item, fluid_count a fluid; circuit any signal on the hub\'s red and green wires; {item|fluid, count|at_least} reads as "NAME >= N", seconds as ticks, said in read_as; any other field is refused), compare=and|or, harness? (fluid_count: true: the harness reads the storage tanks and sends the platform on, the game\'s record holding a circuit wait that never holds; with time and item_count waits joined by and only)}]}; e.g. {"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}; [] clears; circuit_note when the hub has no wire',current='1-based stop to head for (default 1); alone (no stops): go to that stop now, the records and their waits kept (the GUI\'s go to station), refused when it is already the current stop',keep_leg='optional true, while flying: the current stop is the stop for the leg\'s destination (refused when the stops hold none; current goes without it)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)',returns='name, state (read after the change), waiting (at the station of its current stop, not paused, the game reading waiting_at_station or no_schedule: \'waiting at stop N (station): conditions false now: each with its value\', or they hold now), state_note (no_schedule waiting on conditions false now: that line, and no recheck or failure; no_schedule otherwise, no_path or paused: it goes nowhere), recheck (any other no_schedule or no_path read: read again, its line), at, paused, schedule; with stops: sent_to (the GUI\'s go to station called for current), rebuilt (when the state read no_schedule after the records were set: written again record by record as the GUI does and sent again, with the state after), go_error; current_note (the current stop is the station it is at: it waits there on that stop\'s conditions, the waiting line); leg (in flight: the leg before the edit and the current stop now: the same destination, back the way it came, or new); note, circuit_note'},
     drop={partial='optional true: a queue step that sends part of what was asked (without full, pod 1 of several) is done; without it such a step fails. Every reply that sent part says partial {sent, stayed (still in the hub), why}',up_to='optional true: drop what the hub holds now of each item, up to its count (up_to says what it held); holding none of any, the drop is done with nothing sent (nothing_to_drop), a queue step too',platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',
       full='true: send every pod the list takes (a pod holds 10 slots); pods beyond the free hatches go as each hatch frees up (one every 2 s) while your character and queue go on (status drop_pending, then last_drop: outcome dropped | short | failed | timed_out; --wait waits for them). Without it only the first pod goes and short says what stays in the hub',
       dry_run='true: send nothing; the pod split (each pod\'s items, in the list\'s order), freshness (the hub\'s stacks of those items: their spread, and how many a unit the running research takes and its units left), the hatches, what the hub holds less of, and the landing pad\'s room for what would go (pod 1, or every pod with full): pad_room (its free slots of its slots up to the red-X limit, what takes the others, the new slots the drop needs, and what would not fit and land on the ground around the pad), pad_free, spill (items); a real drop reports pad_room and spill too, read before it sends',

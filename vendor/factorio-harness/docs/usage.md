@@ -10537,3 +10537,38 @@ stopped at a turret's own feeder switched off.
   the gate line with "on its wires: firearm-magazine 15" (what the belt read gave), 4 behind the gate. Opened: "maker",
   no gate. The turret's own feeder held off: 5 reach it, 16 behind the gate. A turret on a belt nothing loads: preload
   only, STOPPED.
+
+## d21 batch66 AB4 (eng/d20-batch66)
+
+AB4 (Sol #1681): Solstice at Nauvis, schedule [nauvis, gleba] current 1, paused false, read `no_schedule` from tick
+42819577; the recheck failed the call. It left by 42829613 once 346 processing units had come.
+- Sol's journal (shift52): the state read no_schedule at 42820518, 42822827, 42825293, 42826616, 42827718 and 42828245.
+  At 42825293 and 42826616 nothing was on the way and the hub held 246 processing units against its wait
+  processing-unit >= 300. At 42829613 it read on_the_path, nauvis->gleba.
+- The 8 cases behind the old rule ("8 of 8 edits whose current stop was the station it waits at read no_schedule"),
+  read again:
+  - Luna's 4 (shift32 05:38:14-05:38:34): Spindle was at gleba, not fulgora, and its current stop was fulgora. A
+    rocket of 120 carbon fiber had been launched to it at 05:38:10. It left by 05:38:46.
+  - Sol's 4 (shift31 03:05:03-03:06:33): Swiftlet at aquilo read no_schedule before the first call (03:04:58, current
+    on gleba) and after each call, with the current on aquilo (a 1-tick time wait, held) or on gleba. No rocket was
+    launched to it then. Aquilo's silo held a ready rocket of 36 cryogenic science packs for it, not launched. It left
+    at 03:07:54, after the operator's GUI go to station and a 3-stop schedule.
+- Changed (space.lua, platwait.lua; runtime deploy needed):
+  - `waiting_now`: a platform stopped at the station of its current stop, not paused, the game reading
+    waiting_at_station or no_schedule. Each condition of that stop is read with its value now and whether it holds
+    (time from the arrival the harness saw, inactivity, item_count in the hub, circuit on the hub's wires,
+    all_requests_satisfied, any_request_not_satisfied; others not read), joined as the game joins them.
+  - `platforms` rows and every `platform_schedule` reply have `waiting`: `waiting at stop 1 (nauvis): conditions false
+    now: time 60s: 0s left [holds] and item_count processing-unit >= 300: the hub holds 246, 54 to go [false]`, with
+    "; the game reads no_schedule while it waits there and leaves when they hold" when it reads no_schedule.
+  - That case is not stuck: no recheck, no failed call or queue step; the state_note gives the line. A recheck begun
+    before ends ok with it. A no_schedule with the conditions holding, or with the current stop elsewhere, is read
+    again and fails as before, its text naming the stops set ("no_schedule with 2 stops set (current 2, gleba) while
+    it is at nauvis: it has not left"). `M.STUCK_RULE` gives the journals as read again.
+  - `stops` marks that stop "waiting here" with the values; `platform_gate` says "at station nauvis (the game reads
+    no_schedule)"; `current_note` gives the waiting line; `current` alone and `next` treat it as waiting there; the
+    harness's own waits (platwait) and the arrival tick count it.
+- Headless copy: platform B66wait at Nauvis (made, then destroyed), given [nauvis (iron-plate >= 100), gleba] current
+  1: the game read waiting_at_station (the copy did not give no_schedule); `waiting` and the platforms row said
+  "conditions false now: item_count iron-plate >= 100: the hub holds 0, 100 to go [false]", the gate "at station
+  nauvis". 100 iron plates put in the hub: waiting_for_departure, current 2.
