@@ -9636,3 +9636,31 @@ fh watch    # deploy on every change
   read `missing science packs 100%`, used 0, and agricultural packs spoiled in it read `used unknown for
   agricultural-science-pack in 1 of 22 intervals (packs spoiled); spoil results in its trash: spoilage 3`.
   Tests: tests/d20_batch55.lua (P8).
+## d20 batch60 (eng/d20-batch60)
+- V1 (Sol, board #1470: a paper outer-ship supply design, #1467, needed rounds a minute and damage a shot per weapon at
+  the research done; platform_defense gave damage a second only). Not in main before: platform_defense's damage on the
+  route (batch35 B6, batch52 K5) multiplies the listed damage by 60 / cooldown x (1 + shooting speed), with no shots,
+  rounds or items a minute and no quality. `platform_defense` now returns `ammo_use` (ammorate.lua; `ammo_use: false`
+  leaves it out, `"all"` adds every ammo turret prototype with every ammunition of its categories, normal quality): per
+  turret, turret quality, ammunition and its quality (held in the turrets, or in the hub when none of that kind holds
+  it): cooldown_ticks (attack_parameters.cooldown x the ammo type's cooldown_modifier over 1 + the force's
+  get_gun_speed_modifier for its category), shots_per_min, rounds_per_shot (ammo_consumption_modifier x the ammo type's
+  consumption_modifier), magazine_size, items_per_min (each turret) and items_per_min_all, damage_per_shot and damage by
+  type (the ammo type's damage, a projectile's attack_result included, x the ammo quality's default_multiplier x (1 +
+  get_ammo_damage_modifier) x (1 + get_turret_attack_modifier) x damage_modifier; before resistances), and sources:
+  the technologies whose gun-speed, ammo-damage and turret-attack effects give each bonus, by name and levels
+  researched (an infinite one counts its levels up to the one under way), with any part not from research. The
+  technologies with those effects are indexed from the prototypes once (every technology read took 12.7 ms on the
+  private copy). Checked on the private copy (2.0.77, its research: bullet speed +150%, damage +140%, gun-turret attack
+  +140%; rocket speed +340%, damage +280%; railgun none), each turret firing at one target kept in reach (healed every
+  0.2 s; the asteroid also put back in place): gun-turret 718 rounds in 1722 ticks (25.0/s; ammo_use 1500/min),
+  rocket-turret 63 in 1722 (one in 27.33 ticks; 27.27), railgun-turret 9 in 1540 ticks (171 each, a 0.1 s poll; 170);
+  normal and legendary turrets of each kind used the same rounds. Damage: firearm-magazine 18.75 a shot on a behemoth
+  worm (28.8 less its 10 flat), legendary magazines 61.9 (72 less 10), the same 43 rounds in the same time; rockets 524
+  (760 less 10, x 0.7), legendary rockets killed the 3000 hp worm in 3; railgun-ammo 6300 on a huge promethium asteroid
+  (10000 less 3000, x 0.9), a legendary round destroyed it in one. So turret quality changes neither shots nor damage,
+  and ammunition quality multiplies the damage. ammorate run on the copy's turrets gave those numbers (8.2 ms the first
+  call with the index, 2.4 ms after). Left out: target switching (a rocket turret across 16 worms fired 2.05/s, not
+  2.2, and spent 92 rockets on 13 kills that 78 would make by damage; railguns turn between targets) and resistances
+  (the route's damage reads them); electric and fluid turrets (no ammunition items). The copy's test surface was deleted
+  after. agent/ref/space-age.md has it. Tests: tests/d20_batch60.lua.
