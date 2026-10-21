@@ -224,7 +224,9 @@ return function(api)
   M.SURFACE_ACTIONS = {'blueprint_save', 'blueprint_capture', 'rates', 'rotate', 'upgrade', 'placements', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace', 'deliver', 'belt_route', 'pole_route', 'map', 'grid', 'observe', 'screenshot', 'power',
     -- (d20 batch62 X4, Astra #1555) reads of our entities a player makes there by remote view
-    'heat_budget', 'ports', 'ingredient_gap', 'defense', 'flamers', 'cargo'}
+    'heat_budget', 'ports', 'ingredient_gap', 'defense', 'flamers', 'cargo',
+    -- (d20 batch62 X5, Astra #1557) a blueprint's ghosts on a planet, as place_ghosts there
+    'paste', 'blueprint_place'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), platform_rearm (platform=), drop (hub items down to the planet) and land; '
     .. 'by remote view with platform=NAME: ' .. table.concat(M.PLATFORM_ACTIONS, ', ') .. '; with surface=NAME (a planet): ' .. table.concat(M.SURFACE_ACTIONS, ', ')
