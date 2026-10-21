@@ -79,18 +79,29 @@ return function(api)
     clean_view(p)
   end
   local function distance(a, b) return ((a.x-b.x)^2 + (a.y-b.y)^2)^0.5 end
+  -- A character's spot on the ground. Flying (mech armor, 2.0.77) its position is drawn flight_height tiles north of
+  -- the ground: on a private copy y + flight_height stayed put while y rose about 1.1 tiles on takeoff, fell on each
+  -- landing mid-walk and bobbed 0.3 to 0.5 tiles every 95 ticks while it hovered (d20 batch65 AA6, viewer Foobator: the
+  -- camera followed it up and down). On the ground flight_height is 0, so walking shots are as before.
+  local function flight_height(c) return c.flight_height end
+  local function ground(c)
+    local pos = c.position
+    local ok, h = pcall(flight_height, c)
+    if ok and type(h) == 'number' and h ~= 0 then return {x=pos.x, y=pos.y + h} end
+    return pos
+  end
   -- Where a follow target is: a bot (alive or where it died) or a player.
   local function locate(name)
     local b = api.bot(name)
     if b then
       local c = b.character
-      if c and c.valid then return c.position, c.surface end
+      if c and c.valid then return ground(c), c.surface end
       return b.position, game.get_surface(b.surface or 'nauvis')
     end
     local p = game.get_player(name)
     if p and p.valid then
       local c = p.character
-      if c and c.valid then return c.position, c.surface end
+      if c and c.valid then return ground(c), c.surface end
       return p.position, p.surface
     end
   end
