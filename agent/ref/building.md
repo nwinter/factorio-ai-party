@@ -230,6 +230,10 @@
 - `blueprint_rename {name, new_name}`: its author any time, anyone after 24 game hours unused.
   Example: `./fh call blueprint_rename --args '{"name":"smelter-row","new_name":"smelter-row-v2"}'`
 - `blueprint_delete {name}`: who may, as `blueprint_rename`.
+- `blueprint_retire {name, reason, replaced_by}` marks an entry retired, `replaced_by` another entry of the library;
+  `{name, clear: true}` clears it. Who may, as `blueprint_rename`. Its description stays as written; `blueprint_list`,
+  an export, and a paste or dry run of it say `retired by X: reason; replaced by NAME`.
+  Example: `./fh call blueprint_retire --args '{"name":"smelter-row","reason":"jams","replaced_by":"smelter-row-v2"}'`
 - Dry runs (`"dry_run": true` on `build`, `place_ghosts`, `paste`) place nothing and report the plan: per entity
   whether it fits or what blocks it and where, blocked entities first and all of them in `blocked` (up to 200) apart
   from those needing tiles; the tiles an entry needs (landfill, foundation, shallow oil, water, and on a platform the
