@@ -1887,6 +1887,7 @@ M.EXAMPLES={
   collect={{positions={{x=12.5,y=4.5},{x=15.5,y=4.5}},item='iron-plate'}},
   feed={{positions={{x=12.5,y=4.5}},item='coal',count=10}},
   inspect={{position={x=23,y=73}}},
+  character_settings={{personal_logistics=true,personal_roboport=false},{filters={{slot=1,item='firearm-magazine'},{slot=2,item=false}}}},
   conflicts={{name='pumpjack',position={x=-4.5,y=101.5}}},
   build={{item='stone-furnace',position={x=10,y=4}},{item='transport-belt',direction='east',builds={{position={x=10.5,y=6.5}},{position={x=11.5,y=6.5}}}}},
   place_ghosts={{entities={{name='assembling-machine-2',position={x=20.5,y=8.5},direction='north'}}}},
@@ -1922,6 +1923,7 @@ function handlers.describe(_,a)
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, and their reach and sight come from its position; reads see by remote view, as the map does: inspect, belt_flow, trace and screenshot with position in any chunk our force sees now on your surface, scan, observe and nearest centred on any charted chunk, surface= and platform= elsewhere',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
+      character_settings={personal_logistics='optional boolean: the personal logistics switch (the master switch of your requests; off: no request is made)',personal_roboport='optional boolean: the personal roboport switch (off: it sends no construction robots)',movement_bonus='optional boolean: the equipment movement bonus switch (off: exoskeletons give no speed)',filters='optional 1..200 {slot, item, quality?}: main inventory slot filters as a middle-click sets them (item false clears one); a slot that holds an item takes a filter for that item only',returns='personal_logistics, personal_roboport, movement_bonus (on|off), filters [{slot, item, quality, holds}], filters_line, networks {logistic, construction, personal_roboport, not_dispatched (what the game shows stops robots now), unfilled (as requests)}; with an edit: changed ["what was -> now"] or unchanged. Every argument is checked before anything changes; an edit changes only what it names'},
       equipment={operation='insert|remove|list (default list)',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal',vehicle='optional: a vehicle\'s grid instead of your armor\'s, by unit_number or {x,y} (a tank 6x8 and a spidertron 10x6 have one; a car, locomotive or wagon does not); insert and remove in reach or seated, as its GUI allows; list also by remote view in a chunk our force sees',returns='insert/remove: what moved, where, grid (size, equipment, free_cells, shield, battery_mj); list: the same with rows (each piece at its cell)'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
       shoot={fire_anyway='optional true: fire area ammunition (explosive rockets and shells) even when the blast at the target reaches our own entities; without it such a shot is refused, naming them, and auto fire holds at such a target (last: held_blast)',retreat='optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): checked every 5 ticks; when the health (or the armor\'s shield) falls under it during the action, the action ends retreated and you go back to `to` at once (on foot walking with avoid_enemies and the guns on auto while ammunition lasts; driving: the vehicle driven back); last.retreated: why, from, health, to; the walk back ends retreated on arrival; false: not even the standing retreat_guard',position='{x,y} or auto=true',ticks='1..600',vehicle='optional: the vehicle whose guns fire (unit_number or {x,y}): the one you sit in as its gunner; a vehicle you drive by remote view is refused (its guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player); a whole drive\'s fire: vehicle {drive, combat: true}',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
@@ -16136,6 +16138,8 @@ passive.circuit_set=true; passive.wire=true
 -- wait_until as interrupted, every time): min_payload names its platforms in platforms (M.away reads platform), and
 -- platform_rename; neither touches the character.
 passive.min_payload=true; passive.platform_rename=true; passive.platform_delete=true
+-- (d20 batch59 U1) character_settings flips switches and slot filters, as requests sets requests: no walk, no queue stop.
+passive.character_settings=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
@@ -17248,6 +17252,9 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
+-- (d20 batch59 U1) the character GUI's switches and the main inventory's slot filters (charsettings.lua).
+M.charsettings=require('charsettings'){personal=function() return M.personal end}
+function handlers.character_settings(p,a) return M.charsettings.handle(p,a) end
 -- (d17 batch31 C2) the personal requests unfilled, a line each, or nil: for a sleep or direct wait that ends early.
 M.WAIT_EARLY={told=true,mentioned=true,urgent=true,damaged=true}
 function M.personal_unfilled_lines(p)

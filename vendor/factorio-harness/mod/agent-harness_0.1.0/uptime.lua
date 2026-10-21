@@ -44,15 +44,21 @@ return function(api)
     local which = e.type == 'furnace' and defines.inventory.furnace_source or defines.inventory.assembling_machine_input
     return try(function() return e.get_inventory(which) end)
   end
+  -- (d20 batch58 T1, Sol #1453: a rare quality-module-3 recipe holding rare circuits read every ingredient short, least
+  -- 0) a recipe runs at a quality and takes its item ingredients at that quality; get_item_count(name) counts normal
+  -- ones only (2.0.77, the private copy: 40 uncommon plates read 0 by name, 40 with the quality). Fluids have none.
+  local function quality_name(q) return type(q) == 'string' and q or q and try(function() return q.name end) or 'normal' end
   local function recipe_of(e)
-    local r = try(function() return e.get_recipe() end)
+    local ok, r, q = pcall(function() return e.get_recipe() end)
+    if not ok then r, q = nil, nil end
     if not r and e.type == 'furnace' then
       local prev = try(function() return e.previous_recipe end)
       local n = prev and (type(prev.name) == 'table' and prev.name.name or prev.name)
-      r = n and try(function() return e.force.recipes[n] end)
+      r, q = n and try(function() return e.force.recipes[n] end), prev and prev.quality
     end
-    return r
+    return r, r and quality_name(q) or nil
   end
+  local function qlabel(name, q) return q and q ~= 'normal' and string.format('%s (%s)', name, q) or name end
   local function finished(e) return try(function() return e.products_finished end) or 0 end
   local function bar(e) return try(function() return e.bonus_progress end) or 0 end
   local function progress(e) return try(function() return e.crafting_progress end) or 0 end
@@ -199,12 +205,12 @@ return function(api)
       else
         local st = api.status_name and api.status_name(e) or 'unknown'
         m.status[st] = (m.status[st] or 0) + 1
-        local r = recipe_of(e)
+        local r, rq = recipe_of(e)
         local rn = r and r.name or 'none'
         -- an idle furnace reads no recipe: the last one seen is kept
-        if rn ~= m.recipe and rn ~= 'none' then
-          if m.recipe ~= 'none' then m.recipe_changed = m.recipe_changed or (m.recipe .. ' -> ' .. rn) end
-          m.recipe = rn
+        if rn ~= 'none' and (rn ~= m.recipe or rq ~= m.recipe_quality) then
+          if m.recipe ~= 'none' then m.recipe_changed = m.recipe_changed or (qlabel(m.recipe, m.recipe_quality) .. ' -> ' .. qlabel(rn, rq)) end
+          m.recipe, m.recipe_quality = rn, rq
           if not m.full_cpm and api.craftrate then local rt = try(function() return api.craftrate(e) end); m.full_cpm = rt and rt.crafts_per_min or nil; if m.prod == nil then M.keep_prod(m, rt) end end
         end
         local pr = r and m.prod ~= nil and api.productivity and try(function() return api.productivity(e, r) end)
@@ -214,12 +220,13 @@ return function(api)
           for _, ing in ipairs(r and try(function() return r.ingredients end) or {}) do
             local have
             if ing.type == 'fluid' then have = try(function() return e.get_fluid_count(ing.name) end) or 0
-            else have = inv and try(function() return inv.get_item_count(ing.name) end) or 0 end
+            else have = inv and try(function() return inv.get_item_count({name=ing.name, quality=rq or 'normal'}) end) or 0 end
             if have < (ing.amount or 0) then
-              local s = m.short[ing.name] or {samples=0, least=have, need=ing.amount}
+              local key = ing.type == 'fluid' and ing.name or qlabel(ing.name, rq)
+              local s = m.short[key] or {samples=0, least=have, need=ing.amount}
               s.samples = s.samples + 1
               if have < s.least then s.least = have end
-              m.short[ing.name] = s
+              m.short[key] = s
             end
           end
         end
@@ -312,7 +319,7 @@ return function(api)
       local cpm, dpm = crafts and pm(crafts), pm(done)
       local prod = m.prod or 0
       local full_done = m.full_cpm and math.floor(m.full_cpm * (1 + prod) * 10 + 0.5) / 10 or nil
-      local row = {name=m.name, position=m.position, recipe=m.recipe, crafts=crafts, crafts_per_min=cpm, full_speed_per_min=m.full_cpm,
+      local row = {name=m.name, position=m.position, recipe=m.recipe, recipe_quality=m.recipe ~= 'none' and (m.recipe_quality or 'normal') or nil, crafts=crafts, crafts_per_min=cpm, full_speed_per_min=m.full_cpm,
         completions=done, bonus_completions=bonus, completions_per_min=dpm, full_speed_completions_per_min=prod > 0 and full_done or nil,
         productivity=prod > 0 and prod or nil, productivity_research=m.prod_research, crafts_unknown=unknown and 'base crafts unknown: ' .. unknown or nil, working_share=job.samples > 0 and math.floor((share.working or 0) / job.samples * 100 + 0.5) or nil,
         samples=share, short=#short > 0 and short or nil, recipe_changed=m.recipe_changed, gone=m.gone and 'removed' or nil}
@@ -326,7 +333,7 @@ return function(api)
           prod > 0 and string.format(' and %d productivity completion%s (%s): %d completions, %g/min against %s/min at full speed', bonus, bonus == 1 and '' or 's',
             prod_text(m), done, dpm, full_done and string.format('%g', full_done) or '?') or '')
       end
-      row.line = string.format('%s %s %s: %s; %s%s%s', m.name, at(m.position), m.recipe, made,
+      row.line = string.format('%s %s %s: %s; %s%s%s', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), made,
         #parts > 0 and table.concat(parts, ', ') or 'no sample yet', #short > 0 and '; ' .. table.concat(short, '; ') or '',
         m.gone and '; removed during the watch' or m.recipe_changed and '; recipe changed: ' .. m.recipe_changed or '')
       rows[#rows+1] = row
@@ -377,9 +384,9 @@ return function(api)
         goto next_position
       end
       do
-      local r = recipe_of(e)
+      local r, rq = recipe_of(e)
       local rates = api.craftrate and try(function() return api.craftrate(e) end)
-      local m = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, recipe=r and r.name or 'none', finished0=finished(e),
+      local m = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, recipe=r and r.name or 'none', recipe_quality=rq, finished0=finished(e),
         bar0=bar(e), progress0=progress(e), status={}, short={}, full_cpm=rates and rates.crafts_per_min or nil}
       M.keep_prod(m, rates)
       machines[#machines+1] = m
@@ -403,13 +410,13 @@ return function(api)
         local held = {}
         for _, name in ipairs(m.order) do held[#held+1] = string.format('%s %d', name, m.packs[name].n) end
         lines[#lines+1] = string.format('%s %s: holds %s', m.name, at(m.position), #held > 0 and table.concat(held, ', ') or 'no science packs')
-      else lines[#lines+1] = string.format('%s %s %s: %d completions so far (the game\'s count, productivity\'s included)', m.name, at(m.position), m.recipe, m.finished0) end
+      else lines[#lines+1] = string.format('%s %s %s: %d completions so far (the game\'s count, productivity\'s included)', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), m.finished0) end
     end
     return {watching=true, seconds=seconds, machines=#machines, baseline=lines, replaced=replaced and 'your earlier watch, still running, was replaced' or nil,
       line=string.format('watching %d machine%s for %ds, a status sample a second at a phase 7 ticks later each second: uptime {} reads it so far, and in full once done', #machines, #machines == 1 and '' or 's', seconds)}
   end
   M.schema = {uptime = {positions='1..16 crafting machines or labs {x,y} (an assembler, furnace, chemical plant, biochamber, lab, biolab, ...; in sight or by remote view)', position='or one',
     seconds='optional 10..3600 (default 600): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), short (each ingredient under one craft in its input at the samples that read short of ingredients: how many samples, the least held), recipe_changed, gone; a lab\'s row (kind lab): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); lines; left_out (what the watch does not see). Read only'}}
+    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; a lab\'s row (kind lab): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); lines; left_out (what the watch does not see). Read only'}}
   return M
 end
