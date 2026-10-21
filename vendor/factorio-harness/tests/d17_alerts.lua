@@ -1,6 +1,7 @@
 -- d17 alerts: an alert line shown with the same words in the last 10 minutes is left out of the team block; changed
 -- words show; the kinds that wake a sleep and a platform hub's damage always show.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 game={tick=1000}
 local st={}
 local B=dofile('mod/agent-harness_0.1.0/board.lua'){state=function() return st end}
