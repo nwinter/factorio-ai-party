@@ -152,14 +152,15 @@ def public_haul(hauling):
 
 def public_delivery(status, keep=150):
     """(d17 batch35 D1, viewer Aurora: four lines received and never relayed, no reason shown) each site line's delivery
-    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?,
+    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed|expired (d20
+    batch65 AA5: a line that waited too long for the service, or that no service ever read), to?, why?,
     to_all?: every recipient of a line to several agents, op?: 1 when it is in the operator's inbox too, lost?: 1 relayed
     with whom to lost at a stream service restart, at?: when it was sent, for a record read back after a restart}},
     the newest `keep`. YouTube lines are not keyed by a site seq and stay out."""
     out = {}
     for r in (status or {}).get("delivery") or []:
         i = str(r.get("id") or "")
-        if not i.startswith("site:") or r.get("status") not in ("relayed", "held", "operator", "not_relayed"):
+        if not i.startswith("site:") or r.get("status") not in ("relayed", "held", "operator", "not_relayed", "expired"):
             continue
         row = {"s": r["status"]}
         if r.get("to"):
@@ -450,6 +451,11 @@ def public_state(s):
     vd = public_delivery(s.get("viewers_status"))
     if vd:
         out["viewer_delivery"] = vd
+    # (d20 batch65 AA5) the site seq the stream service has read up to: a later line with no delivery is queued (the page
+    # says so, and that the service is not running when this state is old)
+    site = ((s.get("viewers_status") or {}).get("site") or {})
+    if isinstance(site.get("after"), int) and not isinstance(site.get("after"), bool):
+        out["viewer_read"] = {"after": site["after"]}
     vr = public_replies(s.get("viewer_replies"), hidden_now())
     if vr:
         out["viewer_replies"] = vr
