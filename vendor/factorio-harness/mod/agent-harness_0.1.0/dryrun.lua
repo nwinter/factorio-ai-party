@@ -896,6 +896,22 @@ return function(api)
         rec.proto = proto
         rec.mask = layers(proto.collision_mask)
         rec.pos = M.snap(proto, e.position, rec.dir)
+        -- (d20 batch71 AG1) a rail or chain signal: the game's check on its rail layer (railsignal.lua), the facing of
+        -- the signal spot there when no direction is given; an elevated one stands over whatever is on the ground
+        local rs = api.railsignal and api.railsignal()
+        if rs and rs.TYPES[proto.type] then
+          local ok, l = pcall(rs.layer_arg, e.rail_layer)
+          if not ok then rec.signal = {ok=false, why=tostring(l)}
+          else
+            if not e.dir_given then
+              local d, ll = rs.direction_at(s, force, rec.pos, l)
+              if d then rec.dir = d; l = l or ll end
+            end
+            rec.signal = rs.check(s, force, e.name, rec.pos, rec.dir, l, kind == 'ghosts')
+            rec.rail_layer = rec.signal.ok and rs.LAYER_NAME[rec.signal.layer] or nil
+            if rec.signal.ok and rec.signal.layer == 1 then rec.mask = {} end
+          end
+        end
         local ramp = proto.type == 'rail-ramp'
         if ramp then rec.dir = math.floor(rec.dir / 4) * 4 end
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
@@ -1120,6 +1136,7 @@ return function(api)
               reasons[#reasons+1] = text and (text:gsub('^placement blocked', 'the game refuses it here')) or 'the game refuses a cargo bay here (it joins the hub or a bay where their connection points line up)'
             end
           end
+          if rec.signal then engine = rec.signal.ok end
           rec.engine = engine
           -- (J1) tiles past the generated chunks: when the game refuses it, the chunks are asked for and it is said
           if ungenerated and engine ~= true and not same then
@@ -1224,7 +1241,7 @@ return function(api)
             rec.status = 'after_rails'; rec.note = 'goes with the plan\'s rails: the game checks its rail rules once they stand'
           else
             rec.status = 'blocked'
-            local text = api.placement_error and try(function() return api.placement_error(p, proto, rec.pos, rec.dir) end)
+            local text = rec.signal and rec.signal.why or api.placement_error and try(function() return api.placement_error(p, proto, rec.pos, rec.dir) end)
             reasons[#reasons+1] = text and (text:gsub('^placement blocked', 'the game refuses it here')) or 'the game refuses it here'
           end
           if #marked > 0 and rec.status ~= 'blocked' then
@@ -2135,7 +2152,7 @@ return function(api)
       if problem then nproblems = nproblems + 1 end
       if (problem or plan.details or r.ports) and #rows < (plan.details and 256 or MAX_ROWS) then
         local row = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos or nil,
-          direction=r.dir ~= 0 and NAMES[r.dir] or nil, status=r.status, why=r.why or r.note, reach=r.reach, collisions=r.collisions, ports=r.ports}
+          direction=r.dir ~= 0 and NAMES[r.dir] or nil, status=r.status, why=r.why or r.note, reach=r.reach, collisions=r.collisions, ports=r.ports, rail_layer=r.rail_layer}
         if r.why and r.note then row.note = r.note end
         if plan.details and r.box then
           local x0, y0, x1, y1 = span(r.box)

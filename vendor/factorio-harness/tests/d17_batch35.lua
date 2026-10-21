@@ -279,7 +279,7 @@ do
   fails(function() check('train',{position={x=1,y=2},schedule={{station='A',wait={{type='time',seconds=30}}}}}) end,
     'train schedule[1].wait[1]: seconds is not a train wait field: type, ticks?, compare?, condition? (for seconds: ticks (60 a second))')
   fails(function() check('build',{builds={{item='stone-furnace',position={x=1,y=2},modules={'speed-module'}}}}) end,
-    'build builds[1]: modules is not a build entry field: item, position, direction?, quality?, type?, size?, entity?, recipe?, name?, configure?, requests?, circuit?, wires?, settings? (for modules: configure {modules = ...})')
+    'build builds[1]: modules is not a build entry field: item, position, direction?, quality?, type?, size?, entity?, recipe?, name?, rail_layer?, configure?, requests?, circuit?, wires?, settings? (for modules: configure {modules = ...})')
   fails(function() check('drop',{items={['iron-plate']=5}}) end,'drop items must be an array of {item, count?, quality?}')
   -- the forms each parser takes go through
   check('requests',{platform='Wren',set={{item='iron-plate',min=200,max='inf',quality='rare',from='vulcanus',min_payload=false}}})

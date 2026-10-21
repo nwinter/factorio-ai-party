@@ -10077,6 +10077,35 @@ fh watch    # deploy on every change
   on each machine row; the recipe's quality changing during the watch reads as a recipe change. Main did not do this
   before (uptime's last change there was batch55 P8). Tests: tests/d20_batch58.lua (T1).
 
+## d20 batch71 (eng/d20-batch71)
+
+- AG1 (#1686, Sol: Fulgora's elevated junction near (-63,140); place_ghosts refused a rail_layer field, placements
+  searched the ground only and refused oil ocean). Main before: no call took rail_layer (argshapes refused it); a
+  signal's ghost and build went through the generic checks with the ground layer; placements searched a grid of
+  ground positions; inspect read no signal state. Read on 2.0.77 (private copy, an elevated straight line with no
+  ground rail; then 40x30 tiles of water with an elevated line across and an elevated curve off it):
+  - a rail end (LuaRailEnd) gives in_signal_location and out_signal_location (alternative_* on curves) with rail_layer
+    (defines.rail_layer: ground 0, elevated 1); an elevated rail's say 1;
+  - can_place_entity, create_entity and an entity-ghost take rail_layer for a signal (a revived elevated ghost reads
+    rail_layer 1; LuaEntity.rail_layer on a built signal); the manual and manual_ghost checks take a signal beside the
+    elevated line on the elevated layer only, and only facing the way that spot faces (west at (-148.5,2.5): the other
+    7 directions refused); the script check takes either layer anywhere;
+  - a ghost 0.1 to 0.2 tiles off a spot stands on the spot; get_connected_rails gives the rails a signal guards (the
+    junction's entry signal (-149.5,16.5): the curve and the straight); signal_state open/closed/reserved/
+    reserved_by_circuit_network; chain_signal_state none/all_open/partially_open/none_open;
+  - at the junction, 10 of 21 spots within 5 tiles are refused by the game (where the curve and straight meet, and a
+    joint's other side once one holds a signal); over the water no ground spot.
+  Now (railsignal.lua): build (single and builds entries), place_ghosts entries and their dry runs take rail_layer
+  (ground | elevated) for rail-signal and rail-chain-signal: the game's manual check (build) or manual_ghost check
+  (ghost) on that layer decides, and with none given the ground layer and then the elevated; with no direction the
+  facing of the signal spot at the position; an elevated signal skips the ground tile checks (water, oil ocean).
+  A refusal names up to 4 spots within 6 tiles the game takes now. build's reply gives signal_placed and signal;
+  a dry run row gives rail_layer. placements {name: rail-signal or rail-chain-signal, rail_layer?} lists the signal
+  spots of the rails within the radius that the game's ghost check takes: [{position, direction, rail_layer, rail
+  {name, position}}], checked, refused. inspect on a signal: signal {rail_layer, rails [{name, position}],
+  signal_state, state (chain), line}; on its ghost, a note. rail_layer on another entity is refused. Tests:
+  tests/d21_batch71.lua.
+
 ## d21 batch64 (eng/d20-batch64)
 
 - Z1 (Sol #1515: the crusher on Petrel (-17,-10.5) read no_recipe at tick 40313975 with Set recipe on while its green

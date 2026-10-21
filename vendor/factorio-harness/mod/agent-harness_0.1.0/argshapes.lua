@@ -21,10 +21,10 @@ return function()
     signals='circuit {signals = ...}', decider='circuit {decider = ...}', arithmetic='circuit {arithmetic = ...}',
     request_filters='requests {set = ...}', set='requests {set = ...}'}
   local function with(t, extra) local out = {}; for k, v in pairs(t) do out[k] = v end; for k, v in pairs(extra or {}) do out[k] = v end; return out end
-  local BUILD = {label='build entry', fields={'item', 'position', 'direction?', 'quality?', 'type?', 'size?', 'entity?', 'recipe?', 'name?',
+  local BUILD = {label='build entry', fields={'item', 'position', 'direction?', 'quality?', 'type?', 'size?', 'entity?', 'recipe?', 'name?', 'rail_layer?',
     'configure?', 'requests?', 'circuit?', 'wires?', 'settings?'}, hint=with(SETTING_HINTS, {count='one entry places one'})}
   local CRAFT = {label='recipe entry', fields={'recipe', 'count?', 'force?'}, hint={name='recipe', item='recipe', amount='count'}}
-  local GHOST = {label='ghost entry', fields={'name', 'position', 'direction?', 'type?', 'recipe?', 'quality?', 'ammo?', 'item?',
+  local GHOST = {label='ghost entry', fields={'name', 'position', 'direction?', 'type?', 'recipe?', 'quality?', 'ammo?', 'item?', 'rail_layer?',
     'configure?', 'requests?', 'circuit?', 'wires?', 'settings?'}, hint=SETTING_HINTS}
   local TRAIN_WAIT = {label='train wait', fields={'type', 'ticks?', 'compare?', 'condition?'}, hint={seconds='ticks (60 a second)', compare_type='compare'}}
   local TRAIN_STOP = {label='train stop record', fields={'station', 'wait?'}, hint={name='station', stop='station', waits='wait'},
