@@ -964,7 +964,10 @@ return function(api)
               if t == 'entity-ghost' then
                 if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = same or o
                 elseif shape and RAILS[o.ghost_type] then -- crossing or joining
-                elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
+                -- (d20 batch61 W2) a ghost whose collision layers miss this one's (a rail support under an elevated rail) shares the tiles, as the game lets it
+                elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) and (function()
+                  local gm = try(function() return o.ghost_prototype.collision_mask end)
+                  return gm == nil or collide(mask, layers(gm)) end)() then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
               elseif rail and RAILS[t] and not ramp then
                 -- Another rail crosses or joins it; the same rail there is the same.
                 if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = o end

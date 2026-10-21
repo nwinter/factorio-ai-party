@@ -313,6 +313,14 @@ return function(api)
         checks=checks+1
         args.name=ELEV[name]; args.direction=dir; args.position.x=x; args.position.y=y; args.forced=nil
         v=s.can_place_entity(args) and 0 or false
+        if not v then
+          -- the same piece of ours there already (a call before laid it): the route goes along it
+          local at={x=x,y=y}
+          for _,list in ipairs({s.find_entities_filtered{position=at,radius=0.1,name=args.name,force=force,limit=2},
+            s.find_entities_filtered{position=at,radius=0.1,ghost_name=args.name,force=force,limit=2}}) do
+            for _,e in ipairs(list) do if e.valid and norm(name,e.direction)==norm(name,dir) then v=0 end end
+          end
+        end
       else
         checks=checks+1
         args.name=name; args.direction=dir; args.position.x=x; args.position.y=y; args.forced=nil
@@ -358,6 +366,19 @@ return function(api)
     -- free ground at the point, rising toward the other end (up) or toward the start (down).
     local function place_ramp(pt,toward,fixed,role)
       local tried={}
+      -- our ramp (built or a ghost) with its ground end at the point: a call before placed it; the route goes on from it
+      local area={left_top={x=pt.x-END_R-9,y=pt.y-END_R-9},right_bottom={x=pt.x+END_R+9,y=pt.y+END_R+9}}
+      local own={}
+      for _,e in pairs(s.find_entities_filtered{area=area,type='rail-ramp',force=force}) do own[#own+1]=e end
+      for _,e in pairs(s.find_entities_filtered{area=area,ghost_type='rail-ramp',force=force}) do own[#own+1]=e end
+      for _,e in ipairs(own) do
+        local d=math.floor(e.direction/4)*4
+        local r=M.ramp_at({x=e.position.x-8*UX[d],y=e.position.y-8*UY[d]},d)
+        if e.valid and dist(r.ground.x,r.ground.y,pt.x,pt.y)<=END_R and (not fixed or (role=='up' and d==fixed) or (role=='down' and d==opposite(fixed))) then
+          r.existing=e.type=='entity-ghost' and 'a ghost of your rail ramp' or 'your rail ramp'
+          return r
+        end
+      end
       local near_ground=M.ends_near(p,pt,END_R)
       for _,en in ipairs(near_ground) do
         if en.free and en.d%4==0 and (not fixed or (role=='up' and en.d==fixed) or (role=='down' and en.d==opposite(fixed))) then
@@ -571,7 +592,7 @@ return function(api)
       local n=node
       while n.parent do table.insert(legsteps,1,n); n=n.parent end
       if i==2 then steps.first=n end
-      for _,st in ipairs(legsteps) do steps[#steps+1]=st end
+      for _,st in ipairs(legsteps) do st.leg=i-1; steps[#steps+1]=st end
       total_pieces=total_pieces+#legsteps
       assert(total_pieces<=MAX_PIECES,string.format('the route needs more than %d pieces; split it into shorter routes',MAX_PIECES))
       current={{x=node.x,y=node.y,d=node.d,g=0}}
@@ -602,14 +623,18 @@ return function(api)
       rails_n=rails_n+n*per
     end
     local items={rail=rails_n}
+    local entities_rails=entities
     local lifted=elevated and M.lift(p,{steps=steps,ramps=ramps,is_charted=is_charted,count=function() checks=checks+1 end}) or nil
     if lifted then
       local front={}
       for _,e in ipairs(lifted.entities) do front[#front+1]=e end
       for _,e in ipairs(entities) do front[#front+1]=e end
       entities=front
-      if #ramps>0 then items['rail-ramp']=#ramps end
+      local new_ramps=0
+      for _,r in ipairs(ramps) do if not r.existing then new_ramps=new_ramps+1 end end
+      if new_ramps>0 then items['rail-ramp']=new_ramps end
       if lifted.supports.count>0 then items['rail-support']=lifted.supports.count end
+      lifted.rails=entities_rails
     end
     -- Signals at the joints between pieces, every so many tiles of track.
     local signals={}
@@ -637,8 +662,11 @@ return function(api)
     if lifted then
       out.level='elevated'; out.ramps=lifted.ramps; out.supports=lifted.supports; out.research=lifted.research
       out.unsupported=lifted.unsupported; out.unsupported_note=lifted.unsupported_note
+      local cap=M.per_call(checks)
+      lifted.cap=cap
+      out.per_call={pieces=cap,calls=M.calls(lifted,cap)}
     end
-    return {entities=entities,out=out,steps=steps}
+    return {entities=entities,out=out,steps=steps,lifted=lifted,points=points}
   end
 
   -- An elevated route's ramps and supports (level elevated). t.steps: the route's pieces as planned (each with its
@@ -702,6 +730,11 @@ return function(api)
         t.count()
         args.position.x=j.x; args.position.y=j.y; args.direction=j.d%8
         v=s.can_place_entity(args)
+        if not v then
+          -- a support of ours on this joint already (a call before placed it)
+          local at={left_top={x=j.x-0.1,y=j.y-0.1},right_bottom={x=j.x+0.1,y=j.y+0.1}}
+          v=#s.find_entities_filtered{area=at,name='rail-support',force=force,limit=1}>0 or #s.find_entities_filtered{area=at,ghost_name='rail-support',force=force,limit=1}>0
+        end
       end
       spot[k]=v
       return v
@@ -718,15 +751,35 @@ return function(api)
     local up=ramps[1] and ramps[1].role=='up'
     local down=ramps[#ramps] and ramps[#ramps].role=='down'
     if up then while covered<n and joints[covered+1].s<=RR do covered=covered+1 end end
+    -- (W2) continuing from where a call before stopped: its support on the start joint, or on the joint a piece back,
+    -- carries the line on (as far as its reach less the way to the start)
+    local start_support
+    if not up then
+      local j=joints[1]
+      local at={left_top={x=j.x-3,y=j.y-3},right_bottom={x=j.x+3,y=j.y+3}}
+      local near
+      for _,list in ipairs({s.find_entities_filtered{area=at,name='rail-support',force=force,limit=4},s.find_entities_filtered{area=at,ghost_name='rail-support',force=force,limit=4}}) do
+        for _,e in ipairs(list) do
+          local d=dist(e.position.x,e.position.y,j.x,j.y)
+          if e.valid and (not near or d<near) then near=d end
+        end
+      end
+      if near then
+        start_support=true
+        while covered<n and joints[covered+1].s<=R-near do covered=covered+1 end
+      end
+    end
     if down then while e>1 and joints[n].s-joints[e-1].s<=RR do e=e-1 end end
-    local chosen,gaps={},{}
+    local chosen,gaps,widest={},{},0
     while covered<e do
       local base,best=joints[covered].s,nil
       for k=covered,n do
         if joints[k].s-R>base+0.001 then break end
         if ok_at(k) and reach(k)>covered then best=k end
       end
-      if best then chosen[#chosen+1]=best; covered=reach(best)
+      if best then
+        if #chosen>0 then widest=math.max(widest,joints[best].s-joints[chosen[#chosen]].s) end
+        chosen[#chosen+1]=best; covered=reach(best)
       else
         local nxt
         for k=covered+1,n do if ok_at(k) then nxt=k; break end end
@@ -751,19 +804,26 @@ return function(api)
       end
     end
     local entities,rows={},{}
+    local up_entity,down_entity,support_list
     for _,r in ipairs(ramps) do
-      entities[#entities+1]={name='rail-ramp',position=r.position,direction=NAMES[r.direction]}
+      if not r.existing then
+        entities[#entities+1]={name='rail-ramp',position=r.position,direction=NAMES[r.direction]}
+        if r.role=='up' then up_entity=entities[#entities] else down_entity=entities[#entities] end
+      end
       rows[#rows+1]={role=r.role=='up' and 'up at from' or 'down at to',position=r.position,rises_toward=NAMES[r.direction],
-        ground_end={x=r.ground.x,y=r.ground.y},elevated_end={x=r.top.x,y=r.top.y},joins=r.joins}
+        ground_end={x=r.ground.x,y=r.ground.y},elevated_end={x=r.top.x,y=r.top.y},joins=r.joins,existing=r.existing}
     end
-    local spacing=0
-    for i,k in ipairs(chosen) do
+    support_list={}
+    for _,k in ipairs(chosen) do
       local j=joints[k]
       entities[#entities+1]={name='rail-support',position={x=j.x,y=j.y},direction=NAMES[j.d%8]}
-      if i>1 then spacing=math.max(spacing,j.s-joints[chosen[i-1]].s) end
+      support_list[#support_list+1]={e=entities[#entities],k=k}
     end
-    local out={entities=entities,ramps=#rows>0 and rows or nil,
-      supports={count=#chosen,reach=M.SUPPORT_REACH,ramp_reach=M.RAMP_REACH,widest=#chosen>1 and math.floor(spacing+0.5) or nil,
+    local out={entities=entities,ramps=#rows>0 and rows or nil,joints=joints,steps=steps,
+      up_entity=up_entity,down_entity=down_entity,support_list=support_list,
+
+      supports={count=#chosen,reach=M.SUPPORT_REACH,ramp_reach=M.RAMP_REACH,widest=widest>0 and math.floor(widest+0.5) or nil,
+        at_start=start_support and 'a rail support of yours on the start joint carries the line on' or nil,
         on='rail joints, every piece within 11 tiles of one support or 9 of a ramp\'s elevated end'},
       research={elevated_rail=researched(force,'elevated-rail') and 'researched' or 'not researched',
         rail_support_foundations=deep_ok and 'researched' or 'not researched'}}
@@ -772,6 +832,71 @@ return function(api)
       out.unsupported_note='the game builds an elevated rail only where it joins elevated rail and lies within 11 tiles of one rail support (9 of a ramp\'s elevated end): the rails of these spans stay ghosts'
     end
     return out
+  end
+
+  -- (d20 batch61 W2, operator 23:25) an elevated call places at most ELEVATED_PER_CALL pieces (ramps, supports, rails),
+  -- which keeps it near 10 ms on the private copy, and stops on one of its own supports: the next call from that end
+  -- starts carried. The cut after joint k0 (support i0 there; the first call: k0=1, i0=0, with the ramp up): the
+  -- farthest support within the count, else the first one past it; none at all: the count of rails.
+  M.ELEVATED_PER_CALL=24
+  -- Measured on the copy (warm): a call costs about 3.4 ms, 0.007 ms a placement check of its search and 0.18 ms a
+  -- piece placed (86 tiles straight, 155 checks: 22 pieces in 7.5-9.1 ms; 101 tiles with a 90 degree turn, 778
+  -- checks: 21 pieces in 12-13 ms). Pieces for one call near 10 ms: 24 at most, 6 at least.
+  function M.per_call(checks) return math.max(6,math.min(M.ELEVATED_PER_CALL,math.floor(34-(checks or 0)/26))) end
+  local function next_cut(L,cap,k0,i0,first)
+    local list,nj=L.support_list,#L.joints
+    local up=(first and L.up_entity) and 1 or 0
+    if up+(#list-i0)+(nj-k0)+(L.down_entity and 1 or 0)<=cap then return nil end
+    local best
+    for i=i0+1,#list do
+      local c=list[i]
+      if c.k>k0 and c.k<nj then
+        local n=up+(i-i0)+(c.k-k0)
+        if n<=cap or not best then best={k=c.k,i=i} end
+        if n>cap then break end
+      end
+    end
+    if not best then
+      local k=math.min(nj-1,k0+math.max(1,cap-up))
+      best={k=k,i=i0}
+      for i=i0+1,#list do if list[i].k<=k then best.i=i end end
+    end
+    return best
+  end
+  function M.calls(L,cap)
+    local n,k0,i0=1,1,0
+    local c=next_cut(L,cap,k0,i0,true)
+    while c and n<200 do n=n+1; k0,i0=c.k,c.i; c=next_cut(L,cap,k0,i0,false) end
+    return n
+  end
+  -- The first call's part of an elevated plan, or nil when the whole route fits: its entities, and the reply's capped
+  -- {placed, of, continue_from, pieces_left, next_call}. a: the call's arguments (to, via, to_direction carried on).
+  function M.cut(plan,a)
+    local L=plan.lifted
+    if not L then return nil end
+    local cap=L.cap or M.ELEVATED_PER_CALL
+    local c=next_cut(L,cap,1,0,true)
+    if not c then return nil end
+    local list={}
+    if L.up_entity then list[1]=L.up_entity end
+    for i=1,c.i do list[#list+1]=L.support_list[i].e end
+    local rails=0
+    for i=1,c.k-1 do list[#list+1]=L.rails[i]; rails=rails+1 end
+    local j=L.joints[c.k]
+    -- the via points not passed yet: those after the leg the next piece is on
+    local via={}
+    local leg=L.steps[c.k] and L.steps[c.k].leg or 1
+    for i=leg+1,#plan.points-1 do via[#via+1]=plan.points[i] end
+    local items={}
+    for _,e in ipairs(list) do
+      local proto=prototypes.entity[e.name]
+      for _,it in ipairs(proto and proto.items_to_place_this or {}) do items[it.name]=(items[it.name] or 0)+(it.count or 1) end
+    end
+    local next_call={from={x=j.x,y=j.y},to=a.to,via=#via>0 and via or nil,level='elevated',to_direction=a.to_direction}
+    return list,{placed_pieces=#list,of=#plan.entities,continue_from={position={x=j.x,y=j.y},heading=NAMES[j.d]},
+      rails_left=#L.rails-rails,pieces_left=#plan.entities-#list,next_call=next_call,items=items,
+      note=string.format('this call places %d of the route\'s %d pieces (about %d a call: fewer when the search costs more) and stops on its own elevated end at %s heading %s, on a rail support; rail_route from there to the same to (next_call) continues the line',
+        #list,#plan.entities,cap,fmt(j.x,j.y),NAMES[j.d])}
   end
 
   -- train_stop: beside the nearest straight north-south or east-west rail

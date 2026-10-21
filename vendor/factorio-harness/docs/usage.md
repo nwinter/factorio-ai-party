@@ -559,7 +559,18 @@ fh call status
       refused (`dry_run` shows the plan). Ghosts go ramps first, then supports, then rails, so a build in reach takes
       them in the order the game accepts. `signals` are not placed on elevated rails.
     - `dry_run` checks every piece (a support on deep oil ocean without the research: `oil-ocean-deep (the game takes rail
-      supports there once Rail support foundations is researched; or on foundation laid there)`).
+      supports there once Rail support foundations is researched; or on foundation laid there)`), and says `per_call
+      {pieces, calls}`: about how many pieces a real call places and how many calls the route takes.
+    - (W2, operator d20 23:25) A real call places at most about 24 pieces (ramps, supports and rails; fewer when its
+      search costs more, 6 at least), which keeps it near 10 ms on the private copy, and stops on its own elevated end
+      on one of its supports: `capped {placed_pieces, of, continue_from {position, heading}, rails_left, pieces_left,
+      next_call, note}`; `items` are this call's, `route_items` the whole route's. `next_call` (from that end, the same
+      `to`, the via points not passed yet) continues: from near an end of your elevated rail the line goes on, and the
+      support there carries it. A call again over its own ghosts goes along them (an own piece or support already
+      there counts as laid; an own ramp with its ground end at the point is used) and places only what is missing.
+    - Measured on the copy (warm, foundations researched): the straight 86 tiles took 3 calls of 22, 22 and 5 pieces in
+      9.1-9.8, 7.2-8.1 and 4.5-5.0 ms; 101 tiles with a 90 degree turn (search 774 checks, about 6 ms) 5 calls of 5-10
+      pieces in 9-11 ms; the game built every piece from the ghosts. The first call after a runtime deploy ran 12-21 ms.
     - The private copy (Fulgora x=-175, y 194 to 312: 86 tiles of oil ocean, 25 deep): 2 ramps, 43 rails, 4 supports with
       the research, and the game built all 49 from their ghosts; without it 2 supports, and the 15 rails over the deep
       part stayed ghosts. Planning took 1.7-1.9 ms; the dry run 12.6 ms and the ghosts 19 ms in all (a 22-piece ground

@@ -45,13 +45,17 @@ function surface.find_tiles_filtered() return {} end
 local function inside(e,area) return e.position.x>=area.left_top.x and e.position.x<=area.right_bottom.x and e.position.y>=area.left_top.y and e.position.y<=area.right_bottom.y end
 function surface.find_entities_filtered(f)
   local out={}
-  local types=f.type or f.ghost_type
-  if type(types)=='table' then
-    local want={}
-    for _,t in ipairs(types) do want[t]=true end
-    for _,e in ipairs(ours) do
-      if want[e.name] and (f.ghost_type~=nil)==(e.ghost==true) and inside(e,f.area) then out[#out+1]=e end
-    end
+  local t=f.type or f.ghost_type
+  local want
+  if type(t)=='table' then want={} for _,x in ipairs(t) do want[x]=true end elseif type(t)=='string' then want={[t]=true} end
+  local nm=f.name or f.ghost_name
+  if not want and not nm then return out end
+  local ghost=f.ghost_type~=nil or f.ghost_name~=nil
+  for _,e in ipairs(ours) do
+    local ok=(e.ghost==true)==ghost and (not want or want[e.name]) and (not nm or e.name==nm)
+    if ok and f.area then ok=inside(e,f.area) end
+    if ok and f.position then local r=(f.radius or 0)+0.01; ok=math.abs(e.position.x-f.position.x)<=r and math.abs(e.position.y-f.position.y)<=r end
+    if ok then out[#out+1]=e end
   end
   return out
 end
@@ -122,7 +126,7 @@ has(r.out.research.elevated_rail,'researched')
 -- and how long, and its rails stay ghosts in the game.
 reset(); deep={y0=258,y1=289}
 r=R.plan(p,{from={x=-175,y=194},to={x=-175,y=312},level='elevated'})
-eq(r.out.supports.count,2)
+eq(r.out.supports.count,2); eq(r.out.supports.widest,20)  -- between the two before the deep span, not across it
 eq(#r.out.unsupported,1)
 local gap=r.out.unsupported[1]
 eq(gap.from.y,258); eq(gap.to.y,288); eq(gap.tiles,30); eq(gap.pieces,15)
@@ -195,6 +199,46 @@ fails(function() R.plan(p,{from={x=1,y=0},to={x=1,y=-100},level='elevated',to_di
 fails(function() R.plan(p,{from={x=1,y=0},to={x=1,y=-100},level='bridge'}) end,'level is ground (the default) or elevated')
 fails(function() R.plan(p,{from={x=1,y=0},to={x=1,y=-100},level='elevated',signals=30}) end,'signals: rail_route places rail signals on ground rails only')
 fails(function() R.plan(p,{from={x=1,y=0},to={x=1,y=-100},level='ground',elevated=true}) end,'level and elevated differ')
+-- (W2) A real call places at most ELEVATED_PER_CALL pieces and stops on its own support; the next call from there
+-- (next_call) starts carried by it; the last one lays the ramp down. Together they lay what one plan would.
+reset()
+local whole=R.plan(p,{from={x=-175,y=194},to={x=-175,y=312},level='elevated'})
+eq(#whole.entities,49); eq(whole.out.per_call.pieces,R.per_call(whole.out.cost.placement_checks)); eq(whole.out.per_call.calls,3)
+local args,calls,laid={from={x=-175,y=194},to={x=-175,y=312},level='elevated'},0,{}
+while args and calls<6 do
+  calls=calls+1
+  local plan=R.plan(p,args)
+  local part,capped=R.cut(plan,args)
+  part=part or plan.entities
+  assert(#part<=plan.out.per_call.pieces,#part)
+  if calls>1 then has(plan.out.supports.at_start,'carries the line on'); eq(plan.out.ramps[1].role,'down at to') end
+  for _,e in ipairs(part) do
+    rail(e.name,e.position.x,e.position.y,dirs[e.direction],true)
+    laid[#laid+1]=e
+  end
+  if capped then
+    eq(part[#part].name:find('^elevated%-')~=nil,true)
+    local last=R.ends_of(part[#part].name,part[#part].position,dirs[part[#part].direction])
+    local cf=capped.continue_from.position
+    assert((last[1].x==cf.x and last[1].y==cf.y) or (last[2].x==cf.x and last[2].y==cf.y),'stops on its last rail\'s end')
+    local on_support=false
+    for _,e in ipairs(part) do if e.name=='rail-support' and e.position.x==cf.x and e.position.y==cf.y then on_support=true end end
+    assert(on_support,'stops on one of its own supports')
+    eq(capped.next_call.from.y,cf.y); eq(capped.next_call.to.y,312); eq(capped.pieces_left,#plan.entities-#part)
+    has(capped.note,'stops on its own elevated end at (-175,')
+    eq(capped.items.rail+(capped.items['rail-ramp'] or 0)+(capped.items['rail-support'] or 0)>0,true)
+  end
+  args=capped and capped.next_call
+end
+eq(calls,3)
+local by={}
+for _,e in ipairs(laid) do by[e.name]=(by[e.name] or 0)+1 end
+eq(by['rail-ramp'],2); eq(by['elevated-straight-rail'],43); eq(by['rail-support'],4)
+-- A route that fits takes one call: no cut.
+reset()
+r=R.plan(p,{from={x=-175,y=194},to={x=-175,y=240},level='elevated'})
+eq(R.cut(r,{}),nil); eq(r.out.per_call.calls,1)
+
 -- The schema names the new arguments.
 assert(R.schema.rail_route.level and R.schema.rail_route.elevated and R.schema.rail_route.to_direction)
 print('elevated ok')

@@ -14376,6 +14376,13 @@ function handlers.rail_route(p,a)
   if out.research and out.research.elevated_rail~='researched' then
     error('level elevated: Elevated rail (elevated-rail) is not researched; it unlocks rail ramps, rail supports and elevated rails (dry_run: true shows the plan)',0)
   end
+  -- (d20 batch61 W2) a long elevated route: this call's part, ending on its own support; the reply says how to go on
+  local part,capped=M.rails.cut(plan,a)
+  if part then
+    plan.entities=part
+    out.route_items=out.items; out.items=capped.items; capped.items=nil
+    out.capped=capped
+  end
   if a.details then out.entities=plan.entities end
   local inv=p.get_main_inventory()
   for name,n in pairs(out.items) do
