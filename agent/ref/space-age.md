@@ -177,6 +177,8 @@
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
   range of a collector whose arc misses it is named under `outside_arc` and not counted. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
   only, or preload only), wrong ammunition on its way, and inserters whose circuit sets more filters than their slots.
+  An inserter or belt held off by its condition now is "gated closed now" (its condition and wire values): the route
+  through it is traced to its source; what waits behind it is `behind_gate`, said under `NOW:`, apart from `STOPPED:`.
   Damage apart from reach, for `route` (`"fulgora->aquilo"` or a connection name; default the schedule's next
   leg): each asteroid that spawns on it with its health and resistances, and per turret and the ammo it holds its
   damage a second after them against its listed damage (the force's bonuses counted), together and the time to kill

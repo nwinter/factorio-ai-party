@@ -501,7 +501,7 @@ return function(api)
               local first = starving[1]
               lines[#lines+1] = string.format('platform %s: %d turret%s in (%g,%g)-(%g,%g) can reach under %d rounds and nothing more comes (%s %s: %s) while %d aboard can reach no turret%s; platform_defense {platform: "%s"} traces each feed',
                 name, #starving, #starving == 1 and '' or 's', x0, y0, x1, y1, 2 * LOW_AMMO, first.name, at(first.position),
-                #first.stops > 0 and first.stops[1] or 'its feed is dry', spare,
+                #first.stops > 0 and first.stops[1] or first.gated and first.gated[1] or 'its feed is dry', spare,
                 #tr.stranded_groups > 0 and ' (on belts: ' .. table.concat(tr.stranded_groups, '; ', 1, math.min(3, #tr.stranded_groups)) .. ')' or ' (in the hub, no inserter takes it toward a turret)', pl.name)
             end
           else clear(seen, 'starving') end

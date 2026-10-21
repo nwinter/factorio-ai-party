@@ -127,3 +127,101 @@ do
   has(r.lines[1],'solar-panel@epic 1 (asks 1, holds 0)')
   print('d21_batch66 AB1 platform_bom by item and quality: ok')
 end
+
+-- AB3 (Sol #1617): platform_defense read five of Solstice's turrets "preload only" while belt buffers capped near 10
+-- held their source inserters off; every feed led to the maker aboard when those gates opened. A link held off by its
+-- condition is traced through to its source and said gated closed now, with its condition and the values it reads.
+do
+  defines={inventory={turret_ammo=1,hub_main=2,chest=3},entity_status={disabled_by_control_behavior=99},wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={item={['firearm-magazine']={type='ammo',ammo_category='bullet'}}}
+  local n=0
+  local function contents(t) local out={} for name,c in pairs(t) do out[#out+1]={name=name,count=c} end return out end
+  local function inv(t) return {get_contents=function() return contents(t) end} end
+  local function belt(x,y,items)
+    n=n+1
+    local b={valid=true,unit_number=n,type='transport-belt',name='transport-belt',position={x=x,y=y},belt_neighbours={inputs={}}}
+    b.get_max_transport_line_index=function() return 2 end
+    b.get_transport_line=function(i) local c=i==1 and contents(items or {}) or {} return setmetatable({get_contents=function() return c end},{__len=function() local t=0 for _,r in ipairs(c) do t=t+r.count end return t end}) end
+    return b
+  end
+  local function turret(x,y,held)
+    n=n+1
+    local t={valid=true,unit_number=n,type='ammo-turret',name='gun-turret',position={x=x,y=y},prototype={attack_parameters={ammo_categories={'bullet'}}}}
+    t.get_inventory=function() return inv({['firearm-magazine']=held}) end
+    return t
+  end
+  local function ins(x,y,from,to,cond)
+    n=n+1
+    local i={valid=true,unit_number=n,type='inserter',name='fast-inserter',position={x=x,y=y},pickup_target=from,drop_target=to}
+    if cond then i.cond=cond; i.get_control_behavior=function() return {disabled=true} end; i.status=99 end
+    return i
+  end
+  local hub={valid=true,unit_number=1000,type='space-platform-hub',name='space-platform-hub',position={x=0,y=0}}
+  hub.get_inventory=function() return inv({}) end
+  local asm={valid=true,unit_number=1001,type='assembling-machine',name='assembling-machine-2',position={x=5.5,y=-8.5},
+    get_recipe=function() return {products={{name='firearm-magazine',amount=1}}} end,get_output_inventory=function() return inv({['firearm-magazine']=4}) end}
+  -- 1. a buffer belt capped at 10: its source inserter from the maker off by "firearm-magazine < 10" (12 on its wire)
+  local t1=turret(0,-10,20)
+  local b1=belt(0,-8.5,{['firearm-magazine']=12})
+  local f1=ins(0,-9.5,b1,t1)
+  local s1=ins(1.5,-8.5,asm,b1,'enabled when firearm-magazine < 10 (on its wires: firearm-magazine 12): false now')
+  -- 2. a relay off by its condition between the maker's belt and the turret's belt
+  local t2=turret(10,-10,3)
+  local b2,m2=belt(10,-8.5,{}),belt(10,-6.5,{['firearm-magazine']=6})
+  local f2=ins(10,-9.5,b2,t2)
+  local r2=ins(10,-7.5,m2,b2,'enabled when signal-A > 0 (on its wires: signal-A 0): false now')
+  local s2=ins(11.5,-6.5,asm,m2)
+  -- 3. a turret whose own feeder from the maker is off by a logistic condition
+  local t3=turret(-10,-10,2)
+  local f3=ins(-10,-9,asm,t3,'logistic condition firearm-magazine < 50 (network holds firearm-magazine 80): false now')
+  -- 4. a belt nothing puts anything on: no route to a source
+  local t4=turret(-20,-10,1)
+  local b4=belt(-20,-8.5,{['firearm-magazine']=3})
+  local f4=ins(-20,-9.5,b4,t4)
+  local inserters={f1,s1,f2,r2,s2,f3,f4}
+  local surface={find_entities_filtered=function(f)
+    local t=type(f.type)=='table' and f.type[1] or f.type
+    if t=='inserter' then return inserters end
+    if t=='ammo-turret' then return {t1,t2,t3,t4} end
+    if t=='transport-belt' then return {b1,b2,m2,b4} end
+    return {}
+  end}
+  -- the real feeders.lua, its condition read from the inserter's GUI text
+  local Fd=dofile('mod/agent-harness_0.1.0/feeders.lua'){condition_parts=function(e) return e.cond and {e.cond,'it is off by its condition'} or {} end}
+  local F=dofile('mod/agent-harness_0.1.0/ammofeed.lua'){feeders=Fd}
+  local tr=F.trace({surface=surface,force='player',hub=hub})
+  local lines=table.concat(F.lines(tr,true,'Solstice',false),'\n')
+  local r1,r2_,r3,r4=tr.rows[1],tr.rows[2],tr.rows[3],tr.rows[4]
+  -- 1: the 12 on the buffer reach it now; the maker's 4 wait behind the gate; refilled by the maker through that gate
+  eq(r1.reaches,32); eq(r1.behind_gate,4); eq(#r1.stops,0)
+  has(r1.gated[1],'fast-inserter (0,-9.5): the inserters putting items on the belts upstream of transport-belt (0,-8.5) are gated closed now (fast-inserter (1.5,-8.5)): nothing more comes onto them until one opens; 12 on them now')
+  has(r1.ways[1],'put on them by fast-inserter (1.5,-8.5) from assembling-machine-2 (5.5,-8.5) (holds 4 of its ammo) (gated closed now: enabled when firearm-magazine < 10 (on its wires: firearm-magazine 12): false now)')
+  eq(r1.replenished,'maker'); eq(r1.replenished_gated,true)
+  -- 2: the route through the relay is traced to the maker: its belt's 6 and the maker's 4 behind the relay
+  eq(r2_.reaches,3); eq(r2_.behind_gate,10); eq(#r2_.stops,0)
+  has(r2_.ways[1],'behind a relay fast-inserter (10,-7.5) (gated closed now: enabled when signal-A > 0 (on its wires: signal-A 0): false now) from 1 belt holding 6 of its ammo')
+  eq(r2_.replenished,'maker'); eq(r2_.replenished_gated,true)
+  -- 3: its own feeder held off: the maker's 4 behind it
+  eq(r3.reaches,2); eq(r3.behind_gate,4)
+  has(r3.gated[1],'fast-inserter (-10,-9) gated closed now (logistic condition firearm-magazine < 50 (network holds firearm-magazine 80): false now): 4 of its ammo waits behind it in assembling-machine-2 (5.5,-8.5)')
+  eq(r3.replenished,'maker'); eq(r3.replenished_gated,true)
+  -- 4: no route: preload only, and stopped (dry)
+  eq(r4.replenished,'preload'); has(r4.stops[1],'no inserter puts anything on the belts upstream of transport-belt (-20,-8.5): the 3 on them, then dry')
+  eq(#r4.gated,0)
+  has(lines,'replenishment by turret: 3 from an ammunition maker aboard (assembling-machine-2 (5.5,-8.5) making firearm-magazine) (3 of them only through a link gated closed now: (0,-10), (10,-10), (-10,-10)), 0 from the hub, 0 from chests only (what fills them is not traced), 1 preload only: (-20,-10)')
+  has(lines,'gated closed now (a route to the turret, held off by its condition now; it carries when its condition is met): fast-inserter (-10,-9) (logistic condition')
+  has(lines,'; fast-inserter (1.5,-8.5) (enabled when firearm-magazine < 10 (on its wires: firearm-magazine 12): false now) on the way of 1 turret: (0,-10)')
+  has(lines,'fast-inserter (10,-7.5) (enabled when signal-A > 0 (on its wires: signal-A 0): false now) on the way of 1 turret: (10,-10)')
+  has(lines,'gun-turret (-10,-10): holds 2; 2 reach it, 4 more behind a link gated closed now')
+  has(lines,'; NOW: fast-inserter (-10,-9) gated closed now')
+  has(lines,'gun-turret (-20,-10): holds 1; 4 reach it'); has(lines,'; STOPPED: fast-inserter (-20,-9.5): no inserter puts anything on')
+  -- the stranded count leaves out the belt behind the relay (it is on a route)
+  eq(tr.stranded,0)
+  -- the source opened: refilled by the maker now, nothing gated
+  s1.get_control_behavior=nil; s1.status=nil
+  tr=F.trace({surface=surface,force='player',hub=hub})
+  F.lines(tr,true,'Solstice',false)
+  eq(tr.rows[1].reaches,36); eq(tr.rows[1].behind_gate,nil); eq(#tr.rows[1].gated,0); eq(tr.rows[1].replenished_gated,nil)
+  defines,prototypes=nil,nil
+  print('d21_batch66 AB3 ammunition routes through links gated closed now: ok')
+end

@@ -10354,3 +10354,29 @@ his body.
   (surface platform-N) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret N, ...". The frame is one search of ours in it (at most 2000 entities, 1920x1080 px is 60x34 tiles).
 - `./shot` (tools/new-run.sh) prints that line under the file name. Runs made before this keep their old `shot` script
   until they are made again.
+
+## d21 batch66 AB3 (eng/d20-batch66)
+
+AB3 (Sol #1617): `platform_defense` read five of Solstice's turrets "preload only" while belt buffers capped near 10
+held their source inserters off; every feed led to the maker aboard when those gates opened. The ammunition trace
+(ammofeed.lua) dropped a source inserter switched off by its condition, did not follow a relay switched off, and
+stopped at a turret's own feeder switched off.
+- Changed: an inserter or belt its circuit or logistic condition holds off now is a link "gated closed now". The trace
+  goes on through it: a source inserter keeps its maker, chest or the hub; a relay's belts upstream are read with their
+  ammunition and sources; a turret's own feeder is traced back as any other. Its condition with the values on its
+  wires comes from feeders.lua (`enabled when firearm-magazine < 10 (on its wires: firearm-magazine 12): false now`),
+  read for the first 16 gates of a trace.
+- A turret row: `reaches` counts what comes now; `behind_gate` what waits behind a link gated closed now. Its line has
+  `NOW:` (the gated links on its way: the current flow) apart from `STOPPED:` (no route to a source, a filter leaving
+  its ammo out, no feeder, blocked by other ammunition ahead).
+- `replenished` counts a source behind a gate: `maker`, `hub`, `chest`; `replenished_gated: true` when every source of
+  that kind is behind one. `preload` is kept for a turret with no route to a source. The replenishment line adds
+  "(N of them only through a link gated closed now: positions)"; a new line lists each gate with its condition and
+  the turrets on its way. `feed.gates` [{name, position, condition, turrets}].
+- Totals: belts and sources behind a gate are on a turret's way (not stranded).
+- Headless copy: a test platform B66gate (made, then destroyed) with a maker, a fast inserter onto 3 belts holding 12
+  magazines, wired to a belt reading the entire belt, enabled when firearm-magazine < 10, and a turret fed from those
+  belts. Closed: "1 from an ammunition maker aboard (...) (1 of them only through a link gated closed now: (1,-12))",
+  the gate line with "on its wires: firearm-magazine 15" (what the belt read gave), 4 behind the gate. Opened: "maker",
+  no gate. The turret's own feeder held off: 5 reach it, 16 behind the gate. A turret on a belt nothing loads: preload
+  only, STOPPED.
