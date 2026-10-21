@@ -87,8 +87,12 @@ return function(api)
     return stack
   end
   -- The team's blueprint library (operator 00:50): named entries captured from what the team built (blueprint_save),
-  -- kept in the save for every agent and every later shift. An entry's string only ever comes from a capture.
-  local MAX_LIBRARY, MAX_NAME, MAX_DESCRIPTION = 64, 40, 300
+  -- kept in the save for every agent and every later shift, or imported from a string (blueprint_import {name}).
+  -- (d20 batch59 U2, Astra #1446: 64 entries full after 48 shifts) 256 entries and 8 MB of strings. Measured on the
+  -- private copy (an 18 MB save): the 64 entries of shift49 hold 416 KB (the largest 52 KB: 2636 entities and 6417
+  -- tiles; Astra's 2123 entities and 6978 tiles 52 KB); 7.6 MB more strings made the save 4.8 MB larger and its save
+  -- time stayed 0.6-0.7 s. A string costs nothing between saves; the operator read pages them (MAX_READ_BYTES).
+  local MAX_LIBRARY, MAX_LIBRARY_BYTES, MAX_NAME, MAX_DESCRIPTION = 256, 8000000, 40, 300
   local STALE = 24 * 60 * 60 * 60 -- 24 game hours unused: anyone may delete or rename the entry
   local function library()
     local s = storage.agent_harness
@@ -99,6 +103,25 @@ return function(api)
     assert(type(v) == 'string' and #v >= 1 and #v <= MAX_NAME and v:match('^[%w][%w_.-]*$'),
       (what or 'name') .. ' must be 1..' .. MAX_NAME .. ' letters, digits, _ . - (starting with a letter or digit)')
     return v
+  end
+  -- The strings' bytes, all entries but `except` (a name being replaced).
+  local function library_bytes(except)
+    local n, count = 0, 0
+    for name, e in pairs(library().entries) do
+      count = count + 1
+      if name ~= except then n = n + #(e.string or '') end
+    end
+    return n, count
+  end
+  local function kb(n) return math.floor(n / 102.4 + 0.5) / 10 end
+  -- A new or replaced entry fits the library's count and bytes, or the call fails naming both.
+  local function room_for(name, bytes)
+    local used, count = library_bytes(name)
+    local old = library().entries[name]
+    assert(old or count < MAX_LIBRARY, string.format('the library holds %d entries, its limit (%g of %g KB of strings used); blueprint_delete frees one',
+      MAX_LIBRARY, kb(used), kb(MAX_LIBRARY_BYTES)))
+    assert(used + bytes <= MAX_LIBRARY_BYTES, string.format('this blueprint\'s string is %g KB and the library holds %g of its %g KB of strings; blueprint_delete frees room',
+      kb(bytes), kb(used), kb(MAX_LIBRARY_BYTES)))
   end
   local function library_entry(name)
     local e = library().entries[entry_name(name)]
@@ -1174,7 +1197,7 @@ return function(api)
     local r={name=e.name,author=e.author,entities=e.entities,tiles=e.tiles>0 and e.tiles or nil,
       footprint=string.format('%gx%g',e.footprint.w,e.footprint.h),counts=counts_line(e.counts,not full and 4 or nil),
       saved=ago(game.tick-e.saved_tick),last_used=e.last_used and ago(game.tick-e.last_used)..' by '..e.last_user or 'never',
-      uses=e.uses or 0,surface=e.surface,anchor=e.anchor~=nil or nil}
+      uses=e.uses or 0,surface=e.surface,anchor=e.anchor~=nil or nil,size_kb=kb(#(e.string or '')),imported=e.imported}
     if full then
       r.description=e.description; r.anchor=e.anchor; r.captured=e.captured
       r.changeable_by_anyone=game.tick-(e.last_used or e.saved_tick)>=STALE
@@ -1260,6 +1283,7 @@ return function(api)
       for _,e in ipairs(ents) do counts[e.name]=(counts[e.name] or 0)+1 end
       local value=stack.export_stack()
       assert(#value<=MAX_STRING,'blueprint export exceeds size limit')
+      room_for(name,#value)
       lib.revision=lib.revision+1
       local entry={name=name,author=api.who(p),string=value,entities=#ents,tiles=#tls,counts=counts,
         footprint={w=r-l,h=b-t},anchor=anchor and {x=anchor.x-origin.x,y=anchor.y-origin.y} or nil,surface=p.surface.name,
@@ -1279,14 +1303,26 @@ return function(api)
       return out
     end)
   end
+  -- (d20 batch59 U2) a page of entries by name (limit, from), each with its string's size, and the library's size.
   function H.blueprint_list(p,a)
     a=a or {}
     if a.name~=nil then return row(library_entry(a.name),true) end
+    local limit=a.limit==nil and 64 or api.integer(a.limit,64,1,MAX_LIBRARY,'limit')
+    local from=a.from==nil and 1 or api.integer(a.from,1,1,MAX_LIBRARY,'from')
     local out=slot_list(p)
+    local all={}
+    for _,e in pairs(library().entries) do all[#all+1]=e end
+    table.sort(all,function(x,y) return x.name<y.name end)
     local rows={}
-    for _,e in pairs(library().entries) do rows[#rows+1]=row(e) end
-    table.sort(rows,function(x,y) return x.name<y.name end)
+    for i=from,math.min(#all,from+limit-1) do rows[#rows+1]=row(all[i]) end
+    local bytes=library_bytes()
     out.library=rows; out.library_limit=MAX_LIBRARY
+    out.library_bytes=bytes; out.library_bytes_limit=MAX_LIBRARY_BYTES
+    out.library_size=string.format('%d of %d entries; %g of %g KB of strings',#all,MAX_LIBRARY,kb(bytes),kb(MAX_LIBRARY_BYTES))
+    if from>1 or from+limit-1<#all then
+      out.library_page=string.format('entries %d-%d of %d by name%s',math.min(from,#all),math.min(#all,from+limit-1),#all,
+        from+limit-1<#all and string.format('; blueprint_list {from: %d} reads on',from+limit) or '')
+    end
     return out
   end
   function H.blueprint_delete(p,a)
@@ -1297,6 +1333,68 @@ return function(api)
     local lib=library()
     lib.entries[e.name]=nil; lib.revision=lib.revision+1
     return {name=e.name,deleted=true,author=e.author}
+  end
+  -- (d20 batch59 U2, Astra #1446) a string into the team library, as a player imports one into theirs: the importer is
+  -- its author, and the same name replaces an entry under blueprint_save's rules. One blueprint (not a book), within
+  -- the library's entries and bytes. description and anchor (blueprint coordinates, as blueprint_export gives them)
+  -- are kept with it; the string's own description is the default description.
+  local function library_import(p,a)
+    permission(p,'import_blueprint_string')
+    local name=entry_name(a.name)
+    assert(a.slot==nil,'give name (a library entry) or slot, not both')
+    assert(type(a.blueprint)=='string' and #a.blueprint>0 and #a.blueprint<=MAX_STRING,'blueprint string size out of range')
+    assert(a.description==nil or (type(a.description)=='string' and #a.description<=MAX_DESCRIPTION),'description must be text of up to '..MAX_DESCRIPTION..' characters')
+    local lib=library()
+    local old=lib.entries[name]
+    if old then may_change(p,old,'replace') end
+    local anchor=a.anchor~=nil and api.position(a.anchor) or nil
+    return temporary(function(stack)
+      assert(stack.import_stack(a.blueprint)==0,'blueprint import failed or contains missing prototypes')
+      assert(stack.valid_for_read and stack.is_blueprint,'a library entry is one blueprint: this string holds '..(stack.valid_for_read and (stack.is_blueprint_book and 'a blueprint book' or stack.name) or 'nothing'))
+      local ents,tls=validate(stack)
+      local l,t,r,b=extent(ents,tls)
+      assert(not anchor or (anchor.x>=l and anchor.x<=r and anchor.y>=t and anchor.y<=b),
+        string.format('anchor must lie in the blueprint (%g..%g, %g..%g in blueprint coordinates)',l,r,t,b))
+      local desc=a.description
+      if desc==nil then
+        local own=(function() local ok,v=pcall(function() return stack.blueprint_description end); return ok and v or nil end)()
+        if type(own)=='string' and own~='' then desc=own:sub(1,MAX_DESCRIPTION) end
+      end
+      stack.label=name
+      local value=stack.export_stack()
+      assert(#value<=MAX_STRING,'blueprint export exceeds size limit')
+      room_for(name,#value)
+      local counts={}
+      for _,e in ipairs(ents) do counts[e.name]=(counts[e.name] or 0)+1 end
+      lib.revision=lib.revision+1
+      local entry={name=name,author=api.who(p),string=value,entities=#ents,tiles=#tls,counts=counts,footprint={w=r-l,h=b-t},
+        anchor=anchor and {x=anchor.x,y=anchor.y} or nil,description=desc and desc:gsub('%s+',' ') or nil,saved_tick=game.tick,
+        rev=lib.revision,uses=0,imported=true}
+      lib.entries[name]=entry
+      local out=row(entry)
+      out.replaced=old and old.author or nil
+      out.library_size=string.format('%d of %d entries; %g of %g KB of strings',select(2,library_bytes()),MAX_LIBRARY,kb((library_bytes())),kb(MAX_LIBRARY_BYTES))
+      return out
+    end)
+  end
+  local slot_import=H.blueprint_import
+  function H.blueprint_import(p,a)
+    if a.name~=nil then return library_import(p,a) end
+    return slot_import(p,a)
+  end
+  -- A library entry's export (blueprint_export {name}): its string carries the entry's name as label and its
+  -- description, as a player's exported string does; the reply gives what blueprint_import {name} takes back.
+  local slot_export=H.blueprint_export
+  function H.blueprint_export(p,a)
+    if a.name==nil or a.layout==true then return slot_export(p,a) end
+    permission(p,'export_blueprint')
+    local e=library_entry(a.name)
+    return load(p,a,function(stack)
+      if e.description then pcall(function() stack.blueprint_description=e.description end) end
+      local out={name=e.name,author=e.author,kind='blueprint',entities=e.entities,tiles=e.tiles,description=e.description,anchor=e.anchor,
+        size_kb=kb(#e.string),blueprint=stack.export_stack()}
+      return out
+    end)
   end
   function H.blueprint_rename(p,a)
     local e=library_entry(a.name)
@@ -1310,17 +1408,29 @@ return function(api)
   end
   -- Operator read (tools/bplibrary.py): every entry's facts, and the string of each changed after `since`.
   H.operator={}
+  -- (d20 batch59 U2) the strings go MAX_READ_BYTES a read at most (at least one): the JSON of 7.6 MB of strings took
+  -- 21.8 ms on the private copy, 416 KB 1.0 ms. strings_after names the last entry whose string came; the next read
+  -- passes it as after.
+  local MAX_READ_BYTES=1000000
   function H.operator.blueprint_library(args)
     local lib,since=library(),tonumber(args and args.since) or -1
-    local rows={}
+    local after=args and type(args.after)=='string' and args.after or nil
+    local budget=tonumber(args and args.max_bytes) or MAX_READ_BYTES
+    local rows,sent,last,held={},0,nil,false
     for _,e in pairs(lib.entries) do
       local r=row(e,true)
       r.rev=e.rev; r.saved_tick=e.saved_tick; r.last_used_tick=e.last_used
-      if (e.rev or 0)>since then r.string=e.string end
       rows[#rows+1]=r
     end
     table.sort(rows,function(x,y) return x.name<y.name end)
-    return {revision=lib.revision,tick=game.tick,entries=rows}
+    for _,r in ipairs(rows) do
+      local e=lib.entries[r.name]
+      if (e.rev or 0)>since and (not after or r.name>after) then
+        if held or (sent>0 and sent+#e.string>budget) then held=true
+        else r.string=e.string; sent=sent+#e.string; last=r.name end
+      end
+    end
+    return {revision=lib.revision,tick=game.tick,entries=rows,strings_after=held and last or nil}
   end
   return H
 end

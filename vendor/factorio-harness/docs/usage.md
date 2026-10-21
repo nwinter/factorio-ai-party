@@ -3167,14 +3167,15 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   paste is checked (short, wired or anchored) `origin_at` and `center_at`: where the blueprint's 0,0 and its center
   landed.
 - The team blueprint library: named entries of what the team built, one library for every agent, kept in the save
-  (`storage`), so it goes on with the world into later shifts. Entries come only from a capture on the map.
+  (`storage`), so it goes on with the world into later shifts. Entries come from a capture on the map, or from a
+  blueprint string (`blueprint_import {name}`, d20 batch59 U2).
   - `blueprint_save {name, area | positions, description, anchor, tiles}` captures our entities in `area` (up to
     256x256 of charted map), or only the entities at `positions` (1..256, each may carry `name` or `unit_number`) with
     the wires between them, into the entry `name` (1..40 letters, digits, `_ . -`). `description` is up to 300
     characters; `anchor` `{x,y}` in the area is a point `blueprint_place` puts at `position`. The same name replaces
     the entry. Reply: `name, author, entities, tiles, footprint` (tiles, `WxH`), `counts` (`assembling-machine-2*12
     inserter*24 ...`), `saved`, `last_used`, `uses`, `surface`, `anchor`, and `replaced` (the previous author). The
-    library holds 64 entries.
+    library holds 256 entries and 8 MB of strings (64 entries before d20 batch59 U2).
   - `blueprint_list` adds `library`: one row per entry (`name, author, entities, tiles, footprint, counts` (the largest
     4), `saved` and `last_used` as time ago with who placed it last, or `never`, `uses, surface, anchor, description`
     (60 characters)) and `library_limit`; `blueprint_list {name}` gives one entry in full (every count, the
@@ -3190,6 +3191,55 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     placed); a refusal says whose it is and when it was last used.
   - The operator keeps a copy in the run: `runs/RUN/blueprints/NAME.txt` (the entry's blueprint string) and
     `index.json` (tools/bplibrary.py, a storage-only read once a minute and at the end of the shift).
+  - d20 batch59 U2 (Astra #1446: the 64 entries were full after 48 shifts, and saving a verified design meant
+    deleting another):
+    - Cost, measured on the private copy (Factorio 2.0.77, an 18 MB save):
+      - Shift49's 64 entries hold 416 KB of strings. The largest is 52 KB (Sol-Limestone-Core47: 2636 entities, 6417
+        tiles); Astra's kestrel-ii-native-freight-183h09 (2123 entities, 6978 tiles) is 51.7 KB. The mean is 6.5 KB.
+      - Saves with more strings in `storage`, two each:
+        - 1.25 MB of real entries: the save grew 1.1-1.3 MB.
+        - 7.6 MB (192 copies of the six largest): the save grew 4.8 MB (18.4 to 23.2 MB).
+        - The save time stayed 0.60-0.69 s in every case.
+      - A string costs nothing between saves.
+      - The JSON of the strings costs about 2.9 ms per MB in game on the copy (416 KB: 1.0 ms; 7.6 MB: 21.8 ms).
+    - So the library holds 256 entries and 8,000,000 bytes of strings, each still under 1 MB. 256 entries at today's
+      mean is about 1.7 MB. A save or import that goes over either limit is refused, naming both, e.g. `this
+      blueprint's string is 51.7 KB and the library holds 7790.2 of its 7812.5 KB of strings; blueprint_delete frees
+      room`.
+    - `blueprint_list`:
+      - each row has `size_kb` (its string);
+      - `library_size` reads `64 of 256 entries; 406.4 of 7812.5 KB of strings`, with `library_bytes` and
+        `library_bytes_limit`;
+      - rows come 64 a page by name (`limit` 1..256, `from`), and `library_page` says which entries a page holds and
+        where the next starts.
+    - `blueprint_export {name}` (in main already: the string) now replies with what an import takes back: `name,
+      author, entities, tiles, description, anchor` (blueprint coordinates) and `size_kb`. The string carries the
+      entry's name as its label and its description as the blueprint's description, as a player's exported string
+      does. `fh call blueprint_export` (or `fh blueprint export`) with `name` writes the string to
+      `blueprints/NAME.txt` in the workspace (`--out FILE`: there) and replies with its `path`. A slot's export
+      without `--out` stays in the reply, as before.
+    - `blueprint_import {blueprint, name, description?, anchor?}` puts a string into the library (`fh blueprint import
+      --file F --args '{"name":...}'`), as a player imports a string into theirs:
+      - the importer is its author, and the same name replaces an entry under `blueprint_save`'s rules;
+      - one blueprint only (a book is refused, naming it);
+      - `anchor` in blueprint coordinates, inside the blueprint;
+      - `description` defaults to the string's own;
+      - the row says `imported: true`;
+      - without `name` it goes to your slot, as before;
+      - passive now (both forms): it leaves the character's action and queue alone, as `blueprint_save` does.
+    - The operator read `blueprint_library` pages the strings: about 1 MB a read (`max_bytes`), at least one, and
+      `strings_after` names the last entry whose string came. tools/bplibrary.py reads on with `{since, after}` until
+      none is left.
+    - Real engine (the private copy, branch runtime, bot sol):
+      - astra's Starling-four-furnace (203 entities, 723 tiles, 6.8 KB) was exported to
+        `blueprints/Starling-four-furnace.txt`, then imported as u2-test-copy with the anchor the export gave.
+      - Same counts, footprint and description; a 6.9 KB string.
+      - `blueprint_place` dry runs of both at (40,40) read the same: 53 placeable, 12 already there, 138 blocked.
+      - The mirror over 24 entries at 20 KB a read took 6 reads, each string once; the next pass took 1 read and
+        wrote nothing.
+      - The test entry was deleted after.
+    - Tests: tests/blueprints.lua (the limits, paging, export and import, the operator read's pages),
+      tests/cli.test.ts (the export file), tools/test_bplibrary.py (paged strings).
 - After any paste of a blueprint with wires, each of its circuit and copper wires whose two ends stand where the
   layout puts them (a new ghost, or a matching entity or ghost from before) is checked and connected if missing, as
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed

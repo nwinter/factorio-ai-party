@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFile, writeFile, cp, mkdir } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
@@ -2186,10 +2186,12 @@ async function main() {
       if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
       else await addLookahead(reply, action, args);
       addPoll(reply, action, args);
-      if (reply.ok && action === 'blueprint_export' && !args.layout && values.out) {
-        await mkdir(dirname(resolve(values.out)),{recursive:true});
-        await writeFile(values.out,reply.result.blueprint+'\n');
-        output({...reply,result:{...reply.result,blueprint:undefined,path:resolve(values.out)}});
+      // (d20 batch59 U2) a library entry's string goes to blueprints/NAME.txt in the workspace unless --out names a file.
+      const exportTo = values.out ?? (typeof args.name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/.test(args.name) ? join('blueprints', `${args.name}.txt`) : undefined);
+      if (reply.ok && action === 'blueprint_export' && !args.layout && exportTo && typeof reply.result?.blueprint === 'string') {
+        await mkdir(dirname(resolve(exportTo)),{recursive:true});
+        await writeFile(exportTo,reply.result.blueprint+'\n');
+        output({...reply,result:{...reply.result,blueprint:undefined,path:resolve(exportTo)}});
       } else {
         // (d17 batch34 C3) a walk's --wait reply says first whether it arrived
         const walk = values.wait ? walkLine(action, reply, exitCode(reply)) : undefined;
