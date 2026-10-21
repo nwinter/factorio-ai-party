@@ -168,7 +168,10 @@
   plant on lithium: lithium-brine left and middle, ammonia right); `box` is the fluidbox inspect gives once built.
   Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
 - `power {position?, radius?, area?, fragile?, by_cause?, platform?, surface?}`: per network `supply_line`: generators'
-  nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state;
+  nameplate (fusion generators at 50 MW each), what the working ones can give, the stopped ones by status (dry steam
+  engines), `generators.by_name` (each one's most output apart from the network's output of that name now), solar,
+  accumulator and lightning attractor lines, `reactors`, and `boilers` by state; each of `lines` says its age, and
+  `built_since` a generator built after it (the view is made again from then);
   generators with no steam, fuel or plasma in now are named, and headroom is against what can supply now, with
   low-power machines counted beside it (the science line's headroom too). `fragile: true` with `position` (and
   `radius`, default 96) lists the poles of that network whose loss alone would cut machines off from all generation,

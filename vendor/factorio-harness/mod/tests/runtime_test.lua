@@ -3046,7 +3046,9 @@ end
 p.surface.find_entities_filtered=function(f)
   local out={}
   for _,e in ipairs(world) do
-    local ok=e.valid and (not f.type or e.type==f.type) and (not f.name or e.name==f.name)
+    local typed=not f.type or e.type==f.type
+    if type(f.type)=='table' then for _,t in ipairs(f.type) do typed=typed or t==e.type end end
+    local ok=e.valid and typed and (not f.name or e.name==f.name)
     if f.radius then ok=ok and dist(e.position,f.position)<=f.radius end
     if f.area then ok=ok and e.position.x>=f.area.left_top.x and e.position.x<=f.area.right_bottom.x end
     if ok then out[#out+1]=e end
