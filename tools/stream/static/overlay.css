@@ -326,6 +326,7 @@ html body.portrait[data-density] .card.waiting .doing { font-size: 14px; }
 .research .top { display: flex; justify-content: space-between; align-items: baseline; }
 .research .tech { font-size: 18px; font-weight: 700; color: var(--head); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .research .pct { font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; margin-left: 8px; }
+.research .levels { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar { height: 10px; border-radius: var(--fx-r-1); background: var(--fx-deep); box-shadow: var(--fx-inset-shadow); overflow: hidden; padding: 2px; box-sizing: border-box; }
 .bar > i {
   display: block; height: 100%; width: 0; border-radius: 1px; transition: width 1.2s ease;
@@ -667,7 +668,7 @@ body[data-density="2"] .card .doing { font-size: 14.5px; }
 body[data-density="2"] .card .doing .where { font-size: 13.5px; }
 body[data-density="2"] .card.research { padding: 7px 14px; gap: 4px; }
 body[data-density="2"] .research .tech { font-size: 16.5px; }
-body[data-density="2"] .research .recent { font-size: 12.5px; }
+body[data-density="2"] .research .recent, body[data-density="2"] .research .levels { font-size: 12.5px; }
 
 body[data-density="3"] #cards { grid-auto-rows: 60px; gap: 6px 10px; }
 body[data-density="3"] .card { padding: 5px 12px 5px 10px; gap: 9px; }
@@ -684,7 +685,7 @@ body[data-density="3"] .dot { width: 8px; height: 8px; }
 body[data-density="3"] .card.research { padding: 5px 14px; gap: 3px; }
 body[data-density="3"] .research .tech { font-size: 15px; }
 body[data-density="3"] .research .pct { font-size: 13px; }
-body[data-density="3"] .research .recent { font-size: 12px; }
+body[data-density="3"] .research .recent, body[data-density="3"] .research .levels { font-size: 12px; }
 body[data-density="3"] .bar { height: 8px; }
 
 /* ---- the trio (onecam.py): one big tile and two small ones; one camera otherwise (no small tiles) ---- */

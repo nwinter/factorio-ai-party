@@ -88,7 +88,13 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                             "building": {"kind": "construct", "done": 7, "total": 20}, "age_s": 3.2}}],
     "chat": [{"seq": 1, "tick": 144720, "from": "Muse", "agent": "muse", "text": "...", "t": 1791695551.8}],  // last 40
     "research": {"current": "engine", "label": "Engine", "progress": 0.54, "done_count": 8,
-                 "recent": [{"name": "steel-processing", "label": "Steel processing", "t": null}]},
+                 "recent": [{"name": "steel-processing", "label": "Steel processing", "t": null}],
+                 // (d20 batch57 S4, viewer Foobator) each infinite technology researched at least once (or being
+                 // researched), the highest level first, at most 24: level is the last level done, next the level the
+                 // tech tree shows; the one being researched has researching and progress
+                 "repeating": [{"name": "mining-productivity-3", "label": "Mining productivity", "level": 14, "next": 15},
+                               {"name": "rocket-fuel-productivity", "label": "Rocket fuel productivity", "level": 10,
+                                "next": 11, "researching": true, "progress": 0.052}]},
     "production": [{"item": "iron-plate", "total": 4562, "rate": 239.8, "series": [/* per minute, last 30 */]}],
     "science": {"spm": 10.0, "series": [/* per minute */], "stage": 2, "stage_label": "Steel & logistics",
                 "packs": [{"item": "automation-science-pack", "rate": 0.0, "total": 277}]},
