@@ -88,7 +88,7 @@ refused('power',{surface='fulgora'},'power with surface needs position or area t
 refused('power',{surface='nowhere',position={x=0,y=0}},'no surface named nowhere')
 
 -- wait_until: surface and platform only on the conditions that read them.
-refused('wait_until',{['until']='no_enemies',surface='fulgora',timeout=1},'surface applies to item_count, rocket_ready, rocket_parts and spoil_within; no_enemies reads no other surface')
+refused('wait_until',{['until']='no_enemies',surface='fulgora',timeout=1},'surface applies to item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count; no_enemies reads no other surface')
 refused('wait_until',{['until']='crafting_done',platform='Swift',timeout=1},'crafting_done reads no platform')
 refused('wait_until',{['until']='all',surface='fulgora',conditions={{['until']='crafting_done'}},timeout=1},'all reads no other surface')
 

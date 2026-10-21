@@ -71,7 +71,7 @@ do
     checked('wait_until',{['until']='rocket_ready',surface='nauvis',position={x=15.5,y=59.5}})
     checked('wait_until',{['until']='all',conditions={{['until']='ammo_below',platform='Bastion',count=1},{['until']='platform_left',platform='Bastion'}}})
     fails(function() checked('wait_until',{['until']='ammo_below',count=1}) end,'ammo_below with platform')
-    fails(function() checked('wait_until',{['until']='rocket_ready',position={x=15.5,y=59.5}}) end,'rocket_ready or rocket_parts with surface')
+    fails(function() checked('wait_until',{['until']='rocket_ready',position={x=15.5,y=59.5}}) end,'rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface')
     print('d20_batch52 remote lane checks: ok')
   end
   defines,prototypes,game=nil,nil,nil

@@ -9,6 +9,11 @@ return function(api)
   -- ghosts the hub's robots build, no body needed; platform_built waits for the foundation.
   local PLATFORM_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,flush=true,place_ghosts=true,deconstruct=true,platform_rearm=true}
   local BODY_READS={inventory=true,craftable=true,sleep_check=true,dry_run=true,screenshot=true}
+  -- (d20 batch62 X3, Astra #1540: circuit_set took surface as a direct call and was refused in the remote lane) the
+  -- writes whose direct call acts on a planet by remote view with surface (bots.lua SURFACE_ACTIONS) take it here too.
+  local SURFACE_WRITES={configure=true,circuit_set=true,circuit=true,wire=true,requests=true,place_ghosts=true,deconstruct=true}
+  -- (X3) waits on our machines, turrets, burners and tanks on a planet by remote view
+  local SURFACE_WAITS={produced=true,ammo_below=true,fuel_below=true,fluid_count=true}
   local function check(action,a)
     a=a or {}
     if action=='wait_ticks' then return end
@@ -27,10 +32,10 @@ return function(api)
           or (c['until']=='ammo_below' and type(c.platform)=='string' and c.platform~='')
           -- (d20 batch55 P5, Sol #1400) a platform's losses since the wait began; its ghosts
           or ((c['until']=='platform_loss' or c['until']=='ghosts_waiting') and type(c.platform)=='string' and c.platform~='')
-          or ((c['until']=='rocket_ready' or c['until']=='rocket_parts') and type(c.surface)=='string' and c.surface~='')
+          or ((c['until']=='rocket_ready' or c['until']=='rocket_parts' or SURFACE_WAITS[c['until']]) and type(c.surface)=='string' and c.surface~='')
       end
       assert(remote_ok(a),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss or ghosts_waiting with platform, rocket_ready or rocket_parts with surface, and all of those')
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, produced, fluid_count, circuit_signal or pod_landed with platform, ammo_below with platform, platform_loss or ghosts_waiting with platform, rocket_ready, rocket_parts, produced, ammo_below, fuel_below or fluid_count with surface, and all of those')
       return
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).
@@ -43,7 +48,8 @@ return function(api)
       return
     end
     if action=='drop' or action=='platform_schedule' or PLATFORM_WRITES[action] then
-      assert(type(a.platform)=='string' and a.platform~='', 'remote lane '..action..' requires platform')
+      assert(type(a.platform)=='string' and a.platform~='' or SURFACE_WRITES[action] and type(a.surface)=='string' and a.surface~='',
+        'remote lane '..action..' requires platform'..(SURFACE_WRITES[action] and ' or surface (by remote view, as the direct call takes them)' or ''))
       return
     end
     if action=='observe' then
@@ -141,7 +147,7 @@ return function(api)
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below, platform_loss or ghosts_waiting with platform, rocket_ready or rocket_parts with surface (guards\' when too); drop, platform_schedule, configure, circuit_set, circuit, wire, requests, flush, place_ghosts, deconstruct and platform_rearm with explicit platform; rotate with platform or surface; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below, platform_loss or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end

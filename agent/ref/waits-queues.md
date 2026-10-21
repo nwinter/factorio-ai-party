@@ -17,15 +17,20 @@
   remote lane too); `rocket_parts` (`position`, `at_least`; without it every part; `silo_parts` is the same name;
   `surface` as rocket_ready); `ammo_below` with `platform` (`count`; every ammo turret aboard, or `positions` or
   `area` in platform coordinates; saw names the lowest turret and what it holds; a remote and platform lane wait and
-  guard, e.g. `{"until":"ammo_below","platform":"Bastion","count":20}`); `platform_loss` (`platform`, `at_least?`,
+  guard, e.g. `{"until":"ammo_below","platform":"Bastion","count":20}`); `ammo_below` and `fuel_below` with `surface`
+  (a planet) and `position` (with `radius`), `area` or (ammo_below) `positions`: the turrets or burners there by remote
+  view, in a charted chunk, in the remote lane too; `platform_loss` (`platform`, `at_least?`,
   `names?`, `since_tick?`: our entities on that platform destroyed since the wait or guard began; saw names each, where,
   by what and when; a remote and platform lane wait and guard, met on a one-shot loss that ammo_below misses, e.g.
   `{"until":"platform_loss","platform":"Edge5"}`); `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
-  products-finished counter; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
+  products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
+  remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
+  machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
-  pipe, thruster and machine of ours there holding it, saw saying how much in each kind) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
+  pipe, thruster and machine of ours there holding it, saw saying how much in each kind; or `surface` (a planet) with
+  `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
   `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
   every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
@@ -85,7 +90,8 @@
   collect, feed, rearm or refuel step with a position and no `walk` runs with `walk: true`: it walks into reach from
   any distance, with move_to's enemy checks (`walk: false` keeps it from walking; standing orders keep `max_walk`). `guards` (up to 8
   `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing.
-  `lane: "remote"`: the remote lane (`./fh help space-age`); `lane: "platform:NAME"`: a remote lane of its own for that
+  `lane: "remote"`: the remote lane (`./fh help space-age`; its `configure`, `circuit_set`, `circuit`, `wire`,
+  `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do); `lane: "platform:NAME"`: a remote lane of its own for that
   platform (the same steps), apart from the remote lane and the other platforms' lanes; each queue call takes the same
   `lane`, and `queue_status`'s `lanes.platforms` lists them. A queue step or standing order step that ends with you 8
   or more tiles from where it began is named in your next reply: `moved_by`

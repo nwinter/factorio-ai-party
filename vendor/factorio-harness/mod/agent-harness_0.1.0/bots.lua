@@ -226,7 +226,7 @@ return function(api)
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), platform_rearm (platform=), drop (hub items down to the planet) and land; '
     .. 'by remote view with platform=NAME: ' .. table.concat(M.PLATFORM_ACTIONS, ', ') .. '; with surface=NAME (a planet): ' .. table.concat(M.SURFACE_ACTIONS, ', ')
-    .. ' (requests there with position); sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready, rocket_parts or item_count at positions or a named platform hub. '
+    .. ' (requests there with position); sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready, rocket_parts, produced, item_count at positions, or any condition with surface or platform. '
     .. 'Nothing that needs a body: walking, mining, building or crafting by hand, your inventory'
   -- A ride never ends sooner than MIN_*: should the engine replace a pod
   -- entity on its way (unverified), the ride still takes its time.
@@ -427,7 +427,9 @@ return function(api)
     if action == 'observe' and VIEWS[args.scope] then return end
     if api.read_only and api.read_only(action) and not BODY_READS[action] and not (action == 'observe' and BODY_READS[args.scope]) then return end
     -- wait_until on a platform, the research, a silo, or counts at positions / a named hub (no body needed).
-    if action == 'wait_until' and (BODYLESS_WAITS[args['until']] or (args['until'] == 'item_count' and (args.positions ~= nil or args.position ~= nil or args.platform ~= nil))) then return end
+    -- (d20 batch62 X3) and any condition with surface or platform: conditions.validate takes those only where the
+    -- condition reads that planet or platform, by remote view.
+    if action == 'wait_until' and (BODYLESS_WAITS[args['until']] or args.surface ~= nil or args.platform ~= nil or (args['until'] == 'item_count' and (args.positions ~= nil or args.position ~= nil))) then return end
     error(no_body(b), 0)
   end
   -- A bot's corpse (Opus, shift12 15:20: a corpse recovery call). The game leaves a character-corpse where the

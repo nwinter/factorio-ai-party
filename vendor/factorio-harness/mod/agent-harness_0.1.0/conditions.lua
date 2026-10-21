@@ -23,11 +23,36 @@ return function(api)
     end
     return n
   end
+  -- (d20 batch62 X3, Astra #1540: produced on Nauvis from Aquilo) surface: a planet by remote view, else the character's
+  -- own; our entities there count in chunks our force has charted, as their GUIs open by remote view.
+  local function surface_of(p,c)
+    if c.surface==nil then return p.surface end
+    local s=game.get_surface(c.surface)
+    if not s then error('no surface named '..tostring(c.surface),0) end
+    return s
+  end
+  local function charted(p,s,pos) return s==p.surface or p.force.is_chunk_charted(s,{math.floor(pos.x/32),math.floor(pos.y/32)}) end
+  -- A crafting machine's recipe name: set (assemblers), or a furnace's current or last one; nil when it has none.
+  local function recipe_of(e)
+    local ok,r=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe) or nil end)
+    if not ok or not r then return nil end
+    local n=r.name
+    if type(n)~='string' then n=try(function() return n.name end) end
+    if type(n)~='string' then return nil end
+    return n,(prototypes.recipe and prototypes.recipe[n]) or r
+  end
+  local function uncharted(s,pos,what) error(string.format('(%g,%g) on %s is not charted: no remote view of %s there',pos.x,pos.y,s.name,what),0) end
   local function selected(p,c,types)
     local centre,radius=area(p,c)
+    local s=surface_of(p,c)
     local filter={position=not c.area and centre or nil,radius=not c.area and radius or nil,area=c.area,type=types,force=p.force,limit=1025}
-    local list=p.surface.find_entities_filtered(filter)
+    local list=s.find_entities_filtered(filter)
     assert(#list<=1024,'condition area exceeds 1024 entities')
+    if s~=p.surface then
+      local out={}
+      for _,e in ipairs(list) do if e.valid and charted(p,s,e.position) then out[#out+1]=e end end
+      list=out
+    end
     return list
   end
   local function turrets(p,c) return selected(p,c,OUR_TURRETS) end
@@ -150,7 +175,19 @@ return function(api)
           list=s.find_entities_filtered{area=c.area,type='ammo-turret',force=p.force,limit=1025}
           assert(#list<=1024,'condition area exceeds 1024 entities')
         end
+      elseif c.positions then
+        -- (X3) surface with positions: those turrets on that planet
+        local s=surface_of(p,c)
+        list={}
+        for _,raw in ipairs(c.positions) do
+          local q=api.position(raw)
+          if not charted(p,s,q) then uncharted(s,q,'a turret') end
+          local found=s.find_entities_filtered{area={{q.x-0.01,q.y-0.01},{q.x+0.01,q.y+0.01}},type='ammo-turret',force=p.force,limit=1}
+          if not found[1] then error(string.format('no ammo turret of ours at (%g,%g) on %s',q.x,q.y,s.name),0) end
+          list[#list+1]=found[1]
+        end
       else list=turrets(p,c) end
+      local on=c.platform or (c.surface~=nil and surface_of(p,c).name) or nil
       local low,n,lowest=0,0,nil
       for _,e in ipairs(list) do
         local k=e.valid and ammo(e)
@@ -161,12 +198,12 @@ return function(api)
         end
       end
       local saw=low..' turrets below '..c.count
-      if lowest and c.platform then
+      if lowest and on then
         local inv=lowest.e.get_inventory(defines.inventory.turret_ammo)
         local held=try(function() local t={} for _,r in ipairs(inv.get_contents()) do t[#t+1]=r.count..' '..r.name end return table.concat(t,', ') end)
-        saw=saw..string.format(' (of %d%s; lowest %s (%g,%g): %s)',n,c.platform and ' on '..c.platform or '',lowest.e.name,lowest.e.position.x,lowest.e.position.y,
+        saw=saw..string.format(' (of %d on %s; lowest %s (%g,%g): %s)',n,on,lowest.e.name,lowest.e.position.x,lowest.e.position.y,
           held and held~='' and held or 'no ammo')
-      elseif c.platform then saw=saw..' (no ammo turret of ours '..(c.area and 'in that area' or 'aboard')..' on '..c.platform..')' end
+      elseif on then saw=saw..' (no ammo turret of ours '..(c.area and 'in that area' or c.platform and 'aboard' or 'within the radius')..' on '..on..')' end
       return low>0,saw
     end,
     health_below=function(p,c)
@@ -265,13 +302,38 @@ return function(api)
     -- (batch28 A4, Sol: Kestrel III held full propellant in pipes and thrusters, and a gate on the tanks would wait
     -- forever) every fluidbox of ours on the platform that holds it: storage tanks, pipes (pipes, pipes-to-ground,
     -- pumps), thrusters and machines, each kind said.
+    -- (d20 batch62 X3) surface with positions or area: our tanks, pipes and machines there on that planet, by remote view
+    -- in chunks our force has charted.
     fluid_count=function(p,c,estimate)
-      local pl=M.platform_named(p,c.platform)
       local KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
         ['assembling-machine']='machines',furnace='machines'}
+      local TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace'}
+      local list,on
+      if c.platform then
+        local pl=M.platform_named(p,c.platform)
+        list,on=pl.surface.find_entities_filtered{type=TYPES,force=p.force,limit=4096},c.platform
+      else
+        local s=surface_of(p,c)
+        list,on={},s.name
+        local seen={}
+        local function add(e) local key=e.unit_number or e; if e.valid and not seen[key] then seen[key]=true; list[#list+1]=e end end
+        if c.positions then
+          for _,raw in ipairs(c.positions) do
+            local pos=api.position(raw)
+            if not charted(p,s,pos) then uncharted(s,pos,'a tank, pipe or machine') end
+            local found=s.find_entities_filtered{position=pos,radius=0.3,type=TYPES,force=p.force}
+            if not found[1] then error(string.format('no tank, pipe or machine of ours at (%g,%g) on %s',pos.x,pos.y,s.name),0) end
+            for _,e in ipairs(found) do add(e) end
+          end
+        else
+          local found=s.find_entities_filtered{area=c.area,type=TYPES,force=p.force,limit=1025}
+          assert(#found<=1024,'condition area exceeds 1024 entities')
+          for _,e in ipairs(found) do if charted(p,s,e.position) then add(e) end end
+        end
+      end
       local n,by,count={},{},{}
       local total=0
-      for _,e in pairs(pl.surface.find_entities_filtered{type={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace'},force=p.force,limit=4096}) do
+      for _,e in pairs(list) do
         local ok,k=pcall(function() return e.get_fluid_count(c.fluid) end)
         local kind=KIND[e.type] or 'other'
         if ok and k and k>0 then by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
@@ -281,8 +343,9 @@ return function(api)
         if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',kind,math.floor(by[kind]+0.5),count[kind]) end
       end
       local met=(c.at_least==nil or total>=c.at_least) and (c.below==nil or total<c.below)
-      return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),c.platform,#parts>0 and table.concat(parts,', ') or 'none in its tanks, pipes, thrusters or machines'),
-        estimate and {value=total,scope='fluid:'..c.platform..':'..c.fluid} or nil
+      return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),on,#parts>0 and table.concat(parts,', ')
+        or (c.platform and 'none in its tanks, pipes, thrusters or machines' or 'none in our '..#list..' tanks, pipes and machines '..(c.positions and 'there' or 'in the area'))),
+        estimate and {value=total,scope='fluid:'..on..':'..c.fluid..(c.platform and '' or ':'..#list)} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
     -- together, as a circuit wait condition reads it.
@@ -326,26 +389,43 @@ return function(api)
         return made>=c.at_least,string.format('made %d %s on platform %s since the wait began (at least %d; the platform\'s production statistics)',made,c.item,c.platform,c.at_least),
           estimate and {value=made,scope='produced:platform:'..c.platform..':'..c.item} or nil
       end
+      -- (d20 batch62 X3, Astra #1540) surface: our machines on that planet by remote view, in chunks our force has
+      -- charted. Each machine is kept with its recipe from its first check: one gone from its tile, or one whose recipe
+      -- changed, fails the wait with the reason (its count so far would be wrong).
+      local s=surface_of(p,c)
+      local there=s~=p.surface and ' on '..s.name or ''
+      base.machines=base.machines or {}
       local crafts,items,seen,machines=0,0,0,0
       local positions=c.positions or {c.position}
-      local scope={tostring(p.surface.index or p.surface.name or '')}
+      local scope={tostring(s.index or s.name or '')}
+      local counted={}
       for _,raw in ipairs(positions) do
         local pos=api.position(raw)
         scope[#scope+1]=pos.x..','..pos.y
-        for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,force=p.force}) do
+        if not charted(p,s,pos) then uncharted(s,pos,'a machine') end
+        for _,e in pairs(s.find_entities_filtered{position=pos,radius=0.3,force=p.force}) do
           local ok,pf=pcall(function() return e.products_finished end)
           seen=seen+1
-          if ok and type(pf)=='number' then
+          local key=e.unit_number or (e.position.x..','..e.position.y)
+          if ok and type(pf)=='number' and not counted[key] then
+            counted[key]=true
             machines=machines+1
-            local key=e.unit_number or (e.position.x..','..e.position.y)
+            local rname,recipe=recipe_of(e)
+            local was=base.machines[key]
+            if not was then
+              was={name=e.name,x=e.position.x,y=e.position.y,recipe=rname}
+              base.machines[key]=was
+            elseif was.recipe~=nil and was.recipe~=rname then
+              error(string.format('the %s at (%g,%g)%s changed recipe since the wait began (%s, now %s): its count would mix the two',
+                e.name,was.x,was.y,there,tostring(was.recipe or 'none'),tostring(rname or 'none')),0)
+            end
+            if was.recipe==nil and rname~=nil then was.recipe=rname end
             if base[key]==nil or pf<base[key] then base[key]=pf end
             local made=pf-base[key]
             crafts=crafts+made
             if c.item then
               local per=0
-              local okr,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe) end)
-              if okr and recipe and recipe.name then recipe=prototypes.recipe[recipe.name] or recipe end
-              for _,prod in ipairs(okr and recipe and recipe.products or {}) do
+              for _,prod in ipairs(recipe and recipe.products or {}) do
                 if prod.name==c.item then per=per+(prod.amount or ((prod.amount_min or 0)+(prod.amount_max or 0))/2)*(prod.probability or 1) end
               end
               items=items+made*per
@@ -353,11 +433,16 @@ return function(api)
           end
         end
       end
+      for key,was in pairs(base.machines) do
+        if not counted[key] then
+          error(string.format('the %s at (%g,%g)%s is gone since the wait began (mined, destroyed or replaced): its products are no longer counted',was.name,was.x,was.y,there),0)
+        end
+      end
       local n=c.item and math.floor(items+0.5) or crafts
       local what=c.item and string.format('made %d %s (%d crafts)',n,c.item,crafts) or string.format('made %d crafts',crafts)
-      local saw=string.format('%s in %d machine%s since the wait began (at least %d)%s',what,machines,machines==1 and '' or 's',c.at_least,
+      local saw=string.format('%s in %d machine%s%s since the wait began (at least %d)%s',what,machines,machines==1 and '' or 's',there,c.at_least,
         seen>machines and string.format('; %d other entities on the tiles have no products counter',seen-machines) or '')
-      if machines==0 then saw='no machine with a products counter on the given tiles' end
+      if machines==0 then saw='no machine with a products counter on the given tiles'..there end
       return machines>0 and n>=c.at_least,saw,estimate and {value=n,scope='produced:'..table.concat(scope,':')} or nil
     end,
     -- A silo's rocket built and ready to launch (the GUI's rocket state).
@@ -602,7 +687,7 @@ return function(api)
           if not best or d<best then best,near=d,e end
         end
       end
-      return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
+      return n>0,n..' burners below '..c.count..' fuel'..(c.surface~=nil and ' on '..surface_of(p,c).name or '')..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
   -- A platform of ours by name, and a signal by name (an item, a fluid or a virtual signal such as signal-A).
@@ -632,7 +717,7 @@ return function(api)
     return all,table.concat(saws,'; ')
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
-  local SURFACE_LIST='item_count, rocket_ready, rocket_parts and spoil_within'
+  local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
   local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
@@ -647,6 +732,16 @@ return function(api)
     -- (d20 batch62 X2, Sol #1529: a surface a read took and did not use) surface and platform only where the condition reads them
     if c.surface~=nil then
       assert(SURFACE_KINDS[c['until']],'surface applies to '..SURFACE_LIST..'; '..tostring(c['until'])..' reads no other surface')
+      -- (d20 batch62 X3) a planet by name; a platform goes by platform=NAME, and its place there is given (your character
+      -- may stand on another surface)
+      local kind=c['until']
+      assert(type(c.surface)=='string' and game.get_surface(c.surface),kind..' surface must be a surface name (nauvis, vulcanus, ...)')
+      assert(not game.get_surface(c.surface).platform,kind..' surface is a planet; a platform goes by platform=NAME')
+      assert(c.platform==nil,kind..': surface or platform, not both')
+      if kind=='produced' or kind=='ammo_below' or kind=='fuel_below' or kind=='fluid_count' then
+        assert(c.position~=nil or c.positions~=nil or c.area~=nil,kind..' with surface needs '..(kind=='produced' and 'position or positions (the machines there)'
+          or kind=='fluid_count' and 'positions or area there' or 'position (with radius), positions or area there')..' (your character may stand on another surface)')
+      end
     end
     if c.platform~=nil then
       assert(PLATFORM_KINDS[c['until']],'platform applies to '..PLATFORM_LIST..'; '..tostring(c['until'])..' reads no platform')
@@ -667,7 +762,7 @@ return function(api)
     elseif c.area~=nil and kind=='ghosts_waiting' and c.platform~=nil then
       M.areas_of(c.area)
     elseif c.area~=nil then
-      assert(kind=='ammo_below' or kind=='fuel_below','area applies to ammo_below or fuel_below (and platform_built, platform_ready, ghosts_waiting with platform)')
+      assert(kind=='ammo_below' or kind=='fuel_below' or kind=='fluid_count','area applies to ammo_below, fuel_below or fluid_count (and platform_built, platform_ready, ghosts_waiting with platform)')
       assert(c.radius==nil and c.position==nil,'area excludes position and radius')
       local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
       assert(r.x>l.x and r.y>l.y and r.x-l.x<=256 and r.y-l.y<=256,'area must be nonempty and at most 256x256')
@@ -679,7 +774,8 @@ return function(api)
       assert(c.positions==nil or c.area==nil,'ammo_below on a platform: positions or area, not both')
     end
     if kind=='ammo_below' and c.positions~=nil then
-      assert(c.platform~=nil,'ammo_below positions applies with platform (turrets on a platform, platform coordinates)')
+      assert(c.platform~=nil or c.surface~=nil,'ammo_below positions applies with platform (turrets on a platform, platform coordinates) or surface (turrets on that planet)')
+      assert(c.position==nil and c.radius==nil and c.area==nil,'ammo_below positions excludes position, radius and area')
       assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'ammo_below positions takes 1..64 {x,y} (turrets)')
       for _,pos in ipairs(c.positions) do api.position(pos) end
     end
@@ -712,8 +808,17 @@ return function(api)
         for _,pos in ipairs(c.positions) do api.position(pos) end
       end
     end
+    if kind=='fluid_count' and c.surface~=nil then
+      assert(c.position==nil and c.radius==nil,'fluid_count on a planet: positions (1..64 {x,y}: tanks, pipes, machines) or area; no position or radius')
+      assert(c.positions==nil or c.area==nil,'fluid_count on a planet: positions or area, not both')
+      if c.positions~=nil then
+        assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'fluid_count positions takes 1..64 {x,y} (tanks, pipes, machines)')
+        for _,pos in ipairs(c.positions) do api.position(pos) end
+      end
+    end
     if kind=='fluid_count' or kind=='circuit_signal' then
-      assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
+      assert(type(c.platform)=='string' and #c.platform>0 or (kind=='fluid_count' and c.surface~=nil),kind..' requires platform (a platform name)'..(kind=='fluid_count' and ', or surface (a planet) with positions or area' or ''))
+      assert(kind~='fluid_count' or c.platform==nil or (c.positions==nil and c.area==nil),'fluid_count on a platform reads all of it: no positions or area (those go with surface)')
       if kind=='fluid_count' then assert(type(c.fluid)=='string' and prototypes.fluid[c.fluid],'fluid_count requires fluid (a fluid name: thruster-fuel, thruster-oxidizer, water, ...)')
       else assert(type(c.signal)=='string','circuit_signal requires signal (an item, fluid or virtual signal name)'); M.signal_of(c.signal) end
       assert(c.at_least~=nil or c.below~=nil,kind..' requires at_least or below')

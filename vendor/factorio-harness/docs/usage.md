@@ -1538,7 +1538,8 @@ fh queue cancel --args '{"lane":"remote"}'
 
 The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
 `platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
-`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`; `min_payload` (it names its
+`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform` (`configure`, `circuit_set`,
+`circuit`, `wire`, `requests`, `place_ghosts` and `deconstruct` with `surface` too, d20 batch62 X3); `min_payload` (it names its
 platforms); and read actions that need no body. `observe` requires `platform` or a scope other
 than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,
 `dry_run`, `screenshot`, body conditions and body actions are refused. Validation
@@ -10052,3 +10053,31 @@ fh watch    # deploy on every change
   `by_cause` with surface fulgora read Fulgora's networks. Each refusal above was called there. Tests:
   tests/d20_batch62b.lua; tests/alertdigest.lua, d17_batch32.lua, pushalerts.lua and spoil.lua give their fake game
   `get_surface`.
+
+## d20 batch62 X3 (eng/d20-batch62c)
+
+- X3 (Astra #1540: after X2, `wait_until produced` with `surface: nauvis` from Aquilo was refused at tick 40886995, and
+  the remote lane's `circuit_set` required `platform` while the direct call takes `surface`).
+- `produced {surface, positions | position, item?, at_least}`: our machines on that planet by remote view, each tile in
+  a chunk our force has charted (else refused: "(x,y) on nauvis is not charted: no remote view of a machine there"),
+  counted from products_finished as the local wait does. A body lane step, a direct wait and a remote lane step. `surface`
+  is a planet (a platform goes by `platform`), with position or positions.
+- Every produced wait (local too) keeps each machine and its recipe from its first check. A machine gone from its tile
+  (mined, destroyed or replaced) fails the wait: "the assembling-machine-2 at (-65.5,72.5) on nauvis is gone since the
+  wait began (mined, destroyed or replaced): its products are no longer counted". A recipe change fails it: "... changed
+  recipe since the wait began (iron-gear-wheel, now copper-cable): its count would mix the two". A machine with no recipe
+  at the first check counts from the recipe it gets. One machine named at two of its tiles counts once (it counted twice).
+- The remote lane takes `configure`, `circuit_set`, `circuit`, `wire`, `requests`, `place_ghosts` and `deconstruct` with
+  `surface` (each is on bots.lua SURFACE_ACTIONS: the direct call acts there by remote view), as well as `platform`.
+  `drop`, `platform_schedule`, `flush` and `platform_rearm` still require `platform`.
+- X2's other surface refusals, for conditions that read machines or chests: `ammo_below` (turrets' ammo), `fuel_below`
+  (burners' fuel) and `fluid_count` (tanks, pipes and machines) take `surface` (a planet), with a place there: ammo_below
+  `position` with `radius`, `positions` or `area`; fuel_below `position` with `radius` or `area`; fluid_count `positions`
+  or `area`. Our entities count in chunks our force has charted. Body and remote lanes; a bot aboard a platform takes
+  any wait_until with `surface` or `platform`.
+- Still refused with `surface`: `no_enemy_structures`, `no_enemies`, `units_clear` (enemies, not ours), `health_below`,
+  `health_above`, `crafting_done` (the character), `researched` (the force), `turrets_idle` (turrets firing),
+  `damaged` (health), `ghosts_waiting` (ghosts, `platform` only), `circuit_signal` (a platform hub's wires), and the
+  platform conditions.
+- Tests: tests/d20_batch62c.lua (fails on main's conditions.lua); tests/d20_batch52.lua and d20_batch62b.lua quote the
+  widened refusals.
