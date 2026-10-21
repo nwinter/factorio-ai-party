@@ -50,7 +50,8 @@
   its provider chests' steel less the reserved pickups, plus its buffers. `bottleneck` gives the same for a link held
   off by a condition (its first gated maker).
   Example: `./fh call gates --args '{"surface":"nauvis"}'`
-- `circuit_audit {area | positions | platform, inserter?}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
+- `circuit_audit {area | positions | platform, inserter?, surface?}` (`surface` with area or positions: those networks
+  on another planet by remote view; entities out of sight now are not read, `out_of_sight` counts them): with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
   (`entire_belt_hold`) on one network whose belts overlap (counted twice); each whole-belt reader whose read is shorter

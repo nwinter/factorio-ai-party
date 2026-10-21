@@ -83,14 +83,18 @@ return function(api)
     return {{x0, y0}, {x1, y1}}
   end
   function M.networks_read(p, a)
-    local s, force, where = p.surface, p.force, 'your surface'
+    local s, force, where = p.surface, p.force, type(p) == 'table' and rawget(p, '__remote') and p.surface.name or 'your surface'
     if a.platform ~= nil then
       local pl = api.platform(p, a.platform)
       s, force, where = pl.surface, pl.force, 'platform ' .. pl.name
       assert(s, 'platform ' .. pl.name .. ' has no surface yet')
     end
     local list, seen = {}, {}
-    local function add(e) if e.valid and not seen[key(e)] and #list < ENTITIES then seen[key(e)] = true; list[#list+1] = e end end
+    local unseen = 0
+    local function add(e)
+      if e.valid and api.seen and not api.seen(p, e.position) then unseen = unseen + 1; return end
+      if e.valid and not seen[key(e)] and #list < ENTITIES then seen[key(e)] = true; list[#list+1] = e end
+    end
     if a.area ~= nil then
       for _, e in ipairs(s.find_entities_filtered{area=box_of(a.area), force=force, limit=ENTITIES * 4}) do
         if #networks(e) > 0 then add(e) end
@@ -146,6 +150,7 @@ return function(api)
         #r.members > LISTED and string.format('; +%d more', #r.members - LISTED) or '')
     end
     if #order == 0 then lines[1] = 'no entity there is on a red or green network' end
+    if unseen > 0 then lines[#lines+1] = string.format('%d entit%s out of sight now (no radar coverage there): not read', unseen, unseen == 1 and 'y' or 'ies') end
     -- (D1, D2) the feeders among them the circuit sets or gates, as the platform read gives them
     local feeders = {}
     M.feeders_begin()
@@ -156,7 +161,7 @@ return function(api)
       end
     end
     M.feeders_end()
-    return {where=where, entities=#list, networks=rows, lines=lines, feeder_rows=#feeders > 0 and feeders or nil}
+    return {where=where, entities=#list, out_of_sight=unseen > 0 and unseen or nil, networks=rows, lines=lines, feeder_rows=#feeders > 0 and feeders or nil}
   end
   -- Feeders the circuit gates (d18 batch38 D1 with batch37 D2; Sol 18:21, more than 10 reads: whole-belt counts took in
   -- output branches the feeders could not reach, and a filter set from a constant minus a belt reader starved the
@@ -518,7 +523,7 @@ return function(api)
     return {platform=pl.name, lines=lines, belt_readers=#readers, double_counts=#doubles > 0 and doubles or nil, short_reads=#short > 0 and short or nil,
       collectors=#cols > 0 and cols or nil, feeders=#feeders > 0 and feeders or nil, feeder_rows=#feeder_rows > 0 and feeder_rows or nil}
   end
-  M.schema = {circuit_audit = {platform='platform name (with area or positions: optional, else your surface)',inserter='optional {x, y}, with platform: that one feeder\'s circuit read (feeders)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
+  M.schema = {circuit_audit = {surface='optional planet, surface or platform name (default yours): with area or positions: the networks of our entities there; one out of sight now (no radar coverage) is not read, said as out_of_sight there by remote view (d20 batch62 X4)',platform='platform name (with area or positions: optional, else your surface)',inserter='optional {x, y}, with platform: that one feeder\'s circuit read (feeders)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
     returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose whole belts share tiles (those items reach the network twice); each such reader whose belt segment (what the game reads) is shorter than the belt in line through it, across undergrounds: the belts left out of the read, upstream and downstream (short_reads [{position, segment_tiles, physical_belts, left_out [{side, from, to, belts}]}]); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]; feeders (lines) and feeder_rows [{name, position, filters, set_filters, gated, mode, pickup, readers [{position, mode, belts, from, to, holds, past_pickup, joins}], line}]: each inserter or loader whose filters the circuit sets or which it turns on and off, on the platform or among the entities of area or positions (the first 8; inserter: one): what it takes now, its pickup, the signals on its networks, the combinators putting out onto them and the networks those read (3 deep), constant combinators, the hub\'s own read apart, and each belt reader on them: its read mode, the belts its count covers (whole belt: the game\'s segment, in flow order), what it holds now of what the inserter takes, the belts of it past the inserter\'s pickup (it cannot take those) and side-loads joining inside the count (a read walks at most 160 belts, 400 for one inserter; a reader past that is named, not walked). With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
   return M
 end

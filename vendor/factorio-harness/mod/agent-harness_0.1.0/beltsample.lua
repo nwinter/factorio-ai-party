@@ -35,18 +35,22 @@ return function(api)
     return partner(b, 'input')
   end
   -- The path through e in flow order, and per tile the belts merging into it (not the tile before it on the path).
-  function M.walk(e)
+  -- charted (optional): the walk goes on only where the map draws the belts (trace.lua's rule); it says where it stopped.
+  function M.walk(e, charted)
     local path, seen = {e}, {[e.unit_number]=true}
+    local stops = {}
     local b = e
     for _ = 1, WALK do
       local x = before(b)
       if not (x and x.valid) or seen[x.unit_number] then break end
+      if charted and not charted(x.position) then stops[#stops+1] = 'back at ' .. at(x.position); break end
       seen[x.unit_number] = true; table.insert(path, 1, x); b = x
     end
     b = e
     for _ = 1, WALK do
       local x = after(b)
       if not (x and x.valid) or seen[x.unit_number] then break end
+      if charted and not charted(x.position) then stops[#stops+1] = 'on at ' .. at(x.position); break end
       seen[x.unit_number] = true; path[#path+1] = x; b = x
     end
     local merges = {}
@@ -58,7 +62,16 @@ return function(api)
         end
       end
     end
-    return path, merges
+    return path, merges, stops
+  end
+  -- (d20 batch62 X4, Astra #1555: belt_flow on Nauvis from Aquilo) what remote view shows, as trace.lua reads it: our
+  -- own platform whole; else items only in chunks our force sees now (radar coverage), the layout in charted ones.
+  local function chunk(pos) return {x=math.floor(pos.x / 32), y=math.floor(pos.y / 32)} end
+  local function viewer(force, surface)
+    local pl = try(function() return surface.platform end)
+    if pl and pl.force == force then return nil end
+    return {visible=function(pos) return try(function() return force.is_chunk_visible(surface, chunk(pos)) end) == true end,
+      charted=function(pos) return try(function() return force.is_chunk_charted(surface, chunk(pos)) end) == true end}
   end
   local function speed(b) return try(function() return b.prototype.belt_speed end) or 0.03125 end
   -- Points: each section's last tile (sections cut at merges), and each merging belt.
@@ -81,7 +94,8 @@ return function(api)
   end
   function M.start(p, e, seconds)
     assert(e and e.valid and BELT[e.type], 'belt_flow reads a belt line: position on a belt, underground or splitter tile')
-    local path, merges = M.walk(e)
+    local view = viewer(p.force, e.surface)
+    local path, merges, stops = M.walk(e, view and view.charted)
     local pts = points(path, merges)
     local fastest = 0
     for _, pt in ipairs(pts) do
@@ -97,22 +111,28 @@ return function(api)
     end
     local every = math.max(1, math.floor(0.5 / fastest))
     local job = {points=pts, start=game.tick, until_tick=game.tick + seconds * 60, every=every, next_tick=game.tick, samples=0,
-      path_from=path[1].position, path_to=path[#path].position, tiles=#path, merges=0}
+      path_from=path[1].position, path_to=path[#path].position, tiles=#path, merges=0,
+      force=view and p.force.name or nil, surface=view and e.surface.name or nil, surface_name=e.surface.name, walk_stops=#stops > 0 and stops or nil}
     for _ in pairs(merges) do job.merges = job.merges + 1 end
     store()[p.index] = job
     M.sample(job)
     job.next_tick = game.tick + every
     local labels = {}
     for i, pt in ipairs(pts) do labels[i] = pt.kind == 'side' and 'merging belt ' .. at(pt.entity.position) .. ' into ' .. at(pt.into) or 'section end ' .. at(pt.entity.position) end
-    return {sampling=true, until_tick=job.until_tick, seconds=seconds, every_ticks=every, tiles=#path, points=labels,
-      note=string.format('the belt line %s to %s (%d tiles, %d merges), sampled for %d s', at(job.path_from), at(job.path_to), #path, job.merges, seconds)}
+    return {sampling=true, until_tick=job.until_tick, seconds=seconds, every_ticks=every, tiles=#path, points=labels, surface=e.surface.name,
+      note=string.format('the belt line %s to %s (%d tiles, %d merges) on %s, sampled for %d s%s', at(job.path_from), at(job.path_to), #path, job.merges, e.surface.name, seconds,
+        #stops > 0 and '; the line goes on uncharted (' .. table.concat(stops, ', ') .. '): not walked' or '')}
   end
   -- One sample: each point's lanes by item id; an id seen before and gone now has passed.
   function M.sample(job)
     job.samples = job.samples + 1
+    local force, surface = job.force and game.forces[job.force], job.surface and game.get_surface(job.surface)
+    local view = force and surface and viewer(force, surface)
     for _, pt in ipairs(job.points) do
       local e = pt.entity
-      if e.valid then
+      if e.valid and view and not view.visible(e.position) then
+        pt.unseen = (pt.unseen or 0) + 1
+      elseif e.valid then
         for k = 1, 2 do
           local now = {}
           local items = try(function() return e.get_transport_line(k).get_detailed_contents() end) or {}
@@ -162,10 +182,16 @@ return function(api)
       local row = {kind=pt.kind, position=pt.entity.valid and pt.entity.position or nil, left=L, right=R, rate=L.rate + R.rate}
       if pt.kind == 'section' then row.from, row.to, row.tiles = pt.from, pt.to, pt.tiles else row.into = pt.into end
       if pt.gone then row.gone = 'the belt was removed while sampling' end
+      if pt.unseen then
+        row.out_of_sight = pt.unseen >= job.samples and 'out of sight (no radar coverage there): not sampled'
+          or string.format('out of sight for %d of %d samples: counted over the rest', pt.unseen, job.samples)
+      end
       rows[#rows+1] = row
       local where = pt.kind == 'section' and string.format('section %s to %s (%d tiles)', at(pt.from), at(pt.to), pt.tiles)
         or string.format('belt %s merging into %s', at(row.position or pt.into), at(pt.into))
-      lines[#lines+1] = string.format('%s: left lane %s%s; right lane %s%s', where, L.state, L.items and ' (' .. L.items .. ')' or '', R.state, R.items and ' (' .. R.items .. ')' or '')
+      if pt.unseen and pt.unseen >= job.samples then lines[#lines+1] = where .. ': ' .. row.out_of_sight
+      else lines[#lines+1] = string.format('%s: left lane %s%s; right lane %s%s%s', where, L.state, L.items and ' (' .. L.items .. ')' or '', R.state, R.items and ' (' .. R.items .. ')' or '',
+        row.out_of_sight and ' (' .. row.out_of_sight .. ')' or '') end
       by_index[pt.index] = by_index[pt.index] or {}
       table.insert(by_index[pt.index], row)
     end
@@ -261,7 +287,8 @@ return function(api)
     end
     if limit then lines[#lines+1] = 'limit: ' .. limit end
     for _, pt in ipairs(job.points) do pt.entity = nil end
-    return {done=true, seconds=math.floor((game.tick - job.start) / 6 + 0.5) / 10, samples=job.samples, every_ticks=job.every, tiles=job.tiles,
+    if job.walk_stops then lines[#lines+1] = 'the line goes on uncharted (' .. table.concat(job.walk_stops, ', ') .. '): not walked' end
+    return {done=true, surface=job.surface_name, seconds=math.floor((game.tick - job.start) / 6 + 0.5) / 10, samples=job.samples, every_ticks=job.every, tiles=job.tiles,
       from=job.path_from, to=job.path_to, points=rows, merges=#merges > 0 and merges or nil, lane_mix=#mix > 0 and mix or nil, limit=limit, lines=lines,
       note='an item counts once it leaves the tile sampled; a lane whose items did not move over the window is stopped (full: 4 or more on the tile)'}
   end
@@ -279,7 +306,7 @@ return function(api)
   function M.handler(p, a)
     if a.position == nil then
       -- (d20 batch62 X2, Sol #1529) the sample so far is read where it was started: platform goes with position (a new sample there)
-      assert(a.platform == nil, 'platform goes with position (a belt there); belt_flow {} reads your sample where it began')
+      assert(a.platform == nil and a.surface == nil, 'surface and platform go with position (a belt there); belt_flow {} reads your sample where it began')
       local job = store()[p.index]
       assert(job, 'no belt_flow sampled yet: belt_flow {position, seconds?}')
       if job.result then return job.result end
@@ -287,12 +314,14 @@ return function(api)
     end
     local seconds = a.seconds == nil and 10 or a.seconds
     assert(type(seconds) == 'number' and seconds >= 2 and seconds <= 30 and seconds == math.floor(seconds), 'seconds: 2..30 (default 10)')
-    local q = a.platform ~= nil and api.on_platform(p, a.platform) or p
+    assert(a.platform == nil or a.surface == nil, 'give platform or surface, not both')
+    local q = a.surface ~= nil and api.on_surface(p, a.surface) or a.platform ~= nil and api.on_platform(p, a.platform) or p
     local e = api.remote_entity(q, {position=a.position})
     return M.start(p, e, seconds)
   end
   M.schema = {belt_flow = {position='a belt, underground or splitter tile {x,y}', seconds='optional 2..30 (default 10): how long to sample',
     platform='optional platform name (platform coordinates)',
+    surface='optional planet, surface or platform name (default yours): the belt there by remote view (d20 batch62 X4): the start tile in a chunk our force sees now (radar coverage); the line is walked where the map is charted, and a point out of sight is not sampled (said per point: out_of_sight)',
     returns='the belt line through position (up to 64 tiles back and 64 on; undergrounds followed; cut into sections at each merge: a side-load or a splitter), its sections\' last tiles and each belt merging in sampled for seconds by item: points [{kind (section, side), from, to, tiles, into, left, right {rate (items a minute that left the tile), passed, items (by name), held (on the tile now), state (N/min, empty, stopped (full: 4 or more on the tile), with what stands on the tile by name), on_tile}, rate}], merges (across each: the line before it and each belt merging in, against the line after it), lane_mix (each merge: a side-load from which side of the line, the lane both its lanes go onto, or a splitter or end-on join lane to lane; what each lane carries after it), limit (what limits the line: a side-load stopped full while the line after it runs at its cap, the straight line\'s items going first; the end backed up, both lanes or one stopped full; else a lane at its cap, items a minute against speed x 4 a tile x 3600), lines, samples, every_ticks. The call returns when the sampling ends; belt_flow {} reads the last result (or the seconds left). Read only'}}
   return M
 end
