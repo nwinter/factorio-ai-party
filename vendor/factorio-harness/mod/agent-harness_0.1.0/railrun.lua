@@ -1,98 +1,176 @@
 -- Elevated rails and rail supports the game keeps (d20 batch69 AE1, Sol #1642: elevated-straight-rail 18232890 at
 -- (277,191) on Fulgora, "entity is not mineable" from mine, and deconstruct over (276,190)-(280,192) marked the rail at
--- 279 only). Read on 2.0.77: a rail support carries the elevated rails within its reach (support_range, 11 tiles);
--- the game lets a hand take only the rails at the two ends of that run (LuaEntity.minable reads false for the rest,
--- minable_flag stays true, and LuaEntity.mine refuses them); each end taken frees the next one in; the support itself
--- goes once no rail rests on it. A deconstruction planner marks nothing over a rail in the middle of a run, and over
--- the support it marks the support and every rail it carries (robots took a run of 10 and its support end first in
--- 57 s). Rails no support reaches go anywhere.
+-- 279 only; AE2, Sol 11:29: mined 281 and 279 as cp1 said, and 277 stayed). Read on 2.0.77, Sol's layout rebuilt on a
+-- private copy: every elevated rail must be held up by a rail support (support_range 11) or a rail ramp's elevated end
+-- (9) within reach along the track: the path from the support's joint to the rail's near end plus the rail's own
+-- length (get_rail_end) at most the reach. The game keeps a rail (LuaEntity.minable false, minable_flag true,
+-- LuaEntity.mine refuses) while another rail is held up only through it, and a support while a rail is held up only by
+-- it. On Sol's line the rails 269 to 275 are held up by the support at (278,191) only through 277: after 281 and 279,
+-- 277 went once 269, 271, 273 and 275 had gone, outermost first. A deconstruction planner marks nothing over such a
+-- rail, and over a support it marks the support and every rail it holds (robots took a run of 10 and its support,
+-- outermost first, in 57 s).
 return function(api)
 local M={}
 M.RAIL={['elevated-straight-rail']=true,['elevated-half-diagonal-rail']=true,['elevated-curved-rail-a']=true,['elevated-curved-rail-b']=true}
 M.SUPPORT={['rail-support']=true}
-local MAX_WALK=64
+local RAIL_TYPES={'elevated-straight-rail','elevated-half-diagonal-rail','elevated-curved-rail-a','elevated-curved-rail-b'}
+local RADIUS=26   -- rails read round the one asked about: a rail held through it lies within one reach of it, its other holder within two
+local LIST=6
 
 local function at(e) return string.format('(%g,%g)',e.position.x,e.position.y) end
 local function dist(a,b) return math.sqrt((a.x-b.x)^2+(a.y-b.y)^2) end
-local function range(s)
+local function key(p) return string.format('%g,%g',p.x,p.y) end
+local function reach(s)
   local ok,r=pcall(function() return s.prototype.support_range end)
-  return ok and r or 11
+  return ok and r or (s.type=='rail-ramp' and 9 or 11)
 end
 
--- The rail supports whose reach takes in rail e (its centre within support_range less one tile), nearest first.
-function M.supports(e)
+-- The track round position pos on surface: edges {rail, a, b (joint keys), len} for the elevated rails, joints ->
+-- edges, and the holders {entity, joint, reach}: each rail support on a joint, each rail ramp at its elevated end.
+function M.graph(surface,pos,radius)
+  radius=radius or RADIUS
+  local g={edges={},by_unit={},joints={},holders={}}
+  local D=defines.rail_direction
+  local elevated_ends={}
+  for _,r in pairs(surface.find_entities_filtered{type=RAIL_TYPES,position=pos,radius=radius}) do
+    local ok,a,b=pcall(function() return r.get_rail_end(D.front).location.position,r.get_rail_end(D.back).location.position end)
+    if ok and a and b then
+      local e={rail=r,a=key(a),b=key(b),len=dist(a,b)}
+      g.edges[#g.edges+1]=e; g.by_unit[r.unit_number]=e
+      for _,j in ipairs({e.a,e.b}) do g.joints[j]=g.joints[j] or {}; table.insert(g.joints[j],e); elevated_ends[j]=true end
+    end
+  end
+  for _,s in pairs(surface.find_entities_filtered{type={'rail-support','rail-ramp'},position=pos,radius=radius+12}) do
+    if s.type=='rail-support' then
+      g.holders[#g.holders+1]={entity=s,joint=key(s.position),reach=reach(s)}
+    else
+      local ok,a,b=pcall(function() return s.get_rail_end(D.front).location.position,s.get_rail_end(D.back).location.position end)
+      if ok and a and b then
+        local j=elevated_ends[key(a)] and key(a) or elevated_ends[key(b)] and key(b) or nil
+        if j then g.holders[#g.holders+1]={entity=s,joint=j,reach=reach(s)} end
+      end
+    end
+  end
+  return g
+end
+
+-- {unit_number=true} of the rails holder h holds up, with the rails in skip ({unit_number=true}) gone: those whose near
+-- end is at most reach - their length along the track from its joint.
+local function held_by(g,h,skip)
+  skip=skip or {}
+  local best={[h.joint]=0}
+  local todo={h.joint}
+  local held={}
+  while #todo>0 do
+    -- the nearest joint not done (the graphs are small)
+    local bi,bj
+    for i,j in ipairs(todo) do if not bi or best[j]<best[bj] then bi,bj=i,j end end
+    table.remove(todo,bi)
+    for _,e in ipairs(g.joints[bj] or {}) do
+      local u=e.rail.valid and e.rail.unit_number
+      if u and not skip[u] and best[bj]+e.len<=h.reach+1e-6 then
+        held[u]=true
+        local other=e.a==bj and e.b or e.a
+        local d=best[bj]+e.len
+        if best[other]==nil or d<best[other]-1e-9 then
+          if best[other]==nil then todo[#todo+1]=other end
+          best[other]=d
+        end
+      end
+    end
+  end
+  return held
+end
+
+local function held_all(g,skip,skip_holder)
+  local all={}
+  for _,h in ipairs(g.holders) do
+    if h.entity~=skip_holder and h.entity.valid then
+      for u in pairs(held_by(g,h,skip)) do all[u]=true end
+    end
+  end
+  return all
+end
+
+-- The rails held up only through rail e (or, for a support, only by it): those the game keeps it for. cascade: also
+-- the rails held up only through those, and so on (what a planner marks with a support).
+function M.dependents(e,g,cascade)
+  g=g or M.graph(e.surface,e.position)
+  local before=held_all(g)
+  local gone={}
+  if not M.SUPPORT[e.type] then gone[e.unit_number]=true end
   local out={}
-  for _,s in pairs(e.surface.find_entities_filtered{type='rail-support',position=e.position,radius=16}) do
-    if s.valid and dist(s.position,e.position)+1<=range(s) then out[#out+1]=s end
+  repeat
+    local after=held_all(g,gone,M.SUPPORT[e.type] and e or nil)
+    local added=false
+    for u in pairs(before) do
+      if not gone[u] and not after[u] then gone[u]=true; added=true; out[#out+1]=g.by_unit[u].rail end
+    end
+  until not cascade or not added
+  table.sort(out,function(a,b) return dist(a.position,e.position)<dist(b.position,e.position) end)
+  return out,g
+end
+
+-- The holders whose reach holds rail e now.
+function M.holders(e,g)
+  g=g or M.graph(e.surface,e.position)
+  local out={}
+  for _,h in ipairs(g.holders) do
+    if h.entity.valid and held_by(g,h)[e.unit_number] then out[#out+1]=h.entity end
   end
   table.sort(out,function(a,b) return dist(a.position,e.position)<dist(b.position,e.position) end)
   return out
 end
 
--- The elevated rails within a support's reach (as supports() takes them in).
-function M.carried(s)
-  local out={}
-  for _,r in pairs(s.surface.find_entities_filtered{type={'elevated-straight-rail','elevated-half-diagonal-rail','elevated-curved-rail-a','elevated-curved-rail-b'},
-      position=s.position,radius=range(s)}) do
-    if r.valid and dist(s.position,r.position)+1<=range(s) then out[#out+1]=r end
-  end
-  return out
+local function names(list)
+  local parts={}
+  for i=1,math.min(LIST,#list) do parts[#parts+1]=list[i].name..' '..at(list[i]) end
+  return table.concat(parts,', ')..(#list>LIST and string.format(' (+%d more)',#list-LIST) or '')
 end
 
--- The nearest elevated rails joined to e along the rails, each way, that the game lets go now (minable), walking at
--- most MAX_WALK rails.
-function M.ends(e)
-  local found,seen,frontier,steps={},{[e.unit_number or 0]=true},{e},0
-  local D,C=defines.rail_direction,defines.rail_connection_direction
-  while #frontier>0 and steps<MAX_WALK do
-    local nxt={}
-    for _,r in ipairs(frontier) do
-      for _,d in ipairs({D.front,D.back}) do
-        for _,c in ipairs({C.straight,C.left,C.right}) do
-          local ok,n=pcall(r.get_connected_rail,{rail_direction=d,rail_connection_direction=c})
-          if ok and n and n.valid and M.RAIL[n.type] and not seen[n.unit_number] then
-            seen[n.unit_number]=true; steps=steps+1
-            if n.minable then found[#found+1]=n else nxt[#nxt+1]=n end
-          end
-        end
-      end
-    end
-    frontier=nxt
-  end
-  return found,steps>=MAX_WALK
-end
-
--- Why the game will not let entity e be mined now (nil when it will): an elevated rail inside a support's run, a
--- support that carries rails, or the game's minable flag.
+-- Why the game will not let entity e be mined now (nil when it will).
 function M.why(e)
   if not (e and e.valid) or e.minable then return nil end
   local okf,flag=pcall(function() return e.minable_flag end)
   if okf and flag==false then return 'its minable flag is off (set by a script); the game mines it only with the flag on' end
-  if M.RAIL[e.type] then
-    local sup=M.supports(e)
-    local ends,cut=M.ends(e)
-    local names={}
-    for i=1,math.min(4,#ends) do names[#names+1]=ends[i].name..' '..at(ends[i]) end
-    return string.format('the game lets an elevated rail go only from an end of the run a rail support carries%s; taken from an end, the next rail in frees; %s; '
-        ..'a deconstruction planner marks nothing over a rail inside a run, and over the support it marks the support and every rail it carries',
-      #sup>0 and (': '..sup[1].name..' '..at(sup[1])..(#sup>1 and string.format(' (and %d more)',#sup-1) or '')..' carries this one') or '',
-      #names>0 and ('the nearest that can go now along these rails: '..table.concat(names,', ')..(#ends>4 and string.format(' (+%d more)',#ends-4) or ''))
-        or ('none can go now within '..MAX_WALK..' rails along these'..(cut and ' (more beyond)' or '')))
-  end
-  if M.SUPPORT[e.type] then
-    return string.format('a rail support goes only once no elevated rail rests on it: %d within its reach (%g tiles); marking it for deconstruction marks them with it',
-      #M.carried(e),range(e))
+  if M.RAIL[e.type] or M.SUPPORT[e.type] then
+    local deps,g=M.dependents(e)
+    local hold=M.RAIL[e.type] and M.holders(e,g) or {}
+    local free={}
+    for _,r in ipairs(deps) do if r.minable then free[#free+1]=r end end
+    local rule='each elevated rail must be held up by a rail support (reach 11) or a rail ramp\'s elevated end (reach 9) within reach along the track'
+    local held_by_text=#hold>0 and ('; it is held up by '..names(hold)) or ''
+    local via=M.SUPPORT[e.type] and 'by' or 'through'
+    if #deps==0 then
+      return 'the game reads it not minable now ('..rule..'; no rail within '..RADIUS..' tiles is held up only '..via..' it)'..held_by_text
+    end
+    return string.format('the game keeps %s while another rail is held up only %s it (%s)%s; held up only %s it: %d rail%s, %s; '
+        ..'they go first, outermost first%s',
+      M.SUPPORT[e.type] and 'a rail support' or 'an elevated rail',via,rule,held_by_text,via,#deps,#deps==1 and '' or 's',names(deps),
+      #free>0 and ('; of those, these can go now: '..names(free)) or '')
   end
   return 'the game reads it not minable now'..(okf and flag and ' (its minable flag is on)' or '')
 end
 
--- deconstruct: mark support s as a planner does, which marks the rails it carries too. Returns the entities newly
+-- The elevated rails support s holds up (within its reach along the track): a planner marks them with it.
+function M.carried(s)
+  local g=M.graph(s.surface,s.position,reach(s)+4)
+  for _,h in ipairs(g.holders) do
+    if h.entity==s then
+      local out={}
+      for u in pairs(held_by(g,h)) do out[#out+1]=g.by_unit[u].rail end
+      return out
+    end
+  end
+  return {}
+end
+
+local function near_rails(s)
+  return s.surface.find_entities_filtered{type=RAIL_TYPES,position=s.position,radius=reach(s)+6}
+end
+-- deconstruct: mark support s as a planner does, which marks the rails it holds too. Returns the entities newly
 -- marked by name ({name=count}, the rails as the game marked them), nil, the number of rails and {unit_number=true}
 -- of all it marked; or nil and the game's error.
-local function near_rails(s)
-  return s.surface.find_entities_filtered{type={'elevated-straight-rail','elevated-half-diagonal-rail','elevated-curved-rail-a','elevated-curved-rail-b'},
-    position=s.position,radius=range(s)+6}
-end
 function M.mark_support(p,s,player)
   local before={}
   for _,r in ipairs(near_rails(s)) do before[r.unit_number]=r.to_be_deconstructed() end

@@ -1094,13 +1094,14 @@ return function(api)
     -- marks nothing over such a rail and, over the support, the support with every rail it carries (railrun.lua). Our
     -- supports here are marked that way first; what is left unmarked is named with why (not_marked).
     local rr=api.railrun and api.railrun()
-    local by_support,skipped,support_marks={},{},{}
+    local by_support,skipped,support_marks,skipped_more={},{},{},0
     local function allowed(t,n) return (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) end
     if rr and not cancel then
       for _,e in ipairs(list) do
         local ok,t,n,keep=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and e.force==p.force and not e.minable and e.minable_flag end)
         if ok and t and rr.SUPPORT[t] and keep and allowed(t,n) and not e.to_be_deconstructed(p.force) then
-          local carried=rr.carried(e)
+          -- (AE2) the rails held up only by it, as the game keeps them (the live reply counts what the game marks)
+          local carried=rr.dependents(e,nil,true)
           if dry then
             changed=changed+1; by[n]=(by[n] or 0)+1
             for _,r in ipairs(carried) do
@@ -1118,7 +1119,8 @@ return function(api)
           end
           by_support[e.unit_number]=true
           local nr=carried.n or #carried
-          support_marks[#support_marks+1]=string.format('%s (%g,%g) with the %d elevated rail%s it carries',n,e.position.x,e.position.y,nr,nr==1 and '' or 's')
+          support_marks[#support_marks+1]=string.format('%s (%g,%g) with the %d elevated rail%s %s',n,e.position.x,e.position.y,nr,nr==1 and '' or 's',
+            dry and 'held up only by it (the live reply gives the game\'s own count)' or 'the game marked with it')
         end
       end
     end
@@ -1129,7 +1131,9 @@ return function(api)
       local unit=ok and t and e.valid and e.unit_number
       if unit and by_support[unit] then
         -- marked (or counted, in a dry run) with its rail support above
-      elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) and #skipped<64 then
+      elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) and #skipped>=12 then
+        skipped_more=skipped_more+1  -- (AE1) counted; the reason read for the 12 listed only (railrun.why reads the track round it)
+      elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) then
         -- (AE1) found in the area, not marked: why
         local why
         if e.force~=p.force and e.force.name~='neutral' then why='another force\'s ('..e.force.name..')'
@@ -1173,15 +1177,15 @@ return function(api)
     if cancel and #support_marks>0 then
       -- (AE1) the game's cancel takes only what is in the area: rails a cancelled support carries may stay marked
       local left=0
-      for _,e in ipairs(support_marks) do for _,r in ipairs(rr.carried(e)) do if r.valid and r.to_be_deconstructed(p.force) then left=left+1 end end end
+      for _,e in ipairs(support_marks) do for _,r in ipairs(rr.carried(e)) do if r.valid and r.to_be_deconstructed(p.force) then left=left+1 end end end  -- rails in its reach
       support_marks={}
-      if left>0 then out.rails_still_marked=left..' elevated rails the cancelled rail supports carry stay marked (a cancel takes only what is in the area, as the game\'s does)' end
+      if left>0 then out.rails_still_marked=left..' elevated rails in the cancelled rail supports\' reach stay marked (a cancel takes only what is in the area, as the game\'s does)' end
     end
     if #support_marks>0 then out.rail_supports=(dry and 'would mark ' or 'marked ')..table.concat(support_marks,'; ',1,math.min(6,#support_marks))
-      ..' (the game marks a rail support with the rails it carries; robots take the rails from the run\'s ends, the support last)' end
+      ..' (the game marks a rail support with the rails held up only by it; robots take them outermost first, the support last)' end
     if #skipped>0 then
-      out.not_marked=#skipped>12 and {table.unpack(skipped,1,12)} or skipped
-      out.not_marked_count=#skipped
+      out.not_marked=skipped
+      out.not_marked_count=#skipped+skipped_more
     end
     if not dry and changed>0 then
       local names={}
