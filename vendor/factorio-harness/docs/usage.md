@@ -5597,10 +5597,27 @@ fh watch    # deploy on every change
   - `reminders {all?}` lists yours and those addressed to you (`all: true`: the team's): owner, recipients, message,
     cadence, next due, the last result and its age, and per recipient `scheduled`, `pending`, `overdue` (pending for
     more than an interval), `acknowledged`, with runs missed.
+  - Backup and each recipient's latest (d20 batch70 AF2, viewer Aurora: "Freight review shows 12 missed runs despite
+    newer freight work in chat"; world n #107 verify-native-freight-receipts went to its owner Astra alone, every 10
+    min, so the owner line never fired). `backup: "sol"` on `reminder_add` or `reminder_edit` (`false` clears it): one
+    teammate told once when a recipient misses a run (a second run comes while the first waits), until that recipient
+    acknowledges: `astra missed a run of reminder #107 verify-native-freight-receipts (astra's, every 10m00s; you are
+    its backup): not acknowledged since tick 42358560 (10m00s ago), 1 run missed (...); astra's last result: ...;
+    reminder_ack {id: 107, for: "astra", result} records one for them`. The backup (or the owner) records a result
+    for a recipient with `reminder_ack {id, for, result}` (not a checklist): it clears that recipient's run, and the
+    result is theirs with `by`. The read's rows carry `backup` and `latest`, one per recipient: `{name, state,
+    acked_tick, acked_ago_s, result, by, waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick,
+    line}` (`astra: waiting since tick 42358560 (2h23m), 15 runs missed (...), backup sol told; last acknowledged
+    2h27m ago: K2 Fulgora ...`); the job's line ends with `latest: ...`, and `states` adds `backup sol told`. A job
+    from before keeps its last result for the recipient who gave it. Cost on the private copy: `reminders {all:
+    true}` over 47 jobs 9.6 ms against 7.4 ms before (54 KB against 36 KB).
   - The jobs live in the save, so a rollback restores them with the tick; a next run more than one interval past the
     tick is set again from it.
   - The site's Board card has a Reminders panel: owner, message, cadence and next due, the last result and its age,
-    and each recipient's state. tools/stream/live.py reads `reminders {all: true}` with the board, every board read.
+    and each recipient's state; with AF2 the backup and each recipient's latest (acknowledged how long ago, by whom
+    and with what, the result cut to 240 characters; or waiting how long, runs missed, backup told). Over the
+    reminders' 24 KB share push_live drops those results before any job (first the ones that repeat the job's last
+    result). tools/stream/live.py reads `reminders {all: true}` with the board, every board read.
 - The site (viewer Foobator, asked twice).
   - `/blueprints/`: the team's blueprint library from the newest shift's copy (tools/bplibrary.py writes
     runs/RUN/blueprints/index.json and NAME.txt each shift): per entry its name, author, footprint, entity counts,
