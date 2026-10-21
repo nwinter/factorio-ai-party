@@ -10210,3 +10210,27 @@ fh watch    # deploy on every change
   (3000,3000) refused, nothing placed; flips and a missing position refused.
 - Noted, not changed: the paste dry run of that blueprint calls 3 belts blocked by the planned assembler while the paste
   itself places all 15; Sol's local dry run gives the same rows, so it predates X5.
+
+## d21 batch66 (eng/d20-batch66)
+
+AB1 (Sol #1591): `platform_bom` counts by item and quality, as `construction_blocked` and the game's own
+missing-materials section do. Solstice's ghosts needed asteroid-collector@uncommon 1, solar-panel@epic 1 and
+solar-panel@rare 2. The BOM counted collector 1 and solar 3 at normal, took 6 normal panels in the hub as covering them,
+and its request section asked for normal items only.
+- The read: a row an item at a quality (`item`, `quality`, `key`: `item@quality` past normal, the bare name at normal).
+  ghosts_need, built (entities of that name at that quality; tiles as before), hub, in_flight, in_robots, asks and
+  remaining are each at that quality. `hub_other_quality` is the hub's stock of the item at other qualities, said in the
+  line as "(and N at other qualities, which do not build these)". Item requests (modules) keep their quality.
+- `request: true`: one slot an item at a quality (comparator `=`), at what the ghosts of that quality need. The watch
+  lowers a slot only for a drop at its quality; each item and quality keeps its slot across rewrites.
+  `min_payload` takes `item` (every quality of it) or `item@quality`; an unknown quality is refused.
+- `surface`: each request row has `quality` and `holds` at that quality; the line names `item@quality`.
+- On the shared headless copy, a test platform B66test at Nauvis (made, then deleted) had Sol's ghosts and 6 normal
+  panels in the hub. construction_blocked and platform_bom gave the same three needs; each row said "(and 6 at other
+  qualities, which do not build these)". The request section had asteroid-collector@uncommon 1, solar-panel@epic 1 and
+  solar-panel@rare 2. Taking the 6 normal panels out changed no slot. The rare slot fell as the hub spent rare panels.
+  A built epic panel cleared its slot at the 10 s rewrite, and the rare slot stayed where it was. min_payload by
+  `item@quality` and by `item` set the slots.
+- Seen on the copy, not changed: the hub's game-managed missing-materials section already asks the ghosts' items at
+  their quality from the planet the platform is at (it did not ask the uncommon collector). `asks` sums every active
+  section, the game's included: with `request: true` the row for 1 rare panel ghost read asks 2 (1 in each section).

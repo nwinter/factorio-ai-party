@@ -102,7 +102,7 @@ do
   game={tick=0}
   defines={cargo_destination={station=1,space_platform=2},inventory={hub_main=1,cargo_unit=2}}
   prototypes={item={['space-platform-foundation']={weight=20000,stack_size=50},pipe={weight=5000,stack_size=100}}}
-  local hub={valid=true,get_inventory=function() return {get_item_count=function(n) return n=='pipe' and 100 or 0 end} end,
+  local hub={valid=true,get_inventory=function() return {get_item_count=function(n) n=type(n)=='table' and n.name or n; return n=='pipe' and 100 or 0 end} end,
     get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='space-platform-foundation'},min=2826}}} end} end}
   local floor={name='space-platform-foundation',items_to_place_this={{name='space-platform-foundation',count=1}}}
   local pipe={name='pipe',items_to_place_this={{name='pipe',count=1}}}

@@ -42,7 +42,7 @@ do
   secs.remove_section=function(i) table.remove(sections,i); secs.sections_count=#sections end
   local held={['fast-inserter']=4}
   local hub={valid=true,get_logistic_sections=function() return secs end,
-    get_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end}
+    get_inventory=function() return {get_item_count=function(n) n=type(n)=='table' and n.name or n; return held[n] or 0 end} end}
   local pl={valid=true,index=7,name='Swiftlet',hub=hub,space_location={name='nauvis'},surface={find_entities_filtered=find,count_entities_filtered=function() return 0 end}}
   local force={name='player',platforms={pl}}
   pl.force=force
@@ -141,7 +141,7 @@ STAGE_FIXTURE=function()
     ['copper-cable']={name='copper-cable',ingredients={{type='item',name='copper-plate',amount=1}},products={{name='copper-cable',amount=2}}},
     pipe={name='pipe',ingredients={{type='item',name='iron-plate',amount=1}},products={{name='pipe',amount=1}}}}
   local held={pipe=5}
-  local p={get_main_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end}
+  local p={get_main_inventory=function() return {get_item_count=function(n) n=type(n)=='table' and n.name or n; return held[n] or 0 end} end}
   local submitted
   local S=dofile('mod/agent-harness_0.1.0/stage.lua'){position=function(q) return {x=q.x or q[1],y=q.y or q[2]} end,
     entity=function(_,q) return at[q.x..','..q.y] end,hand_recipe=function(_,item) return recipes[item] end,
