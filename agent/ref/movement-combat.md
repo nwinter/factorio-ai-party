@@ -151,6 +151,10 @@
   statistics) and `fed_by` inserters (a piece one refills keeps its count after a shot). `configure {position,
   auto_targeting: false}` switches targeting off; `use_item {"item":"artillery-targeting-remote","position":{...}}`
   puts a flare there for the pieces in range.
+  A flare reaches farther than automatic targeting: `manual_range` is the range times the prototype's
+  manual_range_modifier (2.5: 560 tiles with no range research, 728 at +30%), the 32-tile minimum holding too. The
+  flare's reply says for each loaded piece in reach whether only its manual range holds it, and when none reaches,
+  `nearest_out_of_range`: the loaded piece nearest to reaching it and why (past its manual range, or inside its minimum).
 - `shoot {position | auto, gun?, ammo?, ticks?, fire_anyway?}`: fires at the position (`auto: true`: the nearest enemy); the
   position is within 32 tiles of you or the selected gun's range, the larger, in a chunk our force sees now; replies
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,

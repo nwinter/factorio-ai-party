@@ -376,7 +376,7 @@ do
   eq(r.count,2); eq(r.artillery[1].position.x,0,'nearest you first'); eq(r.artillery[1].range,280,'224 with a 25% bonus')
   eq(r.artillery[1].in_range,2,'the worm inside the minimum range and the spawner past the range are left out')
   eq(r.artillery[1].nearest[1].name,'spitter-spawner'); eq(r.artillery[1].nearest[1].distance,60)
-  has(r.lines[1],'artillery-turret (0,0): 5 shells; automatic targeting on; range 280 (minimum 32); 2 enemy spawners and worms in range, the nearest spitter-spawner (60,0) 60 tiles away')
+  has(r.lines[1],'artillery-turret (0,0): 5 shells; automatic targeting on; range 280 (minimum 32), a flare within 280; 2 enemy spawners and worms in range, the nearest spitter-spawner (60,0) 60 tiles away')
   eq(r.artillery[2].in_range,0,'a spawner on an uncharted chunk is left out'); has(r.lines[2],'no shells')
   -- the switch, read back
   local c=A.configure(a1,false)
