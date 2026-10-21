@@ -100,6 +100,11 @@
   `./fh call queue_status --args '{"history":"all","pending":10}'`
 - `queue_edit {id, steps?, to?}`: `id: "job-12"` deletes a pending step (`steps`: replace it, `to: N`: move it); the
   active step is untouched. Example: `./fh call queue_edit --args '{"id":"job-12","to":1}'`
+- `queue_edit {lane?, expected_revision, guards: {remove?, replace?, add?}}`: the guards only, by id (`guard-N`,
+  queue_status `guards`): `remove: ["guard-3"]`, `replace: [{id, when, goto|steps}]`, `add: [guards]`. The active step,
+  its wait and the pending steps go on; a guard not named keeps its baseline (platform_loss its since tick); one
+  replaced or added starts its own. The reply gives `revision` and each guard's `baseline`. Example:
+  `./fh call queue_edit --args '{"lane":"platform:Edge8","expected_revision":41,"guards":{"remove":["guard-3"]}}'`
 - `queue_cancel {lane?, clear?}`: cancels a queue (`lane: "remote"` for the remote lane); `clear: false` keeps the
   pending steps.
 - `queue_pause {lane?}` (`./fh queue pause`): pauses a queue and holds it: the running step goes back to the head of

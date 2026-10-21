@@ -335,3 +335,99 @@ do
   game,defines=nil,nil
 end
 print('d20_batch54 N7 platform_delete: ok')
+
+-- N9 (Sol #1427: a one-belt repair on Edge8 needed ghosts_waiting off while platform_loss and the ammo guard stayed;
+-- a full-plan replace ran platform_schedule current 2 again, which failed and paused the queue with no guard).
+-- queue_edit guards on a running platform-lane queue: ghosts_waiting removed, the active wait, the pending step and
+-- the other guards' baselines kept; replace and add by id; refusals.
+do
+  defines={inventory={turret_ammo=7}}
+  prototypes={item={['railgun-ammo']={}},quality={normal={}}}
+  local st={}
+  game={tick=1000}
+  local function rail(x,y,n)
+    local e={valid=true,name='railgun-turret',type='ammo-turret',position={x=x,y=y},force={name='player'},surface={name='platform-8'}}
+    e.get_inventory=function() return {get_item_count=function() return n end,get_contents=function() return {{name='railgun-ammo',count=n}} end} end
+    return e
+  end
+  local guns={rail(-6,-12,10),rail(6,-12,10)}
+  local ghosts=0
+  local deck={name='platform-8',find_entities_filtered=function() local out={} for _,e in ipairs(guns) do if e.valid then out[#out+1]=e end end return out end,
+    count_entities_filtered=function() return ghosts end}
+  local edge={valid=true,name='Edge8',surface=deck}
+  local force={name='player',platforms={edge}}
+  local sol={index=1,valid=true,position={x=0,y=0},surface={name='nauvis'},force=force}
+  local L=dofile('mod/agent-harness_0.1.0/lostlog.lua'){state=function() return st end,position=function(v) return v end}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,known=function() return true end,
+    losses_since=function(f,s,since,names,max) return L.since(f,s,since,names,max) end}
+  local arrived=false
+  local function check(p,c,record)
+    if c['until']=='platform_arrived' then return arrived,arrived and 'Edge8 at vulcanus' or 'Edge8 flying' end
+    return C.check(p,c,nil,record)
+  end
+  local schedules={}
+  local base={state=function() return st end,player=function() return sol end,
+    handlers={platform_schedule=function(_,a) schedules[#schedules+1]=a.current; return {ok=true} end},
+    condition=function(p,c) return check(p,c) end,wait_check=check,validate_condition=function(c) if c['until']~='platform_arrived' then C.validate(c) end end,
+    busy=function() return false end,stop=function() end,stop_index=function() end}
+  local factory=dofile('mod/agent-harness_0.1.0/scheduler.lua')
+  local S=dofile('mod/agent-harness_0.1.0/queue_lanes.lua'){scheduler=factory(base),factory=factory,base=base,is_read=function() return false end}
+  local function run(n) for _=1,n do game.tick=game.tick+1; S.tick() end end
+  local lane='platform:Edge8'
+  local q=S.handlers.queue_submit(sol,{lane=lane,steps={{action='platform_schedule',args={platform='Edge8',current=2}},
+      {action='wait_until',args={['until']='platform_arrived',platform='Edge8',timeout=54000}},
+      {action='platform_schedule',args={platform='Edge8',current=3}}},
+    guards={{when={['until']='ammo_below',platform='Edge8',count=1}},{when={['until']='platform_loss',platform='Edge8'}},
+      {when={['until']='ghosts_waiting',platform='Edge8'}}}})
+  eq(q.lane,lane)
+  eq(q.guards[1].id,'guard-1'); eq(q.guards[3].id,'guard-3'); eq(q.guards[2].when.loss_since,1000,'counted from the submit')
+  run(30)
+  local lq=st['lane_queues|Edge8'][1]
+  eq(#schedules,1); eq(lq.current.action,'wait_until'); local wait_id=lq.current.id
+  -- the repair is planned at tick 2000: ghosts_waiting goes, the rest stays
+  run(970)
+  local rev=S.handlers.queue_status(sol,{lane=lane}).revision
+  local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev,guards={remove={'guard-9'}}}) end,'guards.remove[1]: no guard guard-9; guards: guard-1 ammo_below, guard-2 platform_loss, guard-3 ghosts_waiting')
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev-1,guards={remove={'guard-3'}}}) end,'queue revision conflict')
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,guards={remove={'guard-3'}}}) end,'requires expected_revision')
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev,index=1,steps={},guards={remove={'guard-3'}}}) end,'guards edits the guards only')
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev,guards={add={{when={['until']='no_enemies'}}}}}) end,'guards.add: guards[1]: when: remote lane wait_until supports')
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev,guards={drop={'guard-3'}}}) end,'unknown: drop')
+  eq(#lq.guards,3,'a refused edit changes nothing')
+  local r=S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev,guards={remove={'guard-3'}}})
+  eq(r.lane,lane); eq(r.revision,rev+1)
+  eq(#r.guards,2); eq(r.guards[1].id,'guard-1'); eq(r.guards[1].edit,'kept'); eq(r.guards[2].id,'guard-2'); eq(r.guards[2].since_tick,1000)
+  eq(r.guards[2].baseline,'losses on Edge8 since tick 1000'); eq(r.guards[1].baseline,'read at each check: a turret on Edge8 holding under 1')
+  eq(r.guards[2].set_tick,1000,'the guard set at the submit')
+  eq(r.line,'guards edited (revision '..(rev+1)..'): 2 kept, 0 replaced, 0 added, 1 removed (guard-3); the active step ('..wait_id..' wait_until) and the 1 pending step go on')
+  eq(r.guard_lines[2],'guard-2 platform_loss (kept): losses on Edge8 since tick 1000')
+  eq(lq.current.id,wait_id,'the wait goes on'); eq(lq.current.wait_started,1001); eq(#lq.pending,1); eq(lq.paused,false)
+  -- the repair's ghosts: nothing fires, nothing runs again
+  ghosts=3
+  run(100)
+  eq(lq.current.id,wait_id); eq(lq.paused,false); eq(#schedules,1)
+  -- replace the ammo guard (a new threshold: its own guard, same id) and add a named loss guard counting from a tick
+  rev=lq.revision
+  r=S.handlers.queue_edit(sol,{lane=lane,expected_revision=rev,guards={replace={{id='guard-1',when={['until']='ammo_below',platform='Edge8',count=5}}},
+    add={{when={['until']='platform_loss',platform='Edge8',names={'thruster'},since_tick=1500}}}}})
+  eq(r.guards[1].id,'guard-1'); eq(r.guards[1].edit,'replaced'); eq(r.guards[1].set_tick,2100); eq(lq.guards[1].when.count,5)
+  eq(r.guards[2].edit,'kept'); eq(r.guards[2].since_tick,1000)
+  eq(r.guards[3].id,'guard-4'); eq(r.guards[3].edit,'added'); eq(r.guards[3].since_tick,1500); eq(r.guards[3].baseline,'losses on Edge8 since tick 1500 (of thruster)')
+  fails(function() S.handlers.queue_edit(sol,{lane=lane,expected_revision=lq.revision,guards={remove={'guard-1'},replace={{id='guard-1',when={['until']='ammo_below',platform='Edge8',count=2}}}}}) end,'removed in this call too')
+  -- a loss now: the kept guard fires, counting from the submit
+  game.tick=2200
+  guns[2].valid=false
+  L.died(guns[2],'big-metallic-asteroid')
+  run(20)
+  eq(lq.paused,true); has(lq.paused_why.line,'a guard fired: platform_loss')
+  local fired=lq.history[#lq.history]
+  eq(fired.action,'guard'); has(fired.result.saw,'1 of ours lost since tick 1000: railgun-turret (6,-12)')
+  eq(#schedules,1,'platform_schedule ran once')
+  -- guards from a runtime before ids get theirs on a read
+  lq.guards[1].id=nil
+  local s2=S.handlers.queue_status(sol,{lane=lane})
+  eq(s2.guards[1].id,'guard-5')
+  defines,prototypes=nil,nil
+end
+print('d20_batch54 N9 queue_edit guards: ok')
