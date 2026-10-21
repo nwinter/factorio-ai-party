@@ -61,16 +61,6 @@ return function(api)
     table.sort(parts)
     return table.concat(parts, ', ')
   end
-  -- The inserters dropping into e.
-  local function feeders(e)
-    local b = e.bounding_box
-    local area = {left_top={x=b.left_top.x-3, y=b.left_top.y-3}, right_bottom={x=b.right_bottom.x+3, y=b.right_bottom.y+3}}
-    local out = {}
-    for _, ins in pairs(try(function() return e.surface.find_entities_filtered{area=area, type='inserter', force=e.force, limit=32} end) or {}) do
-      if ins.valid and try(function() return ins.drop_target end) == e then out[#out+1] = ins end
-    end
-    return out
-  end
   -- One reactor. Returns its row and what the group sums.
   function M.reactor(e, budget)
     local burner = e.burner
@@ -121,45 +111,24 @@ return function(api)
     local main = item or next(held)
     local feed_j, feed_n, control, from, held_back = 0, 0, {}, {}, false
     local network
-    local ins_list = feeders(e)
+    local ins_list = api.feeders.of(e)
     for i, ins in ipairs(ins_list) do
       if i > 4 then break end
-      local f = {position=ins.position, name=ins.name}
-      local h = try(function() return ins.held_stack end)
-      if h and h.valid_for_read and fuel_value(h.name) > 0 then
-        f.hand = h.count .. ' ' .. h.name; feed_n = feed_n + h.count; feed_j = feed_j + h.count * fuel_value(h.name)
-        main = main or h.name
+      -- the shared feeder reading (feeders.lua): condition with wire values, holds back, set_by, hand, source stock
+      local r = api.feeders.read(ins, fuels, budget)
+      local f = {position=r.position, name=r.name, takes_from=r.takes_from, condition=r.condition, set_by=r.set_by}
+      if r.hand and fuel_value(r.hand.item) > 0 then
+        f.hand = r.hand.count .. ' ' .. r.hand.item; feed_n = feed_n + r.hand.count; feed_j = feed_j + r.hand.count * fuel_value(r.hand.item)
+        main = main or r.hand.item
       end
+      for _, fu in ipairs(fuels) do
+        local n = r.source and r.source.counts[fu] or 0
+        if n > 0 then feed_n = feed_n + n; feed_j = feed_j + n * fuel_value(fu); main = main or fu end
+      end
+      if r.holds_back then f.holds_fuel_back = true; held_back = true end
       local pick = try(function() return ins.pickup_target end)
       if pick and pick.valid then
-        local inv = try(function() return pick.get_output_inventory() end) or try(function() return pick.get_inventory(defines.inventory.chest) end)
-        local c = {}
-        for _, fu in ipairs(fuels) do
-          local n = inv and try(function() return inv.get_item_count(fu) end) or 0
-          if n > 0 then c[fu] = n; feed_n = feed_n + n; feed_j = feed_j + n * fuel_value(fu); main = main or fu end
-        end
-        f.takes_from = string.format('%s %s%s', pick.name, at(pick.position), next(c) and ' holding ' .. list_text(c) or ' holding none of its fuel')
         network = network or try(function() return pick.logistic_network end) or try(function() return e.surface.find_logistic_network_by_position(pick.position, e.force) end)
-      end
-      -- Its conditions as its GUI shows them, the values on its wires, whether it is off by them.
-      local parts = api.condition_parts and try(function() return api.condition_parts(ins) end)
-      if parts and #parts > 0 then
-        f.condition = table.concat(parts, '; ')
-        local st = try(function() return ins.status end)
-        if st and st == defines.entity_status.disabled_by_control_behavior then
-          f.holds_fuel_back = true; held_back = true
-        end
-        -- What sets the signal of a feeder holding fuel back (the combinators on its wires and their settings), while
-        -- the budget lasts.
-        if f.holds_fuel_back and api.trace and budget.traces > 0 then
-          budget.traces = budget.traces - 1
-          local lines = try(function() return api.trace(ins) end) or {}
-          local set = {}
-          for _, l in ipairs(lines) do
-            if (l:find('combinator', 1, true)) and #set < 3 then set[#set+1] = (l:gsub('^%s+', '')) end
-          end
-          if #set > 0 then f.set_by = set end
-        end
       end
       control[#control+1] = f
     end

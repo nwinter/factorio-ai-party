@@ -5898,6 +5898,21 @@ fh watch    # deploy on every change
 - `platforms {compact: true}` (B4, Astra 13:50): a line a platform: where, ammunition aboard (hub and turrets), thruster
   fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers this agent was not
   shown in its last compact read (the rest counted).
+- `bottleneck {item}` and its feeders (d20 batch63 Y2, Astra #1523: cryogenic-science-pack named ice the root and offered
+  transfers while both cryogenic plants' input inserter was off by "cryogenic-science-pack < 2000" and its requester
+  held 101 ice and 100 lithium plate): before a step counts a short maker as lacking an item, it reads the maker's
+  input inserters (feeders.lua, as fuel_budget's reactors do): an inserter off by its circuit or logistic condition
+  whose source (chest, machine output, belt) holds the item, with no running inserter bringing it, holds the maker.
+  Such a maker counts under `held_by_feeders` and `held_lines` in its step, not under `lacking`; a step where most
+  makers are held reads `iron-chest: 1 of 1 makers held by their feeders' conditions (they lack iron-plate, which the
+  feeders' sources hold)` and the line stops there (fewer held: `(N held by their feeders' conditions)` after the
+  step). Its `not_working` row adds `iron-plate held by its feeder's condition: fast-inserter (-33.5,204.5), ...;
+  logistic condition iron-plate > 1000000 (...): false now; it is off by its condition; takes from requester-chest
+  (-33.5,203.5) holding 72 iron-plate`; `held_by_feeders` lists them with the combinators setting the signal
+  (`set by`, at most 3 traces a read); no transfer fix is offered for a held item. A source holding none stays a
+  shortage, as before. At most 64 feeder checks a chain. On the private copy: the rig above read held; emptied, the
+  same call named the shortage down to iron ore with fixes; the checks added about 1-13 ms to a bottleneck read
+  of 90-113 ms.
 - `bottleneck {item}` for a fluid (B5, Sonnet, every shift) adds `shares`: the fluid's users by recipe on the surface,
   machines and how many work, what they take at full speed and their share of all users' take, against what the
   surface used and made in 10 minutes and its makers at full speed. On the copy: heavy oil 1288/min used of its users'

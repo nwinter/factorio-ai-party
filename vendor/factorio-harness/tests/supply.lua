@@ -350,6 +350,43 @@ bn=S.bottleneck_item(p,{item=AC})
 eq(bn.not_working[1],'advanced-circuit: assembling-machine-2 (4,0) item_ingredient_shortage (lacks electronic-circuit); assembling-machine-2 (8,0) full_output')
 eq(bn.fixes[1],'assembling-machine-2 (4,0) lacks electronic-circuit: no chest within 64 tiles holds it')
 assert(not pcall(S.bottleneck_item,p,{item='nope'}),'an unknown item is refused')
+-- (d20 batch63 Y2, Astra #1523) two cryogenic plants short of ice and lithium plate whose input inserter is off by its
+-- condition "cryogenic-science-pack < 2000" while its requester holds 101 ice and 100 lithium plate: held by the
+-- feeder's condition (feeders.lua reads it), the path stops there and no transfer is offered; a source with no stock
+-- stays a shortage, as before.
+do
+  local CRYO={name='cryogenic-science-pack',products={{type='item',name='cryogenic-science-pack',amount=1}},
+    ingredients={{type='item',name='ice',amount=3},{type='item',name='lithium-plate',amount=1}}}
+  for _,n in ipairs({'cryogenic-science-pack','ice','lithium-plate'}) do prototypes.item[n]=prototypes.item[n] or {type='item'} end
+  crafter(500,0,'cryogenic-plant','item_ingredient_shortage',CRYO,{['lithium-plate']=5},{})
+  crafter(510,0,'cryogenic-plant','item_ingredient_shortage',CRYO,{},{})
+  local HELD='held by its feeder\'s condition: fast-inserter (500.5,3.5), enabled when cryogenic-science-pack < 2000 (on its wires: cryogenic-science-pack 2140): false now; it is off by its condition; takes from requester-chest (500.5,4.5) holding 101 ice'
+  local stocked=true
+  local base={status_name=function(e) return e.status end,
+    position=function(v) return {x=v.x,y=v.y} end,
+    integer=function(v,d) return v==nil and d or v end,agents=function() return agents end,lookup=function(i) return {character=bodies[i]} end}
+  local api={}
+  for k,v in pairs(base) do api[k]=v end
+  api.feeders_held=function(e,item) if stocked and e.position.x>=500 then return {line=HELD,set_by={'decider-combinator (502.5,3) output side: ...'}} end end
+  local S3=dofile('mod/agent-harness_0.1.0/supply.lua')(api)
+  game.tick=game.tick+600
+  local b0=S.bottleneck_item(p,{item='cryogenic-science-pack'})
+  has(b0.line,'cryogenic-science-pack: 2 of 2 makers lack ice'); eq(b0.path[2],'ice')
+  game.tick=game.tick+600
+  local b=S3.bottleneck_item(p,{item='cryogenic-science-pack'})
+  eq(#b.path,1,'the path stops at the held step')
+  has(b.root,'cryogenic-science-pack: 2 of 2 makers held by their feeders\' conditions (they lack ice, lithium-plate, which the feeders\' sources hold)')
+  eq(b.fixes,nil,'no transfer for a held ingredient')
+  has(b.not_working[1],'cryogenic-plant (500,0) item_ingredient_shortage (lacks ice); ice held by its feeder\'s condition: fast-inserter (500.5,3.5)')
+  has(b.held_by_feeders[1],'cryogenic-plant (500,0) lacks ice: held by its feeder\'s condition'); has(b.held_by_feeders[1],'set by decider-combinator (502.5,3)')
+  eq(b.steps[1].held_by_feeders.ice,2); eq(b.steps[1].lacking,nil)
+  -- no stock at the feeders' sources: a shortage, as before
+  stocked=false
+  game.tick=game.tick+600
+  b=S3.bottleneck_item(p,{item='cryogenic-science-pack'})
+  has(b.line,'cryogenic-science-pack: 2 of 2 makers lack ice'); eq(b.path[2],'ice'); eq(b.held_by_feeders,nil)
+  assert(b.fixes and #b.fixes>0)
+end
 -- throughput (Sol, 19:50): each maker's inserters in and out and each user's feeders go to craftrate.feed
 -- (tests/craftrate.lua); the machines it finds short are listed.
 do

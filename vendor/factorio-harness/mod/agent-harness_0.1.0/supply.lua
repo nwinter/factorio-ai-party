@@ -1308,12 +1308,15 @@ return function(api)
       return n and math.floor(n / 10 + 0.5) or 0
     end
     local nodes, seen = {}, {}
+    -- (d20 batch63 Y2, Astra #1523) a maker lacking an item its held-off feeder's source holds is held by that feeder's
+    -- condition, not short of it: at most 64 such checks a chain, 3 combinator traces
+    local feed_budget = {checks=64, traces=3}
     local function visit(name, depth)
       if seen[name] or #nodes >= CHAIN_NODES or depth > CHAIN_DEPTH then return end
       seen[name] = true
       local makers = by_product[name] or {}
       local node = {item=name, depth=depth, made=per_min(name, 'input'), used=per_min(name, 'output'), makers=#makers, working=0, states={}, lack={},
-        miners=0, miner_names={}, miner_states={}, outputs={}}
+        miners=0, miner_names={}, miner_states={}, outputs={}, held={}, held_lines={}}
       nodes[#nodes+1] = node
       local children, child_seen = {}, {}
       for _, m in ipairs(makers) do
@@ -1333,7 +1336,17 @@ return function(api)
           end
         else
           if SHORT[status] then
-            for _, ing in ipairs(missing(m.e, m, nil)) do bump(node.lack, ing) end
+            for _, ing in ipairs(missing(m.e, m, nil)) do
+              local h
+              if api.feeders_held and feed_budget.checks > 0 then
+                feed_budget.checks = feed_budget.checks - 1
+                h = try(function() return api.feeders_held(m.e, ing, feed_budget) end)
+              end
+              if h then
+                bump(node.held, ing)
+                if #node.held_lines < 3 then node.held_lines[#node.held_lines+1] = string.format('%s %s lacks %s: %s', m.e.name, at(m.e.position), ing, h.line) end
+              else bump(node.lack, ing) end
+            end
           end
           for _, ing in ipairs(m.recipe.ingredients or {}) do
             if not child_seen[ing.name] then child_seen[ing.name] = true; children[#children+1] = ing.name end
@@ -1367,9 +1380,16 @@ return function(api)
     local function step(n)
       local top, top_n
       for ing, k in pairs(n.lack) do if not top_n or k > top_n or (k == top_n and ing < top) then top, top_n = ing, k end end
+      local held_n, held_items = 0, {}
+      for ing, k in pairs(n.held) do held_n = math.max(held_n, k); held_items[#held_items+1] = ing end
+      table.sort(held_items)
       local text
       if n.makers == 0 then text = string.format('%s: no assembler, furnace, silo, mining drill or pump makes it', n.item)
       elseif top and top_n * 2 > n.makers then text = string.format('%s: %d of %d makers lack %s', n.item, top_n, n.makers, top)
+      elseif held_n * 2 > n.makers then
+        -- most makers wait on feeders held off by their conditions with the items at their sources: not a shortage
+        text = string.format('%s: %d of %d makers held by their feeders\' conditions (they lack %s, which the feeders\' sources hold)',
+          n.item, held_n, n.makers, table.concat(held_items, ', '))
       elseif n.miners > 0 then
         -- 'stone: 8 electric-mining-drill (6 working, 2 output full) into 5 transport-belt, 3 wooden-chest'
         local out = tally(n.outputs)
@@ -1380,6 +1400,9 @@ return function(api)
       else
         local other = states_text(n)
         text = string.format('%s: %d of %d working%s', n.item, n.working, n.makers, other ~= '' and ' (' .. other .. ')' or '')
+      end
+      if held_n > 0 and not (held_n * 2 > n.makers and not (top and top_n * 2 > n.makers)) then
+        text = text .. string.format(' (%d held by their feeders\' conditions)', held_n)
       end
       return text .. string.format(', made %d/min, used %d/min', n.made, n.used), top and top_n * 2 > n.makers and top or nil
     end
@@ -1395,6 +1418,7 @@ return function(api)
     for _, n in ipairs(nodes) do
       rows[#rows+1] = {item=n.item, depth=n.depth, made_per_min=n.made, used_per_min=n.used, makers=n.makers, working=n.working,
         states=next(n.states) and n.states or nil, lacking=next(n.lack) and n.lack or nil,
+        held_by_feeders=next(n.held) and n.held or nil, held_lines=#n.held_lines > 0 and n.held_lines or nil,
         miners=n.miners > 0 and n.miners or nil, miner_states=next(n.miner_states) and n.miner_states or nil,
         outputs=next(n.outputs) and n.outputs or nil}
     end
@@ -1456,7 +1480,8 @@ return function(api)
       local names = prototypes.item[item] and {[item]=true} or {}
       local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
       local chain = M.chain(scan, force, surface, item)
-      local where, fixes, full_chests, stopped = {}, {}, {}, {}
+      local where, fixes, full_chests, stopped, held = {}, {}, {}, {}, {}
+      local feed_budget = {traces=3}
       for _, name in ipairs(chain.path or {}) do
         local rows = {}
         if a.all_stopped then
@@ -1479,10 +1504,21 @@ return function(api)
             -- Its output waiting on a chest with every slot used (Astra, Luna, shift19).
             local fc = FULL[state] and try(fullchest.of_machine, m.e)
             if fc then full_chests[#full_chests+1] = fc.line end
-            rows[#rows+1] = string.format('%s %s %s%s%s%s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '',
+            -- (Y2) an item it lacks that its held-off feeder's source holds: held by that feeder's condition, no fix
+            local held_txt, short = {}, {}
+            for _, ing in ipairs(SHORT[state] and lack or {}) do
+              local h = api.feeders_held and try(function() return api.feeders_held(m.e, ing, feed_budget) end)
+              if h then
+                held_txt[#held_txt+1] = ing .. ' ' .. h.line
+                held[#held+1] = string.format('%s %s lacks %s: %s%s', m.e.name, at(m.e.position), ing, h.line,
+                  h.set_by and '; set by ' .. table.concat(h.set_by, ' | ') or '')
+              else short[#short+1] = ing end
+            end
+            rows[#rows+1] = string.format('%s %s %s%s%s%s%s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '',
+              #held_txt > 0 and '; ' .. table.concat(held_txt, '; ') or '',
               burnt and ' (' .. burnt .. ')' or '', sp and '; ' .. sp.text or '',
               fc and string.format('; output into %s %s: %d/%d slots used (%s)', fc.name, at(fc.position), fc.used, fc.total, fc.fills) or '')
-            for _, ing in ipairs(SHORT[state] and lack or {}) do
+            for _, ing in ipairs(short) do
               if #fixes < FIX_MAX then fixes[#fixes+1] = fix_line(surface, force, m, ing) end
             end
           end
@@ -1499,6 +1535,7 @@ return function(api)
       local shares = prototypes.fluid and prototypes.fluid[item] and not prototypes.item[item] and try(M.fluid_shares, surface, force, item) or nil
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
         fixes=#fixes > 0 and fixes or nil, full_chests=#full_chests > 0 and full_chests or nil, steps=chain.tree, cut=chain.cut, target=target,
+        held_by_feeders=#held > 0 and held or nil,
         stopped=#stopped > 0 and stopped or nil,
         shares=shares}
     end)
