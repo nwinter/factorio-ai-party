@@ -40,6 +40,20 @@
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
   var TERRAIN_DESAT = 0.6, TERRAIN_DIM = 0.45;  // how much colour the terrain loses, and how far it fades to the ground
 
+  // (d21 batch68 AD1) a grid push_live run-length packs (rle: "12A" is twelve A cells), unpacked once; others as they are
+  function unpack(g) {
+    if (!g || !g.rle || !Array.isArray(g.rows)) return g;
+    var out = Object.assign({}, g, { rows: g.rows.map(function (r) { return String(r).replace(/(\d+)(\D)/g, function (m, n, c) { return new Array(+n + 1).join(c); }); }) });
+    delete out.rle;
+    if (g.core) out.core = unpack(g.core);
+    return out;
+  }
+  function unpackData(data) {
+    if (!data) return data;
+    var planets = {};
+    Object.keys(data.planets || {}).forEach(function (k) { planets[k] = unpack(data.planets[k]); });
+    return Object.assign({}, data, { base: unpack(data.base), core: unpack(data.core), ore: unpack(data.ore), planets: planets });
+  }
   function validGrid(g) {
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
   }
@@ -148,10 +162,11 @@
   function prepare(data) {
     data = data || {};
     var surface = data.surface || 'nauvis', home = surface === 'nauvis';
-    // another planet: its coarse map (data.planets, the census's grid; no core, ore or terrain there)
+    // another planet: its coarse map and (AD1) its dense core, as Nauvis's (data.planets, the census's; no ore or terrain there)
     var away = !home && data.planets && data.planets[surface];
     var base = home ? (validGrid(data.base) && data.base.rows.length ? data.base : null) : (validGrid(away) && away.rows.length ? away : null);
-    var core = home && validGrid(data.core) && data.core.w > 0 ? data.core : null;
+    var fine = home ? data.core : base && away.core;
+    var core = validGrid(fine) && fine.w > 0 ? fine : null;
     var d = { surface: surface, base: base, fine: core, ore: home && validGrid(data.ore) ? data.ore : null,
       ground: home && validGrid(data.ground) ? data.ground : null };
     // the clouds: the one of the surface shown, and the surfaces that have one (the switch)
@@ -289,7 +304,7 @@
   }
   // A kept planet map's age in game seconds (null without both ticks), and how a switch or the scale line says it.
   function mapAge(data, k) {
-    var m = data && data.planets && data.planets[k], now = data && (data.now_tick != null ? data.now_tick : null);
+    var m = data && (k === 'nauvis' ? data.base : data.planets && data.planets[k]), now = data && (data.now_tick != null ? data.now_tick : null);
     return m && isFinite(m.tick) && isFinite(now) && now >= m.tick ? (now - m.tick) / 60 : null;
   }
   function ageText(sec) {
@@ -662,7 +677,7 @@
   Viewer.prototype.set = function (data) {
     // (D1) every surface seen keeps its switch and last map: the surface shown and the view (pan, zoom) stay
     this.memo = this.memo || {};
-    data = this.data = remember(this.memo, data);
+    data = this.data = remember(this.memo, unpackData(data));
     if (this.surface !== 'nauvis' && !data.seen[this.surface]) this.surface = 'nauvis';
     this.d = prepareSafe(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
@@ -715,8 +730,9 @@
       return;
     }
     this.root.dataset.paintMs = Date.now() - t0;  // tools/site_shots.js reads how long a frame took
-    var age = this.d.surface !== 'nauvis' ? mapAge(this.data, this.d.surface) : null;
-    var old = age != null && age >= OLD_S ? ' · map from ' + ageText(age) + ' ago' : '';
+    // (AD1) the buildings' read on every surface: Nauvis's basemap once a minute, a planet's kept map
+    var age = mapAge(this.data, this.d.surface);
+    var old = age == null ? '' : ' · map from ' + (age < 60 ? 'under a minute' : ageText(age)) + ' ago';
     this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + old + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
@@ -903,7 +919,7 @@
   root.PogMap = {
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
-    prepare: prepare, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
+    prepare: prepare, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
     remember: remember, switchList: switchList, mapAge: mapAge, OLD_S: OLD_S,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };

@@ -10354,3 +10354,17 @@ his body.
   (surface platform-N) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret N, ...". The frame is one search of ours in it (at most 2000 entities, 1920x1080 px is 60x34 tiles).
 - `./shot` (tools/new-run.sh) prints that line under the file name. Runs made before this keep their old `shot` script
   until they are made again.
+
+## d21 batch68 (eng/d20-batch68)
+- AD1 (viewer Aurora, operator inbox d21 08:40: "Could Aquilo get a detailed base map using the Nauvis approach, with
+  building footprints, coordinates and data age? Zoom currently only enlarges category blocks"). The census pass
+  (census.lua) kept each Nauvis building's size and drew Nauvis's dense core from the footprints (1-4 tiles a cell, up
+  to 160 cells a side), but kept only each other planet's building centres, gridded at 4 tiles a cell or more (Aquilo
+  4, Gleba and Vulcanus 8, Fulgora 16-32 on world n): zooming in enlarged those cells. Each planet now gets its own
+  core the same way, in the same pass (its points' footprints, the box round its densest 32-tile blocks, CMAX 160),
+  one fine-grid step per 800 buildings after its coarse grid; `census {part: "basemap", surface}` adds `core {cell, x0,
+  y0, w, h, rows}`. On the d17 private copy: Aquilo 80x80 cells at 1 tile, Fulgora 88x56 at 2, Gleba 144x112 at 1,
+  Vulcanus 120x72 at 2; each planet map read 15-19 ms through the stream client's RCON there. census.step over 120 s
+  there: 2.66 ms a step (7167 steps) on this branch and 3.60 ms (7053) on main's census, the copy's GC and Rosetta
+  swings larger than the 15 added steps a pass. The stream site side is in docs/LIVE-API.md (planet cores, packed
+  rows, the map's age on every surface). Tests: tests/census.lua, site/test_planetcore.py.
