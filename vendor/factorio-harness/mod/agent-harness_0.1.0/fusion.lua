@@ -23,6 +23,9 @@
 -- (Z7, Astra #1672: measured read over_s 30 with 31 samples while sampling lasts 10 min) measured is a rolling window
 -- of the last KEEP samples (30 s); totals add up the whole stretch since sampling began: fuel burnt, seconds covered,
 -- seconds burning, and gaps (seconds in which cells were put in, their burn unknown).
+-- (d20 batch71 AG3, Astra #1690: a pair's stretch ran 42855861 to 42891861 and the first read after it, 6.5 s late,
+-- began a new one with no totals) a stretch that ends keeps its totals frozen (ended, per reactor: began, ended_tick,
+-- the totals), given as last_stretch {expired, ended_tick} by every read until the next stretch ends and replaces it.
 -- Reads sample the reactors read (and those the harness builds) every SAMPLE ticks for WATCH ticks: the fuel each
 -- holds (burning plus cells) gives fuel burnt per second, measured; coolant in and plasma out follow from it at 25 MJ
 -- a unit (derived), and the bonus at full from the prototype and the connected reactors (formula).
@@ -74,7 +77,19 @@ return function(api)
     if tick % SAMPLE ~= 0 then return end
     local w = store().watch
     for k, r in pairs(w) do
-      if not r.e.valid or tick > r.until_tick then w[k] = nil
+      if not r.e.valid or tick > r.until_tick then
+        w[k] = nil
+        -- (AG3) its totals kept, frozen at its end
+        local st = store()
+        st.ended = st.ended or {}
+        if r.e.valid and r.total then
+          local tot = {}
+          for kk, v in pairs(r.total) do tot[kk] = v end
+          st.ended[k] = {total=tot, ended_tick=r.until_tick, last_sample=r.samples[#r.samples] and r.samples[#r.samples].tick or nil}
+          local n, oldest = 0, nil
+          for kk, x in pairs(st.ended) do n = n + 1; if not oldest or x.ended_tick < st.ended[oldest].ended_tick then oldest = kk end end
+          if n > MAX_WATCH and oldest then st.ended[oldest] = nil end
+        else st.ended[k] = nil end
       else
         local last = r.samples[#r.samples]
         local now = {tick=tick, fuel=fuel_j(r.e)}
@@ -206,14 +221,27 @@ return function(api)
     end
     -- (Z7) sampling: when it began and ends, and the totals since it began (measured)
     out.sampling = {began_tick=row.total and row.total.since, ends_tick=row.until_tick,
-      note=string.format('sampled every %d s while read: kept up %d s after the last read (each read extends it); measured is a rolling %d s window, totals cover the whole stretch since sampling began', SAMPLE / 60, WATCH / 60, (KEEP - 1) * SAMPLE / 60)}
-    local t = row.total
-    if t and t.covered + t.gap_ticks > 0 then
-      out.totals = {since_s=math.floor((game.tick - t.since) / 60 + 0.5), covered_s=math.floor(t.covered / 60 + 0.5), running_s=math.floor(t.running / 60 + 0.5),
+      note=string.format('sampled every %d s while read: kept up %d s after the last read (each read before ends_tick extends it; a read after it begins a new stretch, the ended one\'s totals kept frozen in last_stretch); measured is a rolling %d s window, totals cover the whole stretch since sampling began', SAMPLE / 60, WATCH / 60, (KEEP - 1) * SAMPLE / 60)}
+    local function totals_of(t, upto)
+      return {since_s=math.floor((upto - t.since) / 60 + 0.5), covered_s=math.floor(t.covered / 60 + 0.5), running_s=math.floor(t.running / 60 + 0.5),
         fuel_mj=math.floor(t.fuel / 1e6 + 0.5), fuel_mw_avg=t.covered > 0 and mw(t.fuel / t.covered * 60) or nil,
         running_pct=t.covered > 0 and fuel_max > 0 and math.floor(100 * t.fuel / t.covered * 60 / fuel_max + 0.5) or nil,
-        gaps=t.gaps, gap_s=math.floor(t.gap_ticks / 60 + 0.5), put_in_mj=t.gaps > 0 and math.floor(t.put_in / 1e6 + 0.5) or nil,
-        source='measured: fuel burnt over the covered seconds since sampling began; a gap is a second in which the fuel held rose (cells put in), its burn not counted; running: seconds in which it burnt fuel'}
+        gaps=t.gaps, gap_s=math.floor(t.gap_ticks / 60 + 0.5), put_in_mj=t.gaps > 0 and math.floor(t.put_in / 1e6 + 0.5) or nil}
+    end
+    local t = row.total
+    if t and t.covered + t.gap_ticks > 0 then
+      out.totals = totals_of(t, game.tick)
+      out.totals.source = 'measured: fuel burnt over the covered seconds since sampling began; a gap is a second in which the fuel held rose (cells put in), its burn not counted; running: seconds in which it burnt fuel'
+    end
+    -- (AG3) the last stretch that ended, frozen
+    local ended = (store().ended or {})[e.unit_number]
+    if ended and ended.total and ended.total.covered + ended.total.gap_ticks > 0 and not (t and t.since < ended.ended_tick) then
+      local lt = totals_of(ended.total, ended.ended_tick)
+      lt.began_tick, lt.ended_tick, lt.expired = ended.total.since, ended.ended_tick, true
+      lt.ended_s_ago = math.floor((game.tick - ended.ended_tick) / 60 + 0.5)
+      lt.note = string.format('this stretch ended at tick %d, %d s after the last read in it; its totals are kept as they were then; %s', ended.ended_tick, WATCH / 60,
+        t and t.since == game.tick and 'this read began a new stretch' or string.format('a new stretch began at tick %d', t and t.since or game.tick))
+      out.last_stretch = lt
     end
     local nb = {}
     for _, p in ipairs(out.neighbours) do nb[#nb+1] = at(p) .. ' (' .. p.sides .. ')' end
@@ -226,6 +254,10 @@ return function(api)
       .. (out.totals and string.format('; since sampling began %d s ago: %d MJ of fuel over %d s covered (%s MW average, %s%%), burning %d s, %d gap%s (%d s, cells put in)',
         out.totals.since_s, out.totals.fuel_mj, out.totals.covered_s, tostring(out.totals.fuel_mw_avg or 0), tostring(out.totals.running_pct or 0), out.totals.running_s,
         out.totals.gaps, out.totals.gaps == 1 and '' or 's', out.totals.gap_s) or '')
+      .. (out.last_stretch and string.format('; the last stretch (expired: it ended %d s ago at tick %d): %d MJ of fuel over %d s covered (%s MW average, %s%%), burning %d s, %d gap%s; %s',
+        out.last_stretch.ended_s_ago, out.last_stretch.ended_tick, out.last_stretch.fuel_mj, out.last_stretch.covered_s, tostring(out.last_stretch.fuel_mw_avg or 0),
+        tostring(out.last_stretch.running_pct or 0), out.last_stretch.running_s, out.last_stretch.gaps, out.last_stretch.gaps == 1 and '' or 's',
+        t and t.since == game.tick and 'this read began a new stretch' or 'a new stretch runs') or '')
       .. string.format('; sampling ends %d s from now unless read again', math.max(0, math.floor((row.until_tick - game.tick) / 60))))
     return out
   end

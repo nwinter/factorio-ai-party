@@ -10125,6 +10125,16 @@ fh watch    # deploy on every change
   front, 0 back); rotate on the rear one: "uncoupled from locomotive (-151,-5); flipped from north to south; coupled to
   locomotive (-151,-5)", train 34: 1 front, 1 back. build orientation 0.6 behind a lone one: faces south, coupled;
   orientation 0 behind that: a 3-carriage train of 2 front and 1 back. Tests: tests/d21_batch71.lua (AG2 block).
+- AG3 (#1690, Astra: a pair's sampling ran 42855861 to 42891861; the first read after it, at 42892250, 6.5 s late,
+  began a new stretch and no totals remained). Main before (batch64 Z7): a stretch's samples and totals were dropped
+  when it ended (600 s after the last read), and the next read began a new one. Now (fusion.lua): an ended stretch's
+  totals are kept frozen per reactor (up to 64), given as last_stretch {since_s, covered_s, running_s, fuel_mj,
+  fuel_mw_avg, running_pct, gaps, gap_s, began_tick, ended_tick, ended_s_ago, expired: true, note} by every read until
+  the next stretch ends and replaces them; the note and line say whether this read began the new stretch. A read
+  before ends_tick extends the stretch (sampling.note says both). The rolling 30 s `measured` and the current
+  `totals` are apart. On the copy (the sampling end moved to 1 s ahead in the mod's storage so it expired through the
+  tick): "the last stretch (expired: it ended 7 s ago at tick 29469592): 1743 MJ of fuel over 17 s covered (100 MW
+  average, 100%), burning 17 s, 0 gaps; this read began a new stretch". Tests: tests/d21_batch64c.lua.
 
 ## d21 batch64 (eng/d20-batch64)
 

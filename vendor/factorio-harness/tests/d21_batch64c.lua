@@ -80,7 +80,23 @@ for t=1801,1800+36000-60 do
 end
 b=F.read(r2)
 eq(b.measured.over_s,30); eq(b.totals.since_s,629); eq(b.totals.covered_s,628); eq(b.totals.fuel_mw_avg,20.7)
+-- (d20 batch71 AG3) the stretch ends 600 s after the last read; a read 6.5 s later begins a new one and gives the
+-- ended one's totals frozen, expired, with its ended tick
+local ended_at=b.sampling.ends_tick
+for t=game.tick+1,ended_at+60 do game.tick=t; r2.burner.remaining_burning_fuel=r2.burner.remaining_burning_fuel-20.7e6/60; F.tick(t) end
+eq(st.fusion.watch[r2.unit_number],nil,'sampling ended')
+game.tick=ended_at+390
+b=F.read(r2)
+eq(b.totals,nil); eq(b.last_stretch.expired,true); eq(b.last_stretch.ended_tick,ended_at); eq(b.last_stretch.began_tick,0)
+eq(b.last_stretch.fuel_mw_avg,20.7); eq(b.last_stretch.since_s,math.floor(ended_at/60+0.5)); eq(b.last_stretch.ended_s_ago,7)
+has(b.last_stretch.note,'this read began a new stretch')
+has(b.line,'the last stretch (expired: it ended 7 s ago at tick '..ended_at..'): ')
+has(b.line,'(20.7 MW average, 21%)')
+-- later reads in the new stretch still give it, until the new stretch ends and replaces it
+for t=game.tick+1,game.tick+120 do game.tick=t; r2.burner.remaining_burning_fuel=r2.burner.remaining_burning_fuel-50e6/60; F.tick(t) end
+b=F.read(r2)
+eq(b.last_stretch.ended_tick,ended_at); eq(b.totals.fuel_mw_avg,50); has(b.last_stretch.note,'a new stretch began at tick '..(ended_at+390))
 -- a reactor not read for 10 min is no longer sampled
-game.tick=1800+36000+36000; F.tick(game.tick)
+game.tick=game.tick+36060-game.tick%60; F.tick(game.tick)
 eq(st.fusion.watch[r5.unit_number],nil)
 print('d21_batch64c Z6 fusion: ok')
