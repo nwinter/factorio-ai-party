@@ -10145,6 +10145,41 @@ fh watch    # deploy on every change
   crosses, and that armor without flight put on now kills it) or on the ground. equip refuses armor without flight
   while the character flies: `armor: the character is flying now (mech-armor provides flight, power-armor does not);
   in 2.0.77 a character that loses flight in the air dies ...`. Tests: tests/d21_batch64.lua (Z4 block).
+- Z5 (#1635, Astra: `power` on Nauvis at (7,-175), tick 42224815, listed two working fusion generators making 56.974 MW
+  with generators.nameplate_kw 0, working_kw 0 and a supply line of 0 MW; inspect gave each max 50000 kW; the networks
+  line's capacity had not taken in the new 100 MW). Main before: power rated each generator by the prototype's
+  get_max_power_output, else max_power_output, and counted only steam engines and turbines, burner generators and fusion
+  generators; the networks view (the `lines`) fell back to get_max_energy_production and was made every 60 s, its walk
+  spread over the next 60 s, so a build showed there up to about 2 min later. Read on 2.0.77 (private copy):
+  - get_max_power_output (J a tick): steam-engine 15000 (900 kW), steam-turbine 97000 (5.82 MW), burner-generator
+    16666.7 (1 MW); nil for fusion-generator, solar-panel, accumulator and the lightning attractors.
+    get_max_energy_production: fusion-generator 833333.3 (50 MW), solar-panel 1000 (60 kW), accumulator 5000 (300 kW),
+    lightning-collector, lightning-rod, fusion-reactor, heating-tower and nuclear-reactor 0. Output flow limits:
+    accumulator 5000 J a tick, fusion-generator 833333.3, lightning-collector 1e9 and lightning-rod 5e8 (their buffers
+    1 GJ and 500 MJ). A fusion reactor is an electric consumer (primary-input) that makes plasma; a heating tower and a
+    nuclear reactor have no electric source (heat); none gives electricity itself.
+  - two fusion generators fed plasma (10 at 1,000,000 C, about 0.019 a tick each at the load) with a 57 MW load read on
+    main: `generators: count=2 nameplate_kw=0 working_kw=0`, "nameplate 0.0 MW; working now 0.0 MW ...; producing 57.0
+    MW", Astra's read.
+  - the force's entity build statistics count a robot's build (an accumulator from a ghost: 0 to 1) and not a script's
+    create_entity (with or without raise_built), which is how the harness builds.
+  Now: networks.max_output_kw(e) (get_max_power_output, else get_max_energy_production, by the entity's quality) rates
+  power's generators: nameplate_kw and working_kw count fusion generators at 50 MW each, and generators.by_name lists
+  each name and quality: count, each_kw (one entity's most output), max_kw, working, and network_output_kw (the whole
+  network's output of that name now, its 5 s statistics), kept apart; the supply line names them ("fusion-generator 2 x
+  50.0 MW = 100.0 MW, 2 working ... the network produces 57.0 MW now, of it fusion-generator 57.0 MW"). Also per network
+  in the area: solar {count, full_sun_kw at this surface's solar power, network_output_kw} and solar_line; accumulators
+  acc_holding and acc_out_kw (the most those holding charge give, each its output limit) and acc_line; lightning
+  attractors (attractors, attr_mj, attractor_line); and `reactors`: reactors, heating towers and fusion reactors in the
+  area by state. The cached view: each of power's `lines` ends "(as of Ns ago)"; `not_in_view` names a network here the
+  view has no line for yet; a generator, solar panel or accumulator built (a harness build, networks.built; a player's or
+  robot's, by the build statistics read every 5 s: 0.048 ms a read on the copy, 11 surfaces x 6 names) starts the view
+  and the pole map again from that tick, and power's and networks' `built_since` says what was built after the view
+  began, where, when, and when the new one is due. On the copy: sol built a third fusion generator; power at once read
+  nameplate 150.0 MW in the area and built_since "fusion-generator built 4s ago at (-152.5,5.5) on nauvis (up to 50.0
+  MW), after this view: a new view started then, ready in about 55s"; 60 s later the line read 150.0 MW capacity. A
+  robot-built accumulator gave networks' built_since "accumulator built 20s ago on nauvis by a player or robot ...".
+  The network GUI was not opened (headless copy). Tests: tests/d21_batch64b.lua.
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a

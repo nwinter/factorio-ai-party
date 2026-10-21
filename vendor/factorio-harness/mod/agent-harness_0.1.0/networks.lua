@@ -116,8 +116,12 @@ return function(api)
   local function map_step(n, tick)
     n.map_bg = true
     local job = n.map_job
+    -- (a generator built after the map and after the walk in hand began: a walk starts now, M.built)
+    local last = 0
+    for _, g in pairs(n.gen_added or {}) do last = math.max(last, g.tick) end
+    if n.map_tick and last >= n.map_tick and tick > last and not (job and job.start >= last) then job = nil; n.map_job = nil end
     if not job then
-      if n.map_tick and tick - snapfail.since(n.map_tick, n.map_failed) < VIEW_TICKS then return end
+      if n.map_tick and last < n.map_tick and tick - snapfail.since(n.map_tick, n.map_failed) < VIEW_TICKS then return end
       local todo = {}
       for _, f in ipairs(forces()) do for _, s in ipairs(surfaces()) do todo[#todo+1] = {force=f.name, surface=s.index} end end
       n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, every=walk.every(n.map_steps, VIEW_TICKS)}
@@ -294,6 +298,44 @@ return function(api)
     while max and #rows > max do table.remove(rows) end
     return rows, enough
   end
+  -- A generator, solar panel or accumulator built (d21 batch64 Z5, Astra #1635: power's line from the view held the
+  -- capacity from before two fusion generators were built): the view and the pole map are made again from then
+  -- (view_step, map_step). The harness's builds call M.built; a player's or a robot's shows in the force's entity build
+  -- statistics, read every SAMPLE ticks (2.0.77 counted a robot-built accumulator there, not a create_entity one).
+  local GEN_TYPE, GEN_NAMES = {}, nil
+  for _, t in ipairs(GENERATORS) do if t ~= 'electric-energy-interface' then GEN_TYPE[t] = true end end
+  local function gen_names()
+    if not GEN_NAMES then
+      GEN_NAMES = {}
+      for name, proto in pairs(prototypes.entity or {}) do if GEN_TYPE[proto.type] then GEN_NAMES[#GEN_NAMES+1] = name end end
+      table.sort(GEN_NAMES)
+    end
+    return GEN_NAMES
+  end
+  local function added(n, f, row)
+    n.gen_added = n.gen_added or {}
+    row.tick = game.tick
+    n.gen_added[f] = row
+  end
+  local function poll_builds(n)
+    n.gen_builds = n.gen_builds or {}
+    for _, f in ipairs(forces()) do
+      local seen = n.gen_builds[f.name]
+      local now = {}
+      for _, s in ipairs(surfaces()) do
+        local st = try(function() return f.get_entity_build_count_statistics(s) end)
+        for _, name in ipairs(st and gen_names() or {}) do
+          local c = try(function() return st.get_input_count(name) end) or 0
+          if c > 0 then
+            local k = s.index .. ':' .. name
+            now[k] = c
+            if seen and c > (seen[k] or 0) then added(n, f.name, {name=name, surface=s.name, count=c - (seen[k] or 0)}) end
+          end
+        end
+      end
+      n.gen_builds[f.name] = now
+    end
+  end
   -- task-statuscost: the requests are looked at every 30 s (unfilled for 60 s,
   -- no idle robot for 10 min); the poles are mapped again by map_step, a walk
   -- spread over each VIEW_TICKS (at once only when there is no map yet).
@@ -311,6 +353,8 @@ return function(api)
     if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
     if not n.stock_tick or tick - n.stock_tick >= STOCK_EVERY then pcall(sample_stock, n); n.stock_tick = tick end
     sample(n)
+    local okb, errb = pcall(poll_builds, n)
+    if not okb then n.build_poll_error = {tick=tick, error=tostring(errb)} end
   end
 
   local function mw(kw)
@@ -391,10 +435,27 @@ return function(api)
     for name, kw in pairs(by) do by[name] = kw / #list end
     return {avg=sum / #list, now=list[#list].kw, by=by, samples=#list, span_s=math.min(WINDOW / 60, math.floor((list[#list].tick - list[1].tick) / 60) + 5)}
   end
+  -- One entity's most output in J a tick. (d21 batch64 Z5, Astra #1635) In 2.0.77 get_max_power_output gives a steam
+  -- engine's, a turbine's and a burner generator's and nil for a fusion generator, whose 833333 J a tick (50 MW) is
+  -- its get_max_energy_production; a solar panel's and an accumulator's are there too (1000 and 5000).
   local function max_output(e)
     local q = try(function() return e.quality end)
     local proto = e.prototype
     return try(function() return proto.get_max_power_output(q) end) or try(function() return proto.get_max_energy_production(q) end) or 0
+  end
+  function M.max_output_kw(e) return max_output(e) * 60 / 1000 end
+  -- A harness build: one of GEN_TYPE is noted (added), and its network goes on the pole map now when a pole of it
+  -- stands within 10 tiles (the map walk takes up to VIEW_TICKS).
+  function M.built(e)
+    if not (e and e.valid and GEN_TYPE[e.type]) then return end
+    local n = store()
+    added(n, e.force.name, {name=e.name, x=e.position.x, y=e.position.y, surface=e.surface.name, kw=M.max_output_kw(e)})
+    local id = try(function() return e.electric_network_id end)
+    if id and not n.map[id] then
+      for _, pole in ipairs(e.surface.find_entities_filtered{position=e.position, radius=10, type='electric-pole', force=e.force, limit=16}) do
+        if try(function() return pole.electric_network_id end) == id then pole_into(n.map, pole, e.surface, e.force); break end
+      end
+    end
   end
   -- The solar power where a surface is, in percent (100 is a solar panel's nameplate output; Astra, 13:10): a planet's
   -- solar-power property against its default; on a platform, the solar power in space of the location it stops at,
@@ -1334,7 +1395,11 @@ return function(api)
   function M.view_step(n, f, tick)
     local job = n.view_jobs[f.name]
     local v = n.views[f.name]
-    if not job and (not v or tick - snapfail.since(v.tick, v.refresh_failed) >= VIEW_TICKS) then
+    -- (a generator built after the view and after the job in hand began: a job starts now, M.built)
+    local g = (n.gen_added or {})[f.name]
+    if g and v and g.tick >= v.tick and tick > g.tick and not (job and job.start >= g.tick) then job = nil; n.view_jobs[f.name] = nil
+    elseif not job and v and tick - snapfail.since(v.tick, v.refresh_failed) < VIEW_TICKS then return end
+    if not job then
       -- (with no pole map yet the first is made here at once)
       if not n.map_tick then fresh_map(n) end
       local steps = {}
@@ -1505,6 +1570,18 @@ return function(api)
   end
   -- The last view as it is, never computed here (urgent.lua reads it on every sleep check): nil before the first.
   function M.cached_view(f) return store().views[f.name] end
+  -- The last generator, solar panel or accumulator of a force built after its view began, as a phrase (nil when none):
+  -- what, where, when, and when the new view is due.
+  function M.added_since(f, v)
+    local g = (store().gen_added or {})[f.name]
+    if not (g and v and g.tick >= v.tick) then return nil end
+    local job = (store().view_jobs or {})[f.name]
+    local due = job and job.start >= g.tick and math.max(0, math.floor((job.start + VIEW_TICKS - game.tick) / 60)) or nil
+    return string.format('%s%s built %ds ago%s, after this view: a new view started then%s',
+      g.count and g.count > 1 and (g.count .. ' ') or '', g.name, math.floor((game.tick - g.tick) / 60),
+      g.x and string.format(' at (%g,%g) on %s (up to %s)', g.x, g.y, g.surface, mw(g.kw or 0)) or string.format(' on %s by a player or robot', g.surface),
+      due and string.format(', ready in about %ds', due) or '')
+  end
   -- Robots per planet (D4, Haiku 16:50: "I had to use networks for each planet"): per surface of the last finished
   -- view, each kind's robots over all its networks (idle, working, charging, waiting to charge) and the networks with
   -- robots waiting to charge, most first. Reads the kept view only (nil before the first one).
@@ -1687,7 +1764,7 @@ return function(api)
     -- A surface named with nothing in the view: said, with when the view looked (a new network shows within about 3 min).
     local none = named and #out == 0 and string.format('no electric network over 2 poles or with a generator, no logistic network and no turret of ours on %s as of %ds ago',
       label(named) .. (try(function() return named.platform end) and ' (' .. named.name .. ')' or ''), math.floor((game.tick - v.tick) / 60)) or nil
-    return {surfaces=out, none=none, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)),
+    return {surfaces=out, none=none, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)), built_since=M.added_since(p.force, v),
       refresh_failed=snapfail.line('the networks view', v.tick, v.refresh_failed) or snapfail.line('the pole map', n.map_tick or v.tick, n.map_failed),
       read_now=a.fresh and 'accumulators (acc_mj, acc_pct, the line\'s part) and draw_now_kw (the last 5 s of each network\'s statistics); the rest as of the view' or 'accumulators (acc_mj, acc_pct, the line\'s part); the rest as of the view, rebuilt every 60 s (fresh: true reads the draw now too)',
       note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now '
@@ -2464,7 +2541,7 @@ return function(api)
         .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
         .. 'ghosts, line}], turrets {by_name, '
         .. 'ammo_used_1h, line}, storm (Fulgora, read now: state storm while dark (lightning strikes in the dark, none in daylight; the API has no storm property), else clear; '
-        .. 'phase day|darkening|full dark|brightening, darkness, dusk_in_s, evening_in_s, morning_in_s, dawn_in_s, day_s, line)}]; none (a surface or platform named with none of these); as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
+        .. 'phase day|darkening|full dark|brightening, darkness, dusk_in_s, evening_in_s, morning_in_s, dawn_in_s, day_s, line)}]; none (a surface or platform named with none of these); as_of (kept 60 s; made again from when a generator, solar panel or accumulator of ours is built); built_since (the last one built after the view began: what, where, when, when the new view is due); note (how each number is counted). Electric networks over 2 poles or with '
         .. 'a generator. Read only'},
   }
   return M
