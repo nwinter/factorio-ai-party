@@ -71,3 +71,46 @@ local A=dofile('mod/agent-harness_0.1.0/argshapes.lua')()
 A.check('place_ghosts',{entities={{name='rail-signal',position={x=1,y=2},rail_layer='elevated'}}})
 A.check('build',{builds={{item='rail-signal',position={x=1,y=2},rail_layer='elevated'}}})
 print('d21_batch71 AG1 signals on a rail layer: ok')
+
+-- AG2 (#1688, Sol): rolling stock's facing is orientation; rotate flips it 180 degrees, uncoupling and coupling again
+-- (the game's rotate refuses one coupled to another); readback of the train's locomotives each way.
+defines.train_state={on_the_path=0,manual_control=9}
+local K=require('rollingstock'){}
+eq(K.direction_of_orientation(0.5),8); eq(K.direction_of_orientation(0.6),10); eq(K.direction_of_orientation(1),0)
+fails(function() K.direction_of_orientation(2) end,'orientation is 0..1')
+eq(K.facing(0.25),'east'); eq(K.opposite(0,8),true); eq(K.opposite(0.5,8),false); eq(K.opposite(0.5,4),false)
+-- a fake train of A (facing north) and B (north) coupled B front to A
+local A,B
+local train={id=31,carriages={},speed=0,manual_mode=true,state=9}
+local function locos()
+  local f,b={},{}
+  for _,c in ipairs(train.carriages) do if c.orientation==0 then f[#f+1]=c else b[#b+1]=c end end
+  return {front_movers=f,back_movers=b}
+end
+setmetatable(train,{__index=function(_,k) if k=='locomotives' then return locos() end end})
+local function loco(y,o)
+  local e={valid=true,type='locomotive',name='locomotive',position={x=-151,y=y},orientation=o,train=train,links={}}
+  e.get_connected_rolling_stock=function(rd) return e.links[rd] end
+  e.disconnect_rolling_stock=function(rd) local o2=e.links[rd]; if not o2 then return false end; e.links[rd]=nil
+    for k,v in pairs(o2.links) do if v==e then o2.links[k]=nil end end; return true end
+  e.connect_rolling_stock=function(rd)
+    -- the other one stands north of B: B's front when it faces north, its back when south
+    local side=e.orientation==0 and 0 or 1
+    if rd~=side or e.links[rd] then return false end
+    e.links[rd]=A; A.links[1]=e; return true end
+  e.rotate=function() if e.links[0] or e.links[1] then return false end; e.orientation=(e.orientation+0.5)%1; return true end
+  return e
+end
+A=loco(-5,0); B=loco(2,0)
+B.links[0]=A; A.links[1]=B
+train.carriages={A,B}
+local rd0=K.read(B)
+eq(rd0.train.front_locomotives,2); eq(rd0.train.back_locomotives,0); eq(rd0.facing,'north')
+local out=K.rotate(B,nil,nil)
+eq(out.flipped,'uncoupled from locomotive (-151,-5); flipped from north to south; coupled to locomotive (-151,-5)')
+eq(out.rolling_stock.orientation,0.5); eq(out.rolling_stock.train.front_locomotives,1); eq(out.rolling_stock.train.back_locomotives,1)
+has(out.rolling_stock.line,'faces south (orientation 0.5); coupled: front none, back locomotive (-151,-5)')
+has(K.rotate(B,8,nil).unchanged,'already faces south')
+train.speed=0.2
+fails(function() K.rotate(B,0,nil) end,'its train moves (speed 0.2)')
+print('d21_batch71 AG2 rolling stock: ok')

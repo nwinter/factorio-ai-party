@@ -191,6 +191,10 @@
   direction the signal takes the facing of the signal spot there. `placements` lists the signal spots of the rails near
   that the game takes, with direction and layer; `inspect` on a signal gives `signal` (rail layer, rails attached, block
   state). Example: `./fh call place_ghosts --args '{"entities":[{"name":"rail-chain-signal","position":{"x":-146.5,"y":16.5},"rail_layer":"elevated"}]}'`
+- Rolling stock: `build {item: locomotive, position, orientation?}` (0..1: 0 north, 0.5 south) or direction; the game
+  snaps it to the way along the rail nearer to it, and `rolling_stock` reads back orientation, couplings and the train's
+  locomotives facing its front and its back (a dry run names the rail and the way it faces). `rotate` on a locomotive
+  or wagon flips it 180 degrees (a coupled one is uncoupled, flipped and coupled again; refused while the train moves).
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
 - `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}` or
