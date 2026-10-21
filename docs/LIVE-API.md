@@ -214,6 +214,25 @@ surface}`); push_live sends it at twice the cell until its packed form fits 12 K
 the four). Every surface's scale line gives its map's age (`map from 2 min ago`: Nauvis's basemap read, a planet's
 last census map), and the pointer's tile coordinates show in the corner on every surface.
 
+`library_areas` (d21 batch68 AD2, viewer Aurora: "could installed blueprint areas show tested revision, required hookups
+and last check, with failed or unverified hookups on every planet's map?") is the team library's placements the harness
+remembers (a `blueprint_place {name}` paste: the last 4 of a name, 32 names; checks.lua), read once a minute by the
+stream service (operator read `library_areas`, libareas.lua): `{tick, age_s, placements, areas, left_out?}`, newest
+first, one per name and spot, at most 48 from the read and 16 KB in a push (the oldest left out). An area: `name`,
+`surface`, `box` [l, t, r, b] (the paste's first 400 entities' extent), `tick` placed, `by`, `entities`, `description`
+(its first 80 characters), `saved_tick` (the entry's save now) and `placed_save` (the save that was placed; pastes
+before d21 batch68 have none), `deleted` (no entry of that name now), `retired` {by, reason, replaced_by, tick},
+`check` {id, name, state (pass, fail, stale or not run), tick} (the newest blueprint check over it), and `hookups`
+as the world shows them at the area's edge, read two areas a read (the ones read longest ago first) and kept with
+their tick `t`: `b` belts [in joined, in open, out joined, out open] (a belt whose next tile is outside: fed from or
+into a belt there, or not), `p` fluid connections to a tile outside [joined, open], `i` inserters reaching outside
+[in joined, in open, out joined, out open], `e` power [poles, wires to poles outside, machines with no power, on low
+power], `g` ghosts, `n` built, `open` the first 4 open ones `[x, y, what]`; or `capped` (over 1500 of ours in the area),
+`too_big`, `error`. The map's Blueprints layer draws each area on its surface: red with an open hookup or a failed
+check, dashed orange when not verified (no passing check, or hookups not read), green when its check passed and every
+hookup is joined; hover gives the facts in words. On the d17 copy: a read 2.5-3.7 ms in the game with no hookups,
++0.1-0.5 ms an area's hookups (a 64x19 area of 448 belts included).
+
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
 `rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
 plain. On world n's state at 08:45 PDT d21 that took the push from 200-205 KB to 187-188 KB (the basemap 46.0 KB to

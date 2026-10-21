@@ -770,6 +770,8 @@ class Model:
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
+        self.library_areas = None  # (d21 batch68 AD2) the library's placed areas, the last read (live.py observe_library_areas)
+        self.library_areas_t = None
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -873,6 +875,8 @@ class Model:
         # still has its tab
         if isinstance(obs.get("planet_map"), dict) and obs["planet_map"].get("surface"):
             self.planet_maps[obs["planet_map"]["surface"]] = obs["planet_map"]
+        if isinstance(obs.get("library_areas"), dict):
+            self.library_areas, self.library_areas_t = obs["library_areas"], now
         if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
             self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
@@ -2307,6 +2311,8 @@ class Model:
             "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
             "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
+            # the library's placed areas with their hookups (libareas.lua; push_live sends them, the live map draws them)
+            "library_areas": dict(self.library_areas, age_s=round(now - self.library_areas_t)) if self.library_areas else None,
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),
