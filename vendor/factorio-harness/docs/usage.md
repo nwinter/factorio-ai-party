@@ -9818,3 +9818,33 @@ fh watch    # deploy on every change
   (least 1 of 2 a craft)`), the baseline and the row line (`iron-gear-wheel (uncommon)`), and gives `recipe_quality`
   on each machine row; the recipe's quality changing during the watch reads as a recipe change. Main did not do this
   before (uptime's last change there was batch55 P8). Tests: tests/d20_batch58.lua (T1).
+
+## d21 batch64 (eng/d20-batch64)
+
+- Z1 (Sol #1515: the crusher on Petrel (-17,-10.5) read no_recipe at tick 40313975 with Set recipe on while its green
+  wire (network 1307, a decider's output) carried recipe:oxide-asteroid-crushing = 1; configure was refused as
+  "recipe incompatible with machine"). What 2.0.77's Set recipe takes, seen on a private copy with a crusher and a
+  constant combinator, each case from no recipe: a recipe signal above 0 sets that recipe at the signal's quality, on
+  red or green alike (the two summed); among several recipe signals the lowest recipe order wins whatever the counts
+  (metallic b-a-a, carbonic b-a-b, oxide b-a-c, advanced oxide f), normal before rare; a recipe the machine cannot
+  make or the force has not researched is skipped; recipe signals come before item signals, and an item signal alone
+  picks a recipe of the machine that has it as a product (ice and the oxide chunk: oxide-asteroid-crushing; calcite:
+  advanced-oxide; iron ore: metallic), at its quality; virtual signals are ignored. A constant combinator slot with no
+  quality sends nothing; circuit_set's signals are written with quality normal, which the game takes. When the wires
+  change the recipe, the running craft finishes, then the old recipe's ingredients and products go to the machine's
+  dump slots (defines.inventory.assembling_machine_dump) and it has no recipe until they are empty; an inserter taking
+  from it empties them (one with filters only its filter items), and the new recipe goes in. A recipe set by hand
+  (set_recipe) is ignored while Set recipe is on, which configure read as "recipe incompatible with machine"; with it
+  off, set_recipe works while the dump still holds items and returns none of them. Sol's case: Petrel's two deciders
+  switch the crusher between advanced-oxide (calcite < 20, or ice >= 100 and calcite < 100, read from a belt) and oxide
+  (ice < 100 and calcite >= 20); a switch put the old recipe's items in the dump, and the takers (a bulk inserter
+  filtered to ice and calcite, a fast inserter filtered to the oxide chunk, both onto belts) had not emptied it (what it
+  held then is not recorded: inspect did not list the dump; configure's change with Set recipe off left it, and it is
+  empty now). Now: inspect's `circuit_recipe` (an assembling machine with Set recipe on) gives what the wires give
+  (`wires_give`, `from`), `recipe_now`, the dump's contents, the inserters taking from it with their filters and what
+  each takes (`takers`, `dump_left`), the signals not used and why, the rule, and a line, e.g. `Set recipe is on: its
+  wires give oxide-asteroid-crushing (recipe:oxide-asteroid-crushing); it has no recipe: the new one waits until its
+  dump slots are empty: they hold carbon*20, carbonic-asteroid-chunk*2 (...); inserters taking from it: ...`; the dump
+  is listed in inventories (assembling_machine_dump) and transfer takes from it (take-only). configure with Set recipe
+  on is refused before any change, naming what the wires give and the two ways in the game's terms (Set recipe off,
+  then configure; or the recipe signal on a wire). Tests: tests/d21_batch64.lua.
