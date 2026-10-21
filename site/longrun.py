@@ -517,7 +517,8 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             v = interp(tx, ty, raw_tick) if tx else None
             return datetime.datetime.fromtimestamp(v).isoformat(timespec="seconds") if v is not None else None
 
-        row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], game0=game_time(a["tick"]),
+        row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], raw0=a["raw"], raw1=b["raw"],
+                   game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
                    researching=in_progress(b.get("current")),
                    # SPM: research units a minute over the shift (the labs' use); packs made a minute, all colours
