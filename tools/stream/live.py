@@ -263,6 +263,8 @@ class LiveSource:
             ex = self.h.extras()
             if "research" in obs:
                 obs["research"].update(progress=ex.get("progress"), top_done=ex.get("top_done") or [])
+                if "repeating" in ex:  # (d20 batch57 S4) the infinite technologies' levels; {} from Lua when none
+                    obs["research"]["repeating"] = ex["repeating"] if isinstance(ex["repeating"], list) else []
             obs["power"] = {"machines": ex.get("electric_machines"), "starved": ex.get("starved")}
             obs["darkness"] = ex.get("darkness")
             # the game's connected players (hostview.py: the host view ends when his client leaves)

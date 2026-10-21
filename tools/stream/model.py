@@ -608,6 +608,30 @@ def tech_label(name):
     return re.sub(r"\b(nauvis|vulcanus|fulgora|gleba|aquilo)\b", lambda m: m.group(1).capitalize(), label)
 
 
+REPEATING_MAX = 24  # infinite technologies on the research card (Space Age has about 30)
+
+
+def repeating_levels(rows, current=None, progress=None):
+    """(d20 batch57 S4, viewer Foobator, shift48 18:25: "the current level of ever increasing recurring research") The
+    extras read's infinite technologies [{name, level, next, researching}] -> [{name, label ("Mining productivity",
+    the prototype name without its starting number), level (the last level researched), next (the level the tech tree
+    shows to research), researching?, progress?}], the highest level first, then by label; levels as the game counts
+    them (mining-productivity-3 starts at 3: levels 1 and 2 are the two finite technologies before it)."""
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or not r.get("name") or not isinstance(r.get("level"), int):
+            continue
+        row = {"name": r["name"], "label": tech_label(re.sub(r"-\d+$", "", r["name"])), "level": r["level"],
+               "next": r.get("next") if isinstance(r.get("next"), int) else r["level"] + 1}
+        if r.get("researching") or r["name"] == current:
+            row["researching"] = True
+            if isinstance(progress, (int, float)):
+                row["progress"] = round(progress, 3)
+        out.append(row)
+    out.sort(key=lambda x: (-x["level"], x["label"]))
+    return out[:REPEATING_MAX]
+
+
 def human_name(name):
     """A prototype name for viewers: 'assembling-machine-2' -> 'Assembling machine 2', 'travel to vulcanus' ->
     'Travel to vulcanus'."""
@@ -1298,6 +1322,8 @@ class Model:
         res["current"] = r.get("current")
         res["progress"] = r.get("progress")
         res["packs"] = list(r.get("packs") or [])  # the running technology's packs (score's current_packs)
+        if "repeating" in r:
+            res["repeating"] = repeating_levels(r.get("repeating"), r.get("current"), r.get("progress"))
 
     def unused_unlocks(self, now=None):
         """Researched technologies whose building the team has none of, oldest first: [{tech, unlocks, built,
@@ -2254,7 +2280,8 @@ class Model:
             # the hosts read a new entry)
             "chronicle": {"entries": list(self.chronicle_entries)[-8:], "events": list(self.chronicle_events)[-12:]},
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
-                         "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
+                         "done_count": len(res["done"]), "recent": list(res["recent"])[:4],
+                         "repeating": res.get("repeating") or []},
             "unused_unlocks": self.unused_unlocks(now),
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
