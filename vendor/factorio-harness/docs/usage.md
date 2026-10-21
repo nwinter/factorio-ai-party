@@ -10108,6 +10108,43 @@ fh watch    # deploy on every change
   private copy (a 16-wall box); its searches through the copy's densest chunk (964 entities) 0.07 ms for the line and
   0.09 ms for the wall search; the flood is capped at 1024 walls (3.6 ms in plain Lua for a 1600-wall block with the
   test's linear finds). Tests: tests/d21_batch64.lua (Z3 block).
+- Z4 (viewer Aurora, operator inbox 08:07: Luna's and Opus's walks still blocked in mech armor; does the planner
+  account for flight). Main before: every path request asked with the character prototype's mask (player, train,
+  is_object), and the closed-in flood, reach-ring check, mining search, stall reason and across read obstacles by the
+  player layer. Read on 2.0.77 (private copy, sol's bot character, mech-armor with an empty grid):
+  - mech-armor's item prototype has provides_flight; the game's default mask "character/flying" (prototypes.
+    utility_constants.default_collision_masks) is {trigger_target}, which in 2.0.77 only spidertrons and the pentapods
+    carry, and no tile; LuaEntity.is_flying reads it;
+  - the character takes off a few tiles into a walk on open ground, or within 10 ticks when something stands in its way,
+    and lands when it stops where it can stand; stopped beside a wall or over a building it stays up (bobbing, and the
+    game moved it off a wall it was put on); with nothing in the way it lands mid-walk and takes off again;
+  - flying it crossed 48 tiles of water and deepwater (pathfind=false, 62 tiles in 7.1 s; the planned walk went round
+    the lake in 24.5 s), a stone wall and an assembling machine, in straight lines, with no equipment or power;
+  - a change to armor without flight while it flew killed it (equip power-armor while it hovered beside a wall; the
+    same by script): the corpse lay where it hovered.
+  Shift51: Luna equipped mech-armor at 13:12 (tick 41478945) and Opus at 14:23 (41712500); both kept it on.
+  - Luna, 14:26 (tick 41722943), queue job-2875 move_to via (-115.7,271.1) to (-269.5,486.5), the captive cell's
+    requester chest: leg 2 unreachable, "no path for the character to (-269.5,486.5) on the tile, half- or quarter-tile
+    grid", nearest reachable (-223.5,499.5), 47.8 tiles short: the cell is walled and the way to it crosses water and
+    deepwater from (-223,421) to (-260,473); the path requests asked with the ground mask, which neither crosses.
+  - Opus, 14:36 to 14:44: a walk to the cell went round the water (308 tiles against 163) and ended arrived_near at
+    (-263.8,469.6) beside its walls; the walking transfers into it then ended timed_out (4), unreached once ("no path
+    ... mining stone-wall (-265.5,470.5) opens a way") and replaced once, and at 14:44 a move_to from there found no path at all (walked 0 tiles), all with the ground mask; the spot
+    is sand between the cell's wall row (y 470.5) and water to its north and east (world n read, 2-tile samples of
+    (-280..-246, 456..472)).
+  - Opus, 14:48 to 14:50: a move_to (-150,170) arrived at (-150.48,169.69), inside the footprint of the solar panel at
+    (-149.5,169.5) (world n read: solar panels there, red desert tiles): the flying character stopped over it. The next
+    walks read "closed in ... the area (-150.5,169.5)-(-150.5,169.5) (about 0 tiles)": the flood with the ground
+    mask finds no free step inside the panel's box. He mined the panel (14:50:52) and walked on.
+  Now: pathing.flies(c) (the armor slot's item provides flight) and pathing.mask(c) (the flying default mask, else the
+  prototype's): the path requests and probes ask with it (no belt-free twin when flying), and boxes_in, the flood
+  (region), dig, stall_why and across find obstacles by its layer (trigger_target flying). On the copy with mech-armor:
+  the planned walk across the lake took 8.2 s straight (24.5 s round before); into a sealed ring of 40 stone walls 2.4
+  s and out 3.1 s (without the armor: closed in); onto an assembling machine's centre it arrived over it and the next
+  walk left normally. status (brief and full) gains `flight` for a character in armor with flight: flying (what it
+  crosses, and that armor without flight put on now kills it) or on the ground. equip refuses armor without flight
+  while the character flies: `armor: the character is flying now (mech-armor provides flight, power-armor does not);
+  in 2.0.77 a character that loses flight in the air dies ...`. Tests: tests/d21_batch64.lua (Z4 block).
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a

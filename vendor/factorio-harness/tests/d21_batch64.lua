@@ -196,3 +196,35 @@ ring(nil)
 local d=P.dig(surface,{x=-40,y=-120},0.2,{ignore=me,force=ours})
 eq(#d.mine,1); eq(d.mine[1].name,'stone-wall')
 print('d21_batch64 Z3 walls and gates: ok')
+
+-- d21 batch64 Z4 (viewer Aurora: Luna's and Opus's walks in mech armor). A character in armor that provides flight
+-- (2.0.77 mech-armor) collides only by the "character/flying" mask (trigger_target) as it flies: the planner plans and
+-- reads obstacles with that mask, so a walled ring or water is no obstacle to it, and a spidertron still is.
+defines.inventory.character_armor=5
+prototypes.utility_constants={default_collision_masks={['character/flying']={layers={trigger_target=true},not_colliding_with_itself=true}}}
+local function wearing(armor)
+  local slot=armor and {valid_for_read=true,name=armor,prototype={provides_flight=armor=='mech-armor' or nil}} or {valid_for_read=false}
+  return {valid=true,type='character',name='character',prototype={collision_mask={layers={player=true,train=true,is_object=true}}},
+    get_inventory=function(i) return i==5 and {slot} or nil end}
+end
+local mech,power,bare=wearing('mech-armor'),wearing('power-armor-mk2'),wearing(nil)
+eq(P.flies(mech),true); eq(P.flies(power),false); eq(P.flies(bare),false)
+local m,l=P.mask(mech); eq(l,'trigger_target'); eq(m.layers.trigger_target,true); eq(m.layers.player,nil)
+m,l=P.mask(power); eq(l,'player'); eq(m.layers.player,true)
+eq(P.layer_of(mech),'trigger_target'); eq(P.layer_of(nil),'player'); eq(P.layer_of({valid=true,type='car'}),'player')
+-- the obstacle reads find by the layer: walls are player-layer, a spidertron trigger_target too
+local LAYERS={wall={player=true,is_object=true},gate={player=true,is_object=true},['spider-vehicle']={player=true,trigger_target=true}}
+local find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f)
+  local out={}
+  for _,e in ipairs(find(f)) do if not f.collision_mask or (LAYERS[e.type] or {})[f.collision_mask] then out[#out+1]=e end end
+  return out
+end
+ring(nil)
+eq(P.region(surface,{x=-40,y=-120},0.2,{ignore=power,force=ours}).closed,true)
+eq(P.region(surface,{x=-40,y=-120},0.2,{ignore=mech,force=ours}).closed,false)
+eq(P.dig(surface,{x=-40,y=-120},0.2,{ignore=mech,force=ours}),nil)
+eq(P.across(surface,{x=-40,y=-119.5},{x=-15,y=-119.5},0.2,ours,'trigger_target'),nil)
+put('spidertron','spider-vehicle',-30.5,-119.5,ours)
+has(P.across(surface,{x=-40,y=-119.5},{x=-15,y=-119.5},0.2,ours,'trigger_target').line,': spidertron (-30.5,-119.5)')
+print('d21_batch64 Z4 flight: ok')
