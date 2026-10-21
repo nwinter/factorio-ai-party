@@ -1365,6 +1365,8 @@ async function main() {
         path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
         // not closed in, yet no way to the target: what to mine for one (round1820a)
         mine_for_a_way: last.mine_for_a_way,
+        // what stands across the straight line to the goal: walls with their extent and gates (d21 batch64 Z3)
+        across: last.across, across_walls: last.across_walls,
         // an attack that started on the way: planned again round it (round1950a)
         replanned: last.replanned,
         // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)

@@ -455,7 +455,9 @@ return function(api)
   function M.give_up_rest(p, nav)
     local pos = nav.position
     local here = p.position
-    local region = M.region(p.surface, here, M.half(p.character), {ignore=p.character, goal=pos})
+    -- (d21 batch64 Z3) our gates open for the character, as for the path requests (can_open_gates): with no force a
+    -- closed gate read as wall here, and an area left only through our gate read closed in while the gate was shut.
+    local region = M.region(p.surface, here, M.half(p.character), {ignore=p.character, goal=pos, force=p.force})
     nav.region = region
     -- The goal inside the area it can reach: the grids missed a route, so steer.
     if region and region.closed and region.nearest and dist(region.nearest, pos) <= nav.tolerance + 1 then
@@ -1144,6 +1146,15 @@ return function(api)
     local boxes = boxes_in(surface, {{tx0, ty0}, {tx1 + 1, ty1 + 1}}, opts.ignore)
     local h = half + PAD
     local force = opts.force
+    -- (d21 batch64 Z3) our gates open for the character: passed free, never named to mine.
+    if force then
+      local kept = {}
+      for _, b in ipairs(boxes) do
+        local g = b[6] and try(function() return b[6].type == 'gate' and b[6].force == force end)
+        if not g then kept[#kept+1] = b end
+      end
+      boxes = kept
+    end
     -- What stands on each tile (its centre, the padded box): entities the character may mine, by index (one index, or
     -- a list of them); stop: anything else. Whether a kind is minable, and its weight, read once per name.
     local on, stop, ents, weight, kinds = {}, {}, {}, {}, {}
@@ -1422,6 +1433,153 @@ return function(api)
     local best = scan(within and 4 or math.min(10, math.ceil(tolerance) + 1), tolerance)
     if best then return best, true end
     return scan(3, math.huge), false
+  end
+
+  -- (d21 batch64 Z3, viewer Foobator via the operator: walls that leave no way) What stands across the straight line
+  -- from where a walk ended to its goal, the first ACROSS_LEN tiles of it: each entity the character's box runs into
+  -- on it, in order, and the tiles it cannot walk on; a wall or gate is read with the wall it is part of (walls and
+  -- gates side by side or corner to corner, within ACROSS_R tiles of the crossing): how many, the box they span,
+  -- whether it runs on past what was read, and its gates. Read on 2.0.77 (private copy, a bot's character, a ring of
+  -- 39 stone walls and a gate): the character walked out through our gate and in from the far side round to it, and
+  -- the path requests (can_open_gates) route through it; with a stone wall in its place the walk ended closed in.
+  -- Returns {rows, walls, line}, or nil when nothing stands across it.
+  local ACROSS_LEN, ACROSS_R, ACROSS_ROWS, ACROSS_WALLS = 48, 32, 6, 1024
+  M.ACROSS_LEN, M.ACROSS_R = ACROSS_LEN, ACROSS_R
+  local WALL_TYPES = {wall=true, gate=true}
+  local function key_of(e) return e.unit_number or string.format('%s@%g,%g', e.name, e.position.x, e.position.y) end
+  -- Where along the line (0..L) a box grown by h is first met, or nil (slabs).
+  local function enters(from, ux, uy, L, b, h)
+    local t0, t1 = 0, L
+    for _, ax in ipairs({{from.x, ux, b.left_top.x - h, b.right_bottom.x + h}, {from.y, uy, b.left_top.y - h, b.right_bottom.y + h}}) do
+      local o, d, lo, hi = ax[1], ax[2], ax[3], ax[4]
+      if math.abs(d) < 1e-9 then
+        if o < lo or o > hi then return nil end
+      else
+        local a, c = (lo - o) / d, (hi - o) / d
+        if a > c then a, c = c, a end
+        t0, t1 = math.max(t0, a), math.min(t1, c)
+        if t0 > t1 then return nil end
+      end
+    end
+    return t0
+  end
+  -- The wall a wall or gate is part of, read within ACROSS_R tiles of it.
+  local function wall_of(surface, e, force)
+    local p0 = e.position
+    local found = try(function() return surface.find_entities_filtered{area={{p0.x - ACROSS_R, p0.y - ACROSS_R}, {p0.x + ACROSS_R, p0.y + ACROSS_R}}, type={'wall', 'gate'}} end) or {}
+    local by = {}
+    for _, w in ipairs(found) do by[math.floor(w.position.x) * 65536 + math.floor(w.position.y)] = w end
+    local sk = math.floor(p0.x) * 65536 + math.floor(p0.y)
+    if not by[sk] then by[sk] = e end
+    local seen, queue, head = {[sk]=true}, {sk}, 1
+    local names, keys, gates, edge = {}, {}, {}, false
+    local x0, y0, x1, y1
+    while head <= #queue and #queue <= ACROSS_WALLS do
+      local k = queue[head]; head = head + 1
+      local w = by[k]
+      local i = math.floor((k + 32768) / 65536)
+      local j = k - i * 65536
+      x0, y0, x1, y1 = math.min(x0 or i, i), math.min(y0 or j, j), math.max(x1 or i, i), math.max(y1 or j, j)
+      names[w.name] = (names[w.name] or 0) + 1
+      keys[key_of(w)] = true
+      if w.type == 'gate' then
+        local f = try(function() return w.force end)
+        gates[#gates+1] = {position={x=w.position.x, y=w.position.y}, ours=f == force or nil, force=f and f.name}
+      end
+      if math.abs(i + 0.5 - p0.x) >= ACROSS_R - 1 or math.abs(j + 0.5 - p0.y) >= ACROSS_R - 1 then edge = true end
+      for di = -1, 1 do
+        for dj = -1, 1 do
+          local n = (i + di) * 65536 + (j + dj)
+          if not seen[n] and by[n] then seen[n] = true; queue[#queue+1] = n end
+        end
+      end
+    end
+    local count = 0
+    for _, n in pairs(names) do count = count + n end
+    return {names=names, count=count, box={x0, y0, x1 + 1, y1 + 1}, gates=gates, runs_on=edge or #queue > ACROSS_WALLS or nil, keys=keys}
+  end
+  local function wall_text(w)
+    local list = {}
+    for n, c in pairs(w.names) do list[#list+1] = n .. ' ' .. c end
+    table.sort(list)
+    local g = {}
+    for _, x in ipairs(w.gates) do
+      g[#g+1] = string.format('gate %s (%s)', at(x.position), x.ours and 'ours: it opens for the character' or ('force ' .. tostring(x.force) .. ': it does not open for ours'))
+    end
+    return string.format('a wall of %d (%s) over %s-%s%s; %s', w.count, table.concat(list, ', '), at({x=w.box[1], y=w.box[2]}), at({x=w.box[3], y=w.box[4]}),
+      w.runs_on and string.format(', running on past the %d tiles read round the crossing', ACROSS_R) or '',
+      #g > 0 and ('gates in it: ' .. table.concat(g, ', ')) or 'no gate in it')
+  end
+  function M.across(surface, from, goal, half, force)
+    local dx, dy = goal.x - from.x, goal.y - from.y
+    local len = (dx * dx + dy * dy) ^ 0.5
+    if len < 0.01 then return nil end
+    local L = math.min(len, ACROSS_LEN)
+    local ux, uy = dx / len, dy / len
+    local hits, seen = {}, {}
+    local tiles = {}
+    local s = 0
+    while s < L do
+      local e1 = math.min(L, s + 4)
+      local a, b = {x=from.x + ux * s, y=from.y + uy * s}, {x=from.x + ux * e1, y=from.y + uy * e1}
+      local area = line_area(a, b, half)
+      for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
+        if e.valid and e.type ~= 'character' then
+          local k = key_of(e)
+          if not seen[k] then
+            seen[k] = true
+            local t = enters(from, ux, uy, L, e.bounding_box, half)
+            if t then hits[#hits+1] = {e=e, t=t} end
+          end
+        end
+      end
+      for _, tl in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
+        local k = tl.position.x .. ',' .. tl.position.y
+        if not seen[k] then
+          seen[k] = true
+          local t = enters(from, ux, uy, L, {left_top=tl.position, right_bottom={x=tl.position.x + 1, y=tl.position.y + 1}}, half)
+          if t then
+            local r = tiles[tl.name]
+            if not r then r = {name=tl.name, n=0, t=t, first={x=tl.position.x + 0.5, y=tl.position.y + 0.5}}; tiles[tl.name] = r end
+            r.n = r.n + 1
+            if t < r.t then r.t, r.first = t, {x=tl.position.x + 0.5, y=tl.position.y + 0.5} end
+          end
+        end
+      end
+      s = e1
+    end
+    for _, r in pairs(tiles) do hits[#hits+1] = {tile=r, t=r.t} end
+    if #hits == 0 then return nil end
+    table.sort(hits, function(a, b) return a.t < b.t end)
+    local rows, walls, parts, in_wall = {}, {}, {}, {}
+    for _, h in ipairs(hits) do
+      if #rows >= ACROSS_ROWS then break end
+      if h.tile then
+        rows[#rows+1] = {tile=h.tile.name, count=h.tile.n, position=h.tile.first, at=math.floor(h.t * 10 + 0.5) / 10}
+        parts[#parts+1] = string.format('%d tiles of %s from %s', h.tile.n, h.tile.name, at(h.tile.first))
+      else
+        local e = h.e
+        local k = key_of(e)
+        if not in_wall[k] then
+          local row = {name=e.name, position={x=e.position.x, y=e.position.y}, at=math.floor(h.t * 10 + 0.5) / 10}
+          local text = string.format('%s %s', e.name, at(e.position))
+          local f = try(function() return e.force end)
+          if f and f ~= force and f.name ~= 'neutral' then row.force = f.name; text = text .. ' (force ' .. f.name .. ')' end
+          if WALL_TYPES[e.type] then
+            local w = wall_of(surface, e, force)
+            for wk in pairs(w.keys) do in_wall[wk] = true end
+            w.keys = nil
+            row.wall = #walls + 1
+            walls[#walls+1] = w
+            text = text .. ', ' .. wall_text(w)
+          end
+          rows[#rows+1] = row
+          parts[#parts+1] = text
+        end
+      end
+    end
+    return {rows=rows, walls=walls, line=string.format('across the straight line from %s to %s%s: %s', at(from), at(goal),
+      len > ACROSS_LEN and string.format(' (its first %d tiles)', ACROSS_LEN) or '', table.concat(parts, '; then '))}
   end
   return M
 end

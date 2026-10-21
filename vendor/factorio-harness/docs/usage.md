@@ -10042,6 +10042,30 @@ fh watch    # deploy on every change
   {position, logistic: "ITEM < N"}, naming the logistic network where it stands), an output inserter's enable or
   logistic condition; it names its output inserters and what each drops into with that one's bar. A ghost, an
   inserter or anything else with no bar is refused naming what has one. Tests: tests/d21_batch64.lua.
+- Z3 (viewer Foobator, operator inbox 07:30: walls that leave no walkable path, and gates). Main before: the path
+  requests already pass can_open_gates=true (84831f73), and the closed-in reads of placements and routes (closes_in,
+  routecheck) take our gates as open; the walk's own closed-in flood at its give-up (pathing give_up_rest), the
+  reach-ring pocket check and the mining search for a way out did not (a shut gate read as wall: closed in, and the
+  gate named to mine). Read on 2.0.77 (private copy, sol's bot character, a ring of 39 stone walls and a gate on
+  Nauvis at (-45..-34,-125..-114); every probe entity removed after):
+  - our gate set along the wall line (north in a north-south line): it opened as the character came (is_opened true
+    2 tiles off) and the walk went straight through, out in 3.1 s; from outside on the far side the walk
+    went round to it and in;
+  - a gate set across the wall line (east in a north-south line) joins no wall: its box and its neighbours' stay
+    0.58 tiles, leaving 0.42-tile gaps the 0.4-tile character passes through while the gate stays shut; the same for
+    another force's gate in our wall (walls and gates join only within one force);
+  - a ring and gate both of another force (no friend, no cease-fire): the gate never opened for our character; the path
+    requests routed through it (can_open_gates), and the walk ended blocked after 16 stalls (32.5 s) at the gate;
+  - a stone wall in the gate's place: the walk ended unreachable, closed in.
+  Now: the give-up's flood, the reach-ring check and the mining search take our gates as open (passed free, never
+  named to mine). A walk ending unreachable, blocked or near gives `last.across`, e.g. `across the straight line from
+  (-40,-120) to (-15,-120): stone-wall (-34.5,-120.5), a wall of 40 (stone-wall 40) over (-45,-125)-(-34,-114); no gate
+  in it; then stone-wall (-26.5,-120.5), a wall of 16 ...`, and with another force's ring `... (force z3other), a wall
+  of 40 (gate 1, stone-wall 39) over ...; gates in it: gate (-34.5,-119.5) (force z3other: it does not open for
+  ours)`; `last.across_walls` [{names, count, box, gates [{position, ours, force}], runs_on}]. Cost: 0.36 ms on the
+  private copy (a 16-wall box); its searches through the copy's densest chunk (964 entities) 0.07 ms for the line and
+  0.09 ms for the wall search; the flood is capped at 1024 walls (3.6 ms in plain Lua for a 1600-wall block with the
+  test's linear finds). Tests: tests/d21_batch64.lua (Z3 block).
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a

@@ -134,3 +134,65 @@ eq(err,'bar: fast-inserter (1,2) has no inventory with a bar in 2.0.77 (the red 
 ok,err=pcall(B.set,{type='entity-ghost',ghost_name='steel-chest',position={x=3,y=4}},2)
 eq(err,'bar: ghost of steel-chest (3,4) holds no items: the bar is set on the built chest, cargo wagon or landing pad')
 print('d21_batch64 Z2 inventory bar: ok')
+
+-- d21 batch64 Z3 (viewer Foobator): walls with no way through. On 2.0.77 (private copy, a bot's character, a ring of
+-- 39 stone walls and a gate set along the wall line): our gate opened as the character came and the walk went straight
+-- through, in and out; another force's gate in its own ring did not open and the walk ended blocked. pathing.across
+-- names what stands across the straight line to the goal, each wall with its extent and gates; the closed-in flood and
+-- the mining search take our gates as open.
+game=game or {tick=1}
+local P=dofile('mod/agent-harness_0.1.0/pathing.lua'){paths=function() return {} end}
+local ours,other={name='player'},{name='z3other'}
+local ents,un={},0
+-- Joined walls touch: boxes of a whole tile (the game stretches a wall's box to its neighbour's).
+local function put(name,kind,x,y,force)
+  un=un+1
+  ents[#ents+1]={valid=true,name=name,type=kind,position={x=x,y=y},force=force,unit_number=un,minable=true,
+    bounding_box={left_top={x=x-0.5,y=y-0.5},right_bottom={x=x+0.5,y=y+0.5}}}
+end
+local function ring(gate_force)
+  ents={}
+  for i=-45,-35 do for j=-125,-115 do if i==-45 or i==-35 or j==-125 or j==-115 then
+    if i==-35 and j==-120 and gate_force then put('gate','gate',i+0.5,j+0.5,gate_force) else put('stone-wall','wall',i+0.5,j+0.5,ours) end
+  end end end
+end
+local function overlaps(b,a) return b.right_bottom.x>a[1][1] and b.left_top.x<a[2][1] and b.right_bottom.y>a[1][2] and b.left_top.y<a[2][2] end
+local surface={find_entities_filtered=function(f)
+    local types
+    if f.type then types={} for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end end
+    local out={}
+    for _,e in ipairs(ents) do if overlaps(e.bounding_box,f.area) and (not types or types[e.type]) then out[#out+1]=e end end
+    return out
+  end,
+  find_tiles_filtered=function() return {} end}
+-- a closed ring: the wall crossed, its extent, no gate
+ring(nil)
+local r=P.across(surface,{x=-40,y=-119.5},{x=-15,y=-119.5},0.2,ours)
+eq(r.line,'across the straight line from (-40,-119.5) to (-15,-119.5): stone-wall (-34.5,-119.5), a wall of 40 (stone-wall 40) over (-45,-125)-(-34,-114); no gate in it')
+eq(#r.walls,1); eq(r.walls[1].count,40); eq(r.walls[1].runs_on,nil); eq(r.rows[1].wall,1)
+-- our gate in it, and another force's
+ring(ours)
+r=P.across(surface,{x=-40,y=-119.5},{x=-15,y=-119.5},0.2,ours)
+has(r.line,'gate (-34.5,-119.5), a wall of 40 (gate 1, stone-wall 39) over (-45,-125)-(-34,-114); gates in it: gate (-34.5,-119.5) (ours: it opens for the character)')
+eq(r.walls[1].gates[1].ours,true)
+ring(other)
+r=P.across(surface,{x=-40,y=-119.5},{x=-15,y=-119.5},0.2,ours)
+has(r.line,'gate (-34.5,-119.5) (force z3other), a wall of 40 (gate 1, stone-wall 39)')
+has(r.line,'gates in it: gate (-34.5,-119.5) (force z3other: it does not open for ours)')
+-- a wall running on past what is read round the crossing; a line crossing nothing; the line cut at 48 tiles
+ents={}
+for j=-60,60 do put('stone-wall','wall',0.5,j+0.5,ours) end
+r=P.across(surface,{x=-5,y=0.5},{x=80,y=0.5},0.2,ours)
+has(r.line,'across the straight line from (-5,0.5) to (80,0.5) (its first 48 tiles): stone-wall (0.5,0.5), a wall of ')
+has(r.line,', running on past the 32 tiles read round the crossing; no gate in it')
+eq(P.across(surface,{x=-5,y=100},{x=5,y=100},0.2,ours),nil)
+-- the closed-in flood: our gate open with force, a wall without; the mining search never names our gate
+ring(ours)
+local me={valid=true,type='character'}
+eq(P.region(surface,{x=-40,y=-120},0.2,{ignore=me,force=ours}).closed,false)
+eq(P.region(surface,{x=-40,y=-120},0.2,{ignore=me}).closed,true)
+eq(P.dig(surface,{x=-40,y=-120},0.2,{ignore=me,force=ours}),nil)
+ring(nil)
+local d=P.dig(surface,{x=-40,y=-120},0.2,{ignore=me,force=ours})
+eq(#d.mine,1); eq(d.mine[1].name,'stone-wall')
+print('d21_batch64 Z3 walls and gates: ok')
