@@ -67,7 +67,7 @@
   said).
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, hand_size?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
-  ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?}`: a machine's or building's
+  ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?, bar?}`: a machine's or building's
   settings, as its GUI sets them; `inspect` reads each back.
   - `item_requests: false` (or `ammo: false` on a built turret): a built entity's item requests removed, every one on
     it, as a deconstruction planner over it and a cancel of that deconstruction do (`removed` per entity).
@@ -94,6 +94,10 @@
     whitelist: iron-plate`, `off`, `set by circuit`); `hand_size: N` sets an inserter's stack size override, as
     its GUI does (1 up to its hand size now; 0 or false for none); `spoil_priority: fresh_first | spoiled_first | none` sets an
     inserter's Spoil priority (built or ghost).
+  - `bar: N` sets a chest's, logistic chest's, cargo wagon's or landing pad's red-X bar (N usable slots; `false`: none);
+    items past it stay, new ones go only under it. A crafting machine's output has no bar in 2.0.77 and its GUI no
+    output limit: with nothing taking from it, it holds one stack. `bar` on one is refused, naming its output inserters,
+    the chests they fill and its own logistic condition (`circuit_set logistic`).
   - `storage_filter: "efficiency-module"` sets a storage chest's filter (robots store no other item in it);
     `input_priority`, `output_priority`, `filter` set a splitter's (left and right facing the way items move).
   - Turrets: `priority_targets: ["big-metallic-asteroid", ...]` with `ignore_unprioritised: true` sets a turret's (or

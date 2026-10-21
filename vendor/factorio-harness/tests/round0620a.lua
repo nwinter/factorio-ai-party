@@ -319,9 +319,8 @@ local ok3,err3=pcall(astra,'configure',{position=ins.position,filtr={'coal'}})
 assert(not ok3,'refused')
 assert(err3:find('unknown argument filtr for configure; valid: ',1,true),err3)
 assert(err3:find('; closest name: filter; long-handed-inserter at (10.5,0.5) takes: filters, filter_mode (alias mode), use_filters, spoil_priority; and position, name, unit_number, platform, surface',1,true),err3)
--- A chest: configure has nothing of its own for it.
-fails(function() astra('configure',{position={x=7.5,y=0.5},bar=4}) end,
-  'iron-chest at (7.5,0.5) takes: nothing of its own: configure sets recipes (assembling machines), item filters (inserters, loaders, asteroid collectors), modules (machines with module slots), turret targets, rocket silo switches, storage chest filters and splitter priorities and filters')
+-- A chest: its bar (d21 batch64 Z2, Luna #1576; bar was unknown here before).
+fails(function() astra('configure',{position={x=7.5,y=0.5},limit=4}) end,'iron-chest at (7.5,0.5) takes: bar; and position')
 -- circuit_set: its arguments for that entity.
 fails(function() astra('circuit_set',{position=ins.position,setting={}}) end,
   'closest name: settings; long-handed-inserter at (10.5,0.5) takes: enable, logistic, read, settings (')
