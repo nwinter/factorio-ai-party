@@ -669,6 +669,9 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .project-steps .step-mark { display: inline-block; width: 1.1em; text-align: center; }
 .project-steps .step-tag { font-size: .7rem; padding: 0 4px; }
 .projects-all { margin-top: 6px; }
+.rem-all { margin-top: 6px; }  /* (d20 batch65 AA4) the reminders' Show all and their filters */
+.rem-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.rem-filters .fx-btn[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; font-weight: 700; }
 .projects-more h5 { margin: 8px 0 4px; font-size: .8rem; color: var(--fx-muted, #999); }
 .board-projects b { color: var(--fx-heading); }
 .project-progress { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 3px; }
