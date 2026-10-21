@@ -84,7 +84,14 @@ SCRIPT = """<script>
     if (data) return;
     data = {frames: []};
     view = PogMap.create(root.querySelector('.tlapse-map'), {storeKey: 'pog-tlapse-map', label: 'Map of the base'});
-    fetch(root.dataset.src).then(function (r) { return r.json(); }).then(function (d) {
+    function get(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(u); return r.json(); }); }
+    get(root.dataset.src).then(function (d) {
+      // the frames come in parts (each under the host's file size limit), in order
+      return Promise.all((d.parts || []).map(get)).then(function (ps) {
+        ps.forEach(function (p) { d.frames = (d.frames || []).concat(p.frames || []); });
+        return d;
+      });
+    }).then(function (d) {
       data = d;
       range.max = d.frames.length - 1; range.value = d.frames.length - 1; range.disabled = false; play.disabled = false;
       show(d.frames.length - 1);
@@ -129,13 +136,32 @@ def section(frames, esc, src="/runs/long/timelapse.json"):
             '<script src="/static/mapview.js"></script>' + SCRIPT + "</section>")
 
 
-def data(frames, terrain=None):
-    """timelapse.json: the frame box (tiles), the frames, and the terrain frames ({src, x0, y0, x1, y1, tick}: the
-    map-camera frames with their edges in tiles; each snapshot shows those up to its tick)."""
-    out = {"box": frame_box(frames), "frames": frames}
+PART_BYTES = 8 << 20  # Cloudflare Pages serves files up to 25 MiB; the whole time-lapse passed that at shift 49
+
+
+def data(frames, terrain=None, src="/runs/long/timelapse.json", part_bytes=PART_BYTES):
+    """{path: text} to publish: timelapse.json (the frame box in tiles, the terrain frames ({src, x0, y0, x1, y1, tick}:
+    the map-camera frames with their edges in tiles; each snapshot shows those up to its tick), count, and parts: the
+    frames' files in order) and the parts (timelapse-1.json ...: {frames}, each under part_bytes, filled from the first
+    frame on, so a full part's text stays the same as later shifts add frames)."""
+    stem = src.rsplit(".", 1)[0]
+    parts, cur, size = [], [], 0
+    for f in frames:
+        n = len(json.dumps(f, separators=(",", ":"))) + 1
+        if cur and size + n > part_bytes:
+            parts.append(cur)
+            cur, size = [], 0
+        cur.append(f)
+        size += n
+    if cur:
+        parts.append(cur)
+    srcs = [f"{stem}-{i}.json" for i in range(1, len(parts) + 1)]
+    index = {"box": frame_box(frames), "count": len(frames), "parts": srcs}
     if terrain:
-        out["terrain"] = terrain
-    return json.dumps(out, separators=(",", ":"))
+        index["terrain"] = terrain
+    out = {src: json.dumps(index, separators=(",", ":"))}
+    out.update({u: json.dumps({"frames": p}, separators=(",", ":")) for u, p in zip(srcs, parts)})
+    return out
 
 
 def inject(page_html, sec):
