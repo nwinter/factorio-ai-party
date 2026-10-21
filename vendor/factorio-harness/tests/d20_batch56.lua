@@ -46,3 +46,61 @@ do
   defines=nil
 end
 print('d20_batch56 R5 railgun arc in platform_defense: ok')
+
+-- d20 batch56 R7 (Luna #1434): who placed a ghost, through which request; what robots built from it; unknown with why.
+do
+  game={tick=1000}
+  table_size=function(t) local n=0 for _ in pairs(t) do n=n+1 end return n end
+  local storage,via={},nil
+  local G=dofile('mod/agent-harness_0.1.0/ghostlog.lua'){state=function() return storage end,via=function() return via end}
+  local nauvis={name='nauvis'}
+  local function ghost(name,x,y,user) return {valid=true,type='entity-ghost',ghost_name=name,name='entity-ghost',surface=nauvis,position={x=x,y=y},last_user=user} end
+  local function built(name,x,y,user) return {valid=true,type='transport-belt',name=name,surface=nauvis,position={x=x,y=y},last_user=user} end
+  -- Luna's belt_route call lays three belt ghosts; robots build them (no last user: a bot is no player)
+  via={action='belt_route'}
+  for x=407.5,409.5 do G.placed('luna',ghost('transport-belt',x,-277.5)) end
+  via=nil
+  game.tick=1000+60*90
+  local g=G.read(ghost('transport-belt',408.5,-277.5))
+  eq(g.by,'luna'); eq(g.tick,1000); eq(g.through,'belt_route, a call'); eq(g.last_user,nil)
+  has(g.line,'ghost placed by luna 1m ago (tick 1000) through belt_route, a call')
+  local b=G.read(built('transport-belt',407.5,-277.5))
+  has(b.line,'its ghost placed by luna 1m ago (tick 1000) through belt_route, a call; built from it since (robots or a hand: the harness does not see which)')
+  eq(G.short(built('transport-belt',409.5,-277.5)),'ghost by luna 1m ago (belt_route, a call)')
+  -- another name on the spot: no record; the reason says what is unknown
+  local u=G.read(built('fast-transport-belt',407.5,-277.5))
+  eq(u.unknown,true); has(u.line,'unknown: no harness record of placing it or its ghost here (the record began 1m ago, at tick 1000, and keeps the last 8192 placements)')
+  eq(G.short(built('fast-transport-belt',407.5,-277.5)),nil)
+  -- a player's ghost: the game's last user
+  local pu=G.read(ghost('stone-wall',1.5,1.5,{name='Foobator'}))
+  eq(pu.last_user,'Foobator'); has(pu.line,'unknown: '); has(pu.line,'; the game\'s last user: Foobator')
+  eq(G.short(ghost('stone-wall',1.5,1.5,{name='Foobator'})),'last user Foobator')
+  -- a queue step and a standing order; a hand build of a recorded ghost keeps the planner and adds the builder
+  via={action='place_ghosts',step='job-12',label='walls'}
+  G.placed('sol',ghost('stone-wall',5.5,5.5))
+  via={action='paste',step='job-3',order='rebuild'}
+  G.placed('astra',ghost('gun-turret',8,8))
+  via={action='construct'}
+  G.placed('opus',built('stone-wall',5.5,5.5),true,true)
+  via={action='build'}
+  G.placed('opus',built('iron-chest',9.5,9.5),true)
+  via=nil
+  has(G.read(built('stone-wall',5.5,5.5)).line,'its ghost placed by sol 0s ago (tick 6400) through place_ghosts, queue step 12 "walls"; built by hand by opus 0s ago')
+  eq(G.read(built('stone-wall',5.5,5.5)).built_by_hand,'opus')
+  has(G.read(ghost('gun-turret',8,8)).line,'through paste, standing order "rebuild"')
+  has(G.read(built('iron-chest',9.5,9.5)).line,'built by hand by opus 0s ago (tick 6400) through build, a call')
+  -- removed: the record goes
+  G.forget(built('iron-chest',9.5,9.5))
+  eq(G.read(built('iron-chest',9.5,9.5)).unknown,true)
+  -- bounded: the ring keeps the last 8192; the oldest go first
+  for i=1,8192 do G.placed('grok',ghost('stone-wall',1000+i,0)) end
+  eq(G.read(ghost('transport-belt',408.5,-277.5)).unknown,true)
+  eq(G.read(ghost('stone-wall',1001,0)).by,'grok')
+  eq(G.stats().kept,8192)
+  -- a spot placed twice keeps the newer, and the older slot's turn does not drop it
+  G.placed('haiku',ghost('stone-wall',1500,0))
+  for i=1,8191 do G.placed('grok',ghost('pipe',2000+i,0)) end
+  eq(G.read(ghost('stone-wall',1500,0)).by,'haiku'); eq(G.read(ghost('stone-wall',1600,0)).unknown,true)
+  game=nil; table_size=nil
+end
+print('d20_batch56 R7 ghost placement record: ok')
