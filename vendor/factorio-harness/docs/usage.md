@@ -10219,6 +10219,40 @@ fh watch    # deploy on every change
   MW), after this view: a new view started then, ready in about 55s"; 60 s later the line read 150.0 MW capacity. A
   robot-built accumulator gave networks' built_since "accumulator built 20s ago on nauvis by a player or robot ...".
   The network GUI was not opened (headless copy). Tests: tests/d21_batch64b.lua.
+- Z6 (#1655, Astra: a pair of fusion reactors with 8 generators runs, power gives 400 MW nameplate, and inspect on a
+  reactor lacks its neighbour bonus and plasma output, so adjacency cannot be told from ports that only touch). Main
+  before: inspect gave a fusion reactor its electricity (max 10 MW) and its fluids; nothing read its neighbours, bonus
+  or rates. Read on 2.0.77 (private copy):
+  - LuaEntity.neighbour_bonus refuses a fusion reactor ("Entity is not reactor"); LuaFluidBox has no flow read; the
+    force's fluid production statistics counted none of the coolant or plasma. The prototype: neighbour_bonus 1;
+    get_fluid_usage_per_tick 0.0667 (4 a second; uncommon 1.3x, rare 1.6x, epic 1.9x, legendary 2.5x); get_max_energy_usage
+    166667 J a tick (10 MW, every quality); a burner for fusion power cells (40 GJ); neighbour_connectable: 8 points,
+    two a side, plasma on the north and south sides and coolant on the east and west (turned with it; north or east
+    only), each pairing with a plasma or coolant point of another reactor within 0.7 tiles facing it.
+  - each coolant unit takes 25 MJ of fuel (plasma heat capacity 25 x 1,000,000 C) and becomes one plasma unit. Lone,
+    a reactor makes plasma at 1,000,000 C and at most burns 100.0 MW for 4.000 coolant a second.
+  - a pair, plasma side to plasma side, with 4 generators on 150 MW: fuel 100.0 and 20.7 MW (4.000 and 0.828 coolant a
+    second), generators 162.07 MW = the fuel and 41.4 MW: each reactor's fuel x (1 + bonus x how hard its neighbour
+    ran); with 8 generators both burnt 100.0 MW, 8.0 plasma a second, generators 392 MW on 390 MW of draw (at most 400).
+  - the bonus goes by the neighbour points, not by fluid connections: a reactor joined to another only coolant side to
+    coolant side read 1,207,916 then 1,302,561 C as the other ran; an east-facing one whose plasma side met a north
+    one's coolant side had no fluid connection to it and both made plasma at 2,000,000 C; moved 2 tiles along (points
+    apart), 1,000,000 C each.
+  - after a load drop the generators ran on plasma held in their boxes (10 each, 500 MJ at 2,000,000 C) while one
+    reactor stood still: a window of fuel burnt can read below the generators' output for a while.
+  Now (fusion.lua): inspect's `fusion` on a fusion reactor: neighbours [{x, y, sides (plasma-plasma, coolant-coolant,
+  coolant-plasma ...)}], generators (on its plasma ports), neighbour_bonus {per_neighbour, connected, at_full} (formula),
+  max at its quality {coolant_per_s, plasma_per_s, fuel_mw, electric_mw, plasma_mw_alone, plasma_mw_with_neighbours}
+  (formula), now {status, plasma {amount, temperature, bonus_seen}, coolant, fuel {burning, remaining_mj, cells}} (the
+  plasma box is one segment with what it joins: its temperature is theirs mixed), measured {over_s, samples, fuel_mw
+  (measured from the fuel held), running_pct, coolant_per_s and plasma_per_s (derived at 25 MJ a unit), bonus_estimate
+  and plasma_mw_estimate (formula on the neighbours' measured running)}, line. A reactor read (or built by the harness)
+  and its neighbours are sampled every 1 s for 10 min after the last read (up to 64; 31 samples kept); the first read
+  says sampling began. power's `fusion_reactors` gives each one's line in the area (up to 8). On the copy: (-150,0)
+  "neighbour reactor (-150,6) (plasma-plasma), bonus 1 at full ... measured over 30 s: 100.0 MW of fuel (100%), 4.000
+  coolant and plasma a second (derived), about 120.7 MW of plasma with the bonus its neighbours give now (estimate)";
+  (-150,6) 20.7 MW (21%), 0.828 a second, about 41.4 MW: together 162.1 MW, the generators' 162.1 MW. The reactor GUI and
+  tooltip were not opened (headless copy). Tests: tests/d21_batch64c.lua.
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a
