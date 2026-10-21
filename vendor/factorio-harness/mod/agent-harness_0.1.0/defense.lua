@@ -389,7 +389,7 @@ return function(api)
         nests=nests[1] and nests or nil,turrets=turret_count,artillery=artillery[1] and artillery or nil}
     end)
   end
-  M.schema.defense={limit='optional: areas listed in full (default '..MAX_AREAS..', max 40)',
+  M.schema.defense={surface='optional planet, surface or platform name (default yours): our defended areas and their turrets on that surface there by remote view (d20 batch62 X4)',limit='optional: areas listed in full (default '..MAX_AREAS..', max 40)',
     returns='read, cached 10 s: areas [{area, kind, line, centre, from_centre, bearing, box, buildings, kinds, turrets, ammo, empty, low, '
     ..'flamers {count, oil, capacity, dry, low}, lasers, turret_list, covered, covered_once, uncovered, uncovered_parts [{box, buildings, kinds}], nests}]: '
     ..'the team\'s buildings in clusters, largest first. kind: cluster (buildings touching by 32-tile cells, an outpost or the base), '
@@ -507,7 +507,7 @@ return function(api)
     -- hand_fed_low (A3, Haiku 01:50): every hand-fed ammo turret under below rounds (default 10), nearest you first
     assert(a.hand_fed_low==nil or type(a.hand_fed_low)=='boolean','hand_fed_low must be true or false')
     local hfl_below=a.hand_fed_low and math.max(1,math.min(1000,math.floor(tonumber(a.below) or 10))) or nil
-    local kind='turrets|'..s.name..'|'..(area and table.concat({area[1][1],area[1][2],area[2][1],area[2][2]},',') or 'all')..(hfl_below and '|hfl'..hfl_below or '')
+    local kind='turrets|'..s.name..'|'..(area and table.concat({area[1][1],area[1][2],area[2][1],area[2][2]},',') or 'all')..(hfl_below and '|hfl'..hfl_below..(s~=p.surface and '|away' or '') or '')
     local q={force=p.force,surface={index=s.index}}
     return cached(q,kind,limit,function()
       -- (d19 batch44 A2: this find was 15.5 ms for 566 turrets on the private copy's Nauvis) with no area, the census
@@ -572,7 +572,9 @@ return function(api)
       end)
       local hfl
       if hfl_below then
-        local here=p.position
+        -- (d20 batch62 X4) on another planet your character stands elsewhere: no distance from you, in map order
+        local away=s~=p.surface
+        local here=away and {x=0,y=0} or p.position
         local list={}
         for _,r in ipairs(rows) do
           if r.hand_fed and r.type=='ammo-turret' and (r.count or 0)<hfl_below then list[#list+1]=r end
@@ -582,7 +584,8 @@ return function(api)
         local lines,pos={},{}
         for i,r in ipairs(list) do
           if i<=64 then
-            lines[#lines+1]=string.format('%s %s: %s, %.0f tiles from you',r.name,at(r.position),r.ammo,math.sqrt(d(r)))
+            lines[#lines+1]=away and string.format('%s %s on %s: %s',r.name,at(r.position),s.name,r.ammo)
+              or string.format('%s %s: %s, %.0f tiles from you',r.name,at(r.position),r.ammo,math.sqrt(d(r)))
             pos[#pos+1]={x=r.position.x,y=r.position.y}
           end
         end
@@ -690,7 +693,7 @@ return function(api)
         more=#rows>limit and string.format('+%d more flamers: limit raises the count',#rows-limit) or nil}
     end)
   end
-  M.schema.flamers={limit='optional: flamers listed (default '..MAX_FLAMERS..', max 40)',
+  M.schema.flamers={surface='optional planet, surface or platform name (default yours): every flamethrower turret of ours on that surface there by remote view (d20 batch62 X4)',limit='optional: flamers listed (default '..MAX_FLAMERS..', max 40)',
     returns='read, cached 10 s: summary (N of M with oil (crude-oil 87 at (x,y), ...)), flamers [{line, position, facing, oil, fluid, capacity, at_risk, kinds, '
     ..'nearest {name, position, distance}}], the most at risk first: each flamethrower turret on your surface with its oil (all it holds, its own '
     ..'buffer too: a flamer fires from it after its pipe has drained; capacity: its fluidbox plus that buffer), and our own buildings that fire can burn '

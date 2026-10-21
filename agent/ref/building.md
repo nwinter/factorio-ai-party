@@ -204,7 +204,7 @@
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the
   rest.
   Example: `./fh call clear_cliffs --args '{"positions":[{"x":82,"y":38.5}]}' --wait`
-- `heat_budget {position, add_pipes?}`: a heat network's mean temperature, heat capacity and heat above 30 C, and with
+- `heat_budget {position, add_pipes?, surface?}` (`surface`: a heat network on another planet by remote view, in sight): a heat network's mean temperature, heat capacity and heat above 30 C, and with
   `add_pipes` the mean after that many new cold heat pipes join.
   Example: `./fh call heat_budget --args '{"position":{"x":12.5,"y":40.5},"add_pipes":20}'`
 - `outpost {position, radius | area, dry_run?}`: queues one tour for an outpost: construct its ghosts, rearm its

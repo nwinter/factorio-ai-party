@@ -4,13 +4,15 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local function has(s,part) assert(type(s)=='string' and s:find(part,1,true),tostring(s)..' lacks '..part) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
-game={tick=0}
+local surf={name='nauvis'}
+local force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end}
+game={tick=0,forces={player=force},get_surface=function(n) return n=='nauvis' and surf or nil end}
 local storage={}
 local n=0
 -- contents(e,k,tick) -> {{id,pos,name}}
 local function belt(x,y,dir,contents)
   n=n+1
-  local e={valid=true,unit_number=n,type='transport-belt',name='transport-belt',position={x=x,y=y},direction=dir,
+  local e={valid=true,unit_number=n,type='transport-belt',name='transport-belt',surface=surf,position={x=x,y=y},direction=dir,
     prototype={belt_speed=0.03125},belt_neighbours={inputs={},outputs={}}}
   e.get_transport_line=function(k) return {get_detailed_contents=function()
     local out={}
@@ -31,7 +33,7 @@ local side=belt(4.5,-0.5,8,moving('copper-plate',1000))
 table.insert(main[4].belt_neighbours.inputs,side); side.belt_neighbours.outputs={main[4]}
 local S=require('beltsample'){state=function() return storage end,remote_entity=function(_,a) for _,b in ipairs(main) do if b.position.x==a.position.x then return b end end error('no belt there') end,
   on_platform=function(p) return p end}
-local p={index=1}
+local p={index=1,force=force}
 local r=S.handler(p,{position={x=2.5,y=0.5},seconds=2})
 eq(r.sampling,true); eq(r.tiles,6); eq(r.every_ticks,16); eq(#r.points,3)
 eq(r.points[1],'section end (3.5,0.5)'); eq(r.points[2],'merging belt (4.5,-0.5) into (4.5,0.5)'); eq(r.points[3],'section end (6.5,0.5)')
@@ -59,9 +61,9 @@ do
   table.insert(L[3].belt_neighbours.inputs,sd); sd.belt_neighbours.outputs={L[3]}
   local S2=require('beltsample'){state=function() return storage end,remote_entity=function(_,a) for _,b in ipairs(L) do if b.position.x==a.position.x then return b end end end,on_platform=function(q) return q end}
   game.tick=200
-  S2.handler({index=3},{position={x=1.5,y=10.5},seconds=2})
+  S2.handler({index=3,force=force},{position={x=1.5,y=10.5},seconds=2})
   for t=201,340 do game.tick=t; S2.tick(t) end
-  local r2=S2.handler({index=3},{})
+  local r2=S2.handler({index=3,force=force},{})
   eq(r2.limit,"a side-load waits at (3.5,10.5): belt (3.5,9.5) is stopped full of 4 carbon while the line after it runs at its cap (450/min a lane): the line's own items go first")
 end
 -- arguments
