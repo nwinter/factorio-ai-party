@@ -14332,7 +14332,18 @@ end
 -- what blocks them and places them as ghosts; the ones in build reach are
 -- built from the inventory unless ghosts=true. train_stop puts a stop on the
 -- side of a straight rail where it serves trains heading one way.
-M.rails=require('rails'){position=position,directions=directions,chunk_of=chunk_of}
+M.rails=require('rails'){position=position,directions=directions,chunk_of=chunk_of,
+  -- (d20 batch61 W1) why the game refuses a ramp: what stands in its footprint, else the tiles it cannot stand on
+  ramp_why=function(p,pos,d)
+    local proto=prototypes.entity['rail-ramp']
+    local _,_,text,box=M.placewhy.ramp_collisions(p.surface,p.force,proto,pos,d)
+    if text and text~='' then return 'its footprint holds '..text end
+    local layers,bad=proto.collision_mask.layers,{}
+    for _,t in pairs(box and p.surface.find_tiles_filtered{area=box,limit=64} or {}) do
+      for k in pairs(t.prototype.collision_mask.layers or {}) do if layers[k] and not bad[t.name] then bad[t.name]=true; bad[#bad+1]=t.name end end
+    end
+    return #bad>0 and 'its footprint covers '..table.concat(bad,', ') or nil
+  end}
 -- Ghosts of planned entities in build reach, built from the inventory as
 -- construct builds them, without walking; the rest stay ghosts.
 function M.rails.build(p,list)
@@ -14362,6 +14373,9 @@ function handlers.rail_route(p,a)
   assert(a.ghosts==nil or type(a.ghosts)=='boolean','ghosts must be true or false')
   local plan=M.rails.plan(p,a)
   local out=plan.out
+  if out.research and out.research.elevated_rail~='researched' then
+    error('level elevated: Elevated rail (elevated-rail) is not researched; it unlocks rail ramps, rail supports and elevated rails (dry_run: true shows the plan)',0)
+  end
   if a.details then out.entities=plan.entities end
   local inv=p.get_main_inventory()
   for name,n in pairs(out.items) do

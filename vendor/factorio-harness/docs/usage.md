@@ -531,12 +531,39 @@ fh call status
     as such after 1000 expansions.
   - `dry_run: true` checks every belt as a `place_ghosts` dry run does (what blocks, tiles needing landfill, standing
     spots, items against what you hold); `belt_route` holds the plan.
-- Rails (2.0): `rail_route {from, to, via?, signals?, from_direction?, ghosts?, dry_run?, details?}` lays a line of the
-  rail planner's own pieces. 2.0 rails take 16 headings (north, northnortheast, northeast, ...); the pieces are
+- Rails (2.0): `rail_route {from, to, via?, signals?, from_direction?, level?, to_direction?, ghosts?, dry_run?, details?}`
+  lays a line of the rail planner's own pieces. 2.0 rails take 16 headings (north, northnortheast, northeast, ...); the pieces are
   `straight-rail` (2 tiles, 1 rail; 2.8 tiles on a diagonal), `half-diagonal-rail` (4.5 tiles, 2 rails) and
   `curved-rail-a` / `curved-rail-b` (about 5 tiles and 3 rails each, each turning 22.5 degrees: a 90 degree turn is four
   curves, about 20 tiles). Rail ends sit on a 2-tile grid. The tables come from the game (2.0.77, rail planner
-  extensions); rail ramps and elevated rails are not planned.
+  extensions).
+  - `level: "elevated"` (or `elevated: true`; d20 batch61 W1, Sol #1491: Fulgora island links): a `rail-ramp` up at
+    `from`, the elevated pieces (`elevated-straight-rail`, ... : the same geometry and rail counts), a ramp down at `to`,
+    and `rail-support` ghosts on joints between. Ground stays the default. Read from the game (2.0.77):
+    - A ramp is 16 tiles long and rises north, east, south or west; its ground end sits at the point and its elevated end
+      16 tiles on. At `from` it rises toward the next point, or continues a free cardinal end of your ground rail within 2.5
+      tiles (`joins`); at `to` it rises back toward the route. `from_direction` fixes the way the first ramp rises,
+      `to_direction` the way trains run down the last one. `from` or `to` near an end of your elevated rail or ramp
+      joins it with no ramp. No ramp fits: `no rail ramp fits at from (x,y) ...: rising east from (x,y): its footprint holds ...`.
+    - Elevated rails pass over ground, water, oil ocean and buildings; other elevated rails and ramps decide. The game
+      builds an elevated rail only where it joins elevated rail and lies wholly within 11 tiles of one rail support
+      (9 of a ramp's elevated end): on a straight line, supports at most 20 tiles of track apart. A support stands on a
+      rail joint, facing the rail (8 directions), on land, water and shallow oil ocean, and on deep oil ocean once Rail
+      support foundations is researched; it collides with ground rails and buildings. Supports go on joints as far
+      apart as that allows; a span with no joint the game takes one on is listed in `unsupported {from, to, tiles,
+      pieces, why}` (`no rail support fits on 16 joints: oil-ocean-deep (the game takes rail supports there once Rail
+      support foundations is researched) (first at (-175,258))`); its rails stay ghosts.
+    - Reply adds `level`, `ramps {role, position, rises_toward, ground_end, elevated_end, joins?}`, `supports {count,
+      widest}`, `unsupported`, `research {elevated_rail, rail_support_foundations}` ("researched" or "not
+      researched"); `items` counts `rail`, `rail-ramp` and `rail-support`. Without Elevated rail researched the call is
+      refused (`dry_run` shows the plan). Ghosts go ramps first, then supports, then rails, so a build in reach takes
+      them in the order the game accepts. `signals` are not placed on elevated rails.
+    - `dry_run` checks every piece (a support on deep oil ocean without the research: `oil-ocean-deep (the game takes rail
+      supports there once Rail support foundations is researched; or on foundation laid there)`).
+    - The private copy (Fulgora x=-175, y 194 to 312: 86 tiles of oil ocean, 25 deep): 2 ramps, 43 rails, 4 supports with
+      the research, and the game built all 49 from their ghosts; without it 2 supports, and the 15 rails over the deep
+      part stayed ghosts. Planning took 1.7-1.9 ms; the dry run 12.6 ms and the ghosts 19 ms in all (a 22-piece ground
+      route: 10.5 ms each).
   - `from`: free ground, or within 2.5 tiles of an end of your rail or rail ghost: a free end continues that line, an
     end where two rails meet branches off it. `to`: an end within 2 tiles of it, or an end of your rail or rail ghost
     there, joined head on. `via`: 1..16 points passed in order; each leg is at most 500 tiles, the route at most 1024

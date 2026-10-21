@@ -175,6 +175,8 @@
   3 rails) around water, cliffs and buildings as ghosts and builds those in reach (`"signals": 30` adds one-way
   signals). Rail ramp dry runs list every physical collision in `collisions`, rotated cliffs and deconstruction marks
   still present included; a failed `place_ghosts` names the same footprint list.
+  `"level": "elevated"`: a ramp up at `from`, elevated rails over water, oil ocean and buildings, a ramp down at `to`,
+  rail supports on joints between; `unsupported` names spans with no support spot and why; `research` says what is researched.
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
