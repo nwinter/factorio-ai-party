@@ -22,14 +22,14 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
   commands). An argument refusal or an unknown action names the call's topic.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
   `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`. Reads work by remote
-  view: `inspect`, `belt_flow`, `trace` in chunks our force sees now; `scan`, `observe`,
-  `nearest` at any charted centre; `surface=`, `platform=` elsewhere.
+  view: `inspect`, `belt_flow`, `trace` in chunks we see now; `scan`, `observe`, `nearest` at a charted centre;
+  `surface=`, `platform=` elsewhere.
 - Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take `--wait`,
   which lasts until the action's own end tick (`--wait-timeout MS` cuts it shorter). `build` accepts a batch of up to
   64 placements.
 - Plans: `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no round trips.
 - Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot centred on
-  your character (`at=X,Y`: there, by remote view) to `shots/NAME.png` that you can open and look at.
+  your character (`at=X,Y`: by remote view) to `shots/NAME.png` that you can open and look at.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace

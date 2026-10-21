@@ -3308,6 +3308,33 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
       - The test entry was deleted after.
     - Tests: tests/blueprints.lua (the limits, paging, export and import, the operator read's pages),
       tests/cli.test.ts (the export file), tools/test_bplibrary.py (paged strings).
+  - d20 batch59 U4 (viewer Aurora: "Could blueprint lookup and dry runs show when a design is retired and name its
+    tested replacement?"): `blueprint_retire {name, reason, replaced_by}` marks an entry retired; `{name, clear: true}`
+    clears the mark.
+    - `reason` is 1..200 characters. `replaced_by` names another entry of the library that is not retired itself.
+    - Who may, as `blueprint_rename`: its author any time, anyone after 24 game hours unused. Retiring is not a use.
+    - The mark is stored beside the entry; its description stays as written (a player writes such a note in the
+      blueprint's description; the mark does not touch it, nor the string).
+    - Reply: `retired` (`retired by sol: belts jam at the third furnace; replaced by smelter-row-v2`), `was` (the mark
+      it replaced), or `cleared` (the mark cleared); `{clear: true}` on an entry with no mark replies `unchanged`.
+    - The same `retired` line is in:
+      - `blueprint_list` rows (and `library_retired`, how many are retired), and `blueprint_list {name}` with
+        `retired_at` (time ago);
+      - `blueprint_export {name}`;
+      - `blueprint_place` and `paste` by name, real (the use is recorded as before) and dry runs (top-level `retired`
+        and in `paste`).
+      - Nothing is refused for it.
+    - The replacement's state is in the line: `(retired too; replaced by NAME)` or `(no entry of that name now)`.
+      `blueprint_rename` of the replacement moves the mark to the new name; its reply and a `blueprint_delete` reply
+      list `replacement_for` (the entries that name it).
+    - A `blueprint_save` or `blueprint_import` over a retired entry's name is a new design: the mark goes, and the reply
+      gives it as `retired_cleared`.
+    - The operator read has the line and `retired_tick`; the mirror's index.json keeps them.
+    - CLI: `fh blueprint retire --args '{...}'`.
+    - Tests: tests/blueprints.lua (the mark in each reply, the refusals, rename, delete, a chain, clear, a save over it).
+      Real engine (the private copy, branch runtime): two imports of a 2-entity entry; the mark read back in the list
+      row, `blueprint_list {name}`, the export, a `blueprint_place` and a `paste` dry run, the `dry_run` action and a
+      real paste (2 ghosts placed, the use recorded); rename, the refusals and clear as above.
 - After any paste of a blueprint with wires, each of its circuit and copper wires whose two ends stand where the
   layout puts them (a new ghost, or a matching entity or ghost from before) is checked and connected if missing, as
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed

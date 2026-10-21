@@ -855,8 +855,8 @@ async function main() {
   }
   if (command === 'blueprint') {
     const operation = positionals[1] ?? 'list';
-    // save and rename: the team library (blueprint_save, blueprint_rename).
-    if (!['import','export','inspect','list','delete','capture','place','copy','cut','paste','save','rename'].includes(operation)) throw new Error('Unknown blueprint operation');
+    // save, rename and retire: the team library (blueprint_save, blueprint_rename, blueprint_retire).
+    if (!['import','export','inspect','list','delete','capture','place','copy','cut','paste','save','rename','retire'].includes(operation)) throw new Error('Unknown blueprint operation');
     const args = object(JSON.parse(values.args ?? '{}'),'args');
     if (operation === 'import') {
       if (!values.file) throw new Error('blueprint import requires --file blueprint.txt');
