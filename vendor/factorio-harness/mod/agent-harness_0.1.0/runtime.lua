@@ -17511,7 +17511,8 @@ M.ammofeed=require('ammofeed'){state=state}
 -- A railgun's line of fire over our entities (fireline.lua; d17 batch31 B3, Astra, Nick 07:10): in platform_defense,
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
-M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
+M.ammorate=require('ammorate'){}
+M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
 do
   local function target_surface(p,a)
     if type(a.platform)=='string' then
