@@ -107,6 +107,16 @@
   hand-fed and low ones first. `hand_fed_low: true, below: 10`: turrets no inserter feeds under 10 rounds, nearest
   first.
   Example: `./fh call turrets --args '{"hand_fed_low":true,"below":10}'`
+- `turret_tally {positions | position | area, name?, seconds?, surface? | platform?}`: up to 64 turrets (ammo, electric,
+  fluid, artillery) watched for seconds (5..3600, default 120): each one's kills and damage dealt, as its tooltip shows
+  them, at the start and the end and the change, a turret with none said `no change`; `first_change_s`, `last_change_s`
+  and `seconds_changing` from a read a second; a turret destroyed or mined during the watch keeps its change to its last
+  read (`gone_s`); `groups` sum them by name. The start returns `baseline`; `turret_tally {}` reads it so far or done
+  (one watch an agent; a new one replaces it). What the counts take in (`note`): damage after the target's resistances,
+  overkill included; a tesla's chain, a rocket's splash, a flamethrower's stream and its fire; trees and rocks hit, a
+  tree destroyed is a kill. A kill goes to the turret whose hit destroyed the target; the others that damaged it get
+  the damage only. Trees set alight that burn down do not count. A turret mined or rebuilt starts at 0.
+  Example: `./fh call turret_tally --args '{"area":{"left_top":{"x":-40,"y":360},"right_bottom":{"x":40,"y":420}},"seconds":300}'`
 - `rearm {surface | area | radius | positions | alert, below?, count?, ammo?}`: tops up turrets in one walking tour,
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or

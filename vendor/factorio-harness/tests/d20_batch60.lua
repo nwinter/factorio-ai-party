@@ -218,3 +218,97 @@ do
   defines=nil
 end
 print('d20_batch60 V2 ghosts floor by the tile rules: ok')
+
+-- d20 batch60 V3 (Astra #1521: a Tesla trial saw attackers in range, powered turrets and no breach, and nothing said
+-- which turret fought). turrettally.lua: a turret's kills and damage dealt (its tooltip's Kills and Damage dealt) and
+-- turret_tally, a bounded watch of a list of turrets: the counts at the start and the end and the change, zeros
+-- included; a turret gone during the watch keeps its change to its last read. The numbers are the private copy's
+-- (2.0.77): a gun turret on three 500-health worms 3 kills and 1570.8 dealt; a laser beside a gun 0 kills and 384.
+do
+  local tick=1000
+  game={}
+  setmetatable(game,{__index=function(_,k) if k=='tick' then return tick end end})
+  local S={}
+  local function turret(name,x,y,kills,dmg,type_)
+    return {valid=true,type=type_ or 'ammo-turret',name=name,position={x=x,y=y},unit_number=x*100+y,quality={name='normal'},kills=kills,damage_dealt=dmg}
+  end
+  local gun=turret('gun-turret',-3,0,10,250)
+  local laser=turret('laser-turret',3,0,4,500,'electric-turret')
+  local tesla=turret('tesla-turret',0,6,0,0,'electric-turret')
+  local wagon=turret('artillery-wagon',0,20,2,900,'artillery-wagon')
+  local chest={valid=true,type='container',name='iron-chest',position={x=9.5,y=9.5},unit_number=7}
+  local at={['-3,0']=gun,['3,0']=laser,['0,6']=tesla,['0,20']=wagon,['9.5,9.5']=chest}
+  local surface={find_entities_filtered=function(f)
+    eq(f.force,'player'); eq(f.limit,65)
+    local out={}
+    for _,e in ipairs({gun,laser,tesla}) do if not f.name or f.name==e.name then out[#out+1]=e end end
+    return out
+  end}
+  local p={index=1,force='player',surface=surface}
+  local TT=require('turrettally'){state=function() return S end,
+    remote_entity=function(q,a) local e=at[a.position.x..','..a.position.y]; assert(e,'no entity of ours there'); return e end,
+    on_platform=function() error('no platform') end,on_surface=function() error('no surface') end}
+  -- inspect's read: turrets, artillery and wagons; nothing for a chest or a turret gone
+  local r=TT.read(gun); eq(r.kills,10); eq(r.damage_dealt,250)
+  eq(TT.text(TT.read(laser)),'kills 4, damage dealt 500')
+  eq(TT.read(wagon).damage_dealt,900)
+  eq(TT.read(chest),nil)
+  eq(TT.read({valid=false,type='ammo-turret'}),nil)
+  near(TT.read(turret('gun-turret',0,0,1,1570.8000001)).damage_dealt,1570.8)
+  -- refused: no watch yet, a chest, a bad window
+  local ok,err=pcall(TT.handler,p,{})
+  eq(ok,false); has(err,'no turret_tally watch yet')
+  ok,err=pcall(TT.handler,p,{positions={{x=9.5,y=9.5}}})
+  eq(ok,false); has(err,'iron-chest (9.5,9.5) is not a built turret')
+  ok,err=pcall(TT.handler,p,{positions={{x=-3,y=0}},seconds=2})
+  eq(ok,false); has(err,'seconds: 5..3600')
+  -- the start: baseline, one entry a turret (the same one twice once)
+  local st=TT.handler(p,{positions={{x=-3,y=0},{x=3,y=0},{x=0,y=6},{x=-3,y=0}},seconds=10})
+  eq(st.watching,true); eq(st.turrets,3); eq(st.baseline[1],'gun-turret (-3,0): kills 10, damage dealt 250 so far')
+  has(st.line,'watching 3 turrets for 10s'); has(st.note,'overkill included')
+  -- the fight: the gun kills 3 (1570.8), the laser deals 384 and kills none, the tesla nothing
+  for s=1,10 do
+    tick=1000+60*s
+    if s==2 then gun.kills=11; gun.damage_dealt=250+523.6 end
+    if s==4 then gun.kills=13; gun.damage_dealt=250+1570.8; laser.damage_dealt=500+384 end
+    TT.tick(tick)
+    if s==5 then
+      local mid=TT.handler(p,{})
+      eq(mid.watching,true); eq(mid.done,nil); has(mid.line,'watching 3 turrets for 5s of 10s'); eq(mid.turrets[1].kills_change,3)
+    end
+  end
+  local done=TT.handler(p,{})
+  eq(done.done,true); eq(done.watching,nil); eq(done.seconds_watched,10); eq(done.end_tick,1600)
+  eq(done.changed,2); eq(done.unchanged,1); eq(done.kills_change,3); near(done.damage_change,1954.8)
+  local g,l,t=done.turrets[1],done.turrets[2],done.turrets[3]
+  eq(g.kills_start,10); eq(g.kills_end,13); eq(g.kills_change,3); near(g.damage_change,1570.8)
+  eq(g.first_change_s,2); eq(g.last_change_s,4); eq(g.seconds_changing,2)
+  eq(l.kills_change,0); eq(l.damage_change,384)
+  eq(t.kills_change,0); eq(t.damage_change,0); eq(t.first_change_s,nil)
+  eq(done.lines[1],'gun-turret (-3,0): kills 10 -> 13 (+3), damage dealt 250 -> 1820.8 (+1570.8) (rising in 2 of 10 one-second reads, first at +2s, last at +4s)')
+  eq(done.lines[2],'laser-turret (3,0): kills 4 -> 4 (+0), damage dealt 500 -> 884 (+384) (rising in 1 of 10 one-second reads, first at +4s, last at +4s)')
+  eq(done.lines[3],'tesla-turret (0,6): kills 0 -> 0 (+0), damage dealt 0 -> 0 (+0): no change')
+  eq(done.groups[1].line,'gun-turret x1: 1 with a change, 0 without; kills +3, damage dealt +1570.8')
+  has(done.line,'watched 3 turrets for 10s: 2 with a change in kills or damage dealt, 1 without; kills +3, damage dealt +1954.8 in all')
+  -- read again: the same result; ticks after the end change nothing
+  tick=2000; TT.tick(tick); gun.kills=99
+  eq(TT.handler(p,{}).kills_change,3)
+  -- a turret destroyed during the watch keeps its change to its last read; an area picks the turrets in it
+  tick=3000
+  local st2=TT.handler(p,{area={left_top={x=-10,y=-10},right_bottom={x=10,y=10}},name='laser-turret',seconds=5})
+  eq(st2.turrets,1)
+  tick=3060; laser.kills=5; laser.damage_dealt=900; TT.tick(tick)
+  tick=3120; laser.valid=false; TT.tick(tick)
+  for s=3,5 do tick=3000+60*s; TT.tick(tick) end
+  local d2=TT.handler(p,{})
+  eq(d2.turrets[1].kills_change,1); eq(d2.turrets[1].damage_change,16); eq(d2.turrets[1].gone_s,2)
+  has(d2.lines[1],'gone at +2s (not read since: its counts went with it)')
+  -- a new watch while one runs replaces it, said so
+  laser.valid=true
+  TT.handler(p,{positions={{x=3,y=0}},seconds=5})
+  eq(TT.handler(p,{positions={{x=-3,y=0}},seconds=5}).replaced,'your earlier watch, still running, was replaced')
+  ok,err=pcall(TT.handler,p,{area={left_top={x=0,y=0},right_bottom={x=300,y=1}}})
+  eq(ok,false); has(err,'at most 200 tiles a side')
+  game=nil
+end
+print('d20_batch60 V3 turret kills and damage dealt: ok')
