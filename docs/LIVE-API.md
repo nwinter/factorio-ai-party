@@ -242,6 +242,16 @@ after a restart. A reply with no record is matched by the rules above. `part` [k
 parts (the tool's, or an agent's `fh say` parts), shown "part 1 of 2". The page finds a line by `answers.id` first; its
 text match drops every leading @name ("@Muse @Luna ..." on the site, "@Luna ..." in a reply's quote).
 
+`viewer_delivery` {seq: {s, ...}} gains `s` "expired" with `why` (d20 batch65 AA5, viewer Aurora 09:46: "Could messages
+sent between shifts stay queued until delivery, with queued/delivered/expired labels?"), and `viewer_read` {after} is
+the site seq the stream service has read up to. The service saves that seq in `runs/RUN/site-cursor.json` (just before
+a line still waiting in the relay's queue); the next one (a restart, or the next shift along `resumed-from`) reads every
+site line after it as queued: to the Operator's inbox at any age, to the agents when written at most 30 minutes before
+it was read, else expired ("waited N min for the stream service ..."). A line read again that the last service had
+already refused, relayed or put in the inbox keeps that record. A backlog line in no verdict log, inbox or relayed
+file (one no service ever read, before the cursor) is expired with that reason. The page labels a site line past
+`viewer_read.after` with no delivery "queued", and says the service is not running when the state is old.
+
 `clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
 each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or
 spores), color {r, g, b, a} (the game's map colour, 0..1), cells [[cx, cy, amount]], chunks, max, total, age_s,

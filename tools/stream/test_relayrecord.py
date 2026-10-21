@@ -119,9 +119,9 @@ def site(pub, NOW):
         os.unlink(f.name)
     assert r.returncode == 0, r.stderr
     out = [re.sub(r"<[^>]+>", "", h).strip() for h in json.loads(r.stdout)]
-    assert out[0] == "sent to the agents (details lost at a stream service restart)", out
-    assert re.fullmatch(r"to Sol, Luna \(sent \d\d:\d\d( [AP]M)?\)", out[1]), out
-    assert out[2] == "to Opus: about Nauvis power", out  # sent within a minute of the line: no time
+    assert out[0] == "delivered to the agents (details lost at a stream service restart)", out
+    assert re.fullmatch(r"delivered to Sol, Luna \(sent \d\d:\d\d( [AP]M)?\)", out[1]), out
+    assert out[2] == "delivered to Opus: about Nauvis power", out  # sent within a minute of the line: no time
 
 
 if __name__ == "__main__":
