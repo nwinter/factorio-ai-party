@@ -28,7 +28,9 @@ OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_li
 OPERATOR_DRAWS = {"highlights"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
-# finished technologies (to seed "recent milestones" on start), machines starved of power, and how dark it is
+# finished technologies (to seed "recent milestones" on start), the infinite technologies researched at least once
+# (repeating: name, level reached, next level as the tech tree names it, researching; d20 batch57 S4, viewer Foobator;
+# inside the loop over the technologies this read already made: about 2 ms for the loop alone on the private copy), machines starved of power, and how dark it is
 # (LuaSurface.darkness, 0 at noon; drives the night lift on the camera captures, nightlift.py). The machine counts come
 # from the harness census when it has a pass (pog.CENSUS_FN; the find over every surface was 25-27 ms of this read's
 # 32 ms on world n, 2026-10-14 22:00, every 3 s), else from that find.
@@ -36,9 +38,15 @@ STREAM_LUA = pog.CENSUS_FN + r"""
 local f = game.forces.player
 local cur = f.current_research
 local done = {}
+local rep = {}
 for name, t in pairs(f.technologies) do
   if t.researched and t.enabled and t.research_unit_count > 0 and not t.prototype.hidden then
     done[#done+1] = {name = name, cost = t.research_unit_count * #t.research_unit_ingredients}
+  end
+  local p = t.prototype
+  local now = cur ~= nil and cur.name == name
+  if p.max_level >= 4294967295 and (t.level > p.level or now) and not p.hidden then
+    rep[#rep+1] = {name = name, level = t.level - 1, next = t.level, researching = now or nil}
   end
 end
 table.sort(done, function(a, b) return a.cost > b.cost end)
@@ -62,7 +70,7 @@ local home = game.surfaces.nauvis
 local connected = {}
 for _, pl in pairs(game.connected_players or {}) do connected[#connected + 1] = pl.name end
 rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, research = cur and cur.name or nil,
-  progress = cur and f.research_progress or nil, top_done = top, electric_machines = machines, starved = starved,
+  progress = cur and f.research_progress or nil, top_done = top, repeating = rep, electric_machines = machines, starved = starved,
   darkness = home.darkness, daytime = home.daytime, connected = connected})
 """
 

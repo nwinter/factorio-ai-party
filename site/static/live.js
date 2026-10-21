@@ -635,6 +635,16 @@
     var research = r.current ? '<div class="live-research-label"><span><strong>' + esc(r.label || label(r.current)) + '</strong></span><span class="live-research-pct">' + pct + '%</span></div>' +
       '<div class="fx-progress fx-progress--research" style="--fx-value:' + pct + '%" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100" aria-label="Research progress"></div>' : '<p class="fx-muted">Nothing being researched.</p>';
     research += '<p class="small">' + esc(r.done_count || 0) + ' technologies done</p>' + (recent ? '<h4>Latest</h4><ol class="research-recent">' + recent + '</ol>' : '');
+    // (d20 batch57 S4, viewer Foobator 18:25: "the current level of ever increasing recurring research") each infinite
+    // technology researched at least once, the highest level first: the level reached; the tech tree names the next one
+    var reps = Array.isArray(r.repeating) ? r.repeating : [];
+    if (reps.length) {
+      research += '<h4>Repeating research</h4><p class="small fx-muted">Level reached (the tech tree shows the next level).</p><ul class="research-levels">' +
+        reps.map(function (x) {
+          var now = x.researching ? ' <span class="fx-muted">researching ' + esc(x.next) + (isFinite(x.progress) ? ': ' + Math.floor(x.progress * 100) + '%' : '') + '</span>' : '';
+          return '<li' + (x.researching ? ' class="is-researching"' : '') + '><span class="rl-name">' + esc(x.label || label(x.name)) + '</span> <b class="rl-level">' + esc(x.level) + '</b>' + now + '</li>';
+        }).join('') + '</ul>';
+    }
 
     // charts
     var prodSeries = (s.production || []).slice(0, 4).map(function (p, i) {

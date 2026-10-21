@@ -694,6 +694,10 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .plan-tip .t-line { padding: 1px 9px; overflow-wrap: anywhere; }
 .plan-tip .t-foot { padding: 4px 9px 0; font-size: .78rem; }
 .research-recent { margin: 0; padding-left: 1.3em; font-size: .9rem; }
+.research-levels { list-style: none; margin: 0; padding: 0; font-size: .9rem; columns: 2 12rem; column-gap: 1rem; }
+.research-levels li { break-inside: avoid; display: flex; flex-wrap: wrap; gap: .3em; align-items: baseline; }
+.research-levels .rl-level { font-variant-numeric: tabular-nums; }
+.research-levels .is-researching .rl-name { font-weight: 600; }
 .game-chat { max-height: 360px; overflow-y: auto; }
 .live-card .chart { background: var(--fx-deep); box-shadow: var(--fx-inset-shadow); border: 0; }
 .live-card .chart figcaption strong { color: var(--fx-heading); }

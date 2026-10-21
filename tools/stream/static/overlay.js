@@ -325,7 +325,8 @@
       researchCard.fill = el("i");
       bar.append(researchCard.fill);
       researchCard.recent = el("div", "recent");
-      researchCard.root.append(el("div", "panel-title", "Research"), top, bar, researchCard.recent);
+      researchCard.levels = el("div", "levels");  // (d20 batch57 S4) infinite technologies' levels reached
+      researchCard.root.append(el("div", "panel-title", "Research"), top, bar, researchCard.recent, researchCard.levels);
       box.appendChild(researchCard.root);
     }
     researchCard.root.style.order = 999;
@@ -338,6 +339,9 @@
     researchCard.recent.textContent = "";
     researchCard.recent.append(el("b", "", (r.done_count || 0) + " done"));
     if (rec.length) researchCard.recent.append(document.createTextNode(" · latest " + rec.join(", ")));
+    const reps = (Array.isArray(r.repeating) ? r.repeating : []).slice(0, 4);
+    setText(researchCard.levels, reps.length ? "Levels: " + reps.map((x) => x.label + " " + x.level).join(" · ") : "");
+    researchCard.levels.hidden = !reps.length;
   }
 
   function sparkPath(series, w, h) {
