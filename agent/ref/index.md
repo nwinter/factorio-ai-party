@@ -24,7 +24,7 @@
   `board_progress`, `board_critical`, `board_focus`, `checks`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`,
   `lesson_review`, `ground_rule_add`, `ground_rule_edit`, `ground_rule_retire`, `ground_rules`, `review`, `lookahead`, `networks`,
   `boilers`, `tells`.
-- `stream-people`, profile, viewers, players: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
+- `stream-people`, viewers: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
   `operator`, `poll`, `players`, `vote`, `votes`, `restore`.
 - `space-age`, rockets, platforms, planets, remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
   `platform_arrived`/`platform_left` waits, `platform_create`, `platform_schedule`, `platform_rename`, `platform_delete`,
