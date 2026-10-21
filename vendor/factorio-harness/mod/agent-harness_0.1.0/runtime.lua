@@ -17624,7 +17624,7 @@ function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end
 -- A platform's turret cover of its collectors and hull (platdefense.lua; A4, Astra 01:50).
 -- A platform's ammunition by whether it can reach a turret (ammofeed.lua; d17 batch13 B1).
-M.ammofeed=require('ammofeed'){state=state}
+M.ammofeed=require('ammofeed'){state=state,feeders=M.feeders}
 -- A railgun's line of fire over our entities (fireline.lua; d17 batch31 B3, Astra, Nick 07:10): in platform_defense,
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
