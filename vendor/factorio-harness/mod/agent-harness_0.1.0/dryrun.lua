@@ -50,7 +50,8 @@ return function(api)
   -- centres, even ones on tile corners (rails keep their own grid).
   function M.snap(proto, pos, dir)
     if proto.type == 'rail-ramp' then return api.placewhy.ramp_position(pos, dir) end
-    if RAILS[proto.type] then return {x=pos.x, y=pos.y} end
+    -- (d20 batch61 W1) a rail support stands on a rail joint as asked (the game keeps a support ghost where it is put)
+    if RAILS[proto.type] or proto.type == 'rail-support' then return {x=pos.x, y=pos.y} end
     local w, h = proto.tile_width or 1, proto.tile_height or 1
     if (dir or 0) % 8 == 4 then w, h = h, w end
     -- a cargo bay keeps to a 2-tile grid (backlog #555: a dry run at (-10,29) read placeable, the ghost stood at (-10,30))
@@ -250,13 +251,15 @@ return function(api)
     if not next(mask) then return nil end
     remedy_cache = {}
     local x0, y0, x1, y1 = span(M.footprint(proto, pos, dir))
+    -- (d20 batch61 W1) the game takes a rail support on deep oil ocean once Rail support foundations is researched
+    local deep_ok = try(function() return proto.type end) == 'rail-support' and try(function() return force.rail_support_on_deep_oil_ocean end) == true
     local out
     for x = x0, x1 do
       for y = y0, y1 do
         local t = try(function() return surface.get_tile(x, y) end)
         local name = t and try(function() return t.name end)
         local tl = name and try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}
-        if collide(mask, tl) then
+        if collide(mask, tl) and not (deep_ok and name == 'oil-ocean-deep') then
           local laid = false
           for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
             local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
@@ -961,7 +964,10 @@ return function(api)
               if t == 'entity-ghost' then
                 if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = same or o
                 elseif shape and RAILS[o.ghost_type] then -- crossing or joining
-                elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
+                -- (d20 batch61 W2) a ghost whose collision layers miss this one's (a rail support under an elevated rail) shares the tiles, as the game lets it
+                elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) and (function()
+                  local gm = try(function() return o.ghost_prototype.collision_mask end)
+                  return gm == nil or collide(mask, layers(gm)) end)() then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
               elseif rail and RAILS[t] and not ramp then
                 -- Another rail crosses or joins it; the same rail there is the same.
                 if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = o end
@@ -1019,10 +1025,19 @@ return function(api)
               end
             end
           else
+            -- (d20 batch61 W1) a rail support on deep oil ocean: the game takes it once Rail support foundations is researched
+            local support = proto.type == 'rail-support'
+            local deep_ok = support and try(function() return force.rail_support_on_deep_oil_ocean end) == true
             for x = x0, x1 do
               for y = y0, y1 do
                 local t = tile_at(x, y)
-                if collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1)) then
+                if support and t.name == 'oil-ocean-deep' then
+                  if not deep_ok and #tile_bad < 4 then
+                    local fix = remedy(force, t.name, t.layers, mask)
+                    tile_bad[#tile_bad+1] = string.format('%s oil-ocean-deep (the game takes rail supports there once Rail support foundations is researched%s)',
+                      tile_text(x, y), fix and '; or on '..fix..' laid there' or '')
+                  end
+                elseif collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1)) then
                   if t.layers.out_of_map then tile_bad[#tile_bad+1] = tile_text(x, y)..' is outside the map'
                   else
                     local fix = remedy(force, t.name, t.layers, mask)
