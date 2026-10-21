@@ -82,7 +82,10 @@
   robots can build it (in transit: a robot with an order on it carries the item, how far off; no construction area
   covers it; its network holds none and no robot carries one; no idle robot); `page` for more. On a space platform the
   hub builds from its inventory, with no roboport: each ghost says what holds it (no foundation under it, a foundation
-  ghost built first, the hub's count of its item and whether a hub request asks for it); place_ghosts' robot preview
+  ghost built first, foundation where its tile rules need empty space, the hub's count of its item and whether a hub
+  request asks for it). The floor is the game's: an asteroid collector needs foundation under its two rear rows and
+  empty space under its front row (`over_empty_space`), a thruster empty space behind it; a ghost the game's placement
+  check takes is not named as held by its floor; place_ghosts' robot preview
   says the same, and construction_robots there names this read. `contested`: more of
   our ghosts in its network want its item than the network holds (16 or fewer): each, its claim and distance.
   `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds

@@ -22,6 +22,85 @@ return function(api)
   -- it is never built); then the hub holds the item or not, and whether its requests ask for it. 2.0.77 on world n:
   -- Wayfarer's hub has no logistic network and its surface none; past the hull the tile is empty-space.
   -- Returns the verdict and {hub_holds, hub_requests, no_foundation, foundation_ghosts}, or nil off a platform.
+  -- (d20 batch60 V2, Sol #1499: two asteroid collector ghosts on IVc read "no foundation under 3 of its tiles" and were
+  -- built by the hub with their front row over empty space) The floor an entity ghost needs, as the game checks it
+  -- (2.0.77, read on the private copy): where its prototype has tile_buildability_rules, each rule's area (turned
+  -- with the entity) needs tiles with one of its required layers and none of its colliding ones (asteroid-collector:
+  -- foundation under its two rear rows, empty space under its front row and 3 rows past it; thruster: foundation under
+  -- its body, empty space behind it); a tile of its box no rule covers needs a tile its collision mask does not meet
+  -- (empty-space's layers include object and item: every building but rolling stock, robots and spidertrons). A
+  -- foundation ghost on a tile counts as foundation to come. Returns {bare (need foundation, none and no ghost),
+  -- ghosted (need foundation, a ghost there), not_empty (foundation, or a foundation ghost, where empty space is
+  -- required), not_empty_ghosts, overhang (box tiles left over empty space by a rule), rules, placeable (the game's
+  -- placement check for reviving it: can_place_entity, build_check_type ghost_revive, read only when a tile reads short;
+  -- nil unread)}. On the private copy the check and a revive agreed in 8 of 8 cases (collectors north and east, their
+  -- front over space or on foundation, a rear row over space; thrusters with space or foundation behind; belts).
+  local function rot(x, y, dir) for _ = 1, math.floor(((dir or 0) % 16) / 4) do x, y = -y, x end return x, y end
+  local function layers_of(m) return m and (m.layers or m) or nil end
+  function M.floor(s, g)
+    local out = {bare=0, ghosted=0, not_empty=0, not_empty_ghosts=0, overhang=0}
+    local proto = try(function() return g.ghost_prototype end)
+    local pos, dir = g.position, try(function() return g.direction end) or 0
+    local rules = proto and try(function() return proto.tile_buildability_rules end) or {}
+    local mask = proto and layers_of(try(function() return proto.collision_mask end))
+    local areas = {}
+    for _, r in ipairs(rules) do
+      local a = r.area
+      if a then
+        local x1, y1 = rot(a.left_top.x, a.left_top.y, dir)
+        local x2, y2 = rot(a.right_bottom.x, a.right_bottom.y, dir)
+        local req, col = layers_of(r.required_tiles), layers_of(r.colliding_tiles)
+        local area = {x1=pos.x + math.min(x1, x2), y1=pos.y + math.min(y1, y2), x2=pos.x + math.max(x1, x2), y2=pos.y + math.max(y1, y2),
+          ground=(req and req.ground_tile) or (col and col.empty_space) or false, empty=(req and req.empty_space) or false}
+        areas[#areas+1] = area
+      end
+    end
+    out.rules = #areas > 0 or nil
+    local function tile_ghost(x, y) return (try(function() return s.count_entities_filtered{area={{x, y}, {x + 1, y + 1}}, type='tile-ghost', force=g.force} end) or 0) > 0 end
+    local function is_empty(t) return t and t.name == 'empty-space' end
+    -- the box: a tile in a rule's area follows the rule; the rest, the mask against the tile (by name when unread)
+    local b = try(function() return g.bounding_box end)
+    local n = 0
+    if b then
+      for x = math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1 do
+        for y = math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1 do
+          n = n + 1
+          local t = n <= 128 and try(function() return s.get_tile(x, y) end)
+          local ground, ruled = false, false
+          for _, a in ipairs(areas) do
+            if x < a.x2 and x + 1 > a.x1 and y < a.y2 and y + 1 > a.y1 then
+              ruled = true
+              if a.ground then ground = true end
+            end
+          end
+          if not ruled then
+            local tl = t and layers_of(try(function() return t.prototype.collision_mask end))
+            if tl and mask then for l in pairs(mask) do if tl[l] then ground = true end end
+            else ground = is_empty(t) end
+          end
+          if is_empty(t) then
+            if ground then if tile_ghost(x, y) then out.ghosted = out.ghosted + 1 else out.bare = out.bare + 1 end
+            else out.overhang = out.overhang + 1 end
+          end
+        end
+      end
+    end
+    -- rule areas needing empty space: foundation there, or a foundation ghost to come
+    for _, a in ipairs(areas) do
+      if a.empty then
+        local box = {{math.floor(a.x1), math.floor(a.y1)}, {math.ceil(a.x2), math.ceil(a.y2)}}
+        local solid = try(function() return s.count_tiles_filtered{area=box, name='empty-space', invert=true} end) or 0
+        local ghosts = try(function() return s.count_entities_filtered{area=box, type='tile-ghost', force=g.force} end) or 0
+        out.not_empty = out.not_empty + solid + ghosts
+        out.not_empty_ghosts = out.not_empty_ghosts + ghosts
+      end
+    end
+    local name = try(function() return g.ghost_name end)
+    if (out.bare > 0 or out.not_empty > 0) and name and s.can_place_entity and defines.build_check_type and defines.build_check_type.ghost_revive then
+      out.placeable = try(function() return s.can_place_entity{name=name, position=pos, direction=dir, force=g.force, build_check_type=defines.build_check_type.ghost_revive} end)
+    end
+    return out
+  end
   function M.platform_blocker(s, g, item, count)
     local pl = try(function() return s.platform end)
     if not pl then return nil end
@@ -29,27 +108,24 @@ return function(api)
     if not (hub and hub.valid) then return 'the platform has no hub: nothing builds it', {} end
     local info, parts = {}, {}
     if g.type == 'entity-ghost' then
-      local b = try(function() return g.bounding_box end)
-      local bare, ghosted, n = 0, 0, 0
-      if b then
-        for x = math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1 do
-          for y = math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1 do
-            n = n + 1
-            local t = n <= 128 and try(function() return s.get_tile(x, y) end)
-            if t and t.name == 'empty-space' then
-              local tg = try(function() return s.count_entities_filtered{area={{x, y}, {x + 1, y + 1}}, type='tile-ghost', force=g.force} end) or 0
-              if tg > 0 then ghosted = ghosted + 1 else bare = bare + 1 end
-            end
-          end
-        end
-      end
-      if bare > 0 then
+      local f = M.floor(s, g)
+      local bare, ghosted = f.bare, f.ghosted
+      -- (d20 batch60 V2) the game's own placement check has the last word: a ghost it would revive here is not held by
+      -- its floor, whatever the count
+      if (bare > 0 or f.not_empty > 0) and f.placeable then
+        info.floor_ok = true
+        parts[#parts+1] = 'its floor as the game checks it (the placement check for reviving this ghost) takes it'
+      elseif bare > 0 then
         info.no_foundation = bare
-        parts[#parts+1] = string.format('no foundation under %d of its tiles and no foundation ghost there: the hub does not build it until foundation is placed', bare)
+        parts[#parts+1] = string.format('no foundation under %d of %s and no foundation ghost there: the hub does not build it until foundation is placed', bare, f.rules and 'the tiles its tile rules need foundation on' or 'its tiles')
+      elseif f.not_empty > 0 then
+        info.not_empty = f.not_empty
+        parts[#parts+1] = string.format('foundation (%d tile%s) where its tile rules need empty space%s: the game does not place it there', f.not_empty, f.not_empty == 1 and '' or 's', f.not_empty_ghosts > 0 and string.format(' (%d of them foundation ghosts)', f.not_empty_ghosts) or '')
       elseif ghosted > 0 then
         info.foundation_ghosts = ghosted
         parts[#parts+1] = string.format('waits for foundation: %d space-platform-foundation ghost%s under it, built first', ghosted, ghosted == 1 and '' or 's')
       end
+      if f.overhang > 0 then info.over_empty_space = f.overhang end
     end
     if not item then
       parts[#parts+1] = 'no item places it'

@@ -145,3 +145,76 @@ do
   game,defines,prototypes=nil,nil,nil
 end
 print('d20_batch60 V1 platform_defense ammo_use: ok')
+
+-- V2 (Sol #1499: IVc's collector ghosts at (-8.5,-14.5) and (-4.5,-14.5) read "no foundation under 3 of its tiles" and
+-- the hub built them with their front row over empty space). The floor as the game checks it: the prototypes' tile
+-- rules as 2.0.77 gives them (the private copy), the box past them by the collision mask; the game's placement check
+-- last. The cases are the copy's test platform, where a revive of each ghost agreed.
+do
+  local ES={doodad=true,empty_space=true,floor=true,ground_tile=true,item=true,object=true,player=true,resource=true,water_tile=true}
+  local FOUND={ground_tile=true}
+  local found={}
+  for x=-30,29 do for y=-5,4 do found[x..','..y]=true end end
+  local tghost={}
+  local function tile(x,y) local f=found[x..','..y]; return {name=f and 'space-platform-foundation' or 'empty-space',prototype={collision_mask={layers=f and FOUND or ES}}} end
+  local function inside(ar,x,y) return x>=ar[1][1] and x<ar[2][1] and y>=ar[1][2] and y<ar[2][2] end
+  local place={}
+  local s={get_tile=tile,
+    count_entities_filtered=function(f) local n=0 for k in pairs(tghost) do local x,y=k:match('(-?%d+),(-?%d+)'); if inside(f.area,tonumber(x),tonumber(y)) then n=n+1 end end return n end,
+    count_tiles_filtered=function(f) assert(f.name=='empty-space' and f.invert) local n=0 for x=f.area[1][1],f.area[2][1]-1 do for y=f.area[1][2],f.area[2][2]-1 do if found[x..','..y] then n=n+1 end end end return n end,
+    can_place_entity=function(a) place[#place+1]=a; return a.position.x==-777 end}
+  defines={build_check_type={ghost_revive=3}}
+  local collector={collision_mask={layers={is_lower_object=true,is_object=true,transport_belt=true}},tile_buildability_rules={
+    {area={left_top={x=-1.39844,y=-0.398438},right_bottom={x=1.39844,y=1.39844}},required_tiles={layers={ground_tile=true}},colliding_tiles={layers={empty_space=true}},remove_on_collision=true},
+    {area={left_top={x=-1.39844,y=-4.39844},right_bottom={x=1.39844,y=-0.597656}},required_tiles={layers={empty_space=true}},remove_on_collision=true}}}
+  local thruster={collision_mask={layers={is_lower_object=true,is_object=true,item=true,object=true,train=true}},tile_buildability_rules={
+    {area={left_top={x=-1.79688,y=-2.29688},right_bottom={x=1.79688,y=2.29688}},required_tiles={layers={ground_tile=true}},colliding_tiles={layers={empty_space=true}},remove_on_collision=true},
+    {area={left_top={x=-1.79688,y=2.69922},right_bottom={x=1.79688,y=90.2969}},required_tiles={layers={empty_space=true}},remove_on_collision=true}}}
+  local belt={collision_mask={layers={floor=true,meltable=true,object=true,transport_belt=true,water_tile=true}},tile_buildability_rules={}}
+  local BOX={['asteroid-collector']={1.19922,1.19922},thruster={1.69922,2.19922},['transport-belt']={0.4,0.4}}
+  local PROTO={['asteroid-collector']=collector,thruster=thruster,['transport-belt']=belt}
+  local function ghost(name,x,y,dir)
+    local w,h=BOX[name][1],BOX[name][2]
+    if dir==4 then w,h=h,w end
+    return {type='entity-ghost',ghost_name=name,ghost_prototype=PROTO[name],position={x=x,y=y},direction=dir or 0,force='player',
+      bounding_box={left_top={x=x-w,y=y-h},right_bottom={x=x+w,y=y+h}}}
+  end
+  local GL=dofile('mod/agent-harness_0.1.0/ghostlist.lua'){}
+  local function floor(name,x,y,dir) return GL.floor(s,ghost(name,x,y,dir)) end
+  -- A: the front row over empty space, the rear rows on foundation (the IVc case): nothing short
+  local f=floor('asteroid-collector',-20.5,-4.5)
+  eq(f.bare,0); eq(f.not_empty,0); eq(f.overhang,3); eq(f.rules,true); eq(f.placeable,nil,'no placement check when nothing reads short')
+  -- H: facing east at the east edge, its front column over space
+  f=floor('asteroid-collector',29.5,0.5,4); eq(f.bare,0); eq(f.overhang,3); eq(f.not_empty,0)
+  -- B: a rear row over space: those 3 need foundation (the old count said 6)
+  f=floor('asteroid-collector',-15.5,-5.5); eq(f.bare,3); eq(f.placeable,false)
+  -- C: the front row on foundation: refused for that
+  f=floor('asteroid-collector',-10.5,-3.5); eq(f.bare,0); eq(f.not_empty,3); eq(f.placeable,false)
+  -- D, E: a thruster with space behind it; with foundation in its exhaust row
+  f=floor('thruster',10,2.5); eq(f.bare,0); eq(f.not_empty,0)
+  f=floor('thruster',20,1.5); eq(f.bare,0); eq(f.not_empty,4)
+  -- F, G: a belt (no rules: its mask meets empty space's object layer) over space and on foundation
+  f=floor('transport-belt',25.5,-6.5); eq(f.bare,1); eq(f.rules,nil)
+  f=floor('transport-belt',25.5,-4.5); eq(f.bare,0)
+  -- a foundation ghost under the rear row: waits for it
+  tghost['-17,-6']=true; tghost['-16,-6']=true; tghost['-15,-6']=true
+  f=floor('asteroid-collector',-15.5,-5.5); eq(f.bare,0); eq(f.ghosted,3)
+  tghost={}
+  eq(place[1].build_check_type,3); eq(place[1].name,'asteroid-collector'); eq(place[1].direction,0)
+  -- the verdicts: the IVc case names no foundation; the rear-row case and the front-on-foundation case name theirs
+  local pl={hub={valid=true,get_item_count=function() return 1 end}}
+  s.platform=pl
+  local v,info=GL.platform_blocker(s,ghost('asteroid-collector',-20.5,-4.5),'asteroid-collector',1)
+  eq(v,'the hub holds 1 asteroid-collector'); eq(info.no_foundation,nil); eq(info.over_empty_space,3)
+  v,info=GL.platform_blocker(s,ghost('asteroid-collector',-15.5,-5.5),'asteroid-collector',1)
+  eq(v,'no foundation under 3 of the tiles its tile rules need foundation on and no foundation ghost there: the hub does not build it until foundation is placed; the hub holds 1 asteroid-collector'); eq(info.no_foundation,3)
+  v,info=GL.platform_blocker(s,ghost('asteroid-collector',-10.5,-3.5),'asteroid-collector',1)
+  eq(v,'foundation (3 tiles) where its tile rules need empty space: the game does not place it there; the hub holds 1 asteroid-collector'); eq(info.not_empty,3)
+  v=GL.platform_blocker(s,ghost('transport-belt',25.5,-6.5),'transport-belt',1)
+  has(v,'no foundation under 1 of its tiles and no foundation ghost there')
+  -- the game's placement check has the last word: a ghost it takes is not held by its floor
+  v,info=GL.platform_blocker(s,ghost('transport-belt',-777,-6.5),'transport-belt',1)
+  has(v,'its floor as the game checks it (the placement check for reviving this ghost) takes it'); eq(info.floor_ok,true); eq(info.no_foundation,nil)
+  defines=nil
+end
+print('d20_batch60 V2 ghosts floor by the tile rules: ok')

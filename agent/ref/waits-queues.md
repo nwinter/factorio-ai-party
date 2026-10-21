@@ -96,7 +96,8 @@
   standing at a machine that crafts, which is no stall), the next one, and the plan you last submitted (`plan`: steps
   done, ok, failed; `history`: its own results); `paused_why` says what paused the queue. `args: true`: history with
   each step's arguments (and a finished loop's steps); `./fh queue status orders` lists the standing orders' steps
-  too. An interrupted queued transfer tour resumes from the stops left. Example:
+  too. An interrupted queued transfer tour resumes from the stops left; an interrupted queued `wait_ticks` keeps its
+  end tick (`kept_wait`), and the steps after it run at that tick or at the resume, never sooner. Example:
   `./fh call queue_status --args '{"history":"all","pending":10}'`
 - `queue_edit {id, steps?, to?}`: `id: "job-12"` deletes a pending step (`steps`: replace it, `to: N`: move it); the
   active step is untouched. Example: `./fh call queue_edit --args '{"id":"job-12","to":1}'`
@@ -106,7 +107,7 @@
   replaced or added starts its own. The reply gives `revision` and each guard's `baseline`. Example:
   `./fh call queue_edit --args '{"lane":"platform:Edge8","expected_revision":41,"guards":{"remove":["guard-3"]}}'`
 - `queue_cancel {lane?, clear?}`: cancels a queue (`lane: "remote"` for the remote lane); `clear: false` keeps the
-  pending steps.
+  pending steps, paused (a running `wait_ticks` ends: `cancelled_wait`).
 - `queue_pause {lane?}` (`./fh queue pause`): pauses a queue and holds it: the running step goes back to the head of
   pending, and nothing resumes it until `./fh queue resume` (or a submit or repeat that starts it). Without it, a
   direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused
