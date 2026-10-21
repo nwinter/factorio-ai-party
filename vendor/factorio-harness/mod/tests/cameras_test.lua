@@ -137,4 +137,27 @@ do
   assert(c2.position.x>0.8,c2.position.x) -- no speed: EASE of the distance
   assert(not pcall(cams2.set,{player=2,position={x=0,y=0},speed=0}),'speed 0 accepted')
 end
+-- d20 batch65 AA6 (viewer Foobator): a flying character (mech armor) is drawn flight_height tiles north of its spot on
+-- the ground and bobs; the camera follows the ground (y + flight_height), so it holds still while the character bobs.
+-- On the ground (flight_height 0) and for a character without the field, follows are as before.
+do
+  local ch=api_bot.character
+  ch.position={x=5,y=4}; ch.flight_height=1
+  cams2.set{player=2,follow='luna',zoom=1,smooth=false}
+  eq(c2.position.x,5); eq(c2.position.y,5)
+  cams2.set{player=2,follow='luna',zoom=1}
+  for i,h in ipairs({1.3,1.0,1.2,1.05,1.3}) do
+    ch.position={x=5,y=5-h}; ch.flight_height=h
+    game.tick=603+i; cams2.tick()
+    eq(c2.position.x,5); eq(c2.position.y,5) -- the bob does not move the camera
+  end
+  eq(cams2.describe(2).position.y,5)
+  ch.position={x=5,y=5}; ch.flight_height=0 -- landed
+  game.tick=610; cams2.tick()
+  eq(c2.position.y,5)
+  setmetatable(ch,{__index=function(_,k) if k=='flight_height' then error('no such key') end end})
+  ch.flight_height=nil; ch.position={x=5,y=7}
+  cams2.set{player=2,follow='luna',zoom=1,smooth=false}
+  eq(c2.position.y,7)
+end
 print('cameras ok ('..assertions..' assertions)')
