@@ -10118,8 +10118,8 @@ fh watch    # deploy on every change
     grid", nearest reachable (-223.5,499.5), 47.8 tiles short: the cell is walled and the way to it crosses water and
     deepwater from (-223,421) to (-260,473); the path requests asked with the ground mask, which neither crosses.
   - Opus, 14:36 to 14:44: a walk to the cell went round the water (308 tiles against 163) and ended arrived_near at
-    (-263.8,469.6) beside its walls; the transfers into it then ended "no path ... mining stone-wall (-265.5,470.5) opens
-    a way", and at 14:44 a move_to from there found no path at all (walked 0 tiles), all with the ground mask; the spot
+    (-263.8,469.6) beside its walls; the walking transfers into it then ended timed_out (4), unreached once ("no path
+    ... mining stone-wall (-265.5,470.5) opens a way") and replaced once, and at 14:44 a move_to from there found no path at all (walked 0 tiles), all with the ground mask; the spot
     is sand between the cell's wall row (y 470.5) and water to its north and east (world n read, 2-tile samples of
     (-280..-246, 456..472)).
   - Opus, 14:48 to 14:50: a move_to (-150,170) arrived at (-150.48,169.69), inside the footprint of the solar panel at
