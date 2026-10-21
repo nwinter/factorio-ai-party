@@ -124,7 +124,7 @@
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
   returns dated last-seen memory. `inspect {position}` with nothing there lists what stands within 3 tiles (`not_at`
-  says so). `positions`: up to 32 entities in one call (`compact: true`: one line each). What it shows:
+  says so). `positions`: up to 8 entities in one call (`positions_limit` says 8; more is refused; `compact: true`: one line each). What it shows:
   - a machine: its `rate` (crafts and output per minute, net of what goes back in), `output_fill` (and `full`) and
     `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an
     ingredient holding a few crafts' worth (the game reads it so);
@@ -214,9 +214,12 @@
   nothing: `ghost_breaks` (and `ghost_line`) give each with its tiles, the items that build it and whether a roboport's
   construction area covers it (the network's count of each item, its idle construction robots).
   Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
-- `uptime {positions, seconds?}`: up to 16 crafting machines watched for seconds (10..3600, default 600), a status sample
-  a second, in the background; `uptime {}` reads it so far or done: each machine's crafts finished and crafts a minute
-  against its full speed, status shares, the ingredients short at the samples that read short, `left_out`.
+- `uptime {positions, seconds?}`: up to 64 crafting machines or labs (or `area` {left_top, right_bottom} with an optional
+  `recipe`) watched for seconds (10..3600, default 600), a status sample a second, in the background; `uptime {}` reads it
+  so far or done: each machine's crafts finished and crafts a minute against its full speed, status shares, the
+  ingredients short at the samples that read short (at the recipe's quality), outputs by quality from its output slot,
+  totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
+  name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
 - `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
@@ -293,7 +296,11 @@
   storage chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no
   room when every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are
   idle, orders to a chest with no room for the item). Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
-- `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?}` (read only; default: the network where you stand):
+- `logistics_audit {network? | position?, surface?, limit?, from?, storage?, backlog?, charging?}` (read only; default: the network where you stand):
+  `charging: true`: the network's roboports with the most robots waiting to charge, then charging, each as its own
+  GUI shows it (`limit` 1..20, default 5): position, waiting, charging, its charging slots, energy; with the network's
+  totals and how many roboports have a queue. The status `robots` line gives a network's total over all its roboports
+  with the position of one of them, then the 5 roboports of the planet with the most.
   `backlog: true`: why requests wait: the oldest unfilled first (chest, item, short, how long it has been short, the
   provider the game picks with what robots reserve there) and `held_by`, the first that holds each now (on the way, no
   room, none in the network, no provider, all reserved, no idle robot with what the busy ones do, robots queued with
