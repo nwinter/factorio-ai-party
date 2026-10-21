@@ -5027,6 +5027,8 @@ fh watch    # deploy on every change
   adds `unfilled`, one line per request whose held plus on-the-way count is under its min, with the first reason
   that holds:
   - personal logistics switched off;
+  - no slot of the character takes the item (main inventory full, its free slots filtered to other items; d20 batch59
+    U1);
   - no logistic network where the character stands;
   - the network has no logistic robots;
   - the network holds none of the item robots can take;
@@ -5037,6 +5039,53 @@ fh watch    # deploy on every change
     hold none)`, read on a copy of world n as Haiku.
   - Alert (team.alerts): a personal request unfilled for 60 s or more in a network with 0 logistic robots. Checked
     every 5 s an agent replies; told once per network and item, and again after 10 minutes.
+  - What a request counts (d20 batch59 U1, Astra #1480: firearm-magazine and rocket read `hold 0 of 100; network 348
+    holds 4039 and has 176 of 190 logistic robots free; none has taken it yet` for 25 minutes, 04:13-04:38 in
+    shift49, while her ammo slots held 100 of each; the game had nothing to send). Checked on 2.0.77 on the private
+    copy:
+    - ammo slots count: sol with 10 firearm-magazine in them got nothing for min 10 and 6 for min 15;
+    - gun slots count: 1 pistol held, nothing for min 1, 1 for min 2;
+    - worn armor counts: gemini wearing modular-armor got 1 for min 2.
+    - So the line counts the main inventory, gun, ammo and armor slots, and says where:
+      `firearm-magazine: hold 19 of 30 (19 in ammo slots) (1 on the way); ...`.
+    - With every free slot filtered to wood, sol got no pipe for min 5; with one slot cleared, 6 were on the way
+      within 6 s. The line says `no slot of yours takes pipe`.
+    - With personal logistics off, the requester point's `logistic_network` reads as an invalid object; so does
+      grok's on Gleba on the copy. Both read as no network now; before, every call on it failed and the line said
+      "has no logistic robots".
+- `character_settings {personal_logistics?, personal_roboport?, movement_bonus?, filters?}` (d20 batch59 U1, Astra
+  #1480 for viewer Foobator17928). The character GUI's switches and the main inventory's slot filters, read and
+  written as a player sets them.
+  - The 2.0.77 fields, read and written on the private copy:
+    - personal logistics: the character requester point's `enabled` (the master switch of the requests; the
+      sections' own switches stay `requests {section, active}`);
+    - the personal roboport: the character's `allow_dispatching_robots`;
+    - the equipment movement bonus: the armor grid's `inhibit_movement_bonus` (on = not inhibited);
+    - slot filters: the main inventory's `set_filter`/`get_filter`. The API also sets a filter for another item on
+      a slot that holds one, which a player's middle-click does not do, so that is refused (`slot 2 holds radar*1: a
+      slot that holds an item takes a filter for that item only`). An empty slot takes any item's filter.
+  - `filters: [{slot, item, quality?}]`, 1..200 entries; `item: false` clears the slot's filter.
+  - Every argument is checked before anything changes, and an edit changes only what it names.
+  - `changed` lists each change, e.g. `personal roboport on -> off`, `slot 1 filter none -> stone-brick`. When
+    nothing named differed, `unchanged` says so.
+  - Every reply is the read after the edit: `personal_logistics`, `personal_roboport`, `movement_bonus` (on/off,
+    noting no roboport or no exoskeleton in the armor), `filters` (each filtered slot with what it holds; 40 at most,
+    `filters_more` counts the rest) and `filters_line`. Runs of empty slots with one filter read as one, e.g. `90
+    slots filtered: 1-90 wood (empty); 0 of 90 slots free (empty and unfiltered)`.
+  - `networks` gives:
+    - `logistic`: the network the requests go to, or the one whose area covers the character while personal logistics
+      are off;
+    - `construction`: the roboport networks whose construction area covers the character;
+    - `personal_roboport`: count, switch, construction radius, construction robots in the main inventory and out
+      now, energy;
+    - `not_dispatched`: what the game shows stops robots now (roboport off, no robot to send, no energy, personal
+      logistics off, no free slot);
+    - `unfilled`, as `requests` gives it.
+  - Passive: it leaves the character's action and queue alone, as `requests` does.
+  - Real engine (private copy, bot gemini, with a personal roboport): all three switches off with slots 1 and 100
+    filtered, then all back on, each read back; a filter for iron-plate on slot 2, which holds a radar, was refused,
+    with nothing changed.
+  - Tests: tests/d20_batch59.lua U1.
 - Burner fuel alert (Opus: 30 stone furnaces ran out of coal and copper fell from 1000 to 560 a minute). team.alerts
   names a group of burner machines that no inserter brings fuel to (fed by hand or by order) when they will run dry
   within 10 minutes: `stone-furnace near (108,-168), fed by hand or by order (no inserter brings them fuel): 21 run dry

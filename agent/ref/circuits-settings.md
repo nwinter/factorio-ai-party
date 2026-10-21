@@ -161,9 +161,18 @@
     lists our groups with their requests and members. There is no setting that stops a hub unloading: at each stop it
     keeps only what its requests from that planet ask, so a reserve kept at every port is one section per port, each
     requesting the item `from` that port.
-  - Your own: `unfilled` lists the personal requests not filled, each with why (no network where you stand, no
-    logistic robots, none free, none of the item in the network).
+  - Your own: `unfilled` lists the personal requests not filled, each with why (personal logistics off, no slot of
+    yours takes the item, no network where you stand, no logistic robots, none free, none of the item in the network).
+    A request counts what your main inventory, gun, ammo and armor slots hold.
   Example: `./fh call requests --args '{"platform":"Starling","construction_requests":true}'`
+- `character_settings {personal_logistics?, personal_roboport?, movement_bonus?, filters?}`: your character GUI's
+  switches (each true or false: personal logistics, the master switch of your requests; the personal roboport; the
+  equipment movement bonus) and main inventory slot filters (`filters: [{slot, item, quality?}]`, `item: false`
+  clears one; a slot holding an item takes a filter for that item only). An edit changes only what it names and
+  replies `changed` ("personal roboport on -> off"). Every reply reads them all, with `networks`: the logistic network
+  your requests go to, the construction areas covering you, your personal roboport (robots in your inventory, energy),
+  `not_dispatched` (switches off, no free slot) and `unfilled` as `requests` gives it.
+  Example: `./fh call character_settings --args '{"personal_roboport":false}'`
 - Logistics: roboports are placed with `build` and robots put into them with `transfer`; requester and buffer chests'
   requests and your own are set with `requests`.
 - Quality: `configure {recipe, quality}`; `quality` on build, transfer and requests.
