@@ -18,6 +18,7 @@
 -- unless its area holds none of our buildings there and exactly one other
 -- planet's does (world n, 08:05: Luna on Gleba, her claim #111 built only on
 -- Nauvis). Positions on other surfaces are never in it.
+local namematch = require('namematch')
 return function(api)
   local M = {}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
@@ -42,11 +43,17 @@ return function(api)
   function M.surface_of(i)
     if not i.surface then
       local planets = api.planets and api.planets() or {}
-      local title, named = type(i.title) == 'string' and i.title:lower() or '', nil
-      for _, name in ipairs(planets) do
-        if title:find(name, 1, true) then
+      -- (d20 batch67 AC1) a whole planet name, outside our platforms' names ("Gleba Express" names a platform)
+      local cands, named, is_planet = {}, nil, {}
+      for _, name in ipairs(planets) do cands[#cands+1] = {name=name, planet=true}; is_planet[name:lower()] = true end
+      local ok, pls = pcall(function() return game.forces.player.platforms end)
+      for _, pl in pairs(ok and pls or {}) do
+        if pl.valid and not is_planet[pl.name:lower()] then cands[#cands+1] = {name=pl.name} end
+      end
+      for _, m in ipairs(namematch.find(i.title, cands)) do
+        if m.c.planet and named ~= m.c.name then
           if named then named = false; break end
-          named = name
+          named = m.c.name
         end
       end
       if named then i.surface = named; return named end
@@ -165,6 +172,18 @@ return function(api)
       return string.format('#%d %s (active there %s ago%s)', i.id, tostring(i.owner or 'no owner'), ago(game.tick - M.activity(i)),
         ins and string.format(', inspected %s ago by %s', ago(game.tick - ins.tick), ins.by) or ', no inspection there recorded')
     end
+    -- (d20 batch67 AC1) the platforms a claim's title names, whole names longest first ("Petrel II" is not "Petrel")
+    local pnames, by_title = {}, {}
+    for _, pl in pairs(force.platforms or {}) do if pl.valid then pnames[#pnames+1] = {name=pl.name} end end
+    pnames = namematch.prepare(pnames)
+    local function titled(i)
+      if not by_title[i.id] then
+        local set = {}
+        for _, m in ipairs(namematch.find(i.title, pnames)) do set[m.name] = true end
+        by_title[i.id] = set
+      end
+      return by_title[i.id]
+    end
     local out_surfaces, lines = {}, {}
     for _, s in ipairs(list) do
       local systems = {}
@@ -208,7 +227,7 @@ return function(api)
               for _, q in ipairs(g.positions) do if inside(i.area, q) then inn = inn + 1 end end
               if inn > 0 then cover[#cover+1] = {i=i, n=inn} end
             else cover[#cover+1] = {i=i, n=1} end
-          elseif g.kind == 'platform' and type(i.title) == 'string' and i.title:lower():find(g.name:lower(), 1, true) then
+          elseif g.kind == 'platform' and titled(i)[g.name] then
             cover[#cover+1] = {i=i, n=1, by_title=true}
           end
         end
