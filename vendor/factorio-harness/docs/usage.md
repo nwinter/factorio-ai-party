@@ -4017,6 +4017,22 @@ Some actions work at a distance, the way a player can through remote view:
   landfill planned over water before robots build it (`tile_ghosts_removed`; Grok, shift10 06:20: it marked 0 there,
   and only an unfiltered deconstruct removed the 41 ghosts). Built landfill is minable in 2.0 and is marked like any
   tile. `cancel_deconstruction` leaves tile ghosts alone.
+- Elevated rails and rail supports (d20 batch69 AE1, Sol #1642: elevated-straight-rail 18232890 at (277,191) on
+  Fulgora, "entity is not mineable", and `deconstruct` over (276,190)-(280,192) marked the rail at 279 only). Read on
+  2.0.77 (railrun.lua, tests/railrun.lua):
+  - The game's rule: a rail support carries the elevated rails within its reach (`support_range` 11), and only the
+    rails at the two ends of that run can go. `LuaEntity.minable` reads false for the rest (`minable_flag` stays true)
+    and `LuaEntity.mine` refuses them. Each end taken frees the next rail in. The support goes once no rail rests on
+    it, and rails no support reaches go anywhere.
+  - A deconstruction planner marks nothing over a rail inside a run. Over the support, it marks the support and every
+    rail it carries. Robots took a run of 10 and its support, ends first, in 57 s on the copy.
+  - `mine {dry_run: true}` names the entity it picked (`name`, `unit_number`, `position`) and `minable`. When `minable`
+    is false, `why` names the support carrying the rail and the nearest rails along the line that can go now. The
+    live `mine` refuses with the same text.
+  - `deconstruct` marks our rail supports in the area as a planner does, with their runs (`rail_supports`: each
+    support and how many rails it carries; the dry run counts the rails in its reach). `not_marked` (up to 12, with
+    `not_marked_count`) names what it found and left unmarked, with why. A cancel takes only what is in the area, as
+    the game's does, and `rails_still_marked` says how many rails a cancelled support carries stay marked.
 - `deconstruct {area, items_on_ground: true}` marks every item stack on the ground in the area, as a planner over
   items on the ground does; construction robots carry marked stacks to storage chests. Other entities are marked
   only when `entity_names` or `entity_types` name them. The reply counts `item_stacks` (marked now) and
@@ -5731,6 +5747,29 @@ fh watch    # deploy on every change
   area that no network powers now (they gain coverage) against those already powered: `small-electric-pole
   (24.5,30.5): the spot is free; joins #613 (6 poles); in its supply area 0 machines no network powers now, 0 already
   powered`. Checked on Gleba on the copy.
+- What already feeds a new belt line (d20 batch67 AC2, Astra #1647: a belt_route at tick 42417585 put an underground
+  entrance at (-82.5,47.5) under the drop point of an orphan inserter at (-82.5,48.5), which put coal and ammunition
+  onto the new ore line; the tiles were empty, so the footprint check passed). belt_route's dry run (and the dry_run
+  action's `belt_route`), its reply, a re-run that lays a line's missing tiles, and build_path's start reply carry
+  `feeders`:
+  - rows (the first 12; `more` counts the rest): our inserters whose drop point lies on a planned belt, underground
+    entrance or exit, or splitter (`holds`, `from` {name, position, recipe, items: the top 4 of what is there now},
+    `filters`), and our belts, underground exits and splitters whose output runs into one (`how`: from behind or
+    from a side; `items` on their lanes). Not listed: a belt running head on into it, the belt the line extends
+    (`from` on a standing chain), the line's own standing belts on a re-run. Built entities only (ghosts are not).
+    `inserter (0.5,8.5) drops at (0.5,7.3), on the planned underground-belt entrance (0.5,7.5); holds nothing; takes
+    from wooden-chest (0.5,9.5): coal 50, firearm-magazine 20; not iron-ore: coal, firearm-magazine`.
+  - `item` (belt_route): the item the line is for; a feeder that holds, offers through its filters, or carries any
+    other item is a conflict (`conflict`, `others`, `conflicts`). The line is still placed (a player can place there).
+    `refuse_mixed: true` (with item) refuses the line and places nothing while a conflict is there; a dry run says so
+    in `refuse`.
+  - belt_route already routes round tiles another belt runs into (route.lua), except its first tile, so its belt
+    rows show at the first tile and on a re-run; inserters were never checked. belt_upgrade replaces belts where they
+    stand and lays no new tile: nothing to check.
+  - Cost on the private copy (x86 under Rosetta; reads there run several times slower than on world n): a 77-tile
+    and a 200-tile line through the base, 6.5 and 11.9 ms (the dry runs themselves 82 and 320 ms); a worst case of
+    2048 planned tiles laid over 4142 standing belts and inserters, 309 feeders: 90 ms. Read in boxes round each 8
+    planned tiles (inserters within 2.7 tiles, belts within 1.2).
 - Board planning (Astra 03:45, after a viewer asked the team for planning help; facts and tools, the team decides).
   - `supersedes` on a task, request or project (`board_post` and `board_update`): the items this one replaces; each
     shows `superseded_by`.
