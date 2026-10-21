@@ -205,6 +205,11 @@ def public_replies(rows, hidden=None):
                 row["to"] = [n for n in row["to"] if n.lower() != str(a["name"]).lower()]
             else:
                 row["answers"] = {"name": str(a["name"]), "text": str(a.get("text") or ""), "t": a.get("t"), "source": a.get("source")}
+                if re.fullmatch(r"(site|yt):[\w.:-]{1,80}", str(a.get("id") or "")):  # (d20 batch65 AA2) the line the Operator named
+                    row["answers"]["id"] = str(a["id"])
+        p = r.get("part")  # (AA2) one of a split reply's parts: [k, n]
+        if isinstance(p, list) and len(p) == 2 and all(isinstance(x, int) for x in p) and 1 <= p[0] <= p[1] and p[1] > 1:
+            row["part"] = p
         out.append(row)
     out.sort(key=lambda r: r["t"])
     return out[-REPLY_MAX:]

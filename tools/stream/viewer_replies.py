@@ -118,6 +118,8 @@ def inbox_lines(rows):
         line = {"from": r["agent"], "viewer": True, "text": str(r.get("text") or ""), "t": r.get("t"), "inbox": True}
         if r.get("source"):
             line["source"] = r["source"]
+        if r.get("id"):
+            line["id"] = r["id"]
         out.append(line)
     return out
 
@@ -137,9 +139,54 @@ def read_inbox(path):
     return inbox_lines(rows)
 
 
+# (d20 batch65 AA2, viewer Aurora 04:28: "Could replies keep the original question ID through delivery, split parts and
+# history? Some clear replies say 'not linked', and artillery answers appeared under a different question"; the
+# Operator's 04:20 two-line artillery answer named no time and linked by name to her 04:06 line) tools/opreply.py
+# sends the Operator's reply naming the line it answers (site:3817) and first writes RUN/operator-replies.jsonl: {t, to,
+# name, question {text, t, source}, parts: [each game-chat line as sent]}. A game line from the Operator whose text is
+# one of those parts answers that line, at any age and after a restart; a reply with no record is matched as before.
+LINKS_NAME = "operator-replies.jsonl"
+
+
+def norm(text):
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def read_links(path):
+    """{part text: {id, name, text, t, source, part: [k, n]}} of an operator-replies.jsonl file ({} when there is none)."""
+    out = {}
+    try:
+        with open(path) as f:
+            for raw in f:
+                try:
+                    r = json.loads(raw)
+                except ValueError:
+                    continue
+                q = r.get("question") if isinstance(r, dict) else None
+                parts = r.get("parts") if isinstance(r, dict) else None
+                if not isinstance(q, dict) or not r.get("to") or not r.get("name") or not isinstance(parts, list):
+                    continue
+                for k, text in enumerate(parts, 1):
+                    out[norm(text)] = {"id": str(r["to"]), "name": str(r["name"]), "text": str(q.get("text") or ""), "t": q.get("t"),
+                                       "source": q.get("source"), "part": [k, len(parts)]}
+    except OSError:
+        pass
+    return out
+
+
+def link_line(line, links):
+    """The Operator's game line that tools/opreply.py sent: its link (line["reply_link"]), else the line as it is."""
+    if links and speaker(line) == "operator":
+        rl = links.get(norm(line.get("text")))
+        if rl:
+            line["reply_link"] = rl
+    return line
+
+
 def bare(text):
-    """A relayed viewer line without the relay's "@astra " address in front."""
-    return re.sub(r"^@\S+\s+", "", str(text or "")).strip()
+    """A relayed viewer line without the relay's "@astra " address in front (every leading @name: "@Muse @Luna Could
+    ..." came back "@Luna Could ...", and the site's match missed Aurora's 04:21 line, d20 batch65 AA2)."""
+    return re.sub(r"^(?:@\S+\s+)+", "", str(text or "")).strip()
 
 
 def to_speaker(v, who):
@@ -180,6 +227,12 @@ def classify(line, viewer_lines, inbox=(), by_seq=None):
     who = speaker(line)
     if not who:
         return None
+    rl = line.get("reply_link")
+    if isinstance(rl, dict) and rl.get("name"):  # (AA2) the line the Operator named (tools/opreply.py)
+        v = {"from": "viewer " + rl["name"], "viewer": True, "text": rl.get("text") or "", "t": rl.get("t"), "id": rl.get("id")}
+        if rl.get("source"):
+            v["source"] = rl["source"]
+        return {"kind": "reply", "to": [rl["name"]], "answers": v, "link": "reply_to"}
     lines = list(viewer_lines)
     # (d20 batch50 C1) say reply_to a viewer line's seq (chat.lua keeps it on the line): that line, whatever the text
     # names; (batch57 S1) at any age
@@ -265,7 +318,9 @@ class Threads:
         who = speaker(line)
         p = part_of(line.get("text"))
         prev = self.last.get(who) if who else None
-        if p and p[0] > 1 and prev and prev[0] == (p[0] - 1, p[1]) and 0 <= _age_s(line, prev[1]) <= PART_S:
+        if isinstance(line.get("reply_link"), dict):  # (AA2) each part names its line
+            r = classify(line, viewer_lines, inbox, self.by_seq)
+        elif p and p[0] > 1 and prev and prev[0] == (p[0] - 1, p[1]) and 0 <= _age_s(line, prev[1]) <= PART_S:
             r = prev[2]
         else:
             # part 1 reads without its "(1/3) " ("(1/3) Foobator, the steel line ..." names Foobator as a vocative)
@@ -280,11 +335,14 @@ class Threads:
         return r
 
 
-def replies(lines, window_s=WINDOW_S, inbox=()):
+def replies(lines, window_s=WINDOW_S, inbox=(), links=None):
     """Every reply and viewer-addressed line in a chat log (oldest first) -> [(line, result)]. inbox: the run's
-    inbox_lines (viewers' lines to the Operator), for the Operator's replies."""
+    inbox_lines (viewers' lines to the Operator), for the Operator's replies; links: read_links of the run's
+    operator-replies.jsonl."""
     out, viewers, threads = [], [], Threads()
     for line in lines:
+        if links:
+            line = link_line(dict(line), links)
         if viewer_name(line):
             viewers.append(line)
             threads.see(line)
@@ -311,4 +369,11 @@ def row(line, result):
     if a:
         out["answers"] = {"name": viewer_name(a), "text": bare(a.get("text")), "t": a.get("t"), "tick": a.get("tick"),
                           "source": a.get("source")}
+        if a.get("id"):  # (AA2) the line's own id (site:3817), named by the Operator
+            out["answers"]["id"] = str(a["id"])
+    # (AA2) one of a split reply's parts: [k, n] ("part 1 of 2" on the site)
+    rl = line.get("reply_link") if isinstance(line.get("reply_link"), dict) else {}
+    p = tuple(rl["part"]) if isinstance(rl.get("part"), list) and len(rl["part"]) == 2 and rl["part"][1] > 1 else part_of(line.get("text"))
+    if p:
+        out["part"] = [p[0], p[1]]
     return out

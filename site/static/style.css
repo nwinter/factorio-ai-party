@@ -468,7 +468,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat .c-src-agent { background: var(--ac, #6c7a89); color: #111; }
 .vchat .c-agent-name { color: var(--ac, var(--fx-heading)); }
 .vchat .c-to { font-size: 0.85em; }
-.vchat .c-link, .vchat .c-re { font-size: 0.8em; }
+.vchat .c-link, .vchat .c-re, .vchat .c-part { font-size: 0.8em; }
 .vchat .c-delivery-replied { font: inherit; font-size: 0.85em; color: var(--good); background: none; border: 0; padding: 0;
   text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .vchat .c-delivery-replied:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

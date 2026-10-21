@@ -213,7 +213,7 @@ first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves 
 
 `viewer_replies` (d15 08:07) is the agents' and the Operator's game-chat lines that answer a viewer or speak to the
 viewers, newest 40, oldest first: `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
-to [viewer names], link?, answers? {name, text?, t, source}}]` (tools/stream/viewer_replies.py, kept by model.py so they
+to [viewer names], link?, answers? {name, text?, t, source, id?}, part? [k, n]}]` (tools/stream/viewer_replies.py, kept by model.py so they
 outlive the chat window). A reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
 ("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."), or was said with `reply_to` a viewer line's seq (d20
 batch50); "Viewers, ..." and the like speak to the viewers. `answers` is the one viewer line it answers, and `link` says
@@ -229,6 +229,18 @@ agents' replies to viewers" hides them (kept in localStorage `chatReplies`). The
 threads by the same rule (site/longrun.py). Shifts 46-47: 145 replies were threaded by name only; 7 sat under a line
 they did not answer (2 of them Muse's, with reply_to lines 90 and 110 minutes old that the 15-minute list no longer
 held); with this rule 50 of 157 are not linked, and 2 of the 107 linked ones are under the wrong line.
+
+The Operator names the line it answers with `tools/opreply.py` (d20 batch65 AA2, viewer Aurora 04:28: "Could replies
+keep the original question ID through delivery, split parts and history?"; shift50's 04:20 two-line artillery answer
+linked by name to her 04:06 line): `python3 tools/opreply.py --to site:3817 "text"` (or `--to Aurora@03:51`, the inbox
+line written at that minute; `--list [NAME]` prints recent inbox lines with what `--to` takes) writes
+`runs/RUN/operator-replies.jsonl` ({t, to, name, question {text, t, source}, parts}) and then posts "@Aurora Operator:
+..." to the game chat over RCON, cut at sentence ends into "@Aurora (1/2) Operator: ..." parts over 500 bytes;
+`--sent SEQ ...` links Operator lines already in the game chat; `--dry-run` prints the parts. model.py (and
+longrun.py) read that file: each part answers the named line (`link` reply_to, `answers.id` "site:3817"), at any age and
+after a restart. A reply with no record is matched by the rules above. `part` [k, n] marks one of a split reply's
+parts (the tool's, or an agent's `fh say` parts), shown "part 1 of 2". The page finds a line by `answers.id` first; its
+text match drops every leading @name ("@Muse @Luna ..." on the site, "@Luna ..." in a reply's quote).
 
 `clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
 each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or

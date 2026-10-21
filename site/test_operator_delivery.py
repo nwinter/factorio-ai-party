@@ -65,7 +65,14 @@ def main():
                             "3824": {"s": "operator", "op": 1, "why": "to the operator's inbox"}}
     s["viewer_replies"] = [{"seq": 18326, "t": NOW - 626, "by": "operator", "kind": "reply", "to": ["Aurora"], "link": "only_line",
                             "text": "@Aurora Operator: queued for an engineer: the artillery remote's reach check.",
-                            "answers": {"name": "Aurora", "text": art[10:], "t": round(t1, 1), "source": "site"}}]
+                            "answers": {"name": "Aurora", "text": art[10:], "t": round(t1, 1), "source": "site"}},
+                           # (AA2) a two-part reply sent with tools/opreply.py --to site:3817: by its id, "part k of n"
+                           {"seq": 18454, "t": NOW - 1, "by": "operator", "kind": "reply", "to": ["Aurora"], "link": "reply_to", "part": [1, 2],
+                            "text": "@Aurora (1/2) Operator: the reply has used manual range since Oct 18.",
+                            "answers": {"name": "Aurora", "text": "a question the id overrides", "t": round(t1, 1), "source": "site", "id": "site:3817"}},
+                           {"seq": 18456, "t": NOW, "by": "operator", "kind": "reply", "to": ["Aurora"], "link": "reply_to", "part": [2, 2],
+                            "text": "@Aurora (2/2) Operator: checked on a copy at 559 and 561 tiles.",
+                            "answers": {"name": "Aurora", "text": "a question the id overrides", "t": round(t1, 1), "source": "site", "id": "site:3817"}}]
     with tempfile.TemporaryDirectory() as d:
         js, path = os.path.join(d, "chat.js"), os.path.join(d, "state.json")
         open(js, "w").write(driver(test_sitechat.LIVE_CHAT_JS, server))
@@ -81,6 +88,9 @@ def main():
     assert "not relayed" not in art_line[1] and "to the Operator" not in art_line[1], art_line
     reply = it.index(find(it, "queued for an engineer"))
     assert it[reply - 1] == art_line and "c-thread" in it[reply][0], it
+    p1, p2 = it.index(find(it, "manual range since Oct 18")), it.index(find(it, "checked on a copy at 559"))
+    assert p1 == reply + 1 and p2 == reply + 2 and "c-thread" in it[p1][0] and "c-thread" in it[p2][0], it
+    assert "part 1 of 2" in it[p1][1] and "part 2 of 2" in it[p2][1] and "part" not in it[reply][1].split("@Aurora")[0], (it[p1], it[reply])
     both = find(it, "stop building turrets")
     assert "to the Operator" in both[1] and "not relayed: clef:injection" in both[1], both
     relayed = find(it, "reminder 97")
