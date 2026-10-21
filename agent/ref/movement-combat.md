@@ -35,6 +35,10 @@
     fewest to mine for one (never a rocket silo, landing pad or platform hub; a goal inside a building: the way to its
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
+  - Gates: our gate opens as the character comes, and walks route through it (one set across the wall line joins no
+    wall and leaves gaps beside it). A walk ending unreachable, blocked or near gives `last.across`: what stands across
+    the straight line from where it ended to the goal (48 tiles), each wall with how many, the box it spans and its gates
+    (ours, or another force's, which does not open for ours), or `no gate in it` (`last.across_walls`).
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
     of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
     demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
