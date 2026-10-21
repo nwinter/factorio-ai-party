@@ -202,8 +202,22 @@ older says its age on its tab ("Gleba · 12 min old") and under the map ("map fr
 `tick`); the planet shown and the view (pan, zoom) stay across updates. They come from the harness census's last
 pass (`census {part: "planets"}` and `census {part: "basemap", surface}`, operator reads that answer from storage),
 one planet a minute in the stream service. The map card shows a tab per planet beside Nauvis; on a planet's tab its
-buildings are drawn, with the agents on it (the rest listed in the corner); no core, ore, terrain, nests or turret
-range there.
+buildings are drawn, with the agents on it (the rest listed in the corner); no ore, terrain, nests or turret range
+there.
+
+`basemap.core` is the base's dense core: the box round its densest 32-tile blocks (8 tiles beyond them), each building's
+footprint at `cell` 1, 2 or 4 tiles (doubled until the box fits 160 cells a side), the same letters; the page draws it
+over the coarse grid inside its box, and zooming in shows each building. (d21 batch68 AD1, viewer Aurora: "Could Aquilo
+get a detailed base map using the Nauvis approach, with building footprints, coordinates and data age?") A
+`planet_map` carries its planet's `core` the same way, made by the same census pass (`census {part: "basemap",
+surface}`); push_live sends it at twice the cell until its packed form fits 12 KB (each new cell the most telling of
+the four). Every surface's scale line gives its map's age (`map from 2 min ago`: Nauvis's basemap read, a planet's
+last census map), and the pointer's tile coordinates show in the corner on every surface.
+
+push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
+`rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
+plain. On world n's state at 08:45 PDT d21 that took the push from 200-205 KB to 187-188 KB (the basemap 46.0 KB to
+33.5 KB), and to 188-192 KB with the d17 copy's four planet cores (packed 1.1-4.7 KB each).
 
 `youtube_chat` (eng/sitechat2; Luna 13:54, a viewer's suggestion) is the YouTube lines of the stream service's viewer
 lane (tools/stream/viewers.py: only lines that passed its moderation, YouTube deletions it saw taken out), oldest

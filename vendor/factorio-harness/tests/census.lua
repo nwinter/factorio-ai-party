@@ -148,20 +148,28 @@ print('census fuel users: ok')
 do
   local gleba={name='gleba',index=4,planet={name='gleba'}}
   local function ent(name,t,x,y) return {valid=true,type=t,name=name,position={x=x,y=y},surface=gleba,force=force,status=0,get_recipe=function() return nil end} end
-  local list={ent('biochamber','assembling-machine',10.5,10.5),ent('stone-furnace','furnace',30.5,10.5),ent('gun-turret','ammo-turret',31,11),ent('transport-belt','transport-belt',600,10)}
+  local list={ent('biochamber','assembling-machine',11.5,10.5),ent('stone-furnace','furnace',30.5,10.5),ent('gun-turret','ammo-turret',31,11),ent('transport-belt','transport-belt',600,10)}
   local ls,once={},true
   local C3=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return ls end,
     walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
       band=function() if once then once=false return list end end}}
   local kept,kept_get=game.surfaces,game.get_surface; game.surfaces={gleba}; game.get_surface=function() return gleba end
+  local kept_protos=prototypes
+  prototypes=setmetatable({entity={biochamber={tile_width=3,tile_height=3},['gun-turret']={tile_width=2,tile_height=2}}},{__index=kept_protos})
   for t=5000,5040 do C3.tick(t) end
   local r=C3.read({part='planets'})
   eq(r.ready,true); eq(#r.planets,1); eq(r.planets[1].name,'gleba'); eq(r.planets[1].buildings,4)
   local m=C3.read({part='basemap',surface='gleba'}).basemap
   eq(m.cell,8,'doubled until 590 tiles fit 128 cells'); eq(m.x0,8); eq(m.w,75)
   eq(m.rows[1]:sub(1,1),'A'); eq(m.rows[1]:sub(3,3),'D','the turret outranks the furnace in its cell')
+  -- d21 batch68 AD1 (viewer Aurora): its dense core as Nauvis's, each building's footprint (under 12 buildings: the
+  -- whole extent, 8..608 x 8..16, at 4 tiles a cell to fit 160 cells)
+  local k=m.core
+  eq(k.cell,4); eq(k.x0,8); eq(k.y0,8); eq(k.w,150); eq(k.h,2)
+  eq(k.rows[1]:sub(1,2),'AA','the 3x3 biochamber (tiles 10..12) over cells 8-12 and 12-16')
+  eq(k.rows[1]:sub(6,6),'D','the 2x2 turret (30..32) outranks the furnace in its cell'); eq(k.rows[1]:sub(-1),'B')
   eq(C3.read({part='basemap',surface='vulcanus'}).none,'no buildings of ours on vulcanus in the last pass')
-  game.surfaces,game.get_surface=kept,kept_get
+  game.surfaces,game.get_surface,prototypes=kept,kept_get,kept_protos
 end
 print('census planets: ok')
 list[1]=nil

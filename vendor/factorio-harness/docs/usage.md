@@ -10354,3 +10354,42 @@ his body.
   (surface platform-N) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret N, ...". The frame is one search of ours in it (at most 2000 entities, 1920x1080 px is 60x34 tiles).
 - `./shot` (tools/new-run.sh) prints that line under the file name. Runs made before this keep their old `shot` script
   until they are made again.
+
+## d21 batch68 (eng/d20-batch68)
+- AD1 (viewer Aurora, operator inbox d21 08:40: "Could Aquilo get a detailed base map using the Nauvis approach, with
+  building footprints, coordinates and data age? Zoom currently only enlarges category blocks"). The census pass
+  (census.lua) kept each Nauvis building's size and drew Nauvis's dense core from the footprints (1-4 tiles a cell, up
+  to 160 cells a side), but kept only each other planet's building centres, gridded at 4 tiles a cell or more (Aquilo
+  4, Gleba and Vulcanus 8, Fulgora 16-32 on world n): zooming in enlarged those cells. Each planet now gets its own
+  core the same way, in the same pass (its points' footprints, the box round its densest 32-tile blocks, CMAX 160),
+  one fine-grid step per 800 buildings after its coarse grid; `census {part: "basemap", surface}` adds `core {cell, x0,
+  y0, w, h, rows}`. On the d17 private copy: Aquilo 80x80 cells at 1 tile, Fulgora 88x56 at 2, Gleba 144x112 at 1,
+  Vulcanus 120x72 at 2; each planet map read 15-19 ms through the stream client's RCON there. census.step over 120 s
+  there: 2.66 ms a step (7167 steps) on this branch and 3.60 ms (7053) on main's census, the copy's GC and Rosetta
+  swings larger than the 15 added steps a pass. The stream site side is in docs/LIVE-API.md (planet cores, packed
+  rows, the map's age on every surface). Tests: tests/census.lua, site/test_planetcore.py.
+## d21 batch66 AB3 (eng/d20-batch66)
+
+AB3 (Sol #1617): `platform_defense` read five of Solstice's turrets "preload only" while belt buffers capped near 10
+held their source inserters off; every feed led to the maker aboard when those gates opened. The ammunition trace
+(ammofeed.lua) dropped a source inserter switched off by its condition, did not follow a relay switched off, and
+stopped at a turret's own feeder switched off.
+- Changed: an inserter or belt its circuit or logistic condition holds off now is a link "gated closed now". The trace
+  goes on through it: a source inserter keeps its maker, chest or the hub; a relay's belts upstream are read with their
+  ammunition and sources; a turret's own feeder is traced back as any other. Its condition with the values on its
+  wires comes from feeders.lua (`enabled when firearm-magazine < 10 (on its wires: firearm-magazine 12): false now`),
+  read for the first 16 gates of a trace.
+- A turret row: `reaches` counts what comes now; `behind_gate` what waits behind a link gated closed now. Its line has
+  `NOW:` (the gated links on its way: the current flow) apart from `STOPPED:` (no route to a source, a filter leaving
+  its ammo out, no feeder, blocked by other ammunition ahead).
+- `replenished` counts a source behind a gate: `maker`, `hub`, `chest`; `replenished_gated: true` when every source of
+  that kind is behind one. `preload` is kept for a turret with no route to a source. The replenishment line adds
+  "(N of them only through a link gated closed now: positions)"; a new line lists each gate with its condition and
+  the turrets on its way. `feed.gates` [{name, position, condition, turrets}].
+- Totals: belts and sources behind a gate are on a turret's way (not stranded).
+- Headless copy: a test platform B66gate (made, then destroyed) with a maker, a fast inserter onto 3 belts holding 12
+  magazines, wired to a belt reading the entire belt, enabled when firearm-magazine < 10, and a turret fed from those
+  belts. Closed: "1 from an ammunition maker aboard (...) (1 of them only through a link gated closed now: (1,-12))",
+  the gate line with "on its wires: firearm-magazine 15" (what the belt read gave), 4 behind the gate. Opened: "maker",
+  no gate. The turret's own feeder held off: 5 reach it, 16 behind the gate. A turret on a belt nothing loads: preload
+  only, STOPPED.

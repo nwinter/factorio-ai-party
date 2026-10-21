@@ -16,6 +16,8 @@ return function(api)
   -- platforms with more than SYNC_BELTS belts are read in the background, READ_PER_TICK belts a tick, and their trace
   -- computed from those reads in one tick; a read is fresh for FRESH ticks.
   M.SYNC_BELTS, M.READ_PER_TICK, M.FRESH = 400, 256, 3600
+  -- (d21 batch66 AB3) the gates a trace reads the condition of (feeders.lua), the first met
+  M.MAX_GATE_READS = 16
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local BELT = {['transport-belt']=true, ['underground-belt']=true, splitter=true, ['lane-splitter']=true, ['linked-belt']=true}
@@ -131,6 +133,16 @@ return function(api)
       return string.format('%s %s: its circuit sets its filters from %d positive item signals, more than its %d filter slots (the rest are left out)', ins.name, at(ins.position), n, slots)
     end
   end
+  -- (d21 batch66 AB3, Sol #1617: Solstice's five turrets read "preload only" while belt buffers capped near 10 held
+  -- their source inserters off; every feed led to the maker aboard when the gates opened) an inserter or belt its
+  -- circuit or logistic condition holds off now: its condition with the values on its wires (feeders.lua), else nil
+  local function gate_text(e)
+    local f = api.feeders and try(function() return api.feeders.read(e) end)
+    local c = f and f.condition
+    if not c then return nil end
+    c = c:gsub(';? ?it is off by its condition', '')
+    return c ~= '' and c or nil
+  end
   -- every inserter of the force on a surface by what it drops into (key)
   local function inserters_into(s, f)
     local into = {}
@@ -194,6 +206,27 @@ return function(api)
       end
       return pickm[k] or nil
     end
+    -- (AB3) a link gated closed now: its condition (read for the first MAX_GATE_READS), and the turrets whose way it is on
+    local gatem, gate_reads, gates, gate_list = {}, 0, {}, {}
+    local function gate(e, k)
+      k = k or key(e)
+      if gatem[k] == nil then
+        local t
+        if gate_reads < M.MAX_GATE_READS then gate_reads = gate_reads + 1; t = gate_text(e) end
+        gatem[k] = t or 'its circuit or logistic condition holds it off'
+      end
+      return gatem[k]
+    end
+    local function note_gate(e, row, k)
+      k = k or key(e)
+      local g = gates[k]
+      if not g then
+        g = {name=e.name, position=pos(e, k), condition=gate(e, k), turrets={}, seen={}}
+        gates[k] = g; gate_list[#gate_list+1] = g
+      end
+      if row and not g.seen[row] then g.seen[row] = true; g.turrets[#g.turrets+1] = row.position end
+      return g
+    end
     local amemo = {}
     local anyammo = function(name)
       if amemo[name] == nil then amemo[name] = try(function() return prototypes.item[name].type end) == 'ammo' end
@@ -233,6 +266,10 @@ return function(api)
             if sp and BELT[sp.e.type] then
               if not off(si) and not filter_blocks(si, anyammo) then
                 n.ins[#n.ins+1] = sp.k; n.relay = n.relay or {si=si, sp=sp.e}
+                if not node[sp.k] then queue[#queue+1] = sp end
+              elseif not filter_blocks(si, anyammo) then
+                -- (AB3) a relay gated closed now: its belts are read too, apart from the way that carries now
+                n.gins = n.gins or {}; n.gins[#n.gins+1] = {si=si, k=sp.k}
                 if not node[sp.k] then queue[#queue+1] = sp end
               end
             elseif sp then n.srcs = n.srcs or {}; n.srcs[#n.srcs+1] = {si=si, sp=sp, off=off(si)} end
@@ -278,14 +315,16 @@ return function(api)
     -- its belts until one already found (whose belts all lie upstream: added whole) or a merge (found once, each belt
     -- upstream of it counted once).
     local memo = {}
-    local function blank() return {items={}, n=0, live=0, hub=false, srcs={}, gates={}, relays={}} end
+    local function blank() return {items={}, n=0, live=0, hub=false, srcs={}, gates={}, relays={}, grelays={}, cs={}} end
     local function own_into(a, c)
+      a.cs[c] = true
       for _, k in ipairs(c.keys) do
         local nd = node[k]
         belt_of(nd.e, anyammo, k)
         for name, cnt in pairs(belt_memo[k]) do if anyammo(name) then a.items[name] = (a.items[name] or 0) + cnt end end
         a.n = a.n + 1
-        if off(nd.e, k) and #a.gates < 3 then a.gates[#a.gates+1] = nd.e.name .. ' ' .. at(nd.e.position) .. ' switched off by its circuit condition' end
+        if off(nd.e, k) and #a.gates < 3 then a.gates[#a.gates+1] = {e=nd.e, k=k} end
+        for _, g in ipairs(nd.gins or {}) do a.grelays[#a.grelays+1] = g end
         if nd.relay and #a.relays < 3 then a.relays[#a.relays+1] = string.format('%s %s from %s %s', nd.relay.si.name, at(nd.relay.si.position), nd.relay.sp.name, at(nd.relay.sp.position)) end
         for _, x in ipairs(nd.srcs or {}) do
           a.srcs[#a.srcs+1] = x
@@ -299,6 +338,8 @@ return function(api)
       for _, y in ipairs(x.srcs) do a.srcs[#a.srcs+1] = y end
       for _, y in ipairs(x.gates) do if #a.gates < 3 then a.gates[#a.gates+1] = y end end
       for _, y in ipairs(x.relays) do if #a.relays < 3 then a.relays[#a.relays+1] = y end end
+      for _, y in ipairs(x.grelays) do a.grelays[#a.grelays+1] = y end
+      for y in pairs(x.cs) do a.cs[y] = true end
     end
     local function preds_of(c)
       local out, seen = {}, nil
@@ -347,36 +388,51 @@ return function(api)
       local takes = takes_by[tname] or takes_fn(t)
       takes_by[tname] = takes
       local own_n = inv_count(try(function() return t.get_inventory(defines.inventory.turret_ammo) end), takes)
-      local row = {entity=t, name=tname, position=t.position, own=own_n, reaches=own_n, ways={}, stops={}}
+      local row = {entity=t, name=tname, position=t.position, own=own_n, reaches=own_n, ways={}, stops={}, gated={}}
       local feeders = into[key(t)] or {}
       if #feeders == 0 then row.stops[#row.stops+1] = 'no inserter feeds it' end
       for _, i in ipairs(feeders) do
         local way = string.format('%s %s', i.name, at(i.position))
+        -- (AB3) a feeder its condition holds off now: its way is traced as any other, what is on it counted behind the gate
+        local blocked = filter_blocks(i, takes)
+        local shut = not blocked and off(i) and gate(i) or nil
         local h = try(function() return i.held_stack end)
-        if h and try(function() return h.valid_for_read end) and takes(h.name) then row.reaches = row.reaches + h.count end
-        local blocked = off(i) and 'switched off by its circuit condition' or filter_blocks(i, takes)
+        if h and try(function() return h.valid_for_read end) and takes(h.name) then
+          if shut then row.behind_gate = (row.behind_gate or 0) + h.count else row.reaches = row.reaches + h.count end
+        end
         local ov = circuit_overflow(i)
         if ov then row.overflow = row.overflow or {}; row.overflow[#row.overflow+1] = ov end
         local src = pickup(i)
+        if shut then note_gate(i, row) end
+        local shut_text = shut and ' (gated closed now: ' .. shut .. ')' or ''
         if blocked then row.stops[#row.stops+1] = way .. ': ' .. blocked
         elseif not src then row.stops[#row.stops+1] = way .. ': takes from nothing'
         elseif BELT[src.e.type] then
-          pending[#pending+1] = {row=row, way=way, src=src, takes=takes, slot=#row.ways + 1, ins=i}
+          pending[#pending+1] = {row=row, way=way, src=src, takes=takes, slot=#row.ways + 1, ins=i, shut=shut}
           row.ways[#row.ways+1] = false
           starts[#starts+1] = src
         elseif src.e.type == 'space-platform-hub' then
           any_hub = true
-          row.supply = row.supply or {}; row.supply[#row.supply+1] = {kind='hub', text='the hub'}
+          row.supply = row.supply or {}; row.supply[#row.supply+1] = {kind='hub', text='the hub', gate=shut}
           local held = inv_count(hub_inv, takes)
-          if not row.hub_counted then row.hub_counted = true; row.reaches = row.reaches + held end
-          row.ways[#row.ways+1] = string.format('%s from the hub (holds %d of its ammo)', way, held)
+          if shut then
+            if not row.hub_counted and not row.hub_behind then row.hub_behind = true; row.behind_gate = (row.behind_gate or 0) + held end
+            row.gated[#row.gated+1] = string.format('%s gated closed now (%s): the hub\'s %d of its ammo waits behind it', way, shut, held)
+          elseif not row.hub_counted then
+            row.hub_counted = true; row.reaches = row.reaches + held
+            if row.hub_behind then row.behind_gate = row.behind_gate - held end
+          end
+          row.ways[#row.ways+1] = string.format('%s from the hub (holds %d of its ammo)%s', way, held, shut_text)
         else
           local held = inv_count(try(function() return src.e.get_output_inventory() end) or try(function() return src.e.get_inventory(defines.inventory.chest) end), takes)
           local sk, st = source_kind(src.e, takes)
-          row.supply = row.supply or {}; row.supply[#row.supply+1] = {kind=sk, text=st}
+          row.supply = row.supply or {}; row.supply[#row.supply+1] = {kind=sk, text=st, gate=shut}
           reached_src[src.k] = {e=src.e, n=held}
-          row.reaches = row.reaches + held
-          row.ways[#row.ways+1] = string.format('%s from %s %s (holds %d)', way, src.e.name, at(src.e.position), held)
+          if shut then
+            row.behind_gate = (row.behind_gate or 0) + held
+            row.gated[#row.gated+1] = string.format('%s gated closed now (%s): %d of its ammo waits behind it in %s %s', way, shut, held, src.e.name, at(src.e.position))
+          else row.reaches = row.reaches + held end
+          row.ways[#row.ways+1] = string.format('%s from %s %s (holds %d)%s', way, src.e.name, at(src.e.position), held, shut_text)
         end
       end
       rows[#rows+1] = row
@@ -441,9 +497,20 @@ return function(api)
         end
         return held_memo[hk]
       end
+      local shut = w.shut
+      local hub_held = 0
+      local function hub_once(into_behind)
+        local n = held_of({sp={e=hub, k=key(hub)}})
+        if row.hub_counted or (into_behind and row.hub_behind) then return 0 end
+        if into_behind then row.hub_behind = true; return n end
+        row.hub_counted = true
+        if row.hub_behind then row.behind_gate = row.behind_gate - n end
+        return n
+      end
       if a.hub then
         any_hub = true
-        if not row.hub_counted then row.hub_counted = true; row.reaches = row.reaches + held_of({sp={e=hub, k=key(hub)}}) end
+        hub_held = hub_once(shut ~= nil)
+        if not shut then row.reaches = row.reaches + hub_held end
       end
       local src_list, gates, relays, seen_src = a.srcs, a.gates, a.relays, {}
       local okb, ahead = pcall(lane_ahead, w.ins, src.e, takes)
@@ -457,44 +524,110 @@ return function(api)
           gain = gain + n
         end
       end
-      if ahead then row.blocked = (row.blocked or 0) + gain else row.reaches = row.reaches + gain end
+      -- (AB3) what waits behind a link gated closed now: the sources putting items on these belts that their condition
+      -- holds off, and the belts behind a relay held off (their ammunition and sources), each by the first gate on it
+      local back = 0
+      local function behind_src(x)
+        if x.sp.e.type == 'space-platform-hub' then any_hub = true; back = back + hub_once(true)
+        elseif not seen_src[x.sp.k] then
+          seen_src[x.sp.k] = true
+          local n = held_of(x)
+          reached_src[x.sp.k] = {e=x.sp.e, n=n}
+          back = back + n
+        end
+      end
+      for _, x in ipairs(src_list) do if x.off then behind_src(x) end end
+      local behind, bseen = {}, {}
+      local function behind_of(x, g)
+        for _, r in ipairs(x.grelays) do
+          local c2 = comp[r.k]
+          if c2 and not a.cs[c2] and not bseen[c2] then
+            bseen[c2] = true
+            local bw = way_of(c2)
+            behind[#behind+1] = {g=g or r.si, way=bw}
+            behind_of(bw, g or r.si)
+          end
+        end
+      end
+      behind_of(a)
+      local behind_n, behind_srcs = 0, 0
+      for _, bh in ipairs(behind) do
+        for name, cnt in pairs(bh.way.items) do if takes(name) then behind_n = behind_n + cnt end end
+        for _, x in ipairs(bh.way.srcs) do behind_srcs = behind_srcs + 1; behind_src(x) end
+        if bh.way.hub then behind_srcs = behind_srcs + 1; any_hub = true; back = back + hub_once(true) end
+      end
+      back = back + behind_n
+      local ahead_n = gain
+      if shut then back = back + gain + hub_held; gain = 0
+      elseif ahead then row.blocked = (row.blocked or 0) + gain else row.reaches = row.reaches + gain end
+      if back > 0 then row.behind_gate = (row.behind_gate or 0) + back end
       row.belts = (row.belts or 0) + a.n
       -- (d17 batch23 A2, Astra: a disabled old loader was named beside the bulk inserter feeding the loop) the
       -- switched-off ones are named only when nothing else puts items on
       -- (K6) what refills this way, the ammunition on it the turret takes none of, and circuit filters past the slots
+      -- (AB3) a source reached through a link gated closed now is kept, with that gate
       row.supply = row.supply or {}
       for _, x in ipairs(src_list) do
-        if not x.off then
-          local sk, st = source_kind(x.sp.e, takes)
-          row.supply[#row.supply+1] = {kind=sk, text=st}
-        end
+        local sk, st = source_kind(x.sp.e, takes)
+        if not x.off then row.supply[#row.supply+1] = {kind=sk, text=st, gate=shut}
+        else row.supply[#row.supply+1] = {kind=sk, text=st, gate=shut or gate(x.si)}; note_gate(x.si, row) end
         local ov = circuit_overflow(x.si)
         if ov then row.overflow = row.overflow or {}; row.overflow[#row.overflow+1] = ov end
       end
-      if a.hub then row.supply[#row.supply+1] = {kind='hub', text='the hub'} end
+      if a.hub then row.supply[#row.supply+1] = {kind='hub', text='the hub', gate=shut} end
+      local through = {}
+      for _, bh in ipairs(behind) do
+        local gt = shut or gate(bh.g)
+        for _, x in ipairs(bh.way.srcs) do
+          local sk, st = source_kind(x.sp.e, takes)
+          row.supply[#row.supply+1] = {kind=sk, text=st, gate=gt}
+        end
+        if bh.way.hub then row.supply[#row.supply+1] = {kind='hub', text='the hub', gate=gt} end
+        local g = note_gate(bh.g, row)
+        if not through[g] and #through < 3 then
+          through[g] = true
+          local n = 0
+          for name, cnt in pairs(bh.way.items) do if takes(name) then n = n + cnt end end
+          through[#through+1] = string.format('%s %s (gated closed now: %s) from %d belt%s holding %d of its ammo', g.name, at(g.position), g.condition, bh.way.n, bh.way.n == 1 and '' or 's', n)
+        end
+      end
       for name, cnt in pairs(a.items) do
         if not takes(name) and is_ammo(name) then row.wrong = row.wrong or {}; row.wrong[name] = (row.wrong[name] or 0) + cnt end
       end
-      local sources, off_sources = {}, {}
+      local sources, off_sources, off_names = {}, {}, {}
       for _, x in ipairs(src_list) do
-        local text = string.format('%s %s from %s %s (holds %d of its ammo)', x.si.name, at(x.si.position), x.sp.e.name, at(x.sp.e.position), held_of(x)) .. (x.off and ' (switched off)' or '')
+        local text = string.format('%s %s from %s %s (holds %d of its ammo)', x.si.name, at(x.si.position), x.sp.e.name, at(x.sp.e.position), held_of(x)) .. (x.off and ' (gated closed now: ' .. gate(x.si) .. ')' or '')
         if not x.off and #sources < 4 then sources[#sources+1] = text
-        elseif x.off and #off_sources < 4 then off_sources[#off_sources+1] = text end
+        elseif x.off and #off_sources < 4 then off_sources[#off_sources+1] = text; off_names[#off_names+1] = x.si.name .. ' ' .. at(x.si.position) end
       end
       local text = string.format('%s from %s %s: %d of its ammo on %d belt%s upstream%s', way, src.e.name, at(src.e.position), on, a.n, a.n == 1 and '' or 's',
         capped and ' (of the first ' .. M.MAX_BELTS .. ' belts read)' or '')
       if #relays > 0 then text = text .. '; through ' .. table.concat(relays, ', ') end
       if #sources > 0 then text = text .. '; put on them by ' .. table.concat(sources, ', ') end
       if a.live == 0 and #off_sources > 0 then text = text .. '; put on them by ' .. table.concat(off_sources, ', ') end
-      if a.live == 0 then
-        row.stops[#row.stops+1] = string.format('%s: %s the belts upstream of %s %s: the %d on them, then dry', way,
-          #off_sources > 0 and 'the inserters putting items on are switched off: nothing more comes onto' or 'no inserter puts anything on',
-          src.e.name, at(src.e.position), on)
+      if #through > 0 then text = text .. '; behind a relay ' .. table.concat(through, ', ') end
+      if shut then
+        text = text .. ' (its feeder gated closed now: ' .. shut .. ')'
+        row.gated[#row.gated+1] = string.format('%s gated closed now (%s): %d of its ammo waits behind it', way, shut, back)
       end
-      if #gates > 0 then row.stops[#row.stops+1] = table.concat(gates, '; ') end
+      -- (AB3) nothing carries onto these belts now: a source or relay gated closed now is the current flow, said apart
+      -- from a way with no source at all (STOPPED: dry after what is on it)
+      if a.live == 0 then
+        if #off_sources > 0 or behind_srcs > 0 then
+          for _, bh in ipairs(behind) do if #off_names < 4 then off_names[#off_names+1] = bh.g.name .. ' ' .. at(bh.g.position) end end
+          row.gated[#row.gated+1] = string.format('%s: the inserters putting items on the belts upstream of %s %s are gated closed now (%s): nothing more comes onto them until one opens; %d on them now',
+            way, src.e.name, at(src.e.position), table.concat(off_names, ', '), on)
+        else
+          row.stops[#row.stops+1] = string.format('%s: no inserter puts anything on the belts upstream of %s %s: the %d on them, then dry', way, src.e.name, at(src.e.position), on)
+        end
+      end
+      for _, g in ipairs(gates) do
+        note_gate(g.e, row, g.k)
+        row.gated[#row.gated+1] = string.format('%s %s gated closed now (%s)', g.e.name, at(pos(g.e, g.k)), gate(g.e, g.k))
+      end
       if ahead then
         text = text .. string.format('; blocked by %s ahead (%s)', ahead.item, ahead.line)
-        row.stops[#row.stops+1] = string.format('%s: blocked by %s ahead: %s; the %d behind it do not reach the turret now', way, ahead.item, ahead.line, gain)
+        row.stops[#row.stops+1] = string.format('%s: blocked by %s ahead: %s; the %d behind it do not reach the turret now', way, ahead.item, ahead.line, ahead_n)
       end
       row.ways[w.slot] = text
     end
@@ -615,9 +748,10 @@ return function(api)
         recover[i] = {count=g.count, belts=bl, belts_more=g.n > 8 and g.n - 8 or nil, area=box, other_belts_in_area=others > 0 and others or nil}
       end
     end
+    for _, g in ipairs(gate_list) do g.seen = nil end
     return {rows=rows, reaches=reaches, stranded=stranded, stranded_groups=glines, stranded_recover=recover, stranded_more=#groups > 6 and #groups - 6 or nil,
       hub_ammo=hub_total, hub_reaches=any_hub, turret_own=turret_own, on_belts_reached=belt_reach, in_sources=src_total,
-      stranded_by=stranded_by, hub_stranded=hub_stranded, via_hub=via_hub, at_end=at_end_n, at_end_rows=end_rows}
+      stranded_by=stranded_by, hub_stranded=hub_stranded, via_hub=via_hub, at_end=at_end_n, at_end_rows=end_rows, gates=gate_list}
   end
   -- The read's lines: the totals, the turrets low or empty with what reaches them and what stops it, the stranded stock.
   -- The call that would recover a stranded group: a belt pickup where your character stands on that surface (aboard),
@@ -630,13 +764,12 @@ return function(api)
       call, r.other_belts_in_area and string.format('; that area also holds %d other belt%s of ours', r.other_belts_in_area, r.other_belts_in_area == 1 and '' or 's') or '')
   end
   -- A turret's supply in one word: maker, hub, chest (chests only), preload (ways with nothing that refills them), none
-  -- (no inserter feeds it).
+  -- (no inserter feeds it). (AB3) A source behind a link gated closed now counts; the second value is true when every
+  -- source of that kind is behind one.
   function M.supply_kind(row)
-    local k = {}
-    for _, x in ipairs(row.supply or {}) do k[x.kind] = true end
-    if k.maker then return 'maker' end
-    if k.hub then return 'hub' end
-    if k.chest then return 'chest' end
+    local k, open = {}, {}
+    for _, x in ipairs(row.supply or {}) do k[x.kind] = true; if not x.gate then open[x.kind] = true end end
+    for _, kind in ipairs({'maker', 'hub', 'chest'}) do if k[kind] then return kind, not open[kind] end end
     for _, st in ipairs(row.stops or {}) do if st == 'no inserter feeds it' then return 'none' end end
     return 'preload'
   end
@@ -656,19 +789,25 @@ return function(api)
       if all or low then
         shown = shown + 1
         if shown <= 16 then
-          lines[#lines+1] = string.format('%s %s: holds %d; %d reach it%s%s%s', row.name, at(row.position), row.own, row.reaches,
+          lines[#lines+1] = string.format('%s %s: holds %d; %d reach it%s%s%s%s%s', row.name, at(row.position), row.own, row.reaches,
             row.blocked and string.format(', %d more blocked by other ammunition ahead', row.blocked) or '',
-            #row.ways > 0 and ' (' .. table.concat(row.ways, ' | ') .. ')' or '', #row.stops > 0 and '; STOPPED: ' .. table.concat(row.stops, '; ') or '')
+            (row.behind_gate or 0) > 0 and string.format(', %d more behind a link gated closed now', row.behind_gate) or '',
+            #row.ways > 0 and ' (' .. table.concat(row.ways, ' | ') .. ')' or '',
+            row.gated and #row.gated > 0 and '; NOW: ' .. table.concat(row.gated, '; ') or '',
+            #row.stops > 0 and '; STOPPED: ' .. table.concat(row.stops, '; ') or '')
         end
       end
     end
     if shown > 16 then lines[#lines+1] = string.format('+%d more turrets', shown - 16) end
     -- (d20 batch52 K6) what refills each turret: a maker aboard, the hub, chests only, or nothing (preload only)
     local by, makers, preload, wrong, over, seen_over = {maker=0, hub=0, chest=0, preload=0, none=0}, {}, {}, {}, {}, {}
+    local shut, shut_at = {maker=0, hub=0, chest=0}, {maker={}, hub={}, chest={}}
     for _, row in ipairs(tr.rows) do
-      local k = M.supply_kind(row)
+      local k, g = M.supply_kind(row)
       row.replenished = k
+      row.replenished_gated = g or nil
       by[k] = by[k] + 1
+      if g then shut[k] = shut[k] + 1; if #shut_at[k] < 8 then shut_at[k][#shut_at[k]+1] = at(row.position) end end
       if k == 'maker' then
         for _, x in ipairs(row.supply or {}) do if x.kind == 'maker' and not makers[x.text] then makers[x.text] = true; makers[#makers+1] = x.text end end
       elseif k == 'preload' and #preload < 12 then preload[#preload+1] = at(row.position) end
@@ -681,11 +820,30 @@ return function(api)
       for _, o in ipairs(row.overflow or {}) do if not seen_over[o] and #over < 6 then seen_over[o] = true; over[#over+1] = o end end
     end
     if #tr.rows > 0 then
-      lines[#lines+1] = string.format('replenishment by turret: %d from an ammunition maker aboard%s, %d from the hub, %d from chests only (what fills them is not traced), %d preload only%s%s',
-        by.maker, #makers > 0 and ' (' .. table.concat(makers, ', ', 1, math.min(3, #makers)) .. ')' or '', by.hub, by.chest, by.preload,
+      -- (AB3) those whose only route of that kind runs through a link gated closed now
+      local function g(k)
+        if shut[k] == 0 then return '' end
+        return string.format(' (%d of them only through a link gated closed now: %s%s)', shut[k], table.concat(shut_at[k], ', '), shut[k] > #shut_at[k] and string.format(' +%d more', shut[k] - #shut_at[k]) or '')
+      end
+      lines[#lines+1] = string.format('replenishment by turret: %d from an ammunition maker aboard%s%s, %d from the hub%s, %d from chests only (what fills them is not traced)%s, %d preload only%s%s',
+        by.maker, #makers > 0 and ' (' .. table.concat(makers, ', ', 1, math.min(3, #makers)) .. ')' or '', g('maker'), by.hub, g('hub'), by.chest, g('chest'), by.preload,
         #preload > 0 and ': ' .. table.concat(preload, ', ') .. (by.preload > #preload and string.format(' +%d more', by.preload - #preload) or '')
           .. ' (nothing puts more on their way: what they hold and what is on their way now is all)' or '',
         by.none > 0 and string.format(', %d with no inserter feeding it', by.none) or '')
+    end
+    -- (AB3) each link gated closed now on a turret's way: its condition with the values it reads, the turrets behind it
+    local gl = {}
+    for i, x in ipairs(tr.gates or {}) do
+      if i <= 6 then
+        local t = {}
+        for j, q in ipairs(x.turrets) do if j <= 6 then t[j] = at(q) end end
+        gl[i] = string.format('%s %s (%s) on the way of %d turret%s: %s%s', x.name, at(x.position), x.condition, #x.turrets, #x.turrets == 1 and '' or 's',
+          table.concat(t, ', '), #x.turrets > 6 and string.format(' +%d more', #x.turrets - 6) or '')
+      end
+    end
+    if #gl > 0 then
+      lines[#lines+1] = 'gated closed now (a route to the turret, held off by its condition now; it carries when its condition is met): ' .. table.concat(gl, '; ')
+        .. (#tr.gates > 6 and string.format('; +%d more', #tr.gates - 6) or '')
     end
     if #wrong > 0 then lines[#lines+1] = 'wrong ammunition on turrets\' ways: ' .. table.concat(wrong, '; ') end
     if #over > 0 then lines[#lines+1] = 'circuit filters past the slots: ' .. table.concat(over, '; ') end

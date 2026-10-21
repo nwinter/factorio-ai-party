@@ -534,13 +534,16 @@ class Harness:
         return r.get("planets") if isinstance(r, dict) and isinstance(r.get("planets"), list) else []
 
     def planet_map(self, surface):
-        """One other planet's coarse map {tick, cell, x0, y0, w, h, rows, buildings}, or None."""
+        """One other planet's coarse map {tick, cell, x0, y0, w, h, rows, buildings, core (its dense core as Nauvis's: the
+        footprints at 1-2 tiles a cell, census.lua)}, or None."""
         r = self.lua(planet_read_lua(surface))
         m = r.get("basemap") if isinstance(r, dict) else None
         if not isinstance(m, dict):
             return None
         if not isinstance(m.get("rows"), list):  # table_to_json writes an empty table as {}
             m["rows"] = []
+        if isinstance(m.get("core"), dict) and not isinstance(m["core"].get("rows"), list):  # (d21 batch68 AD1) its dense core
+            m["core"]["rows"] = []
         return dict(m, surface=surface)
 
     def probe(self):
