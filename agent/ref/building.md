@@ -186,6 +186,11 @@
   rail supports on joints between; `unsupported` names spans with no support spot and why; `research` says what is researched.
   A long one is laid over several calls: each reply's `capped.next_call` holds the arguments of the next.
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
+- Rail and chain signals: `build`, `place_ghosts` entries and `placements {name: rail-signal}` take `rail_layer`
+  (ground | elevated); the game's own check on that layer decides (none given: ground, then elevated), and with no
+  direction the signal takes the facing of the signal spot there. `placements` lists the signal spots of the rails near
+  that the game takes, with direction and layer; `inspect` on a signal gives `signal` (rail layer, rails attached, block
+  state). Example: `./fh call place_ghosts --args '{"entities":[{"name":"rail-chain-signal","position":{"x":-146.5,"y":16.5},"rail_layer":"elevated"}]}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
 - `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}` or

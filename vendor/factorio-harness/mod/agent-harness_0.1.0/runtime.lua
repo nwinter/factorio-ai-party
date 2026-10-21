@@ -2185,7 +2185,11 @@ function handlers.describe(_,a)
       b.retry_when_clear='optional true: a build refused because its walk ends in an area under attack now (passing enemies; none for a worm or spawner) waits until no enemy unit is within 48 tiles there (retry_ticks, default 5 min), then builds again, at most 6 times'
       b.retry_ticks='with retry_when_clear: 600..54000 (default 18000)'
       b.retries='(set by the retry: how many so far)'
+      b.rail_layer='optional, a single build: '..'rail_layer (rail and chain signals): ground or elevated, the rail layer it goes beside (as a player\'s cursor over elevated rails places it on them); the game\'s own check on that layer decides, and with none given the ground layer and then the elevated; with no direction the facing of the signal spot there (placements {name: rail-signal} lists the spots); the reply says the layer placed'
     end
+    -- (AG1) rail_layer on a signal's entry
+    if pg and pg.entities then pg.entities=pg.entities..'; an entry may carry rail_layer (rail and chain signals): ground or elevated, the rail layer it goes beside (as a player\'s cursor over elevated rails places it on them); the game\'s own check on that layer decides, and with none given the ground layer and then the elevated; with no direction the facing of the signal spot there (placements {name: rail-signal} lists the spots); the reply says the layer placed' end
+    if b and b.builds then b.builds=b.builds..'; an entry may carry rail_layer (rail and chain signals: ground or elevated)' end
   end
   -- (d18 batch37 U1) a walking tour waits for a leg enemies pass
   local LEGW=' On the walk (rearm by default; a walking transfer with retry_when_clear): a leg enemies pass (units or a group seen now in 24 tiles of it) is waited for where you stand, rechecked every 3 s, up to retry_ticks (default 60 s), then walked (last.ahead_waited says each wait); enemies_ahead only when the wait runs out (it says how long it waited). retry_when_clear: false on rearm: no wait'
@@ -6216,7 +6220,7 @@ local function placement_error(p,proto,pos,direction,near)
  end
  return text
 end
-local function build_direct(p,stack,pos,direction,quality,kind,place)
+local function build_direct(p,stack,pos,direction,quality,kind,place,rail_layer)
   local proto,surface=place or stack.prototype.place_result,p.surface
   -- A rail planner's curve takes 3 rails and a half-diagonal 2, as the game
   -- charges them (items_to_place_this); everything else here takes one.
@@ -6247,7 +6251,7 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     local _,revived=ghost.revive{raise_revive=true}
     e=revived
   else
-    local args={name=proto.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual}
+    local args={name=proto.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual,rail_layer=rail_layer}
     if not surface.can_place_entity(args) then error(placement_error(p,proto,pos,direction,true),0) end
     -- The manual check allows a fast-replace, which create_entity without
     -- fast_replace does not do: both machines stayed on the tiles (shake5:
@@ -6520,6 +6524,13 @@ local function build_one(p,a)
   end
   local direction=M.direction_of(a.direction or 'north'); assert(direction,'invalid direction: a compass name (north, east, south, west) or 0..15')
   if a.direction~=nil then M.check_direction(place,direction) end
+  -- (AG1) a rail or chain signal: the game's manual check on its rail layer, the spot's facing when none is given;
+  -- placed directly with that layer
+  local sig
+  if M.railsignal.TYPES[place.type] then
+    sig=M.railsignal.resolve(p.surface,p.force,place.name,pos,a.direction~=nil and direction or nil,M.railsignal.layer_arg(a.rail_layer),false)
+    direction=sig.direction; direct=true
+  elseif a.rail_layer~=nil then error('rail_layer goes with rail signals and chain signals',0) end
   if place.type=='rail-ramp' then
     pos,direction=M.placewhy.ramp_position(pos,direction)
     build_reach(p,pos,'snapped position')
@@ -6552,7 +6563,7 @@ local function build_one(p,a)
   -- building does not reliably make the exit of a pair from script.
   if direct then
     local pair=place.type=='underground-belt' and M.underground_pair(p,place,pos,a.item,a.quality or 'normal') or nil
-    local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
+    local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place,sig and sig.layer)
     if pair then
       local stack2=p.get_main_inventory().find_item_stack{name=a.item,quality=a.quality or 'normal'}
       local ok2,e2,_,replaced2,need2=pcall(build_direct,p,stack2,pair.position,pair.direction,a.quality or 'normal',pair.kind,place)
@@ -6572,7 +6583,8 @@ local function build_one(p,a)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
     local recipe,turned
     if a.recipe~=nil then recipe,turned=M.set_built_recipe(e,a.recipe,a.direction~=nil and direction or nil) end
-    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,direction_note=turned,snapped=snapped},{e}
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,direction_note=turned,snapped=snapped,
+      signal=sig and M.railsignal.read(e) or nil,signal_placed=sig and sig.line or nil},{e}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -7071,6 +7083,8 @@ function handlers.inspect(p,a)
   out.electricity=okp and pw or nil
   -- A fusion reactor: the reactors its plasma joins, its bonus, its most at its quality and its measured rates (Z6).
   if e.type=='fusion-reactor' then local okf,fu=pcall(M.fusion.read,e); out.fusion=okf and fu or nil end
+  -- A rail or chain signal: its rail layer, the rails it is attached to and its block state (AG1).
+  do local oks,sg=pcall(M.railsignal.read,e); out.signal=oks and sg or nil end
   -- Inserters: the exact pickup/drop points, the tiles they are on, and what
   -- stands there (the same view as scan fields=io).
   -- An inserter's Spoil priority (built or ghost; Sol, 18:15).
@@ -12913,7 +12927,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){railsignal=function() return M.railsignal end,floorcheck=function() return M.floorcheck end,one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -13842,6 +13856,17 @@ M.drillspots=require('drillspots'){position=position,integer=integer,read_sight=
   seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end,
   why=function(p,proto,pos,d) return placement_error(p,proto,pos,d,false) end}
 handlers.placements=M.shore.handlers.placements
+-- (AG1) placements for a rail or chain signal: the signal spots of the rails near, on rail_layer (ground, elevated, or
+-- both when not given), each with the game's ghost check (railsignal.lua)
+do
+  local plain=handlers.placements
+  handlers.placements=function(p,a)
+    local proto=type(a)=='table' and type(a.name)=='string' and (prototypes.entity[a.name] or (prototypes.item[a.name] and prototypes.item[a.name].place_result))
+    if proto and M.railsignal.TYPES[proto.type] then return M.railsignal.placements(p,a,proto) end
+    assert(type(a)~='table' or a.rail_layer==nil,'rail_layer goes with rail signals and chain signals')
+    return plain(p,a)
+  end
+end
 -- ingredient_gap: per crafting machine, the next craft's ingredients held, usable and short, and who can spare them
 -- (gap.lua; d17 batch21 B3, Luna).
 M.gap=require('gap'){position=position,entity=function(p,a) return entity(p,a,true) end,spoil=function() return M.spoil end,
@@ -13892,6 +13917,8 @@ M.circrecipe=require('circrecipe'){status_name=function(e) return entity_status_
 M.invbar=require('invbar'){integer=integer}
 -- a fusion reactor's bonus, maximum and measured rates (d21 batch64 Z6)
 M.fusion=require('fusion'){state=state}
+-- rail and chain signals on the ground or elevated rail layer (d20 batch71 AG1)
+M.railsignal=require('railsignal'){position=position,integer=integer}
 -- An inventory with every slot taken and what fills it; spoilage in a machine's input (slots.lua; Sol, 22:08).
 M.slots=require('slots')()
 M.spoil=require('spoil'){state=state,force=function() return game.forces.player end,
@@ -14050,7 +14077,14 @@ local function place_ghost(p,spec)
   -- over a ghost of the same name (the copy of world n stacked an uncommon and a normal assembler ghost on one spot)
   local other=M.other_quality_there(p,spec.name,pos,spec.quality)
   if other then error(other,0) end
-  if not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
+  -- (AG1) a rail or chain signal: the game's ghost check on its rail layer (rail_layer, else ground then elevated), and
+  -- the facing of the signal spot there when no direction is given
+  local sig
+  if M.railsignal.TYPES[proto.type] then
+    sig=M.railsignal.resolve(p.surface,p.force,spec.name,pos,direction,M.railsignal.layer_arg(spec.rail_layer),true)
+    direction=sig.direction
+  elseif spec.rail_layer~=nil then error('rail_layer goes with rail signals and chain signals',0) end
+  if not sig and not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
     error(placement_error(p,proto,pos,direction),0)
   end
   -- Tiles it cannot stand on (water, Gleba wetland): the forced ghost check
@@ -14059,11 +14093,11 @@ local function place_ghost(p,spec)
   -- With no tile item for them the ghost would never be built: refused.
   -- Trees and rocks where those tiles go are marked first (place_tile_ghost);
   -- anything else there refuses the ghost, named.
-  local fixes=M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction)
+  local fixes=not sig and M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction) or nil
   -- (d20 batch52 J1) An entity with tile rules over empty space where a rule wants ground (a thruster's body): the
   -- foundation tile ghosts under it first, as the game's forced placement lays them (2.0.77 on the copy: a forced
   -- blueprint of a lone thruster placed it and 20 foundation tile ghosts); tile ghosts already there count as laid.
-  if not fixes and #(proto.tile_buildability_rules or {})>0 then
+  if not fixes and not sig and #(proto.tile_buildability_rules or {})>0 then
     local rt=M.placewhy.rule_tiles(p.surface,p.force,proto,pos,direction)
     for _,n in ipairs(rt.need) do
       fixes=fixes or {}
@@ -14095,7 +14129,7 @@ local function place_ghost(p,spec)
     laid[f.item]=(laid[f.item] or 0)+1
   end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type,
-    quality=M.ghost_quality(p,spec.quality)}
+    quality=M.ghost_quality(p,spec.quality),rail_layer=sig and sig.layer or nil}
   if ghost then pcall(M.built_watch,p,spec.name,ghost) end
   if not ghost then
     for _,t in ipairs(tiles) do if t.valid then t.destroy() end end
@@ -15484,7 +15518,8 @@ function handlers.dry_run(p,a)
             assert(spec.direction==nil or dir,'direction must be a compass name (north, east, south, west) or 0..15')
             M.check_direction(prototypes.entity[spec.name or ''],dir)
             if k==0 then M.ghost_quality(q,spec.quality) end
-            plan.entities[#plan.entities+1]={index=i,copy=copy,name=spec.name,position=pos,direction=dir or 0,ug_type=spec.type,recipe=spec.recipe,circuit=spec.circuit,wires=spec.wires,quality=spec.quality}
+            plan.entities[#plan.entities+1]={index=i,copy=copy,name=spec.name,position=pos,direction=dir or 0,ug_type=spec.type,recipe=spec.recipe,circuit=spec.circuit,wires=spec.wires,quality=spec.quality,
+              rail_layer=spec.rail_layer,dir_given=spec.direction~=nil}
           end
         end
       end
@@ -15527,7 +15562,7 @@ function handlers.dry_run(p,a)
           local recipe=b.recipe
           if recipe==nil and inner.recipe~=nil and (place.type=='assembling-machine' or not inner.builds) then recipe=inner.recipe end
           plan.entities[#plan.entities+1]={index=i,name=place.name,position=pos,direction=dir,quality=b.quality or inner.quality,item=item,ug_type=b.type or inner.type,
-            recipe=recipe,circuit=b.circuit,wires=b.wires}
+            recipe=recipe,circuit=b.circuit,wires=b.wires,rail_layer=b.rail_layer or inner.rail_layer,dir_given=(b.direction or inner.direction)~=nil}
         end
       end
     else
