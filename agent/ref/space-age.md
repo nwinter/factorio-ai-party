@@ -260,6 +260,14 @@
   inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
   hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
   minute.
+- `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?}`: follows that count to the
+  consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
+  up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
+  no pad), network (the pad's logistic network and the consumer's), reached (the consumer holds `count` more than at
+  the start). `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
+  with room there, a pod landed with no pad, the platform paused or not stopping there, a requester chest asking none
+  of it. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
+  watches; `{id, clear: true}` ends one.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and

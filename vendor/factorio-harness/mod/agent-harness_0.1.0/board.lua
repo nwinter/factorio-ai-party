@@ -2363,6 +2363,11 @@ return function(api)
       local ok, list = pcall(api.shipment_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A delivery watch's blocker, deadline or arrival, to its setter (delivwatch.lua; d21 batch66 AB5).
+    if api.delivery_lines then
+      local ok, list = pcall(api.delivery_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Hand-fed burner machines running dry within 10 minutes (burnerfuel.lua).
     if api.burner_lines then
       local ok, list = pcall(api.burner_lines, p, h)

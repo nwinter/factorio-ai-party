@@ -10572,3 +10572,52 @@ AB4 (Sol #1681): Solstice at Nauvis, schedule [nauvis, gleba] current 1, paused 
   1: the game read waiting_at_station (the copy did not give no_schedule); `waiting` and the platforms row said
   "conditions false now: item_count iron-plate >= 100: the hub holds 0, 100 to go [false]", the gate "at station
   nauvis". 100 iron plates put in the hub: waiting_for_departure, current 2.
+
+## d21 batch66 AB5 (eng/d20-batch66)
+
+AB5 (viewer Aurora, operator inbox 13:02 PDT: "Could delivery watches follow cargo to a named consumer, with a
+deadline, last confirmed stage, blocker and recovery alert? K2's carbide landed in a different network from its
+silo.").
+- What the reads tracked before:
+  - shipment: a hub request's state on its way up (delivered, in flight, launched, loading, waiting with the silo's
+    flag), and what a planet's pads ask of the hub.
+  - freight: each rocket launched to a platform, and each cargo pod from a hub to the pad that received it or to the
+    ground.
+  - pods and landed: pods in the sky, containers on the ground.
+  - drops: one drop's pod to its container.
+  - freight_audit: one item's stock across planets and platforms.
+  None followed a count of an item to the chest, silo or machine that uses it.
+- New: `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?}` (delivwatch.lua; runtime
+  deploy needed).
+  - The consumer is an entity of ours within 2 tiles of the position, in a chunk our force has charted.
+  - Once a second, 4 watches a pass, each watch reads what a player sees and keeps the first tick of each stage.
+  - Down (the consumer on a planet):
+    - loaded: a platform's hub holds the item (`from`, else the first platform with it whose schedule stops there);
+    - departed, in_transit (flying to that planet), arrived;
+    - landed: its pod received by a landing pad (freight's pod receipts now carry the pad's position), or landed with
+      no pad;
+    - network: the pad's logistic network and the consumer's;
+    - reached: the consumer holds `count` more than at the start.
+  - Up (the consumer aboard a platform):
+    - loaded: a silo of `from` with it in its rocket (the census pass's silos);
+    - launched and in_transit: a rocket with it launched to the platform;
+    - landed: the hub holds more of it;
+    - reached.
+  - Blockers: the pad's network is not the consumer's, or the consumer is in none; the platform is stopped there with
+    it but no landing pad there has room for it, or there is none; a pod with it landed with no pad; the platform is
+    paused, or its schedule has no stop there; up: not stopped at `from`; a requester or buffer chest asks none of it;
+    the consumer is gone.
+  - The setter hears each in team.alerts: each blocker once, a blocker gone, the deadline passed while not reached
+    (with the last confirmed stage and the blocker), and the arrival. `{}` lists the force's watches; `{id}` reads
+    one; `{id, clear: true}` ends one. At most 16 open a force; a watch is kept 10 minutes after it ends.
+- Headless copy (shared; a test platform B66dw at Nauvis, made, then destroyed):
+  - With 50 tungsten carbide in its hub, the pad (52,54) got a request for it (section added, then removed). Two
+    watches: one to a wooden chest at (-43.5,134.5) in no logistic network, one to the silo (15.5,59.5) in network
+    #243.
+  - Both read "loaded", "arrived" and "blocked: no landing pad of ours on nauvis has room for tungsten-carbide
+    (cargo-landing-pad (52,54)): the hub sends no pod of it down". The pad had no free slot.
+  - One slot freed (200 space science packs taken out): "landed (50 tungsten-carbide received by cargo-landing-pad
+    (52,54) on nauvis)" and "network (the pad (52,54) is in logistic network #243; ...)". For the chest: "blocked: the
+    consumer wooden-chest (-43.5,134.5) is in no logistic network". The silo: in #243, no blocker.
+  - The events were stored for the setter in order (blocked, no longer blocked, blocked by network). The copy's
+    replies to that bot carried no team block, so team.alerts delivery is checked by the fake engine only.
