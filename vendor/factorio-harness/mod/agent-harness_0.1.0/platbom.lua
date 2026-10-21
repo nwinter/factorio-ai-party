@@ -7,6 +7,7 @@
 -- Item requests (modules and the like) count too: on entity ghosts and on item-request proxies of built machines (d17
 -- batch19 A3, Astra: Swiftlet's 34 efficiency and 2 speed modules were in no BOM line). Items construction robots
 -- there carry (taken from the hub for a ghost not built yet) are said, and taken off what is still to send. Read only.
+-- Every count is by item and quality (d21 batch66 AB1): a ghost is built only from items of its own quality.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -17,13 +18,29 @@ return function(api)
     local name = type(first.name) == 'string' and first.name or try(function() return first.name.name end)
     return name, first.count or 1
   end
+  -- (d21 batch66 AB1, Sol #1591: Solstice's ghosts needed asteroid-collector@uncommon 1, solar-panel@epic 1 and @rare 2;
+  -- the BOM counted collector 1 and solar 3 at normal, took 6 normal panels in the hub as covering them, and its
+  -- requests never asked the qualities) every count is by item and quality, as construction_blocked and the game's
+  -- ghost item requests are: the hub builds a ghost only from items of its quality, so no other quality covers it.
+  local function qname(q)
+    if type(q) == 'string' then return q end
+    return q and try(function() return q.name end) or 'normal'
+  end
+  local function key(name, q) return name .. '@' .. (q or 'normal') end
+  local function split(k) local name, q = k:match('^(.*)@([^@]*)$'); return name or k, q or 'normal' end
+  local function label(k) local name, q = split(k); return q == 'normal' and name or k end
+  local function count_of(inv, k)
+    if not inv then return 0 end
+    local name, q = split(k)
+    return try(function() return inv.get_item_count{name=name, quality=q} end) or 0
+  end
   -- What a ghost or an item-request proxy asks to have put in it (modules and the like), added into `into` by item.
   local function requests_of(e, into)
     local list = try(function() return e.item_requests end)
     if type(list) == 'table' and #list > 0 then
       for _, q in ipairs(list) do
         local n = type(q.name) == 'table' and q.name.name or q.name
-        if n and (q.count or 0) > 0 then into[n] = (into[n] or 0) + q.count end
+        if n and (q.count or 0) > 0 then local k = key(n, qname(q.quality)); into[k] = (into[k] or 0) + q.count end
       end
       return
     end
@@ -31,19 +48,19 @@ return function(api)
       local n = plan.id and (type(plan.id.name) == 'table' and plan.id.name.name or plan.id.name)
       local c = plan.items and plan.items.grid_count or 0
       for _, r in ipairs(plan.items and plan.items.in_inventory or {}) do c = c + (r.count or 1) end
-      if n and c > 0 then into[n] = (into[n] or 0) + c end
+      if n and c > 0 then local k = key(n, qname(plan.id.quality)); into[k] = (into[k] or 0) + c end
     end
   end
-  -- The items the platform's construction robots carry now, by item.
+  -- The items the platform's construction robots carry now, by item and quality.
   local function in_robots(pl, force)
     local by = {}
     for _, r in ipairs(try(function() return pl.surface.find_entities_filtered{type='construction-robot', force=force} end) or {}) do
       local inv = try(function() return r.get_inventory(defines.inventory.robot_cargo) end)
-      for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do by[c.name] = (by[c.name] or 0) + c.count end
+      for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do local k = key(c.name, qname(c.quality)); by[k] = (by[k] or 0) + c.count end
     end
     return by
   end
-  -- Cargo pods headed for the platform, from any surface: their cargo by item, and how many pods.
+  -- Cargo pods headed for the platform, from any surface: their cargo by item and quality, and how many pods.
   local function in_flight(pl)
     local hub = pl.hub
     local by, pods = {}, 0
@@ -56,13 +73,13 @@ return function(api)
         if ours then
           pods = pods + 1
           local inv = try(function() return pod.get_inventory(defines.inventory.cargo_unit) end)
-          for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do by[c.name] = (by[c.name] or 0) + c.count end
+          for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do local k = key(c.name, qname(c.quality)); by[k] = (by[k] or 0) + c.count end
         end
       end
     end
     return by, pods
   end
-  -- What the hub's active request sections ask of each item (their min summed).
+  -- What the hub's active request sections ask of each item and quality (their min summed).
   local function asks(hub)
     local out = {}
     local secs = try(function() return hub.get_logistic_sections() end)
@@ -72,7 +89,7 @@ return function(api)
         for _, f in pairs(try(function() return sec.filters end) or {}) do
           local v = f.value
           local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
-          if name and (f.min or 0) > 0 then out[name] = (out[name] or 0) + f.min end
+          if name and (f.min or 0) > 0 then local k = key(name, qname(v.quality)); out[k] = (out[k] or 0) + f.min end
         end
       end
     end
@@ -100,10 +117,10 @@ return function(api)
       for _, g in ipairs(list) do
         if g.type == 'item-request-proxy' then requests_of(g, need)
         else
-          local key = g.type .. ':' .. g.ghost_name
-          local k = known[key]
-          if not k then local item, n = item_of(try(function() return g.ghost_prototype end)); k = {item=item, n=n}; known[key] = k end
-          if k.item then need[k.item] = (need[k.item] or 0) + k.n end
+          local gk = g.type .. ':' .. g.ghost_name
+          local k = known[gk]
+          if not k then local item, n = item_of(try(function() return g.ghost_prototype end)); k = {item=item, n=n}; known[gk] = k end
+          if k.item then local q = key(k.item, qname(try(function() return g.quality end))); need[q] = (need[q] or 0) + k.n end
           if g.type == 'entity-ghost' then requests_of(g, need) end
         end
       end
@@ -127,7 +144,7 @@ return function(api)
     local hub = pl.hub
     local items = {}
     local carry = next(need) and in_robots(pl, pl.force) or {}
-    for item, n in pairs(need) do items[#items+1] = {item=item, n=math.max(0, n - (carry[item] or 0)), need=n, carry=carry[item]} end
+    for k, n in pairs(need) do local name, q = split(k); items[#items+1] = {item=k, name=name, quality=q, n=math.max(0, n - (carry[k] or 0)), need=n, carry=carry[k]} end
     table.sort(items, function(x, y) return x.item < y.item end)
     if #items == 0 then
       local _, secs, i = section_of(hub, rec.group, false)
@@ -142,13 +159,14 @@ return function(api)
     -- (d17 batch34 A3, Muse: Wayfarer's floor request read absent with 72 ghosts open, between two rewrites that each
     -- read it as 72; both times items sorted before it had just dropped out) each item keeps the slot it has: an item no
     -- longer needed is cleared where it stands and a new one takes a free slot, so no rewrite writes one item into
-    -- another's slot.
+    -- another's slot. (d21 batch66 AB1) A slot is an item at a quality (comparator =): one slot each.
     local was, free, wanted = {}, {}, {}
     for _, it in ipairs(items) do wanted[it.item] = true end
     for i = 1, n do
       local f = try(function() return sec.get_slot(i) end)
       local v = f and f.value
       local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
+      if name then name = key(name, qname(v.quality)) end
       if name and wanted[name] and not was[name] then
         was[name] = {slot=i, min=f.min, max=f.max, mp=f.minimum_delivery_count, from=f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))}
       else
@@ -169,6 +187,7 @@ return function(api)
         rec.adopted[it.item] = {mp=w.mp, tick=game.tick}
       end
       local mp = rec.min_payload and rec.min_payload[it.item]
+      if mp == nil and rec.min_payload then mp = rec.min_payload[it.name] end
       if mp == nil and w then mp = w.mp end
       if mp == false or mp == 0 then mp = nil end
       -- tail (d17 batch21 A2): the payload no more than what is still to come (the request less what the hub holds),
@@ -176,9 +195,9 @@ return function(api)
       -- (d17 batch33 A3, Sol: Wayfarer's arithmetic combinator asked 2 against the default, a full rocket of 50, and
       -- waited) a slot with no custom minimum payload has the game's default, a full rocket by weight: tail lowers that
       -- too
-      local full = full_rocket(it.item)
+      local full = full_rocket(it.name)
       if rec.tail then
-        local left = it.n - (inv0 and try(function() return inv0.get_item_count(it.item) end) or 0)
+        local left = it.n - count_of(inv0, it.item)
         local base = mp or full
         if base and left > 0 and left < base then it.tail_of = base; it.tail_default = not mp or nil; mp = left end
       end
@@ -189,7 +208,7 @@ return function(api)
       if not slot then n = n + 1; slot = n end
       it.slot = slot
       if not (w and w.min == it.n and w.mp == mp and w.from == rec.import_from) then
-        sec.set_slot(slot, {value={type='item', name=it.item, quality='normal', comparator='='}, min=it.n, max=w and w.max or nil,
+        sec.set_slot(slot, {value={type='item', name=it.name, quality=it.quality, comparator='='}, min=it.n, max=w and w.max or nil,
           import_from=rec.import_from, minimum_delivery_count=mp})
       end
     end
@@ -200,11 +219,11 @@ return function(api)
     rec.min, rec.held, rec.slot, rec.spent = {}, {}, {}, nil
     for _, it in ipairs(items) do
       rec.min[it.item] = it.n; rec.slot[it.item] = it.slot
-      rec.held[it.item] = inv and try(function() return inv.get_item_count(it.item) end) or 0
+      rec.held[it.item] = count_of(inv, it.item)
     end
     for _, it in ipairs(items) do
       local held = rec.held[it.item]
-      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d%s; the hub holds %d)%s', it.item, it.n, rec.import_from, it.need,
+      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d%s; the hub holds %d)%s', label(it.item), it.n, rec.import_from, it.need,
         it.carry and string.format(', construction robots carry %d', it.carry) or '', held,
         it.mp and string.format('; custom minimum payload %d', it.mp) or (it.full and string.format('; minimum payload: a full rocket, %d by weight (the game\'s default)', it.full) or '; minimum payload: the game\'s default'))
         .. (it.tail_of and string.format(' (tail: %d of the %d %s, what is still to come)', it.mp, it.tail_of, it.tail_default and 'a full rocket takes' or 'set') or '')
@@ -234,14 +253,14 @@ return function(api)
       if inv then
         local sec
         for item, was in pairs(rec.held) do
-          local now = inv.get_item_count(item)
+          local now = count_of(inv, item)
           if now < was and (rec.min[item] or 0) > 0 then
             sec = sec or section_of(hub, rec.group, false)
             local i = rec.slot[item]
             local f = sec and i and try(function() return sec.get_slot(i) end)
             local v = f and f.value
             local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
-            if name == item then
+            if name and key(name, qname(v.quality)) == item then
               local min = math.max(0, rec.min[item] - (was - now))
               if pcall(sec.set_slot, i, {value=v, min=min, max=f.max, import_from=f.import_from, minimum_delivery_count=f.minimum_delivery_count}) then
                 rec.spent = rec.spent or {}
@@ -294,9 +313,11 @@ return function(api)
       assert(type(a.min_payload) == 'table' and a.min_payload[1] == nil, 'min_payload is {item: N, ...} (0 or false clears it)')
       mpmap = {}
       for item, n in pairs(a.min_payload) do
-        assert(prototypes.item[item], 'min_payload: unknown item ' .. tostring(item))
+        local name, q = split(tostring(item))
+        assert(prototypes.item[name], 'min_payload: unknown item ' .. tostring(item))
+        assert(not item:find('@', 1, true) or prototypes.quality[q], 'min_payload: unknown quality ' .. q .. ' (item or item@quality)')
         assert(n == false or (type(n) == 'number' and n == math.floor(n) and n >= 0 and n <= 1000000), 'min_payload ' .. item .. ': 1..1000000, or 0 or false to clear')
-        payload_fits(item, n, 'min_payload')
+        payload_fits(name, n, 'min_payload')
         mpmap[item] = n
       end
     end
@@ -348,12 +369,13 @@ return function(api)
             for _, f in ipairs(sec.filters or {}) do
               local v = f.value
               local name = type(v) == 'table' and v.name or v
+              local q = type(v) == 'table' and qname(v.quality) or 'normal'
               local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
               if name and from == planet and (f.min or 0) > 0 then
-                local held = inv and try(function() return inv.get_item_count(name) end) or 0
+                local held = count_of(inv, key(name, q))
                 local short = math.max(0, f.min - held)
-                rows[#rows+1] = {platform=pl.name, item=name, asks=f.min, holds=held, short=short, where=where}
-                if short > 0 then asks[#asks+1] = string.format('%s %d (asks %d, holds %d)', name, short, f.min, held) end
+                rows[#rows+1] = {platform=pl.name, item=name, quality=q, asks=f.min, holds=held, short=short, where=where}
+                if short > 0 then asks[#asks+1] = string.format('%s %d (asks %d, holds %d)', label(key(name, q)), short, f.min, held) end
               end
             end
           end
@@ -382,15 +404,16 @@ return function(api)
     for _, g in ipairs(s.find_entities_filtered{type='item-request-proxy', force=p.force}) do requests_of(g, asked) end
     for _, g in ipairs(s.find_entities_filtered{type={'entity-ghost', 'tile-ghost'}, force=p.force}) do
       if g.type == 'entity-ghost' then requests_of(g, asked) end
-      local key = g.type .. ':' .. g.ghost_name
-      local k = known[key]
+      local gk = g.type .. ':' .. g.ghost_name
+      local k = known[gk]
       if not k then
         local proto = try(function() return g.ghost_prototype end)
         local item, n = item_of(proto)
-        k = {item=item, n=n, proto=proto}; known[key] = k
+        k = {item=item, n=n, proto=proto}; known[gk] = k
       end
       local item, n, proto = k.item, k.n, k.proto
       if item then
+        item = key(item, qname(try(function() return g.quality end)))
         need[item] = (need[item] or 0) + n
         if g.type == 'tile-ghost' then tile_ghosts = tile_ghosts + 1; tile_names[item] = proto.name
         else entity_ghosts = entity_ghosts + 1; ghost_names[item] = proto.name end
@@ -403,23 +426,29 @@ return function(api)
     local carry = in_robots(pl, p.force)
     local ask = asks(hub)
     local rows, rest, lines = {}, {}, {}
+    -- a row an item at a quality: built, held, in flight and carried at that quality only; the hub's stock of the item at
+    -- other qualities is said beside it (it builds none of these ghosts)
     for item, n in pairs(need) do
+      local name, q = split(item)
       local built
-      if ghost_names[item] then built = try(function() return s.count_entities_filtered{name=ghost_names[item], force=p.force} end) end
+      if ghost_names[item] then built = try(function() return s.count_entities_filtered{name=ghost_names[item], force=p.force, quality=q} end) end
       if tile_names[item] then built = try(function() return s.count_tiles_filtered{name=tile_names[item]} end) end
-      local held = inv and try(function() return inv.get_item_count(item) end) or 0
+      local held = count_of(inv, item)
+      local all = inv and try(function() return inv.get_item_count(name) end) or held
       local coming = flight[item] or 0
       local robots = carry[item] or 0
       local left = math.max(0, n - held - coming - robots)
-      rows[#rows+1] = {item=item, ghosts_need=n, requests=requests[item], built=built, hub=held, in_flight=coming > 0 and coming or nil,
+      rows[#rows+1] = {item=name, quality=q, key=label(item), ghosts_need=n, requests=requests[item], built=built, hub=held,
+        hub_other_quality=all > held and all - held or nil, in_flight=coming > 0 and coming or nil,
         in_robots=robots > 0 and robots or nil, remaining=left, asks=ask[item]}
-      if left > 0 then rest[#rest+1] = {name=item, count=left} end
+      if left > 0 then rest[#rest+1] = {name=name, quality=q, count=left} end
     end
-    table.sort(rows, function(x, y) if x.remaining ~= y.remaining then return x.remaining > y.remaining end return x.item < y.item end)
+    table.sort(rows, function(x, y) if x.remaining ~= y.remaining then return x.remaining > y.remaining end return x.key < y.key end)
     for _, r in ipairs(rows) do
-      lines[#lines+1] = string.format('%s: ghosts need %d%s%s; hub holds %d%s%s; %s%s', r.item, r.ghosts_need,
+      lines[#lines+1] = string.format('%s: ghosts need %d%s%s; hub holds %d%s%s%s; %s%s', r.key, r.ghosts_need,
         r.requests and string.format(' (%d of them asked into ghosts and machines)', r.requests) or '', r.built and string.format(' (%d built)', r.built) or '',
-        r.hub, r.in_robots and string.format(', construction robots carry %d', r.in_robots) or '', r.in_flight and string.format(', %d in flight', r.in_flight) or '',
+        r.hub, r.hub_other_quality and string.format(' (and %d at other qualities, which do not build these)', r.hub_other_quality) or '',
+        r.in_robots and string.format(', construction robots carry %d', r.in_robots) or '', r.in_flight and string.format(', %d in flight', r.in_flight) or '',
         r.remaining > 0 and string.format('%d to send', r.remaining) or 'covered',
         r.asks and string.format(' (the hub asks %d)', r.asks) or ' (the hub asks none)')
     end
@@ -428,7 +457,7 @@ return function(api)
     local unasked = {}
     for _, r in ipairs(rows) do
       if r.remaining > 0 and (r.asks or 0) == 0 then
-        unasked[#unasked+1] = string.format('%s: ghosts need %d, %d not in the hub, in flight or in robots; no active hub request asks for it', r.item, r.ghosts_need, r.remaining)
+        unasked[#unasked+1] = string.format('%s: ghosts need %d, %d not in the hub, in flight or in robots; no active hub request asks for it', r.key, r.ghosts_need, r.remaining)
       end
     end
     local out = {platform=pl.name, entity_ghosts=entity_ghosts, tile_ghosts=tile_ghosts, pods_in_flight=pods, items=rows,
@@ -496,12 +525,12 @@ return function(api)
   end
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',leg='optional true: the whole leg instead: since the platform left its last stop to now (the leg and the stop after it so far), and while it is stopped the last full leg alone: thruster fuel and oxidizer and each ammunition made and used, cargo loaded (rockets launched to it) and dropped (its cargo pods), totals and a minute: lines, since_departure and last_leg {from, to, minutes, fuel, ammo, loaded, dropped}',
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
-    platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, asks, holds, short, where}], lines (a line a platform with what it lacks)',
-    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
+    platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, quality, asks, holds (at that quality), short, where}], lines (a line a platform with what it lacks)',
+    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need, their module and other item requests and built machines\' too, less what its construction robots carry, one slot an item at a quality (as the ghosts need it; a normal item never covers a ghost of another quality) (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them (each item keeps its slot from one rewrite to the next: one no longer needed is cleared where it stands, a new one takes a free slot); false removes it. Your other requests stay as they are. Returns lines (item, or item@quality past normal: request N from P (the ghosts need N; the hub holds H at that quality)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
     tail='with request: optional true: an item\'s minimum payload is no more than what is still to come (its request less what the hub holds), so the last few go without a full batch; a slot with no custom minimum payload (the game\'s default, a full rocket by weight) is lowered the same way; kept until false. Each line says the minimum payload the slot has now',
-    min_payload='with request: {item: N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
+    min_payload='with request: {item: N} (every quality of it) or {"item@quality": N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
-    returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], requests_check (with ghosts open: whether every item they still need has an active hub request) and unrequested (each item the ghosts still need, beyond the hub, in flight and in robots, that no active hub request asks for), entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}
+    returns='lines (one per item and quality, item@quality past normal, most still to send first, then the total), items [{item, quality, key (item, or item@quality past normal), ghosts_need (what the entity and tile ghosts there need of it at that quality), built (entities of it at that quality, or tiles, already built there), hub (held at that quality), hub_other_quality (the hub\'s stock of the item at other qualities: it builds none of these ghosts), in_flight (in cargo pods headed for this platform), requests (of ghosts_need: item requests, modules and the like, on entity ghosts and on item-request proxies of built machines), in_robots (carried by the platform\'s construction robots now), remaining (need less hub, in flight and in robots), asks (the hub\'s active requests)}], requests_check (with ghosts open: whether every item they still need has an active hub request) and unrequested (each item the ghosts still need, beyond the hub, in flight and in robots, that no active hub request asks for), entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets. Read only'}}
   return M
 end

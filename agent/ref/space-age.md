@@ -143,8 +143,9 @@
   64 a page, each a `deconstruct {platform, area, tiles: ["space-platform-foundation"]}`; `strands` names entity ghosts
   not chosen that stand on a tile that would go. Read only.
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
-- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item, what the ghosts
-  still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
+- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
+  (`solar-panel@epic`; a ghost is built only from items of its quality, so the hub's normal stock never covers a quality
+  ghost, and `hub_other_quality` says what it holds at other qualities), what the ghosts still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
   rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
@@ -155,7 +156,7 @@
   open, `requests_check` says whether every item they still need has an active hub request, and `unrequested` names
   each one that has none while the hub, pods in flight and robots hold less than the ghosts need (`request: false`
   removes it; `import_from`,
-  `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
+  `area`; `min_payload: {item: N}` (every quality) or `{"item@quality": N}`; one slot an item at a quality; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its
   request less what the hub holds, a slot on the game's default, a full rocket by weight, too; each line says the
   minimum payload the slot has). `surface: "gleba"` with no platform:

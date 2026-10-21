@@ -85,7 +85,7 @@ do
   defines={inventory={hub_main=1}}
   prototypes={space_location={gleba={},nauvis={}},item={}}
   local function hub(held, filters)
-    return {valid=true,get_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end,
+    return {valid=true,get_inventory=function() return {get_item_count=function(n) n=type(n)=='table' and n.name or n; return held[n] or 0 end} end,
       get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters=filters} end} end}
   end
   local swift={valid=true,name='Swift',space_location={name='nauvis'},hub=hub({['agricultural-science-pack']=120},{

@@ -24,7 +24,7 @@ secs.add_section=function(g) sections[#sections+1]=section(g); secs.sections_cou
 secs.remove_section=function(i) table.remove(sections,i); secs.sections_count=#sections end
 local held=5
 local hub={valid=true,get_logistic_sections=function() return secs end,
-  get_inventory=function() return {get_item_count=function(n) return n=='transport-belt' and held or 0 end} end}
+  get_inventory=function() return {get_item_count=function(n) n=type(n)=='table' and n.name or n; return n=='transport-belt' and held or 0 end} end}
 local pl={valid=true,index=5,name='Meridian',hub=hub,space_location={name='fulgora'},
   surface={find_entities_filtered=function(f) if f.type=='construction-robot' then return {} end return ghosts end}}
 local force={name='player',platforms={pl}}
