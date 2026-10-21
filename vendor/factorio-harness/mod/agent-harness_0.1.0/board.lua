@@ -3,6 +3,7 @@
 -- pushed on replies, agents' requests for harness tools, and saved queue plans.
 -- Nothing here runs per tick: hints are computed when an agent's reply is
 -- built, bounded by the board size and the chat/event logs.
+local namematch = require('namematch')
 return function(api)
   local M = {handlers={}}
   local MAX_ITEMS, MAX_EVENTS, MAX_NOTES, MAX_PLANS, MAX_HARNESS_OPEN, MAX_PLAN_BYTES = 300, 1000, 10, 50, 10, 65536
@@ -1361,7 +1362,7 @@ return function(api)
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
       returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
     board_review = {ownership='optional true: who covers each system, per surface (surface= one): each electric network\'s machines (assemblers and furnaces, from the census pass), each logistic network, each platform, with the open claims covering it (how many of its sampled machines or roboports lie in each claim\'s area; a platform: a claim on it or titled with its name), overlaps, an open claim with no area on that surface (planet-wide) when no area covers it, else none; each claim\'s owner, their last activity there and the last inspection of the area (a read there, by whom); then each listed owner\'s blocked board items with the latest note: surfaces [{surface, systems [{kind, id, name, size, claims, owner_line, line}]}], lines, blocked',surface='with ownership: one surface',id='optional: one item (a project) and the items under it; default every active item',
-      returns='flags [{id, kind, line}]: gone_platform (a title or open step naming a platform of ours no longer there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
+      returns='flags [{id, kind, line, platforms?}]: gone_platform (a title or open step naming a platform of ours no longer there; whole names, longest first, so "Kestrel II" is never the gone "Kestrel"; platforms [{name, index | gone, indexes}] every name matched there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
     lesson_add = {rule='1..160 characters: the rule or symptom, short', cause='optional root cause (240)', fix='optional fix (240)',
       evidence_tick='optional game tick of the evidence (default now)', invalidated_when='optional: when it no longer holds, in words (160)',
       owner='optional teammate (default you)', item='key: an item name', recipe='key: a recipe name', entity='key: an entity name',
@@ -1732,20 +1733,49 @@ return function(api)
       return api.claims.ownership(p, a)
     end
     local b = store()
-    local live, seen = {}, {}
-    for _, pl in pairs(try(function() return p.force.platforms end) or {}) do if pl.valid then live[pl.name:lower()] = true end end
-    for _, r in pairs(try(function() return api.state().platform_alerts.by end) or {}) do if r.name then seen[r.name] = true end end
-    for _, r in pairs(try(function() return api.state().freight end) or {}) do if type(r) == 'table' and r.name then seen[r.name] = true end end
-    local gone = {}
-    for name in pairs(seen) do if not live[name:lower()] then gone[#gone+1] = name end end
-    table.sort(gone)
-    local function names_gone(text)
-      local out = {}
-      for _, g in ipairs(gone) do
-        local s, e = text:lower():find(g:lower(), 1, true)
-        if s and not text:sub(s - 1, s - 1):match('[%w]') and not text:sub(e + 1, e + 1):match('[%w]') then out[#out+1] = g end
+    -- (d20 batch67 AC1, Astra #1609) every platform name we know, live and recorded, matched longest first: a title
+    -- naming "Kestrel II" names that live platform, never the gone "Kestrel". A record kept under a live platform's
+    -- index is that platform under an older name.
+    local live, live_low, seen = {}, {}, {}
+    for _, pl in pairs(try(function() return p.force.platforms end) or {}) do
+      if pl.valid then live[pl.index] = pl.name; live_low[pl.name:lower()] = true end
+    end
+    local function saw(index, name)
+      if type(name) ~= 'string' or name == '' then return end
+      seen[name] = seen[name] or {}
+      if type(index) == 'number' then seen[name][index] = true end
+    end
+    for index, r in pairs(try(function() return api.state().platform_alerts.by end) or {}) do if type(r) == 'table' then saw(index, r.name) end end
+    for index, r in pairs(try(function() return api.state().freight end) or {}) do if type(r) == 'table' then saw(index, r.name) end end
+    local gone, names = {}, {}
+    for index, name in pairs(live) do names[#names+1] = {name=name, index=index} end
+    for name, at in pairs(seen) do
+      local now
+      for index in pairs(at) do if live[index] then now = {name=name, index=index, now=live[index]} end end
+      if now then
+        if now.now ~= name then names[#names+1] = now end
+      elseif not live_low[name:lower()] then
+        local idx = {}
+        for index in pairs(at) do idx[#idx+1] = index end
+        table.sort(idx)
+        gone[#gone+1] = name
+        names[#names+1] = {name=name, gone=true, indexes=idx}
       end
-      return out
+    end
+    table.sort(gone)
+    names = namematch.prepare(names)
+    local function was(c) local t = {}; for k, n in ipairs(c.indexes) do t[k] = '#' .. n end; return table.concat(t, ', ') end
+    -- The gone names in text (with their old indexes), and every platform name matched there.
+    local function names_gone(text)
+      local out, matched = {}, {}
+      for _, m in ipairs(namematch.find(text, names)) do
+        local c = m.c
+        if c.gone then
+          out[#out+1] = c.name .. (#c.indexes > 0 and ' (was ' .. was(c) .. ')' or '')
+          matched[#matched+1] = {name=c.name, gone=true, indexes=c.indexes}
+        else matched[#matched+1] = {name=c.name, index=c.index, now=c.now} end
+      end
+      return out, matched
     end
     local scope = {}
     if a.id ~= nil then
@@ -1758,15 +1788,15 @@ return function(api)
     end
     table.sort(scope, function(x, y) return x.id < y.id end)
     local flags = {}
-    local function flag(i, kind, text) flags[#flags+1] = {id=i.id, kind=kind, line=string.format('#%d %s: %s', i.id, clip(i.title or '', 60), text)} end
+    local function flag(i, kind, text, platforms) flags[#flags+1] = {id=i.id, kind=kind, platforms=platforms, line=string.format('#%d %s: %s', i.id, clip(i.title or '', 60), text)} end
     local needs_by = {}
     for _, i in ipairs(scope) do
-      local g = names_gone(i.title or '')
-      if #g > 0 then flag(i, 'gone_platform', 'its title names ' .. table.concat(g, ', ') .. ', no platform of ours now') end
+      local g, gm = names_gone(i.title or '')
+      if #g > 0 then flag(i, 'gone_platform', 'its title names ' .. table.concat(g, ', ') .. ', no platform of ours now', gm) end
       for _, s in ipairs(i.steps or {}) do
         if not s.done_by then
-          local gs = names_gone(s.text or '')
-          if #gs > 0 then flag(i, 'gone_platform', string.format('open step %d (%s) names %s, no platform of ours now', s.n, clip(s.text, 60), table.concat(gs, ', '))) end
+          local gs, gsm = names_gone(s.text or '')
+          if #gs > 0 then flag(i, 'gone_platform', string.format('open step %d (%s) names %s, no platform of ours now', s.n, clip(s.text, 60), table.concat(gs, ', ')), gsm) end
         end
       end
       if i.handoff and i.owner and i.handoff_tick and game.tick - i.handoff_tick > REVIEW_STALE and not quiet(i.owner, REVIEW_ACTIVE) then

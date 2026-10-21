@@ -5737,7 +5737,17 @@ fh watch    # deploy on every change
   - `board_update {id, edit_step: {n, text}}` changes a project step's text in place (its adder, its owner or a lead);
     the earlier text stays in the step's history (last 8), and the change is an event (`step_edited`).
   - `board_review {id?}` (a project and the items under it; default every active item) flags, facts only:
-    - `gone_platform`: a title or open step naming a platform of ours no longer there;
+    - `gone_platform`: a title or open step naming a platform of ours no longer there. Names are matched whole and
+      longest first among every platform name known (live ones and those kept in platform alerts and freight
+      records), case as the game keeps it first, then any case: "Kestrel II ammo" names the live Kestrel II, never
+      the gone Kestrel (d20 batch67 AC1, Astra #1609: items 953 "Kestrel II" and 1528 "Kestrel IVc" were flagged
+      because two platforms once named Kestrel, #8 and #18, are gone). A name is gone only when no live platform has
+      it; a record under a live platform's index is that platform under an older name, never gone. The row's
+      `platforms` lists every name matched in that text: `{name, index}` for a live one (`now` when renamed),
+      `{name, gone: true, indexes}` for a gone one, and the line says `Kestrel (was #8, #18)`. The ownership read's
+      "titled with its name" and a claim's planet from its title use the same matcher (a claim titled "Petrel II
+      ammo" covers Petrel II, not Petrel; "Gleba Express refuel" names that platform, not Gleba). Cost on the copy
+      (202 active items, 48 names): 8.0 ms against 7.2 ms before.
     - `stale_handoff`: a handoff unchanged for 2 h while its owner was active in the last 30 min;
     - `superseded`: an item another one supersedes, still active;
     - `needs_differ`: the same item needed in different counts by items of one project.
