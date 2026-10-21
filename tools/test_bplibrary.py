@@ -82,6 +82,28 @@ def main():
         bplibrary.mirror(lib.read, run, out)
         assert not os.path.exists(os.path.join(run, "evil.txt")) and not os.path.exists(os.path.join(folder, "../evil.txt"))
         print("mirror: ok")
+        # (d20 batch59 U2) strings paged: strings_after, read on with after, every string written once.
+        run2 = os.path.join(tmp, "run2")
+        paged = FakeLibrary()
+        for name in ("a", "b", "c"):
+            paged.put(name, "0eN" + name)
+        calls = []
+
+        def read(since, after=None):
+            calls.append((since, after))
+            r = paged.read(since)
+            keep = [e for e in r["entries"] if "string" in e and (after is None or e["name"] > after)][:1]
+            for e in r["entries"]:
+                if e not in keep:
+                    e.pop("string", None)
+            if keep and any("string" in e and e["name"] > keep[0]["name"] for e in paged.read(since)["entries"]):
+                r["strings_after"] = keep[0]["name"]
+            return r
+        r = bplibrary.mirror(read, run2, out)
+        assert sorted(r["written"]) == ["a", "b", "c"], r
+        assert calls == [(-1, None), (-1, "a"), (-1, "b")], calls
+        assert open(os.path.join(run2, "blueprints", "c.txt")).read() == "0eNc\n"
+        print("paged strings: ok")
     finally:
         shutil.rmtree(tmp)
 

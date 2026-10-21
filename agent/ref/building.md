@@ -211,7 +211,13 @@
 - `blueprint_capture {area, surface? | platform?}`: captures an area into the clipboard; `surface` or `platform` as
   `blueprint_save`.
   Example: `./fh call blueprint_capture --args '{"area":{"left_top":{"x":30,"y":0},"right_bottom":{"x":60,"y":20}}}'`
-- `blueprint_list {name?}`: the library's entries (author, size, counts, last used); `name` gives one in full.
+- `blueprint_list {name?, limit?, from?}`: the library's entries by name, 64 a page (author, size, counts, last used,
+  `size_kb` of its string); `name` gives one in full. `library_size`: entries and KB of strings of its 256 and 8 MB.
+- `./fh blueprint export --args '{"name":"smelter-row"}'` writes an entry's string to `blueprints/smelter-row.txt` in
+  your workspace (`--out FILE`: there), with its author, description and anchor in the reply.
+  `./fh blueprint import --file blueprints/smelter-row.txt --args '{"name":"smelter-row-2","anchor":{"x":0,"y":0}}'`
+  puts a string into the library under `name`, you its author (`description` and `anchor` optional; the same name
+  replaces an entry as `blueprint_save` does).
 - `blueprint_place {name, position, direction?, platform?, dry_run?}`: pastes a library entry, as `paste`; a platform's
   layout goes on another platform with `platform: "Swift"`.
   Example: `./fh call blueprint_place --args '{"name":"smelter-row","position":{"x":90,"y":0},"dry_run":true}'`
