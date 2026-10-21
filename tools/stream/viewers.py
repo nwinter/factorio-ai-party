@@ -31,6 +31,50 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML,
 LANE_MAX = 30          # messages kept in the lane (oldest first)
 SEEN_MAX = 5000        # messages remembered by id, for deletions that come later
 DELIVERY_MAX = 300     # lines whose delivery the site is told (Feed.deliveries)
+# (d20 batch65 AA5, viewer Aurora 09:46: "Could messages sent between shifts stay queued until delivery, with
+# queued/delivered/expired labels?"; her site:3946 at 09:33:53 came between shift51's service (last write 09:31:40)
+# and shift52's (09:36:05), and the new service's first read took it as backlog and dropped it unlabelled at 120 s)
+# The site chat's seq each service has finished with, beside the run's inbox; the next service (a restart or the next
+# shift, along resumed-from) reads every site line after it as queued.
+CURSOR_NAME = "site-cursor.json"
+QUEUE_TTL = 1800.0     # a queued line to the agents is relayed up to 30 min after it was written, else expired;
+#                        a line to the operator reaches the inbox at any age
+QUEUE_PAGES = 20       # pages of 100 read after the cursor at the start (the Worker keeps 2000 lines)
+
+
+def load_cursor(run_dir, depth=4):
+    """(AA5) the site chat seq the last stream service had finished with: this run's CURSOR_NAME, else that of the run
+    it resumed from (runs/RUN/resumed-from), and so on back a few; None without one."""
+    d = run_dir
+    for _ in range(depth):
+        if not d:
+            return None
+        try:
+            with open(os.path.join(d, CURSOR_NAME)) as f:
+                c = json.load(f).get("after")
+            if isinstance(c, int) and not isinstance(c, bool):
+                return c
+        except (OSError, ValueError, AttributeError):
+            pass
+        try:
+            with open(os.path.join(d, "resumed-from")) as f:
+                parent = f.read().strip()
+        except OSError:
+            return None
+        if not parent or os.sep in parent or parent in (".", ".."):
+            return None
+        d = os.path.join(os.path.dirname(d), parent)
+    return None
+
+
+def fresh_t(m):
+    """When a line's wait began: its own time, or when the service read it (a queued line, AA5)."""
+    return max(float(m.get("t") or 0), float(m.get("read_t") or 0))
+
+
+def minutes(s):
+    m = int(s // 60)
+    return f"{m // 60} h {m % 60} min" if m >= 60 else f"{m} min"
 AUTHOR_TEXTS_MAX = 200 # lines remembered per author, for author deletions
 TEXT_MAX = 200         # lane cap (YouTube's own limit is 200; the site's too)
 RELAY_MAX = 300        # one in-game viewer line (audience.lua VIEWER_LEN); longer text goes in labelled parts
@@ -445,9 +489,12 @@ class Filter:
                 reasons.append("duplicate")
             elif len({a for t, a, k in self.recent if k == key and now - t < 60 and a != m["author"]}) >= 2:
                 reasons.append("copypasta")
-        self.recent.append((now, m["author"], key))
+        # (d20 batch65 AA5) a queued line counts at its own time: a viewer's lines written minutes apart while no service
+        # ran arrive together at its start, and are no flood
+        at = float(m["t"]) if m.get("queued") and isinstance(m.get("t"), (int, float)) else now
+        self.recent.append((at, m["author"], key))
         if not reasons and not m.get("staff") and not host:
-            r = self.limit.check(m["author"], now)
+            r = self.limit.check(m["author"], at)
             if r:
                 reasons.append(r)
         out["order"] = directive(text, self.agent_names)
@@ -766,13 +813,28 @@ class YouTubeChat:
 class SiteChat:
     """GET /v1/chat?after=SEQ on the companion site's Worker (docs/LIVE-API.md, schema 1)."""
 
-    def __init__(self, base=SITE_URL, fetch=http):
+    def __init__(self, base=SITE_URL, fetch=http, resume=None):
         self.base, self.fetch = base.rstrip("/"), fetch
         self.after = None
+        # (AA5) the seq the last service finished with (load_cursor): at the start, every line after it is queued, read
+        # in full; without one, the last 50 are backlog as before
+        self.resume = resume
         self.state, self.error, self.open = "starting", None, None
 
     def status(self):
         return {"state": self.state, "open": self.open, "after": self.after, "error": self.error}
+
+    def gap(self, first_seq):
+        """(AA5) the lines after self.resume and before first_seq (the start's last-50 page), oldest first."""
+        out, after = [], self.resume
+        for _ in range(QUEUE_PAGES):
+            page = json.loads(self.fetch(f"{self.base}/v1/chat?after={after}&limit=100")).get("messages") or []
+            got = [r for r in page if int(r["seq"]) < first_seq]
+            out += got
+            if len(page) < 100 or len(got) < len(page) or not got:
+                break
+            after = int(got[-1]["seq"])
+        return out
 
     def poll(self):
         msgs, dels = [], []
@@ -784,13 +846,19 @@ class SiteChat:
                 self.open = res.get("open")
                 dels += [("id", f"site:{s}") for s in res.get("hidden") or []]
                 page = res.get("messages") or []
+                resume = self.resume if first else None
+                if resume is not None and page and resume < int(page[0]["seq"]) - 1:
+                    page = self.gap(int(page[0]["seq"])) + page
                 for r in page:
                     if r.get("channel", "game") != "game":
                         continue  # a viewers-only line (the Worker leaves them out of this read anyway): never relayed
+                    queued = resume is not None and int(r["seq"]) > resume  # (AA5) arrived while no service read
                     # the site has no stable viewer id: its own per-client limits apply, ours go by name
                     msgs.append({"id": f"site:{r['seq']}", "source": "site", "author": author_key("site", fold(
                         r.get("name", ""))), "name": r.get("name", ""), "text": r.get("text", ""), "t": r.get("t"),
-                        "backlog": first, "host": r.get("host") is True})  # host: posted with the host link
+                        "backlog": first and not queued, "host": r.get("host") is True})  # host: posted with the host link
+                    if queued:
+                        msgs[-1]["queued"] = True
                 if page:
                     self.after = max([self.after or 0] + [int(r["seq"]) for r in page])
                 elif first:
@@ -1160,7 +1228,7 @@ class Relay:
                 m["muted"] = True
                 self.dropped["muted"] += 1
                 not_relayed(m, "the viewer is muted in the game")
-            elif now - max(m["t"], m.get("author_wait", m["t"])) > self.max_age:
+            elif now - max(fresh_t(m), m.get("author_wait", m["t"])) > self.max_age:
                 self.dropped["stale"] += 1  # waited past max_age behind other viewers' lines
                 not_relayed(m, f"busy: waited over {int(self.max_age)} s behind other viewers' lines", "busy")
             else:
@@ -1245,8 +1313,11 @@ class Feed:
     """Sources -> filter -> classifier -> lane (+ relay). `lane()` is what serve.py puts into the snapshot."""
 
     def __init__(self, sources, filt=None, classifier=None, relay=None, log_path=None, record=None, max_age=120.0,
-                 inbox=None, deletions=None, log_dir=None):
+                 inbox=None, deletions=None, log_dir=None, cursor=None):
         self.sources = sources            # {name: source with poll() and status()}
+        self.cursor_path = cursor         # (AA5) runs/RUN/site-cursor.json: the site seq this service has finished with
+        self._saved_cursor = None
+        self.preloaded = False            # verdict logs read (preload): a backlog line with no record was never read
         self.inbox = inbox                # runs/RUN/operator-inbox.jsonl: viewer lines to the operator (to_inbox)
         self._inbox_keys = None           # inbox_keys(), read once
         # runs/RUN/viewer-deletions.jsonl: every YouTube deletion, with the name and text(s) it removes, so the site
@@ -1312,6 +1383,7 @@ class Feed:
                             self.remember(row)
                             if "pass" in row:  # its verdict, for a backlog line read again (backlog_status)
                                 self.logged[row["id"]] = (bool(row["pass"]), list(row.get("reasons") or []))
+                                self.preloaded = True
             except OSError:
                 continue
 
@@ -1340,11 +1412,21 @@ class Feed:
                        "text": m.get("text"), "author": m["author"]}
                 self.rec_f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 self.rec_f.flush()
-            if m.get("backlog") and now - float(m.get("t") or 0) > self.max_age:
+            if m.get("queued"):
+                # (AA5) read after the last service's cursor: handled already when its verdict refused it, it is in
+                # the inbox or the relayed files (a line still in the relay's queue at the stop keeps the cursor before
+                # it, and the lines after it come again); else it goes through as new, its wait counted from now
+                lg = self.logged.get(m.get("id"))
+                if (lg and not lg[0]) or self.in_inbox(m) or (self.relay and m.get("id") in self.relay.done):
+                    self.backlog_status(m)
+                    continue
+            elif m.get("backlog") and now - float(m.get("t") or 0) > self.max_age:
                 self.dropped["backlog"] += 1
                 self.backlog_status(m)
                 continue
             v, reasons = self.filt.check(m, now)
+            if m.get("queued"):
+                v["queued"], v["read_t"] = True, now
             if reasons:
                 self.verdict(v, reasons)
                 if reasons == ["impersonation:text"] and not m.get("staff") and to_operator(v["text"]):
@@ -1359,7 +1441,7 @@ class Feed:
         # (d17 batch35 D1, site:2707 lost to a Clef 401 at 12:50:36) lines held while Clef failed: classified again with
         # these, while they are fresh
         retry, self.recheck = self.recheck, []
-        for r in [r for r in retry if now - float(r[0].get("t") or now) > self.max_age]:
+        for r in [r for r in retry if now - (fresh_t(r[0]) or now) > self.max_age]:
             retry.remove(r)
             not_relayed(r[0], f"Clef was unavailable while it was fresh ({self.clf_error})")
             self.deliver(r[0], "not_relayed", "Clef unavailable")
@@ -1461,17 +1543,23 @@ class Feed:
     def route(self, v, author, relay_ok):
         """A line that passed: to the operator's inbox, chatter (shown only), or offered to the relay."""
         v["chatter"] = is_chatter(v["text"])
+        expired = self.expired_why(v)
         if not v.get("staff") and to_operator(v["text"]):
             # to the operator: into the operator's inbox, never to an agent unless the line addresses one too (d19
             # batch42 A3: "@operator Muse's reply was cut mid-word ..." went to Muse, and the site showed only that)
             v["operator"], v["chatter"] = True, False
             self.to_inbox(v)
             named = self.relay.explicit(v["text"]) if self.relay else []
-            if named and relay_ok:
+            if named and relay_ok and not expired:
                 self.relay.offer(v, author)
             else:
                 v["delivery"] = "operator"
                 self.deliver(v, "operator", "to the operator's inbox")
+            return
+        if expired:  # (AA5) waited too long for the service: shown, not posted to the game
+            self.dropped["expired"] += 1
+            v["delivery"], v["delivery_why"] = "expired", expired
+            self.deliver(v, "expired", expired)
             return
         pick = v.get("route") or {}
         if self.relay and relay_ok and pick.get("kind") == "operator" and self.relay.on():
@@ -1496,6 +1584,46 @@ class Feed:
             self.relay.offer(v, author)
         elif self.relay and self.relay.on():
             self.dropped["relay:unchecked"] += 1
+
+    @staticmethod
+    def expired_why(v):
+        """(AA5) why a queued line is too old for the agents (None when it is not): written over QUEUE_TTL before this
+        service read it."""
+        if not v.get("queued") or not isinstance(v.get("t"), (int, float)):
+            return None
+        waited = float(v.get("read_t") or time.time()) - v["t"]
+        if waited <= QUEUE_TTL:
+            return None
+        return (f"waited {minutes(waited)} for the stream service (not running: between shifts or restarting); "
+                f"a line to the agents waits at most {minutes(QUEUE_TTL)}")
+
+    def in_inbox(self, m):
+        return bool(self.inbox) and isinstance(m.get("t"), (int, float)) and (m.get("name"), round(m["t"], 1)) in self.inbox_keys()
+
+    def site_cursor(self):
+        """(AA5) the site seq this service has finished with: the source's cursor, or just before the oldest site line
+        still waiting (the relay's queue, lines held for Clef), so the next service reads those again."""
+        src = self.sources.get("site")
+        after = getattr(src, "after", None)
+        if after is None:
+            return None
+        waiting = [m.get("id") for m, _ in list(self.relay.q)] if self.relay else []
+        waiting += [r[0].get("id") for r in list(self.recheck)]
+        seqs = [int(i[5:]) for i in waiting if isinstance(i, str) and i.startswith("site:") and i[5:].isdigit()]
+        return min([after] + [n - 1 for n in seqs])
+
+    def save_cursor(self):
+        c = self.site_cursor()
+        if c is None or not self.cursor_path or c == self._saved_cursor:
+            return
+        try:
+            tmp = self.cursor_path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"after": c, "t": round(time.time(), 1)}, f)
+            os.replace(tmp, self.cursor_path)
+            self._saved_cursor = c
+        except OSError as e:
+            log(f"site cursor: {e}")
 
     def to_inbox(self, v, dropped=None):
         """runs/RUN/operator-inbox.jsonl (operator_inbox.py; the operator's watch reads it): {t, agent: "viewer NAME",
@@ -1595,7 +1723,7 @@ class Feed:
         relayed files (this run's and the last), with its record there (restored), its verdict when the verdict logs
         refused it, else no status."""
         # (d20 batch65 AA1) a line in the operator's inbox keeps that receipt; one to the operator alone is delivered
-        if self.inbox and isinstance(m.get("t"), (int, float)) and (m.get("name"), round(m["t"], 1)) in self.inbox_keys():
+        if self.in_inbox(m):
             m["inbox"] = True
         if self.relay and m.get("id") in self.relay.done:
             self.restored(m)
@@ -1606,6 +1734,11 @@ class Feed:
             self.deliver(m, "operator", ("kept off the stream: " + (", ".join(lg[1]) or "refused")) if refused else "to the operator's inbox")
         elif lg and not lg[0]:
             self.deliver(m, "not_relayed", ", ".join(lg[1]) or "refused")
+        elif not lg and not m.get("inbox") and self.preloaded and not m.get("host") \
+                and time.time() - float(m.get("t") or 0) < 36 * 3600:  # well inside the logs preload reads (2 days)
+            # (AA5) in no verdict log, the inbox or the relayed files: no stream service ever read it (it came while
+            # none ran, before the cursor kept such lines queued)
+            self.deliver(m, "expired", "the stream service was not running when it came (between shifts or restarting) and never read it")
 
     def restored(self, m):
         """(d20 batch57 S5, Nick 19:05: "what's this 'relayed: before the restart'?"; shifts 44-48: at each of the 11
@@ -1679,7 +1812,7 @@ class Feed:
                     self.deliver(m, "held", m.get("delivery_why") or "queued behind other viewers' lines")
                 elif d == "relayed_before":  # sent before this service started: its record (d20 batch57 S5)
                     self.restored(m)
-                elif d and d not in ("operator",):
+                elif d and d not in ("operator", "expired"):
                     self.deliver(m, "not_relayed", m.get("delivery_why") or d)
             st["delivery"] = [dict(id=k, **v) for k, v in self.deliveries.items()]
         return msgs, st
@@ -1691,6 +1824,8 @@ class Feed:
                 msgs, dels, wait = src.poll()
                 if msgs or dels:
                     self.ingest(msgs, dels)
+                if name == "site":
+                    self.save_cursor()
             except Exception as e:
                 log(f"{name}: {type(e).__name__}: {e}")
                 wait = 10.0
@@ -1702,6 +1837,7 @@ class Feed:
                 sent = self.relay.step(time.time())
                 if sent:
                     log(f"relayed {sent['id']} ({sent['name']})")
+                self.save_cursor()
             except Exception as e:
                 log(f"relay: {type(e).__name__}: {e}")
             time.sleep(2.0)
@@ -1742,7 +1878,7 @@ def add_args(ap, prefix=""):
 
 
 def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False, roster=(), inbox=None,
-          deletions=None):
+          deletions=None, cursor=None):
     """A Feed from parsed args, or None when no source is configured. roster: [(name, display_name)] in team order,
     for addressing viewers' questions (serve.py refreshes it with Relay.set_roster). inbox: the operator inbox file
     viewer lines to the operator go to. deletions: the run's viewer-deletions.jsonl."""
@@ -1753,7 +1889,8 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
     if g("youtube"):
         sources["youtube"] = YouTubeChat(g("youtube"))
     if g("site"):
-        sources["site"] = SiteChat(g("site"))
+        # (AA5) cursor: runs/RUN/site-cursor.json; the next service reads every line after the last one saved
+        sources["site"] = SiteChat(g("site"), resume=load_cursor(os.path.dirname(cursor)) if cursor else None)
     if not sources:
         return None
     blocklist = [l.strip() for l in open(g("blocklist"))] if g("blocklist") else []
@@ -1766,7 +1903,8 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, time.strftime("viewers-%Y%m%d-%H%M%S.jsonl"))
-    feed = Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"), inbox=inbox, deletions=deletions)
+    feed = Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"), inbox=inbox, deletions=deletions,
+                cursor=cursor if g("site") else None)
     if log_dir:
         feed.preload(log_dir)
     return feed

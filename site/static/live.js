@@ -205,26 +205,39 @@
         (why ? '<span class="c-delivery c-delivery-operator fx-muted">' + esc(why) + '</span>' : '');
     }
     if (!d || !(d.s === 'operator' || d.op)) return '';
-    return ' <span class="c-delivery c-delivery-operator fx-muted">' + esc('to the Operator' + why) + '</span>';
+    return ' <span class="c-delivery c-delivery-operator fx-muted">' + esc('delivered to the Operator' + why) + '</span>';
+  }
+  // (d20 batch65 AA5, viewer Aurora 09:46: "Could messages sent between shifts stay queued until delivery, with
+  // queued/delivered/expired labels?") A site line past the seq the stream service has read up to (state.viewer_read)
+  // is queued: read when the service runs again (a new shift or a restart reads every line it missed); when the state
+  // is old, the service is not running and the label says so.
+  var readUpTo = null, serviceLive = true;
+  function isQueued(m) {
+    return m.src === 'site' && readUpTo != null && m.seq > readUpTo && !(delivery[m.seq] && delivery[m.seq].s);
   }
   function deliveryHtml(m) {
     var d = m.src === 'site' ? delivery[m.seq] : null;
+    if (isQueued(m)) {
+      return operatorHtml(m, null) + ' <span class="c-delivery c-delivery-queued fx-muted">' + esc(serviceLive ? 'queued' :
+        'queued: the stream service is not running (between shifts or restarting); it reads this line when it starts') + '</span>';
+    }
     if (!d || !d.s) return operatorHtml(m, null);
     var who = Array.isArray(d.to_all) && d.to_all.length ? d.to_all : d.to ? [d.to] : [];
     // (d20 batch57 S5, operator 19:12) a record lost at a stream service restart says so; one read back after a restart says
     // when it was sent when that was a minute or more after the line
     var sent = d.at && isFinite(d.at) && m.t && d.at - m.t >= 60 ? ' (sent ' + new Date(d.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')' : '';
     if (d.s === 'operator') return operatorHtml(m, d);
-    var txt = d.s === 'relayed' && d.lost ? 'sent to the agents (details lost at a stream service restart)'
-      : d.s === 'relayed' ? (who.length ? 'to ' + who.map(agentName).join(', ') : 'relayed') + sent + (d.why ? ': ' + d.why : '')
+    var txt = d.s === 'relayed' && d.lost ? 'delivered to the agents (details lost at a stream service restart)'
+      : d.s === 'relayed' ? (who.length ? 'delivered to ' + who.map(agentName).join(', ') : 'delivered to the agents') + sent + (d.why ? ': ' + d.why : '')
       : d.s === 'held' ? 'held' + (d.why ? ': ' + d.why : '')
+      : d.s === 'expired' ? 'expired' + (d.why ? ': ' + d.why : '')
       : 'not relayed' + (d.why ? ': ' + d.why : '');
     var html = ' <span class="c-delivery c-delivery-' + esc(d.s) + ' fx-muted">' + esc(txt) + '</span>';
     return operatorHtml(m, d) + html;
   }
   function renderChat() {
     if (!chatList) return;
-    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : ''); }).join(',');
+    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : '') + (isQueued(m) ? '+q' + serviceLive : ''); }).join(',');
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
@@ -593,6 +606,8 @@
     replyLines = Array.isArray(s.viewer_replies) ? s.viewer_replies.filter(function (m) { return m && m.text && m.by && isFinite(m.t); }) : [];
     // (d17 batch35 D1, viewer Aurora) each site line's delivery from the relay: relayed (to whom), held, operator, not relayed (why)
     delivery = s.viewer_delivery && typeof s.viewer_delivery === 'object' ? s.viewer_delivery : {};
+    readUpTo = s.viewer_read && isFinite(s.viewer_read.after) ? s.viewer_read.after : null;  // (AA5) queued past it
+    serviceLive = age == null || age <= LIVE_MAX_AGE;
     team = {}; (s.agents || []).forEach(function (a) { team[a.name] = a; });
     renderChat();
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });

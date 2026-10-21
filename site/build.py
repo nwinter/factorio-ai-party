@@ -1753,7 +1753,8 @@ def live_app(heading, sample_href):
           <dl class="vchat-tips fx-muted small">
             <div><dt>@astra</dt><dd>that agent answers (any agent's name)</dd></div>
             <div><dt>No name</dt><dd>the next agent in turn</dd></div>
-            <div><dt>@operator</dt><dd>harness suggestions: read, maybe built; your line says "to the Operator" once it is in the Operator's inbox and "Operator replied" when they answer (click it for the reply)</dd></div>
+            <div><dt>@operator</dt><dd>harness suggestions: read, maybe built; your line says "delivered to the Operator" once it is in the Operator's inbox and "Operator replied" when they answer (click it for the reply)</dd></div>
+            <div><dt>Labels</dt><dd>"queued": not read yet (between shifts it waits for the next one); "delivered to" the agents or the Operator; "expired": waited over 30 minutes for the agents (a line to the Operator still reaches them), with why</dd></div>
             <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
             <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
             <div><dt>HOST</dt><dd>the stream's host, from their own YouTube channel or the site's host link</dd></div>
