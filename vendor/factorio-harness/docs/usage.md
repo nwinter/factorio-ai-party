@@ -9946,6 +9946,20 @@ fh watch    # deploy on every change
   a gun and laser together, an idle tesla) read the same numbers as the raw reads, the idle one `no change`. Reading 64
   turrets' counts takes 0.04 ms. agent/ref/movement-combat.md and analysis.md (inspect) have it. Tests:
   tests/d20_batch60.lua V3.
+- V4 (viewer Aurora, operator inbox d21 03:51: "Could artillery remote results use manual range? Public code creates a
+  flare but checks automatic reach, which can wrongly report that no loaded gun can hit a target"; branch
+  eng/d20-batch60c). Main already counted manual range for the remote's reply since 1386543d (d18 batch37 C2, also
+  Aurora): each piece in reach within range x manual_range_modifier, and which range holds it. Read on the private copy
+  (2.0.77): artillery-turret and artillery-wagon have range 224, minimum 32, manual_range_modifier 2.5; the force's
+  artillery range bonus was 0 (artillery-shell-range-1, +30%, not researched). On a test surface (removed after) a
+  turret with automatic targeting off fired at script flares (made as use_item makes them) at 299.5 and 559 tiles and
+  not at 561; a test force with artillery_range_modifier 0.3 fired at 726 and not at 730 (224 x 2.5 x 1.3 = 728); at
+  34 tiles and not at 20 (the minimum holds for a flare). Through the deployed runtime, a bot on that surface: flares
+  at 300 (in its manual range only) and 100 (in automatic range too) read in reach and were taken; 600 and 20 read
+  out of reach and stayed. New: artillery.lua M.manual (the flare reach, shared by the reply and the read); the reply's
+  `nearest_out_of_range` (and the line): the loaded piece nearest to reaching an out-of-reach flare, its distance, and
+  past its manual range (with the automatic) or inside its minimum; the `artillery` read's `manual_range` per piece and
+  "a flare within N" in its line. agent/ref/movement-combat.md has it. Tests: tests/d20_batch60.lua V4.
 
 ## d20 batch58 (eng/d20-batch58)
 
