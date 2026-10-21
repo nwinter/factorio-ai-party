@@ -4018,21 +4018,26 @@ Some actions work at a distance, the way a player can through remote view:
   and only an unfiltered deconstruct removed the 41 ghosts). Built landfill is minable in 2.0 and is marked like any
   tile. `cancel_deconstruction` leaves tile ghosts alone.
 - Elevated rails and rail supports (d20 batch69 AE1, Sol #1642: elevated-straight-rail 18232890 at (277,191) on
-  Fulgora, "entity is not mineable", and `deconstruct` over (276,190)-(280,192) marked the rail at 279 only). Read on
-  2.0.77 (railrun.lua, tests/railrun.lua):
-  - The game's rule: a rail support carries the elevated rails within its reach (`support_range` 11), and only the
-    rails at the two ends of that run can go. `LuaEntity.minable` reads false for the rest (`minable_flag` stays true)
-    and `LuaEntity.mine` refuses them. Each end taken frees the next rail in. The support goes once no rail rests on
-    it, and rails no support reaches go anywhere.
-  - A deconstruction planner marks nothing over a rail inside a run. Over the support, it marks the support and every
-    rail it carries. Robots took a run of 10 and its support, ends first, in 57 s on the copy.
-  - `mine {dry_run: true}` names the entity it picked (`name`, `unit_number`, `position`) and `minable`. When `minable`
-    is false, `why` names the support carrying the rail and the nearest rails along the line that can go now. The
-    live `mine` refuses with the same text.
-  - `deconstruct` marks our rail supports in the area as a planner does, with their runs (`rail_supports`: each
-    support and how many rails it carries; the dry run counts the rails in its reach). `not_marked` (up to 12, with
-    `not_marked_count`) names what it found and left unmarked, with why. A cancel takes only what is in the area, as
-    the game's does, and `rails_still_marked` says how many rails a cancelled support carries stay marked.
+  Fulgora, "entity is not mineable", and `deconstruct` over (276,190)-(280,192) marked the rail at 279 only; AE2: cp1's
+  "from the run's ends" was wrong, and Sol mined 281 and 279 for nothing). Read on 2.0.77, with Sol's layout rebuilt on a
+  private copy (railrun.lua, tests/railrun.lua):
+  - The game's rule: every elevated rail must be held up by a rail support (`support_range` 11) or a rail ramp's
+    elevated end (9) within reach along the track. That is the path from the support's joint to the rail's near end,
+    plus the rail's own length (`get_rail_end`).
+  - The game keeps a rail while another rail is held up only through it (`LuaEntity.minable` false, `minable_flag`
+    true, `LuaEntity.mine` refuses). It keeps a support while a rail is held up only by it.
+  - The model matched the game on all 47 rails and supports of Sol's layout, at the start and after each of six rails
+    mined. On Sol's line, 275, 273, 271 and 269 are held up by the support at (278,191) only through 277. They go first,
+    outermost first (269 can go now), and then 277 goes.
+  - A deconstruction planner marks nothing over such a rail. Over a support, it marks the support and every rail it
+    holds up. Robots took a run of 10 and its support, outermost first, in 57 s on the copy.
+  - `mine {dry_run: true}` names the entity it picked (`name`, `unit_number`, `position`) and `minable`. When
+    `minable` is false, `why` names what holds the entity, the rails held up only through it, and which of those can go
+    now. The live `mine` refuses with the same text.
+  - `deconstruct` marks our rail supports in the area as a planner does, with the rails they hold up (`rail_supports`;
+    the dry run counts the rails in reach). `not_marked` (the first 12, each with why, and `not_marked_count`) names
+    what it found and left unmarked. A cancel takes only what is in the area, as the game's does, and
+    `rails_still_marked` says how many rails a cancelled support holds up stay marked.
 - `deconstruct {area, items_on_ground: true}` marks every item stack on the ground in the area, as a planner over
   items on the ground does; construction robots carry marked stacks to storage chests. Other entities are marked
   only when `entity_names` or `entity_types` name them. The reply counts `item_stacks` (marked now) and

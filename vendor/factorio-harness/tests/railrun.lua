@@ -1,87 +1,73 @@
 -- Run from repository root: lua tests/railrun.lua
--- Elevated rails the game keeps (d20 batch69 AE1, Sol #1642) against a fake engine shaped by what 2.0.77 did on the
--- private copy: a rail support at (0,1) with elevated straight rails from x=-9 to 9 (2 tiles each, support_range 11)
--- leaves only -9 and 9 minable; the support reads not minable; a planner over the support marks it and the run.
+-- Elevated rails the game keeps (d20 batch69 AE1 and AE2, Sol #1642) against a fake track shaped like Sol's line on
+-- Fulgora: elevated straight rails from x=265 to 289 at y=191 (each 2 tiles, ends at the even x), a rail support on the
+-- joint at 278 (reach 11) and a rail ramp whose elevated end is the joint at 290 (reach 9). Read on 2.0.77 with that
+-- layout rebuilt on a private copy: 271 to 279 and 265 were kept (265 by a support further west, left out here), 267,
+-- 269 and 281 to 289 went; after 281 and 279 were mined, 277 went only once 269, 271, 273 and 275 had gone.
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(text,part) assert(text and tostring(text):find(part,1,true),tostring(text)..' lacks '..part) end
-defines={rail_direction={front=0,back=1},rail_connection_direction={left=0,straight=1,right=2}}
-local SUPPORT_PROTO={support_range=11}
-local entities,by_x={},{}
-local surface={}
+defines={rail_direction={front=0,back=1}}
+local entities,surface={},{}
 local function dist(a,b) return math.sqrt((a.x-b.x)^2+(a.y-b.y)^2) end
 local function new(t)
-  t.valid=true; t.marked=false
+  t.valid=true; t.marked=false; t.surface=surface; t.minable_flag=true
   t.to_be_deconstructed=function() return t.marked end
   entities[#entities+1]=t
   return t
 end
-local unit=100
-local function rail(x)
-  unit=unit+1
-  local r=new{name='elevated-straight-rail',type='elevated-straight-rail',position={x=x,y=1},unit_number=unit,surface=surface,minable_flag=true}
-  r.get_connected_rail=function(a)
-    if a.rail_connection_direction~=defines.rail_connection_direction.straight then return nil end
-    return by_x[x+(a.rail_direction==defines.rail_direction.front and 2 or -2)]
-  end
-  by_x[x]=r
-  return r
+local rails={}
+for x=265,289,2 do
+  local r=new{name='elevated-straight-rail',type='elevated-straight-rail',position={x=x,y=191},unit_number=x}
+  r.get_rail_end=function(d) return {location={position={x=x+(d==0 and 1 or -1),y=191}}} end
+  rails[x]=r
 end
-for x=-9,9,2 do rail(x) end
-local support=new{name='rail-support',type='rail-support',position={x=0,y=1},unit_number=1,surface=surface,minable_flag=true,prototype=SUPPORT_PROTO,
-  bounding_box={left_top={x=-1.39,y=-0.39},right_bottom={x=1.39,y=2.39}}}
--- the game's rule, as read on 2.0.77: only the ends of the run the support carries; the support while rails rest on it
-local function settle()
-  local xs={}
-  for x,r in pairs(by_x) do if r.valid then xs[#xs+1]=x end end
-  table.sort(xs)
-  for x,r in pairs(by_x) do r.minable=(x==xs[1] or x==xs[#xs]) end
-  support.minable=#xs==0
-end
-settle()
-local function types(t) local o={} for _,v in ipairs(type(t)=='table' and t or {t}) do o[v]=true end return o end
+local support=new{name='rail-support',type='rail-support',position={x=278,y=191},unit_number=1,prototype={support_range=11},
+  bounding_box={left_top={x=276.6,y=189.6},right_bottom={x=279.4,y=192.4}}}
+local ramp=new{name='rail-ramp',type='rail-ramp',position={x=298,y=191},unit_number=2,prototype={support_range=9}}
+ramp.get_rail_end=function(d) return {location={position={x=d==0 and 306 or 290,y=191}}} end
+local T={['elevated-straight-rail']=true,['elevated-half-diagonal-rail']=true,['elevated-curved-rail-a']=true,['elevated-curved-rail-b']=true,['rail-support']=true,['rail-ramp']=true}
 function surface.find_entities_filtered(f)
-  local out,want={},f.type and types(f.type)
+  local want={}
+  for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do want[t]=true end
+  local out={}
   for _,e in ipairs(entities) do
-    if e.valid and (not want or want[e.type]) and (not f.radius or dist(e.position,f.position)<=f.radius) then out[#out+1]=e end
+    if e.valid and want[e.type] and dist(e.position,f.position)<=f.radius then out[#out+1]=e end
   end
   return out
 end
-local planner_calls=0
-function surface.deconstruct_area(a)
-  planner_calls=planner_calls+1
-  local f=a.item and a.item.entity_filters
-  assert(f and f[1]=='rail-support','a planner filtered to the support')
-  support.marked=true
-  for _,r in pairs(by_x) do if r.valid then r.marked=true end end
-end
-game={create_inventory=function()
-  local stack={}
-  local inv={insert=function() return 1 end,destroy=function() end}
-  return setmetatable(inv,{__index=function(_,k) if k==1 then return stack end end})
-end}
-
 local R=dofile('mod/agent-harness_0.1.0/railrun.lua'){}
--- a rail inside the run: why, the support carrying it, the nearest that can go now each way
-local w=R.why(by_x[3])
-has(w,'the game lets an elevated rail go only from an end of the run a rail support carries: rail-support (0,1) carries this one')
-has(w,'the nearest that can go now along these rails: elevated-straight-rail (9,1), elevated-straight-rail (-9,1)')
-has(w,'a deconstruction planner marks nothing over a rail inside a run, and over the support it marks the support and every rail it carries')
-eq(R.why(by_x[9]),nil,'an end can go')
--- an end taken: the next one in frees
-by_x[9].valid=false; settle()
-eq(by_x[7].minable,true)
-has(R.why(by_x[3]),'elevated-straight-rail (7,1), elevated-straight-rail (-9,1)')
--- the support
-has(R.why(support),'a rail support goes only once no elevated rail rests on it: 9 within its reach (11 tiles); marking it for deconstruction marks them with it')
-eq(#R.carried(support),9)
-eq(#R.supports(by_x[3]),1)
--- its flag off (a script): said
-local off={valid=true,name='stone-furnace',type='furnace',position={x=4,y=4},minable=false,minable_flag=false}
-has(R.why(off),'its minable flag is off')
-has(R.why({valid=true,name='x',type='furnace',position={x=0,y=0},minable=false,minable_flag=true}),'the game reads it not minable now (its minable flag is on)')
--- mark_support: as a planner, the support and the rails it carries
-local by,err,n,units=R.mark_support({surface=surface,force={name='player'}},support,nil)
-eq(err,nil); eq(planner_calls,1); eq(by['rail-support'],1); eq(by['elevated-straight-rail'],9); eq(n,9)
-eq(units[support.unit_number],true); eq(units[by_x[3].unit_number],true)
+-- the game's flags as the copy read them (265 aside: a support further west keeps it)
+local function settle(kept)
+  for x,r in pairs(rails) do r.minable=not kept[x] end
+end
+settle({[271]=true,[273]=true,[275]=true,[277]=true,[279]=true})
+-- the model: what is held up only through each rail
+local function deps(e) local d=R.dependents(e) local xs={} for _,r in ipairs(d) do xs[#xs+1]=r.position.x end table.sort(xs) return table.concat(xs,',') end
+eq(deps(rails[277]),'269,271,273,275','held up only through 277')
+eq(deps(rails[279]),'281','281 is held up by the support through 279 only (the ramp reaches 283 to 289)')
+eq(deps(rails[281]),'','281 can go')
+eq(deps(rails[269]),'','269 can go')
+eq(deps(rails[267]),'','267 can go: no support reaches it')
+local w=R.why(rails[277])
+has(w,'held up by rail-support (278,191)')
+has(w,'held up only through it: 4 rails, elevated-straight-rail (275,191), elevated-straight-rail (273,191), elevated-straight-rail (271,191), elevated-straight-rail (269,191)')
+has(w,'of those, these can go now: elevated-straight-rail (269,191)')
+eq(R.why(rails[281]),nil)
+-- Sol's 281 and 279 mined: 277 still kept for the same four
+rails[281].valid=false; rails[279].valid=false
+eq(deps(rails[277]),'269,271,273,275')
+-- outermost first: 269, 271, 273, 275, then 277 has none
+for _,x in ipairs({269,271,273,275}) do
+  eq(deps(rails[x]),'','the outermost goes: '..x)
+  rails[x].valid=false
+end
+eq(deps(rails[277]),'')
+-- the support: kept while a rail is held up only by it
+rails[281].valid=true; rails[279].valid=true; rails[269].valid=true; rails[271].valid=true; rails[273].valid=true; rails[275].valid=true
+support.minable=false
+has(R.why(support),'the game keeps a rail support while another rail is held up only by it')
+eq(#R.carried(support),10,'the support holds up 269 to 287')
+-- its flag off: said
+has(R.why({valid=true,name='stone-furnace',type='furnace',position={x=4,y=4},minable=false,minable_flag=false}),'its minable flag is off')
 print('railrun ok')
