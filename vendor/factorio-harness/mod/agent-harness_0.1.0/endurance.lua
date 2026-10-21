@@ -87,23 +87,27 @@ return function(api)
     if #recs > 0 then out[#out+1] = out[1] end
     return out, 'schedule'
   end
+  -- What the thrusters and storage tanks hold of each fluid in names; and of it, the storage tanks' (d20 batch60 V5).
   local function fluid_stock(pl, names)
-    local out = {}
+    local out, tanks = {}, {}
     for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
       for i = 1, try(function() return #e.fluidbox end) or 0 do
         local f = try(function() return e.fluidbox[i] end)
-        if f and names[f.name] then out[f.name] = (out[f.name] or 0) + f.amount end
+        if f and names[f.name] then
+          out[f.name] = (out[f.name] or 0) + f.amount
+          if e.type == 'storage-tank' then tanks[f.name] = (tanks[f.name] or 0) + f.amount end
+        end
       end
     end
-    return out
+    return out, tanks
   end
   -- The fuel outlook (batch27 B1, Luna, on each flight): thruster fuel and oxidizer held (thrusters and tanks), made and
   -- used a minute now (the platform's fluid production statistics, the last minute), and, flying, whether each lasts the
   -- rest of the leg at the speed now; stopped, the thrusters burn nothing. {line, short (fluids that run out before the
-  -- leg ends), rows}.
+  -- leg ends), rows (each with in_tanks: the storage tanks' part of held)}.
   function M.fuel_outlook(pl)
     local names = {['thruster-fuel']=true, ['thruster-oxidizer']=true}
-    local stock = fluid_stock(pl, names)
+    local stock, in_tanks = fluid_stock(pl, names)
     local stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
     local P = defines.flow_precision_index or {}
     local function per_min(name, cat)
@@ -116,7 +120,7 @@ return function(api)
     local rows, parts, short = {}, {}, {}
     for _, name in ipairs({'thruster-fuel', 'thruster-oxidizer'}) do
       local held, made, used = stock[name] or 0, per_min(name, 'input'), per_min(name, 'output')
-      local row = {name=name, held=math.floor(held + 0.5), made_per_min=round(made, 0), used_per_min=round(used, 0)}
+      local row = {name=name, held=math.floor(held + 0.5), in_tanks=math.floor((in_tanks[name] or 0) + 0.5), made_per_min=round(made, 0), used_per_min=round(used, 0)}
       local net = used - made
       local text = string.format('%s %d held, made %d/min, used %d/min', name, row.held, row.made_per_min, row.used_per_min)
       if left_min then

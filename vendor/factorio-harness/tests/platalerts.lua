@@ -219,16 +219,28 @@ do
   -- batch27 B1 (Luna): flying, thruster fuel that runs out before the leg ends is told once to those the platform's
   -- alerts go to, with the outlook line; again after 5 minutes.
   local kept_outlook=runtime.endurance.fuel_outlook
+  -- d20 batch60 V5 (Astra #1594): 40 s into the leg, a projected shortage is an advisory with the stock and the pumps
+  local lasts=3
+  storage.agent_harness.platform_alerts.by[1].fuel_trend=nil
   runtime.endurance.fuel_outlook=function() return {short={'thruster-fuel'},line='leg nauvis->gleba, 9000 km left; thruster-fuel 900 held, made 0/min, used 300/min: runs out in 3m00s, 3m00s before the leg ends',
+    rows={{name='thruster-fuel',held=900,in_tanks=0,lasts_min=lasts}},leg_left_min=6,since_departure_s=40,
     since_line='left nauvis 0m40s ago; samples last 60 s (20 s of it at the stop before it left): thruster-fuel used 5333/min'} end
   jump(601)
-  local fl=has(alerts(astra),'runs out before the leg ends')
-  assert(fl and fl:find('thruster-fuel runs out before the leg ends: leg nauvis->gleba',1,true),tostring(fl))
+  local fl=has(alerts(astra),'projected to run out before the leg ends')
+  assert(fl and fl:find(S..': advisory: thruster-fuel projected to run out before the leg ends at the last minute\'s rates (40 s into the leg, under 90;',1,true),tostring(fl))
+  assert(fl:find('): leg nauvis->gleba, 9000 km left;',1,true),tostring(fl))
+  assert(fl:find('; stock: thruster-fuel held 900 (storage tanks 0), one scan so far; thruster-fuel pumps no pump between the thrusters and the rest of the line; speed now 60 km/s',1,true),tostring(fl))
   -- d20 batch54 N1: with the time since it left its stop and the engine's samples
-  assert(fl:find('before the leg ends; left nauvis 0m40s ago; samples last 60 s (20 s of it at the stop before it left)',1,true),tostring(fl))
-  jump(601); eq(has(alerts(astra),'runs out before the leg ends'),nil,'told once')
+  assert(fl:find('km/s; left nauvis 0m40s ago; samples last 60 s (20 s of it at the stop before it left)',1,true),tostring(fl))
+  jump(601); eq(has(alerts(astra),'before the leg ends'),nil,'told once')
+  -- under 2 minutes of it at the rates now: urgent at once
+  lasts=1.5
+  jump(601)
+  fl=has(alerts(astra),'runs out before the leg ends')
+  assert(fl and fl:find(S..': urgent: thruster-fuel runs out before the leg ends (thruster-fuel lasts 1m30s at the rates now, under 2 minutes): leg nauvis->gleba',1,true),tostring(fl))
+  jump(601); eq(has(alerts(astra),'before the leg ends'),nil,'told once')
   runtime.endurance.fuel_outlook=function() return {line='lasts'} end
-  jump(601); eq(has(alerts(astra),'runs out before the leg ends'),nil)
+  jump(601); eq(has(alerts(astra),'before the leg ends'),nil)
   runtime.endurance.fuel_outlook=kept_outlook
   platform.state=6; platform.space_location={name='nauvis'}; platform.space_connection=nil; platform.speed=0
   psurf.find_entities_filtered=find
