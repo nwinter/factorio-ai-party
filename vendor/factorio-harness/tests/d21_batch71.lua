@@ -114,3 +114,36 @@ has(K.rotate(B,8,nil).unchanged,'already faces south')
 train.speed=0.2
 fails(function() K.rotate(B,0,nil) end,'its train moves (speed 0.2)')
 print('d21_batch71 AG2 rolling stock: ok')
+
+-- d20 batch71 AG4 (#1699, Astra): a platform's own network read whole from its surface. As on 2.0.77: 3 solar panels,
+-- 2 assemblers on low power and an accumulator on network 1456 (one assembler under a pole); 2 poles on network 1457
+-- with nothing on it, and 1 pole on 1460 with a panel on it (electrically apart).
+game={tick=43217816}
+defines.entity_status={working=1,low_power=14,no_power=2}
+defines.flow_precision_index={five_seconds=0}
+prototypes.surface_property={['solar-power']={default_value=100}}
+local stats={input_counts={['assembling-machine-1']=2},output_counts={['solar-panel']=3},
+  get_flow_count=function(a) return ({['assembling-machine-1']=3000,['solar-panel']=3000})[a.name] end}
+local function ent(t,id,x) return {valid=true,type=t,name=t,position={x=x,y=0},electric_network_id=id,
+  prototype={get_max_energy_production=function() return 1000 end}} end
+local list={ent('solar-panel',1456,1),ent('solar-panel',1456,2),ent('solar-panel',1456,3),ent('electric-pole',1457,4),ent('electric-pole',1457,5),
+  ent('assembling-machine',1456,6),ent('assembling-machine',1456,7),ent('accumulator',1456,8),ent('electric-pole',1460,9),ent('solar-panel',1460,10)}
+list[6].electric_buffer_size,list[6].energy,list[6].status=1000,250,14
+list[7].electric_buffer_size,list[7].energy,list[7].status=1000,350,14
+list[8].electric_buffer_size,list[8].energy=5000000,2500000
+local plat_surface={name='platform-7',has_global_electric_network=true,global_electric_network_statistics=stats,
+  platform={name='Prospect',space_location={name='nauvis',solar_power_in_space=300}},find_entities_filtered=function() return list end}
+local NW=require('networks'){state=function() return {} end}
+local pp=NW.platform_power(plat_surface,{name='player'})
+eq(pp.network,1456); eq(pp.tick,43217816); eq(pp.draw_kw,180); eq(pp.production_kw,180)
+eq(pp.solar.count,3); eq(pp.solar.kw,540); eq(pp.capacity_kw,540); eq(pp.accumulators.pct,50)
+eq(pp.satisfaction.machines,2); eq(pp.satisfaction.low_power,2); eq(pp.satisfaction.power_bars_pct,30); eq(pp.satisfaction.low_power_bars_pct,30)
+eq(pp.poles,3); eq(pp.separate_pole_networks[1],1460)
+has(pp.line,'Prospect electric #1456, the platform\'s own network (every machine, panel and accumulator of ours on it; no pole needed), at tick 43217816')
+has(pp.line,'draw 180 kW now, production 180 kW (the last 5 s)')
+has(pp.line,'capacity 540 kW: 3 solar panels giving up to 540 kW at solar power 300% at nauvis')
+has(pp.line,'machines 2: 2 low power, 0 no power; their power bars 30% full on average, those on low power 30%')
+has(pp.line,'3 poles of ours (network #1457: no machine, panel or accumulator on them; a pole\'s statistics there are this network\'s); electrically apart with machines or panels on them: #1460 (their own rows)')
+plat_surface.has_global_electric_network=false
+eq(NW.platform_power(plat_surface,{name='player'}),nil)
+print('d21_batch71 AG4 platform power: ok')

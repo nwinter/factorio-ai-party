@@ -10178,6 +10178,25 @@ fh watch    # deploy on every change
   `totals` are apart. On the copy (the sampling end moved to 1 s ahead in the mod's storage so it expired through the
   tick): "the last stretch (expired: it ended 7 s ago at tick 29469592): 1743 MJ of fuel over 17 s covered (100 MW
   average, 100%), burning 17 s, 0 gaps; this read began a new stretch". Tests: tests/d21_batch64c.lua.
+- AG4 (#1699, Astra: on Prospect at tick 43217816 power read network 13880 with 3 poles, 0 capacity and 180 kW now,
+  and the surface-wide 13369 with 180 kW capacity and no draw figures). Main before: power and the networks view read
+  a network's statistics only through a pole of it. What 2.0.77 does, on a private copy with a new platform: its
+  surface has has_global_electric_network true; every machine, solar panel and accumulator on it is on that one
+  network (also one in a pole's supply area, and one built after the pole); a pole gets a network id of its own (poles
+  wired together share one) that no machine or panel joins; a pole's electric_network_statistics give the same figures
+  as the surface's global_electric_network_statistics. Now: power on a platform gives platform_power {network, tick,
+  draw_kw, production_kw, consumers, producers, capacity_kw (solar at the solar power where it is, plus generators'
+  rating), solar, generators, accumulators, satisfaction {machines, low_power, no_power, power_bars_pct,
+  low_power_bars_pct}, poles, pole_networks, separate_pole_networks, line}, read from all of our entities on the
+  platform and the surface's statistics. The platform's network row has platform_network true and the figures. Pole
+  networks with nothing on them are no rows of their own (pole_networks_folded names them). A pole network with a
+  machine or panel on it stays a row (separate_pole_networks). The networks view samples the platform's network
+  through the surface, so its line has the draw, and inspect's electricity reads it the same way. On the copy, 1
+  panel and 9 assemblers (3 poles: #1457 alone, #1458 two wired): "draw 180 kW now, production 180 kW (the last 5 s);
+  capacity 180 kW: 1 solar panel giving up to 180 kW at solar power 300% at nauvis; machines 9: 6 low power, 0 no
+  power; their power bars 55% full on average". The whole-platform scan took 0.6-1.1 ms on the copy's largest
+  platform (Swift, 488 entities). No GUI on the headless copy: a pole's GUI shows its statistics, which are the
+  platform's. Tests: tests/d21_batch71.lua.
 
 ## d21 batch64 (eng/d20-batch64)
 
