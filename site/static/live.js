@@ -121,6 +121,13 @@
       .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id, host: m.host === true }; }));
     all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
     all = all.slice(-150);
+    // (d20 batch65 AA1, viewer Aurora 04:06) the line an Operator reply answers shows "Operator replied", the replies
+    // shown or not
+    replyLines.forEach(function (r) {
+      if (r.by !== 'operator' || r.kind !== 'reply') return;
+      var at = answered(all, r);
+      if (at >= 0 && (!all[at].opReply || (r.t || 0) < (all[at].opReply.t || 0))) all[at].opReply = { seq: r.seq, t: r.t };
+    });
     if (!showReplies || !replyLines.length) return all;
     // A reply goes right after the viewer line it answers (after earlier replies to it) when that line is in the list;
     // else in time order among the rest.
@@ -171,33 +178,45 @@
     // (d19 batch42 A5, viewer Aurora) a reply read again at a stream restart keeps its own time and says it is history
     if (m.history) to += ' <span class="c-history fx-muted" title="said before the stream service restarted">history</span>';
     to += linkHtml(m);
-    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + '"' + (col ? ' style="--ac:' + col + '"' : '') +
+    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + '" id="c-a' + esc(m.k.slice(1)) + '"' + (col ? ' style="--ac:' + col + '"' : '') +
       '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
       who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';
   }
-  // A site line's delivery: "to Sol", "to Sol, Luna", "held", "to the operator", "not relayed: why" (the viewers-only
+  // A site line's delivery: "to Sol", "to Sol, Luna", "held", "to the Operator", "not relayed: why" (the viewers-only
   // lines never go). (d19 batch42 A3, A4, viewer Aurora) a line in the operator's inbox shows that receipt on its own,
-  // beside what became of the agents' copy; a group line names every recipient.
+  // beside what became of the agents' copy; a group line names every recipient. (d20 batch65 AA1, viewer Aurora 04:06:
+  // "Could chat show confirmed Operator inbox delivery separately from game relay rejection?") a line the Operator
+  // answered shows "Operator replied", a button to that reply; one to the Operator alone is never "not relayed".
   function agentName(n) { return team[n] && team[n].display_name || n; }
+  function hm(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function operatorHtml(m, d) {
+    var why = d && d.s === 'operator' && d.why && d.why !== "to the operator's inbox" ? ' (' + d.why + ')' : '';
+    if (m.opReply) {
+      var lbl = 'Operator replied' + (m.opReply.t ? ' at ' + hm(m.opReply.t) : '');
+      return ' <button type="button" class="c-delivery c-delivery-replied" data-reply="' + esc(m.opReply.seq) + '">' + esc(lbl) + '</button>' +
+        (why ? '<span class="c-delivery c-delivery-operator fx-muted">' + esc(why) + '</span>' : '');
+    }
+    if (!d || !(d.s === 'operator' || d.op)) return '';
+    return ' <span class="c-delivery c-delivery-operator fx-muted">' + esc('to the Operator' + why) + '</span>';
+  }
   function deliveryHtml(m) {
     var d = m.src === 'site' ? delivery[m.seq] : null;
-    if (!d || !d.s) return '';
+    if (!d || !d.s) return operatorHtml(m, null);
     var who = Array.isArray(d.to_all) && d.to_all.length ? d.to_all : d.to ? [d.to] : [];
     // (d20 batch57 S5, operator 19:12) a record lost at a stream service restart says so; one read back after a restart says
     // when it was sent when that was a minute or more after the line
     var sent = d.at && isFinite(d.at) && m.t && d.at - m.t >= 60 ? ' (sent ' + new Date(d.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')' : '';
+    if (d.s === 'operator') return operatorHtml(m, d);
     var txt = d.s === 'relayed' && d.lost ? 'sent to the agents (details lost at a stream service restart)'
       : d.s === 'relayed' ? (who.length ? 'to ' + who.map(agentName).join(', ') : 'relayed') + sent + (d.why ? ': ' + d.why : '')
       : d.s === 'held' ? 'held' + (d.why ? ': ' + d.why : '')
-      : d.s === 'operator' ? 'to the operator'
       : 'not relayed' + (d.why ? ': ' + d.why : '');
     var html = ' <span class="c-delivery c-delivery-' + esc(d.s) + ' fx-muted">' + esc(txt) + '</span>';
-    if (d.op && d.s !== 'operator') html = ' <span class="c-delivery c-delivery-operator fx-muted">to the operator</span>' + html;
-    return html;
+    return operatorHtml(m, d) + html;
   }
   function renderChat() {
     if (!chatList) return;
-    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') : ''); }).join(',');
+    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : ''); }).join(',');
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
@@ -257,6 +276,22 @@
       renderChat();
     });
   }
+  // "Operator replied" (AA1): to that reply in the list, showing the replies first when they are hidden
+  if (chatList) chatList.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-reply]') : null;
+    if (!b) return;
+    if (!showReplies) {
+      showReplies = true;
+      if (repliesBox) repliesBox.checked = true;
+      chatList.dataset.sig = '';
+      renderChat();
+    }
+    var el = document.getElementById('c-a' + b.getAttribute('data-reply'));
+    if (!el) return;
+    if (el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el.classList.add('is-flash');
+    setTimeout(function () { el.classList.remove('is-flash'); }, 1600);
+  });
   // The host link (d16 17:11): ?host=TOKEN once; kept in this browser, taken out of the address bar, and sent as
   // X-Host-Token with each chat post (never in a URL the page fetches). The Worker posts those lines under the host's
   // name with a HOST badge and refuses a token that does not match.

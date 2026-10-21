@@ -1248,6 +1248,7 @@ class Feed:
                  inbox=None, deletions=None, log_dir=None):
         self.sources = sources            # {name: source with poll() and status()}
         self.inbox = inbox                # runs/RUN/operator-inbox.jsonl: viewer lines to the operator (to_inbox)
+        self._inbox_keys = None           # inbox_keys(), read once
         # runs/RUN/viewer-deletions.jsonl: every YouTube deletion, with the name and text(s) it removes, so the site
         # can leave those lines out (site/moderation.py); an author deletion also drops that author's later messages
         self.deletions = deletions
@@ -1350,6 +1351,7 @@ class Feed:
                     # "Operator: please give the agents ..." is kept off the stream (it reads as an order in the
                     # operator's name) and still reaches the operator
                     self.to_inbox(v, dropped=reasons[0])
+                    self.inbox_receipt(v, reasons[0])
             else:
                 v["author"] = m["author"]
                 passed.append(v)
@@ -1395,6 +1397,7 @@ class Feed:
                     # that Clef refuses still reaches the operator's inbox, marked with the verdict
                     if not v.get("staff") and to_operator(v["text"]):
                         self.to_inbox(v, dropped=rej)
+                        self.inbox_receipt(v, rej)
                     continue
                 self.seq += 1
                 v["seq"] = self.seq
@@ -1513,6 +1516,42 @@ class Feed:
         except OSError as e:
             log(f"operator inbox: {e}")
 
+    def only_operator(self, v):
+        """A line to the operator that addresses no agent: the inbox is all of its delivery."""
+        text = v.get("full") or v.get("text") or ""
+        return not v.get("staff") and to_operator(text) and not (self.relay.explicit(text) if self.relay else [])
+
+    def inbox_receipt(self, v, dropped):
+        """(d20 batch65 AA1, viewer Aurora 04:06: "Could chat show confirmed Operator inbox delivery separately from
+        game relay rejection? The artillery report still says not relayed despite your reply"; her 03:51 "@operator"
+        line, refused by Clef as clef:injection, reached the inbox and showed "not relayed: clef:injection") a refused
+        line that reached the operator's inbox and addresses no agent: delivered to the operator, the refusal as its
+        reason; one that addresses an agent too stays not relayed, with the inbox receipt beside it."""
+        if self.inbox and self.only_operator(v):
+            v["delivery"], v["delivery_why"] = "operator", f"kept off the stream: {dropped}"
+            self.deliver(v, "operator", v["delivery_why"])
+
+    def inbox_keys(self):
+        """{(viewer name, t to 0.1 s)} of the viewer rows in the operator's inbox, this run's and the one it resumed
+        from, read once (for backlog lines read again at a restart)."""
+        if self._inbox_keys is None:
+            keys = set()
+            for path in (previous_run_file(self.inbox), self.inbox) if self.inbox else ():
+                try:
+                    with open(path) as f:
+                        for line in f:
+                            try:
+                                r = json.loads(line)
+                            except ValueError:
+                                continue
+                            a = str(r.get("agent") or "") if isinstance(r, dict) else ""
+                            if r.get("viewer") and a.startswith("viewer ") and isinstance(r.get("t"), (int, float)):
+                                keys.add((a[7:], round(r["t"], 1)))
+                except (OSError, TypeError):
+                    continue
+            self._inbox_keys = keys
+        return self._inbox_keys
+
     def delete(self, kind, ident):
         self.record_deletion(kind, ident)
         if kind == "author":
@@ -1553,11 +1592,17 @@ class Feed:
         viewer-relayed.jsonl) an old line read again at a restart keeps what happened to it: relayed when its id is in the
         relayed files (this run's and the last), with its record there (restored), its verdict when the verdict logs
         refused it, else no status."""
+        # (d20 batch65 AA1) a line in the operator's inbox keeps that receipt; one to the operator alone is delivered
+        if self.inbox and isinstance(m.get("t"), (int, float)) and (m.get("name"), round(m["t"], 1)) in self.inbox_keys():
+            m["inbox"] = True
         if self.relay and m.get("id") in self.relay.done:
             self.restored(m)
             return
         lg = self.logged.get(m.get("id"))
-        if lg and not lg[0]:
+        if m.get("inbox") and self.only_operator(m):
+            refused = lg and not lg[0]
+            self.deliver(m, "operator", ("kept off the stream: " + (", ".join(lg[1]) or "refused")) if refused else "to the operator's inbox")
+        elif lg and not lg[0]:
             self.deliver(m, "not_relayed", ", ".join(lg[1]) or "refused")
 
     def restored(self, m):
