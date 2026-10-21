@@ -5,10 +5,11 @@
     bplibrary.py --world W --run-dir runs/RUN watch [--interval 60]
     bplibrary.py --world W show                                     the entries as the operator read gives them
 
-The library lives in the save (storage), so it goes on with the world from shift to shift. Each pass is one operator
+The library lives in the save (storage), so it goes on with the world from shift to shift. Each pass is an operator
 read, `blueprint_library {since}`: storage only, no entity scan, so it stays well under the 20 ms a command on world n
 may take. It returns every entry's facts and the blueprint string of each entry changed since the revision the run
-dir last saw. Files in RUN/blueprints/: NAME.txt (the entry's blueprint string), index.json (every entry's facts, the
+dir last saw, about 1 MB of strings a read (the JSON of 7.6 MB took 21.8 ms on the private copy): while the reply
+names `strings_after`, the pass reads on with `{since, after}`. Files in RUN/blueprints/: NAME.txt (the entry's blueprint string), index.json (every entry's facts, the
 library revision and the game tick), .mirror.json (the revision this copy holds). A .txt whose entry is gone from the
 library moves to deleted/. A new run dir (a resumed shift) starts at no revision and so gets every string.
 """
@@ -54,6 +55,17 @@ def mirror(read, run_dir, out=sys.stdout):
     since = state.get("revision", -1)
     lib = read(since)
     entries = [e for e in lib.get("entries") or [] if isinstance(e, dict) and NAME.fullmatch(str(e.get("name", "")))]
+    # (d20 batch59 U2) the strings come about 1 MB a read: strings_after names the last entry whose string came.
+    after, reads = lib.get("strings_after"), 1
+    while isinstance(after, str) and reads < 1000:
+        more = read(since, after)
+        reads += 1
+        got = {e.get("name"): e["string"] for e in more.get("entries") or [] if isinstance(e, dict) and isinstance(e.get("string"), str)}
+        for e in entries:
+            if e["name"] in got:
+                e["string"] = got[e["name"]]
+        nxt = more.get("strings_after")
+        after = nxt if isinstance(nxt, str) and nxt > after else None
     names = {e["name"] for e in entries}
     written, moved, missing = [], [], False
     for e in entries:
@@ -100,7 +112,7 @@ def main(argv=None):
         return 0
     if not a.run_dir:
         ap.error(f"{a.command} needs --run-dir")
-    read = lambda since: game.operator("blueprint_library", {"since": since})  # noqa: E731
+    read = lambda since, after=None: game.operator("blueprint_library", dict({"since": since}, **({"after": after} if after else {})))  # noqa: E731
     while True:
         try:
             mirror(read, a.run_dir)

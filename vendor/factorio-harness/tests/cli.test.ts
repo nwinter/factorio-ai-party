@@ -252,6 +252,26 @@ test('blueprint inspection uses the existing read-only export protocol',async()=
     return {ok:true,result:{layout:[]}};
   },async port=>{await cli(port,['blueprint','inspect','--args','{"slot":"plan"}']);});
 });
+test('a library entry\'s export goes to blueprints/NAME.txt in the workspace without --out (d20 batch59 U2)',async()=>{
+  const dir=await tempDir('fh-bpexport-');
+  const {readFile}=await import('node:fs/promises');
+  await engine(request=>{
+    assert.equal(request.action,'blueprint_export');
+    return {ok:true,result:{name:'smelter-row',author:'sol',blueprint:'0eNqA'}};
+  },async port=>{
+    const {stdout}=await exec(process.execPath,[join(process.cwd(),'dist/host/cli.js'),'--format','json','--port',String(port),'blueprint','export','--args','{"name":"smelter-row"}'],
+      {cwd:dir,env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    const reply=JSON.parse(stdout);
+    assert.equal(reply.result.blueprint,undefined,'the string is in the file, not the reply');
+    assert.equal(reply.result.path,join(await (await import('node:fs/promises')).realpath(dir),'blueprints','smelter-row.txt'));
+    assert.equal(await readFile(join(dir,'blueprints','smelter-row.txt'),'utf8'),'0eNqA\n');
+  });
+  // A slot's export without --out stays in the reply, as before.
+  await engine(()=>({ok:true,result:{slot:'clipboard',blueprint:'0eNqB'}}),async port=>{
+    const {stdout}=await cli(port,['call','blueprint_export']);
+    assert.equal(JSON.parse(stdout).result.blueprint,'0eNqB');
+  });
+});
 test('a --wait that outlasts its timeout reports the action still running, after showing acceptance in compact output',async()=>{
   await engine(request=>{
     if(request.action==='construct')return {ok:true,result:{until_tick:36000,total:4}};

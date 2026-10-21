@@ -579,6 +579,7 @@ do
     placewhy=dofile('mod/agent-harness_0.1.0/placewhy.lua'){filters=function() return {filters={}} end},
     blocked=function() return 'blocked' end,
     who=function(pl) return pl.name end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
     entity=function(_,args)
       for _,e in ipairs(world) do if e.position.x==args.position.x and e.position.y==args.position.y then return e end end
       error('entity not found',0)
@@ -601,7 +602,8 @@ do
   eq(ends.entities,2); eq(sources[lib.entries.ends.string].entities[1].wires,nil)
   -- The list: the team's entries beside your own slots.
   local list=L.blueprint_list(p,{})
-  eq(#list.library,3); eq(list.library[1].name,'chest-row'); eq(list.library[2].name,'ends'); eq(list.library_limit,64)
+  eq(#list.library,3); eq(list.library[1].name,'chest-row'); eq(list.library[2].name,'ends'); eq(list.library_limit,256)
+  eq(list.library_size,'3 of 256 entries; 0 of 7812.5 KB of strings'); eq(list.library_bytes_limit,8000000); eq(list.library_page,nil)
   eq(list.library[1].description,'three chests, wired'); assert(list.slots,'slots are listed too')
   eq(L.blueprint_list(p,{name='chest-row'}).anchor.x,-2.5)
   -- Placed by name: the saved anchor lands at position; the use is recorded.
@@ -637,8 +639,51 @@ do
   fails(function() L.blueprint_save(p,{name='x',area=area,positions={{x=1.5,y=1.5}}}) end,'give area or positions')
   fails(function() L.blueprint_save(p,{name='x'}) end,'give area or positions')
   fails(function() L.blueprint_save(p,{name='x',area=area,anchor={x=20,y=1}}) end,'anchor must lie in the saved area')
-  for i=1,62 do L.blueprint_save(p,{name='e'..i,area=area}) end
-  fails(function() L.blueprint_save(p,{name='e63',area=area}) end,'holds 64 entries')
+  -- (d20 batch59 U2, Astra #1446) 256 entries and 8 MB of strings.
+  for i=1,254 do L.blueprint_save(p,{name='e'..i,area=area}) end
+  fails(function() L.blueprint_save(p,{name='e255',area=area}) end,'holds 256 entries')
+  eq(L.blueprint_save(p,{name='e1',area=area}).replaced,'sol','a full library still takes a replacement')
+  -- A page of the list by name.
+  local page=L.blueprint_list(p,{limit=10,from=11})
+  eq(#page.library,10); eq(page.library_page,'entries 11-20 of 256 by name; blueprint_list {from: 21} reads on')
+  eq(#L.blueprint_list(p,{}).library,64,'64 a page by default')
+  -- The bytes: a string over what is left is refused, naming the sizes.
+  for i=100,254 do lib.entries['e'..i]=nil end
+  lib.entries.e99.string=string.rep('x',7999990)
+  fails(function() L.blueprint_save(p,{name='big',area=area}) end,'string is 0 KB and the library holds 7813.3 of its 7812%.5 KB of strings; blueprint_delete frees room')
+  lib.entries.e99.string='export1'
+  -- The operator read pages the strings: max_bytes a read, at least one string, strings_after names the last.
+  lib.entries.e98.string=string.rep('y',600000); lib.entries.e97.string=string.rep('z',600000)
+  local r1=L.operator.blueprint_library({})
+  local function strings(r) local n=0; for _,e in ipairs(r.entries) do if e.string then n=n+1 end end; return n end
+  assert(r1.strings_after,'held back'); eq(#r1.entries,101)
+  local got,seen,rounds=0,{},0
+  local r=r1
+  while true do
+    rounds=rounds+1
+    for _,e in ipairs(r.entries) do if e.string then assert(not seen[e.name],'once: '..e.name); seen[e.name]=true; got=got+1 end end
+    if not r.strings_after then break end
+    r=L.operator.blueprint_library({after=r.strings_after})
+  end
+  eq(got,101,'every string once'); assert(rounds>=2,'paged')
+  eq(strings(L.operator.blueprint_library({since=lib.revision})),0)
+  for i=11,99 do lib.entries['e'..i]=nil end
+  -- Export and import (a player exports a string and imports it): the entry's facts in the reply, back into the
+  -- library under the importer's name; the author rules of blueprint_save.
+  lib.entries['chest-row'].description='three chests'
+  local ex=L.blueprint_export(p,{name='chest-row'})
+  eq(ex.name,'chest-row'); eq(ex.author,'sol'); eq(ex.description,'three chests'); eq(ex.anchor,nil); assert(type(ex.blueprint)=='string')
+  eq(sources[ex.blueprint].blueprint_description,'three chests','the string carries the description')
+  local im=L.blueprint_import(luna,{name='chest-row-copy',blueprint=ex.blueprint,anchor={x=0,y=0}})
+  eq(im.name,'chest-row-copy'); eq(im.author,'luna'); eq(im.imported,true); eq(im.entities,3); eq(im.description,'three chests')
+  eq(lib.entries['chest-row-copy'].anchor.x,0); eq(sources[lib.entries['chest-row-copy'].string].label,'chest-row-copy')
+  fails(function() L.blueprint_import(luna,{name='e1',blueprint=ex.blueprint}) end,"e1 is sol's entry; another agent may replace it")
+  fails(function() L.blueprint_import(luna,{name='x2',blueprint=ex.blueprint,anchor={x=50,y=0}}) end,'anchor must lie in the blueprint')
+  fails(function() L.blueprint_import(luna,{name='x2',blueprint='book'}) end,'a library entry is one blueprint: this string holds a blueprint book')
+  fails(function() L.blueprint_import(luna,{name='x2',slot='a',blueprint=ex.blueprint}) end,'give name')
+  eq(L.blueprint_import(luna,{name='chest-row-copy',blueprint=ex.blueprint,description='mine'}).replaced,'luna')
+  -- Without name: your own slot, as before.
+  eq(L.blueprint_import(p,{blueprint=ex.blueprint,slot='mine'}).slot,'mine')
   _G.capture_world=nil; p.name=nil
 end
 -- blueprint_save and blueprint_capture with platform=NAME (Astra, d15 18:35): the platform handler's view of the
