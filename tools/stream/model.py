@@ -791,6 +791,7 @@ class Model:
         # entries and the events the harness saw, the newest kept for the state; a platform's loss as the harness read
         # it at its hub's death (where, what killed it, its cargo), by name, for the stream's own loss line
         self.chronicle_entries, self.chronicle_events, self.harness_lost = deque(maxlen=12), deque(maxlen=20), {}
+        self.chronicle_earlier = set()  # set_platform_history
         # each platform's newest creation and its departures since (chronicle_log.platform_history, then the live
         # events): its first departure is a maiden flight (viewer Foobator, d17 14:24)
         self.platform_history = {}
@@ -1973,6 +1974,8 @@ class Model:
 
     def _ingest_chronicle_entry(self, e, now):
         """An agent's chronicle entry: its words, where it stood and the events it is filed beside."""
+        if chronicle_log.entry_key(e) in self.chronicle_earlier:
+            return
         agent = self._who(e.get("agent"))
         self.chronicle_entries.append({"seq": e.get("seq"), "tick": e.get("tick"), "game_time": e.get("game_time"),
                                        "agent": agent, "name": e.get("agent"), "title": clean_text(e.get("title") or "") or None,
@@ -1985,6 +1988,8 @@ class Model:
     def _ingest_chronicle_event(self, ev, now):
         """An event the harness saw. A platform's loss carries where it was, what killed it and its hub's items: the
         stream's own loss line (_platform_destroyed) takes them."""
+        if chronicle_log.event_key(ev) in self.chronicle_earlier:
+            return
         row = {k: ev.get(k) for k in ("id", "kind", "tick", "game_time", "line", "platform", "agent", "where", "by",
                                       "cargo", "cargo_items", "hit_by") if ev.get(k) is not None}
         row["t"] = now
@@ -2003,6 +2008,8 @@ class Model:
         """Each platform's creation and departures from the chronicle files along the run chain (serve.py), so a
         restart or a new shift knows which platforms have flown since they were built."""
         self.platform_history = chronicle_log.platform_history(chronicle_path)
+        # the rows earlier shifts wrote: a file carrying them again (before d20 batch65 AA3) does not show them as new
+        self.chronicle_earlier = chronicle_log.earlier_keys(chronicle_path) if chronicle_path else set()
 
     def _maiden_flight(self, ev, h, now):
         """A platform's first departure since its creation (the history knows when it was built and by whom): a

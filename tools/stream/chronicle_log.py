@@ -8,7 +8,8 @@ service to runs/RUN/chronicle.jsonl, one JSON object a line:
   cargo_kinds, platform_renamed with from, platform_deleted).
 The site's Chronicle page and timeline read the files along the run chain (site/chronicle.py). A restarted service
 resumes after the last seq and id in the file; a new shift (runs/RUN/resumed-from) after the last of the shifts before
-it, so nothing is written twice: the game keeps the last 300 of each in the save."""
+it, each cursor on its own, so nothing is written twice: the game keeps the last 300 of each in the save. Files written
+before d20 batch65 carry rows again (entry_key, event_key): readers keep each once."""
 import json
 import os
 import time
@@ -60,13 +61,38 @@ def chain(path):
 
 
 def start_cursors(path):
-    """Where the service starts reading: the file's cursors; for a file with no rows (a new shift), those of the shift
-    it resumed from, and so on back."""
+    """Where the service starts reading: the file's cursors, each from the newest file along the chain that has one (a
+    new shift's empty file: the shift it resumed from, and so on back). A file with events but no entries yet starts
+    its entries after the shift before it, not from 0 (d20 batch65 AA3: shift51's service restarted at 06:14 with no
+    entry written that shift and wrote the save's last 50 entries a second time, as each shift before it had)."""
+    seq = eid = 0
     for p in chain(path):
-        cur = last_cursors(p)
-        if cur != (0, 0):
-            return cur
-    return 0, 0
+        s, e = last_cursors(p)
+        seq, eid = seq or s, eid or e
+        if seq and eid:
+            break
+    return seq, eid
+
+
+def entry_key(e):
+    """An entry's identity across the run's files: its seq and tick."""
+    return ("entry", e.get("seq"), e.get("tick"))
+
+
+def event_key(ev):
+    """An event's identity across the run's files: its id, tick and kind."""
+    return ("event", ev.get("id"), ev.get("tick"), ev.get("kind"))
+
+
+def earlier_keys(path):
+    """The entry_key and event_key of every row in the files of the shifts before this run's (chain(path)[1:]): rows a
+    shift's file carries again are not new."""
+    keys = set()
+    for p in chain(path)[1:]:
+        entries, events = load(os.path.dirname(p))
+        keys.update(map(entry_key, entries))
+        keys.update(map(event_key, events))
+    return keys
 
 
 def platform_history(path):
@@ -74,9 +100,12 @@ def platform_history(path):
     platform_left and platform_renamed events along the run chain: each name's newest creation and its departures since
     (a name used again for a new ship starts over; a renamed ship keeps its history under the new name). Names with no
     creation in the files are left out: built before the chronicle, or renamed before it recorded renames."""
-    events = []
+    events, seen = [], set()
     for p in chain(path):
-        events += load(os.path.dirname(p))[1]
+        for ev in load(os.path.dirname(p))[1]:
+            if event_key(ev) not in seen:  # once, though later shifts' files carry it again
+                seen.add(event_key(ev))
+                events.append(ev)
     out = {}
     for ev in sorted((e for e in events if e.get("kind") in PLATFORM_KINDS and e.get("platform")
                       and isinstance(e.get("tick"), (int, float))), key=lambda e: (e["tick"], e.get("id") or 0)):
