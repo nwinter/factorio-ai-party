@@ -288,6 +288,19 @@ return function(api)
     local v = view(c, false)
     return string.format('check #%d %s: %s%s', c.id, c.name, v.state, v.result_age_s and string.format(' (last run %s %s ago)', v.result, ago(game.tick - v.result_tick)) or '')
   end
+  -- (d21 batch68 AD2) the newest-run blueprint check of name over a box on a surface (index), as stored (no area read):
+  -- {id, name, state (pass | fail | stale | not run), tick (its last run)}, or nil with none.
+  function M.area_state(name, surface, box)
+    local best
+    for _, c in pairs(store().list) do
+      if c.blueprint == name and c.surface == surface and c.box and overlaps(c.box, box) then
+        if not best or (c.result and c.result.tick or -1) > (best.result and best.result.tick or -1) then best = c end
+      end
+    end
+    if not best then return nil end
+    local v = view(best, false)
+    return {id=best.id, name=best.name, state=v.state, tick=best.result and best.result.tick or nil}
+  end
   -- A board item's checks, as stored (no area read): lines for the item's view.
   function M.item_lines(id)
     local out = {}
