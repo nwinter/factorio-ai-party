@@ -473,3 +473,67 @@ do
   assert(v.by_holder.line:find('landed cargo pods 350',1,true),v.by_holder.line)
 end
 print('stock pods and ground: ok')
+-- d20 batch65 AA7 (Grok 22:15: stock {item: nutrients, places: "all", limit: 8, holders: [provider, storage, machine]}
+-- failed "attempt to index local 'near' (a nil value)"): a holders filter that leaves no place. Every holders value, with
+-- the whole surface read (places "all") and with a limit: the summary and holders_left_out say what it left out.
+do
+  prototypes.item.nutrients={}
+  local function holder(name,type,x,n,mode)
+    local e={valid=true,name=name,type=type,position={x=x,y=0},unit_number=x+1000}
+    if mode then e.prototype={logistic_mode=mode} end
+    local i=inv('nutrients',n)
+    e.get_inventory=function() return i end
+    e.get_output_inventory=function() return i end
+    e.get_recipe=function() return nil end
+    return e
+  end
+  local all={holder('passive-provider-chest','logistic-container',3,10,'passive-provider'),holder('storage-chest','logistic-container',5,20,'storage'),
+    holder('requester-chest','logistic-container',7,300,'requester'),holder('buffer-chest','logistic-container',9,40,'buffer'),
+    holder('iron-chest','container',11,50),holder('biochamber','assembling-machine',13,60),holder('cargo-landing-pad','cargo-landing-pad',15,70),
+    holder('cargo-pod-container','temporary-container',17,80)}
+  local function surface(list)
+    return {name='gleba',find_entities_filtered=function(f)
+      local out={}
+      local types={}
+      for _,t in ipairs(f.type or {}) do types[t]=true end
+      for _,e in ipairs(list) do
+        if (f.type==nil or types[e.type]) and (f.name==nil or f.name==e.name) and (f.position==nil or distance(e.position,f.position)<=f.radius) then out[#out+1]=e end
+      end
+      return out
+    end}
+  end
+  api.on_ground=function() return {cells={{position={x=19,y=0},count=4,stacks=1}}} end
+  local q={position={x=0,y=0},force={},surface=surface(all),get_main_inventory=function() return inv('nutrients',0) end}
+  local want={provider=10,storage=20,requester=300,buffer=40,chest=50,machine=60,pad=70,pod=80,ground=4,wagon=0,vehicle=0}
+  for kind,n in pairs(want) do
+    for _,limit in ipairs({8,1}) do
+      local ok,v=pcall(stock.view,q,{item='nutrients',holders={kind},limit=limit},{surface=q.surface,whole=true})
+      assert(ok,kind..': '..tostring(v))
+      eq(v.total,630,kind)
+      if n>0 then
+        eq(#v.places,1,kind); eq(v.places[1].kind,kind); eq(v.places[1].count,n,kind)
+        assert(v.summary:find('nearest '..n..' at',1,true),v.summary)
+      else
+        eq(#v.places,0,kind)
+        assert(v.summary:find('630 nutrients held by our factory',1,true),v.summary)
+        assert(v.summary:find('no place of the holders asked ('..kind..') holds it; by holder kind: requester 300 in 1 place, pod 80 in 1 place',1,true),v.summary)
+        assert(v.summary:find('ground 4 in 1 place (not in total)',1,true),v.summary)
+      end
+      assert(v.holders_left_out:find('requester',1,true) or kind=='requester',v.holders_left_out)
+    end
+  end
+  -- Grok's call: no provider, storage or machine on the surface holds it
+  local q2={position={x=0,y=0},force={},surface=surface({all[3],all[5]}),get_main_inventory=q.get_main_inventory}
+  api.on_ground=nil
+  local v=stock.view(q2,{item='nutrients',holders={'provider','storage','machine'},limit=8},{surface=q2.surface,whole=true})
+  eq(#v.places,0); eq(v.more,nil)
+  eq(v.summary,'350 nutrients held by our factory (300 in 1 requester-chest, 50 in 1 iron-chest); no place of the holders asked (provider, storage, machine) holds it; by holder kind: requester 300 in 1 place, chest 50 in 1 place')
+  eq(v.holders_left_out,'requester 300 in 1 place, chest 50 in 1 place')
+  -- a filter that keeps every place: nothing left out
+  v=stock.view(q2,{item='nutrients',holders={'requester','chest'},limit=1},{surface=q2.surface,whole=true})
+  eq(#v.places,1); eq(v.more,1); eq(v.holders_left_out,nil)
+  -- within a radius too (stock without places "all")
+  v=stock.view(q2,{item='nutrients',holders={'machine'},radius=64},{surface=q2.surface})
+  eq(#v.places,0); assert(v.summary:find('(machine) holds it',1,true),v.summary)
+end
+print('stock holders left out: ok')
