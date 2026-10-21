@@ -290,7 +290,7 @@ do
   game.tick=500+space.RECHECK_TICKS
   local v=space.recheck_read(r1.recheck)
   eq(v.ok,false); eq(v.after_ticks,space.RECHECK_TICKS)
-  assert(v.error:find('alpha read no_schedule at tick 500 (the call\'s tick) and still no_schedule 300 ticks later; the call failed: it reads no_schedule: it follows no schedule and goes nowhere; seen across the journals: every one-stop schedule read no_schedule',1,true),v.error)
+  assert(v.error:find('alpha read no_schedule at tick 500 (the call\'s tick) and still no_schedule 300 ticks later; the call failed: it reads no_schedule with 2 stops set (current 2, vulcanus) while it is at nauvis: it has not left; seen across the journals: every one-stop schedule read no_schedule',1,true),v.error)
   assert(v.error:find('the schedule stays as set: nauvis (time 1s) | >vulcanus',1,true) and v.error:find('it was written again record by record',1,true),v.error)
   -- a rebuild refused part way: the records set back as given
   fail_add,rebuilt=true,false
@@ -315,7 +315,8 @@ do
   platform.state,platform.space_location,platform.space_connection,platform.paused=6,{name='nauvis'},nil,false
   platform.get_schedule=nil
   local r=space.platform_schedule(p,{platform='alpha',stops=stops,current=1})
-  eq(r.current_note,'the current stop (1, nauvis) is the station it waits at now: on world n 8 of 8 such edits (Sol at Aquilo, Luna at Fulgora) read no_schedule, the record by record rebuild too; with the current set to the next stop (current: 2) it departed at once')
+  -- (d21 batch66 AB4) the old 8-of-8 rule read again in the journals: the note says it waits there on that stop's waits
+  eq(r.current_note,'the current stop (1, nauvis) is the station it is at: waiting at stop 1 (nauvis): no wait condition')
   platform.state=6
   r=space.platform_schedule(p,{platform='alpha',stops=stops,current=2})
   eq(r.current_note,nil)

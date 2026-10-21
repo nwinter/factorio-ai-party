@@ -225,3 +225,186 @@ do
   defines,prototypes=nil,nil
   print('d21_batch66 AB3 ammunition routes through links gated closed now: ok')
 end
+
+-- AB4 (Sol #1681): Solstice at nauvis, schedule [nauvis, gleba] current 1, paused false, read no_schedule from 42819577 to
+-- 42828245 while its wait processing-unit >= 300 was false (246 in the hub), and left once 346 had come; the recheck
+-- said the call failed. Waiting at its current stop on conditions false now is said as the GUI shows it, apart from no
+-- schedule and no path, and is not failed.
+do
+  game={tick=42819577}
+  defines={space_platform_state={waiting_at_station=4,on_the_path=3,no_schedule=1,no_path=5,paused=7},inventory={hub_main=1,hub_trash=2},wire_connector_id={circuit_red=1,circuit_green=2}}
+  prototypes={space_location={nauvis={},gleba={}},fluid={},item={['processing-unit']={}}}
+  local pu=246
+  local hub={valid=true,get_inventory=function() return {get_item_count=function(x) local n=type(x)=='table' and x.name or x; return n=='processing-unit' and pu or 0 end,get_contents=function() return {} end} end,
+    get_logistic_sections=function() return {sections_count=0} end}
+  local pl={valid=true,name='Solstice',index=9,state=4,space_location={name='nauvis'},force={name='player'},paused=false,hub=hub}
+  local sch={get_record_count=function() return #(pl.schedule and pl.schedule.records or {}) end}
+  sch.go_to_station=function(i) pl.schedule.current=i; pl.state=1 end
+  sch.remove_record=function() end; sch.add_record=function() end
+  pl.get_schedule=function() return sch end
+  local p={force={platforms={pl},name='player'}}
+  game.forces={player=p.force}
+  local st={platform_stops={[9]={at='nauvis',tick=42815000}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    freight={where=function() return {at='nauvis',stopped=true} end,leg=function() return nil end},
+    circuit_condition=function(c) local a,cmp,n=c:match('^(%S+) (%S+) (%-?%d+)$'); return {first_signal={type='item',name=a},comparator=cmp,constant=tonumber(n)} end}
+  local waits={{type='time',ticks=3600},{type='item_count',condition='processing-unit >= 300',compare='and'}}
+  local r=space.platform_schedule(p,{platform='Solstice',stops={{station='nauvis',wait=waits},{station='gleba',wait={{type='time',ticks=10800}}}},current=1,paused=false})
+  eq(r.state,'no_schedule')
+  eq(r.recheck,nil,'waiting on conditions false now: no recheck, no failure')
+  local line='waiting at stop 1 (nauvis): conditions false now: time 60s: 0s left [holds] and item_count processing-unit >= 300: the hub holds 246, 54 to go [false]; the game reads no_schedule while it waits there and leaves when they hold (Solstice at Nauvis, shift52)'
+  eq(r.waiting,line)
+  eq(r.state_note,'state no_schedule: '..line..' (go to station 1 was called)')
+  has(r.current_note,'the current stop (1, nauvis) is the station it is at: waiting at stop 1 (nauvis): conditions false now:')
+  -- the stops read and the gate say it waits there
+  local stops=space.stops(pl)
+  has(stops[1],'1 nauvis (waiting here): time 60s: 0s left and item_count processing-unit >= 300: the hub holds 246, 54 to go')
+  has(stops[2],'2 gleba (next)')
+  local g=space.gate(p,{platform='Solstice'})
+  has(g.lines[1],'Solstice: at station nauvis (the game reads no_schedule); stop 1 of 2')
+  -- a recheck begun before (a queue step's) ends ok, with the waiting line
+  local v=space.recheck_read({platform='Solstice',first='no_schedule',tick=42819577,ends_tick=42819877,force='player'})
+  eq(v.ok,true); eq(v.waiting,line); has(v.line,'Solstice read no_schedule at tick 42819577 (the call\'s tick) and no_schedule 0 ticks later, at nauvis; waiting at stop 1 (nauvis)')
+  -- the conditions hold (346 came) and it still reads no_schedule: said, and the recheck goes on to fail as before
+  pu=346
+  local w=space.waiting_now(pl)
+  eq(w.met,true); has(w.line,'conditions hold now: time 60s: 0s left [holds] and item_count processing-unit >= 300: the hub holds 346 (met) [holds]; the game reads no_schedule')
+  game.tick=42819877
+  v=space.recheck_read({platform='Solstice',first='no_schedule',tick=42819577,ends_tick=42819877,force='player'})
+  eq(v.ok,false); has(v.error,'it reads no_schedule: waiting at stop 1 (nauvis): conditions hold now:')
+  -- an or: one group holding is enough
+  pu=0
+  pl.schedule.records[1].wait_conditions={{type='item_count',condition={first_signal={type='item',name='processing-unit'},comparator='>=',constant=300}},
+    {type='time',ticks=60,compare_type='or'}}
+  eq(space.waiting_now(pl).met,true)
+  -- the current stop elsewhere (Swiftlet at aquilo with the current on gleba): not waiting; the stuck text names the stop
+  pl.schedule.current=2
+  eq(space.waiting_now(pl),nil); eq(space.waiting_line(pl),nil)
+  v=space.recheck_read({platform='Solstice',first='no_schedule',tick=42819577,ends_tick=42819877,force='player'})
+  eq(v.ok,false); has(v.error,'it reads no_schedule with 2 stops set (current 2, gleba) while it is at nauvis: it has not left')
+  -- paused at its stop: not waiting (paused said apart)
+  pl.schedule.current=1; pl.paused=true
+  eq(space.waiting_now(pl),nil)
+  pl.paused=false
+  -- waiting_at_station reads the same line, without the no_schedule note
+  pl.state=4; pu=100
+  pl.schedule.records[1].wait_conditions={{type='item_count',condition={first_signal={type='item',name='processing-unit'},comparator='>=',constant=300}}}
+  eq(space.waiting_line(pl),'waiting at stop 1 (nauvis): conditions false now: item_count processing-unit >= 300: the hub holds 100, 200 to go [false]')
+  game,defines,prototypes=nil,nil,nil
+  print('d21_batch66 AB4 waiting at its stop on conditions false now: ok')
+end
+
+-- AB5 (viewer Aurora 13:02: "K2's carbide landed in a different network from its silo"): delivery_watch follows a count
+-- of an item to a named consumer, stage by stage, with a deadline, the last confirmed stage and the blocker seen.
+do
+  game={tick=1000}
+  defines={inventory={hub_main=1,rocket_silo_rocket=2,cargo_landing_pad_main=3}}
+  prototypes={item={['tungsten-carbide']={},['iron-plate']={}}}
+  local held={silo=0,hub=200}
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=12.5,y=-30.5},get_item_count=function() return held.silo end}
+  local padroom=false
+  local pad={valid=true,name='cargo-landing-pad',type='cargo-landing-pad',position={x=5,y=6},get_inventory=function() return {can_insert=function() return padroom end} end}
+  local chest={valid=true,name='requester-chest',type='logistic-container',position={x=20.5,y=1.5},prototype={logistic_mode='requester'},
+    get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='iron-plate'},min=10}}} end} end}
+  local nets={[silo]=7,[pad]=12,[chest]=7}
+  local aquilo={name='aquilo',find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs({silo,pad,chest}) do
+      if (not f.name or f.name==e.name) and math.abs(e.position.x-f.position.x)<=(f.radius or 0)+0.01 and math.abs(e.position.y-f.position.y)<=(f.radius or 0)+0.01 then out[#out+1]=e end
+    end
+    return out
+  end}
+  aquilo.find_logistic_network_by_position=function(pos)
+    for e,id in pairs(nets) do if e.position.x==pos.x and e.position.y==pos.y then return {network_id=id} end end
+  end
+  for _,e in ipairs({silo,pad,chest}) do e.surface=aquilo; e.force='player' end
+  local force={name='player',platforms={},is_chunk_charted=function() return true end}
+  local hub={valid=true,get_inventory=function() return {get_item_count=function() return held.hub end} end}
+  local pl={valid=true,name='Kestrel II',index=3,hub=hub,paused=false,space_location={name='fulgora'},schedule={records={{station='fulgora'},{station='aquilo'}}}}
+  force.platforms={pl}
+  game.forces={player=force}; game.planets={aquilo={surface=aquilo},fulgora={},nauvis={}}
+  local receipts={}
+  local where={}
+  local st={}
+  local W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,
+    census_typed=function(_,s,t) eq(t,'cargo-landing-pad'); return {pad} end,
+    freight={where=function() return where end,receipts_since=function(_,since) local o={} for _,r in ipairs(receipts) do if r.tick>since then o[#o+1]=r end end return o end}}
+  local sol={name='sol',index=1,force=force,surface=aquilo}
+  local function fails(a,text) local ok,err=pcall(W.call,sol,a); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+  fails({item='tungsten-carbide',count=200,to={position={x=0,y=0},surface='aquilo'},deadline_min=20},'no silo, chest or machine of ours within 2 tiles of (0,0) on aquilo')
+  fails({item='carbide',count=200,to={position={x=12.5,y=-30.5}},deadline_min=20},'unknown item: carbide')
+  fails({item='tungsten-carbide',count=200,to={position={x=12.5,y=-30.5}}},'deadline_min')
+  -- set: the silo on aquilo; Kestrel II at fulgora holds 200, its schedule stops at aquilo: loaded
+  local r=W.call(sol,{item='tungsten-carbide',count=200,to={position={x=12.5,y=-30.5},surface='aquilo'},deadline_min=20})
+  local w=r.watch
+  eq(w.id,1); eq(w.direction,'down'); eq(w.last_confirmed,'loaded'); eq(w.carrier,'Kestrel II')
+  has(r.line,'delivery watch #1: 200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo, open; deadline in 20m00s; last confirmed stage loaded (Kestrel II\'s hub holds 200 tungsten-carbide')
+  -- it leaves, flies to aquilo, stops there
+  game.tick=1600; pl.space_connection={}; pl.space_location=nil; where={leg={from='fulgora',to='aquilo',flown=0.1}}
+  W.tick(1620)
+  local x=st.delivwatch.list[1]
+  eq(x.stages.departed.text,'Kestrel II left fulgora'); eq(x.stages.in_transit.text,'Kestrel II flying fulgora->aquilo (10% when first seen)')
+  game.tick=8940; pl.space_connection=nil; pl.space_location={name='aquilo'}; where={at='aquilo',stopped=true}
+  -- stopped there with it aboard while the pad has no room for it (on the headless copy Nauvis's pad was full): blocked
+  W.tick(8940)
+  local h={}
+  eq(W.lines(sol,h)[1],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): blocked: no landing pad of ours on aquilo has room for tungsten-carbide (cargo-landing-pad (5,6)): the hub sends no pod of it down')
+  padroom=true; game.tick=9000
+  -- its pod lands at the pad (5,6), in network #12; the silo is in #7: blocked, the setter told once
+  receipts[#receipts+1]={tick=8990,kind='received',where='cargo-landing-pad (5,6) on aquilo',cargo={['tungsten-carbide']=200},dest={pad='cargo-landing-pad',position={x=5,y=6},surface='aquilo'}}
+  held.hub=0
+  W.tick(9000)
+  eq(x.last,'network'); eq(x.stages.arrived.text,'Kestrel II stopped at aquilo')
+  eq(x.stages.landed.text,'200 tungsten-carbide received by cargo-landing-pad (5,6) on aquilo'); eq(x.stages.landed.tick,8990)
+  eq(x.stages.network.text,'the pad (5,6) is in logistic network #12; the consumer in #7')
+  local lines=W.lines(sol,h)
+  eq(#lines,2)
+  eq(lines[2],'delivery watch #1: no longer blocked: no landing pad of ours on aquilo has room for tungsten-carbide (cargo-landing-pad (5,6)): the hub sends no pod of it down')
+  eq(lines[1],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): blocked: landed at the pad (5,6) in logistic network #12; the consumer rocket-silo (12.5,-30.5) is in network #7: robots of one do not carry to the other')
+  W.tick(9060); eq(W.lines(sol,h),nil,'told once')
+  eq(W.lines({name='astra',force=force},{}),nil,'the setter only')
+  -- the deadline passes: late, with the last confirmed stage and the blocker
+  game.tick=1000+20*3600+20; W.tick(game.tick)
+  eq(x.state,'late')
+  lines=W.lines(sol,h)
+  has(lines[1],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): deadline passed, not reached: last confirmed stage network (the pad (5,6) is in logistic network #12; the consumer in #7')
+  has(lines[1],'the consumer holds 0 (0 at the start); blocked: landed at the pad (5,6) in logistic network #12')
+  -- the pad joined to the silo's network and the carbide brought: blocker gone, reached (late)
+  nets[pad]=7; held.silo=200
+  game.tick=game.tick+60; W.tick(game.tick)
+  lines=W.lines(sol,h)
+  has(lines[1],'delivery watch #1: no longer blocked: landed at the pad (5,6) in logistic network #12')
+  has(lines[2],'delivery watch #1: reached: rocket-silo (12.5,-30.5) holds 200 tungsten-carbide (0 when the watch was set), late, 1s after the deadline')
+  eq(x.state,'reached')
+  -- the read lists it; a requester chest asking none of the item is a blocker; clear
+  local rd=W.call(sol,{})
+  eq(#rd.watches,1); has(rd.lines[1],'delivery watch #1: 200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo, reached')
+  r=W.call(sol,{item='tungsten-carbide',count=10,to={position={x=20.5,y=1.5},surface='aquilo'},deadline_min=5})
+  eq(r.watch.blockers[1],'the consumer, requester chest (20.5,1.5), asks none of tungsten-carbide: robots bring it nothing')
+  eq(W.call(sol,{id=2,clear=true}).cleared,2)
+  eq(#W.call(sol,{}).watches,1)
+  -- up: a machine aboard Kestrel II, the carbide launched from nauvis
+  local mach={valid=true,name='assembling-machine-3',type='assembling-machine',position={x=3.5,y=-4.5},get_item_count=function() return held.mach or 0 end}
+  local deck={name='platform-3',find_entities_filtered=function() return {mach} end}
+  mach.surface=deck; pl.surface=deck; pl.space_location={name='aquilo'}
+  held.hub=0
+  local rows={}
+  W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,
+    freight={where=function() return where end,receipts_since=function() return {} end,incoming=function() return {rows=rows} end}}
+  r=W.call(sol,{item='tungsten-carbide',count=20,to={position={x=3.5,y=-4.5},platform='Kestrel II'},deadline_min=10,from='nauvis'})
+  eq(r.watch.direction,'up'); eq(r.watch.blockers[1],'Kestrel II is not stopped at nauvis: a silo there launches to it only while it is')
+  pl.space_location={name='nauvis'}
+  rows[1]={cargo={['tungsten-carbide']=20},from='nauvis',tick=game.tick,down=false}
+  game.tick=game.tick+60; W.tick(game.tick)
+  x=st.delivwatch.list[#st.delivwatch.list]
+  eq(x.stages.launched.text,'a rocket from nauvis with 20 tungsten-carbide launched to Kestrel II'); eq(x.stages.in_transit.text,'its pod rising over nauvis')
+  rows={}; held.hub=20
+  game.tick=game.tick+60; W.tick(game.tick)
+  eq(x.stages.landed.text,'Kestrel II\'s hub holds 20 tungsten-carbide (0 when the watch was set)')
+  held.mach=20
+  game.tick=game.tick+60; W.tick(game.tick)
+  eq(x.state,'reached'); eq(x.last,'reached')
+  game,defines,prototypes=nil,nil,nil
+  print('d21_batch66 AB5 delivery_watch: ok')
+end

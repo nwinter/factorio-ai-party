@@ -800,7 +800,7 @@ return function(api)
   -- which pod, from which stop
   local function receipt(rec, p, tick, kind, where)
     rec.receipts = rec.receipts or {}
-    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg})
+    table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
   end
   local function pod_done(rec, p, tick, hub_dead)
@@ -881,7 +881,7 @@ return function(api)
     local out = {}
     local rec = store()[pl.index]
     for _, r in ipairs(rec and rec.receipts or {}) do
-      if r.tick > since then out[#out+1] = {tick=r.tick, kind=r.kind, where=r.where, cargo=r.cargo} end
+      if r.tick > since then out[#out+1] = {tick=r.tick, kind=r.kind, where=r.where, cargo=r.cargo, dest=r.dest} end
     end
     return out
   end

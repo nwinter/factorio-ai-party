@@ -44,10 +44,11 @@
   the schedule. With stops it then calls the GUI's go to station for `current` (`sent_to`). If the state still reads
   `no_schedule`, it writes the schedule again record by record, as the GUI does, and sends it again (`rebuilt` says
   what came of it). `state` is read after; `state_note` says when it is `no_schedule`, `no_path` or `paused` (the
-  platform goes nowhere). Seen on world n, not found on a copy: 8 of 8 edits whose current stop was the station the
-  platform waited at read `no_schedule` (Sol's 4 at Aquilo, Luna's 4 on Spindle at Fulgora), the rebuild too; the
-  same stops with the current on the next stop departed at once. `current_note` says so when an edit's current stop
-  is the station it waits at. In flight, `leg` gives the leg before the edit and the current stop now (the same
+  platform goes nowhere). `waiting`: stopped at the station of its current stop, not paused, it waits there on that
+  stop's conditions, as the schedule GUI shows: `waiting at stop N (station): conditions false now: ...`, each with its
+  value now. The game reads `no_schedule` for such a wait at times (Solstice at Nauvis on shift52, waiting for 300
+  processing units, left once they came); that is said, not failed. `current_note` gives it when an edit's current
+  stop is the station it is at. In flight, `leg` gives the leg before the edit and the current stop now (the same
   destination, back the way it came, or new); `keep_leg: true` makes the current stop the stop for the leg's
   destination (refused when the stops hold none). `next: true` alone calls the game's go to station on the stop after
   the current one now, keeping the records and their waits (`sent_to`: from which stop to which, and where it was).
@@ -259,6 +260,14 @@
   inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
   hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
   minute.
+- `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?}`: follows that count to the
+  consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
+  up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
+  no pad), network (the pad's logistic network and the consumer's), reached (the consumer holds `count` more than at
+  the start). `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
+  with room there, a pod landed with no pad, the platform paused or not stopping there, a requester chest asking none
+  of it. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
+  watches; `{id, clear: true}` ends one.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and

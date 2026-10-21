@@ -10586,3 +10586,87 @@ stopped at a turret's own feeder switched off.
   the gate line with "on its wires: firearm-magazine 15" (what the belt read gave), 4 behind the gate. Opened: "maker",
   no gate. The turret's own feeder held off: 5 reach it, 16 behind the gate. A turret on a belt nothing loads: preload
   only, STOPPED.
+
+## d21 batch66 AB4 (eng/d20-batch66)
+
+AB4 (Sol #1681): Solstice at Nauvis, schedule [nauvis, gleba] current 1, paused false, read `no_schedule` from tick
+42819577; the recheck failed the call. It left by 42829613 once 346 processing units had come.
+- Sol's journal (shift52): the state read no_schedule at 42820518, 42822827, 42825293, 42826616, 42827718 and 42828245.
+  At 42825293 and 42826616 nothing was on the way and the hub held 246 processing units against its wait
+  processing-unit >= 300. At 42829613 it read on_the_path, nauvis->gleba.
+- The 8 cases behind the old rule ("8 of 8 edits whose current stop was the station it waits at read no_schedule"),
+  read again:
+  - Luna's 4 (shift32 05:38:14-05:38:34): Spindle was at gleba, not fulgora, and its current stop was fulgora. A
+    rocket of 120 carbon fiber had been launched to it at 05:38:10. It left by 05:38:46.
+  - Sol's 4 (shift31 03:05:03-03:06:33): Swiftlet at aquilo read no_schedule before the first call (03:04:58, current
+    on gleba) and after each call, with the current on aquilo (a 1-tick time wait, held) or on gleba. No rocket was
+    launched to it then. Aquilo's silo held a ready rocket of 36 cryogenic science packs for it, not launched. It left
+    at 03:07:54, after the operator's GUI go to station and a 3-stop schedule.
+- Changed (space.lua, platwait.lua; runtime deploy needed):
+  - `waiting_now`: a platform stopped at the station of its current stop, not paused, the game reading
+    waiting_at_station or no_schedule. Each condition of that stop is read with its value now and whether it holds
+    (time from the arrival the harness saw, inactivity, item_count in the hub, circuit on the hub's wires,
+    all_requests_satisfied, any_request_not_satisfied; others not read), joined as the game joins them.
+  - `platforms` rows and every `platform_schedule` reply have `waiting`: `waiting at stop 1 (nauvis): conditions false
+    now: time 60s: 0s left [holds] and item_count processing-unit >= 300: the hub holds 246, 54 to go [false]`, with
+    "; the game reads no_schedule while it waits there and leaves when they hold" when it reads no_schedule.
+  - That case is not stuck: no recheck, no failed call or queue step; the state_note gives the line. A recheck begun
+    before ends ok with it. A no_schedule with the conditions holding, or with the current stop elsewhere, is read
+    again and fails as before, its text naming the stops set ("no_schedule with 2 stops set (current 2, gleba) while
+    it is at nauvis: it has not left"). `M.STUCK_RULE` gives the journals as read again.
+  - `stops` marks that stop "waiting here" with the values; `platform_gate` says "at station nauvis (the game reads
+    no_schedule)"; `current_note` gives the waiting line; `current` alone and `next` treat it as waiting there; the
+    harness's own waits (platwait) and the arrival tick count it.
+- Headless copy: platform B66wait at Nauvis (made, then destroyed), given [nauvis (iron-plate >= 100), gleba] current
+  1: the game read waiting_at_station (the copy did not give no_schedule); `waiting` and the platforms row said
+  "conditions false now: item_count iron-plate >= 100: the hub holds 0, 100 to go [false]", the gate "at station
+  nauvis". 100 iron plates put in the hub: waiting_for_departure, current 2.
+
+## d21 batch66 AB5 (eng/d20-batch66)
+
+AB5 (viewer Aurora, operator inbox 13:02 PDT: "Could delivery watches follow cargo to a named consumer, with a
+deadline, last confirmed stage, blocker and recovery alert? K2's carbide landed in a different network from its
+silo.").
+- What the reads tracked before:
+  - shipment: a hub request's state on its way up (delivered, in flight, launched, loading, waiting with the silo's
+    flag), and what a planet's pads ask of the hub.
+  - freight: each rocket launched to a platform, and each cargo pod from a hub to the pad that received it or to the
+    ground.
+  - pods and landed: pods in the sky, containers on the ground.
+  - drops: one drop's pod to its container.
+  - freight_audit: one item's stock across planets and platforms.
+  None followed a count of an item to the chest, silo or machine that uses it.
+- New: `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?}` (delivwatch.lua; runtime
+  deploy needed).
+  - The consumer is an entity of ours within 2 tiles of the position, in a chunk our force has charted.
+  - Once a second, 4 watches a pass, each watch reads what a player sees and keeps the first tick of each stage.
+  - Down (the consumer on a planet):
+    - loaded: a platform's hub holds the item (`from`, else the first platform with it whose schedule stops there);
+    - departed, in_transit (flying to that planet), arrived;
+    - landed: its pod received by a landing pad (freight's pod receipts now carry the pad's position), or landed with
+      no pad;
+    - network: the pad's logistic network and the consumer's;
+    - reached: the consumer holds `count` more than at the start.
+  - Up (the consumer aboard a platform):
+    - loaded: a silo of `from` with it in its rocket (the census pass's silos);
+    - launched and in_transit: a rocket with it launched to the platform;
+    - landed: the hub holds more of it;
+    - reached.
+  - Blockers: the pad's network is not the consumer's, or the consumer is in none; the platform is stopped there with
+    it but no landing pad there has room for it, or there is none; a pod with it landed with no pad; the platform is
+    paused, or its schedule has no stop there; up: not stopped at `from`; a requester or buffer chest asks none of it;
+    the consumer is gone.
+  - The setter hears each in team.alerts: each blocker once, a blocker gone, the deadline passed while not reached
+    (with the last confirmed stage and the blocker), and the arrival. `{}` lists the force's watches; `{id}` reads
+    one; `{id, clear: true}` ends one. At most 16 open a force; a watch is kept 10 minutes after it ends.
+- Headless copy (shared; a test platform B66dw at Nauvis, made, then destroyed):
+  - With 50 tungsten carbide in its hub, the pad (52,54) got a request for it (section added, then removed). Two
+    watches: one to a wooden chest at (-43.5,134.5) in no logistic network, one to the silo (15.5,59.5) in network
+    #243.
+  - Both read "loaded", "arrived" and "blocked: no landing pad of ours on nauvis has room for tungsten-carbide
+    (cargo-landing-pad (52,54)): the hub sends no pod of it down". The pad had no free slot.
+  - One slot freed (200 space science packs taken out): "landed (50 tungsten-carbide received by cargo-landing-pad
+    (52,54) on nauvis)" and "network (the pad (52,54) is in logistic network #243; ...)". For the chest: "blocked: the
+    consumer wooden-chest (-43.5,134.5) is in no logistic network". The silo: in #243, no blocker.
+  - The events were stored for the setter in order (blocked, no longer blocked, blocked by network). The copy's
+    replies to that bot carried no team block, so team.alerts delivery is checked by the fake engine only.

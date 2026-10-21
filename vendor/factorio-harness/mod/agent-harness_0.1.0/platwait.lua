@@ -77,7 +77,9 @@ return function(api)
         local sch = try(function() return pl.get_schedule() end)
         local cur = sch and sch.current
         local s = cur and watch.stops[cur]
-        local waiting = try(function() return pl.state == defines.space_platform_state.waiting_at_station end)
+        -- (d21 batch66 AB4) the game reads no_schedule while a platform waits at the current stop it was sent to there
+        local waiting = try(function() return pl.state == defines.space_platform_state.waiting_at_station
+          or (pl.state == defines.space_platform_state.no_schedule and not pl.paused and not pl.space_connection) end)
         local here = waiting and s and try(function() return pl.space_location.name end) == s.station
         -- the record still holds the never condition: else the schedule was changed elsewhere and the watch is dropped
         local rec = here and try(function() return pl.schedule.records[cur] end)
