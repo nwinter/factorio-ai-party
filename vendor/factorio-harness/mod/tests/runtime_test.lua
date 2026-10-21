@@ -4271,6 +4271,7 @@ eq(pcall(runtime.check_args,'blueprint_save',{name='row',blueprint='0eNq...'}),f
 eq(pcall(runtime.check_args,'blueprint_rename',{name='row',new_name='row2'}),true)
 eq(pcall(runtime.check_args,'blueprint_retire',{name='row',reason='jams',replaced_by='row2'}),true)
 eq(pcall(runtime.check_args,'blueprint_retire',{name='row',clear=true}),true)
+eq(pcall(runtime.check_args,'belt_route',{from={x=0,y=0},to={x=5,y=0},item='iron-ore',refuse_mixed=true}),true)
 eq(pcall(runtime.check_args,'blueprint_list',{name='row'}),true)
 eq(pcall(runtime.check_args,'blueprint_delete',{name='row'}),true)
 eq(pcall(runtime.check_args,'blueprint_export',{name='row',layout=true}),true)
