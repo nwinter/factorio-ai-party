@@ -103,10 +103,16 @@
   var showReplies = store('chatReplies') !== '0';
   // The viewer line a reply answers, in this list: the same viewer, the same words (the relay's "@astra " stripped,
   // its cut "…" too), written before the reply.
-  function bareText(s) { return String(s || '').replace(/^@\S+\s+/, '').replace(/…$/, '').trim().toLowerCase(); }
+  // every leading @name (AA2: "@Muse @Luna Could ..." on the site, "@Luna Could ..." in the reply's quote)
+  function bareText(s) { return String(s || '').replace(/^(?:@\S+\s+)+/, '').replace(/…$/, '').trim().toLowerCase(); }
   function answered(list, r) {
     var a = r.answers;
     if (!a || !a.name) return -1;
+    // (d20 batch65 AA2) the line the Operator named (tools/opreply.py): by its id
+    var id = /^site:(\d+)$/.exec(String(a.id || ''));
+    if (id) {
+      for (var j = list.length - 1; j >= 0; j--) if (list[j].src === 'site' && String(list[j].seq) === id[1]) return j;
+    }
     var name = String(a.name).toLowerCase(), body = bareText(a.text);
     for (var i = list.length - 1; i >= 0; i--) {
       var m = list[i];
@@ -135,7 +141,7 @@
     replyLines.slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); }).forEach(function (r) {
       if ((r.t || 0) < first) return;
       var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind, history: r.history === true,
-        link: r.link, answers: r.answers };
+        link: r.link, answers: r.answers, part: r.part };
       var at = answered(all, r);
       if (at >= 0) {
         item.thread = true;
@@ -177,6 +183,8 @@
     var to = m.to && m.to.length ? ' <span class="c-to fx-muted">↩ ' + esc(m.to.join(', ')) + '</span>' : '';
     // (d19 batch42 A5, viewer Aurora) a reply read again at a stream restart keeps its own time and says it is history
     if (m.history) to += ' <span class="c-history fx-muted" title="said before the stream service restarted">history</span>';
+    // (AA2) one of a split reply's parts
+    if (Array.isArray(m.part) && m.part.length === 2 && m.part[1] > 1) to += ' <span class="c-part fx-muted">part ' + esc(m.part[0]) + ' of ' + esc(m.part[1]) + '</span>';
     to += linkHtml(m);
     return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + '" id="c-a' + esc(m.k.slice(1)) + '"' + (col ? ' style="--ac:' + col + '"' : '') +
       '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +

@@ -619,7 +619,8 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             # one that speaks to the viewers; the live page's site chat uses the same rule)
             # (the Operator's replies also look at the shift's operator inbox: viewers' lines to the Operator never reach
             # the game chat, so its answer is not threaded under another of their lines; such an answer stays in time order)
-            for c, vr in viewer_replies.replies(chat, inbox=viewer_replies.read_inbox(d / "operator-inbox.jsonl")):
+            for c, vr in viewer_replies.replies(chat, inbox=viewer_replies.read_inbox(d / "operator-inbox.jsonl"),
+                                                    links=viewer_replies.read_links(d / viewer_replies.LINKS_NAME)):
                 who = viewer_replies.speaker(c)
                 if not keep(c["text"]) or (who != "operator" and who not in agents):
                     continue

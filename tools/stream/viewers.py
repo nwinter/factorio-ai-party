@@ -1508,6 +1508,8 @@ class Feed:
             self.deliveries[v["id"]]["inbox"] = True
         row = {"t": round(v.get("t") or time.time(), 1), "agent": f"viewer {v['name']}", "text": v.get("full") or v["text"], "viewer": True,
                "source": v.get("source")}
+        if v.get("id"):  # (d20 batch65 AA2) the line's id, for tools/opreply.py --to
+            row["id"] = v["id"]
         if dropped:
             row["dropped"] = dropped
         try:
