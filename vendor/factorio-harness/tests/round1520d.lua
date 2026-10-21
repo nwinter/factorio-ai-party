@@ -478,4 +478,15 @@ do
   eq(runtime.allowed_directions({name='straight-rail',type='straight-rail',supports_direction=true,flags={['building-direction-8-way']=true}}),nil)
   surface.create_entity=saved_create
 end
+
+-- 7. (d20 batch54 N9, Sol #1427) a queue write's brief reply names each guard by id; a guard edit's keeps its rows,
+-- guard_lines and line.
+do
+  local b=runtime.queue_brief({revision=4,paused=false,pending={},history={},guards={{id='guard-1',when={['until']='ammo_below'}},{id='guard-2',when={['until']='platform_loss'}}}})
+  eq(b.guards,2); eq(b.guard_ids[1],'guard-1 ammo_below'); eq(b.guard_ids[2],'guard-2 platform_loss'); eq(b.line,nil)
+  b=runtime.queue_brief({revision=5,paused=false,pending={},history={},guards={{id='guard-1',baseline='read at each check',edit='kept'}},
+    guard_lines={'guard-1 ammo_below (kept): read at each check'},line='guards edited (revision 5): 1 kept'})
+  eq(b.guards[1].edit,'kept'); eq(b.guard_lines[1],'guard-1 ammo_below (kept): read at each check'); eq(b.line,'guards edited (revision 5): 1 kept'); eq(b.guard_ids,nil)
+  eq(runtime.queue_brief({revision=1,pending={},history={}}).guard_ids,nil)
+end
 print('round1520d: ok')
