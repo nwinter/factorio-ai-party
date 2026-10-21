@@ -56,7 +56,9 @@
 - `bottleneck {item, per_min?, all_stopped?, surface?}` (or `area`, `positions`): follows a shortage down its ingredient
   chain to where it starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved
   maker, the nearest chest within 64 tiles holding what it lacks and one `transfer` call that carries it there.
-  `per_min: 30`: each step's rate for that target, what it makes now, its makers' rate each and the machines the target
+  A maker lacking an item its input inserter's source holds while that inserter is off by its condition reads "held by
+  its feeder's condition" (the condition, values on its wires, the source's stock; `held_by_feeders`), gets no fix, and
+  the line stops there; a source with none stays a shortage. `per_min: 30`: each step's rate for that target, what it makes now, its makers' rate each and the machines the target
   takes; an ingredient is counted net of what its recipe gives back (asteroid crushing). A fluid adds `shares`: each
   recipe's machines and share of the fluid at full speed. `all_stopped: true`: every maker not working, grouped by
   cluster with every position. A maker stopped by its own circuit or logistic condition carries the gate inline (the
