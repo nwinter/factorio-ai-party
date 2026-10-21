@@ -2055,7 +2055,8 @@ function handlers.describe(_,a)
         cut_spans='true: mark tiles under underground spans anyway; without it a live tile deconstruct on a platform that would is refused, naming the pairs (spans_cut), and marks nothing'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',surface='optional planet name: cancel marks there by remote view',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks_cancelled, robot_orders_cancelled, robots_freed); entity_types item-entity or entity_names item-on-ground is the same',
         tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
       screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080',position='optional {x,y}: the centre, by remote view (every chunk of the frame one our force sees now); default the character\'s position',
-        surface='optional planet name (with position)',platform='optional platform name (platform coordinates, hub at 0,0)'}},
+        surface='optional planet name (with position)',platform='optional platform name (platform coordinates, hub at 0,0; without position centred on the hub)',
+        returns='queued, path, client (the game client that renders it), surface and platform (where it is rendered), position (its centre), frame {left_top, right_bottom} (32 px a tile), in_frame (ours standing in the frame by name; characters left out), ghosts_in_frame, line (rendered on WHERE centred (X,Y): frame, ours in it), by'}},
     limitations={'No teleport, resource creation, free crafting, direct mining, remote building, or map reveal',
       'Runtime source installation is trusted operator code, not a security sandbox',
       'Screenshots require a graphical client controlling the requested player; headless hosts do not render',
@@ -12327,9 +12328,30 @@ function handlers.screenshot(p,a)
   end
   local client=screenshot_client(p)
   assert(client,'no graphical client is connected to render a screenshot')
-  game.take_screenshot{player=real(p),by_player=client,surface=p.surface,position=at,path=a.path,resolution={x=w,y=h},zoom=1,show_entity_info=true}
-  return {queued=true,path=a.path,client=client.name,requires_graphical_client=true,position=a.position~=nil and {x=at.x,y=at.y} or nil,
-    surface=a.position~=nil and p.surface.name or nil,by=by}
+  local s=p.surface
+  game.take_screenshot{player=real(p),by_player=client,surface=s,position=at,path=a.path,resolution={x=w,y=h},zoom=1,show_entity_info=true}
+  -- (d21 batch66 AB2, Sol #1602: a shot of platform Solstice at (0,0) from Fulgora, its sprites drawn at low resolution,
+  -- was read as Fulgora round his body) every reply names the surface and centre the engine was given, the frame, and
+  -- what of ours stands in it, so the image can be checked against them
+  local platform=type(p)=='table' and rawget(p,'__platform') or nil
+  local lt,rb={x=at.x-w/64,y=at.y-h/64},{x=at.x+w/64,y=at.y+h/64}
+  local by_name,ghosts,n={},0,0
+  for _,e in ipairs(s.find_entities_filtered{area={lt,rb},force=p.force,limit=2000}) do
+    if e.type=='entity-ghost' or e.type=='tile-ghost' then ghosts=ghosts+1
+    elseif e.type~='character' then by_name[e.name]=(by_name[e.name] or 0)+1; n=n+1 end
+  end
+  local names={}
+  for name,c in pairs(by_name) do names[#names+1]={name,c} end
+  table.sort(names,function(x,y) return x[2]>y[2] or (x[2]==y[2] and x[1]<y[1]) end)
+  local list={}
+  for i,v in ipairs(names) do if i<=8 then list[i]=v[1]..' '..v[2] end end
+  local where=platform and string.format('platform %s (surface %s)',platform,s.name) or s.name
+  local line=string.format('rendered on %s centred (%g,%g)%s: frame (%g,%g)-(%g,%g), %gx%g tiles; ours in it: %s%s%s',where,at.x,at.y,
+    a.position==nil and (platform and ' (the hub)' or ' (your character)') or '',lt.x,lt.y,rb.x,rb.y,w/32,h/32,
+    #list>0 and table.concat(list,', ') or 'nothing',#names>8 and string.format(' and %d more names',#names-8) or '',
+    ghosts>0 and string.format('; %d ghost%s',ghosts,ghosts==1 and '' or 's') or '')
+  return {queued=true,path=a.path,client=client.name,requires_graphical_client=true,position={x=at.x,y=at.y},
+    surface=s.name,platform=platform,frame={left_top=lt,right_bottom=rb},in_frame=by_name,ghosts_in_frame=ghosts,line=line,by=by}
 end
 end function handlers.revive_ghost(p,a)
   local e=entity(p,a); friendly(p,e)
@@ -16102,7 +16124,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
 M.platalerts=require('platalerts'){state=state,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
-  thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
+  thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end,pump_states=function(pl) return M.thrust.pump_states(pl) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,ghost_placed=function(p,g) pcall(M.ghostlog.placed,M.board.who(p),g) end,teammates=function(p) return M.where.list(p) end,

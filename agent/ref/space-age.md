@@ -87,7 +87,10 @@
   hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute; `fuel_outlook`: one line
   of thruster fuel and oxidizer held (thrusters and tanks), made and used a minute over the last minute, and flying
   whether each lasts the rest of the leg at the speed now (a team alert to the platform's people when one runs out
-  before the leg ends, once while it lasts). `route`: the locations
+  before the leg ends, once while it lasts: `urgent:` under 2 minutes of it at the rates now, or from 90 s into the
+  leg when the stock's own fall over a minute runs it out or the shortage holds on two scans a minute apart with the
+  stock lower; else `advisory:` with the stock's trend (thrusters and tanks, and the tanks), the pumps toward the
+  thrusters by state and the speed). `route`: the locations
   in order (default its schedule round to the current stop again), read from the current leg while flying; one
   starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
   window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an
@@ -162,6 +165,8 @@
   minimum payload the slot has). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
+- `./shot NAME platform=NAME [at=X,Y]`: a screenshot of a platform by remote view (its hub without `at=`). Its second
+  line, as every shot's, says where it was rendered: surface, centre, frame and what of ours stands in it.
 - `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
   `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
   loaded and dropped, totals and a minute.

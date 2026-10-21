@@ -267,7 +267,7 @@ return function(api)
     .. 'a 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s in 6 s on one full tank with no supply'
   -- What stays with the thrusters when their pumps stop: per fluid, the thrusters' own tanks and the pipes and tanks
   -- between them and the pumps that push toward them (the walk stops at a pump), and how long that burns.
-  function M.after_pumps(pl)
+  local function walk(pl)
     local s = try(function() return pl.surface end)
     if not s then return nil end
     local thrusters = try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end) or {}
@@ -298,6 +298,11 @@ return function(api)
         end
       end
     end
+    return order
+  end
+  function M.after_pumps(pl)
+    local order = walk(pl)
+    if not order then return nil end
     local lines = {}
     for _, b in ipairs(order) do
       local each = (b.own + b.between) / b.thrusters
@@ -310,6 +315,32 @@ return function(api)
         #pumps > 0 and '; ' .. table.concat(pumps, '; ') or '; no pump between them and the rest of the line')
     end
     return {lines=lines, rule=M.RULE}
+  end
+  -- (d20 batch60 V5, Astra #1594: Kestrel II's pumps feed the thrusters only under 40 km/s) the pumps pushing toward
+  -- the thrusters, per fluid, as their GUIs show them: {fluid: {pumps, working, line}}; line groups them by state
+  -- ("2 of 4 working; 2 off by its circuit condition signal-V < 40 (signal-V 46 on its wires)"); nil with no thruster.
+  function M.pump_states(pl)
+    local order = walk(pl)
+    if not order then return nil end
+    local out = {}
+    for _, b in ipairs(order) do
+      local by, keys, working = {}, {}, 0
+      for _, e in ipairs(b.pumps) do
+        local text = status_names[try(function() return e.status end)] == 'working' and 'working' or state_text(e)
+        if text == 'working' then working = working + 1 end
+        if not by[text] then by[text] = 0; keys[#keys+1] = text end
+        by[text] = by[text] + 1
+      end
+      local parts = {}
+      for _, k in ipairs(keys) do
+        if k == 'working' then table.insert(parts, 1, string.format('%d of %d working', by[k], #b.pumps))
+        else parts[#parts+1] = string.format('%d %s', by[k], k) end
+      end
+      if working == 0 and #b.pumps > 0 then table.insert(parts, 1, string.format('0 of %d working', #b.pumps)) end
+      out[b.fluid] = {pumps=#b.pumps, working=working,
+        line=#b.pumps > 0 and table.concat(parts, '; ') or 'no pump between the thrusters and the rest of the line'}
+    end
+    return out
   end
   -- The thrusters' tanks in one phrase: "thruster-fuel 99%, thruster-oxidizer 18%" (the lowest of each).
   function M.lowest_text(r)
