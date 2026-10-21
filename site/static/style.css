@@ -469,6 +469,10 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat .c-agent-name { color: var(--ac, var(--fx-heading)); }
 .vchat .c-to { font-size: 0.85em; }
 .vchat .c-link, .vchat .c-re { font-size: 0.8em; }
+.vchat .c-delivery-replied { font: inherit; font-size: 0.85em; color: var(--good); background: none; border: 0; padding: 0;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.vchat .c-delivery-replied:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vchat li.is-flash { background-color: rgba(var(--fx-orange-rgb), .22); }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
 .vchat-filter label { display: inline-flex; align-items: center; gap: 6px; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }
