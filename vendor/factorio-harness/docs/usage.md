@@ -10097,3 +10097,34 @@ fh watch    # deploy on every change
   platform conditions.
 - Tests: tests/d20_batch62c.lua (fails on main's conditions.lua); tests/d20_batch52.lua and d20_batch62b.lua quote the
   widened refusals.
+
+## d20 batch62 X4 (eng/d20-batch62d)
+
+- X4 (Astra #1555: `belt_flow {surface: nauvis, position: (135.5,-204.5), seconds: 30}` from Aquilo was refused while
+  inspect, trace and uptime read a remote planet). `belt_flow` takes `surface` (a planet, surface or platform name) by
+  remote view, as uptime does (beltsample.lua with on_surface). Sampling is unchanged. The sight rule is trace's: the
+  start tile in a chunk our force sees now (remote_entity); the line walked only where the map is charted (the reply
+  says where it goes on uncharted: "the line goes on uncharted (on at (64.5,0.5)): not walked"); a point sampled only
+  while its chunk is in sight, said per point as `out_of_sight` ("out of sight (no radar coverage there): not sampled",
+  or "out of sight for N of M samples: counted over the rest"). The same rule holds on your own surface. The reply
+  names the `surface`. `belt_flow {surface}` without position is refused, as platform is.
+- The reads that took no `surface` were listed from describe and runtime.lua's reads (92 reads, 44 without surface).
+  Those that read our entities on your surface now take it by remote view:
+  - on bots.lua SURFACE_ACTIONS (runtime.lua's wrapper): `heat_budget`, `ports`, `ingredient_gap`, `defense`,
+    `flamers`, `cargo` (cargo with position, or items with silo, there);
+  - in their own handlers (defined after the wrapper): `pipe_gaps`, and `circuit_audit` with area or positions (an
+    entity out of sight now is not read, counted as `out_of_sight`).
+  - Fixed with them: heating.lua's and ingredient_gap's "within 32 tiles of the character" sight no longer counts for a
+    remote surface (the character's coordinates are on another planet); `turrets {surface, hand_fed_low}` on another
+    planet gives no "tiles from you" and its cache is apart from the local one.
+- Left without surface: the character's own (status, inventory, craftable, sleep_check, review), the force's and the
+  team's (recipes, technologies, research_options, describe, profiles, cameras, blueprint_list, blueprint_export,
+  board_progress, board_critical, lesson_review, ground_rules, reminders, lookahead, drops, freight_audit, dry_run),
+  the platform reads (platform, platforms, fleet, platform_* , which take platform), and `nearest` and `nearest_water`
+  (resources, tiles and any force's entities, not ours).
+- Checked on the private copy (its own container), Astra on Fulgora against Sol on Nauvis at the same places:
+  belt_flow on two Nauvis belt lines (15 and 68 tiles), heat_budget, pipe_gaps, ports, ingredient_gap, circuit_audit,
+  defense, flamers and cargo gave the same reply but for where/surface. Refused: circuit_audit {surface} alone,
+  belt_flow {surface} alone, an uncharted heat_budget, an unknown surface name.
+- Tests: tests/d20_batch62d.lua (fails on main's beltsample.lua); tests/beltsample.lua gives its fake belts a surface
+  and its fake player a force; tests/d20_batch62b.lua quotes the widened belt_flow refusal.

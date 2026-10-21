@@ -21,7 +21,7 @@ return function(api)
   local function touches(a,b) return a.l<=b.r+1 and a.r>=b.l-1 and a.t<=b.b+1 and a.b>=b.t-1 end
   local function visible(p,pos)
     return try(function() return p.force.is_chunk_visible(p.surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) end)
-      or p.position and ((pos.x-p.position.x)^2+(pos.y-p.position.y)^2)<=32^2
+      or not (type(p)=='table' and rawget(p,'__remote')) and p.position and ((pos.x-p.position.x)^2+(pos.y-p.position.y)^2)<=32^2
   end
   local function facts(p,proto,pos,dir,planned)
     local energy=try(function() return proto.heating_energy end) or 0

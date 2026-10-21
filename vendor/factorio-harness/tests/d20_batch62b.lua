@@ -105,7 +105,7 @@ refused('game_alerts',{surface='nowhere'},'no surface named nowhere')
 refused('shipment',{item='iron-plate',surface='nauvis'},'surface goes with ledger: true')
 refused('board_review',{surface='nauvis'},'surface goes with ownership: true')
 refused('uptime',{surface='fulgora'},'surface and platform go with positions, position, area or items')
-refused('belt_flow',{platform='Swift'},'platform goes with position')
+refused('belt_flow',{platform='Swift'},'surface and platform go with position')
 
 -- A platform name that is none of ours.
 refused('platforms',{platform='Nowhere'},'no platform of ours named Nowhere; platforms: none')

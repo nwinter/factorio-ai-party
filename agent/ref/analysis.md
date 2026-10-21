@@ -161,7 +161,7 @@
   health, recipe, what it holds, and `spoil:` (each spoilable item's count and spoiled share, the first to spoil or hatch
   and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
   condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
-- `ports {name, position, direction?, recipe?, mirror?, platform?}`: where each fluid port of an unbuilt machine is and
+- `ports {name, position, direction?, recipe?, mirror?, platform? | surface?}`: where each fluid port of an unbuilt machine is and
   the fluid the recipe puts there. More boxes on a side than fluids: the first fluid takes the extra ones (a cryogenic
   plant on lithium: lithium-brine left and middle, ammonia right); `box` is the fluidbox inspect gives once built.
   Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
@@ -202,7 +202,8 @@
   facts as inspect's `starving`, to their builder and their feeders' builders; under 2 minutes left it is
   `captive_urgent`, and `captive_died` names the hostile spawner standing in its place; both show in the team block's
   urgent part and wake a sleep.
-- `belt_flow {position, seconds?, platform?}`: the belt line through position (64 tiles back and on, undergrounds
+- `belt_flow {position, seconds?, platform? | surface?}` (`surface`: a belt on another planet by remote view: the line is walked
+  where the map is charted, a point out of sight now is not sampled, said per point as `out_of_sight`): the belt line through position (64 tiles back and on, undergrounds
   followed), cut into sections at each merge (a side-load, a splitter), sampled for `seconds` (2..30, default 10) by
   item at each section's last tile and each belt merging in: per lane items a minute that left the tile, by name, and
   `stopped` (`full` with 4 or more on the tile) for a lane whose items did not move; `merges` gives the line before
@@ -226,7 +227,7 @@
   ingredients short at the samples that read short (at the recipe's quality), outputs by quality from its output slot,
   totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
   name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
-- `pipe_gaps {from, to, via?}` or `{line}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
+- `pipe_gaps {from, to, via?}` or `{line}` (`surface`: those pipes on another planet by remote view): a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the
   network through it, followed through fluid neighbours (pumps too) in chunks our force sees now, up to 1024 entities:
@@ -258,7 +259,8 @@
   deconstruction and upgrade marks cancelled; repairs and deliveries named, not cancelled; a job gone by then (built,
   removed or done) is skipped and named in `ended`.
   Example: `./fh call robot_losses --args '{"cancel":true,"near":{"x":200,"y":40}}'`
-- `ingredient_gap {position | positions | area, all?, skip?}`: per crafting machine (16 a call), each ingredient of its
+- `ingredient_gap {position | positions | area, all?, skip?, surface?}` (`surface`: those machines on another planet by
+  remote view, in sight): per crafting machine (16 a call), each ingredient of its
   next craft: needed, held in its input, how many of those spoil within 5 min, usable, short; for a short item the
   places within 64 tiles of the machine that can spare it without going under their own request (a requester or buffer
   only over its request), with how many; donors for the first 8 short items a call (`donors_skipped`); the ground as
