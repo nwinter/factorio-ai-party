@@ -6049,6 +6049,35 @@ fh watch    # deploy on every change
   logistic networks' robots summed by kind (total, idle, working, charging, waiting to charge) and the networks with
   the most waiting, from the network view kept for a minute (no new scan). On the copy: 5 lines, e.g. `gleba: 1
   network; robots logistic 157: 0 idle, 143 working, 14 charging, 0 waiting; ...`.
+  - Charging hotspots (d20 batch59 U3, Astra #1502):
+    - Before: the line read `waiting to charge most: #243 (37,38) 355 waiting`. The 355 was the network's total over
+      all its roboports. (37,38) was the network's first roboport, not its centre, and its own queue held 0. Astra
+      then read 274 roboports by `inspect`, 8 a call, and found (273,-194) and (386,-244) with 15 waiting each
+      (tick 40189906).
+    - Now the line reads `waiting to charge most: network #243 355 in all (a roboport of it at (37,38))`. It then
+      gives `roboports with the most: (273,-194) 15 waiting, 4 charging, ...`: the planet's 5 roboports with the
+      most robots waiting to charge, then charging.
+    - Each count is that roboport's own logistic cell (`to_charge_robot_count`, `charging_robot_count`), as its GUI
+      shows a player. Personal roboports are left out.
+    - The network view collects them in the pass it already makes over the cells, keeping 5 per network.
+  - `logistics_audit {charging: true, limit?}` (1..20, default 5): the network's roboports ranked the same way, each
+    with position, name, unit_number, waiting, charging, `slots` (its charging_station_count) and `energy` (% of its
+    buffer). Also the network's totals (roboports, charging, waiting), `roboports_with_queue` and a line.
+  - Cost on the private copy:
+    - two counts over 270 cells: 0.23 ms;
+    - the charging read on network 243 (54 roboports): 3.1-3.4 ms in game, of which a `clock` call (the dispatch
+      alone) is 1.8 ms;
+    - so about 4 ms for 274 roboports.
+  - `inspect {positions}` (Astra: it accepted 32 and read 8):
+    - The 8 came from d19 batch45: 32 positions read 26-31 ms on the copy, so a call read the first 8 (12 compact)
+      and listed the rest.
+    - Now one limit, 8 a call compact or not. `positions_limit: 8` is in every positions reply, and 9 or more is
+      refused with the number.
+    - Each roboport's inspect built its whole network's view again. Now one view is built per network per tick, so
+      the 8 share it.
+    - 8 roboports: full 22-24 ms on the copy (27-28 before the shared view), compact 8.7-9.6 ms. A full inspect of
+      any entity costs 2-4 ms on the copy now.
+  - Tests: tests/d20_batch59.lua U3.
 - `moved_by` (D5, Opus 3x: a standing order rearm-se took him to (53,112)): a queue step or standing order step that
   ends with the character 8 or more tiles from where it began (or on another surface) is named in the agent's next
   reply that is not a poll, once: who (the order, or the queue step and label), the action and whether it was done,

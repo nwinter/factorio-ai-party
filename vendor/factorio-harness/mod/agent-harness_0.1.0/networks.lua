@@ -795,14 +795,34 @@ return function(api)
     if k.charging then t = t .. string.format(', %d charging, %d waiting to charge', k.charging, k.waiting) end
     return t
   end
+  -- The roboports with the most robots waiting to charge, then charging: {x, y, waiting, charging} (personal roboports
+  -- left out), at most k. rows: {c (a cell), charging, waiting}.
+  local HOT = 5
+  function M.hottest(rows, k)
+    table.sort(rows, function(a, b) if a.waiting ~= b.waiting then return a.waiting > b.waiting end return a.charging > b.charging end)
+    local out = {}
+    for _, r in ipairs(rows) do
+      if #out >= k then break end
+      local o = not try(function() return r.c.mobile end) and try(function() return r.c.owner end)
+      if o and o.valid then out[#out+1] = {x=o.position.x, y=o.position.y, waiting=r.waiting, charging=r.charging} end
+    end
+    return out
+  end
+  function M.hot_text(h) return string.format('(%g,%g) %d waiting, %d charging', h.x, h.y, h.waiting, h.charging) end
   function M.logistic_view(ln)
     local v = {id=try(function() return ln.network_id end), roboports=0, personal=0,
       logistic={total=try(function() return ln.all_logistic_robots end) or 0, idle=try(function() return ln.available_logistic_robots end) or 0, charging=0, waiting=0},
       construction={total=try(function() return ln.all_construction_robots end) or 0, idle=try(function() return ln.available_construction_robots end) or 0, charging=0, waiting=0}}
     local typed, any_charging, any_waiting = true, 0, 0
+    -- (d20 batch59 U3, Astra #1502) each roboport's own queue, as its GUI shows it: the HOT with the most waiting
+    -- (then charging) are kept with their positions; the network's totals sum every roboport.
+    local hot = {}
     for _, c in ipairs(try(function() return ln.cells end) or {}) do
-      any_charging = any_charging + (try(function() return c.charging_robot_count end) or 0)
-      any_waiting = any_waiting + (try(function() return c.to_charge_robot_count end) or 0)
+      local cc = try(function() return c.charging_robot_count end) or 0
+      local cw = try(function() return c.to_charge_robot_count end) or 0
+      any_charging = any_charging + cc
+      any_waiting = any_waiting + cw
+      if cc + cw > 0 then hot[#hot+1] = {c=c, charging=cc, waiting=cw} end
       local by = cell_robots(c)
       if by then
         for _, k in ipairs({'logistic', 'construction'}) do
@@ -830,6 +850,7 @@ return function(api)
         v.construction_area = box_add(v.construction_area, o.position.x, o.position.y, try(function() return c.construction_radius end) or 0)
       end
     end
+    v.hot = M.hottest(hot, HOT)
     for _, k in ipairs({'logistic', 'construction'}) do
       local r = v[k]
       if not typed then r.charging, r.waiting = nil, nil end
@@ -880,13 +901,18 @@ return function(api)
   end
   -- What inspect shows on a roboport or a logistic chest: its network (or that
   -- it has none) and, for a roboport, its own cell.
+  -- (d20 batch59 U3) one view a network a tick: inspect {positions} of 8 roboports of one network read it once.
+  local view_memo = {tick=-1, by={}}
   function M.of_entity(e)
     local ln = try(function() return e.logistic_network end)
     local cell = e.type == 'roboport' and try(function() return e.logistic_cell end)
     ln = ln or (cell and try(function() return cell.logistic_network end))
     local out
     if ln then
-      local v = M.logistic_view(ln)
+      if view_memo.tick ~= game.tick then view_memo = {tick=game.tick, by={}} end
+      local nid = try(function() return ln.network_id end)
+      local v = nid and view_memo.by[nid] or M.logistic_view(ln)
+      if nid then view_memo.by[nid] = v end
       out = {id=v.id, roboports=v.roboports, personal=v.personal > 0 and v.personal or nil, logistic_area=v.logistic_area,
         construction_area=v.construction_area, logistic_robots=v.logistic, construction_robots=v.construction,
         charging=v.charging, waiting=v.waiting, line=string.format('logistic #%s: %s', tostring(v.id), v.text)}
@@ -1461,7 +1487,7 @@ return function(api)
     local out = {}
     for _, s in ipairs(v.surfaces or {}) do
       local sum = {logistic={total=0, idle=0, working=0, charging=0, waiting=0}, construction={total=0, idle=0, working=0, charging=0, waiting=0}}
-      local nets, waits, untyped = 0, {}, 0
+      local nets, waits, untyped, hots = 0, {}, 0, {}
       for _, r in ipairs(s.logistic or {}) do
         local w = r.view
         if w then
@@ -1473,19 +1499,26 @@ return function(api)
             wait = wait + (x.waiting or 0)
           end
           if w.waiting then untyped = untyped + w.waiting; wait = wait + w.waiting end
-          if wait > 0 then waits[#waits+1] = {n=wait, text=string.format('#%s%s %d waiting', tostring(w.id or r.id),
-            w.center and string.format(' (%d,%d)', math.floor(w.center.x), math.floor(w.center.y)) or '', wait)} end
+          -- (d20 batch59 U3, Astra #1502: "#243 (37,38) 355 waiting" read as that roboport's queue, which held 0) the
+          -- network's total over its roboports, and where one of them stands; the busiest roboports follow.
+          if wait > 0 then waits[#waits+1] = {n=wait, text=string.format('network #%s %d in all%s', tostring(w.id or r.id), wait,
+            w.center and string.format(' (a roboport of it at (%d,%d))', math.floor(w.center.x), math.floor(w.center.y)) or '')} end
+          for _, h in ipairs(w.hot or {}) do hots[#hots+1] = h end
         end
       end
       if nets > 0 and (sum.logistic.total + sum.construction.total) > 0 then
         table.sort(waits, function(x, y) return x.n > y.n end)
         local wl = {}
         for i = 1, math.min(3, #waits) do wl[i] = waits[i].text end
+        table.sort(hots, function(x, y) if x.waiting ~= y.waiting then return x.waiting > y.waiting end return x.charging > y.charging end)
+        local hl = {}
+        for i = 1, math.min(HOT, #hots) do hl[i] = M.hot_text(hots[i]) end
         local function kind(k, x) return string.format('%s %d: %d idle, %d working, %d charging, %d waiting', k, x.total, x.idle, x.working, x.charging, x.waiting) end
-        out[#out+1] = string.format('%s: %d network%s; robots %s; %s%s%s', s.platform or s.name, nets, nets == 1 and '' or 's',
+        out[#out+1] = string.format('%s: %d network%s; robots %s; %s%s%s%s', s.platform or s.name, nets, nets == 1 and '' or 's',
           kind('logistic', sum.logistic), kind('construction', sum.construction),
           untyped > 0 and string.format('; %d more waiting to charge (kind not listed)', untyped) or '',
-          #wl > 0 and '; waiting to charge most: ' .. table.concat(wl, ', ') or '')
+          #wl > 0 and '; waiting to charge most: ' .. table.concat(wl, ', ') or '',
+          #hl > 0 and '; roboports with the most: ' .. table.concat(hl, ', ') or '')
       end
     end
     return #out > 0 and out or nil, v.tick
