@@ -166,7 +166,7 @@
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
-- `platform_defense {platform, feed?, route?}`: each asteroid collector's front and each hull side against turret ranges: the
+- `platform_defense {platform, feed?, route?, ammo_use?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
   range of a collector whose arc misses it is named under `outside_arc` and not counted. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
@@ -194,6 +194,11 @@
   minimum range (rocket turret 15 tiles); a size is covered where every kind of it (metallic, carbonic, oxide;
   promethium when a turret lists one) is engaged by a turret reaching it. Each collector line gives `by size`, each
   side its uncovered edge tiles per size, and a line names the turrets engaging only part of the asteroids.
+  `ammo_use` (default on) gives each ammo turret aboard, by quality, with each ammunition it holds (and the hub's of its
+  categories) at full fire: a shot every N ticks (cooldown over 1 + shooting speed), shots/min, rounds a shot and an
+  item, items/min (each and for the turrets), damage a shot (ammunition quality, damage and turret attack bonuses;
+  before resistances), and the technologies with levels each bonus comes from. `"all"`: every ammo turret and
+  ammunition. Turret quality changes neither rate nor damage; ammunition quality multiplies damage.
   `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
 - `platform_digest {platform}`: one read of a platform from `platforms`, `platform_supply`, `platform_endurance` and
