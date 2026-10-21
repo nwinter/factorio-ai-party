@@ -58,7 +58,7 @@ return function(api)
     local groups, order, read = {}, {}, 0
     local function group(key)
       local g = groups[key]
-      if not g then g = {key=key, n=0, working=0, states={}, held={}, burn={}, empty=0}; groups[key] = g; order[#order+1] = g end
+      if not g then g = {key=key, n=0, working=0, states={}, held={}, burn={}, empty=0, reactors={}}; groups[key] = g; order[#order+1] = g end
       return g
     end
     for _, e in ipairs(list or {}) do
@@ -76,6 +76,7 @@ return function(api)
           if on then g.working = g.working + 1 end
           local st = status_name(e)
           g.states[st] = (g.states[st] or 0) + 1
+          if burner and e.type == 'reactor' then g.reactors[#g.reactors+1] = e end
           if burner then
             local held = inv_counts(try(function() return e.get_fuel_inventory() end), true)
             local any, top, topn = false, nil, 0
@@ -132,8 +133,37 @@ return function(api)
       g.empty > 0 and string.format('; %d with empty fuel slots', g.empty) or '')
     local worst
     for _, r in ipairs(per) do if r.minutes_left and (not worst or r.minutes_left < worst) then worst = r.minutes_left end end
-    return {group=g.key, machines=g.n, working=g.working, states=states_text(g), fuel=per, empty_fuel=g.empty > 0 and g.empty or nil,
+    local row = {group=g.key, machines=g.n, working=g.working, states=states_text(g), fuel=per, empty_fuel=g.empty > 0 and g.empty or nil,
       minutes_left=worst, line=line}
+    -- (d20 batch63 Y1, Astra #1512) reactors one by one: heat, the fuel burning, slots, the feed and its circuit control;
+    -- the group's minutes from those, empty slots apart from no heat and no fuel to be had (fuelreactor.lua)
+    if #g.reactors > 0 and api.reactors then
+      local r = api.reactors.group(g.reactors)
+      if #r.reactors > 0 then
+        row.reactors = r.reactors
+        row.reactors_more = r.more and string.format('%d more not read one by one (at most 12 a group)', r.more) or nil
+        row.empty_fuel = nil
+        row.empty_slots = r.empty_slots > 0 and r.empty_slots or nil
+        row.minutes_left = r.minutes_left
+        row.network_stock = r.network_stock
+        if r.emergencies > 0 then
+          row.emergency = string.format('%d reactor%s with no heat left and no fuel to be had (none burning, none in its slots, its feeders or the logistic network)',
+            r.emergencies, r.emergencies == 1 and '' or 's')
+        end
+        local nets = {}
+        for it, n in pairs(r.network_stock or {}) do nets[#nets+1] = n .. ' ' .. it end
+        table.sort(nets)
+        row.line = string.format('%s: %d (%s); %d burning%s%s; %s%s%s', g.key, g.n, states_text(g), r.burning,
+          r.empty_slots > 0 and string.format(', %d with fuel slots empty', r.empty_slots) or '',
+          r.held_back > 0 and string.format(', %d with feed held back by a circuit', r.held_back) or '',
+          r.minutes_left and string.format('fewest minutes left about %g (heat, burning fuel, slots and feed)', r.minutes_left) or 'none fed by an inserter', #nets > 0 and '; logistic network holds ' .. table.concat(nets, ', ') or '',
+          row.emergency and '; EMERGENCY: ' .. row.emergency or '')
+        for _, f in ipairs(per) do
+          f.minutes_left = nil
+        end
+      end
+    end
+    return row
   end
   local cache = {}
   function M.read(p, a)
@@ -191,13 +221,13 @@ return function(api)
     end
     local out = {surface=surface.name, as_of=as_of, pending=as_of == nil or nil, items=flows, groups=rows,
       read=read, capped=(list and #list > read) and string.format('%d of %d fuel users read', read, #list) or nil,
-      note='burn rates: each working machine at its energy use (a burner) or crafting speed (a fuel ingredient), as the tooltips give them; minutes_left: the fuel in the group\'s own slots at that rate; fuel in chests, on belts and in inserter hands is not counted'}
+      note='burn rates: each working machine at its energy use (a burner) or crafting speed (a fuel ingredient), as the tooltips give them; minutes_left: the fuel in the group\'s own slots at that rate; fuel in chests, on belts and in inserter hands is not counted, except for reactors and heating towers (reactors: their heat, burning fuel and the stock their feeders reach)'}
     if as_of == nil then out.pending = 'the census has not finished its first pass yet: no fuel users listed' end
     cache[key] = {tick=game.tick, out=out}
     return out
   end
   M.schema = {fuel_budget = {surface='optional surface name (default yours)',
     boilers='optional true (D7, Opus: slow brownouts seen late): the boilers in groups (within 8 tiles of each other), each with its burn a minute at full use, the fuel in their slots, in the chests and on the belt tiles feeding them (walked back), the drills dropping onto those belts and what they put on at full speed, the balance and the hours left when the burn is more: groups [{near, boilers, working, fuel, burn_per_min, held, in_chests, chests, on_belts, belt_tiles, drills, drills_working, supply_per_min, balance_per_min, hours_left}] (fewest hours first), lines, surface (each fuel made and used a minute, what the logistic networks hold); kept 10 s',
-    returns='surface, as_of (the census pass the users come from; their state is read now), items [{item, made_per_min, used_per_min (production statistics, last 10 min), groups_burn_per_min, line}], groups (fewest minutes first) [{group (boilers, furnaces, burner drills, burner inserters, heating towers, burner generators, or recipe NAME for machines whose recipe takes a fuel item), machines, working, states, fuel [{item, burn_per_min (working machines at full use), held (in their fuel slots, or an ingredient user\'s input), minutes_left}], empty_fuel, minutes_left (the group\'s fewest), line}], read, capped, note; kept 10 seconds; fuel in chests, belts and hands is not counted'}}
+    returns='surface, as_of (the census pass the users come from; their state is read now), items [{item, made_per_min, used_per_min (production statistics, last 10 min), groups_burn_per_min, line}], groups (fewest minutes first) [{group (boilers, furnaces, burner drills, burner inserters, heating towers, burner generators, or recipe NAME for machines whose recipe takes a fuel item), machines, working, states, fuel [{item, burn_per_min (working machines at full use), held (in their fuel slots, or an ingredient user\'s input), minutes_left}], empty_fuel, minutes_left (the group\'s fewest), line}], read, capped, note; kept 10 seconds; fuel in chests, belts and hands is not counted; reactors and heating towers one by one: reactors [{temperature, burning {item, left, minutes}, fuel_slots, burnt, circuit_reads, feeders [{condition (as its GUI shows it, with the values on its wires), holds_fuel_back, set_by, hand, takes_from}], feed {in_reach, network}, state, minutes_left, minutes {heat, burning, slots, feed, heat_above}, emergency, line}], empty_slots, network_stock, emergency (fed by inserters, no heat and no fuel to be had); their minutes_left from heat, burning fuel, slots and feed'}}
   return M
 end
