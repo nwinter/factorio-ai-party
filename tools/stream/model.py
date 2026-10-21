@@ -713,6 +713,21 @@ class Model:
             self.inbox_mtime, self.inbox_rows = m, viewer_replies.read_inbox(self.inbox_path)[-200:]
         return self.inbox_rows
 
+    def set_reply_links(self, path):
+        """(d20 batch65 AA2) runs/RUN/operator-replies.jsonl (tools/opreply.py): the line each Operator reply names."""
+        self.links_path, self.links_mtime, self.links = path, None, {}
+
+    def reply_links(self):
+        if not self.links_path:
+            return {}
+        try:
+            m = os.stat(self.links_path).st_mtime_ns
+        except OSError:
+            return {}
+        if m != self.links_mtime:
+            self.links_mtime, self.links = m, viewer_replies.read_links(self.links_path)
+        return self.links
+
     def __init__(self, run):
         self.run = run
         self.agents = {}
@@ -726,6 +741,7 @@ class Model:
         # viewers' lines to the Operator, which go to the run's operator inbox, not the game chat (viewer_replies.py):
         # set_inbox; read again when the file changes
         self.inbox_path, self.inbox_mtime, self.inbox_rows = None, None, []
+        self.links_path, self.links_mtime, self.links = None, None, {}  # set_reply_links
         self.chat_seen = set()
         self.chat_read = False  # the first chat read (the backlog) is done
         self.chat_log_path, self.chat_log_times = None, None  # set_chat_log
@@ -1215,6 +1231,7 @@ class Model:
         if viewer_replies.viewer_name(entry):  # (d20 batch57 S1) a say's reply_to finds it after it left self.chat
             self.reply_threads.see(entry)
         if entry["lane"] not in ("viewer", "notice"):
+            viewer_replies.link_line(entry, self.reply_links())  # (AA2) the line tools/opreply.py named
             r = self.reply_threads.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
                                             self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
             if r:
