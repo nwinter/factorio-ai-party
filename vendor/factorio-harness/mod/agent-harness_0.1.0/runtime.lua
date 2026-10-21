@@ -15000,7 +15000,7 @@ M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_pl
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
 M.uptime=require('uptime'){state=state,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
-  status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end}
+  status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end}
 function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,

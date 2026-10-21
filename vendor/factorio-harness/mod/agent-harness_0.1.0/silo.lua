@@ -387,7 +387,9 @@ return function(api)
     end
     -- Crafting: the part in progress, and the rest of the rocket at this speed.
     local recipe = try(function() return e.get_recipe() end)
-    local prod = 1 + (try(function() return e.productivity_bonus end) or 0)
+    -- (d20 batch55 P7) the machine's productivity with the recipe's research (rocket part productivity), capped
+    local prod = 1 + math.min((try(function() return e.productivity_bonus end) or 0) + (recipe and try(function() return e.force.recipes[recipe.name].productivity_bonus end) or 0),
+      recipe and try(function() return recipe.prototype.maximum_productivity end) or 3)
     local crafts_left = math.ceil(left / prod - 1e-9)
     local crafting = try(function() return e.is_crafting() end) and true or false
     local progress = try(function() return e.crafting_progress end) or 0

@@ -58,6 +58,19 @@ return function(api)
   function M.research_prod(force, recipe_name)
     return try(function() return force.recipes[recipe_name].productivity_bonus end) or 0
   end
+  -- (d20 batch55 P7, Astra #1426: a crusher on advanced-carbonic with +40% asteroid productivity read productivity 0)
+  -- 2.0.77's LuaEntity.productivity_bonus is the machine's (its base effect, modules, beacons) without the recipe's
+  -- research: a crusher at +40% research read 0 while its bar filled 0.4 a craft. The game adds the two and caps the sum
+  -- at the recipe's maximum_productivity (+300%: at +350% research the bar filled 3 a craft). A drill's figure has the
+  -- force's mining productivity in it already. {total, machine, research, max, capped}; nil without a recipe.
+  function M.productivity(e, recipe)
+    if not recipe then return nil end
+    local machine = try(function() return e.productivity_bonus end) or M.base_prod(e.prototype)
+    local research = M.research_prod(e.force, recipe.name)
+    local max = try(function() return recipe.prototype.maximum_productivity end) or 3
+    local sum = machine + research
+    return {total=math.min(math.max(sum, 0), max), machine=machine, research=research, max=max, capped=sum > max or nil}
+  end
   -- A built crafting machine: its recipe at its speed and productivity now, as if it ran all the time.
   function M.machine(e)
     local recipe = try(function() return e.get_recipe() end)
@@ -69,18 +82,18 @@ return function(api)
     end
     if not recipe then return nil end
     local speed = try(function() return e.crafting_speed end) or try(function() return e.prototype.get_crafting_speed(e.quality) end) or 1
-    local base, research = M.base_prod(e.prototype), M.research_prod(e.force, recipe.name)
-    local game = try(function() return e.productivity_bonus end)
-    local prod = game or (base + research)
+    local base = M.base_prod(e.prototype)
+    local pr = M.productivity(e, recipe)
+    local research = pr.research
     local parts = {}
     if base ~= 0 then parts[#parts+1] = string.format('the machine\'s own +%d%%', math.floor(base * 100 + 0.5)) end
     if research ~= 0 then parts[#parts+1] = string.format('research +%d%%', math.floor(research * 100 + 0.5)) end
-    if game ~= nil then
-      local rest = game - base - research
-      if rest > 0.0005 then parts[#parts+1] = string.format('modules and beacons +%d%%', math.floor(rest * 100 + 0.5)) end
-    end
-    local out = M.rates(recipe, speed, prod, parts)
+    local rest = pr.machine - base
+    if rest > 0.0005 then parts[#parts+1] = string.format('modules and beacons +%d%%', math.floor(rest * 100 + 0.5)) end
+    if pr.capped then parts[#parts+1] = string.format('capped at the recipe\'s +%d%%', math.floor(pr.max * 100 + 0.5)) end
+    local out = M.rates(recipe, speed, pr.machine + research, parts)
     out.recipe = recipe.name
+    out.productivity_machine, out.productivity_research = r1(pr.machine * 100) / 100, research ~= 0 and r1(research * 100) / 100 or nil
     out.line = out.line .. ' (at full speed all the time; status, input and output decide what it makes)'
     local q = try(function() return e.effects.quality end)
     -- The quality effect is stored as 0.1 per 1% the GUI shows (2.0.77: five rare quality-module-1 read 0.8, the GUI 8%;

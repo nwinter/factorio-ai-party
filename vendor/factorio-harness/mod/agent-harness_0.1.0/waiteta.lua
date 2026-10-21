@@ -47,7 +47,8 @@ return function(api)
     local recipe=try(function() return e.get_recipe() end)
     local speed=try(function() return e.crafting_speed end)
     if not recipe or not speed or speed<=0 then return nil,'no rocket-part crafting rate' end
-    local prod=1+(try(function() return e.productivity_bonus end) or 0)
+    local prod=1+math.min((try(function() return e.productivity_bonus end) or 0)+(try(function() return e.force.recipes[recipe.name].productivity_bonus end) or 0),
+      try(function() return recipe.prototype.maximum_productivity end) or 3)
     local left=math.max(0,(c['until']=='rocket_parts' and c.at_least or o.required)-o.parts)
     local crafts=math.ceil(left/prod-1e-9)
     local progress=try(function() return e.crafting_progress end) or 0

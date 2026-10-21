@@ -13,6 +13,12 @@
 -- products_finished counts every completion, the productivity bar's too. The base crafts come from it with the bar:
 -- base x (1 + productivity) = completions + bar at the end - bar at the start (bonus_progress, 0..1); crafts are the
 -- base ones against the full-speed craft rate, completions against that rate with productivity.
+-- (d20 batch55 P7, Astra #1426: a crusher on advanced-carbonic with +40% asteroid productivity read 20.3 crafts/min,
+-- "106%" of 19.2, productivity 0) the productivity is the game's sum, the machine's and the recipe's research, capped
+-- (craftrate.productivity). The bar fills with crafting progress (2.0.77: 3 bar a craft at +300%, partway through a craft
+-- too), so the split counts the craft in progress at both ends: base x (1 + p) = completions + bar1 - bar0 - p x
+-- (progress1 - progress0). Productivity is read each sample; one that changed, or could not be read, makes the base
+-- crafts unknown (said so, with the completions).
 return function(api)
   local M = {}
   M.MAX, M.EVERY, M.STEP = 16, 60, 7
@@ -39,12 +45,28 @@ return function(api)
   end
   local function finished(e) return try(function() return e.products_finished end) or 0 end
   local function bar(e) return try(function() return e.bonus_progress end) or 0 end
-  -- Base crafts and productivity completions in `done` completions, the bar from b0 to b1 at productivity prod.
-  function M.split(done, b0, b1, prod)
+  local function progress(e) return try(function() return e.crafting_progress end) or 0 end
+  local function pct(v) return math.floor(v * 100 + 0.5) end
+  -- Base crafts and productivity completions in `done` completions, the bar from b0 to b1 and the craft in progress
+  -- from c0 to c1 at productivity prod.
+  function M.split(done, b0, b1, prod, c0, c1)
     local base = done
-    if prod and prod > 0 then base = math.floor((done + (b1 or 0) - (b0 or 0)) / (1 + prod) + 0.5) end
+    if prod and prod > 0 then base = math.floor((done + (b1 or 0) - (b0 or 0) - prod * ((c1 or 0) - (c0 or 0))) / (1 + prod) + 0.5) end
     base = math.max(0, math.min(done, base))
     return base, done - base
+  end
+  -- The productivity craftrate read (the game's sum, capped) and its parts.
+  function M.keep_prod(m, rt)
+    if not rt then return end
+    m.prod, m.prod_machine, m.prod_research = rt.productivity, rt.productivity_machine, rt.productivity_research
+  end
+  local function prod_text(m)
+    local t = string.format('productivity +%d%%', pct(m.prod or 0))
+    if m.prod_research then
+      t = t .. string.format(': the machine\'s +%d%%, research +%d%%', pct(m.prod_machine or 0), pct(m.prod_research))
+      if (m.prod_machine or 0) + m.prod_research > m.prod + 0.0005 then t = t .. ', capped' end
+    end
+    return t
   end
   function M.sample(job)
     job.samples = job.samples + 1
@@ -60,8 +82,10 @@ return function(api)
         if rn ~= m.recipe and rn ~= 'none' then
           if m.recipe ~= 'none' then m.recipe_changed = m.recipe_changed or (m.recipe .. ' -> ' .. rn) end
           m.recipe = rn
-          if not m.full_cpm and api.craftrate then local rt = try(function() return api.craftrate(e) end); m.full_cpm = rt and rt.crafts_per_min or nil; m.prod = m.prod or rt and rt.productivity end
+          if not m.full_cpm and api.craftrate then local rt = try(function() return api.craftrate(e) end); m.full_cpm = rt and rt.crafts_per_min or nil; if m.prod == nil then M.keep_prod(m, rt) end end
         end
+        local pr = r and m.prod ~= nil and api.productivity and try(function() return api.productivity(e, r) end)
+        if pr and math.abs(pr.total - m.prod) > 0.0005 then m.prod_changed = m.prod_changed or string.format('+%d%% -> +%d%%', pct(m.prod), pct(pr.total)) end
         if st == 'item_ingredient_shortage' or st == 'fluid_ingredient_shortage' then
           local inv = input_inv(e)
           for _, ing in ipairs(r and try(function() return r.ingredients end) or {}) do
@@ -85,9 +109,14 @@ return function(api)
     for _, m in ipairs(job.machines) do
       local e = m.e
       local now = e and e.valid and finished(e) or m.last_finished
-      if e and e.valid then m.last_finished, m.last_bar = now, bar(e) end
+      if e and e.valid then m.last_finished, m.last_bar, m.last_progress = now, bar(e), progress(e) end
       local done = math.max(0, (now or m.finished0) - m.finished0)
-      local crafts, bonus = M.split(done, m.bar0, m.last_bar, m.prod)
+      local unknown
+      if m.prod == nil then unknown = 'its productivity could not be read'
+      elseif m.prod_changed then unknown = 'its productivity changed during the watch (' .. m.prod_changed .. ')'
+      elseif m.recipe_changed and m.prod > 0 then unknown = 'its recipe changed during the watch' end
+      local crafts, bonus
+      if not unknown then crafts, bonus = M.split(done, m.bar0, m.last_bar, m.prod, m.progress0, m.last_progress) end
       local states, parts = {}, {}
       for k, n in pairs(m.status) do states[#states+1] = {k, n} end
       table.sort(states, function(x, y) return x[2] > y[2] or (x[2] == y[2] and x[1] < y[1]) end)
@@ -100,17 +129,24 @@ return function(api)
       for n, s in pairs(m.short) do short[#short+1] = string.format('%s short in %d sample%s (least %g of %g a craft)', n, s.samples, s.samples == 1 and '' or 's', s.least, s.need) end
       table.sort(short)
       local function pm(n) return secs > 0 and math.floor(n / secs * 600 + 0.5) / 10 or 0 end
-      local cpm, dpm = pm(crafts), pm(done)
+      local cpm, dpm = crafts and pm(crafts), pm(done)
       local prod = m.prod or 0
       local full_done = m.full_cpm and math.floor(m.full_cpm * (1 + prod) * 10 + 0.5) / 10 or nil
       local row = {name=m.name, position=m.position, recipe=m.recipe, crafts=crafts, crafts_per_min=cpm, full_speed_per_min=m.full_cpm,
         completions=done, bonus_completions=bonus, completions_per_min=dpm, full_speed_completions_per_min=prod > 0 and full_done or nil,
-        productivity=prod > 0 and prod or nil, working_share=job.samples > 0 and math.floor((share.working or 0) / job.samples * 100 + 0.5) or nil,
+        productivity=prod > 0 and prod or nil, productivity_research=m.prod_research, crafts_unknown=unknown and 'base crafts unknown: ' .. unknown or nil, working_share=job.samples > 0 and math.floor((share.working or 0) / job.samples * 100 + 0.5) or nil,
         samples=share, short=#short > 0 and short or nil, recipe_changed=m.recipe_changed, gone=m.gone and 'removed' or nil}
-      row.line = string.format('%s %s %s: %d craft%s in %ds (%g/min%s)%s; %s%s%s', m.name, at(m.position), m.recipe, crafts, crafts == 1 and '' or 's', math.floor(secs + 0.5), cpm,
-        m.full_cpm and m.full_cpm > 0 and string.format(', %d%% of its %g/min at full speed', math.floor(cpm / m.full_cpm * 100 + 0.5), m.full_cpm) or '',
-        prod > 0 and string.format(' and %d productivity completion%s (productivity +%d%%): %d completions, %g/min against %s/min at full speed', bonus, bonus == 1 and '' or 's',
-          math.floor(prod * 100 + 0.5), done, dpm, full_done and string.format('%g', full_done) or '?') or '',
+      local made
+      if unknown then
+        made = string.format('%d completion%s in %ds (%g/min against %s/min at full speed, %s); base crafts unknown: %s', done, done == 1 and '' or 's', math.floor(secs + 0.5), dpm,
+          full_done and string.format('%g', full_done) or '?', prod_text(m), unknown)
+      else
+        made = string.format('%d craft%s in %ds (%g/min%s)%s', crafts, crafts == 1 and '' or 's', math.floor(secs + 0.5), cpm,
+          m.full_cpm and m.full_cpm > 0 and string.format(', %d%% of its %g/min at full speed', math.floor(cpm / m.full_cpm * 100 + 0.5), m.full_cpm) or '',
+          prod > 0 and string.format(' and %d productivity completion%s (%s): %d completions, %g/min against %s/min at full speed', bonus, bonus == 1 and '' or 's',
+            prod_text(m), done, dpm, full_done and string.format('%g', full_done) or '?') or '')
+      end
+      row.line = string.format('%s %s %s: %s; %s%s%s', m.name, at(m.position), m.recipe, made,
         #parts > 0 and table.concat(parts, ', ') or 'no sample yet', #short > 0 and '; ' .. table.concat(short, '; ') or '',
         m.gone and '; removed during the watch' or m.recipe_changed and '; recipe changed: ' .. m.recipe_changed or '')
       rows[#rows+1] = row
@@ -151,8 +187,10 @@ return function(api)
       assert(CRAFT[e.type], string.format('%s %s is not a crafting machine (an assembler, furnace, chemical plant, biochamber, ...)', e.name, at(e.position)))
       local r = recipe_of(e)
       local rates = api.craftrate and try(function() return api.craftrate(e) end)
-      machines[#machines+1] = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, recipe=r and r.name or 'none', finished0=finished(e),
-        bar0=bar(e), status={}, short={}, full_cpm=rates and rates.crafts_per_min or nil, prod=rates and rates.productivity or nil}
+      local m = {e=e, name=e.name, position={x=e.position.x, y=e.position.y}, recipe=r and r.name or 'none', finished0=finished(e),
+        bar0=bar(e), progress0=progress(e), status={}, short={}, full_cpm=rates and rates.crafts_per_min or nil}
+      M.keep_prod(m, rates)
+      machines[#machines+1] = m
     end
     local replaced = store()[p.index] and not store()[p.index].result
     local job = {start=game.tick, until_tick=game.tick + seconds * 60, next_tick=game.tick, seconds=seconds, samples=0, machines=machines}
@@ -166,6 +204,6 @@ return function(api)
   end
   M.schema = {uptime = {positions='1..16 crafting machines {x,y} (an assembler, furnace, chemical plant, biochamber, ...; in sight or by remote view)', position='or one',
     seconds='optional 10..3600 (default 600): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity, working_share (% of samples working), samples by status (the GUI\'s status line, once a second), short (each ingredient under one craft in its input at the samples that read short of ingredients: how many samples, the least held), recipe_changed, gone; lines; left_out (what the watch does not see). Read only'}}
+    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), short (each ingredient under one craft in its input at the samples that read short of ingredients: how many samples, the least held), recipe_changed, gone; lines; left_out (what the watch does not see). Read only'}}
   return M
 end
