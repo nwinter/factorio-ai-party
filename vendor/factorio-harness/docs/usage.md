@@ -5027,6 +5027,8 @@ fh watch    # deploy on every change
   adds `unfilled`, one line per request whose held plus on-the-way count is under its min, with the first reason
   that holds:
   - personal logistics switched off;
+  - no slot of the character takes the item (main inventory full, its free slots filtered to other items; d20 batch59
+    U1);
   - no logistic network where the character stands;
   - the network has no logistic robots;
   - the network holds none of the item robots can take;
@@ -5037,6 +5039,53 @@ fh watch    # deploy on every change
     hold none)`, read on a copy of world n as Haiku.
   - Alert (team.alerts): a personal request unfilled for 60 s or more in a network with 0 logistic robots. Checked
     every 5 s an agent replies; told once per network and item, and again after 10 minutes.
+  - What a request counts (d20 batch59 U1, Astra #1480: firearm-magazine and rocket read `hold 0 of 100; network 348
+    holds 4039 and has 176 of 190 logistic robots free; none has taken it yet` for 25 minutes, 04:13-04:38 in
+    shift49, while her ammo slots held 100 of each; the game had nothing to send). Checked on 2.0.77 on the private
+    copy:
+    - ammo slots count: sol with 10 firearm-magazine in them got nothing for min 10 and 6 for min 15;
+    - gun slots count: 1 pistol held, nothing for min 1, 1 for min 2;
+    - worn armor counts: gemini wearing modular-armor got 1 for min 2.
+    - So the line counts the main inventory, gun, ammo and armor slots, and says where:
+      `firearm-magazine: hold 19 of 30 (19 in ammo slots) (1 on the way); ...`.
+    - With every free slot filtered to wood, sol got no pipe for min 5; with one slot cleared, 6 were on the way
+      within 6 s. The line says `no slot of yours takes pipe`.
+    - With personal logistics off, the requester point's `logistic_network` reads as an invalid object; so does
+      grok's on Gleba on the copy. Both read as no network now; before, every call on it failed and the line said
+      "has no logistic robots".
+- `character_settings {personal_logistics?, personal_roboport?, movement_bonus?, filters?}` (d20 batch59 U1, Astra
+  #1480 for viewer Foobator17928). The character GUI's switches and the main inventory's slot filters, read and
+  written as a player sets them.
+  - The 2.0.77 fields, read and written on the private copy:
+    - personal logistics: the character requester point's `enabled` (the master switch of the requests; the
+      sections' own switches stay `requests {section, active}`);
+    - the personal roboport: the character's `allow_dispatching_robots`;
+    - the equipment movement bonus: the armor grid's `inhibit_movement_bonus` (on = not inhibited);
+    - slot filters: the main inventory's `set_filter`/`get_filter`. The API also sets a filter for another item on
+      a slot that holds one, which a player's middle-click does not do, so that is refused (`slot 2 holds radar*1: a
+      slot that holds an item takes a filter for that item only`). An empty slot takes any item's filter.
+  - `filters: [{slot, item, quality?}]`, 1..200 entries; `item: false` clears the slot's filter.
+  - Every argument is checked before anything changes, and an edit changes only what it names.
+  - `changed` lists each change, e.g. `personal roboport on -> off`, `slot 1 filter none -> stone-brick`. When
+    nothing named differed, `unchanged` says so.
+  - Every reply is the read after the edit: `personal_logistics`, `personal_roboport`, `movement_bonus` (on/off,
+    noting no roboport or no exoskeleton in the armor), `filters` (each filtered slot with what it holds; 40 at most,
+    `filters_more` counts the rest) and `filters_line`. Runs of empty slots with one filter read as one, e.g. `90
+    slots filtered: 1-90 wood (empty); 0 of 90 slots free (empty and unfiltered)`.
+  - `networks` gives:
+    - `logistic`: the network the requests go to, or the one whose area covers the character while personal logistics
+      are off;
+    - `construction`: the roboport networks whose construction area covers the character;
+    - `personal_roboport`: count, switch, construction radius, construction robots in the main inventory and out
+      now, energy;
+    - `not_dispatched`: what the game shows stops robots now (roboport off, no robot to send, no energy, personal
+      logistics off, no free slot);
+    - `unfilled`, as `requests` gives it.
+  - Passive: it leaves the character's action and queue alone, as `requests` does.
+  - Real engine (private copy, bot gemini, with a personal roboport): all three switches off with slots 1 and 100
+    filtered, then all back on, each read back; a filter for iron-plate on slot 2, which holds a radar, was refused,
+    with nothing changed.
+  - Tests: tests/d20_batch59.lua U1.
 - Burner fuel alert (Opus: 30 stone furnaces ran out of coal and copper fell from 1000 to 560 a minute). team.alerts
   names a group of burner machines that no inserter brings fuel to (fed by hand or by order) when they will run dry
   within 10 minutes: `stone-furnace near (108,-168), fed by hand or by order (no inserter brings them fuel): 21 run dry
@@ -9636,6 +9685,34 @@ fh watch    # deploy on every change
   read `missing science packs 100%`, used 0, and agricultural packs spoiled in it read `used unknown for
   agricultural-science-pack in 1 of 22 intervals (packs spoiled); spoil results in its trash: spoilage 3`.
   Tests: tests/d20_batch55.lua (P8).
+## d20 batch60 (eng/d20-batch60)
+- V1 (Sol, board #1470: a paper outer-ship supply design, #1467, needed rounds a minute and damage a shot per weapon at
+  the research done; platform_defense gave damage a second only). Not in main before: platform_defense's damage on the
+  route (batch35 B6, batch52 K5) multiplies the listed damage by 60 / cooldown x (1 + shooting speed), with no shots,
+  rounds or items a minute and no quality. `platform_defense` now returns `ammo_use` (ammorate.lua; `ammo_use: false`
+  leaves it out, `"all"` adds every ammo turret prototype with every ammunition of its categories, normal quality): per
+  turret, turret quality, ammunition and its quality (held in the turrets, or in the hub when none of that kind holds
+  it): cooldown_ticks (attack_parameters.cooldown x the ammo type's cooldown_modifier over 1 + the force's
+  get_gun_speed_modifier for its category), shots_per_min, rounds_per_shot (ammo_consumption_modifier x the ammo type's
+  consumption_modifier), magazine_size, items_per_min (each turret) and items_per_min_all, damage_per_shot and damage by
+  type (the ammo type's damage, a projectile's attack_result included, x the ammo quality's default_multiplier x (1 +
+  get_ammo_damage_modifier) x (1 + get_turret_attack_modifier) x damage_modifier; before resistances), and sources:
+  the technologies whose gun-speed, ammo-damage and turret-attack effects give each bonus, by name and levels
+  researched (an infinite one counts its levels up to the one under way), with any part not from research. The
+  technologies with those effects are indexed from the prototypes once (every technology read took 12.7 ms on the
+  private copy). Checked on the private copy (2.0.77, its research: bullet speed +150%, damage +140%, gun-turret attack
+  +140%; rocket speed +340%, damage +280%; railgun none), each turret firing at one target kept in reach (healed every
+  0.2 s; the asteroid also put back in place): gun-turret 718 rounds in 1722 ticks (25.0/s; ammo_use 1500/min),
+  rocket-turret 63 in 1722 (one in 27.33 ticks; 27.27), railgun-turret 9 in 1540 ticks (171 each, a 0.1 s poll; 170);
+  normal and legendary turrets of each kind used the same rounds. Damage: firearm-magazine 18.75 a shot on a behemoth
+  worm (28.8 less its 10 flat), legendary magazines 61.9 (72 less 10), the same 43 rounds in the same time; rockets 524
+  (760 less 10, x 0.7), legendary rockets killed the 3000 hp worm in 3; railgun-ammo 6300 on a huge promethium asteroid
+  (10000 less 3000, x 0.9), a legendary round destroyed it in one. So turret quality changes neither shots nor damage,
+  and ammunition quality multiplies the damage. ammorate run on the copy's turrets gave those numbers (8.2 ms the first
+  call with the index, 2.4 ms after). Left out: target switching (a rocket turret across 16 worms fired 2.05/s, not
+  2.2, and spent 92 rockets on 13 kills that 78 would make by damage; railguns turn between targets) and resistances
+  (the route's damage reads them); electric and fluid turrets (no ammunition items). The copy's test surface was deleted
+  after. agent/ref/space-age.md has it. Tests: tests/d20_batch60.lua.
 
 ## d20 batch58 (eng/d20-batch58)
 

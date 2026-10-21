@@ -30,6 +30,11 @@ return function(api)
     end
     return n
   end
+  -- A logistic network object the game may hand back invalid (read on 2.0.77: a character's requester point on Gleba).
+  function M.network(n)
+    if n and try(function() return n.valid end) == false then return nil end
+    return n
+  end
   local function point_of(c)
     return try(function() return c.get_logistic_point(defines.logistic_member_index.character_requester) end)
   end
@@ -44,7 +49,15 @@ return function(api)
     local filters = try(function() return pt.filters end) or {}
     local coming = try(function() return pt.targeted_items_deliver end) or {}
     local inv = try(function() return c.get_main_inventory() end) or try(function() return p.get_main_inventory() end)
-    local ln = try(function() return pt.logistic_network end) or try(function() return c.surface.find_logistic_network_by_position(c.position, c.force) end)
+    -- (d20 batch59 U1, Astra #1480: firearm-magazine and rocket read "hold 0 of 100; ... none has taken it yet" for 25
+    -- minutes with 100 of each in her ammo slots) a request counts what the gun, ammo and armor slots hold too, and
+    -- robots bring nothing that no slot can take (both checked on 2.0.77).
+    local slots = {}
+    for _, k in ipairs({'character_guns', 'character_ammo', 'character_armor'}) do
+      local i = try(function() return c.get_inventory(defines.inventory[k]) end)
+      if i then slots[#slots+1] = {inv=i, what=k:sub(11)} end
+    end
+    local ln = M.network(try(function() return pt.logistic_network end)) or M.network(try(function() return c.surface.find_logistic_network_by_position(c.position, c.force) end))
     local enabled = try(function() return pt.enabled end)
     local all = ln and (try(function() return ln.all_logistic_robots end) or 0)
     local idle = ln and (try(function() return ln.available_logistic_robots end) or 0)
@@ -54,10 +67,18 @@ return function(api)
       local min = f.count or f.min or 0
       if name and min > 0 then
         local held = inv and (try(function() return inv.get_item_count{name=name, quality=quality} end) or try(function() return inv.get_item_count(name) end)) or 0
+        local in_slots, room = {}, inv and try(function() return inv.can_insert{name=name, quality=quality} end)
+        for _, sl in ipairs(slots) do
+          local n = try(function() return sl.inv.get_item_count{name=name, quality=quality} end) or 0
+          if n > 0 then held = held + n; in_slots[#in_slots+1] = n .. ' in ' .. sl.what .. ' slots' end
+          if room == false and try(function() return sl.inv.can_insert{name=name, quality=quality} end) then room = true end
+        end
         local on_way = count_in(coming, name, quality)
         if held + on_way < min then
           local why
-          if enabled == false then why = 'your personal logistics are switched off (requests {active: true} on the section, or the GUI\'s checkbox)'
+          if enabled == false then why = 'your personal logistics are switched off (character_settings {personal_logistics: true}, the GUI\'s switch)'
+          elseif room == false and on_way == 0 then
+            why = 'no slot of yours takes ' .. name .. ' (main inventory full, its free slots filtered to other items: character_settings reads them); robots bring an item only where it fits'
           elseif not ln then why = 'no logistic network where you stand ' .. at(c.position) .. ' (no roboport\'s logistic area covers it)'
           elseif all == 0 then why = string.format('logistic network %s where you stand has no logistic robots (its roboports hold none)', tostring(id))
           else
@@ -73,8 +94,8 @@ return function(api)
             end
           end
           rows[#rows+1] = {item=name, quality=quality ~= 'normal' and quality or nil, min=min, held=held, coming=on_way > 0 and on_way or nil,
-            why=why, network=id, robots=all, line=string.format('%s%s: hold %d of %d%s; %s', name, quality ~= 'normal' and '@' .. quality or '', held, min,
-              on_way > 0 and string.format(' (%d on the way)', on_way) or '', why)}
+            why=why, network=id, robots=all, line=string.format('%s%s: hold %d of %d%s%s; %s', name, quality ~= 'normal' and '@' .. quality or '', held, min,
+              #in_slots > 0 and ' (' .. table.concat(in_slots, ', ') .. ')' or '', on_way > 0 and string.format(' (%d on the way)', on_way) or '', why)}
         end
       end
     end
@@ -86,7 +107,7 @@ return function(api)
   function M.here(p)
     local c = p.character
     if not (c and c.valid) then return nil end
-    local ln = try(function() return c.surface.find_logistic_network_by_position(c.position, c.force) end)
+    local ln = M.network(try(function() return c.surface.find_logistic_network_by_position(c.position, c.force) end))
     local rows = try(function() return M.unfilled(p) end) or {}
     local req = #rows > 0 and string.format('; %d personal request%s unfilled (%s)', #rows, #rows == 1 and '' or 's', rows[1].item .. (#rows > 1 and ', ...' or '')) or ''
     if not ln then return 'no logistic network where you stand ' .. at(c.position) .. req end
