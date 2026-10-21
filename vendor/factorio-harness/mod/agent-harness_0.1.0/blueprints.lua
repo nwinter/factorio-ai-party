@@ -1089,16 +1089,65 @@ return function(api)
     -- are not marked by the game's order (a planner leaves them): counted apart, in the dry run as live
     local FLYING={['logistic-robot']=true,['construction-robot']=true,['combat-robot']=true,['capture-robot']=true}
     local flying,jobs=0,{}
+    -- (d20 batch69 AE1, Sol #1642: deconstruct over (276,190)-(280,192) on Fulgora marked the elevated rail at 279 only)
+    -- the game reads an elevated rail inside a rail support's run, and a support carrying rails, not minable; a planner
+    -- marks nothing over such a rail and, over the support, the support with every rail it carries (railrun.lua). Our
+    -- supports here are marked that way first; what is left unmarked is named with why (not_marked).
+    local rr=api.railrun and api.railrun()
+    local by_support,skipped,support_marks={},{},{}
+    local function allowed(t,n) return (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) end
+    if rr and not cancel then
+      for _,e in ipairs(list) do
+        local ok,t,n,keep=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and e.force==p.force and not e.minable and e.minable_flag end)
+        if ok and t and rr.SUPPORT[t] and keep and allowed(t,n) and not e.to_be_deconstructed(p.force) then
+          local carried=rr.carried(e)
+          if dry then
+            changed=changed+1; by[n]=(by[n] or 0)+1
+            for _,r in ipairs(carried) do
+              if not r.to_be_deconstructed(p.force) and not by_support[r.unit_number] then by_support[r.unit_number]=true; changed=changed+1; by[r.name]=(by[r.name] or 0)+1 end
+            end
+          else
+            local got,err,nrails,units=rr.mark_support(p,e,real(p))
+            if got then
+              for nm,c in pairs(got) do changed=changed+c; by[nm]=(by[nm] or 0)+c end
+              for u in pairs(units) do by_support[u]=true end
+              carried={n=nrails}
+            else
+              skipped[#skipped+1]=string.format('%s (%g,%g): %s',n,e.position.x,e.position.y,err)
+            end
+          end
+          by_support[e.unit_number]=true
+          local nr=carried.n or #carried
+          support_marks[#support_marks+1]=string.format('%s (%g,%g) with the %d elevated rail%s it carries',n,e.position.x,e.position.y,nr,nr==1 and '' or 's')
+        end
+      end
+    end
     for _, e in ipairs(list) do
-      local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable end)
-      if ok and t and FLYING[t] then
+      -- (AE1) a cancel takes the marks off elevated rails and supports the game reads not minable too
+      local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character'
+        and (e.minable or (cancel and rr and (rr.RAIL[e.type] or rr.SUPPORT[e.type]) and e.minable_flag)) end)
+      local unit=ok and t and e.valid and e.unit_number
+      if unit and by_support[unit] then
+        -- marked (or counted, in a dry run) with its rail support above
+      elseif ok and t and not mine and not cancel and t~='item-entity' and not FLYING[t] and allowed(t,n) and #skipped<64 then
+        -- (AE1) found in the area, not marked: why
+        local why
+        if e.force~=p.force and e.force.name~='neutral' then why='another force\'s ('..e.force.name..')'
+        elseif t=='character' then why='a character'
+        else why=rr and rr.why(e) or 'the game reads it not minable' end
+        local okp,x,y=pcall(function() return e.position.x,e.position.y end)
+        skipped[#skipped+1]=string.format('%s%s%s: %s',n,unit and (' '..unit) or '',okp and string.format(' (%g,%g)',x,y) or '',why)
+      end
+      if unit and by_support[unit] then
+      elseif ok and t and FLYING[t] then
         if mine and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then flying=flying+1 end
       elseif not (ok and t) then gone=gone+1
       -- Items on the ground go with items_on_ground only (Sol, d15: a cancel on Starling said 146 while 12 entities had
       -- been marked; the rest were most likely items on the ground the platform had marked for pickup).
       elseif mine and t~='item-entity' and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then
         if cancel then
-          if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1; by[n]=(by[n] or 0)+1 end
+          if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1; by[n]=(by[n] or 0)+1
+            if rr and rr.SUPPORT[t] then support_marks[#support_marks+1]=e end end
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
           if not e.to_be_deconstructed(p.force) then
@@ -1121,6 +1170,19 @@ return function(api)
       end
     end
     out.changed=changed
+    if cancel and #support_marks>0 then
+      -- (AE1) the game's cancel takes only what is in the area: rails a cancelled support carries may stay marked
+      local left=0
+      for _,e in ipairs(support_marks) do for _,r in ipairs(rr.carried(e)) do if r.valid and r.to_be_deconstructed(p.force) then left=left+1 end end end
+      support_marks={}
+      if left>0 then out.rails_still_marked=left..' elevated rails the cancelled rail supports carry stay marked (a cancel takes only what is in the area, as the game\'s does)' end
+    end
+    if #support_marks>0 then out.rail_supports=(dry and 'would mark ' or 'marked ')..table.concat(support_marks,'; ',1,math.min(6,#support_marks))
+      ..' (the game marks a rail support with the rails it carries; robots take the rails from the run\'s ends, the support last)' end
+    if #skipped>0 then
+      out.not_marked=#skipped>12 and {table.unpack(skipped,1,12)} or skipped
+      out.not_marked_count=#skipped
+    end
     if not dry and changed>0 then
       local names={}
       for nm,c in pairs(by) do names[#names+1]={nm,c} end
