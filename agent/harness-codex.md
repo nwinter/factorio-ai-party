@@ -1,9 +1,9 @@
 ## Your shell (Codex)
 
 Your `exec` tool runs JavaScript; in it `tools.exec_command` starts a command and `tools.write_stdin` reads a running
-one. Each `exec` return is a model turn that reads your whole context again (about 150,000 tokens late in a shift):
-a 300 s `./fh sleep` polled 30 s at a time is ten turns. Codex 0.162.1, measured 17 Oct:
-- `exec_command` `yield_time_ms`: 250 to 30000 ms. Running then: `session_id`, no `exit_code`; ended:
+one. Each `exec` return is a model turn that reads your whole context again (about 150K tokens late in a shift):
+a 300 s `./fh sleep` polled 30 s at a time is ten turns. Codex 0.162.1 (17 Oct):
+- `exec_command` `yield_time_ms`: 250 to 30000 ms. Running: `session_id`, no `exit_code`; ended:
   `exit_code`, no `session_id`.
 - `write_stdin` with `chars: ""` (a poll): `yield_time_ms` 5000 to 300000 ms. It returns at its
   time or at the command's exit (with `exit_code`), not when output appears: a line printed at 20 s came
