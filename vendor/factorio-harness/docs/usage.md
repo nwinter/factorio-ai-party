@@ -9598,3 +9598,23 @@ fh watch    # deploy on every change
   research +40%): 12 completions, 18/min against 16.8/min at full speed` (the old read: 12 crafts, 150%), and research
   raised to +50% during a watch read `base crafts unknown: its productivity changed during the watch (+40% -> +50%)`.
   Tests: tests/d20_batch55.lua (P7), tests/craftrate.lua.
+- P8 (Sol #1439: uptime refused a biolab as not a crafting machine). uptime takes labs and biolabs with crafting
+  machines (up to 16 in all). A lab's row (`kind: lab`) gives its status samples at the moving phase (working, missing
+  science packs, no power, as the lab GUI shows), `working_share`, and per pack it held: `held_least`/`held_most` at
+  the samples, `empty_samples`, and `used`. 2.0.77 keeps no count per lab. A pack in a lab loses durability as it
+  researches and is gone at 0 (on the private copy a biolab drained 0.099 of each pack in 123 ticks, the force's
+  research progress times its 50% drain), and a spoiled pack's result goes to the lab's trash slot (lab_trash). So
+  `used` is the durability drained between samples: a pack put in or taken out whole moves the held durability by whole
+  packs, and the drain is the change modulo a pack while the lab cannot drain a whole pack between samples (its
+  researching speed times 1 + speed_bonus, which holds the force's lab speed, over the research's unit time, times the
+  lab's drain rate). Otherwise that interval is unknown (`unknown_intervals`, `unknown_why`: it could use a whole pack
+  between samples), as is an interval where a spoilable pack spoiled, or with packs above normal quality; the line
+  says "at least". `spoil_results` counts what appeared in the lab's trash. With a lab in the watch the reply adds
+  `research` (the force's progress gained on its current technology in units, levels and finishes followed, every lab
+  of the force) and `packs_used_up` (the surface's production statistics: whole packs used up, every lab there). On
+  the private copy a biolab with every pack, refilled during the watch, read `working 100%; packs used in 40s
+  (durability drained): automation-science-pack 1.93, ...; held at the samples: automation-science-pack 1-3, ...`,
+  with research 3.87 units (x 50% = 1.93) and 1 of each pack used up on nauvis; a lab missing the electromagnetic pack
+  read `missing science packs 100%`, used 0, and agricultural packs spoiled in it read `used unknown for
+  agricultural-science-pack in 1 of 22 intervals (packs spoiled); spoil results in its trash: spoilage 3`.
+  Tests: tests/d20_batch55.lua (P8).

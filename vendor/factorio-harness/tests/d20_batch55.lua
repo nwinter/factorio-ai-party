@@ -392,3 +392,100 @@ do
   defines=nil
 end
 print('d20_batch55 P7 uptime and rates with research productivity: ok')
+
+-- P8 (Sol #1439: uptime refused a biolab as not a crafting machine). Labs and biolabs: status samples, the packs held,
+-- what was used (2.0.77 keeps no count per lab: each pack's durability drained between samples, modulo a whole pack put
+-- in or taken out, while a lab cannot drain a whole pack between samples), spoil results apart, and the force's research
+-- and the surface's packs used up beside. A lab missing the electromagnetic pack, with agricultural packs that spoil; a
+-- biolab with every pack, fed by an inserter.
+do
+  game={tick=10000}
+  defines={inventory={assembling_machine_input=2,furnace_source=2,lab_input=2,lab_trash=8}}
+  local PACKS={'automation-science-pack','logistic-science-pack','military-science-pack','chemical-science-pack','utility-science-pack','space-science-pack','electromagnetic-science-pack'}
+  prototypes={item={}}
+  for _,n in ipairs(PACKS) do prototypes.item[n]={get_durability=function() return 1 end,get_spoil_ticks=function() return 0 end} end
+  prototypes.item['agricultural-science-pack']={get_durability=function() return 1 end,get_spoil_ticks=function() return 216000 end}
+  local stats={}
+  local tech={name='tesla-weapons',level=1,research_unit_count=1500,research_unit_energy=3600,research_unit_ingredients={}}
+  for _,n in ipairs(PACKS) do tech.research_unit_ingredients[#tech.research_unit_ingredients+1]={name=n,amount=1} end
+  local force={name='player',current_research=tech,research_progress=0.2433,technologies={['tesla-weapons']={researched=false}},
+    get_item_production_statistics=function() return {get_output_count=function(n) return stats[n] or 0 end} end}
+  game.forces={player=force}; game.surfaces={nauvis={name='nauvis'}}
+  local function lab(name,pos,speed,drain,held)
+    local slots={}
+    for _,h in ipairs(held) do slots[#slots+1]={name=h[1],count=h[2],durability=1,quality={name='normal'},valid_for_read=true} end
+    local trash={}
+    local e={valid=true,name=name,type='lab',position=pos,force=force,surface=game.surfaces.nauvis,speed_bonus=1.9,quality='normal',slots=slots,trash=trash,
+      prototype={lab_inputs=PACKS,science_pack_drain_rate_percent=drain,get_researching_speed=function() return speed end}}
+    e.get_inventory=function(i)
+      if i==8 then return {get_contents=function() local o={} for n,c in pairs(trash) do o[#o+1]={name=n,count=c} end return o end} end
+      return setmetatable({},{__len=function() return #slots end,__index=function(_,k) return slots[k] end})
+    end
+    return e
+  end
+  local L=lab('lab',{x=100.5,y=-63.5},1,100,{{'automation-science-pack',10},{'logistic-science-pack',10},{'military-science-pack',10},{'chemical-science-pack',10},
+    {'utility-science-pack',10},{'space-science-pack',10},{'agricultural-science-pack',3}})
+  local B=lab('biolab',{x=96.5,y=-56.5},2,50,{{'automation-science-pack',2},{'logistic-science-pack',2},{'military-science-pack',2},{'chemical-science-pack',2},
+    {'utility-science-pack',2},{'space-science-pack',2},{'electromagnetic-science-pack',2}})
+  local function has_all(e) local got={} for _,s in ipairs(e.slots) do if s.count>0 then got[s.name]=true end end for _,n in ipairs(PACKS) do if not got[n] then return false end end return true end
+  local function status(e) return has_all(e) and 'working' or 'missing_science_packs' end
+  L.status_fn,B.status_fn=status,status
+  local st={}
+  local at={[1]=L,[2]=B}
+  local U=dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return st end,remote_entity=function(_,q) return q.position.x>99 and L or B end,
+    status_name=function(e) return status(e) end}
+  local start=U.handler({index=1},{positions={{x=100.5,y=-63.5},{x=96.5,y=-56.5}},seconds=60})
+  eq(start.baseline[1],'lab (100.5,-63.5): holds automation-science-pack 10, logistic-science-pack 10, military-science-pack 10, chemical-science-pack 10, utility-science-pack 10, space-science-pack 10, agricultural-science-pack 3')
+  -- the game: a working lab drains each pack speed x (1 + bonus) / unit time x drain a tick; a pack at 0 is gone and
+  -- counted used up; research gains the same units; every 5 s the biolab's inserter puts 2 fresh packs in where one is under 2
+  local drained,used_up,units=0,0,0
+  for t=10001,10000+60*60 do
+    game.tick=t
+    for _,e in ipairs({L,B}) do
+      if has_all(e) then
+        local per=e.prototype.get_researching_speed()*(1+e.speed_bonus)/tech.research_unit_energy
+        units=units+per; force.research_progress=force.research_progress+per/tech.research_unit_count
+        for _,s in ipairs(e.slots) do
+          if s.count>0 and s.name~='agricultural-science-pack' then
+            local d=per*e.prototype.science_pack_drain_rate_percent/100
+            if e==B and s.name=='automation-science-pack' then drained=drained+d end
+            s.durability=s.durability-d
+            if s.durability<=1e-12 then s.count=s.count-1; s.durability=1; stats[s.name]=(stats[s.name] or 0)+1; if e==B and s.name=='automation-science-pack' then used_up=used_up+1 end end
+          end
+        end
+      end
+    end
+    if t%300==0 then for _,s in ipairs(B.slots) do if s.count<2 then s.count=s.count+2 end end end
+    -- the agricultural packs spoil at 30 s: spoilage in the lab's trash
+    if t==10000+1800 then L.slots[7].count=0; L.slots[7].valid_for_read=false; L.trash.spoilage=3 end
+    U.tick(t)
+  end
+  local out=U.handler({index=1},{})
+  local l,b=out.machines[1],out.machines[2]
+  eq(l.kind,'lab'); eq(l.samples.missing_science_packs,61); eq(l.working_share,0)
+  eq(l.packs[1].used,0); eq(l.packs[1].held_least,10)
+  eq(l.packs[7].name,'agricultural-science-pack'); eq(l.packs[7].unknown_intervals,1); eq(l.packs[7].unknown_why,'packs spoiled'); eq(l.packs[7].held_least,0)
+  eq(l.spoil_results[1],'spoilage 3')
+  assert(l.line:find('lab (100.5,-63.5): missing science packs 100%; packs used in 60s (durability drained): automation-science-pack 0,',1,true),l.line)
+  assert(l.line:find('agricultural-science-pack 0-3 (none in 31 samples); used unknown for agricultural-science-pack in 1 of 60 intervals (packs spoiled); spoil results in its trash: spoilage 3',1,true),l.line)
+  eq(b.working_share,100); eq(b.samples.working,61)
+  local function r2(v) return math.floor(v*100+0.5)/100 end
+  eq(b.packs[1].used,r2(drained),'the biolab\'s drain, through the inserter\'s refills'); eq(b.packs[1].used,2.9); eq(b.packs[1].unknown_intervals,nil); eq(b.packs[1].held_least,1); eq(b.packs[1].held_most,3)
+  assert(b.line:find('biolab (96.5,-56.5): working 100%; packs used in 60s (durability drained): automation-science-pack 2.9,',1,true),b.line)
+  eq(out.research.units,r2(units)); eq(out.research.technology,'tesla-weapons')
+  eq(out.packs_used_up.by_pack['automation-science-pack'],used_up); eq(used_up,2)
+  assert(out.packs_used_up.line:find('science packs used up on nauvis while the watch ran (the production statistics: whole packs, every lab there): automation-science-pack 2',1,true),out.packs_used_up.line)
+  assert(out.left_out:find('research and packs used up are the force\'s and the surface\'s, not one lab\'s',1,true))
+  -- a lab fast enough to use a whole pack between samples: unknown, not a guess
+  tech.research_unit_energy=60
+  U.handler({index=1},{positions={{x=96.5,y=-56.5}},seconds=10})
+  for t=game.tick+1,game.tick+600 do game.tick=t; U.tick(t) end
+  b=U.handler({index=1},{}).machines[1]
+  -- 9 of the 10 intervals are 67 ticks (5.8 / 60 x 67 x 0.5 = 3.2 packs at most); the one at the phase's wrap is 7 (0.34)
+  eq(b.packs[1].unknown_intervals,9); eq(b.packs[1].of_intervals,10); eq(b.packs[1].unknown_why,'it could use a whole pack between samples')
+  -- an assembler is still a crafting machine; a chest is neither
+  fails(function() local c={valid=true,name='iron-chest',type='container',position={x=1,y=1}}
+    dofile('mod/agent-harness_0.1.0/uptime.lua'){state=function() return {} end,remote_entity=function() return c end}.handler({index=1},{position={x=1,y=1}}) end,'is not a crafting machine or a lab')
+  defines,prototypes=nil,nil
+end
+print('d20_batch55 P8 uptime for labs and biolabs: ok')
