@@ -912,6 +912,9 @@ return function(api)
             if rec.signal.ok and rec.signal.layer == 1 then rec.mask = {} end
           end
         end
+        -- (AG2) rolling stock: the rail under it and the way the asked direction faces along it
+        local rk = api.rollingstock and api.rollingstock()
+        if rk and rk.TYPES[proto.type] then rec.facing = try(function() return rk.snap_text(s, rec.pos, rec.dir) end) end
         local ramp = proto.type == 'rail-ramp'
         if ramp then rec.dir = math.floor(rec.dir / 4) * 4 end
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
@@ -2144,6 +2147,11 @@ return function(api)
       end
     end
     out.blocked = #blocked > 0 and blocked or nil
+    local facings = {}
+    for _, r in ipairs(recs) do
+      if r.facing and #facings < 16 then facings[#facings+1] = string.format('#%s %s %s: %s', tostring(r.copy and (r.copy..'.'..r.index) or r.index), r.name, at(r.pos), r.facing) end
+    end
+    out.rolling_stock = #facings > 0 and facings or nil
     out.blocked_more = nblocked > #blocked and nblocked - #blocked or nil
     for _, r in ipairs(order) do
       -- A paste lays its tiles and entities together; the other calls go in order.

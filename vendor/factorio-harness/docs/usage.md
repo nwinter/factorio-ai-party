@@ -10105,6 +10105,26 @@ fh watch    # deploy on every change
   {name, position}}], checked, refused. inspect on a signal: signal {rail_layer, rails [{name, position}],
   signal_state, state (chain), line}; on its ghost, a note. rail_layer on another entity is refused. Tests:
   tests/d21_batch71.lua.
+- AG2 (#1688, Sol: T37's rear locomotive on Fulgora rebuilt with direction southeast faced the same way as the other,
+  so train 40 could not reverse; rotate {direction: south} said "locomotive has no direction"). Main before: build
+  passed a compass direction and read nothing back of the facing; rotate refused rolling stock (supports_direction
+  false). Read on 2.0.77 (private copy, a straight north-south ground rail):
+  - rolling stock has no direction (LuaEntity.direction reads 0); its facing is orientation (0 north, 0.5 south);
+    create_entity with direction south or orientation 0.5 made 0.5; asked across the rail it snaps to the nearer way
+    along it (northeast 0, east 0.5, southeast 0.5, southwest 0.5, northwest 0); 7 tiles behind another it couples;
+  - the game's rotate (R) flips a lone locomotive 180 degrees and refuses a coupled one (false, nothing changes);
+    uncoupled at the side the other stands, it flips, and connect_rolling_stock on its new front couples again: a
+    pair of 1 front and 1 back mover became 2 front movers, the train id new.
+  Now (rollingstock.lua): build (single and entries, and dry runs) takes orientation 0..1 for rolling stock (asked as
+  the nearest of 16 directions); the reply's rolling_stock {orientation, facing, coupled {front, back}, train {id,
+  carriages, front_locomotives, back_locomotives, state, manual}, line}; a dry run's rolling_stock names the rail under
+  each, the two ways along it and the one asked. rotate on rolling stock flips it 180 degrees: uncoupled at each end,
+  the game's rotate, coupled again at both ends (said in flipped; not_recoupled names any it did not couple back);
+  with direction it flips only when it faces more than 90 degrees from there (else unchanged); refused while its
+  train moves. inspect gives rolling_stock. On the copy, Sol's case: two coupled locomotives both facing north (2
+  front, 0 back); rotate on the rear one: "uncoupled from locomotive (-151,-5); flipped from north to south; coupled to
+  locomotive (-151,-5)", train 34: 1 front, 1 back. build orientation 0.6 behind a lone one: faces south, coupled;
+  orientation 0 behind that: a 3-carriage train of 2 front and 1 back. Tests: tests/d21_batch71.lua (AG2 block).
 
 ## d21 batch64 (eng/d20-batch64)
 
