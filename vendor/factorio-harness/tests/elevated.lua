@@ -239,6 +239,43 @@ reset()
 r=R.plan(p,{from={x=-175,y=194},to={x=-175,y=240},level='elevated'})
 eq(R.cut(r,{}),nil); eq(r.out.per_call.calls,1)
 
+-- (cp3) Curves: a turn across a deep band (y 40..60 here). The unsupported span is the one over the band; with the
+-- research every piece is carried. Supports on joints of odd headings face heading mod 8. Chained calls on the
+-- turn stop on supports at curve and half-diagonal joints and lay the whole route, as on the copy: (-122,281) to
+-- (-21,338) running down south, 5 calls, the game built all 31; without the research 4 calls and 5 half-diagonals
+-- over the deep part stayed ghosts.
+reset(); deep={y0=40,y1=60}
+r=R.plan(p,{from={x=1,y=0},to={x=101,y=100},level='elevated',from_direction='east',to_direction='south'})
+assert((r.out.pieces['elevated-curved-rail-a'] or 0)+(r.out.pieces['elevated-curved-rail-b'] or 0)>=4,'a turn')
+eq(#r.out.unsupported,1)
+local g=r.out.unsupported[1]
+assert(g.from.y>=30 and g.to.y<=70,'the span is the deep band: '..g.from.y..'..'..g.to.y)
+local bad2=carried(r)
+assert(#bad2>0 and #bad2==g.pieces,'the span\'s pieces, no others: '..#bad2..' vs '..g.pieces)
+researched=true
+r=R.plan(p,{from={x=1,y=0},to={x=101,y=100},level='elevated',from_direction='east',to_direction='south'})
+eq(r.out.unsupported,nil); eq(#carried(r),0)
+local odd=0
+for _,e in ipairs(r.entities) do if e.name=='rail-support' then assert(dirs[e.direction]<8,e.direction); odd=odd+1 end end
+assert(odd>=4)
+reset()
+args,calls,laid={from={x=1,y=0},to={x=101,y=100},level='elevated',from_direction='east',to_direction='south'},0,{}
+local cut_headings={}
+while args and calls<12 do
+  calls=calls+1
+  local plan=R.plan(p,args)
+  local part,capped=R.cut(plan,args)
+  for _,e in ipairs(part or plan.entities) do rail(e.name,e.position.x,e.position.y,dirs[e.direction],true); laid[#laid+1]=e end
+  if capped then cut_headings[#cut_headings+1]=capped.continue_from.heading end
+  args=capped and capped.next_call
+end
+assert(calls>=2,'more than one call')
+by={}
+for _,e in ipairs(laid) do by[e.name]=(by[e.name] or 0)+1 end
+eq(by['rail-ramp'],2)
+local curves2=(by['elevated-curved-rail-a'] or 0)+(by['elevated-curved-rail-b'] or 0)
+assert(curves2>=4,'the chained calls lay the turn: '..curves2)
+
 -- The schema names the new arguments.
 assert(R.schema.rail_route.level and R.schema.rail_route.elevated and R.schema.rail_route.to_direction)
 print('elevated ok')
