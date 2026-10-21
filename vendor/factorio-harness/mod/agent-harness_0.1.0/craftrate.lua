@@ -63,6 +63,14 @@ return function(api)
   -- research: a crusher at +40% research read 0 while its bar filled 0.4 a craft. The game adds the two and caps the sum
   -- at the recipe's maximum_productivity (+300%: at +350% research the bar filled 3 a craft). A drill's figure has the
   -- force's mining productivity in it already. {total, machine, research, max, capped}; nil without a recipe.
+  -- The same total in plain reads (uptime's samples, every second for each machine): a crafting machine's
+  -- productivity_bonus and a recipe's productivity_bonus read without error.
+  function M.productivity_now(e, recipe)
+    local proto = recipe.prototype
+    local sum = e.productivity_bonus + e.force.recipes[recipe.name].productivity_bonus
+    local max = proto and proto.maximum_productivity or 3
+    return sum > max and max or sum < 0 and 0 or sum
+  end
   function M.productivity(e, recipe)
     if not recipe then return nil end
     local machine = try(function() return e.productivity_bonus end) or M.base_prod(e.prototype)

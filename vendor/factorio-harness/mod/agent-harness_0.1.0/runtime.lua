@@ -15008,8 +15008,8 @@ function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
 M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform}
 function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
 -- uptime (uptime.lua, d20 batch53 M3, Sol #1304): crafting machines watched over a window, a status sample a second.
-M.uptime=require('uptime'){state=state,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
-  status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end}
+M.uptime=require('uptime'){state=state,timed=M.timed,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end,
+  status_name=function(e) return M.machine_status(e) end,craftrate=function(e) return M.craftrate.machine(e) end,productivity=function(e,r) return M.craftrate.productivity(e,r) end,productivity_now=function(e,r) return M.craftrate.productivity_now(e,r) end}
 function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
@@ -18924,7 +18924,7 @@ function M.tick_body(event)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
-  if state().uptime then pcall(M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
+  if state().uptime then pcall(M.timed,'uptime.tick',M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
