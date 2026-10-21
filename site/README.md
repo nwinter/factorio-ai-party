@@ -192,8 +192,9 @@ live chat embed, `embed_domain` set to the page's host) and "Site chat" (our own
 drawn from the stream service's state: a status strip (game time, technologies, SPM, packs made a minute, research
 progress), alerts, one panel per agent (portrait, model and role, state, current action and place, last two chat
 lines, camera), a map of the base (`static/mapview.js`: buildings by category, ore, enemy nests, turret range and
-terrain frames as layers, from the stream service's once-a-minute `basemap` read; pan, zoom, full screen, follow an
-agent) with the agents, camera rings and alert pins on top, the board (owners and recent events),
+terrain frames as layers, from the stream service's once-a-minute `basemap` read; a tab per planet, each with its
+buildings' footprints in its dense core, the pointer's coordinates and the map's age; the team library's placed
+blueprints with their check and hookups; pan, zoom, full screen, follow an agent) with the agents, camera rings and alert pins on top, the board (owners and recent events),
 research, production and science charts for the last 30 minutes, and the team's game chat. `/live/?demo=1` shows it
 with `live/state.example.json`, a snapshot of the stream service's mock session passed through the pusher's filter.
 

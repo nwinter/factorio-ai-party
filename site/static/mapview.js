@@ -27,8 +27,8 @@
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
-    ['readiness', 'Turret state'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, nests: true, agents: true, attention: true, alerts: true };
+    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
+  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, nests: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
   // (d20 batch50 G1, viewer Aurora: "Could the map flag turrets lacking ammo, fuel or energy and mark stale or unknown
@@ -40,6 +40,20 @@
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
   var TERRAIN_DESAT = 0.6, TERRAIN_DIM = 0.45;  // how much colour the terrain loses, and how far it fades to the ground
 
+  // (d21 batch68 AD1) a grid push_live run-length packs (rle: "12A" is twelve A cells), unpacked once; others as they are
+  function unpack(g) {
+    if (!g || !g.rle || !Array.isArray(g.rows)) return g;
+    var out = Object.assign({}, g, { rows: g.rows.map(function (r) { return String(r).replace(/(\d+)(\D)/g, function (m, n, c) { return new Array(+n + 1).join(c); }); }) });
+    delete out.rle;
+    if (g.core) out.core = unpack(g.core);
+    return out;
+  }
+  function unpackData(data) {
+    if (!data) return data;
+    var planets = {};
+    Object.keys(data.planets || {}).forEach(function (k) { planets[k] = unpack(data.planets[k]); });
+    return Object.assign({}, data, { base: unpack(data.base), core: unpack(data.core), ore: unpack(data.ore), planets: planets });
+  }
   function validGrid(g) {
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
   }
@@ -148,11 +162,12 @@
   function prepare(data) {
     data = data || {};
     var surface = data.surface || 'nauvis', home = surface === 'nauvis';
-    // another planet: its coarse map (data.planets, the census's grid; no core, ore or terrain there)
+    // another planet: its coarse map and (AD1) its dense core, as Nauvis's (data.planets, the census's; no ore or terrain there)
     var away = !home && data.planets && data.planets[surface];
     var base = home ? (validGrid(data.base) && data.base.rows.length ? data.base : null) : (validGrid(away) && away.rows.length ? away : null);
-    var core = home && validGrid(data.core) && data.core.w > 0 ? data.core : null;
-    var d = { surface: surface, base: base, fine: core, ore: home && validGrid(data.ore) ? data.ore : null,
+    var fine = home ? data.core : base && away.core;
+    var core = validGrid(fine) && fine.w > 0 ? fine : null;
+    var d = { surface: surface, now_tick: isFinite(data.now_tick) ? data.now_tick : null, base: base, fine: core, ore: home && validGrid(data.ore) ? data.ore : null,
       ground: home && validGrid(data.ground) ? data.ground : null };
     // the clouds: the one of the surface shown, and the surfaces that have one (the switch)
     d.clouds = (Array.isArray(data.clouds) ? data.clouds : []).filter(function (c) {
@@ -190,6 +205,11 @@
     d.terrainNote = !d.terrain.length ? '' : caps.length ? 'captured ' + when(Math.min.apply(0, caps)) +
       (Math.max.apply(0, caps) - Math.min.apply(0, caps) > 600 ? ' to ' + when(Math.max.apply(0, caps)) : '')
       : 'captured at game tick ' + d.terrain[d.terrain.length - 1].tick;
+    // (d21 batch68 AD2, viewer Aurora) the team library's placed areas on this surface (libareas.lua via push_live)
+    d.areas = (Array.isArray(data.library_areas) ? data.library_areas : []).filter(function (a) {
+      return a && typeof a.name === 'string' && Array.isArray(a.box) && a.box.length === 4 && a.box.every(isFinite) && a.box[2] > a.box[0] && a.box[3] > a.box[1] &&
+        (a.surface || 'nauvis') === surface;
+    });
     d.cams = data.cams || {};
     d.box = null;
     if (core) {
@@ -289,7 +309,7 @@
   }
   // A kept planet map's age in game seconds (null without both ticks), and how a switch or the scale line says it.
   function mapAge(data, k) {
-    var m = data && data.planets && data.planets[k], now = data && (data.now_tick != null ? data.now_tick : null);
+    var m = data && (k === 'nauvis' ? data.base : data.planets && data.planets[k]), now = data && (data.now_tick != null ? data.now_tick : null);
     return m && isFinite(m.tick) && isFinite(now) && now >= m.tick ? (now - m.tick) / 60 : null;
   }
   function ageText(sec) {
@@ -319,6 +339,41 @@
   }
 
   // Every mark for view {cx, cy, span} (span: tiles across the shorter side) on a W x H canvas, with layers `on`.
+  // A placed library area in words and its state: bad (an open hookup or a failed check), unverified (no check,
+  // stale or not run, or hookups not read) or ok (its check passed and no hookup open).
+  function hookText(h) {
+    if (!h) return 'hookups not read yet';
+    if (h.capped) return 'hookups not read: over ' + h.capped + ' of ours in the area';
+    if (h.too_big) return 'hookups not read: the area is over ' + h.too_big + ' tiles a side';
+    if (h.error || h.gone) return 'hookups not read' + (h.gone ? ': its surface is gone' : '');
+    if (h.n === 0) return 'nothing of ours stands there now' + (h.g ? ' but ' + h.g + ' ghost' + (h.g > 1 ? 's' : '') : '');
+    var b = h.b || [], p = h.p || [], i = h.i || [], e = h.e || [], parts = [];
+    var pair = function (what, j, o) { return j || o ? what + ' ' + (j || 0) + ' joined' + (o ? ', ' + o + ' open' : '') : ''; };
+    [pair('belts in', b[0], b[1]), pair('belts out', b[2], b[3]), pair('pipes', p[0], p[1]), pair('inserters in', i[0], i[1]), pair('inserters out', i[2], i[3])]
+      .forEach(function (t) { if (t) parts.push(t); });
+    parts.push(e[0] ? 'power: ' + e[0] + ' pole' + (e[0] > 1 ? 's' : '') + ', ' + (e[1] || 0) + ' wired out' : 'power: no pole in it');
+    if (e[2]) parts.push(e[2] + ' machine' + (e[2] > 1 ? 's' : '') + ' with no power');
+    if (e[3]) parts.push(e[3] + ' on low power');
+    if (h.g) parts.push(h.g + ' still a ghost');
+    var open = (Array.isArray(h.open) ? h.open : []).map(function (o) { return o[2] + ' at (' + o[0] + ', ' + o[1] + ')'; });
+    return 'hookups: ' + parts.join(', ') + (open.length ? '; open: ' + open.join('; ') : '');
+  }
+  function areaMark(a, now, px, py) {
+    var h = a.hookups, c = a.check;
+    var since = function (t) { return isFinite(now) && isFinite(t) && now >= t ? agoText((now - t) / 60) + ' ago' : 'at tick ' + t; };
+    var open = h && !h.capped && !h.too_big && !h.error && !h.gone && h.n !== 0 ? (h.b ? h.b[1] + h.b[3] : 0) + (h.p ? h.p[1] : 0) + (h.i ? h.i[1] + h.i[3] : 0) + (h.e ? h.e[2] : 0) : null;
+    var state = open > 0 || (c && c.state === 'fail') ? 'bad' : open === null || !c || c.state !== 'pass' ? 'unverified' : 'ok';
+    var parts = ['Blueprint ' + a.name, 'placed' + (a.by ? ' by ' + a.by : '') + ' ' + since(a.tick)];
+    if (a.deleted) parts.push('no library entry of that name now');
+    else if (a.placed_save == null) parts.push('which save was placed: not recorded (placed before d21)');
+    else parts.push(a.saved_tick > a.placed_save ? 'the entry was saved again since (' + since(a.saved_tick) + ')' : 'the entry as saved then');
+    if (a.retired) parts.push('retired' + (a.retired.by ? ' by ' + a.retired.by : '') + (a.retired.reason ? ': ' + a.retired.reason : '') + (a.retired.replaced_by ? '; replaced by ' + a.retired.replaced_by : ''));
+    parts.push(c ? 'check "' + (c.name || '#' + c.id) + '": ' + c.state + (isFinite(c.tick) ? ', last run ' + since(c.tick) : '') : 'no check of it');
+    parts.push(hookText(h) + (h && isFinite(h.t) && !h.capped ? ' (read ' + since(h.t) + ')' : ''));
+    if (a.description) parts.push(a.description);
+    var x0 = px(a.box[0]), y0 = py(a.box[1]), x1 = px(a.box[2]), y1 = py(a.box[3]);
+    return { x0: x0, y0: y0, x1: x1, y1: y1, name: a.name, state: state, retired: !!a.retired, text: parts.join(' · ') };
+  }
   function scene(d, view, W, H, on) {
     on = on || DEFAULT_ON;
     var v = view || d.auto || { cx: 0, cy: 0, span: 96 };
@@ -406,6 +461,12 @@
       sc.hits.push({ x: m.x, y: m.y, r: 9, text: cap(p.kind) + ': ' + p.text });
       return m;
     }) : [];
+    sc.areas = on.library ? d.areas.map(function (a) { return areaMark(a, d.now_tick, px, py); }).filter(function (m) {
+      return m.x1 > 0 && m.y1 > 0 && m.x0 < W && m.y0 < H;
+    }) : [];
+    sc.areas.forEach(function (m) {
+      sc.hits.push({ x: (m.x0 + m.x1) / 2, y: (m.y0 + m.y1) / 2, r: Math.max(10, Math.min(m.x1 - m.x0, m.y1 - m.y0) / 2), text: m.text });
+    });
     sc.outposts = on.buildings && d.box ? (d.box.out || []).filter(function (o) { return !inView(o); }).map(function (o) {
       var at = edge(o), m = { x: px(at.x), y: py(at.y) };
       sc.hits.push({ x: m.x, y: m.y, r: 7, text: 'Outpost · ' + o.n + ' building cell' + (o.n > 1 ? 's' : '') + ' · ' + d.dist(o) + ' tiles from the base' });
@@ -539,6 +600,17 @@
       ctx.fillStyle = m.st === 'e' ? C.empty : C.nopower; ctx.strokeStyle = '#000';
       circle(ctx, m.x, m.y, 3.2); ctx.fill(); ctx.stroke();
     });
+    (sc.areas || []).forEach(function (m) {
+      var col = m.state === 'bad' ? C.red : m.state === 'unverified' ? C.orange : '#6fd36f';
+      ctx.fillStyle = m.state === 'bad' ? 'rgba(224, 78, 58, .10)' : 'rgba(255, 255, 255, .04)';
+      ctx.fillRect(m.x0, m.y0, m.x1 - m.x0, m.y1 - m.y0);
+      ctx.setLineDash(m.state === 'unverified' || m.retired ? [4, 3] : []); ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+      ctx.strokeRect(m.x0, m.y0, m.x1 - m.x0, m.y1 - m.y0); ctx.setLineDash([]);
+      if (m.x1 - m.x0 > 46) {
+        ctx.font = '600 10px ' + font; ctx.textAlign = 'left'; ctx.fillStyle = col;
+        ctx.fillText(m.name.length > 28 ? m.name.slice(0, 27) + '…' : m.name, m.x0 + 3, Math.max(m.y0 + 11, 11));
+      }
+    });
     sc.nests.forEach(function (n) {
       ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
       if (n.kind === 'spawner') { ctx.fillStyle = C.nest; ctx.fillRect(n.x - 3, n.y - 3, 6, 6); ctx.strokeRect(n.x - 3, n.y - 3, 6, 6); }
@@ -609,7 +681,7 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function has(d, layer) {
     return layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
-      layer === 'cloud' ? !!d.cloud :
+      layer === 'cloud' ? !!d.cloud : layer === 'library' ? d.areas.length > 0 :
       layer === 'coverage' ? d.turrets.length > 0 : layer === 'readiness' ? !!d.tstate : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
       layer === 'alerts' ? d.fights.length + d.pins.length > 0 : false;
@@ -662,7 +734,7 @@
   Viewer.prototype.set = function (data) {
     // (D1) every surface seen keeps its switch and last map: the surface shown and the view (pan, zoom) stay
     this.memo = this.memo || {};
-    data = this.data = remember(this.memo, data);
+    data = this.data = remember(this.memo, unpackData(data));
     if (this.surface !== 'nauvis' && !data.seen[this.surface]) this.surface = 'nauvis';
     this.d = prepareSafe(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
@@ -715,8 +787,9 @@
       return;
     }
     this.root.dataset.paintMs = Date.now() - t0;  // tools/site_shots.js reads how long a frame took
-    var age = this.d.surface !== 'nauvis' ? mapAge(this.data, this.d.surface) : null;
-    var old = age != null && age >= OLD_S ? ' · map from ' + ageText(age) + ' ago' : '';
+    // (AD1) the buildings' read on every surface: Nauvis's basemap once a minute, a planet's kept map
+    var age = mapAge(this.data, this.d.surface);
+    var old = age == null ? '' : ' · map from ' + (age < 60 ? 'under a minute' : ageText(age)) + ' ago';
     this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + old + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
@@ -767,6 +840,13 @@
     }
     if (d.turrets.length && on.coverage) h += '<li' + (d.turretsCapped ? ' class="mv-incomplete"' : '') + '><i class="mv-range"></i>Turret range' +
       (d.turretNote ? ' (' + esc(d.turretNote) + ')' : '') + '</li>';
+    if (d.areas.length && on.library) {
+      var n3 = { bad: 0, unverified: 0, ok: 0 };
+      d.areas.forEach(function (a) { n3[areaMark(a, d.now_tick, function (x) { return x; }, function (y) { return y; }).state]++; });
+      h += '<li><i class="mv-area" style="border: 2px solid ' + C.red + '"></i>' + esc('Blueprints: ' + n3.bad + ' with an open hookup or a failed check') + '</li>' +
+        '<li><i class="mv-area" style="border: 2px dashed ' + C.orange + '"></i>' + esc(n3.unverified + ' not verified (no passing check, or hookups not read)') + '</li>' +
+        '<li><i class="mv-area" style="border: 2px solid #6fd36f"></i>' + esc(n3.ok + ' check passed, every hookup joined') + '</li>';
+    }
     if (d.tstate && on.readiness) {
       var c = d.tstate.counts, n = function (k) { return +c[k] || 0; };
       h += '<li><i class="mv-ready-e"></i>Turrets: ' + esc(n('armed') + ' armed, ' + n('empty') + ' empty, ' + n('no_power') + ' no power') +
@@ -903,7 +983,7 @@
   root.PogMap = {
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
-    prepare: prepare, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
+    prepare: prepare, areaMark: areaMark, hookText: hookText, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
     remember: remember, switchList: switchList, mapAge: mapAge, OLD_S: OLD_S,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };

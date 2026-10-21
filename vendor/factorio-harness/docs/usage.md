@@ -10108,6 +10108,78 @@ fh watch    # deploy on every change
   private copy (a 16-wall box); its searches through the copy's densest chunk (964 entities) 0.07 ms for the line and
   0.09 ms for the wall search; the flood is capped at 1024 walls (3.6 ms in plain Lua for a 1600-wall block with the
   test's linear finds). Tests: tests/d21_batch64.lua (Z3 block).
+- Z4 (viewer Aurora, operator inbox 08:07: Luna's and Opus's walks still blocked in mech armor; does the planner
+  account for flight). Main before: every path request asked with the character prototype's mask (player, train,
+  is_object), and the closed-in flood, reach-ring check, mining search, stall reason and across read obstacles by the
+  player layer. Read on 2.0.77 (private copy, sol's bot character, mech-armor with an empty grid):
+  - mech-armor's item prototype has provides_flight; the game's default mask "character/flying" (prototypes.
+    utility_constants.default_collision_masks) is {trigger_target}, which in 2.0.77 only spidertrons and the pentapods
+    carry, and no tile; LuaEntity.is_flying reads it;
+  - the character takes off a few tiles into a walk on open ground, or within 10 ticks when something stands in its way,
+    and lands when it stops where it can stand; stopped beside a wall or over a building it stays up (bobbing, and the
+    game moved it off a wall it was put on); with nothing in the way it lands mid-walk and takes off again;
+  - flying it crossed 48 tiles of water and deepwater (pathfind=false, 62 tiles in 7.1 s; the planned walk went round
+    the lake in 24.5 s), a stone wall and an assembling machine, in straight lines, with no equipment or power;
+  - a change to armor without flight while it flew killed it (equip power-armor while it hovered beside a wall; the
+    same by script): the corpse lay where it hovered.
+  Shift51: Luna equipped mech-armor at 13:12 (tick 41478945) and Opus at 14:23 (41712500); both kept it on.
+  - Luna, 14:26 (tick 41722943), queue job-2875 move_to via (-115.7,271.1) to (-269.5,486.5), the captive cell's
+    requester chest: leg 2 unreachable, "no path for the character to (-269.5,486.5) on the tile, half- or quarter-tile
+    grid", nearest reachable (-223.5,499.5), 47.8 tiles short: the cell is walled and the way to it crosses water and
+    deepwater from (-223,421) to (-260,473); the path requests asked with the ground mask, which neither crosses.
+  - Opus, 14:36 to 14:44: a walk to the cell went round the water (308 tiles against 163) and ended arrived_near at
+    (-263.8,469.6) beside its walls; the walking transfers into it then ended timed_out (4), unreached once ("no path
+    ... mining stone-wall (-265.5,470.5) opens a way") and replaced once, and at 14:44 a move_to from there found no path at all (walked 0 tiles), all with the ground mask; the spot
+    is sand between the cell's wall row (y 470.5) and water to its north and east (world n read, 2-tile samples of
+    (-280..-246, 456..472)).
+  - Opus, 14:48 to 14:50: a move_to (-150,170) arrived at (-150.48,169.69), inside the footprint of the solar panel at
+    (-149.5,169.5) (world n read: solar panels there, red desert tiles): the flying character stopped over it. The next
+    walks read "closed in ... the area (-150.5,169.5)-(-150.5,169.5) (about 0 tiles)": the flood with the ground
+    mask finds no free step inside the panel's box. He mined the panel (14:50:52) and walked on.
+  Now: pathing.flies(c) (the armor slot's item provides flight) and pathing.mask(c) (the flying default mask, else the
+  prototype's): the path requests and probes ask with it (no belt-free twin when flying), and boxes_in, the flood
+  (region), dig, stall_why and across find obstacles by its layer (trigger_target flying). On the copy with mech-armor:
+  the planned walk across the lake took 8.2 s straight (24.5 s round before); into a sealed ring of 40 stone walls 2.4
+  s and out 3.1 s (without the armor: closed in); onto an assembling machine's centre it arrived over it and the next
+  walk left normally. status (brief and full) gains `flight` for a character in armor with flight: flying (what it
+  crosses, and that armor without flight put on now kills it) or on the ground. equip refuses armor without flight
+  while the character flies: `armor: the character is flying now (mech-armor provides flight, power-armor does not);
+  in 2.0.77 a character that loses flight in the air dies ...`. Tests: tests/d21_batch64.lua (Z4 block).
+- Z5 (#1635, Astra: `power` on Nauvis at (7,-175), tick 42224815, listed two working fusion generators making 56.974 MW
+  with generators.nameplate_kw 0, working_kw 0 and a supply line of 0 MW; inspect gave each max 50000 kW; the networks
+  line's capacity had not taken in the new 100 MW). Main before: power rated each generator by the prototype's
+  get_max_power_output, else max_power_output, and counted only steam engines and turbines, burner generators and fusion
+  generators; the networks view (the `lines`) fell back to get_max_energy_production and was made every 60 s, its walk
+  spread over the next 60 s, so a build showed there up to about 2 min later. Read on 2.0.77 (private copy):
+  - get_max_power_output (J a tick): steam-engine 15000 (900 kW), steam-turbine 97000 (5.82 MW), burner-generator
+    16666.7 (1 MW); nil for fusion-generator, solar-panel, accumulator and the lightning attractors.
+    get_max_energy_production: fusion-generator 833333.3 (50 MW), solar-panel 1000 (60 kW), accumulator 5000 (300 kW),
+    lightning-collector, lightning-rod, fusion-reactor, heating-tower and nuclear-reactor 0. Output flow limits:
+    accumulator 5000 J a tick, fusion-generator 833333.3, lightning-collector 1e9 and lightning-rod 5e8 (their buffers
+    1 GJ and 500 MJ). A fusion reactor is an electric consumer (primary-input) that makes plasma; a heating tower and a
+    nuclear reactor have no electric source (heat); none gives electricity itself.
+  - two fusion generators fed plasma (10 at 1,000,000 C, about 0.019 a tick each at the load) with a 57 MW load read on
+    main: `generators: count=2 nameplate_kw=0 working_kw=0`, "nameplate 0.0 MW; working now 0.0 MW ...; producing 57.0
+    MW", Astra's read.
+  - the force's entity build statistics count a robot's build (an accumulator from a ghost: 0 to 1) and not a script's
+    create_entity (with or without raise_built), which is how the harness builds.
+  Now: networks.max_output_kw(e) (get_max_power_output, else get_max_energy_production, by the entity's quality) rates
+  power's generators: nameplate_kw and working_kw count fusion generators at 50 MW each, and generators.by_name lists
+  each name and quality: count, each_kw (one entity's most output), max_kw, working, and network_output_kw (the whole
+  network's output of that name now, its 5 s statistics), kept apart; the supply line names them ("fusion-generator 2 x
+  50.0 MW = 100.0 MW, 2 working ... the network produces 57.0 MW now, of it fusion-generator 57.0 MW"). Also per network
+  in the area: solar {count, full_sun_kw at this surface's solar power, network_output_kw} and solar_line; accumulators
+  acc_holding and acc_out_kw (the most those holding charge give, each its output limit) and acc_line; lightning
+  attractors (attractors, attr_mj, attractor_line); and `reactors`: reactors, heating towers and fusion reactors in the
+  area by state. The cached view: each of power's `lines` ends "(as of Ns ago)"; `not_in_view` names a network here the
+  view has no line for yet; a generator, solar panel or accumulator built (a harness build, networks.built; a player's or
+  robot's, by the build statistics read every 5 s: 0.048 ms a read on the copy, 11 surfaces x 6 names) starts the view
+  and the pole map again from that tick, and power's and networks' `built_since` says what was built after the view
+  began, where, when, and when the new one is due. On the copy: sol built a third fusion generator; power at once read
+  nameplate 150.0 MW in the area and built_since "fusion-generator built 4s ago at (-152.5,5.5) on nauvis (up to 50.0
+  MW), after this view: a new view started then, ready in about 55s"; 60 s later the line read 150.0 MW capacity. A
+  robot-built accumulator gave networks' built_since "accumulator built 20s ago on nauvis by a player or robot ...".
+  The network GUI was not opened (headless copy). Tests: tests/d21_batch64b.lua.
 ## d20 batch62 (eng/d20-batch62)
 
 - X1 (viewer Aurora, operator inbox 23:40: "Sol's 600-second trial advanced after 464 seconds when he equipped a
@@ -10317,3 +10389,60 @@ his body.
   (surface platform-N) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret N, ...". The frame is one search of ours in it (at most 2000 entities, 1920x1080 px is 60x34 tiles).
 - `./shot` (tools/new-run.sh) prints that line under the file name. Runs made before this keep their old `shot` script
   until they are made again.
+
+## d21 batch68 (eng/d20-batch68)
+- AD1 (viewer Aurora, operator inbox d21 08:40: "Could Aquilo get a detailed base map using the Nauvis approach, with
+  building footprints, coordinates and data age? Zoom currently only enlarges category blocks"). The census pass
+  (census.lua) kept each Nauvis building's size and drew Nauvis's dense core from the footprints (1-4 tiles a cell, up
+  to 160 cells a side), but kept only each other planet's building centres, gridded at 4 tiles a cell or more (Aquilo
+  4, Gleba and Vulcanus 8, Fulgora 16-32 on world n): zooming in enlarged those cells. Each planet now gets its own
+  core the same way, in the same pass (its points' footprints, the box round its densest 32-tile blocks, CMAX 160),
+  one fine-grid step per 800 buildings after its coarse grid; `census {part: "basemap", surface}` adds `core {cell, x0,
+  y0, w, h, rows}`. On the d17 private copy: Aquilo 80x80 cells at 1 tile, Fulgora 88x56 at 2, Gleba 144x112 at 1,
+  Vulcanus 120x72 at 2; each planet map read 15-19 ms through the stream client's RCON there. census.step over 120 s
+  there: 2.66 ms a step (7167 steps) on this branch and 3.60 ms (7053) on main's census, the copy's GC and Rosetta
+  swings larger than the 15 added steps a pass. The stream site side is in docs/LIVE-API.md (planet cores, packed
+  rows, the map's age on every surface). Tests: tests/census.lua, site/test_planetcore.py.
+- AD2 (viewer Aurora, d20 18:33 and d21 09:45: "could installed blueprint areas show tested revision, required hookups
+  and last check, with failed or unverified hookups on every planet's map?"). New operator read `library_areas`
+  (libareas.lua; describe's operator_reads lists it): the library placements checks.lua remembers (blueprint_place
+  {name}: the last 4 of a name), newest first, one per name and spot, at most 48, on surfaces that still exist; each
+  with the entry's facts (description's start, saved_tick now, retired {by, reason, replaced_by, tick}, deleted), the
+  save placed (`placed_save`: blueprint_place now records the entry's saved_tick with its placement), the newest
+  blueprint check over it (checks.lua area_state: id, name, state, tick), and `hookups` at the area's edge as the world
+  shows them now: belts whose next tile is outside, fed from or into a belt there or not; fluid connections to a tile
+  outside, joined or open; inserters picking up or dropping outside, onto something or not; the area's poles wired to
+  poles outside and its machines on no or low power; ghosts and built counts; the first 4 open ones with positions.
+  Hookups are read for `hookups` areas a read (default 2, 0..4; the ones read longest ago first), each one find over the
+  area of at most 1500 of ours, looking only at what stands within reach of the edge, and kept with their tick. On the
+  d17 private copy (a test surface, removed after): a cell pasted, built and joined outside on some edges read belts in
+  0 joined 1 open and out 1 joined, a fluid connection 1 joined 1 open, an inserter dropping onto the ground outside, 1
+  pole wired out, 2 machines with no power, and its check fail (1 of 27 not placed); the read took 2.5-3.7 ms in the game
+  with no hookups and +0.1-0.5 ms an area's (11 ms for a 448-belt area before the edge filter). The stream service reads it
+  once a minute (live.py observe_library_areas), push_live sends `library_areas` (docs/LIVE-API.md), the live map draws it
+  as the Blueprints layer on every surface. Tests: tests/d21_batch68.lua, tools/stream/test_libareas.py, site/test_libareas.py.
+## d21 batch66 AB3 (eng/d20-batch66)
+
+AB3 (Sol #1617): `platform_defense` read five of Solstice's turrets "preload only" while belt buffers capped near 10
+held their source inserters off; every feed led to the maker aboard when those gates opened. The ammunition trace
+(ammofeed.lua) dropped a source inserter switched off by its condition, did not follow a relay switched off, and
+stopped at a turret's own feeder switched off.
+- Changed: an inserter or belt its circuit or logistic condition holds off now is a link "gated closed now". The trace
+  goes on through it: a source inserter keeps its maker, chest or the hub; a relay's belts upstream are read with their
+  ammunition and sources; a turret's own feeder is traced back as any other. Its condition with the values on its
+  wires comes from feeders.lua (`enabled when firearm-magazine < 10 (on its wires: firearm-magazine 12): false now`),
+  read for the first 16 gates of a trace.
+- A turret row: `reaches` counts what comes now; `behind_gate` what waits behind a link gated closed now. Its line has
+  `NOW:` (the gated links on its way: the current flow) apart from `STOPPED:` (no route to a source, a filter leaving
+  its ammo out, no feeder, blocked by other ammunition ahead).
+- `replenished` counts a source behind a gate: `maker`, `hub`, `chest`; `replenished_gated: true` when every source of
+  that kind is behind one. `preload` is kept for a turret with no route to a source. The replenishment line adds
+  "(N of them only through a link gated closed now: positions)"; a new line lists each gate with its condition and
+  the turrets on its way. `feed.gates` [{name, position, condition, turrets}].
+- Totals: belts and sources behind a gate are on a turret's way (not stranded).
+- Headless copy: a test platform B66gate (made, then destroyed) with a maker, a fast inserter onto 3 belts holding 12
+  magazines, wired to a belt reading the entire belt, enabled when firearm-magazine < 10, and a turret fed from those
+  belts. Closed: "1 from an ammunition maker aboard (...) (1 of them only through a link gated closed now: (1,-12))",
+  the gate line with "on its wires: firearm-magazine 15" (what the belt read gave), 4 behind the gate. Opened: "maker",
+  no gate. The turret's own feeder held off: 5 reach it, 16 behind the gate. A turret on a belt nothing loads: preload
+  only, STOPPED.

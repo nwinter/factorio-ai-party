@@ -770,6 +770,8 @@ class Model:
         self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
+        self.library_areas = None  # (d21 batch68 AD2) the library's placed areas, the last read (live.py observe_library_areas)
+        self.library_areas_t = None
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -791,6 +793,7 @@ class Model:
         # entries and the events the harness saw, the newest kept for the state; a platform's loss as the harness read
         # it at its hub's death (where, what killed it, its cargo), by name, for the stream's own loss line
         self.chronicle_entries, self.chronicle_events, self.harness_lost = deque(maxlen=12), deque(maxlen=20), {}
+        self.chronicle_earlier = set()  # set_platform_history
         # each platform's newest creation and its departures since (chronicle_log.platform_history, then the live
         # events): its first departure is a maiden flight (viewer Foobator, d17 14:24)
         self.platform_history = {}
@@ -873,6 +876,8 @@ class Model:
         # still has its tab
         if isinstance(obs.get("planet_map"), dict) and obs["planet_map"].get("surface"):
             self.planet_maps[obs["planet_map"]["surface"]] = obs["planet_map"]
+        if isinstance(obs.get("library_areas"), dict):
+            self.library_areas, self.library_areas_t = obs["library_areas"], now
         if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
             self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
@@ -1486,7 +1491,9 @@ class Model:
             return
         cl.append({"text": text, "version": version, "request": None if version else text, "tick": tick, "t": t})
 
-    REMINDERS_MAX = 12
+    # (d20 batch65 AA4) every job for the site's "Show all" (push_live.public_reminders keeps them within its budget);
+    # a cap against a runaway list
+    REMINDERS_MAX = 100
 
     def reminders_snapshot(self):
         """The team's reminder jobs for the site's panel (d15 batch5 group I): owner, message, next due, the last result
@@ -1973,6 +1980,8 @@ class Model:
 
     def _ingest_chronicle_entry(self, e, now):
         """An agent's chronicle entry: its words, where it stood and the events it is filed beside."""
+        if chronicle_log.entry_key(e) in self.chronicle_earlier:
+            return
         agent = self._who(e.get("agent"))
         self.chronicle_entries.append({"seq": e.get("seq"), "tick": e.get("tick"), "game_time": e.get("game_time"),
                                        "agent": agent, "name": e.get("agent"), "title": clean_text(e.get("title") or "") or None,
@@ -1985,6 +1994,8 @@ class Model:
     def _ingest_chronicle_event(self, ev, now):
         """An event the harness saw. A platform's loss carries where it was, what killed it and its hub's items: the
         stream's own loss line (_platform_destroyed) takes them."""
+        if chronicle_log.event_key(ev) in self.chronicle_earlier:
+            return
         row = {k: ev.get(k) for k in ("id", "kind", "tick", "game_time", "line", "platform", "agent", "where", "by",
                                       "cargo", "cargo_items", "hit_by") if ev.get(k) is not None}
         row["t"] = now
@@ -2003,6 +2014,8 @@ class Model:
         """Each platform's creation and departures from the chronicle files along the run chain (serve.py), so a
         restart or a new shift knows which platforms have flown since they were built."""
         self.platform_history = chronicle_log.platform_history(chronicle_path)
+        # the rows earlier shifts wrote: a file carrying them again (before d20 batch65 AA3) does not show them as new
+        self.chronicle_earlier = chronicle_log.earlier_keys(chronicle_path) if chronicle_path else set()
 
     def _maiden_flight(self, ev, h, now):
         """A platform's first departure since its creation (the history knows when it was built and by whom): a
@@ -2307,6 +2320,8 @@ class Model:
             "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
             "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
+            # the library's placed areas with their hookups (libareas.lua; push_live sends them, the live map draws them)
+            "library_areas": dict(self.library_areas, age_s=round(now - self.library_areas_t)) if self.library_areas else None,
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),

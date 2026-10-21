@@ -32,6 +32,36 @@ return function(api)
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   M.at = at
+  -- (d21 batch64 Z4, viewer Aurora: Luna's and Opus's walks still ended blocked in mech armor) The character's collision
+  -- mask as the game moves it. Read on 2.0.77 (private copy, a bot's character): with an armor whose prototype provides
+  -- flight (mech-armor) on, the character takes off a few tiles into a walk, or within 10 ticks when something stands
+  -- in its way, and lands when it stops where it can stand (over water, beside a wall or over a building it stays up);
+  -- flying, it crossed 48 tiles of water and deepwater, a stone wall and an assembling machine in straight lines, with no
+  -- equipment or power in the armor. Flying it collides by the default mask "character/flying" (layer trigger_target:
+  -- spidertrons and pentapods; no tile), else by the character prototype's (player, train, is_object).
+  local FLYING
+  function M.flies(c)
+    return try(function()
+      local inv = c.get_inventory(defines.inventory.character_armor)
+      local s = inv and inv[1]
+      return s ~= nil and s.valid_for_read and s.prototype.provides_flight == true
+    end) == true
+  end
+  -- The mask a walk plans with, and the layer the obstacle reads find by.
+  function M.mask(c)
+    if c and M.flies(c) then
+      FLYING = FLYING or try(function() return prototypes.utility_constants.default_collision_masks['character/flying'] end)
+        or {layers={trigger_target=true}, not_colliding_with_itself=true}
+      return FLYING, 'trigger_target'
+    end
+    return c and try(function() return c.prototype.collision_mask end) or try(function() return prototypes.entity.character.collision_mask end)
+      or {layers={player=true, train=true, is_object=true}}, 'player'
+  end
+  -- The layer of what blocks the character given as ignore (opts.ignore), else the ground character's.
+  function M.layer_of(c)
+    if c and try(function() return c.valid and c.type == 'character' end) then local _, l = M.mask(c); return l end
+    return 'player'
+  end
   local found_spot, search_spot
   -- Half the character's box (0.2 for the vanilla character).
   function M.half(c)
@@ -59,13 +89,14 @@ return function(api)
   -- as {x0, y0, x1, y1, name, entity}.
   local function boxes_in(surface, area, ignore)
     local boxes = {}
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
+    local layer = M.layer_of(ignore)
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask=layer} end) or {}) do
       if e.valid and e ~= ignore and e.type ~= 'character' then
         local b = e.bounding_box
         boxes[#boxes+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y, e.name, e}
       end
     end
-    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
+    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask=layer} end) or {}) do
       boxes[#boxes+1] = {t.position.x, t.position.y, t.position.x + 1, t.position.y + 1, t.name}
     end
     return boxes
@@ -147,7 +178,7 @@ return function(api)
     -- (batch26 C2, Sonnet: a recover and three move_to calls stalled 16 times in a solar and accumulator block) after
     -- stalls a replan asks for more room either side (nav.stall_pad), so the route keeps out of gaps the steering sticks in
     local h = M.half(c) + L.pad + (nav.stall_pad or 0)
-    local id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=mask or c.prototype.collision_mask, start=start,
+    local id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=mask or (M.mask(c)), start=start,
       goal=nav.position, force=p.force, radius=nav.precise_corner and nav.tolerance or nav.tolerance + 1 + (nav.replans or 0) + (L.wide or 0), entity_to_ignore=c, can_open_gates=true,
       -- finer grids take more steps: let the engine spread them over ticks
       pathfind_flags={prefer_straight_paths=true, no_break=L.res == 0, cache=false}, path_resolution_modifier=L.res ~= 0 and L.res or nil}
@@ -162,7 +193,8 @@ return function(api)
     local level = nav.path_level or 0
     nav.path_id = ask(p, nav, level)
     nav.avoid_id, nav.found, nav.avoided = nil, nil, nil
-    if M.LEVELS[level + 1].avoid then nav.avoid_id = ask(p, nav, level, off_belts(p.character.prototype.collision_mask)); nav.found = {} end
+    -- (a flying character is not carried by belts: no belt-free twin)
+    if M.LEVELS[level + 1].avoid and not M.flies(p.character) then nav.avoid_id = ask(p, nav, level, off_belts(p.character.prototype.collision_mask)); nav.found = {} end
     nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.sidestep = nil; nav.asked_tick = game.tick; nav.approach = nil
   end
   -- A belt path is replaced by the off-belt one when that is at most 6 tiles
@@ -316,7 +348,7 @@ return function(api)
   local function probe(p, nav, kind, radius, pad, res)
     local c = p.character
     local h = M.half(c) + (pad or 0)
-    nav.probe_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=c.prototype.collision_mask, start=M.start_centre(p),
+    nav.probe_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=(M.mask(c)), start=M.start_centre(p),
       goal=nav.position, force=p.force, radius=radius, entity_to_ignore=c, can_open_gates=true,
       pathfind_flags={prefer_straight_paths=true, no_break=res == nil, cache=false}, path_resolution_modifier=res}
     api.paths()[nav.probe_id] = p.index
@@ -548,11 +580,7 @@ return function(api)
   -- dry run said the route was clear, a minute each): where it stopped, how far from the goal, and what stands within
   -- 2.5 tiles of it that the character collides with (by the character's collision layers), by name; enemy units
   -- within 6 tiles, which push it about.
-  local char_layers
-  local function blocks(e)
-    if not char_layers then
-      char_layers = try(function() return prototypes.entity.character.collision_mask.layers end) or {player=true}
-    end
+  local function blocks(e, char_layers)
     local layers = try(function() return e.prototype.collision_mask.layers end)
     if not layers then return false end
     for k in pairs(layers) do if char_layers[k] then return true end end
@@ -561,10 +589,11 @@ return function(api)
   local SKIP = {character=true, ['item-entity']=true, resource=true, corpse=true, ['character-corpse']=true, ['entity-ghost']=true, ['tile-ghost']=true}
   function M.stall_why(p, nav, goal)
     local here = p.position
+    local char_layers = (M.mask(p.character)).layers or {player=true}
     local list = try(function() return p.surface.find_entities_filtered{area={{here.x - 2.5, here.y - 2.5}, {here.x + 2.5, here.y + 2.5}}, limit=64} end) or {}
     local by, order = {}, {}
     for _, e in ipairs(list) do
-      if e.valid and not SKIP[e.type] and e ~= p.character and blocks(e) then
+      if e.valid and not SKIP[e.type] and e ~= p.character and blocks(e, char_layers) then
         local name = e.type == 'cliff' and 'cliff' or e.name
         if not by[name] then by[name] = {n=0, first=e.position}; order[#order+1] = name end
         by[name].n = by[name].n + 1
@@ -658,14 +687,15 @@ return function(api)
   local function collision_boxes(surface, area, opts)
     local boxes = {}
     local skip, open = opts.skip, opts.open
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
+    local layer = M.layer_of(opts.ignore)
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask=layer} end) or {}) do
       if e.valid and e ~= opts.ignore and e.type ~= 'character' and not (e.type == 'gate' and opts.force and e.force == opts.force)
         and not (skip and e.unit_number and skip[e.unit_number]) then
         local b = e.bounding_box
         boxes[#boxes+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y, e.name}
       end
     end
-    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
+    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask=layer} end) or {}) do
       if not (open and open[t.position.x .. ',' .. t.position.y]) then
         boxes[#boxes+1] = {t.position.x, t.position.y, t.position.x + 1, t.position.y + 1, t.name}
       end
@@ -1510,7 +1540,8 @@ return function(api)
       w.runs_on and string.format(', running on past the %d tiles read round the crossing', ACROSS_R) or '',
       #g > 0 and ('gates in it: ' .. table.concat(g, ', ')) or 'no gate in it')
   end
-  function M.across(surface, from, goal, half, force)
+  function M.across(surface, from, goal, half, force, layer)
+    layer = layer or 'player'
     local dx, dy = goal.x - from.x, goal.y - from.y
     local len = (dx * dx + dy * dy) ^ 0.5
     if len < 0.01 then return nil end
@@ -1523,7 +1554,7 @@ return function(api)
       local e1 = math.min(L, s + 4)
       local a, b = {x=from.x + ux * s, y=from.y + uy * s}, {x=from.x + ux * e1, y=from.y + uy * e1}
       local area = line_area(a, b, half)
-      for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
+      for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask=layer} end) or {}) do
         if e.valid and e.type ~= 'character' then
           local k = key_of(e)
           if not seen[k] then
@@ -1533,7 +1564,7 @@ return function(api)
           end
         end
       end
-      for _, tl in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
+      for _, tl in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask=layer} end) or {}) do
         local k = tl.position.x .. ',' .. tl.position.y
         if not seen[k] then
           seen[k] = true

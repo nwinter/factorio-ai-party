@@ -6,9 +6,15 @@ and the events the harness saw), along the long run's chain (site/longrun.py), f
   through the site's redaction (clean) and its filter (keep);
 - build_page(): the Chronicle page, shift by shift, the agents' words beside the harness's record;
 - timeline_rows(): platform made and lost rows for /timeline/ with their details;
-- platform_losses(): each lost platform's details by name, for the long-run page's platform table."""
+- platform_losses(): each lost platform's details by name, for the long-run page's platform table.
+Each row once (placed()): every shift's file may carry rows an earlier shift wrote (viewer Aurora 08:29: "'Oxidizer kit
+launched' at 58h34m appears 21 times, including under Shift 51")."""
 import json
+import sys
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent / "tools" / "stream"))  # last: site modules keep their names
+import chronicle_log  # noqa: E402  (entry_key, event_key)
 
 NAME = "chronicle.jsonl"
 SHOWN = ("platform_created", "platform_lost", "platform_deleted", "rocket", "death")
@@ -33,6 +39,36 @@ def read(run_dir):
         elif isinstance(row, dict) and row.get("type") == "event" and isinstance(row.get("kind"), str):
             events.append(row)
     return entries, events
+
+
+def home(shifts, tick, writer):
+    """The shift a row belongs to: the one whose game-tick window (its first to its last score read, raw0..raw1) holds
+    its tick, else the shift whose file first has it (a row between two shifts' windows)."""
+    if isinstance(tick, (int, float)):
+        hold = [s for s in shifts if isinstance(s.get("raw0"), (int, float)) and s["raw0"] <= tick <= s["raw1"]]
+        if hold and writer not in hold:
+            return hold[0]
+    return writer
+
+
+def placed(long, runs_dir):
+    """{shift id: (entries, events)} for the shifts that played: each row once along the chain (entries by seq and
+    tick, events by id, tick and kind; chronicle_log.entry_key, event_key), under its home() shift, in game-time order."""
+    shifts = [s for s in (long or {}).get("shifts") or [] if not s.get("empty")]
+    out = {s["id"]: ([], []) for s in shifts}
+    seen = set()
+    for s in shifts:
+        for i, (rows, key) in enumerate(zip(read(Path(runs_dir) / s["id"]), (chronicle_log.entry_key, chronicle_log.event_key))):
+            for r in rows:
+                if key(r) in seen:
+                    continue
+                seen.add(key(r))
+                out[home(shifts, r.get("tick"), s)["id"]][i].append(r)
+    order = lambda r: (r.get("tick") if isinstance(r.get("tick"), (int, float)) else 0)  # noqa: E731
+    for entries, events in out.values():
+        entries.sort(key=order)
+        events.sort(key=order)
+    return out
 
 
 def words(name):
@@ -74,11 +110,11 @@ def event_text(ev):
 def by_shift(long, runs_dir, clean=lambda s: s, keep=lambda s: True):
     """[{n, id, entries, events}] for the shifts with any row: entries {tick, agent, title, text, where, about} whose
     text keep allows, events {tick, kind, text, platform} of the SHOWN kinds."""
-    out = []
+    out, rows_of = [], placed(long, runs_dir)
     for s in (long or {}).get("shifts") or []:
         if s.get("empty"):
             continue
-        entries, events = read(Path(runs_dir) / s["id"])
+        entries, events = rows_of[s["id"]]
         rows = []
         for e in entries:
             text, title = e.get("text") or "", e.get("title") or ""
@@ -97,11 +133,11 @@ def by_shift(long, runs_dir, clean=lambda s: s, keep=lambda s: True):
 def timeline_rows(long, runs_dir):
     """[(tick, shift n, "platform", text)] of the harness's platform events (built, lost, deleted), and the set of
     (kind, name) they cover per shift id, so the score-based rows leave those out."""
-    rows, covered = [], {}
+    rows, covered, rows_of = [], {}, placed(long, runs_dir)
     for s in (long or {}).get("shifts") or []:
         if s.get("empty"):
             continue
-        _, events = read(Path(runs_dir) / s["id"])
+        _, events = rows_of[s["id"]]
         for ev in events:
             if ev.get("kind") in ("platform_created", "platform_lost", "platform_deleted") and isinstance(ev.get("tick"), (int, float)):
                 rows.append((ev["tick"], s["n"], "platform", event_text(ev)))
@@ -111,11 +147,11 @@ def timeline_rows(long, runs_dir):
 
 def platform_losses(long, runs_dir):
     """{platform name: the last platform_lost event's line} (the long-run page's platform table)."""
-    out = {}
+    out, rows_of = {}, placed(long, runs_dir)
     for s in (long or {}).get("shifts") or []:
         if s.get("empty"):
             continue
-        for ev in read(Path(runs_dir) / s["id"])[1]:
+        for ev in rows_of[s["id"]][1]:
             if ev.get("kind") == "platform_lost" and ev.get("platform"):
                 out[ev["platform"]] = event_text(ev)
     return out
@@ -169,7 +205,9 @@ def build_page(shifts, agent, avatar, esc, game_time, known=()):
                        + (f'<span>{esc(x["title"])}</span>' if x["title"] else "")
                        + f'<span class="muted small">{when}{" · " + esc(str(x["where"]).capitalize()) if x["where"] else ""}</span></h3>'
                        f'<p>{esc(x["text"])}</p>{about}</li>')
-        parts.append(f'<section class="chron-shift" id="shift-{s["n"]}"><h2><a href="/runs/long/shift-{s["n"]}/">Shift {s["n"]}</a></h2>'
+        ne, nv = len(s["entries"]), len(s["events"])
+        parts.append(f'<section class="chron-shift" id="shift-{s["n"]}"><h2><a href="/runs/long/shift-{s["n"]}/">Shift {s["n"]}</a> '
+                     f'<span class="muted small">{ne} entr{"y" if ne == 1 else "ies"} · {nv} event{"" if nv == 1 else "s"}</span></h2>'
                      f'<ol class="chron-list">{"".join(lis)}</ol></section>')
     filters = (f'<fieldset class="chron-filters"><legend class="small muted">Show</legend>'
                f'<label><input type="checkbox" value="entries" checked> The agents\' entries ({n_entries})</label>'

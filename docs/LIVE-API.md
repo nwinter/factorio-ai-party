@@ -202,8 +202,41 @@ older says its age on its tab ("Gleba · 12 min old") and under the map ("map fr
 `tick`); the planet shown and the view (pan, zoom) stay across updates. They come from the harness census's last
 pass (`census {part: "planets"}` and `census {part: "basemap", surface}`, operator reads that answer from storage),
 one planet a minute in the stream service. The map card shows a tab per planet beside Nauvis; on a planet's tab its
-buildings are drawn, with the agents on it (the rest listed in the corner); no core, ore, terrain, nests or turret
-range there.
+buildings are drawn, with the agents on it (the rest listed in the corner); no ore, terrain, nests or turret range
+there.
+
+`basemap.core` is the base's dense core: the box round its densest 32-tile blocks (8 tiles beyond them), each building's
+footprint at `cell` 1, 2 or 4 tiles (doubled until the box fits 160 cells a side), the same letters; the page draws it
+over the coarse grid inside its box, and zooming in shows each building. (d21 batch68 AD1, viewer Aurora: "Could Aquilo
+get a detailed base map using the Nauvis approach, with building footprints, coordinates and data age?") A
+`planet_map` carries its planet's `core` the same way, made by the same census pass (`census {part: "basemap",
+surface}`); push_live sends it at twice the cell until its packed form fits 12 KB (each new cell the most telling of
+the four). Every surface's scale line gives its map's age (`map from 2 min ago`: Nauvis's basemap read, a planet's
+last census map), and the pointer's tile coordinates show in the corner on every surface.
+
+`library_areas` (d21 batch68 AD2, viewer Aurora: "could installed blueprint areas show tested revision, required hookups
+and last check, with failed or unverified hookups on every planet's map?") is the team library's placements the harness
+remembers (a `blueprint_place {name}` paste: the last 4 of a name, 32 names; checks.lua), read once a minute by the
+stream service (operator read `library_areas`, libareas.lua): `{tick, age_s, placements, areas, left_out?}`, newest
+first, one per name and spot, at most 48 from the read and 16 KB in a push (the oldest left out). An area: `name`,
+`surface`, `box` [l, t, r, b] (the paste's first 400 entities' extent), `tick` placed, `by`, `entities`, `description`
+(its first 80 characters), `saved_tick` (the entry's save now) and `placed_save` (the save that was placed; pastes
+before d21 batch68 have none), `deleted` (no entry of that name now), `retired` {by, reason, replaced_by, tick},
+`check` {id, name, state (pass, fail, stale or not run), tick} (the newest blueprint check over it), and `hookups`
+as the world shows them at the area's edge, read two areas a read (the ones read longest ago first) and kept with
+their tick `t`: `b` belts [in joined, in open, out joined, out open] (a belt whose next tile is outside: fed from or
+into a belt there, or not), `p` fluid connections to a tile outside [joined, open], `i` inserters reaching outside
+[in joined, in open, out joined, out open], `e` power [poles, wires to poles outside, machines with no power, on low
+power], `g` ghosts, `n` built, `open` the first 4 open ones `[x, y, what]`; or `capped` (over 1500 of ours in the area),
+`too_big`, `error`. The map's Blueprints layer draws each area on its surface: red with an open hookup or a failed
+check, dashed orange when not verified (no passing check, or hookups not read), green when its check passed and every
+hookup is joined; hover gives the facts in words. On the d17 copy: a read 2.5-3.7 ms in the game with no hookups,
++0.1-0.5 ms an area's hookups (a 64x19 area of 448 belts included).
+
+push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
+`rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
+plain. On world n's state at 08:45 PDT d21 that took the push from 200-205 KB to 187-188 KB (the basemap 46.0 KB to
+33.5 KB), and to 188-192 KB with the d17 copy's four planet cores (packed 1.1-4.7 KB each).
 
 `youtube_chat` (eng/sitechat2; Luna 13:54, a viewer's suggestion) is the YouTube lines of the stream service's viewer
 lane (tools/stream/viewers.py: only lines that passed its moderation, YouTube deletions it saw taken out), oldest
@@ -241,6 +274,16 @@ longrun.py) read that file: each part answers the named line (`link` reply_to, `
 after a restart. A reply with no record is matched by the rules above. `part` [k, n] marks one of a split reply's
 parts (the tool's, or an agent's `fh say` parts), shown "part 1 of 2". The page finds a line by `answers.id` first; its
 text match drops every leading @name ("@Muse @Luna ..." on the site, "@Luna ..." in a reply's quote).
+
+`viewer_delivery` {seq: {s, ...}} gains `s` "expired" with `why` (d20 batch65 AA5, viewer Aurora 09:46: "Could messages
+sent between shifts stay queued until delivery, with queued/delivered/expired labels?"), and `viewer_read` {after} is
+the site seq the stream service has read up to. The service saves that seq in `runs/RUN/site-cursor.json` (just before
+a line still waiting in the relay's queue); the next one (a restart, or the next shift along `resumed-from`) reads every
+site line after it as queued: to the Operator's inbox at any age, to the agents when written at most 30 minutes before
+it was read, else expired ("waited N min for the stream service ..."). A line read again that the last service had
+already refused, relayed or put in the inbox keeps that record. A backlog line in no verdict log, inbox or relayed
+file (one no service ever read, before the cursor) is expired with that reason. The page labels a site line past
+`viewer_read.after` with no delivery "queued", and says the service is not running when the state is old.
 
 `clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
 each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or

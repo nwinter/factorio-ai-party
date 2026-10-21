@@ -589,7 +589,9 @@ def main():
     # YouTube deletions, with what they remove, beside it: the site leaves those lines out (site/moderation.py)
     deletions = os.path.join(os.path.dirname(os.path.abspath(a.run)), "viewer-deletions.jsonl") if a.run and not a.mock else None
     feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock,
-                         roster=roster, inbox=inbox, deletions=deletions)
+                         roster=roster, inbox=inbox, deletions=deletions,
+                         # (d20 batch65 AA5) the site seq this service finished with: the next one reads the lines after it
+                         cursor=os.path.join(os.path.dirname(inbox), viewers.CURSOR_NAME) if inbox else None)
     if feed:
         feed.start()
     # the site's polls (pollstrip.py; RUN/polls.json from site/polls_relay.py): the overlay's strip, the hosts' fact

@@ -21,7 +21,8 @@ READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "b
                 "board_focus"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_live", "big_enemies_live", "hauling", "loadout", "clouds",
-                  "efficiency", "chronicle", "artillery_live"}
+                  "efficiency", "chronicle", "artillery_live",
+                  "library_areas"}  # (d21 batch68 AD2) the library's placed areas and their hookups, for the live map
 # Operator drawing for the camera clients only (highlights.lua): rings and labels on what agents act on, seen by the
 # director camera players alone; nothing in the game changes. A runtime without it refuses the operator request,
 # which stops nobody.
@@ -534,13 +535,16 @@ class Harness:
         return r.get("planets") if isinstance(r, dict) and isinstance(r.get("planets"), list) else []
 
     def planet_map(self, surface):
-        """One other planet's coarse map {tick, cell, x0, y0, w, h, rows, buildings}, or None."""
+        """One other planet's coarse map {tick, cell, x0, y0, w, h, rows, buildings, core (its dense core as Nauvis's: the
+        footprints at 1-2 tiles a cell, census.lua)}, or None."""
         r = self.lua(planet_read_lua(surface))
         m = r.get("basemap") if isinstance(r, dict) else None
         if not isinstance(m, dict):
             return None
         if not isinstance(m.get("rows"), list):  # table_to_json writes an empty table as {}
             m["rows"] = []
+        if isinstance(m.get("core"), dict) and not isinstance(m["core"].get("rows"), list):  # (d21 batch68 AD1) its dense core
+            m["core"]["rows"] = []
         return dict(m, surface=surface)
 
     def probe(self):

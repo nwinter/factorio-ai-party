@@ -36,10 +36,13 @@ def main():
          "result_by": "sol", "states": "astra pending; sol acknowledged", "line": "not passed on"}]}})
     import time
     assert m.snapshot(time.time())["reminders"]["total"] == 1
-    many = [{"id": i, "owner": "sol", "message": f"job {i}", "enabled": True} for i in range(20)]
+    many = [{"id": i, "owner": "sol", "message": f"job {i}", "enabled": True} for i in range(120)]
     m.ingest({"reminders": {"jobs": many}})
     s = m.reminders_snapshot()
-    assert len(s["jobs"]) == model.Model.REMINDERS_MAX and s["total"] == 20, (len(s["jobs"]), s["total"])
+    assert len(s["jobs"]) == model.Model.REMINDERS_MAX and s["total"] == 120, (len(s["jobs"]), s["total"])
+    # (d20 batch65 AA4) every job of a list like world n's (25) for the panel's "Show all"
+    m.ingest({"reminders": {"jobs": many[:25]}})
+    assert len(m.reminders_snapshot()["jobs"]) == 25
     # (d19 batch43 A2, batch41 B2) a result up to 1000 characters and the evidence lines reach the site whole
     long = "the recycler loop fed at 92% and the legendary yield held at 3.1% " * 15
     m.ingest({"reminders": {"jobs": [{"id": 97, "owner": "sol", "message": "quality review", "enabled": True,

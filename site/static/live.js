@@ -205,26 +205,39 @@
         (why ? '<span class="c-delivery c-delivery-operator fx-muted">' + esc(why) + '</span>' : '');
     }
     if (!d || !(d.s === 'operator' || d.op)) return '';
-    return ' <span class="c-delivery c-delivery-operator fx-muted">' + esc('to the Operator' + why) + '</span>';
+    return ' <span class="c-delivery c-delivery-operator fx-muted">' + esc('delivered to the Operator' + why) + '</span>';
+  }
+  // (d20 batch65 AA5, viewer Aurora 09:46: "Could messages sent between shifts stay queued until delivery, with
+  // queued/delivered/expired labels?") A site line past the seq the stream service has read up to (state.viewer_read)
+  // is queued: read when the service runs again (a new shift or a restart reads every line it missed); when the state
+  // is old, the service is not running and the label says so.
+  var readUpTo = null, serviceLive = true;
+  function isQueued(m) {
+    return m.src === 'site' && readUpTo != null && m.seq > readUpTo && !(delivery[m.seq] && delivery[m.seq].s);
   }
   function deliveryHtml(m) {
     var d = m.src === 'site' ? delivery[m.seq] : null;
+    if (isQueued(m)) {
+      return operatorHtml(m, null) + ' <span class="c-delivery c-delivery-queued fx-muted">' + esc(serviceLive ? 'queued' :
+        'queued: the stream service is not running (between shifts or restarting); it reads this line when it starts') + '</span>';
+    }
     if (!d || !d.s) return operatorHtml(m, null);
     var who = Array.isArray(d.to_all) && d.to_all.length ? d.to_all : d.to ? [d.to] : [];
     // (d20 batch57 S5, operator 19:12) a record lost at a stream service restart says so; one read back after a restart says
     // when it was sent when that was a minute or more after the line
     var sent = d.at && isFinite(d.at) && m.t && d.at - m.t >= 60 ? ' (sent ' + new Date(d.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')' : '';
     if (d.s === 'operator') return operatorHtml(m, d);
-    var txt = d.s === 'relayed' && d.lost ? 'sent to the agents (details lost at a stream service restart)'
-      : d.s === 'relayed' ? (who.length ? 'to ' + who.map(agentName).join(', ') : 'relayed') + sent + (d.why ? ': ' + d.why : '')
+    var txt = d.s === 'relayed' && d.lost ? 'delivered to the agents (details lost at a stream service restart)'
+      : d.s === 'relayed' ? (who.length ? 'delivered to ' + who.map(agentName).join(', ') : 'delivered to the agents') + sent + (d.why ? ': ' + d.why : '')
       : d.s === 'held' ? 'held' + (d.why ? ': ' + d.why : '')
+      : d.s === 'expired' ? 'expired' + (d.why ? ': ' + d.why : '')
       : 'not relayed' + (d.why ? ': ' + d.why : '');
     var html = ' <span class="c-delivery c-delivery-' + esc(d.s) + ' fx-muted">' + esc(txt) + '</span>';
     return operatorHtml(m, d) + html;
   }
   function renderChat() {
     if (!chatList) return;
-    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : ''); }).join(',');
+    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : '') + (isQueued(m) ? '+q' + serviceLive : ''); }).join(',');
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
@@ -541,6 +554,7 @@
     var bm = s.basemap || {};
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, turrets_read: bm.turrets_read, terrain: bm.terrain,
       planets: keepPlanets(s), now_tick: s.tick,
+      library_areas: s.library_areas && Array.isArray(s.library_areas.areas) ? s.library_areas.areas : [],  // (AD2) placed library areas
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
       clouds: s.clouds || [] };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
@@ -592,6 +606,8 @@
     replyLines = Array.isArray(s.viewer_replies) ? s.viewer_replies.filter(function (m) { return m && m.text && m.by && isFinite(m.t); }) : [];
     // (d17 batch35 D1, viewer Aurora) each site line's delivery from the relay: relayed (to whom), held, operator, not relayed (why)
     delivery = s.viewer_delivery && typeof s.viewer_delivery === 'object' ? s.viewer_delivery : {};
+    readUpTo = s.viewer_read && isFinite(s.viewer_read.after) ? s.viewer_read.after : null;  // (AA5) queued past it
+    serviceLive = age == null || age <= LIVE_MAX_AGE;
     team = {}; (s.agents || []).forEach(function (a) { team[a.name] = a; });
     renderChat();
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
@@ -858,25 +874,59 @@
   // The team's reminder jobs (d15 batch5 group I; viewer Foobator's idea, Astra and Sol's design): who set each, its
   // message, when it is next due, the last result and its age, and each recipient's state (pending, acknowledged,
   // overdue). Reminders only send the agents a line; they never act in the game.
+  // (d20 batch65 AA4, viewer Aurora 08:56: "Could the reminder list expand beyond its first 12 entries? ... Active/overdue
+  // filters") The first REM_SHOWN; "Show all N" opens every job the state carries, with All / Active / Overdue filters
+  // (active: on and not done; overdue: a recipient overdue). The reader's choice stays across refreshes.
+  var REM_SHOWN = 12, remAll = store('remindersAll') === '1', remFilter = store('remindersFilter') || 'all';
+  var REM_FILTERS = [['all', 'All'], ['active', 'Active'], ['overdue', 'Overdue']];
+  function remStates(j) {
+    return splitStates(j.states).map(function (st) { var m = /^(\S+) (\S+)(.*)$/.exec(st) || []; return { who: m[1], state: m[2], rest: m[3] }; });
+  }
+  function remIs(j, f) {
+    if (f === 'active') return !!j.enabled && !j.done;
+    if (f === 'overdue') return remStates(j).some(function (x) { return x.state === 'overdue'; });
+    return true;
+  }
   function remindersHtml(rem, byName) {
     if (!rem || !(rem.jobs || []).length) return '';
     var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green' };
-    var rows = rem.jobs.map(function (j) {
+    var jobs = rem.jobs, total = Math.max(rem.total || 0, jobs.length), opened = remAll && total > REM_SHOWN;
+    var list = opened ? jobs.filter(function (j) { return remIs(j, remFilter); }) : jobs.slice(0, REM_SHOWN);
+    var rows = list.map(function (j) {
       var o = byName[j.agent] || {};
       var due = j.done ? 'done' : !j.enabled ? 'off' : j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : '';
-      var states = splitStates(j.states).map(function (st) {
-        var m = /^(\S+) (\S+)(.*)$/.exec(st) || [];
-        var who = byName[m[1]] || {};
-        return '<span class="fx-chip ' + (STATE[m[2]] || 'fx-chip--grey') + '">' + esc((who.display_name || m[1] || '') + ' ' + (m[2] || '') + (m[3] || '')) + '</span>';
+      var states = remStates(j).map(function (x) {
+        var who = byName[x.who] || {};
+        return '<span class="fx-chip ' + (STATE[x.state] || 'fx-chip--grey') + '">' + esc((who.display_name || x.who || '') + ' ' + (x.state || '') + (x.rest || '')) + '</span>';
       }).join(' ');
       return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
         esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted">' + esc([j.cadence, due].filter(Boolean).join(', ')) + '</span>' +
         (j.last_result ? longText('rem' + j.id + ':result', j.last_result, 'last result' + (j.result_age_s != null ? ' ' + ago(j.result_age_s) : '') + ':') : '') +
         evidenceHtml('rem' + j.id, j) + (states ? '<br>' + states : '') + '</span></li>';
     }).join('');
-    return '<h4>Reminders</h4><ul class="board-claims board-reminders">' + rows + '</ul>' +
-      (rem.total > rem.jobs.length ? '<p class="fx-muted small">+' + esc(rem.total - rem.jobs.length) + ' more</p>' : '');
+    var filters = !opened ? '' : '<div class="rem-filters" role="group" aria-label="Show reminders">' + REM_FILTERS.map(function (f) {
+      var n = jobs.filter(function (j) { return remIs(j, f[0]); }).length;
+      return '<button type="button" class="fx-btn fx-btn--small" data-rem-filter="' + f[0] + '" aria-pressed="' + (remFilter === f[0]) + '">' +
+        esc(f[1]) + ' (' + n + ')</button>';
+    }).join(' ') + '</div>';
+    var none = opened && !list.length ? '<p class="fx-muted small">No ' + esc(remFilter) + ' reminders.</p>' : '';
+    var unsent = opened && total > jobs.length ? '<p class="fx-muted small">+' + esc(total - jobs.length) + ' more not sent (the page\'s size limit)</p>' : '';
+    var toggle = total > REM_SHOWN ? '<button type="button" class="fx-btn fx-btn--small rem-all" data-action="reminders-all" aria-expanded="' + opened + '">' +
+      (opened ? 'Show the first ' + REM_SHOWN : 'Show all ' + total + ' reminders (+' + (total - Math.min(REM_SHOWN, jobs.length)) + ' more)') + '</button>' : '';
+    return '<div class="board-rem"><h4>Reminders</h4>' + filters + (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + unsent + toggle + '</div>';
   }
+  app.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-action="reminders-all"], [data-rem-filter]') : null;
+    if (!b) return;
+    if (b.dataset.remFilter) { remFilter = b.dataset.remFilter; store('remindersFilter', remFilter); }
+    else { remAll = !remAll; store('remindersAll', remAll ? '1' : '0'); }
+    var box = b.closest('.board-rem');
+    if (box && lastState) {
+      box.outerHTML = remindersHtml(lastState.reminders, team);
+      var again = app.querySelector(b.dataset.remFilter ? '[data-rem-filter="' + remFilter + '"]' : '[data-action="reminders-all"]');
+      if (again) again.focus();
+    }
+  });
   function projectsHtml(board, byName, card, withNext) {
     var shown = (board.projects || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');
     var more = (board.projects_more || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');

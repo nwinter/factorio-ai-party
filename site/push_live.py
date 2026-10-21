@@ -152,14 +152,15 @@ def public_haul(hauling):
 
 def public_delivery(status, keep=150):
     """(d17 batch35 D1, viewer Aurora: four lines received and never relayed, no reason shown) each site line's delivery
-    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed, to?, why?,
+    from the stream service's relay (viewers.py Feed.deliveries): {seq: {s: relayed|held|operator|not_relayed|expired (d20
+    batch65 AA5: a line that waited too long for the service, or that no service ever read), to?, why?,
     to_all?: every recipient of a line to several agents, op?: 1 when it is in the operator's inbox too, lost?: 1 relayed
     with whom to lost at a stream service restart, at?: when it was sent, for a record read back after a restart}},
     the newest `keep`. YouTube lines are not keyed by a site seq and stay out."""
     out = {}
     for r in (status or {}).get("delivery") or []:
         i = str(r.get("id") or "")
-        if not i.startswith("site:") or r.get("status") not in ("relayed", "held", "operator", "not_relayed"):
+        if not i.startswith("site:") or r.get("status") not in ("relayed", "held", "operator", "not_relayed", "expired"):
             continue
         row = {"s": r["status"]}
         if r.get("to"):
@@ -260,18 +261,89 @@ def newest_evidence(row):
 REMINDER_BYTES = 24 * 1024  # the reminders' share of the state: results up to 1000 characters, evidence lines
 
 
+REMINDERS_SHOWN = 12  # the panel's first view (live.js REM_SHOWN); "Show all" opens the rest
+
+
 def public_reminders(rem):
     """(d19 batch43 A2) the reminder jobs with their results and evidence whole, within REMINDER_BYTES: over it, each
-    job keeps its newest evidence line (evidence_more says how many older)."""
+    job keeps its newest evidence line (evidence_more says how many older). (d20 batch65 AA4, viewer Aurora 08:56) The
+    whole list rides along for the panel's "Show all" (25 jobs on world n at 09:10: 21 KB); still over, jobs past the
+    first REMINDERS_SHOWN go, finished ones first, then the last; total keeps the count, and the page says how many
+    were not sent."""
     if not isinstance(rem, dict) or not isinstance(rem.get("jobs"), list):
         return rem
     out = dict(rem)
-    if len(json.dumps(out, ensure_ascii=False)) > REMINDER_BYTES:
+    size = lambda: len(json.dumps(out, ensure_ascii=False))  # noqa: E731
+    if size() > REMINDER_BYTES:
         out["jobs"] = [newest_evidence(j) for j in out["jobs"]]
+    if size() > REMINDER_BYTES:
+        head, tail = out["jobs"][:REMINDERS_SHOWN], list(out["jobs"][REMINDERS_SHOWN:])
+        drop = [i for i in reversed(range(len(tail))) if isinstance(tail[i], dict) and tail[i].get("done")] + \
+            [i for i in reversed(range(len(tail))) if not (isinstance(tail[i], dict) and tail[i].get("done"))]
+        gone = set()
+        for i in drop:
+            if size() <= REMINDER_BYTES:
+                break
+            gone.add(i)
+            out["jobs"] = head + [j for k, j in enumerate(tail) if k not in gone]
+        out.setdefault("total", len(rem["jobs"]))
     return out
 
 
-PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings")
+PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings", "core")
+CORE_KEYS = ("cell", "x0", "y0", "w", "h", "rows")
+_RUN = re.compile(r"([^0-9])\1{2,}")
+
+
+def pack(g):
+    """A grid {cell, x0, y0, w, h, rows} with its rows run-length packed (d21 batch68 AD1, viewer Aurora: room in the
+    state for each planet's dense core): three or more of a letter as the count and the letter ("....AAAA" ->
+    "4.4A"), rle: 1; static/mapview.js unpacks it. Category and ore letters are never digits. Anything else as it is."""
+    if not isinstance(g, dict) or not isinstance(g.get("rows"), list) or g.get("rle"):
+        return g
+    return dict(g, rows=[_RUN.sub(lambda m: f"{len(m.group(0))}{m.group(1)}", r) if isinstance(r, str) else r for r in g["rows"]], rle=1)
+
+
+PLANET_CORE_BYTES = 12 * 1024  # (AD1) a planet's packed core a push at most; a bigger one is sent at twice the cell
+RANK = {"D": 12, "R": 11, "O": 10, "A": 9, "S": 8, "M": 7, "E": 6, "L": 5, "I": 4, "B": 3, "T": 2, "P": 1}  # census.lua's
+
+
+def coarser(g):
+    """A grid at twice its cell: each new cell the most telling of the four it covers (census.lua RANK)."""
+    c, c2 = g["cell"], g["cell"] * 2
+    nx0, ny0 = (g["x0"] // c2) * c2, (g["y0"] // c2) * c2
+    ox, oy = (g["x0"] - nx0) // c, (g["y0"] - ny0) // c
+    cells = {}
+    for j, row in enumerate(g["rows"]):
+        for i, ch in enumerate(row):
+            if ch == ".":
+                continue
+            k = ((i + ox) // 2, (j + oy) // 2)
+            if k not in cells or RANK.get(ch, 0) > RANK.get(cells[k], 0):
+                cells[k] = ch
+    w, h = (g.get("w", 0) + ox + 1) // 2, (len(g["rows"]) + oy + 1) // 2
+    rows = ["".join(cells.get((i, j), ".") for i in range(w)).rstrip(".") for j in range(h)]
+    return dict(g, cell=c2, x0=nx0, y0=ny0, w=w, h=h, rows=rows)
+
+
+def fitted(core, limit=PLANET_CORE_BYTES):
+    """core packed, at twice the cell until it fits limit bytes (at most 8 tiles a cell)."""
+    out = pack(core)
+    while len(json.dumps(out, separators=(",", ":"))) > limit and core["cell"] < 8:
+        core = coarser(core)
+        out = pack(core)
+    return out
+
+
+def public_basemap(bm):
+    """The basemap with its coarse grid, dense core and ore packed (pack)."""
+    if not isinstance(bm, dict):
+        return bm
+    out = pack(bm)
+    for k in ("core", "ore"):
+        if isinstance(bm.get(k), dict):
+            out[k] = pack(bm[k])
+    return out
 _planet_turn = {"i": 0}
 
 
@@ -288,7 +360,49 @@ def public_planets(maps):
     name = names[_planet_turn["i"] % len(names)]
     _planet_turn["i"] += 1
     m = maps[name]
-    return listing, {k: m[k] for k in PLANET_MAP_KEYS if k in m} | {"surface": name}
+    out = pack({k: m[k] for k in PLANET_MAP_KEYS if k in m} | {"surface": name})
+    if isinstance(m.get("core"), dict) and isinstance(m["core"].get("rows"), list) and m["core"]["rows"]:
+        out["core"] = fitted({k: m["core"][k] for k in CORE_KEYS if k in m["core"]})  # (AD1) its footprints, as Nauvis's core
+    else:
+        out.pop("core", None)
+    return listing, out
+
+
+LIBRARY_AREAS_BYTES = 16 * 1024  # (AD2) the placed library areas' share of a push; the oldest areas go first
+AREA_KEYS = ("name", "surface", "box", "tick", "by", "entities", "description", "saved_tick", "placed_save", "deleted")
+HOOK_KEYS = ("b", "p", "i", "e", "g", "n", "open", "t", "capped", "error", "too_big", "gone")
+
+
+def public_library_areas(la):
+    """The team library's placed areas for the live map (d21 batch68 AD2, viewer Aurora; libareas.lua via the stream
+    service): {tick, age_s, placements, areas [{name, surface, box [l, t, r, b], tick (placed), by, entities,
+    description, saved_tick (the entry's save now), placed_save (the save placed), deleted, retired {by, reason,
+    replaced_by, tick}, check {id, name, state, tick}, hookups {b [in joined, in open, out joined, out open],
+    p [joined, open], i [in joined, in open, out joined, out open], e [poles, wired out, no power, low power], g (ghosts), n (built),
+    open [[x, y, what]], t}}]}, newest first, at most LIBRARY_AREAS_BYTES (the oldest areas left out: `left_out`)."""
+    if not isinstance(la, dict) or not isinstance(la.get("areas"), list):
+        return None
+    rows = []
+    for a in la["areas"]:
+        if not isinstance(a, dict) or not isinstance(a.get("box"), list) or len(a["box"]) != 4:
+            continue
+        row = {k: a[k] for k in AREA_KEYS if a.get(k) is not None}
+        if isinstance(a.get("retired"), dict):
+            row["retired"] = {k: a["retired"][k] for k in ("by", "reason", "replaced_by", "tick") if a["retired"].get(k) is not None}
+        if isinstance(a.get("check"), dict):
+            row["check"] = {k: a["check"][k] for k in ("id", "name", "state", "tick") if a["check"].get(k) is not None}
+        if isinstance(a.get("hookups"), dict):
+            row["hookups"] = {k: a["hookups"][k] for k in HOOK_KEYS if a["hookups"].get(k) is not None}
+            if not isinstance(row["hookups"].get("open"), list):  # table_to_json writes an empty table as {}
+                row["hookups"]["open"] = []
+        rows.append(row)
+    out = {k: la[k] for k in ("tick", "age_s", "placements") if la.get(k) is not None}
+    while rows and len(json.dumps(rows, separators=(",", ":"))) > LIBRARY_AREAS_BYTES:
+        rows.pop()
+    out["areas"] = rows
+    if len(rows) < len(la["areas"]):
+        out["left_out"] = len(la["areas"]) - len(rows)
+    return out
 
 
 def public_state(s):
@@ -296,6 +410,11 @@ def public_state(s):
     planets, planet_map = public_planets(s.get("planet_maps"))
     if planets:
         out["planets"], out["planet_map"] = planets, planet_map
+    if "basemap" in out:
+        out["basemap"] = public_basemap(out["basemap"])
+    areas = public_library_areas(s.get("library_areas"))
+    if areas:
+        out["library_areas"] = areas
     if "board" in out:
         out["board"] = public_board(out["board"])
     if "reminders" in out:
@@ -332,6 +451,11 @@ def public_state(s):
     vd = public_delivery(s.get("viewers_status"))
     if vd:
         out["viewer_delivery"] = vd
+    # (d20 batch65 AA5) the site seq the stream service has read up to: a later line with no delivery is queued (the page
+    # says so, and that the service is not running when this state is old)
+    site = ((s.get("viewers_status") or {}).get("site") or {})
+    if isinstance(site.get("after"), int) and not isinstance(site.get("after"), bool):
+        out["viewer_read"] = {"after": site["after"]}
     vr = public_replies(s.get("viewer_replies"), hidden_now())
     if vr:
         out["viewer_replies"] = vr
