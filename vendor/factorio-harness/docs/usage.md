@@ -9988,6 +9988,38 @@ fh watch    # deploy on every change
   `nearest_out_of_range` (and the line): the loaded piece nearest to reaching an out-of-reach flare, its distance, and
   past its manual range (with the automatic) or inside its minimum; the `artillery` read's `manual_range` per piece and
   "a flare within N" in its line. agent/ref/movement-combat.md has it. Tests: tests/d20_batch60.lua V4.
+- V5 (Astra #1594: Kestrel II's `runs out before the leg ends` alert came in the first 60-90 s of each leg while the
+  thrusters filled at the stop drained and its pumps, on under 40 km/s, settled; then 40 min against an 8 min leg;
+  branch eng/d20-batch60d). Main told every projected shortage the same way (batch27 B1, with N1's departure samples).
+  Astra's scans in runs/shift51: A>G 29 s in (26470 held, runs out in 4m42s, 1m23s short) and 63 s (24983, 4m17s)
+  then 122 s: 25219, lasts 40m53s; G>N 54 s (thruster-fuel short, 25349) and 73 s (thruster-oxidizer short, held
+  25481/25579, both up) then 87 s: lasts 10m30s against 3m14s. The one-minute rates at a departure count the thrusters'
+  fill at the stop burning off and the makers' 1500-unit crafts (made 1500 or 3000 a minute). The alert now says
+  `platform X: urgent: F runs out before the leg ends (why): ...` when F lasts under 2 minutes at the rates now, or,
+  from 90 s into the leg, when F's held fall over the last minute runs it out before the leg ends at that fall, or
+  when F was short on two scans a minute apart, both from 90 s, with less held at the second; otherwise `platform X:
+  advisory: F projected to run out before the leg ends at the last minute's rates (why; ...): ...` (why: `N s into
+  the leg, under 90`, `the stock rose`, `one window from 90 s into the leg so far`, `the stock did not fall between two
+  windows`). Both add `stock:` (each short fluid's held, thrusters and tanks, over the last minute or since the leg's
+  first scan, and the storage tanks' part), the pumps pushing toward the thrusters by state (`thruster-fuel pumps 0 of
+  2 working; 2 off by its circuit condition signal-V < 40 (signal-V 46 on its wires)`, thrust.lua pump_states) and
+  the speed now, before N1's departure samples. An advisory is told once whichever fluid it names (Kestrel's
+  alternated); urgent is told again when its fluids change, and advisory to urgent is news. A leg first seen under
+  way counts from its first scan (`since first seen under way`). fuel_outlook rows add in_tanks. Astra's two legs read
+  advisory at every scan above, never urgent (tests/d20_batch60.lua V5 replays them).
+  On the private copy (2.0.77, deployed before each leg; a test platform `pogv5`, removed after): 1 thruster fed
+  from a storage tank of each fluid through a pump on `signal-V < 40` from the hub's speed (as Kestrel II), no makers,
+  nauvis<->vulcanus (15000 km). The thruster's 1000 of each filled at the stop burned to about 200-400 in the first
+  20-40 s; the pumps were off above 40 km/s; used a minute rose to 3400-4000 by 50-60 s and settled near 2900. With
+  about 15000 held the projection read short at 40-60 s (3m36s against 4m09s at 50 s) and lasted the leg from 70 s:
+  one advisory at 47 s (`stock: thruster-fuel held 14975 -> 12834 over the last 48 s (storage tanks 13986 -> 12603);
+  thruster-fuel pumps 0 of 1 working; 1 off by its circuit condition signal-V < 40 (signal-V 49 on its wires); speed
+  now 49.5 km/s`), nothing urgent; with about 9600, short at 30-60 s, one advisory at 39 s, nothing urgent; with
+  about 5000, `urgent: ... (thruster-fuel lasts 1m30s at the rates now, under 2 minutes)` at 29 s, told once. Flown
+  back over the same connection a leg read the earlier leg's last scans as its trend (fixed: a new departure starts
+  a new trend). The two-window and falling-stock cases are in the tests only: on the copy the projection settled
+  before 150 s or ran under 2 minutes first.
+  agent/ref/space-age.md has it. Tests: tests/d20_batch60.lua V5, tests/platalerts.lua, tests/thrust.lua.
 
 ## d20 batch58 (eng/d20-batch58)
 
@@ -10268,3 +10300,20 @@ and its request section asked for normal items only.
 - Seen on the copy, not changed: the hub's game-managed missing-materials section already asks the ghosts' items at
   their quality from the planet the platform is at (it did not ask the uncommon collector). `asks` sums every active
   section, the game's included: with `request: true` the row for 1 rare panel ghost read asks 2 (1 in each section).
+
+## d21 batch66 AB2 (eng/d20-batch66)
+
+AB2 (Sol #1602): `./shot solstice51-platform 1600 1080 at=0,0 platform=Solstice` from Fulgora was read as Fulgora round
+his body.
+- Checked: `./shot` sends `position` and `platform` to the harness `screenshot`; the platform wrapper hands it the
+  platform's surface, and `take_screenshot` gets `surface` = Solstice's surface and `position` = (0,0) (the hub without
+  `at=`). Nothing was dropped.
+- Sol's two images (runs/shift51/sol/shots/solstice51-platform.png and solstice51-progress.png) both show a platform:
+  the hub at the centre, foundation, turrets, solar panels and space with an asteroid at the edges. The director client
+  drew the sprites at low resolution.
+- Changed: every `screenshot` reply names where the engine renders it: `surface`, `platform` (when it is one),
+  `position` (the centre, also without `at=`), `frame` {left_top, right_bottom} (32 px a tile), `in_frame` (ours
+  standing in the frame by name; characters left out), `ghosts_in_frame`, and `line`: "rendered on platform Solstice
+  (surface platform-N) centred (0,0): frame (-25,-16.875)-(25,16.875), 50x33.75 tiles; ours in it: gun-turret N, ...". The frame is one search of ours in it (at most 2000 entities, 1920x1080 px is 60x34 tiles).
+- `./shot` (tools/new-run.sh) prints that line under the file name. Runs made before this keep their old `shot` script
+  until they are made again.

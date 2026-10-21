@@ -79,6 +79,11 @@ eq(ap.lines[1],'thruster-fuel: if its pumps stop, 1 thruster holds 300 and the p
 eq(ap.lines[2],'thruster-oxidizer: if its pumps stop, 1 thruster holds 900 and the pipes and tanks between them and the pumps 0 (900 a thruster): '..
   'about 9.5 s of full thrust, 19.2 s until 10%, then 0.1 a tick until empty at 35.9 s; no pump between them and the rest of the line')
 assert(ap.rule:find('2 fuel and 2 oxidizer a tick while its tanks are 80% full or more',1,true))
+-- d20 batch60 V5: the pumps toward the thrusters by state, for the fuel advisory.
+local ps=T.pump_states(pl)
+eq(ps['thruster-fuel'].line,'0 of 1 working; 1 off by its circuit condition signal-B = 1 (signal-B 9 on its wires)')
+eq(ps['thruster-fuel'].pumps,1); eq(ps['thruster-fuel'].working,0)
+eq(ps['thruster-oxidizer'].line,'no pump between the thrusters and the rest of the line')
 -- A pump pushing away from the thruster feeds nothing: the walk stops there.
 pbox.get_pipe_connections=function() return {{flow_direction='input',target=tbox,target_fluidbox_index=1},{flow_direction='output',target=xbox,target_fluidbox_index=1}} end
 eq(T.read(pl).lines[1],'thruster-fuel: thruster (0,11.5) 30%; no machine making thruster-fuel is connected to it')

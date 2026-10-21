@@ -357,3 +357,83 @@ do
   defines,game=nil,nil
 end
 print('d20_batch60 V4 artillery flare reach: ok')
+
+-- V5 (Astra #1594: Kestrel II's "runs out before the leg ends" alert fired in the first 60-90 s of each leg while the
+-- thrusters filled at the stop drained and the pumps under 40 km/s settled, then settled to 40 min against an 8 min
+-- leg). Astra's scans from runs/shift51 (the endurance and alert lines at those ticks): an advisory, never urgent; a
+-- shortage that holds on two scans a minute apart from 90 s with the stock falling, or a stock whose own fall runs it
+-- out, is urgent; under 2 minutes of it at once.
+do
+  game={tick=0}
+  local P=dofile('mod/agent-harness_0.1.0/platalerts.lua'){state=function() return {} end}
+  local r, dep, leg
+  local function scan(tick, rows, left)
+    game.tick=tick
+    local short={}
+    for _,row in ipairs(rows) do if row.short then short[#short+1]=row.name end end
+    local f={rows=rows,short=#short>0 and short or nil,leg_left_min=left,since_departure_s=math.floor((tick-dep)/60)}
+    P.fuel_sample(r,f,leg)
+    if f.short then return P.fuel_level(r,f) end
+  end
+  local function fuel(held,tanks,lasts,short) return {name='thruster-fuel',held=held,in_tanks=tanks,lasts_min=lasts,short=short} end
+  local function ox(held,tanks,lasts,short) return {name='thruster-oxidizer',held=held,in_tanks=tanks,lasts_min=lasts,short=short} end
+  -- A>G: left aquilo at 41618097; alarms at 41619837 (29 s) and 41621889 (63 s); settled at 41625429 (122 s)
+  r, dep, leg = {}, 41618097, 'aquilo->gleba'
+  local lv,why,trend=scan(41619837,{fuel(26470,24929,4.7,true),ox(26560,24927,4.7,true)},6.13)
+  eq(lv,'advisory'); eq(why,'29 s into the leg, under 90')
+  eq(trend,'thruster-fuel held 26470 (storage tanks 24929), one scan so far; thruster-oxidizer held 26560 (storage tanks 24927), one scan so far')
+  lv,why,trend=scan(41621889,{fuel(24983,24900,4.28,true),ox(25099,24950,4.4,true)},9.07)
+  eq(lv,'advisory'); eq(why,'63 s into the leg, under 90')
+  has(trend,'thruster-fuel held 26470 -> 24983 over the last 34 s')
+  -- (not in the journal: a scan at 93 s, the stock between the two read) still short: one window from 90 s, and its
+  -- fall over the 64 s since the 29 s scan (1370) lasts 19.5 min against an 8.8 min leg
+  lv,why=scan(41618097+93*60,{fuel(25100,24800,4.5,true),ox(25200,24850,4.6,true)},8.8)
+  eq(lv,'advisory'); eq(why,'one window from 90 s into the leg so far')
+  eq(scan(41625429,{fuel(25219,24885,40.9),ox(25307,24900,41)},8.57),nil,'settled: lasts 40m53s, the leg 8m34s')
+  -- G>N: left gleba at 41664071; alarms at 41667311 (54 s, fuel) and 41668435 (73 s, oxidizer) while held rose
+  -- 25349 -> 25481; settled at 41669304 (87 s)
+  r, dep, leg = {}, 41664071, 'gleba->nauvis'
+  lv,why=scan(41667311,{fuel(25349,24657,3.2,true),ox(25439,24655,4.0)},3.73)
+  eq(lv,'advisory'); eq(why,'54 s into the leg, under 90')
+  lv,why,trend=scan(41668435,{fuel(25481,24291,4.58),ox(25579,24297,3.6,true)},4.07)
+  eq(lv,'advisory'); eq(why,'73 s into the leg, under 90')
+  has(trend,'thruster-oxidizer held 25439 -> 25579 over the last 19 s (storage tanks 24655 -> 24297)')
+  eq(scan(41669304,{fuel(25296,24300,10.5),ox(25384,24310,27.7)},3.23),nil,'settled: lasts 10m30s, the leg 3m14s')
+  -- A shortage that holds: short on every scan from 90 s, the stock falling 300 a scan; urgent at 150 s (two scans a
+  -- minute apart from 90 s), not before
+  r, dep, leg = {}, 0, 'nauvis->gleba'
+  local held=25000
+  for s=90,140,10 do
+    lv,why=scan(s*60,{fuel(held,held-2000,6,true),ox(30000,28000,20)},9)
+    eq(lv,'advisory','at '..s..' s'); held=held-300
+  end
+  lv,why=scan(150*60,{fuel(held,held-2000,6,true),ox(30000,28000,20)},9)
+  eq(lv,'urgent'); eq(why,'thruster-fuel short on the scans at +90 s and +150 s into the leg, held 25000 -> 23200')
+  -- the same, the stock rising: an advisory
+  r, held = {}, 25000
+  for s=90,150,10 do lv,why=scan(s*60,{fuel(held,held-2000,6,true)},9); held=held+100 end
+  eq(lv,'advisory'); eq(why,'the stock rose')
+  -- a small stock whose own fall runs it out: urgent from 90 s (3000 -> 1500 in 60 s lasts 1 min, the leg 5)
+  r = {}
+  scan(30*60,{fuel(3000,1000,3,true)},5)
+  lv,why=scan(90*60,{fuel(1500,0,2.5,true)},5)
+  eq(lv,'urgent'); eq(why,'thruster-fuel held fell 3000 -> 1500 in 60 s: at that fall it lasts 1.0 min, the leg 5.0')
+  -- under 2 minutes at the rates now: urgent at once, in the first seconds too
+  r = {}
+  lv,why=scan(10*60,{fuel(900,0,1.5,true)},5)
+  eq(lv,'urgent'); eq(why,'thruster-fuel lasts 1m30s at the rates now, under 2 minutes')
+  -- the same connection flown back (the copy, nauvis->vulcanus both ways): a new departure starts a new trend
+  r, dep, leg = {}, 0, 'nauvis->vulcanus'
+  scan(230*60,{fuel(5987,5857,3,true)},1)
+  dep = 400*60
+  lv,why,trend=scan(429*60,{fuel(9177,8782,3.5,true)},3.5)
+  eq(lv,'advisory'); eq(why,'29 s into the leg, under 90'); eq(trend,'thruster-fuel held 9177 (storage tanks 8782), one scan so far')
+  -- a leg first seen under way (no departure on record): counted from the first scan, said
+  r, dep = {}, nil
+  game.tick=1000
+  P.fuel_sample(r,{rows={fuel(25000,23000,5,true)},short={'thruster-fuel'}},'x->y')
+  lv,why=P.fuel_level(r,{rows={fuel(25000,23000,5,true)},short={'thruster-fuel'}})
+  eq(lv,'advisory'); eq(why,'0 s since first seen under way, under 90')
+  game=nil
+end
+print('d20_batch60 V5 departure fuel alert: ok')

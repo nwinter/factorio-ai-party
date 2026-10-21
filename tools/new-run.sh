@@ -54,7 +54,8 @@ cat > "$dir/shot" <<EOS
 #!/usr/bin/env bash
 # Real game screenshot: ./shot NAME [WIDTH HEIGHT] [at=X,Y] [surface=PLANET | platform=NAME]. Centred on the character,
 # or with at= on that position by remote view (every chunk of the frame one our force sees now; refused otherwise, with
-# the nearest radar coverage). A game client renders it (yours, or a director's for a bot) into
+# the nearest radar coverage); platform= alone, on its hub. Prints the file, then where it was rendered: the surface,
+# the centre, the frame and what of ours stands in it. A game client renders it (yours, or a director's for a bot) into
 # script-output/pog/$ws/; tools/shot-sync.sh copies it from the game box into shots/.
 set -euo pipefail
 export POG_SLEEP_CAP=0   # the agents' wait cap (tools/sleepcap/run) is not for this script's waits
@@ -79,7 +80,13 @@ if ! out=\$(env POG_WORLD=$world $conn "$root/bin/fh" $target call screenshot --
   echo "\$out" >&2; exit 1
 fi
 for i in \$(seq 1 60); do
-  if [ -f "shots/\$tag.png" ]; then mv "shots/\$tag.png" "shots/\$name.png"; echo "shots/\$name.png"; exit 0; fi
+  if [ -f "shots/\$tag.png" ]; then
+    mv "shots/\$tag.png" "shots/\$name.png"; echo "shots/\$name.png"
+    # where the engine rendered it and what of ours stands in the frame (d21 batch66 AB2), to check the image against
+    line=\$(printf '%s\n' "\$out" | sed -n 's/^line: //p' | sed 's/^"//; s/"\$//')
+    [ -z "\$line" ] || echo "\$line"
+    exit 0
+  fi
   sleep 0.5
 done
 client=\$(printf '%s\n' "\$out" | sed -n 's/^client: //p')
