@@ -298,8 +298,8 @@ is 8rem wide; the network toggles read "Power" and "Logistics" (their full names
 viewer Aurora site:4183: "Could you put category labels beside the buttons and tighten the gaps between groups, rows and
 the planet selector?") Each label sits in a 3.5rem column at the left of its buttons at every width; Terrain + Networks
 and Combat + Team are each a row of their own, side by side where both fit, else the second below the first (never paired
-otherwise); the gaps are 4-5 px, the toolbar's buttons 7 px a side, the picker 6rem ("Item: not read" where no networks
-map is, the reason in its tooltip), and the Pollution/Spores toggle one width so nothing after it moves across planets.
+otherwise); the gaps are 4-5 px, the toolbar's buttons 7 px a side, the picker 6.5rem ("Item: -" while none is picked, and
+disabled where no networks map is, the reason in its tooltip), and the Pollution/Spores toggle one width so nothing after it moves across planets.
 Desktop toolbar 150 -> 98 px, a 400 px phone 215 -> 203 px.
 
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with

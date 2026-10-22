@@ -1057,11 +1057,11 @@
         return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled') + (title ? ' title="' + esc(title) + '"' : '') +
           ' data-layer="' + k + '" aria-pressed="' + (self.on[k] ? 'true' : 'false') + '">' + esc(text) + '</button>';
       }).join('');
-      // (AK7) the narrow picker says "not read" where no networks map is; why, in its tooltip
+      // (AK7) the narrow picker says "Item: -" where no networks map is; why, in its tooltip
       var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled title="' + esc('no networks map of ' + where + ' yet') + '"') +
-        ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: none</option>' + names.map(function (n) {
+        ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: -</option>' + names.map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
-        }).join('') : '<option value="">Item: not read</option>') + '</select>';
+        }).join('') : '<option value="">Item: -</option>') + '</select>';
       return '<div class="mapview-gbox"><span class="mapview-group-label" aria-hidden="true">' + esc(g[1]) + '</span><div class="mapview-group" data-group="' + g[0] +
         '" role="group" aria-label="' + esc(g[1]) + ' layers">' + pick + buttons + '</div></div>';
     })(); });

@@ -7,7 +7,7 @@ between groups, rows and the planet selector?"): python3 site/test_maptoolbar.py
 static/mapview.js with static/style.css in headless Chromium (Playwright from the npx cache, as tools/site_shots.js
 finds it; skipped when there is none), the toolbar 595 px wide (the live map card on a desktop) and 364 px (a 400 px
 phone). Wide: the planet row on its own; Terrain and Networks side by side, Combat and Team side by side below; the
-picker at most 6rem. Narrow: one group a row. At both: each label at the left of its buttons, on their first line, and
+picker at most 6.5rem, its label ("Item: -", or an item's name) whole beside its arrow. Narrow: one group a row. At both: each label at the left of its buttons, on their first line, and
 the gaps tight (the planet row within 12 px above the groups, the pairs within 6 px). On both, every control
 sits at the same place on Nauvis, Gleba and Aquilo, and nothing is wider than the toolbar.
 """
@@ -43,7 +43,14 @@ const fx = JSON.parse(require('fs').readFileSync(fxFile, 'utf8'));
           planets: r(document.querySelector('.mapview-planets')),
           boxes: q('.mapview-gbox').map((g) => [g.querySelector('.mapview-group-label').textContent, r(g), r(g.querySelector('.mapview-group-label'))]),
           controls: q('.mapview-group > *').map((e) => [e.dataset.layer || 'item', r(e)]),
-          widest: Math.max(...q('.mapview-layers *').map((e) => e.getBoundingClientRect().right - host.left)) };
+          widest: Math.max(...q('.mapview-layers *').map((e) => e.getBoundingClientRect().right - host.left)),
+          // (AK7) the picker's shown label against the room beside its arrow (about 20 px)
+          pick: (function () {
+            const s = document.querySelector('.mapview-item'), cs = getComputedStyle(s), c = document.createElement('canvas').getContext('2d');
+            c.font = cs.font;
+            const label = s.options[s.selectedIndex].text;
+            return { label, text: Math.ceil(c.measureText(label).width), room: Math.floor(s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 20) };
+          })() };
       }, [fx, planet]);
     }
     await page.close();
@@ -107,6 +114,9 @@ def main():
             check(f"{width} {planet}: no error", not p["title"].startswith("ERR"), p["title"])
             check(f"{width} {planet}: nothing wider than the toolbar", p["widest"] <= w + 1, p["widest"])
             check(f"{width} {planet}: the planet row above the groups", p["planets"][1] + p["planets"][3] <= min(b[1][1] for b in p["boxes"]), p)
+        for planet, p in pages.items():
+            check(f"{width} {planet}: the picker's label fits", p["pick"]["text"] <= p["pick"]["room"], p["pick"])
+        check(f"{width}: the label", {p["pick"]["label"] for p in pages.values()} == {"Item: -"}, [p["pick"] for p in pages.values()])
         n = pages["nauvis"]
         # each control at the same place (only the pollution toggle's width differs: "Spores" on Gleba, the last in its group)
         place = lambda p: [(k, x, y) + (() if k == "cloud" else (w,)) for k, (x, y, w, h) in p["controls"]]  # noqa: E731
@@ -116,7 +126,7 @@ def main():
         label = {b[0]: b[2] for b in n["boxes"]}
         check(f"{width}: the groups", list(box) == ["Terrain", "Networks", "Combat", "Team"], list(box))
         item = dict(n["controls"])["item"]
-        check(f"{width}: the picker narrow", item[2] <= 6 * 16 + 1, item)
+        check(f"{width}: the picker narrow", item[2] <= 6.5 * 16 + 1, item)
         # (d22 batch75 AK7) each label at the left of its buttons, at every width
         mine = lambda g: [c[1] for c in n["controls"] if box[g][0] <= c[1][0] < box[g][0] + box[g][2] and box[g][1] <= c[1][1] < box[g][1] + box[g][3]]  # noqa: E731
         check(f"{width}: each label at the left of its buttons", all(label[g][0] + label[g][2] <= min(c[0] for c in mine(g)) for g in box), (label, box))
