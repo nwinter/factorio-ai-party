@@ -456,6 +456,16 @@ bad `cid` is `400`. Without `cid` (scripts, older pages) nothing changes. The li
 a tab switch during a poll started a second poll and a second timer, and both appended the new messages, so lines showed
 twice and more polls ran in parallel after every send.
 
+Names (d22 batch75 AK12, viewer Aurora site:4296: "The site defaults blank names to viewer, but the relay rejects viewer
+as impersonation:name. Please align the name rules and test blank-name posting all the way through delivery."): a blank
+`name` was "viewer", which the relay to the game (tools/stream/viewers.py RESERVED) drops as `impersonation:name`, so the
+line showed on the site and reached no agent (site:4293, d22). Now a blank name is "Guest" and four hex digits of the
+poster's salted client hash ("Guest a46f": the same for that poster, another for another), and the reply says it
+(`guest_name`; the page shows "Sent as Guest a46f"). The relay's reserved words (worker.js RELAY_RESERVED, the same list:
+operator, host, team, viewer, agents, ...) are refused when typed ("that name is reserved") instead of being dropped
+later; a site row the old Worker stored as "viewer", or with no name, is relayed as "Guest". The same default holds for
+blueprints, poll votes and poll ideas.
+
 ## Viewers-only lines (channel)
 
 Viewer LimeLight555 (d16 10:36) asked for a way to talk among viewers without it reaching the agents. `POST /v1/chat
