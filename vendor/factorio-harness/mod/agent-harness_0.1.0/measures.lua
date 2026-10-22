@@ -109,11 +109,11 @@ return function(api)
       seen = seen + (c.taken or 0)
     end
     if not job.collectors and job.result then
-      n, seen = #(job.result.collectors or {}), job.result.taken_seen or 0
+      n, seen = #(job.result.collectors or {}), job.result.gone_in_reach_total or 0
       for _, c in ipairs(job.result.collectors or {}) do if c.gone_s then gone = gone + 1 end end
     end
     return {units=n, gone=gone, scope=string.format('%d collector%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
-      sample=string.format('%d chunks seen taken', seen), empty=n == 0}
+      sample=string.format('%d chunks gone inside a reach (inferred)', seen), empty=n == 0}
   end
   -- One watch's row; tick = now.
   local function row(kind, job, tick)
