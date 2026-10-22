@@ -219,14 +219,41 @@ def pick(pool, who):
     return None, "none"
 
 
+def from_replies_to(line, by_seq=None):
+    """(d22 batch75 AK6, viewer Aurora site:4175: "preserve source message IDs through the harness and reply feed, then
+    thread by those IDs? Allow one answer to link to several messages.") The viewer lines a say answers as chat.lua kept
+    them on the line (replies_to [{seq, name, id, source, tick, text}]): each the line itself when kept here (by_seq),
+    else a line made of what the say kept, so a line from an earlier shift or gone from this log still links; with its
+    own id (source_id). [] without."""
+    out = []
+    for x in line.get("replies_to") or []:
+        if not isinstance(x, dict) or not x.get("name"):
+            continue
+        v = (by_seq or {}).get(x.get("seq")) if isinstance(x.get("seq"), int) else None
+        v = dict(v) if v and viewer_name(v) else {"from": "viewer " + str(x["name"]), "viewer": True, "text": str(x.get("text") or ""),
+                                                 "seq": x.get("seq"), "tick": x.get("tick")}
+        for k, f in (("source_id", "id"), ("source", "source")):
+            if x.get(f) and not v.get(k):
+                v[k] = x[f]
+        out.append(v)
+    return out
+
+
 def classify(line, viewer_lines, inbox=(), by_seq=None):
     """For an agent's or the Operator's line and the viewer lines before it (oldest first): None, or {kind: "reply"
-    | "to_viewers", to: [viewer names], answers: the viewer line it answers or None, link (replies): reply_to |
-    only_line | only_to | time | none}. inbox: the run's inbox_lines, for the Operator's lines only; by_seq: every
-    viewer line kept, by seq (for reply_to)."""
+    | "to_viewers", to: [viewer names], answers: the viewer line it answers or None, also: the other lines it answers
+    (AK6), link (replies): reply_to | name | only_line | only_to | time | none}. inbox: the run's inbox_lines, for the
+    Operator's lines only; by_seq: every viewer line kept, by seq (for reply_to)."""
     who = speaker(line)
     if not who:
         return None
+    found = from_replies_to(line, by_seq)
+    if found:  # (AK6) reply_to (one or several), or linked by the harness by the name it says ("name")
+        names = []
+        for v in found:
+            if viewer_name(v).lower() not in [n.lower() for n in names]:
+                names.append(viewer_name(v))
+        return {"kind": "reply", "to": names, "answers": found[0], "also": found[1:], "link": "name" if line.get("linked_by") == "name" else "reply_to"}
     rl = line.get("reply_link")
     if isinstance(rl, dict) and rl.get("name"):  # (AA2) the line the Operator named (tools/opreply.py)
         v = {"from": "viewer " + rl["name"], "viewer": True, "text": rl.get("text") or "", "t": rl.get("t"), "id": rl.get("id")}
@@ -277,6 +304,8 @@ def classify(line, viewer_lines, inbox=(), by_seq=None):
         return {"kind": "reply", "to": named, "answers": v, "link": link}
     if ADDRESSED.match(str(line.get("text") or "")):
         return {"kind": "to_viewers", "to": [], "answers": None}
+    if linked_elsewhere:  # (AK6) a reply_to a viewer line from before this log (shift57: Muse's 19841 to 19660): a reply
+        return {"kind": "reply", "to": [], "answers": None, "link": "none"}
     return None
 
 
@@ -356,6 +385,15 @@ def replies(lines, window_s=WINDOW_S, inbox=(), links=None):
     return out
 
 
+def answer_row(a):
+    """A viewer line a reply answers, for the page: {name, text, t, tick, source, id?}: id, the line's own id where it
+    was written (site:3817: the Operator named it, AA2; AK6: kept on the game line, source_id)."""
+    out = {"name": viewer_name(a), "text": bare(a.get("text")), "t": a.get("t"), "tick": a.get("tick"), "source": a.get("source")}
+    if a.get("id") or a.get("source_id"):
+        out["id"] = str(a.get("id") or a.get("source_id"))
+    return out
+
+
 def row(line, result):
     """The public row for the live page: {seq, t, tick, by, text, kind, to, history?, link?, answers: {name, text, t,
     tick, source}}. link (a reply): how its line was found (classify), "none" when it is linked to no line."""
@@ -367,10 +405,10 @@ def row(line, result):
     if result.get("link"):
         out["link"] = result["link"]
     if a:
-        out["answers"] = {"name": viewer_name(a), "text": bare(a.get("text")), "t": a.get("t"), "tick": a.get("tick"),
-                          "source": a.get("source")}
-        if a.get("id"):  # (AA2) the line's own id (site:3817), named by the Operator
-            out["answers"]["id"] = str(a["id"])
+        out["answers"] = answer_row(a)
+    also = [answer_row(v) for v in result.get("also") or []]
+    if also:  # (AK6) the other lines one reply answers
+        out["also"] = also
     # (AA2) one of a split reply's parts: [k, n] ("part 1 of 2" on the site)
     rl = line.get("reply_link") if isinstance(line.get("reply_link"), dict) else {}
     p = tuple(rl["part"]) if isinstance(rl.get("part"), list) and len(rl["part"]) == 2 and rl["part"][1] > 1 else part_of(line.get("text"))

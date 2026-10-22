@@ -371,7 +371,7 @@ rf.ingest([{"id": "s:2", "source": "site", "author": "b", "name": "bo", "text": 
            {"id": "s:4", "source": "site", "author": "d", "name": "di", "text": "loving the factory, but copper is short", "t": NOW}], [], now=NOW)
 sent = relay.step(NOW)
 check("relay: an order to an agent is viewer talk and is relayed (marked order in the lane)",
-      sent and sent["id"] == "s:2" and sent["order"] and h.says == [{"name": "bo", "text": "astra, build turrets", "source": "site"}],
+      sent and sent["id"] == "s:2" and sent["order"] and h.says == [{"name": "bo", "text": "astra, build turrets", "source": "site", "id": "s:2"}],
       (sent, h.says))
 cmd = [c for c in h.cmds if '"viewer_say"' in c][0]
 check("relay: an operator dispatch of viewer_say, the JSON in a safe long string",

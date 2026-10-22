@@ -16235,7 +16235,7 @@ M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) 
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
-M.audience=require('audience'){state=state,post_viewer=function(name,text,source) return M.chat.viewer(name,text,source) end,
+M.audience=require('audience'){state=state,post_viewer=function(name,text,source,id) return M.chat.viewer(name,text,source,id) end,
   notice=function(from,text) return M.chat.notice(from,text) end,agents=function() return M.board.agents() end,
   director=function(index) return M.is_director(index) end}
 for name,handler in pairs(M.audience.handlers) do handlers[name]=handler end

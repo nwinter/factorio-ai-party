@@ -101,18 +101,26 @@
   // viewer_replies.py; d15 08:07: what the models said back stays readable after it scrolled past live). Shown
   // unless the reader unticks them (remembered per browser).
   var showReplies = store('chatReplies') !== '0';
+  var THREAD_S = 20 * 60, NEW_S = 10 * 60;  // (AK6) a reply threads under a line at most THREAD_S older; "new" for NEW_S
   // The viewer line a reply answers, in this list: the same viewer, the same words (the relay's "@astra " stripped,
   // its cut "…" too), written before the reply.
   // every leading @name (AA2: "@Muse @Luna Could ..." on the site, "@Luna Could ..." in the reply's quote)
-  function bareText(s) { return String(s || '').replace(/^(?:@\S+\s+)+/, '').replace(/…$/, '').trim().toLowerCase(); }
-  function answered(list, r) {
-    var a = r.answers;
+  function bareText(s) { return String(s || '').replace(/^(?:@\S+\s+)+/, '').replace(/(?:…|\.\.\.)$/, '').trim().toLowerCase(); }
+  function answered(list, r) { return sourceAt(list, r.answers, r.t); }
+  // (d22 batch75 AK6) every line a reply answers: answers, then also (one reply to several lines)
+  function sources(r) { return [r.answers].concat(Array.isArray(r.also) ? r.also : []).filter(function (a) { return a && a.name; }); }
+  // Where in the list the line `a` (a reply's answers or also) is, or -1: by the id it was written under (the Operator's
+  // named line, AA2; AK6: every relayed line keeps it through the harness), else the same viewer and words before t.
+  function sourceAt(list, a, t) {
     if (!a || !a.name) return -1;
-    // (d20 batch65 AA2) the line the Operator named (tools/opreply.py): by its id
     var id = /^site:(\d+)$/.exec(String(a.id || ''));
     if (id) {
       for (var j = list.length - 1; j >= 0; j--) if (list[j].src === 'site' && String(list[j].seq) === id[1]) return j;
     }
+    if (/^yt:/.test(String(a.id || ''))) {
+      for (var y = list.length - 1; y >= 0; y--) if (list[y].src === 'yt' && list[y].k === 'y' + a.id) return y;
+    }
+    var r = { t: t };
     var name = String(a.name).toLowerCase(), body = bareText(a.text);
     for (var i = list.length - 1; i >= 0; i--) {
       var m = list[i];
@@ -135,21 +143,31 @@
       if (at >= 0 && (!all[at].opReply || (r.t || 0) < (all[at].opReply.t || 0))) all[at].opReply = { seq: r.seq, t: r.t };
     });
     if (!showReplies || !replyLines.length) return all;
-    // A reply goes right after the viewer line it answers (after earlier replies to it) when that line is in the list;
-    // else in time order among the rest.
+    // A reply goes right after the viewer line it answers (after earlier replies to it) when that line is in the list
+    // and at most THREAD_S older; else in time order among the rest (AK6: "Keep new replies easy to spot without
+    // scattering unrelated conversations": a reply to an old line stays at the bottom, with its quote that jumps to it).
+    // Each line answered counts its replies (the first one's key: a jump to it).
     var first = all.length ? all[0].t || 0 : 0;
     replyLines.slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); }).forEach(function (r) {
       if ((r.t || 0) < first) return;
       var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind, history: r.history === true,
-        link: r.link, answers: r.answers, part: r.part };
-      var at = answered(all, r);
-      if (at >= 0) {
+        link: r.link, answers: r.answers, also: r.also, part: r.part, quotes: [] };
+      var at = -1;
+      sources(r).forEach(function (a, n) {
+        var i = sourceAt(all, a, r.t);
+        item.quotes.push({ a: a, k: i >= 0 ? all[i].k : null });
+        if (i < 0) return;
+        all[i].replies = all[i].replies || { n: 0, first: item.k };
+        all[i].replies.n++;
+        if (n === 0) at = i;
+      });
+      if (at >= 0 && (r.t || 0) - (all[at].t || 0) <= THREAD_S) {
         item.thread = true;
         while (at + 1 < all.length && all[at + 1].src === 'agent' && all[at + 1].thread) at++;
         all.splice(at + 1, 0, item);
         return;
       }
-      item.away = !!(r.answers && r.answers.name);  // linked to a line this list does not show
+      item.away = !!(r.answers && r.answers.name);  // linked to a line this list does not show, or one long before
       var i = all.length;
       while (i > 0 && (all[i - 1].t || 0) > (item.t || 0)) i--;
       all.splice(i, 0, item);
@@ -167,13 +185,27 @@
       : m.link === 'only_line' ? 'matched by name: ' + who + "'s only recent line"
       : m.link === 'only_to' ? 'matched by name: ' + who + "'s only recent line to " + esc(m.by === 'operator' ? 'the Operator' : agentName(m.by))
       : m.link === 'time' ? 'matched by the time it names'
+      : m.link === 'name' ? 'linked by name: ' + who + "'s open line to " + esc(m.by === 'operator' ? 'the Operator' : agentName(m.by))
       : '';
-    var html = how ? ' <span class="c-link c-link-' + esc(m.link) + ' fx-muted">' + how + '</span>' : '';
-    if (m.away && a.text) {
-      var q = String(a.text);
-      html += ' <span class="c-re fx-muted">re “' + esc(q.length > 80 ? q.slice(0, 79) + '…' : q) + '”</span>';
-    }
-    return html;
+    return how ? ' <span class="c-link c-link-' + esc(m.link) + ' fx-muted">' + how + '</span>' : '';
+  }
+  // (d22 batch75 AK6, viewer Aurora site:4176: "Could replies show a short clickable quote of the source message, with a
+  // reply count on the original?") over a reply, a short quote of each line it answers: a button to that line when the
+  // list shows it, else the quote alone
+  var QUOTE = 70;
+  function quotesHtml(m) {
+    var q = (m.quotes || []).map(function (x) {
+      var t = bareText(x.a.text) ? String(x.a.text).replace(/^(?:@\S+\s+)+/, '') : '';
+      var body = '↪ ' + x.a.name + (t ? ': “' + (t.length > QUOTE ? t.slice(0, QUOTE - 1) + '…' : t) + '”' : '');
+      return x.k ? '<button type="button" class="c-quote" data-jump="' + esc(x.k) + '" title="to the line it answers">' + esc(body) + '</button>'
+        : '<span class="c-quote c-quote-away fx-muted" title="not in this list">' + esc(body) + '</span>';
+    }).join('');
+    return q ? '<span class="c-quotes">' + q + '</span>' : '';
+  }
+  // the reply count on a line answered: a button to its first reply
+  function repliesHtml(m) {
+    if (!m.replies || !m.replies.n) return '';
+    return ' <button type="button" class="c-replies" data-jump="' + esc(m.replies.first) + '">' + esc(m.replies.n + (m.replies.n === 1 ? ' reply' : ' replies')) + '</button>';
   }
   function replyHtml(m, t) {
     var a = m.by === 'operator' ? { name: 'operator', display_name: 'Operator' } : (team[m.by] || { name: m.by });
@@ -186,8 +218,11 @@
     // (AA2) one of a split reply's parts
     if (Array.isArray(m.part) && m.part.length === 2 && m.part[1] > 1) to += ' <span class="c-part fx-muted">part ' + esc(m.part[0]) + ' of ' + esc(m.part[1]) + '</span>';
     to += linkHtml(m);
-    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + '" id="c-a' + esc(m.k.slice(1)) + '"' + (col ? ' style="--ac:' + col + '"' : '') +
-      '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
+    // (AK6) a reply from the last NEW_S: marked new
+    var fresh = !m.history && m.t && Date.now() / 1000 - m.t < NEW_S;
+    if (fresh) to += ' <span class="c-new-tag">new</span>';
+    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + (fresh ? ' c-new' : '') + '" id="c-a' + esc(m.k.slice(1)) + '"' + (col ? ' style="--ac:' + col + '"' : '') +
+      '>' + quotesHtml(m) + '<span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
       who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';
   }
   // A site line's delivery: "to Sol", "to Sol, Luna", "held", "to the Operator", "not relayed: why" (the viewers-only
@@ -237,7 +272,7 @@
   }
   function renderChat() {
     if (!chatList) return;
-    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : '') + (isQueued(m) ? '+q' + serviceLive : ''); }).join(',');
+    var all = joinedChat(), sig = all.map(function (m) { var d = m.src === 'site' && delivery[m.seq]; return m.k + (d ? ':' + d.s + (d.op ? '+op' : '') + (d.to_all ? '+' + d.to_all.length : '') + (d.why ? '+' + d.why.length : '') : '') + (m.opReply ? '+r' + m.opReply.seq : '') + (isQueued(m) ? '+q' + serviceLive : '') + (m.replies ? '+n' + m.replies.n : '') + (m.thread ? '+t' : ''); }).join(',');
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
@@ -245,9 +280,9 @@
       var t = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (m.src === 'agent') return replyHtml(m, t);
       var src = m.host ? 'host' : m.src;
-      return '<li class="c-' + m.src + (m.host ? ' c-host' : '') + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + src + '">' +
+      return '<li class="c-' + m.src + (m.host ? ' c-host' : '') + '" id="c-' + esc(m.k) + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + src + '">' +
         (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span>' +
-        deliveryHtml(m) + '</li>';
+        deliveryHtml(m) + repliesHtml(m) + '</li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
     if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
     chatList.dataset.seen = '1';
@@ -299,6 +334,16 @@
   }
   // "Operator replied" (AA1): to that reply in the list, showing the replies first when they are hidden
   if (chatList) chatList.addEventListener('click', function (ev) {
+    // (AK6) a quote over a reply: to the line it answers; a reply count: to the first reply
+    var j = ev.target && ev.target.closest ? ev.target.closest('[data-jump]') : null;
+    if (j) {
+      var to = document.getElementById('c-' + j.getAttribute('data-jump'));
+      if (!to) return;
+      if (to.scrollIntoView) to.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      to.classList.add('is-flash');
+      setTimeout(function () { to.classList.remove('is-flash'); }, 1600);
+      return;
+    }
     var b = ev.target && ev.target.closest ? ev.target.closest('[data-reply]') : null;
     if (!b) return;
     if (!showReplies) {

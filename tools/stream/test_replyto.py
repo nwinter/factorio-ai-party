@@ -29,8 +29,10 @@ def classify():
     # reply_to wins over the latest line of the named viewer (his Sonnet question came first here, the reply_to names it)
     r = V.classify(dict(OLD, reply_to=16941), [SONNET, ASK])
     assert r["answers"] is SONNET and r["to"] == ["NickWinter"], r
-    # a seq that is no viewer line: the usual rules
-    assert V.classify(dict(OLD, reply_to=16940), [SONNET, ASK]) is None
+    # a seq this log has no viewer line for: chat.lua keeps reply_to only for viewer lines, so a line from before this log
+    # (d22 batch75 AK6, shift57: Muse's 19841 to shift56's 19660 vanished from the site): a reply linked to none
+    r = V.classify(dict(OLD, reply_to=16940), [SONNET, ASK])
+    assert r == {"kind": "reply", "to": [], "answers": None, "link": "none"}, r
     assert V.classify(dict(OLD, reply_to=True), [SONNET, ASK]) is None
     # the archived pages' pass over a log
     rows = V.replies([SONNET, ASK, dict(OLD, text="@NickWinter " + OLD["text"], reply_to=16942)])

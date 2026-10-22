@@ -6949,6 +6949,16 @@ fh watch    # deploy on every change
   nothing but closing it as before. shift40-45: 11 agent lines answered a viewer's line to them without naming the
   viewer (the first line from that agent within 5 game minutes, the viewer named nowhere, not to a teammate, opening with an
   answer word or sharing 2+ words with the question), out of 441 viewer lines addressed to an agent.
+- Replies by the viewer lines' ids, one reply to several (d22 batch75 AK6, viewer Aurora site:4175; shift57: 9 of 101
+  agent lines answering a viewer carried reply_to, all Muse's; Muse's reply_to [19592, 19605, 19660, 19688, 19559] kept
+  19660 alone). `viewer_say {name, text, source, id}` (operator): `id` is the line's own id where the viewer wrote it
+  (`site:4175`, `yt:...`; one not like that is left out, the line still goes), kept on the chat line as `source_id`.
+  `say {reply_to: [SEQ, ...]}` keeps every viewer line in the list (up to 8) as `replies_to` [{seq, name, id, source,
+  tick, text}] on the chat line (`reply_to` stays the first), puts `@Name ` in front for each viewer it names nowhere,
+  and the reply's `reply_to` lists the others as `also` [{seq, to}]. A say without reply_to that closes a viewer's one
+  open line to you by name (owed.lua) is linked to it the same way (`linked_by: "name"` on the line) and the reply says
+  `linked: "linked to #19858 Foobator (it names them; their one open line to you), as reply_to: 19858 would"`. Chat
+  reads give `source_id`, `replies_to` and `linked_by`.
 - Focus after completion (d20 batch57 S2, viewer Aurora, shift47 16:46: "Could task completion refresh focus and offer
   ready work toward the shared goal?"). A board_update (or board_retire) that marks an item done or dropped clears every
   agent's board_focus on it, and marking a focused project step done clears that focus (progress.lua on_update). The

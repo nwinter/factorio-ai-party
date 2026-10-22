@@ -1256,6 +1256,14 @@ class Model:
             entry["look"] = m["look"]
         if isinstance(m.get("reply_to"), int):  # say reply_to a viewer line (chat.lua; viewer_replies.py threads it)
             entry["reply_to"] = m["reply_to"]
+        # (d22 batch75 AK6) each viewer line a say answers as chat.lua kept it {seq, name, id, source, tick, text}, linked_by
+        # "name" when the harness linked it by the name it says, and a viewer line's own id where it was written
+        if isinstance(m.get("replies_to"), list):
+            entry["replies_to"] = [r for r in m["replies_to"] if isinstance(r, dict) and r.get("name")][:8]
+        if m.get("linked_by") == "name":
+            entry["linked_by"] = "name"
+        if isinstance(m.get("source_id"), str):
+            entry["source_id"] = m["source_id"]
         if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
             entry["viewer"] = m["viewer"]
         if m.get("notice"):  # a harness notice: the agents' mute votes and their results (audience.lua)

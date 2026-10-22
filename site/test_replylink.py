@@ -53,11 +53,11 @@ def main():
     a12 = find("joonazan, thanks.")
     assert a12 == find("nice base") + 1 and "matched by name: joonazan's only recent line to Haiku" in items[a12][1], items[a12]
     a13 = items[find("fair point and I agree")]
-    assert "c-thread" not in a13[0] and "↩ Aurora re “Could the 508 hand-fed findings be checked in smaller areas before planning upg…”" in a13[1], a13
+    assert "c-thread" not in a13[0] and "↪ Aurora: “Could the 508 hand-fed findings be checked in smaller areas before pl…”" in a13[1], a13
     a14 = items[find("I will take those gaps")]
     assert "c-thread" not in a14[0] and "not linked to a question" in a14[1] and "matched" not in a14[1], a14
     a15 = items[find("live since 15:27")]
-    assert "matched by the time it names" in a15[1] and "re “Could factory snapshots" in a15[1], a15
+    assert "matched by the time it names" in a15[1] and "↪ " in a15[1] and "“Could factory snapshots" in a15[1], a15
     print("reply link: ok (the site chat says how each reply found its line, quotes a line it does not show, and says when "
           "a reply is linked to none)")
 

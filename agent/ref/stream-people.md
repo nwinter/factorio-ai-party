@@ -63,9 +63,10 @@
   (`viewer: true` in `./fh chat`; not a teammate). A viewer's @mention ends no sleep or wait (it comes in your next
   reply); `--wake-on-viewers` makes it end them. Your `./fh say` lines show on the stream next to it. A viewer's line
   to you shows its seq (`#16942: reply_to: 16942 answers it; a say naming NickWinter does while it is their only open
-  line`); `say {reply_to: 16942}` shows your line under theirs on the stream's site; a line that names them nowhere
-  starts with `@NickWinter`. On the site, a reply without `reply_to` sits under a line only when it is that viewer's
-  one line in the 15 minutes before, or their one line to you; else it shows as not linked to a question.
+  line`); `say {reply_to: 16942}` shows your line under theirs on the stream's site (a list links each line in it); a
+  line that names them nowhere starts with `@NickWinter`. A say naming a viewer whose one open line to you it closes is
+  linked to that line (the reply's `linked`). On the site, another reply without `reply_to` sits under a line only when
+  it is that viewer's one line in the 15 minutes before, or their one line to you; else it shows as not linked.
 - The stream's board widget shows the team plan.
 - A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
   library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket

@@ -473,6 +473,18 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
   text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .vchat .c-delivery-replied:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .vchat li.is-flash { background-color: rgba(var(--fx-orange-rgb), .22); }
+/* (d22 batch75 AK6, viewer Aurora) over a reply, a short quote of each line it answers (a button to it); on a line, its
+   reply count (a button to the first reply); a reply from the last ten minutes marked new */
+.vchat .c-quotes { display: block; }
+.vchat .c-quote { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit;
+  font-size: 0.8em; color: var(--muted); background: none; border: 0; padding: 0; text-align: left; }
+.vchat button.c-quote { cursor: pointer; }
+.vchat button.c-quote:hover, .vchat .c-replies:hover { color: var(--ink); text-decoration: underline; }
+.vchat .c-replies { font: inherit; font-size: 0.8em; color: var(--muted); background: none; border: 1px solid var(--line);
+  border-radius: 9px; padding: 0 6px; margin-left: 4px; cursor: pointer; }
+.vchat .c-quote:focus-visible, .vchat .c-replies:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vchat .c-agent.c-new { background-color: rgba(var(--fx-orange-rgb), .08); }
+.vchat .c-new-tag { font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--fx-orange, #e39827); }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
 .vchat-filter label { display: inline-flex; align-items: center; gap: 6px; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }
@@ -560,31 +572,36 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
    rules style the controls, the legend (.b-X and .o-X are the same colours the canvas uses) and full screen */
 .mapview { position: relative; }
 /* (d22 batch75 AK3, viewer Aurora) the planet tabs in a row of their own, the layers grouped under labels below them */
-.mapview-layers { display: grid; gap: 8px; margin: 0 0 8px; container-type: inline-size; }
-.mapview-planets { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-/* (AK5) two groups a row (Terrain + Networks, Combat + Team), each label over its buttons; one a row when narrow */
-.mapview-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; align-items: start; }
-.mapview-gbox { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.mapview-group-label { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.mapview-group { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-width: 0; }
+.mapview-layers { display: grid; gap: 5px; margin: 0 0 6px; container-type: inline-size; }
+.mapview-planets { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
+/* (AK5) two groups a row (Terrain + Networks, Combat + Team); (d22 batch75 AK7, viewer Aurora: "put category labels
+   beside the buttons and tighten the gaps") each label in a narrow column at the left of its buttons at every width, a
+   pair side by side where both fit (else the second below the first), tighter gaps and button padding */
+.mapview-groups { display: grid; gap: 4px; }
+.mapview-pair { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.mapview-gbox { display: grid; grid-template-columns: 3.5rem auto; align-items: center; gap: 0 4px; min-width: 0; }
+.mapview-group-label { font-size: .64rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
+.mapview-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.mapview-layers .fx-btn.small { padding: 1px 7px; }
+/* Pollution or Spores: one width, so what follows stays put across planets */
+.mapview-layer[data-layer="cloud"] { min-width: 5.6em; }
 .mapview-layer[aria-pressed="false"] { opacity: .55; text-decoration: line-through; text-decoration-thickness: 1px; }
 .mapview-layer[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--fx-orange); }
 /* a layer the surface shown has none of: its spot kept, greyed */
 .mapview-layer:disabled { opacity: .3; cursor: not-allowed; box-shadow: none; }
 /* the surface switch (Nauvis, or another surface's cloud): the one shown is pressed */
 .mapview-surface[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--fx-orange); font-weight: 700; }
-/* narrow: each group a row of its own, its label in a column at the left (one row of buttons where they fit) */
+/* narrow: each group a row of its own (one row of buttons where they fit) */
 @container (max-width: 34rem) {
-  .mapview-groups { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .mapview-gbox { display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: center; gap: 0 6px; }
+  .mapview-gbox { flex: 1 1 100%; grid-template-columns: 3.5rem minmax(0, 1fr); }
 }
 @media (max-width: 520px) {  /* browsers without container queries */
-  .mapview-groups { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .mapview-gbox { display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: center; gap: 0 6px; }
+  .mapview-gbox { flex: 1 1 100%; grid-template-columns: 3.5rem minmax(0, 1fr); }
 }
 /* (d21 batch68 AD3) the item picker: its sources and consumers on the planet shown */
-/* (AK5) narrow and fixed: its longest item name moves nothing */
-.mapview-item { width: 8rem; max-width: 100%; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--well); color: var(--ink); font: inherit; }
+/* (AK5) narrow and fixed: its longest item name moves nothing; (AK7) "Item: -" (none picked, or none to pick: why in its
+   tooltip) whole beside its arrow in any font, an item's name with room */
+.mapview-item { width: 6.5rem; max-width: 100%; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--well); color: var(--ink); font: inherit; }
 .mm-legend li.mv-item-line { flex-basis: 100%; }
 .mapview-stage { position: relative; border-radius: var(--fx-r-1); overflow: hidden; box-shadow: var(--fx-inset-shadow); background: #1b1f1a; }
 .mapview-canvas { display: block; width: 100%; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; }

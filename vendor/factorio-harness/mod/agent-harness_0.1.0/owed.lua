@@ -72,14 +72,20 @@ return function(api)
     end
     return n
   end
+  -- The second value (d22 batch75 AK6): the viewer lines it closed by name, by seq (chat.lua links the say to them).
   function M.said(index, text, linked)
     local t = tostring(text or ''):lower()
     local n = viewer_counts(index)
-    return close(index, function(it)
+    local viewers = {}
+    local count = close(index, function(it)
       if not named(t, it) then return true end
-      if it.viewer then return linked ~= nil or n[sender(it.from):lower()] > 1 end
+      if it.viewer then
+        if linked ~= nil or n[sender(it.from):lower()] > 1 then return true end
+        viewers[#viewers+1] = it.seq
+      end
       return false
     end)
+    return count, viewers
   end
   -- After a say without reply_to: the viewers it names whose lines it left open (two or more each), or nil.
   function M.held(index, text)
