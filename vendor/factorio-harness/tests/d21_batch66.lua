@@ -488,3 +488,81 @@ do
   game,defines,prototypes=nil,nil,nil
   print('d21_batch66 AB6 delivery_watch pad demand: ok')
 end
+
+-- AB7 (viewer Aurora 17:03: "Robots moved 300 of Petrel II's packs before its arrival-age check"): each pod with the
+-- watched item is followed to the tick it is gone; its count and spoilage then, and the pad's on that tick, are kept.
+do
+  game={tick=1000}
+  defines={inventory={hub_main=1,cargo_unit=3,cargo_landing_pad_main=4,chest=5}}
+  prototypes={item={['agricultural-science-pack']={},['iron-plate']={}}}
+  local function stack(name,count,spoil) return {valid_for_read=true,name=name,count=count,spoil_percent=spoil,quality={name='normal'}} end
+  local function inv(list) local t={} for i,x in ipairs(list) do t[i]=x end for i=#list+1,4 do t[i]={valid_for_read=false} end
+    t.get_item_count=function(n) local c=0 for _,x in ipairs(list) do if x.name==n then c=c+x.count end end return c end return t end
+  local nauvis={name='nauvis'}
+  local padinv=inv({stack('agricultural-science-pack',40,0.9)})
+  local pad={valid=true,name='cargo-landing-pad',type='cargo-landing-pad',position={x=52,y=54},surface=nauvis,
+    get_inventory=function() return padinv end,get_item_count=function(n) return padinv.get_item_count(n) end}
+  nauvis.find_entities_filtered=function(f) if f.radius and math.abs(f.position.x-52)<=f.radius and math.abs(f.position.y-54)<=f.radius then return {pad} end return {} end
+  nauvis.find_logistic_network_by_position=function() return {network_id=243} end
+  pad.force='player'
+  local force={name='player',is_chunk_charted=function() return true end}
+  local hubinv=inv({stack('agricultural-science-pack',300,0.4)})
+  local psurf={name='platform-5'}
+  local pl={valid=true,name='Petrel II',index=5,surface=psurf,paused=false,space_location={name='nauvis'},schedule={current=1,records={{station='nauvis'}}},
+    hub={valid=true,type='space-platform-hub',get_inventory=function() return hubinv end,get_logistic_sections=function() return {sections_count=0} end}}
+  force.platforms={pl}
+  game.forces={player=force}; game.planets={nauvis={surface=nauvis}}
+  local podinv=inv({stack('agricultural-science-pack',200,0.1),stack('agricultural-science-pack',100,0.6)})
+  local pod={valid=true,unit_number=77,surface=psurf,position={x=0,y=0},cargo_pod_state='awaiting_launch',cargo_pod_destination={station=pad},
+    get_inventory=function() return podinv end}
+  local fol={down={{pod=pod,unit=77,at='nauvis',tick=1000}},up={}}
+  local st={}
+  local W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,census_typed=function() return {pad} end,
+    freight={where=function() return {at='nauvis',stopped=true} end,receipts_since=function() return {} end,followed=function() return fol end,
+      spoils=function(n) return n=='agricultural-science-pack' end}}
+  local sol={name='sol',index=1,force=force,surface=nauvis}
+  W.call(sol,{item='agricultural-science-pack',count=300,to={position={x=52,y=54},surface='nauvis'},deadline_min=30,from='Petrel II'})
+  W.call(sol,{item='iron-plate',count=10,to={position={x=52,y=54},surface='nauvis'},deadline_min=30,from='Petrel II'})
+  local h={}; W.lines(sol,h)
+  -- the watch pass follows the pod; on the platform it is read every 10 ticks
+  game.tick=1020; W.tick(1020)
+  eq(st.delivwatch.pods[77].watches[1],'agricultural-science-pack'); eq(st.delivwatch.pods[77].watches[2],nil,'no iron in it')
+  game.tick=1025; W.pod_tick(1025); eq(st.delivwatch.pods[77].last.tick,1020,'far: not read yet')
+  game.tick=1030; W.pod_tick(1030); eq(st.delivwatch.pods[77].last.tick,1030)
+  -- over nauvis: read every tick; it spoils a little on the way down
+  pod.surface=nauvis; pod.cargo_pod_state='descending'
+  game.tick=1040; W.pod_tick(1040)
+  podinv[1].spoil_percent=0.26; pod.cargo_pod_state='parking'
+  game.tick=1041; W.pod_tick(1041); eq(st.delivwatch.pods[77].last.tick,1041)
+  -- gone: the pad holds its 300 and the 40 it had; robots take from it after
+  pod.valid=false
+  padinv=inv({stack('agricultural-science-pack',40,0.9),stack('agricultural-science-pack',200,0.26),stack('agricultural-science-pack',100,0.6)})
+  game.tick=1042; W.pod_tick(1042)
+  padinv=inv({})
+  eq(st.delivwatch.pods[77],nil)
+  local x=st.delivwatch.list[1]
+  local a=x.arrivals[1]
+  eq(a.tick,1042); eq(a.pod,77); eq(a.count,300); eq(a.spoil['25-50%'],200); eq(a.spoil['50-75%'],100); eq(a.dest_count,340); eq(a.dest_spoil['75-100%'],40)
+  eq(a.stacks[1].spoil_percent,26); eq(a.read_tick,1041); eq(a.platform,'Petrel II'); eq(a.stop,'nauvis')
+  eq(a.text,'pod 77 from Petrel II\'s hub at nauvis, sent 1s before, received by cargo-landing-pad (52,54) on nauvis at tick 1042: 300 agricultural-science-pack (200 at 25-50% spoiled, 100 at 50-75% spoiled; the pod\'s last read, 0s before); cargo-landing-pad (52,54) on nauvis held 340 of it on that tick (200 at 25-50% spoiled, 100 at 50-75% spoiled, 40 at 75-100% spoiled)')
+  local lines=W.lines(sol,h)
+  eq(#lines,1); has(lines[1],'delivery watch #1: pod 77 from Petrel II\'s hub at nauvis')
+  eq(W.row(st.delivwatch.list[2]).arrivals,nil)
+  -- up: a rocket's pod to the hub; an item that does not spoil reads so; a gone pod in freight's list stops nothing
+  local rinv=inv({stack('iron-plate',100,0)})
+  local rpod={valid=true,unit_number=88,surface=nauvis,position={x=15,y=59},cargo_pod_state='ascending',cargo_pod_destination={space_platform=pl},get_inventory=function() return rinv end}
+  fol.up={{pod={valid=false},tick=1000,from='nauvis'},{pod=rpod,tick=1050,from='nauvis',silo={x=15.5,y=59.5},up=4}}
+  pl.hub.name='space-platform-hub'; pl.hub.position={x=0,y=0}; pl.hub.surface=psurf
+  pl.hub.get_item_count=function(n) return hubinv.get_item_count(n) end
+  psurf.find_entities_filtered=function() return {pl.hub} end
+  W.call(sol,{item='iron-plate',count=100,to={position={x=0,y=0},platform='Petrel II'},deadline_min=30,from='nauvis'})
+  game.tick=1080; W.tick(1080)
+  eq(st.delivwatch.pods[88].watches[3],'iron-plate')
+  rpod.surface=psurf; game.tick=1090; W.pod_tick(1090)
+  rpod.valid=false; hubinv=inv({stack('iron-plate',100,0)}); game.tick=1091; W.pod_tick(1091)
+  local u=st.delivwatch.list[3].arrivals[1]
+  eq(u.text,'pod 88 from a rocket from nauvis (rocket-silo (15.5,59.5)), launched 1s before, received by Petrel II\'s hub at tick 1091: 100 iron-plate (it does not spoil; the pod\'s last read, 0s before); Petrel II\'s hub held 100 of it on that tick (it does not spoil)')
+  eq(u.rocket.up,4)
+  game,defines,prototypes=nil,nil,nil
+  print('d21_batch66 AB7 delivery_watch pod arrivals: ok')
+end

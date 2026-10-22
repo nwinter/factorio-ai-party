@@ -748,7 +748,8 @@ return function(api)
       rec.incoming = rec.incoming or {}
       if #rec.incoming < 32 then
         rec.incoming[#rec.incoming+1] = {pod=pod, tick=game.tick, cargo=add_contents({}, inv and try(function() return inv.get_contents() end)),
-          from=try(function() return event.rocket_silo.surface.name end), up=event.harness_up}
+          from=try(function() return event.rocket_silo.surface.name end), up=event.harness_up,
+          silo=try(function() return xy(event.rocket_silo.position) end)}
       end
     end
     local seg = rec and rec.segs[#rec.segs]
@@ -884,6 +885,12 @@ return function(api)
       if r.tick > since then out[#out+1] = {tick=r.tick, kind=r.kind, where=r.where, cargo=r.cargo, dest=r.dest, stop=r.stop} end
     end
     return out
+  end
+  -- (d21 batch66 AB7) The pods followed for the platform now: down, those from its hub {pod, unit, at (the stop), tick
+  -- (first seen), from, dest}; up, the rockets launched to it {pod, tick (launch), from (the silo's planet), silo, up}.
+  function M.followed(pl)
+    local rec = store()[pl.index]
+    return {down=rec and rec.pods or {}, up=rec and rec.incoming or {}}
   end
   function M.pod_watch(pl, tick)
     local rec = store()[pl.index]

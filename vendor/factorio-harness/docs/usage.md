@@ -10820,3 +10820,35 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   read the risk at Gleba (stop 2), whose pad asks 1000, and team.alerts carried it. Watches cleared, pad slots 2 to 4
   removed, AB6t destroyed.
 
+## d21 batch66 AB7 (eng/d20-batch66)
+
+AB7 (viewer Aurora, 17:03 PDT: "Could delivery_watch record count, spoilage buckets and tick at pod landing, linked to
+the shipment? Robots moved 300 of Petrel II's packs before its arrival-age check.").
+- On the headless copy (2.0.77), logging every tick: a pod of 100 agricultural science packs from a platform at
+  Fulgora read "parking" over Fulgora at 45.83% spoiled; on the next tick it was gone and the pad held 100 at 45.83%;
+  one tick later robots had taken 16. A rocket's pod to a platform kept the same entity from the silo to the hub
+  (awaiting_launch, ascending, surface_transition, descending and parking on the platform's surface).
+- delivery_watch `arrivals` (delivwatch.lua, freight.lua; runtime deploy needed):
+  - each watch pass, the pods with the watched item are followed: down, those freight follows from the carrier's hub;
+    up, the rockets launched to the platform (freight's on_launch rows, now with the silo's position);
+  - a followed pod is read every tick while it is over its destination's surface (every 10 ticks before): its stacks
+    of the item, count, quality and spoil percent;
+  - on the tick it is gone, the pad, hub or cargo pod container it went to is read the same way, before robots or
+    inserters take from it;
+  - each arrival: {tick, pod, from ("Petrel II's hub at gleba, sent 19s before", or "a rocket from nauvis (rocket-silo
+    (15.5,59.5)), launched 35s before"), platform, stop, rocket {planet, silo, launched, up}, where, count, spoil
+    (count by spoiled 0-25%, 25-50%, 50-75%, 75-100% per stack; absent for an item that does not spoil), stacks
+    [{count, quality, spoil_percent}], read_tick, dest_count, dest_spoil, text}; the last 16 a watch;
+  - the setter hears each in team.alerts: "delivery watch #12: pod 4977644 from AB7t's hub at fulgora, sent 19s before,
+    received by cargo-landing-pad (74,208) on fulgora at tick 30159549: 100 agricultural-science-pack (100 at 50-75%
+    spoiled; the pod's last read, 0s before); cargo-landing-pad (74,208) on fulgora held 100 of it on that tick (100 at
+    50-75% spoiled)".
+  - At most 32 pods followed; one followed 10 minutes is dropped. A pod gone between freight's looks no longer stops
+    the pass for the watches after it (each watch is followed under its own pcall).
+  - Cost on the copy: a 20-slot read 0.012 ms a tick per pod over its destination; the landing read of a 140-slot pad
+    0.17 ms once; nothing when no pod is followed.
+- Headless copy: down (watch #8 and #12, test platform AB7t at Fulgora, the pad asking 100 packs): each pod read the
+  tick before it was gone, the pad's 100 on that tick (a second later the pad held 68). Up (watch #11, a rocket of 30
+  packs at 55% from Nauvis's silo to test platform AB7u): "received by AB7u's hub at tick 30152902: 30 (30 at 50-75%
+  spoiled ...); AB7u's hub held 220 of it on that tick".
+

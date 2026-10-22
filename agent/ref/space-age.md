@@ -271,6 +271,9 @@
   platform stops at before the destination (pad, request, count, which stop) is a blocker while it is stopped there and
   in `risks` before (a pad request's import planet does not stop it; the hub's own request for the item keeps up to its
   max aboard, all with no max); a pod of it landing on another planet is in `diversions` (`diverted`: their sum).
+  `arrivals`: each pod with it (from the carrier's hub, or a rocket launched to the platform) on the tick it was gone:
+  its count and spoilage by stack (0-25/25-50/50-75/75-100% spoiled), read up to the tick before, the pad, hub or
+  container it went to and what that held of it on that tick, before robots take any; the setter hears each.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
