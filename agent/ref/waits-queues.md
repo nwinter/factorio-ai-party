@@ -29,7 +29,7 @@
   machine; `{platform, item, at_least}` on a platform); `platform_built` (`platform`: no foundation
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
-  pipe, thruster and machine of ours there holding it, saw saying how much in each kind; or `surface` (a planet) with
+  pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
   `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
   `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when

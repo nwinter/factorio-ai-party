@@ -304,10 +304,15 @@ return function(api)
     -- pumps), thrusters and machines, each kind said.
     -- (d20 batch62 X3) surface with positions or area: our tanks, pipes and machines there on that planet, by remote view
     -- in chunks our force has charted.
+    -- (d22 batch77 AM2, Astra #1769: Asterion's two fusion reactors held 1000 fluoroketone-cold each and the wait read
+    -- the pipes alone) fusion reactors and fusion generators, boilers and heat exchangers, steam engines and turbines,
+    -- and mining drills too, each kind said.
     fluid_count=function(p,c,estimate)
       local KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
-        ['assembling-machine']='machines',furnace='machines'}
-      local TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace'}
+        ['assembling-machine']='machines',furnace='machines',['mining-drill']='machines',['fusion-reactor']='fusion',
+        ['fusion-generator']='fusion',boiler='power',generator='power'}
+      local TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace','mining-drill',
+        'fusion-reactor','fusion-generator','boiler','generator'}
       local list,on
       if c.platform then
         local pl=M.platform_named(p,c.platform)
@@ -339,12 +344,13 @@ return function(api)
         if ok and k and k>0 then by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
       end
       local parts={}
-      for _,kind in ipairs({'tanks','pipes','thrusters','machines'}) do
-        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',kind,math.floor(by[kind]+0.5),count[kind]) end
+      local SAID={fusion='fusion reactors and generators',power='boilers and generators'}
+      for _,kind in ipairs({'tanks','pipes','thrusters','machines','fusion','power'}) do
+        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',SAID[kind] or kind,math.floor(by[kind]+0.5),count[kind]) end
       end
       local met=(c.at_least==nil or total>=c.at_least) and (c.below==nil or total<c.below)
       return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),on,#parts>0 and table.concat(parts,', ')
-        or (c.platform and 'none in its tanks, pipes, thrusters or machines' or 'none in our '..#list..' tanks, pipes and machines '..(c.positions and 'there' or 'in the area'))),
+        or (c.platform and 'none in its tanks, pipes, thrusters, machines, fusion reactors or generators' or 'none in our '..#list..' tanks, pipes and machines '..(c.positions and 'there' or 'in the area'))),
         estimate and {value=total,scope='fluid:'..on..':'..c.fluid..(c.platform and '' or ':'..#list)} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
