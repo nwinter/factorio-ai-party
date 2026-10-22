@@ -415,6 +415,18 @@ comes back afterwards:
 - A departure: a platform seen still that starts travelling. It holds `depart_hold` (60 s). An urgent shot may cut
   in; the camera goes back to the platform for what is left of the departure. A departure the camera could not show
   within `depart_late` (30 s) is dropped. A platform already travelling when the service starts is no departure.
+  Since d22 batch83 AS1 (Nick 09:28: "so many routine flights now that it's pretty repetitive"; shift57 06:21-09:24
+  put 55 departures on air for 51.8 min), only news holds `depart_hold`. News is a maiden flight, or a route
+  (platform, from, to) not flown in `depart_news_h` (6 game hours), or a leg to or from the solar system edge or the
+  shattered planet, or a planet new to the platform. The route memory is `model.add_route`: it comes from the score's
+  reads and the chronicle's `platform_left`, is kept in `space-memory.json` `routes`, and is seeded from the
+  chronicle files along the run chain. Any other departure is routine. It goes on air for `depart_routine_hold`
+  (25 s), at most once per `depart_routine_every` (20 min) across all platforms and once per `depart_route_every`
+  (2 h) per route. Otherwise it goes in a free inset (`depart_inset`), else it is not shown. Each decision is a log
+  line and a director-log row: `departure routine (inset): Cinder Gleba->Nauvis flown 31 min ago; a routine
+  departure went on air 7 min ago`. The platform visit (`platform_every`) is unchanged.
+  `tools/stream/test_departnews.py` replays shift57's 72 departures: 9 on air for 5.0 min, 53 in the inset, 10 not
+  shown.
 - An agent's platform action. The trigger is snapshot `work` with `platform=`. `work.py` now also counts inspect,
   configure, launch, drop, platform_schedule and requests when they carry `platform=`. The shot takes the camera if
   the agent is on air, or if the agent scores `work_ratio` of the agent on air (after onair_dwell, and with no fight

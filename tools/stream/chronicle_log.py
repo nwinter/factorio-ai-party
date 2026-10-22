@@ -116,6 +116,19 @@ def platform_history(path):
 PLATFORM_KINDS = ("platform_created", "platform_left", "platform_renamed")
 
 
+def departures(path):
+    """(d22 batch83 AS1) Every platform_left event along the run chain, once each: [(platform, from, to, tick)] with the
+    location ids (gleba, solar-system-edge), oldest first; the camera's route memory (model.route_last)."""
+    out, seen = [], set()
+    for p in chain(path):
+        for ev in load(os.path.dirname(p))[1]:
+            if ev.get("kind") == "platform_left" and ev.get("platform") and ev.get("at") and ev.get("to") and \
+                    isinstance(ev.get("tick"), (int, float)) and event_key(ev) not in seen:
+                seen.add(event_key(ev))
+                out.append((ev["platform"], ev["at"], ev["to"], int(ev["tick"])))
+    return sorted(out, key=lambda r: r[3])
+
+
 def follow_platform(history, ev):
     """One platform event into a platform_history dict; returns the platform's record before a departure was added
     (None for other events or a platform with no record): the caller tells a first departure from it."""

@@ -47,7 +47,15 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   - a visit about every `platform_every` (12 min) for `platform_hold` (20 s), the platform shown longest ago first;
     like the base map, never during an urgent or segment shot, a replay, a trio, an inset, a fight, or near a cut;
   - a departure (a platform starts travelling; Sol for a viewer: "continuous view during departure"): on it for
-    `depart_hold` (60 s), "Starling · leaving Nauvis for Vulcanus"; only urgent shots and segments come first;
+    `depart_hold` (60 s), "Starling · leaving Nauvis for Vulcanus"; only urgent shots and segments come first. Only
+    news takes the camera (d22 batch83 AS1, Nick 09:28: "so many routine flights now that it's pretty repetitive";
+    shift57 had 24 departure cuts in 3 hours, Cinder Nauvis->Gleba 7 of them): a maiden flight, a route the platform
+    has not flown in `depart_news_h` (6 game hours: model.route_last, kept in space-memory.json and seeded from the
+    chronicle), a leg to or from the solar system edge or the shattered planet, or a planet new to the platform.
+    Anything else is routine: on air for `depart_routine_hold` (25 s) at most once per `depart_routine_every` (20 min)
+    across all platforms and once per `depart_route_every` (2 h) for one route, else in the inset when it is free and
+    nothing else is up, else not shown; each decision is logged with its reason ("departure routine (inset): Cinder
+    Nauvis->Gleba flown 41 min ago");
   - an agent's platform action (snapshot `work` on a platform: place_ghosts, paste, deconstruct, inspect, configure,
     launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
     "Astra · working on Starling", for `work_hold`, longer while its requests keep coming; then back to the agent.
@@ -195,6 +203,12 @@ ONECAM = {
     "ammo_hold": 15.0,        # running out of ammo: on it this long
     "depart_hold": 60.0,      # a platform leaving for another planet: on it this long (Sol for awoo3391, 21:23)
     "depart_late": 30.0,      # a departure seen this long ago (a replay, an urgent shot in the way) is not shown
+    # (d22 batch83 AS1, Nick 09:28) only news takes the camera; routine departures are rationed (module doc)
+    "depart_news_h": 6.0,             # a route the platform has not flown in this many game hours is news
+    "depart_routine_every": 1200.0,   # a routine departure on air at most this often, all platforms together
+    "depart_route_every": 7200.0,     # ... and the same platform and route at most this often
+    "depart_routine_hold": 25.0,      # a routine departure on air (or in the inset) this long
+    "depart_inset": True,             # a routine departure off the main camera may go in a free inset
     # A maiden flight (viewer Foobator, d17 14:24: "please show new ships on their maiden flight"): a platform's first
     # departure since it was built (model.py's maiden_flight moment, from the chronicle), also with one camera
     "maiden_hold": 105.0,     # on it this long: the departure and the first minute and a half of flight
@@ -427,7 +441,11 @@ class OneCam(Director):
         self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
         self.plat_shown = {}   # name -> when it was last on air
         self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
-        self.departure = None  # {"name", "t", "label", "until"?, "maiden"?}: a departure seen, not on air yet
+        self.departure = None  # {"name", "t", "label", "until"?, "maiden"?, "news"?, "route"?, "why"?}: seen, not on air yet
+        self.route_source = None  # (AS1) the model (serve.py): route_last and platform_visited across restarts
+        self.route_ticks = {}     # (name, from, to) -> game ticks of the departures this director saw
+        self.routine_main = []    # (t, route): routine departures that went on air
+        self.departs = []         # (t, name, decision, why): each departure's decision (main, inset, none)
         self.maiden_done = set()  # maiden_flight moment ids already taken (once per platform)
         self.work_shown = {}   # (agent, platform) -> when its work went on air
         self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
@@ -1657,7 +1675,7 @@ class OneCam(Director):
             busy = f"{subj} {'fighting' if self.fighting(subj, by_name, now) else plan_kind(by_name[subj])} on air"
         if not busy:
             return "cut", "nothing more interesting on air"
-        if (self.inset and self.inset.get("why") not in ("attention", "cue")) or len(self.standbys()) < 2:
+        if (self.inset and self.inset.get("why") not in ("attention", "cue", "departure")) or len(self.standbys()) < 2:
             return "drop", f"{busy}; no client free for an inset"
         return "inset", busy
 
@@ -2083,10 +2101,80 @@ class OneCam(Director):
             moving = self.travelling(p)
             if moving and self.plat_moving.get(p["name"]) is False and p.get("view") and \
                     not (self.departure and self.departure.get("maiden") and self.departure["name"] == p["name"]):
-                self.departure = {"name": p["name"], "t": now, "label": self.platform_label(p["name"], "departure")}
+                news, route, why = self.departure_news(p["name"], p)
+                d = {"name": p["name"], "t": now, "label": self.platform_label(p["name"], "departure"),
+                     "news": news, "route": route, "why": why}
                 print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} departure: "
-                      f"{self.departure['label']}", flush=True)
+                      f"{d['label']} ({'news' if news else 'routine'}: {why})", flush=True)
+                old = self.departure  # (AS1) one departure waits at a time: news before routine, else the newer
+                if old and not old.get("until") and (old.get("maiden") or old.get("news")) and not news:
+                    self.log_departure(d, "none", f"{why}; {old['name']}'s departure is news and waits", now)
+                else:
+                    if old and not old.get("until") and "news" in old:
+                        self.log_departure(old, "none", f"{old['why']}; {d['name']} left in the same read", now)
+                    self.departure = d
             self.plat_moving[p["name"]] = moving
+
+    EDGE_PLACES = {"solar-system-edge": "the solar system edge", "shattered-planet": "the shattered planet"}
+
+    def departure_news(self, name, row):
+        """(d22 batch83 AS1) -> (news, route, why) for a platform that starts travelling: news when the leg goes to or
+        from the solar system edge or the shattered planet, to a planet the platform has not been at, or on a route
+        (platform, from, to) it has not flown in depart_news_h game hours (this director's own record and the model's,
+        route_source: space-memory.json and the chronicle along the run chain); else routine, "flown 41 min ago"."""
+        from model import planet_label
+        ids, r = row.get("route_ids") or [], row.get("route") or {}
+        if len(ids) != 2:
+            return False, None, "its route is not read"
+        frm, to = ids
+        route = (name, frm, to)
+        text = f"{name} {r.get('from') or planet_label(frm)}->{r.get('to') or planet_label(to)}"
+        tick = self.game_tick if self.game_tick is not None else None
+        seen = self.route_ticks.setdefault(route, [])
+        before = (tick if tick is not None else 0) - 2 * 3600  # (this departure's own records are newer)
+        last = max((t for t in seen if t < before), default=None) if tick is not None else None
+        src = self.route_source
+        if src and tick is not None:
+            m = src.route_last(name, frm, to, before)
+            last = m if last is None or (m is not None and m > last) else last
+        if tick is not None:
+            seen.append(tick)
+            del seen[:-4]
+        edge = self.EDGE_PLACES.get(frm) or self.EDGE_PLACES.get(to)
+        if edge:
+            return True, route, f"{text}: a leg to or from {edge}"
+        visited = src.platform_visited(name) if src else None
+        if visited is not None and to not in visited:
+            return True, route, f"{text}: {r.get('to') or planet_label(to)} is new to {name}"
+        if last is None:
+            return True, route, f"{text}: no flight on this route remembered"
+        ago = (tick - last) / 60.0
+        if ago > self.cfg["depart_news_h"] * 3600:
+            return True, route, f"{text}: last flown {ago / 3600:.1f} h ago"
+        return False, route, f"{text} flown {round(ago / 60)} min ago"
+
+    def routine_turn(self, route, now):
+        """None when a routine departure may go on air now, else why not."""
+        cfg = self.cfg
+        last = max((t for t, _ in self.routine_main), default=None)
+        if last is not None and now - last < cfg["depart_routine_every"]:
+            return f"a routine departure went on air {round((now - last) / 60)} min ago"
+        same = max((t for t, r in self.routine_main if r == route), default=None)
+        if same is not None and now - same < cfg["depart_route_every"]:
+            return f"this route went on air {round((now - same) / 60)} min ago"
+        return None
+
+    def log_departure(self, d, decision, why, now):
+        self.departs.append((now, d["name"], decision, why))
+        kind = "news" if d.get("news") else "routine"
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} departure {kind} ({decision}): {why}",
+              flush=True)
+        if self.log_path:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                    "slot": "program", "reason": f"departure {kind} ({decision}): {why}",
+                                    "departure": {"name": d["name"], "label": d["label"], "news": bool(d.get("news")),
+                                                  "decision": decision, "why": why}}) + "\n")
 
     def platform_target(self, name, why, until, agent=None, label=None):
         from model import platform_shot
@@ -2325,32 +2413,70 @@ class OneCam(Director):
         self.show_platform(t, scores, now)
 
     def maybe_departure(self, scores, now, segment=None):
+        """A departure seen (watch_platforms, watch_maiden): a maiden flight or news on air for depart_hold (maiden_hold);
+        a routine one (AS1) on air for depart_routine_hold when routine_turn allows, else in a free inset, else not
+        shown. One that comes back after an urgent shot (it has `until`) was decided already."""
         d = self.departure
         if not d or (len(self.slots) < 2 and not d.get("maiden")):  # one camera: only a maiden flight
             return
+        routine = "news" in d and not d.get("news") and not d.get("maiden") and not d.get("until")
         if (now > d["until"] - self.cfg["platform_hold"] / 2) if d.get("until") else now - d["t"] > self.cfg["depart_late"]:
             self.departure = None  # a replay or an urgent shot was in the way the whole time: the moment has passed
+            if "news" in d and not d.get("until"):
+                self.log_departure(d, "none", f"{d['why']}; the camera was busy for {self.cfg['depart_late']:.0f} s", now)
             return
+        hold = self.cfg["depart_routine_hold"] if routine else self.cfg["depart_hold"]
         cur = self.state.get(self.onair)
         if cur and cur.get("platform", {}).get("name") == d["name"] and now < cur.get("until", 0) and not self.pending:
             if cur["platform"].get("why") == "edge" and not d.get("maiden"):
                 self.departure = None  # (d20 batch57 S3) its edge shot is on air: that label stays
                 return
             maiden = d.get("maiden") or cur["platform"].get("maiden")  # (a plain departure never relabels a maiden)
-            cur["until"] = max(cur["until"], d["until"] if d.get("maiden") else now + self.cfg["depart_hold"])
+            cur["until"] = max(cur["until"], d["until"] if d.get("maiden") else now + hold)
             cur["platform"] = dict(cur["platform"], why="departure", maiden=maiden or None,
                                    label=d["label"] if d.get("maiden") or not maiden else cur["platform"]["label"])
             self.departure = None  # on air already (a visit, or the maiden flight's card on the same ship): stay
+            if "news" in d and not d.get("until"):
+                self.log_departure(d, "main", f"{d['why']}; already on air", now)
             return
+        if routine:
+            busy = self.routine_turn(d["route"], now)
+            if busy:
+                self.departure = None
+                self.routine_inset(d, f"{d['why']}; {busy}", scores, now, segment)
+                return
         if self.plat_busy(now, segment) and not (cur and cur.get("subject") == "@map"):
             return  # (the base map gives way to a departure)
-        t = self.platform_target(d["name"], "departure", d.get("until") or now + self.cfg["ready_s"] + self.cfg["depart_hold"],
+        t = self.platform_target(d["name"], "departure", d.get("until") or now + self.cfg["ready_s"] + hold,
                                  label=d["label"])
         self.departure = None
         if t:
             if d.get("maiden"):
                 t["platform"]["maiden"] = True
+            if routine:
+                self.routine_main.append((now, d["route"]))
+            if "news" in d and not d.get("until"):
+                self.log_departure(d, "main", d["why"], now)
             self.show_platform(t, scores, now)
+
+    def routine_inset(self, d, why, scores, now, segment=None):
+        """(AS1) A routine departure off the main camera: in the inset for depart_routine_hold when no inset is up and
+        nothing holds the program (a replay, a trio, a segment, a cut being framed), else not shown."""
+        cur = self.state.get(self.onair) or {}
+        sb = self.standbys()
+        busy = ("routine departures not in the inset (depart_inset)" if not self.cfg["depart_inset"]
+                else "an inset is up" if self.inset else "a replay or a trio" if self.hold_layout or self.mode != "onecam"
+                else "a segment" if segment else "a cut being framed" if self.pending or self.trio_pending
+                else "the ship is on air" if (cur.get("platform") or {}).get("name") == d["name"]
+                else "no client free for an inset" if len(sb) < 2 else None)
+        until = now + self.cfg["ready_s"] + self.cfg["depart_routine_hold"]
+        t = None if busy else self.platform_target(d["name"], "departure", until, label=d["label"])
+        if not t:
+            self.log_departure(d, "none", f"{why}; {busy or 'no view of the ship'}", now)
+            return
+        self.frame_on(sb[-1], t, f"inset departure: {d['label']}", scores, now)
+        self.inset = {"slot": sb[-1]["slot"], "until": until, "why": "departure", "platform": d["name"]}
+        self.log_departure(d, "inset", why, now)
 
     def watch_maiden(self, snapshot, now):
         """A maiden flight (model.py moment maiden_flight: a platform's first departure since it was built): the
