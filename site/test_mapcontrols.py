@@ -5,8 +5,8 @@ spot."): python3 site/test_mapcontrols.py
 
 static/mapview.js's Viewer under node in a stub DOM. The planet tabs are a row of their own (.mapview-planets: planet
 buttons only); the layers sit below in GROUPS (Terrain, Networks, Combat, Team), each under its label. A layer had once
-keeps its button and its place on a planet with none of it (disabled, "none on Aquilo now"); the item picker opens the
-Networks group on every planet, disabled where no networks map is read. Each layer's on/off stays across a planet
+keeps its button and its place on a planet with none of it (disabled, with why: AK10's "not read: ..." or "none: ...");
+the item picker opens the Networks group on every planet, disabled where no networks map is read. Each layer's on/off stays across a planet
 switch and a new page (the viewer's KEY-layers storage); a viewer that never had a networks map shows no Networks group.
 """
 import json, os, re, shutil, subprocess, sys, tempfile
@@ -139,7 +139,9 @@ def main():
     check("Gleba: the layer state kept across the switch", ("Networks", ["item", "power on", "robots"]) in gg, gg)
     check("Gleba: Nauvis-only layers disabled", ("Combat", ["coverage (disabled)", "nests (disabled)"]) in gg, gg)
     check("Aquilo: no networks map: the item picker disabled, in its place", ("Networks", ["item (disabled)", "power (disabled) on", "robots (disabled)"]) in ga, ga)
-    check("Aquilo: why disabled", 'title="Power networks: none on Aquilo now"' in o["aquilo"] and re.search(r'title="no networks map of Aquilo yet"[^>]*>(<option[^>]*>)?Item: -<', o["aquilo"]), o["aquilo"])
+    # (AK10) why: not read (no networks map in the state), never "none"
+    check("Aquilo: why disabled", 'title="Power networks: not read: the game has made no networks map of Aquilo (it has: Nauvis, Gleba)"' in o["aquilo"]
+          and re.search(r'title="Item: not read: the game has made no networks map of Aquilo \(it has: Nauvis, Gleba\)"[^>]*>(<option[^>]*>)?Item: -<', o["aquilo"]), o["aquilo"])
     check("Gleba's items", "Bioflux" in o["gleba"] and "Iron plate" not in o["gleba"], o["gleba"])
     # (d22 batch75 AK5) each group a box, its label over its buttons; the network toggles Power and Logistics, the full
     # names in their tooltips

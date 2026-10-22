@@ -54,16 +54,18 @@ def snapshot_tests():
                   "updated_tick": 50, "steps": ["[x] 1. Build it (done by sol, 2h01m ago)"]})
     m._ingest_board({"items": items, "open_unowned": 0})
     b = m.board_snapshot()
-    assert [p["id"] for p in b["projects"]] == [16, 15, 14, 13] and b["projects_total"] == 7, b["projects"]
-    assert [p["id"] for p in b["projects_more"]] == [12, 11, 10], b["projects_more"]
+    # (d22 batch75 AK11) those worked on (doing) first, then the blocked one, the latest changed first within each; the
+    # card shows every one worked on or blocked (all 7 here)
+    assert [p["id"] for p in b["projects"]] == [16, 15, 14, 13, 11, 10, 12] and b["projects_total"] == 7, b["projects"]
+    assert b["projects_more"] == [], b["projects_more"]
     assert [p["id"] for p in b["projects_done"]] == [30] and b["projects_done"][0]["status"] == "done", b["projects_done"]
     full = b["projects"][0]
     assert [s["text"] for s in full["steps"]] == ["First", "Second step", "Third step"] and "steps_partial" not in full, full
     assert full["steps"][1].get("next") and full["next"] == "Second step", full
     assert full["needs"] == {"iron-plate": 200} and full["handoff"].startswith("Coal belt") and "requested_by" not in full, full
-    partial = b["projects_more"][-1]
+    partial = b["projects"][5]
     assert partial["steps_partial"] is True and partial["requested_by"] == "sol" and partial["steps"][0]["text"] == "Second step", partial
-    assert b["projects_more"][0]["status"] == "blocked"
+    assert b["projects"][-1]["status"] == "blocked" and b["projects"][-1]["state"] == "blocked"
 
 
 def full_steps_tests():
