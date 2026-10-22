@@ -265,8 +265,8 @@ return function(api)
     -- as_of its tick; turrets and machines found and read now. With none yet: the census pass's (as_of its start),
     -- else all read now.
     local bt = belt_store()
-    local rec = bt[pl.index] or {}
-    bt[pl.index] = rec
+    local rec = pl.index and bt[pl.index] or {}
+    if pl.index then bt[pl.index] = rec end
     rec.wanted = game and game.tick or 0
     local idx = not rec.done and api.census_where and try(function() return api.census_where(f, s) end)
     local from = rec.done or idx
