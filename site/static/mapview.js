@@ -29,7 +29,7 @@
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
-    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power networks'], ['robots', 'Logistic networks'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
+    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power'], ['robots', 'Logistics'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
   var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
@@ -1009,6 +1009,11 @@
   // keeps its button and its spot (disabled where the surface shown has none of it), and the item picker opens the
   // Networks group on every planet (disabled where no networks map is read), so a planet switch or a push moves nothing.
   // Each layer's on/off is the viewer's (store: KEY-layers), across planet switches and reloads.
+  // (d22 batch75 AK5, viewer Aurora: "compact the toolbar: Terrain + Networks in one row, Combat + Team below. Narrow the
+  // item picker, use Power/Logistics labels, keep planets separate and wrap groups on small screens") the groups two to
+  // a row, each label over its buttons (style.css .mapview-groups: one a row when the toolbar is narrow); the network
+  // toggles say Power and Logistics, their full names (LONG) in the tooltip and the disabled reason.
+  var LONG = { power: 'Power networks', robots: 'Logistic networks' };
   var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
     ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
   Viewer.prototype.renderLayers = function () {
@@ -1031,8 +1036,8 @@
       surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '') + (had.item ? '|item' : '');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
-    var byKey = {};
-    LAYERS.forEach(function (l) { byKey[l[0]] = l[1]; });
+    var byKey = {}, short = {};
+    LAYERS.forEach(function (l) { byKey[l[0]] = LONG[l[0]] || l[1]; short[l[0]] = l[1]; });
     var planets = surfaces.length ? '<div class="mapview-planets" role="group" aria-label="Planet">' + surfaces.map(function (x) {
       return '<button type="button" class="fx-btn small mapview-surface" data-surface="' + esc(x.surface) + '" aria-pressed="' + (self.surface === x.surface ? 'true' : 'false') + '">' + esc(x.text) + '</button>';
     }).join('') + '</div>' : '';
@@ -1040,17 +1045,18 @@
       var keys = g[2].filter(function (k) { return had[k]; }), item = g[0] === 'networks' && had.item;
       if (!keys.length && !item) return '';
       var buttons = keys.map(function (k) {
-        var text = k === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : k === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : byKey[k];
+        var text = k === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : k === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : short[k];
         var here = has(self.d, k);
-        return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled title="' + esc(byKey[k] + ': none on ' + where + ' now') + '"') +
+        var title = here ? LONG[k] : byKey[k] + ': none on ' + where + ' now';
+        return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled') + (title ? ' title="' + esc(title) + '"' : '') +
           ' data-layer="' + k + '" aria-pressed="' + (self.on[k] ? 'true' : 'false') + '">' + esc(text) + '</button>';
       }).join('');
       var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled') +
         ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: none</option>' + names.map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
         }).join('') : '<option value="">Item: no networks map of ' + esc(where) + ' yet</option>') + '</select>';
-      return '<span class="mapview-group-label" aria-hidden="true">' + esc(g[1]) + '</span><div class="mapview-group" data-group="' + g[0] +
-        '" role="group" aria-label="' + esc(g[1]) + ' layers">' + pick + buttons + '</div>';
+      return '<div class="mapview-gbox"><span class="mapview-group-label" aria-hidden="true">' + esc(g[1]) + '</span><div class="mapview-group" data-group="' + g[0] +
+        '" role="group" aria-label="' + esc(g[1]) + ' layers">' + pick + buttons + '</div></div>';
     }).join('');
     box.innerHTML = planets + (groups ? '<div class="mapview-groups">' + groups + '</div>' : '');
   };
