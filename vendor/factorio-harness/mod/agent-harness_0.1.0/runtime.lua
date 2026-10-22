@@ -16095,7 +16095,7 @@ do local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true
 function M.queue_waits(action,kind)
   return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
 end
-end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
+end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,

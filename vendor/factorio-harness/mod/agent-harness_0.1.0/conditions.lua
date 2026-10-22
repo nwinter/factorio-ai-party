@@ -532,6 +532,115 @@ return function(api)
       return n>=want,string.format('platform %s: %d of ours lost since tick %d%s: %s%s',c.platform,n,holder.loss_since,
         n<want and string.format(' (met at %d)',want) or '',table.concat(parts,', '),n>#rows and string.format(', +%d more',n-#rows) or '')
     end,
+    -- (d22 batch92 BB1, Sol #1884: platform_loss fires only once something is destroyed, and medium asteroid impacts
+    -- can cascade before the next flight_watch read; BB2, Astra #1886: damage, as a repaired hit leaves no damaged
+    -- entity to find) hits on our entities on a platform since the wait or guard began (since_tick, default its first
+    -- check, kept on the wait or the condition), by anything not of our force (asteroids, enemies), as the platform's hit
+    -- alerts count them (platalerts.lua, one ring row a hit, with the platform's damage total after it): met at at_least
+    -- hits or at damage summed, whichever is given first reached (neither: the first hit), on entity_names when given;
+    -- saw names the first hits (what, where, damage, by what, when), kept on the condition (a fired guard's evidence).
+    -- Each check reads only the hits since the one before.
+    platform_hit=function(p,c,estimate,record)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+      local holder=record or c
+      holder.hit_since=holder.hit_since or c.since_tick or game.tick
+      local r,size
+      if api.platform_hits then r,size=api.platform_hits(pl) end
+      local seq,ring=r and r.seq or 0,r and r.ring or {}
+      local total=r and r.total and r.total.damage or 0
+      size=size or 64
+      local function row(s) local x=ring[(s-1)%size+1]; if x and x.s==s then return x end end
+      if holder.hit_seq==nil then
+        -- the hits already after since_tick, back through the ring; older than the ring holds: counted from its oldest
+        local s=seq
+        while s>0 and s>seq-size do
+          local x=row(s)
+          if not x or x.t<=holder.hit_since then break end
+          s=s-1
+        end
+        local after=row(s+1)
+        holder.hit_seq,holder.hit_read,holder.hit_n,holder.hit_d,holder.hit_first=s,s,0,0,{}
+        holder.hit_d0=after and after.D and after.D-after.d or total
+        holder.hit_older=s>0 and s==seq-size and after~=nil or nil
+      end
+      local names
+      if c.entity_names then names={}; for _,n in ipairs(c.entity_names) do names[n]=true end end
+      local from=holder.hit_read+1
+      -- more hits between two checks than the ring holds: the overwritten ones are counted, not named
+      if seq-from+1>size then holder.hit_unread=(holder.hit_unread or 0)+(seq-size-from+1); from=seq-size+1 end
+      for s=from,seq do
+        local x=row(s)
+        if x and (not names or names[x.n]) then
+          holder.hit_n,holder.hit_d=holder.hit_n+1,holder.hit_d+(x.d or 0)
+          if #holder.hit_first<4 then holder.hit_first[#holder.hit_first+1]={t=x.t,n=x.n,x=x.x,y=x.y,d=x.d,c=x.c,k=x.k} end
+        end
+      end
+      holder.hit_read=math.max(holder.hit_read,seq)
+      local n=names and holder.hit_n or seq-holder.hit_seq
+      local dmg=names and holder.hit_d or math.max(0,total-holder.hit_d0)
+      local function g(v) return math.floor(v*10+0.5)/10 end
+      local met
+      if c.at_least==nil and c.damage==nil then met=n>=1
+      else met=(c.at_least~=nil and n>=c.at_least) or (c.damage~=nil and dmg>=c.damage) end
+      local goal={}
+      if c.at_least then goal[#goal+1]=c.at_least..' hit'..(c.at_least==1 and '' or 's') end
+      if c.damage then goal[#goal+1]=string.format('%g damage',g(c.damage)) end
+      local older=holder.hit_older and ' (the ring keeps the last '..size..' hits: earlier ones since then not counted)' or ''
+      local unread=names and holder.hit_unread and string.format(' (%d more hits came between two checks, not read by name)',holder.hit_unread) or ''
+      if n==0 then return false,string.format('platform %s: no hit on ours%s since tick %d%s%s',c.platform,names and ' of those names' or '',holder.hit_since,older,unread) end
+      local parts={}
+      for _,x in ipairs(holder.hit_first) do
+        parts[#parts+1]=string.format('%s (%g,%g) %g damage %s %ds ago',x.n,math.floor(x.x*2+0.5)/2,math.floor(x.y*2+0.5)/2,g(x.d or 0),
+          x.c and 'by '..x.c or x.k and '('..x.k..', no cause)' or '(no cause)',math.floor((game.tick-x.t)/60))
+      end
+      return met,string.format('platform %s: %d hit%s, %g damage, on ours%s since tick %d%s, first: %s%s%s%s',c.platform,n,n==1 and '' or 's',g(dmg),
+        names and ' of those names' or '',holder.hit_since,not met and #goal>0 and ' (met at '..table.concat(goal,' or ')..')' or '',
+        #parts>0 and table.concat(parts,', ') or 'none kept',n>#parts and string.format(', +%d more',n-#parts) or '',older,unread)
+    end,
+    -- (d22 batch92 BB3, Astra #1887: a probe flight turned back at a share of its outer leg, whatever its speed) the
+    -- share of its leg a platform has flown, as the platforms read gives it (freight.lua leg: from and to in the
+    -- direction it flies), met at at_least; on the leg asked only (from, to), so a return leg, another leg or a stop
+    -- never meets it, said in saw. When met, the progress and the leg are kept on the condition (a fired guard's
+    -- evidence).
+    platform_progress=function(p,c,estimate,record)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      assert(pl,'no platform of ours named '..tostring(c.platform))
+      local holder=record or c
+      local asked=(c.from or c.to) and string.format(' (asked: %s->%s)',c.from or 'any',c.to or 'any') or ''
+      local l=api.leg and api.leg(pl)
+      if not l then
+        local at
+        pcall(function() at=pl.space_location and pl.space_location.name end)
+        return false,string.format('platform %s: not flying (%s): not counted%s',c.platform,at and 'at '..at or 'no space location',asked)
+      end
+      local pct=math.floor(l.flown*1000+0.5)/10
+      if (c.from and l.from~=c.from) or (c.to and l.to~=c.to) then
+        return false,string.format('platform %s: flying %s->%s, %g%% flown: not the leg asked, not counted%s',c.platform,l.from,l.to,pct,asked)
+      end
+      local met=l.flown>=c.at_least
+      if met then holder.evidence={tick=game.tick,from=l.from,to=l.to,flown=math.floor(l.flown*1000+0.5)/1000,length_km=math.floor((l.length or 0)+0.5)} end
+      return met,string.format('platform %s: flying %s->%s, %g%% of %d km flown (met at %g%%)',c.platform,l.from,l.to,pct,math.floor((l.length or 0)+0.5),
+        math.floor(c.at_least*1000+0.5)/10)
+    end,
+    -- (d22 batch92 BB2, Astra #1886: a probe flight's retreat when its power reserve drops) a platform's accumulators
+    -- together: the energy they hold over what they can hold, as each one's GUI shows them; met under fraction. Found
+    -- and read at each check (a platform holds tens of them).
+    platform_energy_below=function(p,c)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+      local stored,cap,n=0,0,0
+      for _,e in ipairs(pl.surface.find_entities_filtered{type='accumulator',force=p.force}) do
+        n=n+1; stored=stored+(e.energy or 0); cap=cap+(e.electric_buffer_size or 0)
+      end
+      if n==0 or cap<=0 then return false,string.format('platform %s: no accumulator of ours',c.platform) end
+      local f=stored/cap
+      return f<c.fraction,string.format('platform %s: %d accumulator%s hold %.1f of %.1f MJ (%d%%; met under %d%%)',c.platform,n,n==1 and '' or 's',
+        stored/1e6,cap/1e6,math.floor(f*100),math.floor(c.fraction*100+0.5))
+    end,
     -- A platform's foundation built (Astra, d15 06:23: ship conversions ran in the body queue with an outside tile
     -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either.
     platform_built=function(p,c)
@@ -707,9 +816,9 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
-  M.ALIASES={silo_parts='rocket_parts'}
+  M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
   -- conditions=[...]} met when each is; saw joins theirs. Members are plain conditions.
   checks.platform_ready=checks.platform_built
@@ -724,7 +833,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_energy_below, platform_progress, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -876,6 +985,25 @@ return function(api)
       assert(c.names==nil or (type(c.names)=='table' and #c.names>=1 and #c.names<=16),'platform_loss names: 1..16 entity names')
       for _,n in ipairs(c.names or {}) do assert(type(n)=='string','platform_loss names are entity names') end
       assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_loss since_tick is a game tick up to now')
+    end
+    if kind=='platform_hit' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_hit requires platform (a platform of ours by name)')
+      if c.at_least~=nil then number(c.at_least,1,1000,'at_least') end
+      assert(c.entity_names==nil or (type(c.entity_names)=='table' and #c.entity_names>=1 and #c.entity_names<=16),'platform_hit entity_names: 1..16 entity names')
+      for _,n in ipairs(c.entity_names or {}) do assert(type(n)=='string' and prototypes.entity[n],'platform_hit entity_names: '..tostring(n)..' is no entity name') end
+      assert(c.since_tick==nil or (type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),'platform_hit since_tick is a game tick up to now')
+      if c.damage~=nil then number(c.damage,0.1,1e9,'damage') end
+    end
+    if kind=='platform_progress' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_progress requires platform (a platform of ours by name)')
+      assert(type(c.at_least)=='number' and c.at_least>0 and c.at_least<=1,'platform_progress at_least: the share of the leg flown, over 0 and up to 1 (0.2: 20%)')
+      for _,k in ipairs({'from','to'}) do
+        assert(c[k]==nil or (type(c[k])=='string' and prototypes.space_location[c[k]]),'platform_progress '..k..': a planet or space location name')
+      end
+    end
+    if kind=='platform_energy_below' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_energy_below requires platform (a platform of ours by name)')
+      assert(type(c.fraction)=='number' and c.fraction>0 and c.fraction<=1,'platform_energy_below fraction: the share of the accumulators\' capacity, over 0 and up to 1 (0.3: under 30%)')
     end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
