@@ -182,7 +182,9 @@ def live_tests():
     texts = [(c, re.sub(r"<[^>]+>", "", body)) for c, body in items]
     i_q = next(i for i, (_, t) in enumerate(texts) if "why is steel stopped?" in t)
     assert "c-agent c-thread" in texts[i_q + 1][0] and "Foobator, the steel line is stopped." in texts[i_q + 1][1], texts
-    assert "--ac:#3fa7ff" in html and "REPLY" in texts[i_q + 1][1] and "Grok" in texts[i_q + 1][1] and "↩ Foobator" in texts[i_q + 1][1]
+    # (d22 batch75 AK8) threaded under its line: a compact header (no REPLY tag, no quote of the line above), Details
+    assert "--ac:#3fa7ff" in html and "REPLY" not in texts[i_q + 1][1] and "Grok" in texts[i_q + 1][1] and "↩ Foobator" in texts[i_q + 1][1]
+    assert "↪" not in texts[i_q + 1][1] and 'class="c-details-btn"' in items[i_q + 1][1], items[i_q + 1]
     i_v = next(i for i, (_, t) in enumerate(texts) if "Viewers, fair point." in t)
     assert "TO VIEWERS" in texts[i_v][1] and "c-thread" not in texts[i_v][0], texts[i_v]
     i_op = next(i for i, (_, t) in enumerate(texts) if "Operator: thanks" in t)

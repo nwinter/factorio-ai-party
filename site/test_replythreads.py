@@ -12,6 +12,9 @@ static/live.js under node (test_sitechat.py's stub page and worker, with these s
 - on each line answered, its reply count, a button to the first reply;
 - a reply threads under its first line when that line is at most 20 minutes older; a reply to an older line stays in
   time order at the bottom with its quote (no conversation pulled apart);
+- (AK8, site:4249/4250) a threaded reply has no quote of the line it sits under, a compact header (no REPLY tag) and a
+  Details button (to whom, each line it answers with its id and delivery, how it was linked), closed by default; a reply
+  standing alone keeps its quotes; counts inline ("· 2 replies");
 - a reply from the last ten minutes is marked new; an older one is not.
 """
 import json, os, re, shutil, subprocess, tempfile, time
@@ -71,23 +74,34 @@ def main():
     check("conversations kept together", at("c-s4") == at("c-a22") + 1 and at("c-yyt:Ugx1") > at("c-s4"), ids)
     # an old line's reply stays at the bottom, in time order
     check("a reply to an old line: in time order", at("c-a23") > at("c-yyt:Ugx1") and "c-thread" not in cls["c-a23"], ids)
-    # quotes: one button per line answered, to its key
-    q = re.findall(r'<button type="button" class="c-quote" data-jump="([^"]+)"[^>]*>([^<]*)</button>', body["c-a21"])
-    check("three quotes, each a jump", [k for k, _ in q] == ["s3", "s4", "yyt:Ugx1"], q)
-    check("quote text", q[0][1] == "↪ Foobator: “is the south wall closed?”" and q[2][1] == "↪ Aurora: “the north?”", q)
-    check("found by id, other words", re.search(r'data-jump="s3"', body["c-a22"]), body["c-a22"])
+    # quotes: one button per line answered, to its key; (AK8) threaded right under its line, that line's quote is not
+    # repeated (the others stay)
+    quotes = lambda i: re.findall(r'<button type="button" class="c-quote" data-jump="([^"]+)"[^>]*>([^<]*)</button>', body[i])  # noqa: E731
+    q = quotes("c-a21")
+    check("threaded: the other lines' quotes, each a jump", [k for k, _ in q] == ["s4", "yyt:Ugx1"], q)
+    check("quote text", q[0][1] == "↪ Aurora: “and the west one?”" and q[1][1] == "↪ Aurora: “the north?”", q)
+    check("threaded: no quote of its own line", quotes("c-a22") == [] and "↪" not in text("c-a22"), body["c-a22"])
+    det = lambda i: re.sub(r"<[^>]+>", "|", re.search(r'<span class="c-details[^"]*" id="cd-[^"]+"[^>]*>(.*?)</span>(?=<span class="c-text">)', body[i]).group(1))  # noqa: E731
+    check("found by id, other words (its Details)", "answers Foobator (site:3)" in det("c-a22") and "linked by name" in det("c-a22"), det("c-a22"))
+    # (AK8) a standalone reply keeps its quote as a context link; every reply a Details button, closed by default
+    check("standalone: the quote, a jump", [k for k, _ in quotes("c-a23")] == ["s1"] and "c-alone" in cls["c-a23"], body["c-a23"])
+    check("Details on every reply", all(re.search(r'<button type="button" class="c-details-btn" data-det="%s" aria-expanded="false"' % i[3:], body[i])
+                                        and re.search(r'id="cd-%s" hidden' % i[3:], body[i]) for i in ("c-a20", "c-a21", "c-a22", "c-a23", "c-a24")), body["c-a21"])
+    check("Details: to whom, each line with its id, how linked", all(x in det("c-a21") for x in ("to Foobator, Aurora", "answers Foobator (site:3)",
+                                                                                                "answers Aurora (yt:Ugx1)", "linked by the reply itself")), det("c-a21"))
+    check("compact header: no REPLY tag threaded, kept alone", "REPLY" not in text("c-a21") and "REPLY" in text("c-a23"), (text("c-a21"), text("c-a23")))
     check("a line not shown: the quote alone", 'class="c-quote c-quote-away' in body["c-a24"] and "data-jump" not in body["c-a24"]
           and "↪ Lee: “is the mall stocked?”" in text("c-a24"), body["c-a24"])
     # counts on the lines answered, each a button to the first reply
-    cnt = lambda i: re.findall(r'<button type="button" class="c-replies" data-jump="([^"]+)">([^<]+)</button>', body[i])  # noqa: E731
-    check("Foobator's: 2 replies", cnt("c-s3") == [("a21", "2 replies")], cnt("c-s3"))
-    check("Aurora's site line: 1", cnt("c-s4") == [("a21", "1 reply")] and cnt("c-yyt:Ugx1") == [("a21", "1 reply")], (cnt("c-s4"), cnt("c-yyt:Ugx1")))
-    check("Caleb's old line: 1", cnt("c-s1") == [("a23", "1 reply")], cnt("c-s1"))
+    cnt = lambda i: re.findall(r'<button type="button" class="c-replies" data-jump="([^"]+)"[^>]*>([^<]+)</button>', body[i])  # noqa: E731
+    check("Foobator's: 2 replies", cnt("c-s3") == [("a21", "· 2 replies")], cnt("c-s3"))
+    check("Aurora's site line: 1", cnt("c-s4") == [("a21", "· 1 reply")] and cnt("c-yyt:Ugx1") == [("a21", "· 1 reply")], (cnt("c-s4"), cnt("c-yyt:Ugx1")))
+    check("Caleb's old line: 1", cnt("c-s1") == [("a23", "· 1 reply")], cnt("c-s1"))
     # new replies marked
     check("new", "c-new" in cls["c-a21"] and ">new<" in body["c-a21"] and "c-new" not in cls["c-a20"], (cls["c-a21"], cls["c-a20"]))
     check("linked by name", "linked by name: Foobator's open line to" in text("c-a22"), text("c-a22"))
-    print("reply threads: ok (lines found by id; quotes that jump; reply counts; recent exchanges threaded, older replies in "
-          "time order; new replies marked)")
+    print("reply threads: ok (lines found by id; quotes that jump, none of the line a reply is threaded under; Details on "
+          "every reply; reply counts inline; recent exchanges threaded, older replies in time order; new replies marked)")
 
 
 if __name__ == "__main__":
