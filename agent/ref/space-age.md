@@ -308,6 +308,10 @@
   oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them. The
   setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
   two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
+  Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
+  `now`) and each railgun (`railguns`): energy least, at the start and now; samples, runs and the longest run below a
+  shot's energy (its full 10 MJ buffer; refilled at 10 MW, 60 ticks from empty); `hits`, `shots_hit` (ticks it hit
+  something), `damage` and `kills` from the game's events.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and

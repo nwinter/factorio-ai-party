@@ -11018,6 +11018,39 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   - Cost on the copy (x86 under Rosetta): a sample 0.05-0.08 ms with 6 turrets, peaks 0.16-0.28 ms when it asks for
     a trace or looks for new turrets. A full read is 7.6-8.7 ms against 3.6-7.7 ms for `clock` by the same dispatch;
     the list is 5.8 ms.
+- d22 batch98 BH1 (Astra #1900: proof that all 23 of Asterion's railguns recharge under huge-asteroid load; the watch
+  read ammunition and damage, and the energy guard only the accumulators together). Read only; runtime deploy needed.
+  - Each sample (`sample_ticks`: 60, also in the line: `one every 60 ticks`) also reads:
+    - the platform's accumulators together, their energy over their buffers (found with the turrets, at the start and
+      each minute; at most 1024): `accumulators {count, least_fraction, least_tick, at_start, now}`;
+    - each ammo turret with an electric buffer (railguns): its energy.
+  - Each railgun's row in `railguns` (all of them, up to 64, the longest run below a shot's energy first), with a line
+    each in `railgun_lines`: `shot_energy`, `least_energy` and its tick, `energy_at_start`, `energy_now`,
+    `below_samples`, `below_ticks`, `below_runs`, `longest_below_ticks` and its start, `below_now`, `hits`, `shots_hit`,
+    `damage`, `kills`. The watch's line and the end alert add one phrase for the accumulators and one for the railguns.
+  - A shot's energy: 2.0.77 gives no `energy_per_shot` on the prototype (`get_max_energy_usage` is the 10 MW input
+    limit). In the game's data, railgun-turret has `buffer_capacity` 10 MJ and `energy_per_shot` 10 MJ, so below a
+    shot's energy means under its full buffer (each turret's own `electric_buffer_size`).
+  - Hits, damage and kills: on_entity_damaged and on_entity_died with a watched railgun as cause, on anything not of
+    our force, as asteroidwatch.lua reads turret hits. `shots_hit` counts the ticks a railgun hit something: one shot
+    hits everything on its line in one tick. A shot that hits nothing is not counted.
+- On the private copy (world n's 13:20 autosave; Asterion stopped at Aquilo, 23 railguns, 160 accumulators, 95 ammo
+  turrets):
+  - Polled each tick while one railgun fired: 10 MJ before the shot, 166,667 J on the next tick, then +166,667 J a tick
+    (10 MW), full 60 ticks later. A once-a-second sample sees nearly every shot on full power, and longer runs when power
+    is short.
+  - 12 huge-metallic-asteroids spawned in front (my copy only): the watch read 6 shots that hit, 20 hits, 381,200
+    damage and 20 kills over 4 railguns. Each was below a shot's energy in 1-2 samples (least 5.5-6.2 MJ, runs of 60
+    ticks). The other 19 never were. The accumulators stayed at 100%.
+  - Cost, profile_ticks 60 s with a watch running on Asterion:
+    - `flightwatch.tick` 40.2 ms over the 60 samples before (the save's runtime, 0.67 ms a sample, worst second 2.7 ms)
+      and 46.0 ms after (0.77 ms a sample, worst second 2.4 ms). So about 0.1 ms a sample for 160 accumulators and 23
+      railguns, 0.002 ms a tick.
+    - The damage hook, the handler's body timed over 10,000 calls: 1.8 us for a watched railgun's hit, 0.4 us for any
+      other damage event while a watch with railguns runs. With none watched, it returns at its first check.
+  - Tests: tests/d22_batch98.lua (accumulators' least and its tick, a railgun's runs below a shot's energy, hits,
+    shots, damage and kills from events, a hit on our own force and a gun turret's hit not counted, the end alert, the
+    event index emptied at the end, a platform with neither); tests/d21_batch72.lua (the start line).
 ## d21 batch66 AB7 (eng/d20-batch66)
 
 AB7 (viewer Aurora, 17:03 PDT: "Could delivery_watch record count, spoilage buckets and tick at pod landing, linked to
