@@ -1253,6 +1253,45 @@ end
 -- it aims at, or the fixed spot of a shoot at a position), fired_tick (the last tick it fired at something: an enemy in
 -- range, or the fixed spot), kills_10s (kills by the character or its vehicle in the last 10 s) and hurt (hurt_row).
 -- A shoot auto with nothing in range has no target and no recent fired_tick.
+-- (d22 batch93 BC2, viewer Foobator 13:33: "could the camera on spidertrons zoom out a bit more when rockets are fired?
+-- half the action is not on cam") While the character drives a spidertron: its guns' reach (the prototype's longest
+-- gun range; 2.0.77: four rocket launchers, 36 tiles), the rockets loaded, and the enemies within that reach, which it
+-- fires at on its own: how many (up to 64), the farthest and nearest distance, their box. One bounded find, only seated
+-- in a spidertron; nil otherwise. The stream's director frames them (onecam.py).
+local spider_range={}
+function M.vehicle_fire(p)
+  local v=p.driving and p.vehicle
+  if not (v and v.valid and v.type=='spider-vehicle') then return nil end
+  local range=spider_range[v.name]
+  if not range then
+    range=0
+    for _,g in pairs(v.prototype.guns or {}) do
+      local ok,r=pcall(function() return g.attack_parameters.range end)
+      if ok and type(r)=='number' and r>range then range=r end
+    end
+    spider_range[v.name]=range
+  end
+  local inv=v.get_inventory(defines.inventory.spider_ammo)
+  local out={vehicle=v.name,unit_number=v.unit_number,range=range,ammo=inv and inv.get_item_count() or 0,targets=0}
+  if range<=0 then return out end
+  local pos=v.position
+  local found=v.surface.find_entities_filtered{force='enemy',position=pos,radius=range,type={'unit','unit-spawner','turret','segmented-unit','spider-unit'},limit=64}
+  local far,near,l,t,r,b=0,nil
+  for _,e in ipairs(found) do
+    local q=e.position
+    local d=((q.x-pos.x)^2+(q.y-pos.y)^2)^0.5
+    if d>far then far=d end
+    if not near or d<near then near=d end
+    l=l and math.min(l,q.x) or q.x; t=t and math.min(t,q.y) or q.y; r=r and math.max(r,q.x) or q.x; b=b and math.max(b,q.y) or q.y
+  end
+  out.targets=#found
+  if #found>0 then
+    out.farthest=math.floor(far*10+0.5)/10; out.nearest=math.floor(near*10+0.5)/10
+    out.box={left_top={x=math.floor(l),y=math.floor(t)},right_bottom={x=math.ceil(r),y=math.ceil(b)}}
+    out.more=#found>=64 or nil
+  end
+  return out
+end
 function M.combat_row(index,p)
   local combat=state().combat and state().combat[index]
   if not combat then return false end
@@ -2258,7 +2297,7 @@ function handlers.describe(_,a)
     local d=description.actions[name]
     if d then d.clear_obstacles='optional true: the trees and rocks in the entries\' footprints are marked for deconstruction, those in reach mined by hand (a timed construct over them), the rest left to the construction robots; once all are gone the call runs again (watched 10 min; last.cleared); none in the way: the call runs at once (cleared says so); returns cleared, mining, robots, then_runs. The dry run lists them in trees_rocks' end
   end
-  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
+  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, vehicle_fire (seated in a spidertron: its guns\' range, rockets loaded, and the enemies within range it fires at: targets, farthest, nearest, box), alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   -- (d20 batch70 AF3, viewer Aurora: "Sonnet's plan still says free while sampling Cinder") the site's agent cards
   -- (d20 batch70 AF4, Astra #1718) inspect of a logistic or construction robot
@@ -2711,6 +2750,7 @@ function handlers.status(p,a)
   if a.brief==true then
     return {brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,flight=alive and M.flight_row(p) or nil,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
+      vehicle_fire=alive and (function() local ok,v=pcall(M.vehicle_fire,p); return ok and v or nil end)() or nil,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
       alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),
@@ -6269,7 +6309,7 @@ local function placement_error(p,proto,pos,direction,near)
   local ok_fix,fixes=pcall(function() return not ruled and M.dryrun and M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction) end)
   for _,f in ipairs(ok_fix and fixes or {}) do
     if not tiles[f.tile] then tiles[f.tile]=true; tiles[#tiles+1]=f.tile end
-    local item=f.item or f.locked
+    local item=f.item or f.locked or f.two
     if item and not items[item] then items[item]=true; items[#items+1]=item end
   end
   for _,tile in pairs(#tiles==0 and not ruled and p.surface.find_tiles_filtered{area=area,limit=16} or {}) do
@@ -14244,7 +14284,16 @@ local function place_ghost(p,spec)
     direction=sig.direction
   elseif spec.rail_layer~=nil then error('rail_layer goes with rail signals and chain signals',0) end
   if not sig and not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
-    error(placement_error(p,proto,pos,direction),0)
+    -- (d22 batch95 BE1, Astra #1892: a decider on Aquilo's rough ice) tiles a forced placement does not lay (concrete;
+    -- ice platform then concrete): tile entries before it lay their ghosts first, and the game takes its ghost over them
+    local err=placement_error(p,proto,pos,direction)
+    if err:find(' by tiles: ',1,true) then
+      local okf,fx=pcall(M.dryrun.tile_fixes,p.surface,p.force,proto,pos,direction)
+      local f=okf and fx and fx[1]
+      local what=f and (f.item or f.two)
+      if what then err=err..'; '..what..' as tile entries ({name, position}) before it in this place_ghosts call lay those tile ghosts first, and the game takes its ghost over them' end
+    end
+    error(err,0)
   end
   -- Tiles it cannot stand on (water, Gleba wetland): the forced ghost check
   -- takes them once the force has landfill, because a player's forced
@@ -14271,7 +14320,7 @@ local function place_ghost(p,spec)
     for _,b in ipairs(blockers or {}) do if not b.obstacle then others[#others+1]=b end end
     if not f.result or #others>0 or (blockers and #blockers==0) then
       error(string.format('placement blocked by tiles: %s at (%g,%g)%s',f.tile,f.x,f.y,
-        f.locked and ' (needs '..f.locked..')' or #others>0 and ': its '..f.item..' is blocked by '..table.concat(M.dryrun.blocker_texts({others}),', ')
+        f.locked and ' (needs '..f.locked..')' or f.two and ' (needs '..f.two..': as tile entries before it)' or #others>0 and ': its '..f.item..' is blocked by '..table.concat(M.dryrun.blocker_texts({others}),', ')
         or f.result and ' (the game refuses '..f.item..' there)' or ' (no tile item makes it buildable)'),0)
     end
   end
@@ -15906,6 +15955,9 @@ function M.dry_verdict(out,a)
     if e.status=='exists' then exists=exists+1; first_exists=first_exists or string.format('#%s %s (%g,%g)',tostring(e.index),tostring(e.name),e.position and e.position.x or 0,e.position and e.position.y or 0) end
   end
   if exists>0 then parts[#parts+1]=string.format('%d entr%s where ours stands already (%s)',exists,exists==1 and 'y' or 'ies',first_exists) end
+  -- (d22 batch95 BE1, Astra #1892) entries on tiles the game refuses them on, whose tiles place_ghosts does not lay
+  local untiled=out.refused_until_tiles or 0
+  if untiled>0 then parts[#parts+1]=string.format('%d entr%s the game refuses on the tiles there now, with no tile entry before %s (%s)',untiled,untiled==1 and 'y' or 'ies',untiled==1 and 'it' or 'them',tostring(out.refused_until_tiles_first)) end
   local recipes=#(out.recipes_refused or {})
   if recipes>0 then parts[#parts+1]=string.format('%d refused for the recipe (%s)',recipes,out.recipes_refused[1]) end
   -- (d20 batch76 AL2, Sol #1752) foundation tiles the real call refuses in front of asteroid collectors
