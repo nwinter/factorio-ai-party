@@ -376,27 +376,41 @@ def public_basemap(bm):
             out[k] = pack(bm[k])
     return out
 _planet_turn = {"i": 0}
+PLANET_MAPS_BYTES = 24 * 1024  # (d22 batch75 AK1) the other planets' maps sent beside the one in turn, at most
 
 
-def public_planets(maps):
-    """The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05): planets [{surface, tick, buildings}]
-    for all of them, and planet_map, one of them in turn each push (the page keeps the ones it has seen): one grid of
-    at most 128x128 letters a push instead of all."""
-    if not isinstance(maps, dict) or not maps:
-        return None, None
-    names = sorted(k for k, m in maps.items() if isinstance(m, dict) and isinstance(m.get("rows"), list))
-    if not names:
-        return None, None
-    listing = [{"surface": n, "tick": maps[n].get("tick"), "buildings": maps[n].get("buildings")} for n in names]
-    name = names[_planet_turn["i"] % len(names)]
-    _planet_turn["i"] += 1
-    m = maps[name]
+def public_planet_map(m, name):
     out = pack({k: m[k] for k in PLANET_MAP_KEYS if k in m} | {"surface": name})
     if isinstance(m.get("core"), dict) and isinstance(m["core"].get("rows"), list) and m["core"]["rows"]:
         out["core"] = fitted({k: m["core"][k] for k in CORE_KEYS if k in m["core"]})  # (AD1) its footprints, as Nauvis's core
     else:
         out.pop("core", None)
-    return listing, out
+    return out
+
+
+def public_planets(maps, limit=PLANET_MAPS_BYTES):
+    """The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05): planets [{surface, tick, buildings}]
+    for all of them, planet_map, one of them in turn each push, and (d22 batch75 AK1, viewer Aurora: "Planet buttons
+    and network layers disappear between refreshes") planet_maps {surface: map}, the others after it in turn while
+    they fit limit bytes, so a page just loaded has every planet's buttons and map at once (packed, a planet's map is
+    2-4 KB; the page keeps the ones it has seen)."""
+    if not isinstance(maps, dict) or not maps:
+        return None, None, None
+    names = sorted(k for k, m in maps.items() if isinstance(m, dict) and isinstance(m.get("rows"), list))
+    if not names:
+        return None, None, None
+    listing = [{"surface": n, "tick": maps[n].get("tick"), "buildings": maps[n].get("buildings")} for n in names]
+    i = _planet_turn["i"] % len(names)
+    _planet_turn["i"] += 1
+    out = public_planet_map(maps[names[i]], names[i])
+    others, room = {}, limit
+    for name in names[i + 1:] + names[:i]:
+        m = public_planet_map(maps[name], name)
+        size = len(json.dumps(m, separators=(",", ":"))) + len(name) + 4
+        if size > room:
+            break
+        others[name], room = m, room - size
+    return listing, out, others or None
 
 
 NET_MAP_BYTES = 20 * 1024  # (d21 batch68 AD3) a planet's networks map a push at most (one planet a push, in turn)
@@ -532,9 +546,11 @@ def public_library_areas(la):
 
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
-    planets, planet_map = public_planets(s.get("planet_maps"))
+    planets, planet_map, others = public_planets(s.get("planet_maps"))
     if planets:
         out["planets"], out["planet_map"] = planets, planet_map
+    if others:
+        out["planet_maps"] = others
     if "basemap" in out:
         out["basemap"] = public_basemap(out["basemap"])
     areas = public_library_areas(s.get("library_areas"))
