@@ -19,3 +19,9 @@ runs/*/tokens.json
 
 # ./fh more pages (live game state)
 .fh-more.txt
+
+# d22 09:40 (operator): agy (Gemini's harness) runs `git ls-files --others --exclude-standard` at a fresh session and
+# loads every untracked file: runs/ held 645,583 files (15 GB) and one agy turn grew to 21 GiB and filled the Mac's
+# swap (tools/agy_memguard.py is the backstop). runs/ is never committed; .wrangler/ is the site worker's local state.
+runs/
+.wrangler/
