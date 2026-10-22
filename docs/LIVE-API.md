@@ -173,6 +173,20 @@ under one shot's energy; amber) or unknown (`u`: not read since the last full pa
 stream service reads every Nauvis turret in the basemap's defence cells, a pass at most once a minute, one command an
 observe of at most 120 turrets (2.4 ms on world n, 7.0 ms on the d17 headless copy). `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
 left, `x1`, `y1` its bottom right), older frames first, under everything else; `src` must be a site path or an https URL.
+(d22 batch75 AK9, viewer Aurora site:4272: "Terrain is blank north of the base where Opus explored. Please trace charting,
+capture and publishing, then make newly charted areas appear automatically with visible terrain freshness.") The frames
+are OBS screenshots of the director's base map shot, framed on the core and its outposts and placed by matching our
+buildings; every shift58 frame spans y -580 to 546, while the force has charted Nauvis north to y -1024 (Opus worked at
+y -790 to -990), and a frame reaches the map only with a site deploy. So `basemap.terrain_grid` carries the charted
+ground read from the game (tools/stream/terrain_grid.py; a read every 30 s, about 3 ms on world n): {cell 8, x0, y0, w,
+h, rows (run-length packed as the other grids; a letter a cell: the tile at the cell's centre, "c" a cell with a cliff,
+"." not read), palette [[letter, "#rrggbb" (the tile's map colour), tile name]], chunks, tick (the newest sample's),
+oldest_tick, t (the newest read's wall time), age_s}. A chunk charted next to the known ground is in it within about 3
+minutes; the stream keeps it in runs/RUN/terrain-grid.json (read back from the run it resumed from); push_live drops it
+past 96 KB packed (3247 chunks of world n: 21.6 KB). The map draws it under the frames (a frame's uncharted part is
+transparent) and dims both once; the legend says how many chunks and when the newest was read; a frame 30 min or more
+older than now is labelled at its corner ("terrain from 2 h ago", the newest of frames whose corners are within 60 px)
+and the scale line says the frames' and the ground's ages.
 The map is Nauvis: an agent whose `surface` is another planet, or with `on_platform` or `travel` set (a cargo pod), is
 listed in its bottom-left corner instead ("Luna · Vulcanus", "Opus · Solstice (platform)") and takes no part in
 the framing; each agent row carries `surface`, `where`, `on_platform` and `travel` from the stream service for that.

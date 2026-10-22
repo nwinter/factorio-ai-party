@@ -787,6 +787,7 @@ class Model:
         self.library_areas = None  # (d21 batch68 AD2) the library's placed areas, the last read (live.py observe_library_areas)
         self.library_areas_t = None
         self.net_maps = {}  # (d21 batch68 AD3) surface -> (its networks map, when read) (live.py observe_net_map)
+        self.terrain_grid = None  # (d22 batch75 AK9) the charted ground's tiles (terrain_grid.py via live.py)
         self.map_memory = None  # (d22 batch75 AK1) runs/RUN/map-memory.json (set_map_memory): both maps across restarts
         self.map_memory_t = 0.0
         self.planet_unlisted = {}  # (AK1) surface -> when the census's planet list first left it out
@@ -907,6 +908,8 @@ class Model:
                     self.planet_unlisted.pop(k, None)
         if isinstance(obs.get("library_areas"), dict):
             self.library_areas, self.library_areas_t = obs["library_areas"], now
+        if isinstance(obs.get("terrain_grid"), dict) and isinstance(obs["terrain_grid"].get("rows"), list):
+            self.terrain_grid = obs["terrain_grid"]
         if isinstance(obs.get("net_map"), dict) and isinstance(obs["net_map"].get("surface"), str):
             self.net_maps[obs["net_map"]["surface"]] = (obs["net_map"], now)
         if isinstance(obs.get("net_map_listed"), list):  # (a surface gone has no map in the runtime's listing)
@@ -2537,6 +2540,8 @@ class Model:
             "library_areas": dict(self.library_areas, age_s=round(now - self.library_areas_t)) if self.library_areas else None,
             # each planet's networks and items' sources and consumers (netmap.lua; push_live sends one a push)
             "net_maps": {k: dict(m, age_s=round(now - t)) for k, (m, t) in self.net_maps.items()},
+            # (d22 batch75 AK9) the charted ground under the map (push_live sends it as basemap.terrain_grid)
+            "terrain_grid": dict(self.terrain_grid, age_s=round(now - self.terrain_grid["t"])) if self.terrain_grid and isinstance(self.terrain_grid.get("t"), (int, float)) else self.terrain_grid,
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),

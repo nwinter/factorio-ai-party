@@ -740,6 +740,7 @@
     var kl = keepLast(s), bm = kl.bm;
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, turrets_read: bm.turrets_read, terrain: bm.terrain,
       planets: keepPlanets(s), now_tick: s.tick,
+      now: typeof s.now === 'number' ? s.now : Date.now() / 1000,  // (AK9) the terrain's age is the live map's: from now
       library_areas: s.library_areas && Array.isArray(s.library_areas.areas) ? s.library_areas.areas : [],  // (AD2) placed library areas
       net_maps: keepNets(s),  // (AD3) electric and logistic networks, items' sources and consumers
       // (AK1) the newest tick of each planet's maps the state lists, and the surfaces dropped (keepUp)

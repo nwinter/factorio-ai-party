@@ -16,6 +16,7 @@ import chronicle_log
 import operator_inbox
 import planlog
 import pacing
+import terrain_grid
 from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
@@ -153,6 +154,9 @@ class LiveSource:
         self.net_map_every = 20.0
         self.net_map_seen = {}  # surface -> the tick of the map read
         self.net_map_listed = []  # the last read's [{surface, tick}]
+        # (d22 batch75 AK9) the charted ground's tiles (terrain_grid.py; serve.py gives it its file); None: no reads
+        self.terrain = None
+        self.terrain_sent = False
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -713,6 +717,22 @@ class LiveSource:
         if isinstance(res.get("areas"), (list, dict)):
             obs["library_areas"] = dict(res, areas=res["areas"] if isinstance(res["areas"], list) else [])
 
+    def observe_terrain(self, obs, errors):
+        """(d22 batch75 AK9) the charted ground under the map (terrain_grid.py): a read every terrain_grid.EVERY seconds
+        (the chunks next to the known ground, those under the agents; about 3 ms on world n), and obs["terrain_grid"]
+        after each read, and once at the start from the grid kept in the run."""
+        t = getattr(self, "terrain", None)
+        if t is None:
+            return
+        ran = t.due() and t.read(self.h.lua, terrain_grid.seeds_from(obs.get("agents")))
+        if ran or not getattr(self, "terrain_sent", False):
+            g = t.grid()
+            if g:
+                obs["terrain_grid"] = g
+                self.terrain_sent = True
+        if t.error:
+            errors["terrain_grid"] = t.error
+
     def observe_net_map(self, obs, errors):
         """A planet's networks map (operator read `net_map`), every net_map_every seconds: the first listed planet whose map
         is newer than the one read (none: the listing only). obs["net_map"] is that map, obs["net_map_listed"] the planets
@@ -752,6 +772,7 @@ class LiveSource:
         self.observe_clouds(obs, errors)
         self.observe_library_areas(obs, errors)
         self.observe_net_map(obs, errors)
+        self.observe_terrain(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})
