@@ -11701,3 +11701,39 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
 - Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
   the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
 
+
+## d22 batch103 BM1 (eng/d20-batch103): requests on a section the game controls (Astra #1920)
+
+- Astra (shift59, 23:12:53Z) sent three `requests` calls to Kestrel II in one second: section 1 calcite 300..400 from
+  nauvis, section 2 from fulgora, section 3 from aquilo.
+  - Section 1 was refused, `section 1 is controlled by the game`; sections 2 and 3 were set.
+  - Her tell then named section 1 as set. 13 minutes later she found it missing and added section 8 with `add_section:
+    true`.
+  - So the harness did not accept the write. Its refusal named neither what controls the section nor how to keep the
+    request.
+- 2.0.77, read on a private copy of world n's _autosave12 (15:38):
+  - `LuaLogisticSection.type`: manual 0, circuit_controlled 1, transitional_request_controlled 2 (a rocket silo's one
+    section), request_missing_materials_controlled 3 (Kestrel II's section 1: its hub's construction requests);
+  - a script's `set_slot` on such a section raises `trying to change logistic section that is not manual`.
+  - So there is no write for an `override` to make: the game refuses it whatever the harness does.
+- Now, for `requests`:
+  - a set or clear on such a section is refused with what controls it, and the same call with `add_section: true` in
+    place of `section`. Kestrel II's section 1: `section 1 is controlled by the game: the hub's construction requests
+    (Request missing construction materials): the game writes what the platform's ghosts need; the game refuses a
+    script's write to it and writes its own requests there, so a manual request there does not last; a new manual
+    section keeps these requests: requests {"platform":"Kestrel II","set":[{"item":"calcite","min":300,"max":400,
+    "from":"nauvis","min_payload":100}],"add_section":true}`;
+  - `remove_section` on one is refused the same way (`only the game removes it`);
+  - every section row has `controlled` (true or false) and, when true, `controlled_by` (a hub's construction requests,
+    a silo's automatic requests, the circuit network).
+  - Rows come from the requests read and from every requests write's reply, the only section rows the harness gives.
+- On the copy, with the branch runtime:
+  - Astra's call got the refusal above;
+  - the call it names, sent as given, made section 9 with calcite 300..400 from nauvis, min payload 100;
+  - the read: section 1 `controlled: true` with its kind, the manual ones `controlled: false`.
+  - With the save's runtime, the same call read `section 1 is controlled by the game`.
+- Test tests/d22_batch103.lua (userdata fakes; the fake section raises the game's error on a write):
+  - the refusal, its call and nothing written;
+  - clear and remove_section;
+  - the rows;
+  - the three kinds.
