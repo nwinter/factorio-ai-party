@@ -685,6 +685,15 @@ return function(api)
     ev.list[#ev.list+1] = {seq=ev.seq, platform=pl.name, force=try(function() return pl.force.name end), kind=kind, at=at, to=to, tick=tick}
     while #ev.list > EVENTS do table.remove(ev.list, 1) end
   end
+  -- (d22 batch100 BJ1, Sol #1905) the first departure of a platform from location (any stop without one) logged at or
+  -- after since: {at, to, tick}, or nil. Logged on the game second after it (M.tick), so its tick is never before it.
+  function M.left_since(name, force, location, since)
+    for _, e in ipairs(events().list) do
+      if e.kind == 'left' and e.platform == name and e.force == force and e.tick >= since and (location == nil or e.at == location) then
+        return e
+      end
+    end
+  end
   -- The lines for agent p (h: its hint state): platforms of its force that stopped at or left its planet since it was
   -- last told (its first look: the last 5 minutes).
   function M.event_lines(p, h)

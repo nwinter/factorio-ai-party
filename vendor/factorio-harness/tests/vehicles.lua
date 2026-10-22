@@ -148,15 +148,53 @@ eq(astra('vehicle',{}).vehicle,false); stubborn.valid=false
 local far=vehicle('tank','car',20,0)
 fails(function() astra('vehicle',{position={x=20,y=0},enter=true}) end,'tank is 20.0 tiles away; get within 10 tiles')
 
--- A spidertron walks by itself, sent from outside.
+-- A spidertron walks by itself, sent from outside. Its route as the game keeps it: autopilot_destination replaces it
+-- (nil clears it), add_autopilot_destination appends, autopilot_destinations reads it.
 local spider=vehicle('spidertron','spider-vehicle',4,4)
-spider.add_autopilot_destination=function(pos) spider.autopilot_destination=pos end
+spider.unit_number=7001
+local spider_route={}
+setmetatable(spider,{__index=function(_,k)
+  if k=='autopilot_destinations' then local out={} for i,d in ipairs(spider_route) do out[i]=d end return out end
+  if k=='autopilot_destination' then return spider_route[1] end
+end,__newindex=function(t,k,v) if k=='autopilot_destination' then spider_route=v and {v} or {} else rawset(t,k,v) end end})
+spider.add_autopilot_destination=function(pos) spider_route[#spider_route+1]=pos end
+spider.get_spider_legs=function() return {} end
+local get_entity=game.get_entity_by_unit_number
+game.get_entity_by_unit_number=function(u) if u==7001 then return spider end return get_entity and get_entity(u) end
 local tank_empty=true
 spider.get_fuel_inventory=function() return {is_empty=function() return tank_empty end} end
 r=astra('vehicle',{position={x=4,y=4},go_to={x=40,y=40}}); eq(spider.autopilot_destination.x,40); eq(r.go_to.y,40)
 assert(r.note:find('no fuel',1,true),r.note) -- said, since it will not walk
 tank_empty=false; eq(astra('vehicle',{position={x=4,y=4},go_to={x=41,y=40}}).note,nil)
 fails(function() astra('vehicle',{position={x=3,y=0},go_to={x=1,y=1}}) end,'go_to is for a spidertron')
+-- (d22 batch101 BK1, viewer Aurora site:4308: "Published go_to appends targets, so a blocked one can trap later
+-- detours. Please add clear and replace options and feedback when movement stalls.") go_to replaces the route by
+-- default (the remote's click: Opus's later go_to queued behind a target across water), appends with mode "append"
+-- (shift-click), takes a list; clear empties it; the reply and a read of the spidertron say the route.
+eq(#spider_route,1,'replaced: the earlier target gone'); eq(spider_route[1].x,41)
+r=astra('vehicle',{position={x=4,y=4},go_to={x=50,y=50}})
+eq(r.mode,'replace'); eq(r.replaced[1],'(41,40)'); eq(#r.route,1); eq(r.route_line,'1 target: (50,50)')
+r=astra('vehicle',{position={x=4,y=4},go_to={{x=60,y=60},{x=70,y=70}},mode='append'})
+eq(r.mode,'append'); eq(r.route_line,'3 targets: (50,50) -> (60,60) -> (70,70)'); eq(r.replaced,nil)
+r=astra('vehicle',{position={x=4,y=4}})  -- a spidertron alone: its route (it was refused before)
+eq(r.route_line,'3 targets: (50,50) -> (60,60) -> (70,70)'); eq(r.unit_number,7001); eq(r.stalled,nil)
+r=astra('vehicle',{remote=true,vehicle=7001}); eq(r.by,'remote view'); eq(#r.route,3)
+r=astra('vehicle',{position={x=4,y=4},clear=true}); eq(r.cleared,3); eq(#r.route,0); eq(r.route_line,'no target: it stands')
+fails(function() astra('vehicle',{position={x=4,y=4},go_to={x=1,y=1},mode='after'}) end,'mode is "replace"')
+fails(function() astra('vehicle',{position={x=4,y=4},mode='append'}) end,'mode goes with go_to')
+-- no progress for 10 s while it has a target: a stall, said once to its sender; status lists it; moving again is said
+r=astra('vehicle',{position={x=4,y=4},go_to={x=90,y=4}})
+advance(61); jump(700); advance(61)
+local st=astra('status',{})
+assert(st.spidertrons and st.spidertrons[1]:find('spidertron #7001 at (4,4): 1 target: (90,4); no progress toward (90,4) for',1,true),tostring(st.spidertrons and st.spidertrons[1]))
+local alerts=st.team and st.team.alerts or st.alerts
+local said=has(alerts,'spidertron #7001: no progress toward (90,4)')
+assert(said and said:find('vehicle {go_to, mode: "replace"} sets a new one, {clear: true} empties it',1,true),tostring(said))
+r=astra('vehicle',{position={x=4,y=4}}); assert(r.stalled and r.stalled.for_s>=10 and r.stalled.line:find('standing at (4,4) (86 tiles from it)',1,true),tostring(r.stalled and r.stalled.line))
+spider.position={x=10,y=4}; advance(61)
+assert(has((astra('status',{}).team or {}).alerts,'spidertron #7001 moves again: at (10,4) toward (90,4)'),'moves again said')
+astra('vehicle',{position={x=10,y=4},clear=true}); advance(61)
+eq(astra('status',{}).spidertrons,nil,'an empty route: no longer listed')
 
 -- Drive a car to a position: steer, ease off, stop; the step simulates the car.
 local function physics()

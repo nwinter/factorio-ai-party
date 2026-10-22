@@ -194,6 +194,11 @@
   `remote: true, vehicle: N` drives one of our cars or tanks in radar coverage by remote view while your character
   stays put (its guns do not fire that way), or with `go_to` sends a spidertron; `auto_target_without_gunner` and
   `auto_target_with_gunner` set a spidertron's switches.
+  A spidertron's `go_to` replaces its route, as a click on its remote (`"mode":"append"` adds at the end, as a
+  shift-click; a list of points sets several); `"clear":true` empties it; the reply has `route`. `vehicle {position}`
+  (or `remote: true, vehicle`) of a spidertron alone reads its route and `stalled`: no progress toward its target for
+  10 s (where it stands, for how long, and what its legs cannot stand on in the straight line ahead), also said once in
+  your next reply and listed in status `spidertrons`. The game keeps a target its legs cannot reach (deep water).
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.

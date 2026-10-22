@@ -2373,6 +2373,11 @@ return function(api)
       local ok, list = pcall(api.delivery_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A spidertron sent by go_to making no progress, or moving again, to its sender (spiderroute.lua; d22 batch101 BK1).
+    if api.spider_lines then
+      local ok, list = pcall(api.spider_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- A flight watch begun at a departure or ended, to its setter (flightwatch.lua; d21 batch72 AH1).
     if api.flight_lines then
       local ok, list = pcall(api.flight_lines, p, h)
