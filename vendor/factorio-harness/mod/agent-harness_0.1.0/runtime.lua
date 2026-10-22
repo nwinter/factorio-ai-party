@@ -2221,7 +2221,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -18372,7 +18372,10 @@ function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
+-- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
+M.collectreach=require('collectreach'){state=state}
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
+  collectreach=M.collectreach,reason=function(v) return M.measures.reason(v) end,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
 -- The fuel feedstock trace (fuelstock.lua; d17 batch31 B5, Sol).
 M.fuelstock=require('fuelstock'){}
@@ -19420,7 +19423,8 @@ function M.tick_body(event)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
-  if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end  -- turret_tally watches (turrettally.lua): a read a second
+  if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
+  if state().collector_tally then pcall(M.timed,'collector_tally.tick',M.collectreach.tick,event.tick) end  -- (AN2) collector_tally watches: a read every 10 ticks  -- turret_tally watches (turrettally.lua): a read a second
   if state().uptime then pcall(M.timed,'uptime.tick',M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)

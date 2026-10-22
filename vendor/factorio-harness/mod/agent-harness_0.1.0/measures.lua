@@ -1,4 +1,4 @@
--- An agent's bounded watches: uptime, turret_tally and belt_flow, one of each an agent (d20 batch70 AF1, Aurora; d21
+-- An agent's bounded watches: uptime, turret_tally, belt_flow and collector_tally (d22 batch78 AN2), one of each an agent (d20 batch70 AF1, Aurora; d21
 -- 12:11: the idle nudge told Haiku it had stood idle 11 min, 72 s into a 120 s uptime watch Astra had asked of it).
 -- A watch running is the agent's work: from its start to its end tick, its sampler reading it. The idle count, the
 -- clock line, the sleep line and the operator's idle report (idle.lua) read it as busy with that watch, named.
@@ -12,7 +12,9 @@
 return function(api)
   local M = {}
   M.LATE, M.STALE = 300, 600
-  M.KINDS = {'uptime', 'turret_tally', 'belt_flow'}
+  M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally'}
+  -- how each kind's final is read (default: KIND {})
+  M.READ = {collector_tally='platform_supply {platform, collection: true}'}
   -- (d20 batch70 AF1, operator d21 13:18) the agent's own reason to wait, given with a watch or a sleep: up to REASON
   -- characters, shown back as given; nil when none.
   M.REASON = 200
@@ -98,6 +100,21 @@ return function(api)
     end
     return {units=n, gone=gone, scope=scope, sample=job.points and string.format('%d items passed the sampled tiles', passed) or nil, empty=n == 0}
   end
+  -- (d22 batch78 AN2) a platform's collectors: collectreach.lua
+  function DESCRIBE.collector_tally(job)
+    local n, gone, seen = 0, 0, 0
+    for _, c in ipairs(job.collectors or {}) do
+      n = n + 1
+      if c.gone then gone = gone + 1 end
+      seen = seen + (c.taken or 0)
+    end
+    if not job.collectors and job.result then
+      n, seen = #(job.result.collectors or {}), job.result.taken_seen or 0
+      for _, c in ipairs(job.result.collectors or {}) do if c.gone_s then gone = gone + 1 end end
+    end
+    return {units=n, gone=gone, scope=string.format('%d collector%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
+      sample=string.format('%d chunks seen taken', seen), empty=n == 0}
+  end
   -- One watch's row; tick = now.
   local function row(kind, job, tick)
     local d = DESCRIBE[kind](job)
@@ -117,7 +134,7 @@ return function(api)
     local left = math.max(0, math.ceil((job.until_tick - tick) / 60))
     local why = {
       running=string.format('running in the background until tick %d (%d s more): your actions meanwhile do not end it', job.until_tick, left),
-      done=string.format('done at tick %d, its final %s', job.until_tick, r.final_read and 'read' or 'not read yet (' .. kind .. ' {} reads it)'),
+      done=string.format('done at tick %d, its final %s', job.until_tick, r.final_read and 'read' or 'not read yet (' .. (M.READ[kind] or kind .. ' {}') .. ' reads it)'),
       late=string.format('late: its end tick %d passed %d s ago and no final result came; it is not counted as work', job.until_tick, math.floor((tick - job.until_tick) / 60)),
       stalled=string.format('stalled: no sample for %d s before its end tick %d; it is not counted as work', math.floor((tick - (sampled or job.start)) / 60), job.until_tick),
       invalid=d.empty and 'invalid: it reads nothing' or (job.samples or 0) == 0 and 'invalid: no sample taken'
