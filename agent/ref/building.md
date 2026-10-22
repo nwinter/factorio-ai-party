@@ -227,6 +227,11 @@
   built in the team blueprint library, kept in the save across shifts. Entity ghosts are saved at their positions (tile
   ghosts with `tiles: true`), counted in `ghosts`; `surface` (a planet) or `platform` captures there from anywhere.
   Example: `./fh call blueprint_save --args '{"name":"smelter-row","area":{"left_top":{"x":30,"y":0},"right_bottom":{"x":60,"y":20}}}'`
+  With `platform` and no `area`: the whole platform in one entry (entities with wires and settings, and its foundation
+  unless `tiles: false`; up to 16384 entities and 32768 tiles), as an area over 256 tiles or 4096 entities there does.
+  An entry over 4096 entities, 8192 tiles or 128 tiles from its 0,0 is for its string (`fh blueprint export`, paged
+  over 256 KB); a paste refuses it.
+  Example: `./fh call blueprint_save --args '{"name":"Asterion-whole","platform":"Asterion","description":"..."}'`
 - `blueprint_capture {area, surface? | platform?}`: captures an area into the clipboard; `surface` or `platform` as
   `blueprint_save`.
   Example: `./fh call blueprint_capture --args '{"area":{"left_top":{"x":30,"y":0},"right_bottom":{"x":60,"y":20}}}'`

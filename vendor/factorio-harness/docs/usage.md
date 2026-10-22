@@ -3266,7 +3266,7 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   (`storage`), so it goes on with the world into later shifts. Entries come from a capture on the map, or from a
   blueprint string (`blueprint_import {name}`, d20 batch59 U2).
   - `blueprint_save {name, area | positions, description, anchor, tiles}` captures our entities in `area` (up to
-    256x256 of charted map), or only the entities at `positions` (1..256, each may carry `name` or `unit_number`) with
+    256x256 of charted map; on a platform without area the whole platform, d22 batch80 AP1 below), or only the entities at `positions` (1..256, each may carry `name` or `unit_number`) with
     the wires between them, into the entry `name` (1..40 letters, digits, `_ . -`). `description` is up to 300
     characters; `anchor` `{x,y}` in the area is a point `blueprint_place` puts at `position`. The same name replaces
     the entry. Reply: `name, author, entities, tiles, footprint` (tiles, `WxH`), `counts` (`assembling-machine-2*12
@@ -3363,6 +3363,66 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
       Real engine (the private copy, branch runtime): two imports of a 2-entity entry; the mark read back in the list
       row, `blueprint_list {name}`, the export, a `blueprint_place` and a `paste` dry run, the `dry_run` action and a
       real paste (2 ghosts placed, the use recorded); rename, the refusals and clear as above.
+  - d22 batch80 AP1 (Astra #1851: a viewer asked for Asterion's blueprint; the hull (-58,-49)..(58,234) was over
+    `blueprint_capture`'s 256 tiles, and `blueprint_save` of (-58,-49)..(58,207) failed with `blueprint entity limit
+    exceeded` after 947 ms on the copy): a whole platform in one library entry, as a player selects one from remote view.
+    - The limits, all the harness's (the game sets none of them: a 2.0.77 blueprint of all of Asterion exports, imports
+      and pastes): an area of 256x256 tiles and 16384 entities found in it, and a blueprint of 4096 entities, 8192 tiles
+      and 128 tiles from its 0,0. They came with the harness fork and bound one call's work, since each call runs inside
+      a game tick: the capture, the export and a paste's per-entity checks. #1446 raised only the library's count and
+      bytes (256 entries, 8 MB of strings), not these.
+    - `blueprint_save {name, platform}` without `area`: every entity of ours on the platform with its wires and settings
+      (recipes, modules, filters, circuit conditions, as the game's blueprint carries them), and its foundation unless
+      `tiles: false`, rebased on the hub as before. An area over 256 tiles either way, or holding over 4096 entities, on a
+      platform goes the same way, clipped to the platform (`tiles: true` for its foundation, as an area's save). Up to
+      16384 entities, 32768 tiles and 512 tiles from its 0,0, and the string's 1 MB.
+    - The reply adds `platform`, `whole` and `note` (`the whole platform: 7803 entities, 19295 tiles, 62 wires`). An
+      entry over 4096 entities, 8192 tiles or 128 tiles from its 0,0 is for its string: `blueprint_place`, `paste`,
+      `dry_run` and `blueprint_export {layout: true}` of it are refused, naming its size and the limits; it lists as any
+      entry.
+    - `blueprint_export {name}` of such an entry is its stored string (label and description in it), 2.7 ms on the copy
+      for Asterion's. A string over 262144 bytes comes in pages (`blueprint_page`, `blueprint_bytes`, `next_from`;
+      `from` reads on); `fh call blueprint_export` / `fh blueprint export` reads every page into the file. Asterion's
+      string is 133 KB, one page.
+    - `blueprint_capture` (the clipboard) of an area over 256 on a platform is refused as before, naming
+      `blueprint_save {name, platform}`.
+    - Why the tiles are written by the harness: on the copy the engine's export of all of Asterion took 2.3 s, nearly all
+      of it writing numbers (the JSON of the entities alone 0.88 s, the same as `helpers.table_to_json` of them), and the
+      19295 tiles were 1.45 s of that. So `export_stack` writes the entities and the harness adds the foundation's JSON
+      (`{"position":{"x":X,"y":Y},"name":"space-platform-foundation"}`, whole numbers by `string.format('%d')`) and
+      deflates it again (`helpers.decode_string` / `encode_string`).
+      - On the copy, the decoded string equals the game's own export of the platform: the same 7803 entities, 19295
+        tiles and 62 wires, and every other key (label, description, icons, version).
+    - Cost of the save, one call (no tick work), on the private copy (world n's 07:30 save, x86 under Rosetta), 5 runs:
+      1.04-1.39 s.
+      - The engine's export of the entities is 0.87-1.01 s of that. The rest is about 0.2 s: the capture 34 ms, reading
+        the entities 35 ms, the foundation's JSON about 35 ms, deflating 67 ms.
+      - World n writes numbers 7.4x faster than the copy (`helpers.table_to_json` of 100-400 numbers: 3.9-4.5 µs each
+        on world n, 28-30 µs on the copy). It reads the platform's tiles no faster (1987 tiles: 2.4 ms on world n,
+        1.6 ms on the copy).
+      - So about 0.3-0.45 s on world n, in one tick, per whole-platform save. Main's capture of the same platform with
+        its tiles would have been about 0.57 s there.
+      - An export by name costs no export (2.7 ms).
+    - Checks on the private copy:
+      - Astra's two areas save: (-58,-49)..(58,207), 7572 entities and 18854 tiles; the hull, all 7803 and 19295.
+      - Astra's fusion-core area (-12,165)..(14,195) saves by the ordinary capture as before (143 entities, 78 ms).
+      - A paste of the whole entry is refused with its size.
+    - Checks on a fresh game (a new Space Age map on another headless server), the string from `fh blueprint export`:
+      - It imports with 7803 entities, 19295 tiles, its label and description.
+      - Pasted (`build_blueprint`, forced, the hub on the new platform's hub) on a new platform once its chunks were
+        generated, all 7803 entities stood at their blueprint spots (7802 ghosts and the hub), with 124 wire ends (the
+        62 wires).
+      - 19185 tile ghosts and the new platform's 110 foundation tiles made the 19295 tiles.
+      - Before the chunks south of y 96 were generated, the paste stopped there: 4926 entities. A new platform's
+        surface has only the chunks near its hub.
+    - Tests: tests/d22_batch80.lua (the whole platform, a wide area, an area of over 4096 entities, the tiles' JSON
+      and its shift, tiles: false, a small platform under the limits, the refusals, the export's pages);
+      tests/cli.test.ts (the export's pages into one file).
+    - The site: a viewer cannot get this string from the site today.
+      - `POST /v1/blueprints` takes strings from viewers to the agents.
+      - Reading them back (`GET /v1/blueprints`) needs the publish token.
+      - `library_areas` puts placed entries' boxes on the map, without strings.
+      - The operator's mirror has the string in `runs/RUN/blueprints/NAME.txt` (tools/bplibrary.py).
 - After any paste of a blueprint with wires, each of its circuit and copper wires whose two ends stand where the
   layout puts them (a new ghost, or a matching entity or ghost from before) is checked and connected if missing, as
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
