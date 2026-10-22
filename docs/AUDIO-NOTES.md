@@ -1379,9 +1379,10 @@ has heard any of these voices yet.
   voices to a stand-in: the caster's next voice in `ROLE_VOICES`, an agent's closest voice on the most preferred
   working provider (`PREFER`), else the Aura-2 `like`. A single failed request does the same for that clip. `TTS("eleven")` (or any one provider) speaks everything through that provider: its own voices
   as themselves, Aura-2 ids through a voice of that provider with the same stand-in.
-- Delivery: `mood()` guesses excited, frustrated, deadpan or neutral from the words; casters add a role style
-  (`ROLE_STYLE`). Eleven v4 gets a leading audio tag, OpenAI and Inworld a one-sentence instruction, Cartesia an
-  emotion and speed.
+- Delivery: a line's mood (`MOODS`: neutral, excited, tense, concerned) comes from its moment, not its words
+  (d22 batch99 BI1): the caller passes `speak(..., mood=)`, default neutral; casters add a role style
+  (`ROLE_STYLE`). Eleven v4 gets a leading audio tag (`[excited]` only), OpenAI and Inworld a one-sentence
+  instruction, Cartesia an emotion and speed. Eleven v4 Turbo and Flash (eleven-fast, Rook's) and Aura-2 take none.
 - `TTS(cache=DIR)` or `POG_TTS_CACHE=DIR`: identical lines are served from disk (off by default; the bench uses
   none). `tts.last` tells which provider, voice and mood spoke the latest clip; `tts.spent` uses that provider's rate.
 - ElevenLabs default voices: ElevenLabs retires them on 2026-12-31, and only accounts made before March 2026 have
@@ -1530,3 +1531,59 @@ one.
 
 Tests: `test_hostguide.py`, plus `caster_selftest.py` (a death is said alone first and then the attack folds the
 loss; a headline is never folded; headlines outrank attacks; templates) and `selftest.py` (the shift's first rocket).
+
+## d22 batch99 BI1: the mood from the moment, not the words (viewer Aurora site:4295)
+
+Aurora: "Routine words like still or broken can trigger frustration. Use a natural default, infer emotion from context,
+and compare a few real clips."
+
+- Before: `voices.mood()` scored words. "stuck", "broken", "starv..." counted 2 for frustrated; "still", "again" and
+  "keep(s)" counted 1; "yes", "done", "huge" and "finally" counted 2 for excited. Short flat sentences read deadpan.
+  Casters were excited or neutral only.
+- Shifts 58-59, the 457 voiced lines in the caster logs (replayed through main's `mood()`; the logs did not record it):
+  - agents: 41 frustrated, 32 excited, 5 deadpan and 109 neutral of 187;
+  - on OpenAI voices, 22 of 63 frustrated;
+  - in the lines read frustrated: "still" 21, "again" 10, "keep" 9, "keeps" 4, "stuck" 4, "starved" 2, "broken" 1;
+  - in the lines read excited: "yes" 17, "done" 12, "huge" 7, "finally" 6;
+  - the operator's lines: 3 frustrated, 5 excited;
+  - the hosts: 9 excited, 240 neutral.
+  - Example: Grok's "Kestrel IVc is still on the way from Aquilo" went to OpenAI as "Exasperated and frustrated,
+    clipped, with a sigh".
+- Now:
+  - the hosts' exchange takes its event's mood (caster.py `moment_mood`): an attack is tense; a loss, a death or a
+    destroyed platform is concerned; a space first (the shift's or run's first rocket, a new platform, a maiden flight,
+    a planet first landed on, the team's first arrival somewhere) is excited;
+  - a platform's first orbit of a planet or its later returns stay neutral (41 of shift58's 53 "space" lines; the
+    hosts themselves said "This one's routine now");
+  - an agent's line takes the strongest moment of the last 90 s (`agent_mood`) that names that agent, or a fight,
+    loss or death on its surface (a space first only when it names the agent);
+  - everything else, operator lines included, is neutral ("Natural and conversational").
+  - The records log the clip's `mood`.
+- On the same lines: hosts 15 tense, 8 concerned, 12 excited, 215 neutral. Agents are neutral unless a moment names
+  them or their surface: at most the 26 agent lines that came within 90 s after an aired strong moment anywhere.
+- Rook's voice (eleven-fast, v4 Turbo) takes no mood; his moods are heard on his OpenAI stand-in (oa-cedar), Vale's
+  on OpenAI.
+
+## d22 batch99 BI2: the writer's delivery direction (viewer Aurora site:4300, site:4302)
+
+- **The writer call:** the hosts' exchange call is unchanged otherwise (caster.py `EXCHANGE_RULES` + `DELIVERY_RULE`).
+  It now also writes a `Delivery: ...` line after each host line:
+  - what goes in it: tone, emotion, emphasis, pacing and arc, at most 16 words, from the moment;
+  - "natural" when unsure;
+  - never another accent, character or impression, never words to say.
+- **Parsing:** `parse_exchange` keeps the spoken words as they were and aligns each direction with its line.
+  `clean_direction` drops "natural", empty ones, and any that name an accent, impression, persona or another voice. It
+  caps a direction at 160 characters.
+- **What carries it:** the directions ride on the event to `speak_lines`, each line's clip gets its own, and the
+  record logs `delivery`.
+- **Which engines take it** (`voices.style_for`): the role style, then "This line: DIRECTION" in place of the mood's
+  sentence.
+  - The two at once contradicted: "concerned" beside "bright on the departure, then a small wince".
+  - OpenAI gpt-4o-mini-tts (`instructions`) and Inworld (`instruction`, cut at 300 characters) take it.
+  - ElevenLabs (v4, v4 Turbo, Flash), Cartesia, Aura-2 and say ignore it and keep the moment's mood (tag or emotion).
+  - Today that is Vale (oa-ballad) and Rook only on his OpenAI stand-in (oa-cedar). Rook's ElevenLabs Eric takes none.
+- **Voices:** each voice's persona is its role style and its accent is the voice itself; neither comes from the
+  writer.
+- **Cost:** 8 exchanges on shift58's events, with claude-opus-5.5 through OpenRouter, twice with each prompt. Writer
+  cost $0.0242 → $0.0267 an exchange (+10%, about $0.0012 a line); latency 2.6 → 3.7 s (worst 3.1 → 5.4 s). The
+  directions averaged 11 words (68 characters, about 20 output tokens a line); 16 of 16 lines had one.

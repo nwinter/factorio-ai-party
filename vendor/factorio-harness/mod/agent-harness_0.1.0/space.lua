@@ -2195,8 +2195,10 @@ return function(api)
   -- {from, tick, by}; wait_until platform_left begun within DEPART_GRACE ticks after it counts it (conditions.lua).
   M.DEPART_GRACE=60  -- (conditions.lua DEPART_GRACE)
   function M.platform_schedule(p,a)
-    local plw=select(2,pcall(M.platform,p,a.platform))
-    if type(plw)~='table' then plw=nil end
+    -- (d22 batch100 BJ1) a game object is userdata in 2.0: a type check for a table dropped every platform, so no
+    -- departure was ever recorded on the real engine (the tests' platforms are tables)
+    local found,plw=pcall(M.platform,p,a.platform)
+    if not found then plw=nil end
     local function waiting(x) return platform_states[x.state]=='waiting_at_station' or M.waiting_now(x)~=nil end
     local from=plw and waiting(plw) and try(function() return plw.space_location.name end) or nil
     local out1=M.platform_schedule_call(p,a)
