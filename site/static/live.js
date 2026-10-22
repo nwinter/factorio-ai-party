@@ -748,6 +748,7 @@
       // (AK1) the newest tick of each planet's maps the state lists, and the surfaces dropped (keepUp)
       planet_list: Array.isArray(s.planets) ? s.planets : null, net_list: Array.isArray(s.net_maps) ? s.net_maps : null, gone: keepUp(s),
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
+      threats: s.threats || null,  // (d22 batch97 BG3) enemy groups on their way, demolishers near ours
       clouds: kl.clouds, home_held: kl.home_held, clouds_held: kl.clouds_held };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
 

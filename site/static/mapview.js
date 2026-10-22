@@ -20,17 +20,17 @@
   'use strict';
   // the live map's colours (style.css .b-X and .o-X: the legends use those)
   // (d22 batch75 AK4, viewer Foobator: "can walls be a separate item?") walls and gates W; D the turrets (frames read
-  // before it have walls in D too)
+  // before it have walls in D too); (d22 batch97 BG3) no K: storage was never emitted apart from L
   var BASE = [['D', '#c8553d', 'Defence'], ['W', '#e9dcc0', 'Walls and gates'], ['R', '#a983f0', 'Labs'], ['O', '#3fa8a3', 'Oil and chemistry'], ['A', '#5c8fd6', 'Assembly'],
-    ['S', '#e08a3c', 'Smelting'], ['M', '#a6875a', 'Mining'], ['E', '#f2d34b', 'Power'], ['L', '#b9b9b9', 'Logistics'],
-    ['K', '#8f8f8f', 'Storage'], ['I', '#9fcf6a', 'Inserters'], ['B', '#8a7d45', 'Belts'], ['T', '#6e6a8e', 'Rails'], ['P', '#4a6a8a', 'Pipes']];
+    ['S', '#e08a3c', 'Smelting'], ['M', '#a6875a', 'Mining'], ['E', '#f2d34b', 'Power'], ['L', '#b9b9b9', 'Logistics and storage'],
+    ['I', '#9fcf6a', 'Inserters'], ['B', '#8a7d45', 'Belts'], ['T', '#6e6a8e', 'Rails'], ['P', '#4a6a8a', 'Pipes']];
   var ORE = [['i', '#7f9db4', 'Iron ore'], ['c', '#d0703a', 'Copper ore'], ['k', '#5a5a5a', 'Coal'], ['s', '#c2ab7a', 'Stone'],
     ['o', '#b04fb5', 'Crude oil'], ['u', '#6fe05a', 'Uranium ore'], ['x', '#9a9a9a', 'Other resource']];
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
-    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power'], ['robots', 'Logistics'], ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, agents: true, attention: true, alerts: true };
+    ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power'], ['robots', 'Logistics'], ['nests', 'Nests'], ['threats', 'Attacks'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
+  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, threats: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
   // (d20 batch50 G1, viewer Aurora: "Could the map flag turrets lacking ammo, fuel or energy and mark stale or unknown
@@ -318,6 +318,11 @@
     d.agents = (data.agents || []).filter(function (a) { return a && ok(a.position) && !elsewhere(a, surface); });
     d.fights = home ? (data.fights || []).filter(function (f) { return f && ok(f.position); }) : [];
     d.pins = home ? (data.pins || []).filter(function (p) { return p && ok(p.position); }) : [];
+    // (d22 batch97 BG3) enemy groups on their way and demolishers near ours (harness attack_groups_live and
+    // big_enemies_live, read every 2-10 s; push_live's threats), on the surface shown
+    var th = data.threats || {}, here = function (x) { return x && ok(x.position) && (x.surface || 'nauvis') === surface; };
+    d.groups = (Array.isArray(th.incoming) ? th.incoming : []).filter(here);
+    d.big = (Array.isArray(th.big) ? th.big : []).filter(here);
     d.nests = (home && Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
     // (G1) each turret's readiness; ages from the state's game tick (now_tick) when it has one
     var ts = home && data.base && data.base.turret_state;
@@ -631,6 +636,19 @@
         (f.losses ? ' · ' + f.losses + ' loss' + (f.losses > 1 ? 'es' : '') : '') + (pinned ? ' · ' + d.dist(f.position) + ' tiles from the base' : '') });
       return m;
     }) : [];
+    sc.threats = !on.threats ? [] : d.groups.map(function (g) {
+      var at = spot(g.position), pinned = at !== g.position, t = ok(g.target) ? g.target : null;
+      var m = { x: px(at.x), y: py(at.y), tx: t && !pinned ? px(t.x) : null, ty: t && !pinned ? py(t.y) : null, big: false };
+      sc.hits.push({ x: m.x, y: m.y, r: 9, text: (g.label || (g.size || '?') + ' enemies on their way') + (g.age_s != null ? ' · seen ' + ago(g.age_s) : '') +
+        (pinned ? ' · ' + d.dist(g.position) + ' tiles from the base' : '') });
+      return m;
+    }).concat(d.big.map(function (e) {
+      var at = spot(e.position), pinned = at !== e.position, n = ok(e.nearest) ? e.nearest : null;
+      var m = { x: px(at.x), y: py(at.y), tx: n && !pinned && e.closing ? px(n.x) : null, ty: n && !pinned && e.closing ? py(n.y) : null, big: true };
+      sc.hits.push({ x: m.x, y: m.y, r: 10, text: (e.label || cap(String(e.name || 'demolisher').replace(/-/g, ' '))) +
+        (e.closing ? ' · closing' + (e.eta_s != null ? ', about ' + agoText(e.eta_s) + ' away' : '') : '') });
+      return m;
+    }));
     sc.pins = on.alerts ? d.pins.filter(function (p) { return !d.fights.length || (p.kind !== 'attack' && p.kind !== 'loss'); }).map(function (p) {
       var at = spot(p.position), m = { x: px(at.x), y: py(at.y) };
       sc.hits.push({ x: m.x, y: m.y, r: 9, text: cap(p.kind) + ': ' + p.text });
@@ -848,6 +866,15 @@
       ctx.setLineDash([]);
       if (f.loss) { ctx.strokeStyle = '#ffd1c9'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(f.x - 3, f.y - 3); ctx.lineTo(f.x + 3, f.y + 3); ctx.moveTo(f.x + 3, f.y - 3); ctx.lineTo(f.x - 3, f.y + 3); ctx.stroke(); }
     });
+    sc.threats.forEach(function (t) {
+      if (t.tx != null) {
+        ctx.setLineDash([5, 3]); ctx.strokeStyle = 'rgba(255, 90, 68, .8)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(t.tx, t.ty); ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+      if (t.big) { ctx.fillStyle = '#ff7a1a'; circle(ctx, t.x, t.y, 6); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#ff7a1a'; ctx.lineWidth = 1.5; circle(ctx, t.x, t.y, 10); ctx.stroke(); }
+      else { ctx.fillStyle = '#ff5a44'; ctx.beginPath(); ctx.moveTo(t.x, t.y - 6); ctx.lineTo(t.x + 6, t.y); ctx.lineTo(t.x, t.y + 6); ctx.lineTo(t.x - 6, t.y); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    });
     sc.pins.forEach(function (p) {
       ctx.fillStyle = C.red; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(p.x, p.y - 9); ctx.lineTo(p.x + 8, p.y + 6); ctx.lineTo(p.x - 8, p.y + 6); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -909,7 +936,7 @@
       layer === 'power' ? !!(d.net && d.net.grid) : layer === 'robots' ? !!(d.net && d.net.logistic.length) :
       layer === 'coverage' ? d.turrets.length > 0 : layer === 'readiness' ? !!d.tstate : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
-      layer === 'alerts' ? d.fights.length + d.pins.length > 0 : false;
+      layer === 'alerts' ? d.fights.length + d.pins.length > 0 : layer === 'threats' ? d.groups.length + d.big.length > 0 : false;
   }
 
   function Viewer(host, opts) {
@@ -1060,7 +1087,7 @@
   // below a row each (style.css .mapview-pair)
   var PAIRS = [['terrain', 'networks'], ['combat', 'team']];
   var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
-    ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
+    ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'threats', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
   // (d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero?
   // Vulcanus currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") Why a
   // layer has nothing on the surface shown: "not read" with why (no read of it in the state, a read this page has not
@@ -1105,6 +1132,7 @@
         (read.length ? '; it has: ' + read.map(function (c) { return cap(c.surface); }).join(', ') : '') + ')';
     }
     if (k === 'library') return data.library_read === false ? 'not read: no library areas in the live state yet' : 'none: no placed library area on ' + where;
+    if (k === 'threats') return 'none: no enemy group on its way and no demolisher near ours on ' + where + ' now (read every 2-10 s)';
     if (k === 'agents') return 'none: no agent on ' + where + ' now';
     if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
     return 'none on ' + where + ' now';
@@ -1227,6 +1255,8 @@
     }
     if (d.nests.length && on.nests) h += '<li><i class="nest"></i>Enemy nests</li>';
     if (d.fights.length && on.alerts) h += '<li><i class="mv-fight"></i>Fights</li>';
+    if (d.groups.length && on.threats) h += '<li><i class="mv-group"></i>Enemies on their way (a dashed line to their target)</li>';
+    if (d.big.length && on.threats) h += '<li><i class="mv-big"></i>Demolishers near ours</li>';
     var box = this.root.querySelector('.mapview-legend');
     if (box.dataset.sig !== h) { box.dataset.sig = h; box.innerHTML = h ? '<ul class="mm-legend">' + h + '</ul>' : ''; }
   };

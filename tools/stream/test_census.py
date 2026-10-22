@@ -121,6 +121,10 @@ out.basemap_ore_census = part("basemap", true)
 out.extras_census = part("extras")
 out.machines_census = part("machines")
 out.snapshot_census = part("snapshot")
+out.ore_start = S.census.ore and S.census.ore.start
+game.tick = ticks + 40000
+out.basemap_ore_late = part("basemap", true)
+game.tick = ticks
 -- The reads with a harness that answers census (pog.CENSUS_FN): they print what the census says, with no find.
 local last_req
 remote = {interfaces = {agent_harness = {dispatch = true}}, call = function(_, _, req) last_req = req return "reply" end}
@@ -172,6 +176,8 @@ def same_map(read, census):
     b = dict(census["basemap"])
     a.pop("tick", None)
     b.pop("tick", None)
+    if isinstance(b.get("ore"), dict):  # (d22 batch97 BG3) the census's ore says when its pass started
+        b["ore"] = {k: v for k, v in b["ore"].items() if k != "tick"}
     # (nests come in the find's order in the read and in band order in the census: the same set)
     for m in (a, b):
         m["nests"] = sorted(m.get("nests") or [])
@@ -195,7 +201,7 @@ base = [("assembling-machine-2", "assembling-machine", 4.5 + 4 * i, 4.5 + 4 * j,
         ("oil-refinery", "assembling-machine", -6.5, 2.5, 0, {"status": 3, "recipe": "basic-oil-processing"}),
         ("inserter", "inserter", 7.5, 2.5, 0, {"status": 2}), ("burner-inserter", "inserter", 8.5, 2.5, 0, {"status": 1}),
         ("small-electric-pole", "electric-pole", 30, 30), ("iron-chest", "container", 12.5, 12.5),
-        ("logistic-robot", "logistic-robot", 20.5, 20.5)]
+        ("logistic-robot", "logistic-robot", 20.5, 20.5), ("heat-pipe", "heat-pipe", 90.5, 40.5)]
 line = [("pipe", "pipe", 0.5, -0.5 - k) for k in range(400)] + \
        [("pumpjack", "mining-drill", 0.5 + 3 * i, -405.5, 0, {"status": 1, "ore": "crude-oil"}) for i in range(3)]
 nests = [("biter-spawner", "unit-spawner", 60, 60), ("small-worm-turret", "turret", 40, -20), ("biter-spawner", "unit-spawner", 900, 900),
@@ -214,6 +220,13 @@ check("the live map: the census equals BASEMAP_LUA (rows, core, nests, turrets, 
 ok, detail = same_map(r["basemap_ore_read"], r["basemap_ore_census"])
 check("the live map with ore: equal, the ore grid too", ok and "ore" in r["basemap_ore_census"]["basemap"], detail)
 check("the census's map without ore has no ore", "ore" not in r["basemap_census"]["basemap"])
+bm = r["basemap_census"]["basemap"]
+hp = bm["rows"][(40 - bm["y0"]) // bm["cell"]][(90 - bm["x0"]) // bm["cell"]]
+check("(BG3) a heat pipe is drawn as power (E) on the live map, in the census and the read alike", hp == "E", (hp, bm["rows"]))
+late = r["basemap_ore_late"]
+check("(BG3) its last ore grid is served 40,000 ticks after its pass started (a pass takes 35-41k on world n), "
+      "with that start as ore.tick", late["basemap"].get("ore", {}).get("tick") == r["ore_start"] and not late.get("ore_pending")
+      and late["basemap"]["ore"]["rows"] == r["basemap_ore_census"]["basemap"]["ore"]["rows"], late)
 s, c = r["stream_read"], r["extras_census"]
 check("extras: electric machines and starved equal STREAM_LUA's", (s["electric_machines"], s["starved"]) == (c["electric_machines"], c["starved"]),
       (s, c))
