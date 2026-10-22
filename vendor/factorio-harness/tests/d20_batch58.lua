@@ -34,7 +34,7 @@ do
   for t=1001,1600 do game.tick=t; U.tick(t) end
   local row=U.handler({index=1},{}).machines[1]
   eq(row.recipe,'quality-module-3'); eq(row.recipe_quality,'rare')
-  eq(#row.short,1); eq(row.short[1],'quality-module-2 (rare) short in 11 samples (least 3 of 4 a craft)')
+  eq(#row.short,1); eq(row.short[1],'quality-module-2 (rare) short in 11 samples (least 3 of 4 a craft; ticks 1000-1600)')
   assert(row.line:find('electromagnetic-plant (28,166) quality-module-3 (rare): ',1,true),row.line)
   -- a normal recipe reads as before, its quality normal, and a fluid ingredient has no quality
   recipe.ingredients[#recipe.ingredients+1]={type='fluid',name='electrolyte',amount=10}
@@ -47,7 +47,7 @@ do
   eq(row.recipe_quality,'normal'); assert(row.line:find('electromagnetic-plant (28,166) quality-module-3: ',1,true),row.line)
   local shorts=table.concat(row.short,'; ')
   assert(not shorts:find('advanced-circuit',1,true),shorts)
-  assert(shorts:find('electrolyte short in 11 samples (least 4 of 10 a craft)',1,true) and shorts:find('processing-unit short',1,true),shorts)
+  assert(shorts:find('electrolyte short in 11 samples (least 4 of 10 a craft; ticks 1600-2200)',1,true) and shorts:find('processing-unit short',1,true),shorts)
   -- the recipe's quality changing during the watch reads as a recipe change
   U.handler({index=1},{position={x=28,y=166},seconds=10})
   for t=2201,2800 do game.tick=t; if t==2500 then m.get_recipe=function() return recipe,{name='epic'} end end; U.tick(t) end
