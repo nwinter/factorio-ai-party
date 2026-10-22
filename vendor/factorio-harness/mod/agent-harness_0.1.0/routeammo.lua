@@ -76,35 +76,129 @@ return function(api)
     if #parts == 0 then return nil, at.category, projectile end
     return parts, at.category, projectile
   end
+  -- (d22 batch88 AX1, Astra #1876: rockets read 3 shots a 400 hp asteroid where platform_defense ammo_use gave 1160
+  -- explosion a shot and a measured drill used 160 rockets for 160 kills) 2.0.77 keeps an ammunition's category on its
+  -- item prototype (ammo_category); get_ammo_type().category reads nil there (read on a private copy of world n), so
+  -- the damage bonus and the turret were never found. The ammo type's own field stays a fallback.
+  local function category(ammo)
+    local ip = prototypes.item[ammo]
+    return ip and (try(function() return ip.ammo_category.name end) or try(function() local c = ip.ammo_category; return type(c) == 'string' and c or nil end)
+      or try(function() return ip.get_ammo_type().category end))
+  end
+  M.category = category
+  -- One shot of an ammunition as platform_defense ammo_use gives it (ammorate.row with platdefense's damage reader, when
+  -- the runtime passes them): {by {type: amount}, order, base {type: amount}, qm, bonus, attack, dm, from_data, total};
+  -- the ammunition's damage x its quality's multiplier x (1 + the force's damage bonus for its category) x (1 + the
+  -- force's attack bonus for the turret) x the turret's damage modifier. nil when no damage is read.
+  local hits = {}
+  function M.hit(ammo, quality, force, turret)
+    quality = quality or 'normal'
+    local key = ammo .. '|' .. quality .. '|' .. tostring(turret)
+    if hits[key] ~= nil then return hits[key] or nil end
+    local base, order, from_data = {}, {}, {}
+    if api.damages then
+      local list = {}
+      local ip = prototypes.item[ammo]
+      local at = ip and (try(function() return ip.get_ammo_type('turret') end) or try(function() return ip.get_ammo_type() end))
+      api.damages(at and at.action, list, from_data)
+      for _, d in ipairs(list) do if not base[d.type] then order[#order+1] = d.type; base[d.type] = 0 end; base[d.type] = base[d.type] + d.amount end
+    else
+      for _, d in ipairs(damage_of(ammo) or {}) do if not base[d.type] then order[#order+1] = d.type; base[d.type] = 0 end; base[d.type] = base[d.type] + d.amount end
+    end
+    if #order == 0 then hits[key] = false; return nil end
+    local h = {base=base, order=order, from_data=from_data[1]}
+    if api.ammorate and api.damages then
+      local r = api.ammorate.row(force, {turret=turret or '', quality='normal', ammo=ammo, ammo_quality=quality}, {}, api.damages)
+      h.by, h.qm, h.bonus, h.attack, h.dm, h.total = r.damage, r.quality_multiplier, r.damage_bonus, r.turret_attack_bonus, r.damage_modifier or 1, r.damage_per_shot
+    else
+      local cat = category(ammo)
+      h.qm = try(function() return prototypes.quality[quality].default_multiplier end) or 1
+      h.bonus = cat and try(function() return force.get_ammo_damage_modifier(cat) end) or 0
+      h.attack = turret and try(function() return force.get_turret_attack_modifier(turret) end) or 0
+      h.dm = turret and try(function() return prototypes.entity[turret].attack_parameters.damage_modifier end) or 1
+      h.by, h.total = {}, 0
+      for _, k in ipairs(order) do h.by[k] = base[k] * h.qm * (1 + h.bonus) * (1 + h.attack) * h.dm; h.total = h.total + h.by[k] end
+    end
+    hits[key] = h
+    return h
+  end
+  -- the game's rule for one damage entry against a resistance: past the flat decrease it takes the rest, else
+  -- 1 / (2 + decrease - damage); then less the percent
+  local function after(dmg, r)
+    local dec, pct = r and r.decrease or 0, r and r.percent or 0
+    return (dmg > dec and (dmg - dec) or 1 / (2 + dec - dmg)) * (1 - pct)
+  end
   -- Shots of ammo one asteroid takes: a number; false when every hit does under 1 (it cannot hurt it); nil unknown.
-  function M.shots(kind, ammo, force, turret)
+  -- Second value: the damage a hit does to it after its resistances.
+  function M.shots(kind, ammo, force, turret, quality)
     local e = prototypes.entity[kind]
     local hp = e and try(function() return e.get_max_health() end)
-    local parts, cat = damage_of(ammo)
-    if not (hp and parts) then return nil end
-    local bonus = 1 + (try(function() return force.get_ammo_damage_modifier(cat) end) or 0)
-    if turret then bonus = bonus * (1 + (try(function() return force.get_turret_attack_modifier(turret) end) or 0)) end
+    local h = M.hit(ammo, quality, force, turret)
+    if not (hp and h) then return nil end
     local res = try(function() return e.resistances end) or {}
     local per = 0
-    for _, d in ipairs(parts) do
-      local dmg = d.amount * bonus
-      local r = res[d.type] or {}
-      local dec, pct = r.decrease or 0, r.percent or 0
-      -- the game's rule: past the flat decrease it takes the rest, else 1 / (2 + decrease - damage); then the percent
-      local after = dmg > dec and (dmg - dec) or 1 / (2 + dec - dmg)
-      per = per + after * (1 - pct)
-    end
-    if per < 1 then return false end
-    return math.ceil(hp / per)
+    for _, k in ipairs(h.order) do per = per + after(h.by[k], res[k]) end
+    if per < 1 then return false, per end
+    return math.ceil(hp / per), per
   end
-  -- The turret that fires an ammunition aboard (for its attack bonus): the first of ours whose category it is.
+  local function num(v)
+    if v >= 100 then return string.format('%d', math.floor(v + 0.5)) end
+    if v >= 10 then return string.format('%g', math.floor(v * 10 + 0.5) / 10) end
+    if v >= 0.01 then return string.format('%.3g', v) end
+    return string.format('%.2g', v)
+  end
+  local function pct(x) return string.format('%+g%%', math.floor(x * 1000 + 0.5) / 10) end
+  -- The ammunition's line: "rocket (rocket-turret, normal): 1160 explosion a shot = 200 x (1 +480% rocket damage) x
+  -- (1 +0% rocket-turret attack)".
+  function M.hit_line(ammo, quality, force, turret)
+    local h = M.hit(ammo, quality, force, turret)
+    if not h then return string.format('%s: no damage read', ammo) end
+    local by, base = {}, {}
+    for _, k in ipairs(h.order) do by[#by+1] = num(h.by[k]) .. ' ' .. k; base[#base+1] = num(h.base[k]) .. ' ' .. k end
+    return string.format('%s (%s, %s): %s a shot = %s%s x (1 %s %s damage) x (1 %s %s attack)%s%s', ammo, turret or 'no turret of ours fires it', quality or 'normal',
+      table.concat(by, ' + '), table.concat(base, ' + '), h.qm ~= 1 and (' x ' .. num(h.qm) .. ' quality') or '', pct(h.bonus), tostring(category(ammo)), pct(h.attack),
+      turret or 'turret', h.dm ~= 1 and (' x ' .. num(h.dm) .. ' turret') or '', h.from_data and ' (the rocket\'s damage from the base game\'s data)' or '')
+  end
+  -- One asteroid against it: "medium-metallic-asteroid 400 hp: explosion (1160 - 0 flat) x (1 - 30%) = 812 a hit: 1 shot".
+  function M.vs_line(kind, ammo, quality, force, turret)
+    local e = prototypes.entity[kind]
+    local hp = e and try(function() return e.get_max_health() end)
+    local h = M.hit(ammo, quality, force, turret)
+    if not (hp and h) then return string.format('%s: not read', kind) end
+    local res = try(function() return e.resistances end) or {}
+    local parts, per = {}, 0
+    for _, k in ipairs(h.order) do
+      local r = res[k] or {}
+      local dec, p = r.decrease or 0, r.percent or 0
+      local v = after(h.by[k], r)
+      per = per + v
+      parts[#parts+1] = h.by[k] > dec and string.format('%s (%s - %s flat) x (1 - %s%%) = %s', k, num(h.by[k]), num(dec), num(p * 100), num(v))
+        or string.format('%s %s is not over the %s flat: 1 / (2 + %s - %s) x (1 - %s%%) = %s', k, num(h.by[k]), num(dec), num(dec), num(h.by[k]), num(p * 100), num(v))
+    end
+    local s = per >= 1 and math.ceil(hp / per) or nil
+    return string.format('%s %d hp: %s%s: %s', kind, hp, table.concat(parts, ' + '), #parts > 1 and string.format(' = %s a hit', num(per)) or ' a hit',
+      s and string.format('%d shot%s', s, s == 1 and '' or 's') or 'under 1 a hit: cannot hurt it'), {asteroid=kind, hp=hp, per_hit=per, shots=s or false}
+  end
+  -- The turret that fires an ammunition aboard (for its attack bonus), and the quality of that ammunition in our
+  -- turrets (the first holding it; normal when none does): the first of ours whose category it is.
   local function turret_for(pl, ammo)
-    local cat = try(function() return prototypes.item[ammo].get_ammo_type().category end)
-    for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force, limit=64} end) or {}) do
+    local cat = category(ammo)
+    local name, quality
+    for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
       local cats = try(function() return t.prototype.attack_parameters.ammo_categories end) or {}
-      for _, c in ipairs(cats) do if c == cat then return t.name end end
+      for _, c in ipairs(cats) do
+        if c == cat then
+          name = name or t.name
+          local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
+          for _, s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+            if s.name == ammo then quality = type(s.quality) == 'table' and s.quality.name or s.quality or 'normal'; return name, quality end
+          end
+        end
+      end
     end
+    return name, quality or 'normal'
   end
+  M.turret_for = turret_for
   -- (d20 batch52 K4, Astra #955, 158h42: firearm-magazine read no use on Aquilo->edge, whose asteroids spawn big and
   -- huge, though their fragments are not) What one asteroid of a kind becomes when destroyed, by its prototype's dying
   -- trigger (2.0.77: huge into 3 big, big into 3 medium, medium into 3 small; small into chunks): {kind: count}, itself
@@ -128,19 +222,19 @@ return function(api)
     trees[kind] = out
     return out
   end
-  local function shots_of(kind, ammo, force, turret, cache)
+  local function shots_of(kind, ammo, force, turret, cache, quality)
     cache[kind] = cache[kind] or {}
-    if cache[kind][ammo] == nil then local s = M.shots(kind, ammo, force, turret); cache[kind][ammo] = s == nil and 'unknown' or s end
+    if cache[kind][ammo] == nil then local s = M.shots(kind, ammo, force, turret, quality); cache[kind][ammo] = s == nil and 'unknown' or s end
     return cache[kind][ammo]
   end
   -- Shots of ammo one asteroid of a kind takes, its fragments it can hurt included: total, the kind's own (number,
   -- false or 'unknown'), and the fragments' part.
-  local function tree_shots(kind, ammo, force, turret, cache)
-    local own = shots_of(kind, ammo, force, turret, cache)
+  local function tree_shots(kind, ammo, force, turret, cache, quality)
+    local own = shots_of(kind, ammo, force, turret, cache, quality)
     local frag = 0
     for k, n in pairs(M.breakup(kind)) do
       if k ~= kind then
-        local s = shots_of(k, ammo, force, turret, cache)
+        local s = shots_of(k, ammo, force, turret, cache, quality)
         if s ~= false then frag = frag + n * (s == 'unknown' and 1 or s) end
       end
     end
@@ -148,10 +242,10 @@ return function(api)
   end
   -- Weighted shooting of a density table for one ammunition: sum of chance x shots, fragments included (unknown shots
   -- count 1, can't-hurt 0); cant: the kinds it cannot hurt (itself; their fragments may count).
-  local function load_of(dens, ammo, force, turret, cache)
+  local function load_of(dens, ammo, force, turret, cache, quality)
     local w, cant = 0, {}
     for kind, p in pairs(dens) do
-      local t, own = tree_shots(kind, ammo, force, turret, cache)
+      local t, own = tree_shots(kind, ammo, force, turret, cache, quality)
       if own == false then cant[#cant+1] = kind end
       w = w + p * t
     end
@@ -183,6 +277,13 @@ return function(api)
     end
     for k, p in pairs(fd) do fd[k] = p / fmin end
     local cache, lines = {}, {}
+    hits = {}  -- (AX1) the force's bonuses as they are now
+    local fire = {}  -- ammunition -> {turret, quality} (turret_for, once a forecast)
+    local function fire_of(ammo)
+      if not fire[ammo] then local t, q = turret_for(pl, ammo); fire[ammo] = {t, q} end
+      return fire[ammo][1], fire[ammo][2]
+    end
+    local seen_kinds, kind_list = {}, {}
     local flown_names = {}
     for _, l in ipairs(fl) do flown_names[#flown_names+1] = l.from .. '->' .. l.to end
     lines[#lines+1] = #fl > 0 and string.format('scaled from the legs flown in the last 2 hours: %s (%s)', table.concat(flown_names, ', ', 1, math.min(#flown_names, 6)), mins(fmin))
@@ -203,12 +304,15 @@ return function(api)
         for j = 1, math.min(6, #kinds) do kt[j] = string.format('%s %.4f%s', kinds[j].k, kinds[j].p, fd[kinds[j].k] and string.format(' (flown %.4f)', fd[kinds[j].k]) or (#fl > 0 and ' (flown 0)' or '')) end
         lines[#lines+1] = string.format('%s->%s %d km, %s%s: asteroids (spawn chance, mean over the leg): %s', l.from, l.to, l.km or 0, mins(l.minutes),
           sp < 1 and ' (' .. mins(m) .. ' at ' .. round(sp * 100) .. '% speed)' or '', table.concat(kt, ', '))
+        for _, kd in ipairs(kinds) do
+          for k in pairs(M.breakup(kd.k)) do if not seen_kinds[k] then seen_kinds[k] = true; kind_list[#kind_list+1] = k end end
+        end
         for _, r in ipairs(rows) do
-          local turret = turret_for(pl, r.name)
-          local w, cant = load_of(dens, r.name, pl.force, turret, cache)
+          local turret, quality = fire_of(r.name)
+          local w, cant = load_of(dens, r.name, pl.force, turret, cache, quality)
           local shots = {}
           for j = 1, math.min(4, #kinds) do
-            local _, s, frag = tree_shots(kinds[j].k, r.name, pl.force, turret, cache)
+            local _, s, frag = tree_shots(kinds[j].k, r.name, pl.force, turret, cache, quality)
             shots[#shots+1] = string.format('%s %s%s', kinds[j].k, s == false and 'none hurt' or s == 'unknown' and '?' or tostring(s),
               frag > 0 and string.format(' + %d for its fragments', math.floor(frag + 0.5)) or '')
           end
@@ -217,13 +321,13 @@ return function(api)
           local text = string.format('  %s%s: shots per asteroid %s%s', r.name, turret and ' (' .. turret .. ')' or '', table.concat(shots, ', '),
             #cant > 0 and '; cannot hurt ' .. table.concat(cant, ', ') or '')
           if mv and #fl > 0 and m then
-            local wf = load_of(fd, r.name, pl.force, turret, cache)
+            local wf = load_of(fd, r.name, pl.force, turret, cache, quality)
             local ratio = wf > 0 and w / wf or nil
             -- (K4) the part of this leg's shooting from kinds the legs flown met none of: the scale has no measure for it
             local unmet, unmet_kinds = 0, {}
             for k, p in pairs(dens) do
               if not fd[k] or fd[k] <= 0 then
-                local t = tree_shots(k, r.name, pl.force, turret, cache)
+                local t = tree_shots(k, r.name, pl.force, turret, cache, quality)
                 if t > 0 then unmet = unmet + p * t; unmet_kinds[#unmet_kinds+1] = k end
               end
             end
@@ -257,6 +361,46 @@ return function(api)
         end
       end
     end
+    -- (AX1) The damage behind the shots: each ammunition's shot as platform_defense ammo_use gives it, and against each
+    -- asteroid of the route (its fragments too) the resistance arithmetic; asteroids alike in health and resistances
+    -- (the metallic, carbonic and oxide of one size) share a line.
+    local damage_rows = {}
+    if #kind_list > 0 and #rows > 0 then
+      lines[#lines+1] = 'damage a shot (as platform_defense ammo_use gives it) and a hit on each asteroid after its resistances (the game\'s rule: past the flat decrease it takes the rest, then less the percent; not past it: 1 / (2 + decrease - damage), less the percent):'
+      table.sort(kind_list, function(x, y)
+        local hx = try(function() return prototypes.entity[x].get_max_health() end) or 0
+        local hy = try(function() return prototypes.entity[y].get_max_health() end) or 0
+        if hx ~= hy then return hx < hy end
+        return x < y
+      end)
+      for _, r in ipairs(rows) do
+        local turret, quality = fire_of(r.name)
+        local h = M.hit(r.name, quality, pl.force, turret)
+        lines[#lines+1] = '  ' .. M.hit_line(r.name, quality, pl.force, turret)
+        local groups, order = {}, {}
+        for _, k in ipairs(kind_list) do
+          local line, row = M.vs_line(k, r.name, quality, pl.force, turret)
+          if row then
+            local key = line:gsub('^%S+', '')
+            if not groups[key] then groups[key] = {kinds={}, line=line, row=row}; order[#order+1] = key end
+            table.insert(groups[key].kinds, k)
+            damage_rows[#damage_rows+1] = {ammo=r.name, ammo_quality=quality, turret=turret, damage=h and h.by or nil, damage_per_shot=h and h.total or nil,
+              asteroid=k, hp=row.hp, per_hit=math.floor(row.per_hit * 100 + 0.5) / 100, shots=row.shots}
+          end
+        end
+        for _, key in ipairs(order) do
+          local g = groups[key]
+          local names = g.kinds[1]
+          if #g.kinds > 1 then
+            local stems = {}
+            for _, k in ipairs(g.kinds) do stems[#stems+1] = k:match('^%a+%-(.-)%-asteroid$') or k end
+            local size = g.kinds[1]:match('^(%a+)%-') or ''
+            names = size .. '-' .. table.concat(stems, '/') .. '-asteroid'
+          end
+          lines[#lines+1] = '    ' .. names .. key
+        end
+      end
+    end
     -- Which limit binds what is made on the way, each ammunition once (the trip's whole time at the moving rate).
     for _, r in ipairs(model and rows or {}) do
       local mv = r.phases and r.phases.moving
@@ -265,7 +409,7 @@ return function(api)
           (r.received or 0) > 0 and string.format(', %d on rockets on their way up counted at the start', r.received) or '', model.binds(r.name, mv.made_per_min, t_cum[r.name]).line)
       end
     end
-    return lines
+    return lines, damage_rows
   end
   return M
 end
