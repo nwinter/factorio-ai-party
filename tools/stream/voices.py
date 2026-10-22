@@ -377,31 +377,17 @@ def speakable(text, limit=220):
 
 
 # ---- delivery: how a line should sound ----------------------------------------------------------------------------
-FRUSTRATED = re.compile(r"\b(ugh+|argh+|why (?:is|does|won't|can't)|stuck|broken|starv\w*|damn|seriously|come on|"
-                        r"annoying|great, just)\b", re.I)
-FRUSTRATED_WEAK = re.compile(r"\b(again|keeps?|still|nope)\b", re.I)  # "by hand again!" is not a complaint
-EXCITED = re.compile(r"\b(yes+|huge|finally|boom|let's go|wow|incredible|done|online|we did it|massive|nice)\b", re.I)
+# (d22 batch99 BI1, viewer Aurora site:4295: "Routine words like still or broken can trigger frustration. Use a natural
+# default, infer emotion from context") A line's mood comes from what it is about, never from its words: the caller
+# (caster.py moment_mood) names it from the event (a loss, a fight, a death, a first launch); anything else is neutral.
+# The word guess this replaces read 22 of 63 agent lines on OpenAI voices in shifts 58-59 as frustrated, on "still",
+# "again" and "keeps" ("Kestrel IVc is still on the way from Aquilo"), and "yes"/"done" as excited.
+MOODS = ("neutral", "excited", "tense", "concerned")
 
 
-def mood(text, caster=None):
-    """excited | frustrated | deadpan | neutral: a cheap guess from the words, steering expressive providers.
-    Frustration and excitement are scored (a strong word counts 2, "again" or one "!" counts 1; a tie with a "!" is
-    excited); short flat sentences with no "!" or "?" are deadpan ("Iron plates. Again. I have become the iron plate.")."""
-    f = 2 * len(FRUSTRATED.findall(text)) + len(FRUSTRATED_WEAK.findall(text))
-    e = 2 * len(EXCITED.findall(text)) + ("!" in text) + bool(re.search(r"\b[A-Z]{4,}\b", text))
-    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
-    flat = "!" not in text and "?" not in text and len(sentences) >= 2 \
-        and len(text.split()) / len(sentences) <= 6 and f <= 1
-    if caster is None:
-        if flat:
-            return "deadpan"
-        if f > e or (f and f == e and "!" not in text):
-            return "frustrated"
-    if e:
-        return "excited"
-    if caster is None and len(text) < 70 and text.rstrip().endswith("."):
-        return "deadpan"
-    return "neutral"
+def mood(text=None, caster=None, context=None):
+    """neutral | excited | tense | concerned: `context` if it is one of MOODS, else neutral. The text is not read."""
+    return context if context in MOODS else "neutral"
 
 
 ROLE_STYLE = {
@@ -410,20 +396,24 @@ ROLE_STYLE = {
              "the play-by-play.",
 }
 MOOD_STYLE = {
-    "excited": "Excited and proud, a little breathless.",
-    "frustrated": "Exasperated and frustrated, clipped, with a sigh.",
-    "deadpan": "Deadpan and dry, flat understated delivery.",
+    "excited": "Excited and proud, a little breathless: this is a big moment.",
+    "tense": "Focused and urgent, a little quicker, a fight is on; steady, not shouting.",
+    "concerned": "Serious and concerned, a little lower and slower; something was lost.",
     "neutral": "Natural and conversational, like talking to teammates mid-task.",
 }
-V3_TAG = {"excited": "[excited]", "frustrated": "[sighs]", "deadpan": "[deadpan]", "neutral": ""}  # Eleven v3/v4
-CARTESIA_EMOTION = {"excited": "excited", "frustrated": "frustrated", "deadpan": "calm", "neutral": "neutral"}
+# Eleven v3/v4 audio tags; tense and concerned go untagged (the instruction-free model reads the words as they are)
+V3_TAG = {"excited": "[excited]", "tense": "", "concerned": "", "neutral": ""}
+CARTESIA_EMOTION = {"excited": "excited", "tense": "neutral", "concerned": "calm", "neutral": "neutral"}
 
 
-def style_for(text, caster=None):
-    """(mood, instruction text)."""
-    m = mood(text, caster)
+def style_for(text, caster=None, context=None, direction=None):
+    """(mood, instruction text). (d22 batch99 BI2) `direction`: the writer's delivery for this line (tone, emphasis,
+    pacing), in place of the mood's sentence (the writer read the line and its moment; both at once contradicted on a
+    copy: "concerned" beside "bright on the departure, then a small wince"); the mood stays for the engines without
+    an instruction. The voice's persona and accent come from the role and the voice itself."""
+    m = mood(text, caster, context)
     base = ROLE_STYLE.get(caster, "A player in a live co-op Factorio stream, speaking to teammates.")
-    return m, base + " " + MOOD_STYLE[m]
+    return m, base + " " + ("This line: " + direction if direction else MOOD_STYLE[m])
 
 
 # ---- HTTP ---------------------------------------------------------------------------------------------------------
@@ -890,12 +880,14 @@ class TTS:
         pool = sorted(r for p, r, _, _ in PREMIUM.values() if FAMILY.get(p) == fam)
         return pool[int(hashlib.sha1(aura.encode()).hexdigest(), 16) % len(pool)]
 
-    def speak(self, text, voice, caster=None):
+    def speak(self, text, voice, caster=None, mood=None, direction=None):
         """-> (audio bytes, content type, duration seconds, latency seconds). `text` is the caption text; the
-        lexicon is applied here, for the provider that speaks it."""
+        lexicon is applied here, for the provider that speaks it. `mood`: the line's moment (MOODS; default neutral).
+        `direction`: a delivery direction in words; only the engines that take an instruction use it (OpenAI
+        gpt-4o-mini-tts `instructions`, Inworld `instruction`); ElevenLabs, Cartesia, Aura and say ignore it."""
         t0 = time.time()
         prov, ref = self.route(voice, caster)
-        m, instruction = style_for(text, caster)
+        m, instruction = style_for(text, caster, mood, direction)
         key = None
         if self.cache:
             key = hashlib.sha1(json.dumps([prov, getattr(self.providers.get(prov), "model", ""), ref, m, instruction,
@@ -1150,6 +1142,8 @@ if __name__ == "__main__":
     ap.add_argument("--tts", default="aura2", choices=list(PRICE))
     ap.add_argument("--voice", default="orion", help="voice id, or 'all' to render every voice")
     ap.add_argument("--caster", choices=list(CASTERS), help="speak as this caster (role voice and delivery)")
+    ap.add_argument("--mood", choices=list(MOODS), help="the line's moment (default neutral)")
+    ap.add_argument("--direction", help="a delivery direction in words (OpenAI and Inworld only)")
     ap.add_argument("--out", default=".", help="directory for the mp3 files")
     ap.add_argument("--check", action="store_true",
                     help="also measure loudness and transcribe each clip back with Whisper (word accuracy)")
@@ -1165,7 +1159,7 @@ if __name__ == "__main__":
     tts = TTS(a.tts)
     whisper = 0.0
     for v in (voice_ids() if a.voice == "all" else [a.voice]):
-        audio, ctype, dur, lat = tts.speak(speakable(a.text), v, caster=a.caster)
+        audio, ctype, dur, lat = tts.speak(speakable(a.text), v, caster=a.caster, mood=a.mood, direction=a.direction)
         path = os.path.join(a.out, f"{a.tts}-{v}.mp3")
         open(path, "wb").write(audio)
         row = {"voice": v, "file": path, "seconds": round(dur, 2), "latency": round(lat, 2), **tts.last}
