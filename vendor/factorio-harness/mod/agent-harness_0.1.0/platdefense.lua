@@ -104,6 +104,41 @@ return function(api)
       ammo=ammo, empty=t.type == 'ammo-turret' and rounds == 0, armed=armed,
       unarmed=not armed and (t.type == 'ammo-turret' and 'no ammo' or t.type == 'electric-turret' and 'no energy' or 'no fluid') or nil, feed=feed or (t.type == 'ammo-turret' and 'nothing (by hand)' or t.type == 'electric-turret' and 'power' or 'pipe')}
   end
+  -- (d21 batch72 AH2, Astra #1741) a turret ghost of ours: its prototype's range, minimum range and arc by its facing, and
+  -- the priority list the ghost carries; never armed (a ghost holds no ammunition and draws no power)
+  local function ghost_info(g)
+    local pr = g.ghost_prototype
+    local ap = try(function() return pr.attack_parameters end) or {}
+    local turn = ap.turn_range or 1
+    local dir = try(function() return g.direction end) or 0
+    local face, half, arc
+    if turn < 1 then
+      face, half = dir / 16 * 2 * math.pi, turn * math.pi
+      arc = string.format('aims within %g degrees centred %s', math.floor(turn * 3600 + 0.5) / 10, COMPASS[dir] or (dir .. '/16 of a turn'))
+    end
+    local only = engages(g)
+    local listed = {}
+    for name in pairs(only or {}) do listed[#listed+1] = name end
+    table.sort(listed)
+    local t = g.ghost_type
+    return {entity=g, ghost=true, name=g.ghost_name, type=t, position=g.position, face=face, half=half, arc=arc, facing=arc and (COMPASS[dir] or dir) or nil,
+      arc_degrees=arc and math.floor(turn * 3600 + 0.5) / 10 or nil, range=ap.range or 0, min_range=ap.min_range or 0, only=only,
+      engages=only and (#listed > 0 and 'only ' .. table.concat(listed, ', ') .. ' (ignores the rest)' or 'nothing (ignores every target off its empty priority list)') or 'every asteroid',
+      armed=false, unarmed=t == 'ammo-turret' and 'a ghost: no ammunition' or t == 'electric-turret' and 'a ghost: no power' or 'a ghost: no fluid'}
+  end
+  -- a collector's front: the middle of its collection area (the tile rule that keeps empty space), turned by its facing
+  local function front_of(proto, pos, dir)
+    for _, rule in ipairs(try(function() return proto.tile_buildability_rules end) or {}) do
+      local empty = false
+      for l in pairs(rule.required_tiles and rule.required_tiles.layers or {}) do if l == 'empty_space' then empty = true end end
+      if empty then
+        local cx, cy = (rule.area.left_top.x + rule.area.right_bottom.x) / 2, (rule.area.left_top.y + rule.area.right_bottom.y) / 2
+        local rx, ry = rotate(cx, cy, dir)
+        return {x=pos.x + rx, y=pos.y + ry}
+      end
+    end
+    return pos
+  end
   -- the turrets whose range reaches q (past their minimum range, within their arc); outside: those whose range alone
   -- would reach it, with how far off their arc it lies
   local function covering(turrets, q)
@@ -131,7 +166,9 @@ return function(api)
   local memo = {}
   local function by_size(list, kinds)
     local ids = {}
-    for i, t in ipairs(list) do ids[i] = t.idx end
+    -- (d21 batch72 AH2) each turret's id as text made once: a number turned into text costs about 8 µs in the game's Lua,
+    -- and this ran for every edge tile (200 ms on a 15,357-tile hull)
+    for i, t in ipairs(list) do local k = t.sid; if not k then k = string.format('%d', t.idx); t.sid = k end; ids[i] = k end
     local k = table.concat(ids, ',')
     if memo[k] then return memo[k] end
     local out = {}
@@ -152,18 +189,132 @@ return function(api)
     memo[k] = out
     return out
   end
-  local ALL = {small={covered=true}, medium={covered=true}, big={covered=true}, huge={covered=true}}
-  -- a hull tile's cover by size: a turret engaging every asteroid reaching it covers all; else the turrets with a
-  -- priority list that reach it decide
-  local function cover_at(turrets, x, y, kinds)
-    local part, n = nil, 0
+  -- (d21 batch72 AH2: the old read's hull sides as a function, for the planned hull too) each side of a hull (tiles {x,y}):
+  -- per size the edge tiles no turret reaches as runs; with `second` (a subset of turrets), the tiles covered by turrets
+  -- but not by that subset, as `field` (unarmed_only: by turrets not armed now; ghost_only: by turret ghosts only)
+  -- the turrets by GRID-tile cell: each cell lists the turrets whose range reaches into it (a tile's cover tests only
+  -- its cell's), with their squared range and minimum range
+  local GRID = 16
+  local function reach_grid(turrets)
+    local grid = {}
     for _, t in ipairs(turrets) do
-      if reaches(t, x, y) then
-        if not t.only then return ALL end
-        n = n + 1; part = part or {}; part[n] = t
+      t.r2, t.m2 = t.range * t.range, t.min_range * t.min_range
+      local px, py, r = t.position.x, t.position.y, t.range + 1
+      for gx = math.floor((px - r) / GRID), math.floor((px + r) / GRID) do
+        for gy = math.floor((py - r) / GRID), math.floor((py + r) / GRID) do
+          local k = key(gx, gy)
+          local l = grid[k]
+          if not l then l = {}; grid[k] = l end
+          l[#l+1] = t
+        end
       end
     end
-    return by_size(part or {}, kinds)
+    return grid
+  end
+  local NONE = {}
+  -- the turrets that reach (x, y), and of them those `keep` keeps (nil: all)
+  local function reach_list(grid, x, y, keep)
+    local list, sub = {}, keep and {} or nil
+    for _, t in ipairs(grid[key(math.floor(x / GRID), math.floor(y / GRID))] or NONE) do
+      local dx, dy = t.position.x - x, t.position.y - y
+      local d2 = dx * dx + dy * dy
+      if d2 <= t.r2 and d2 >= t.m2 and not off_arc(t, x, y) then
+        list[#list+1] = t
+        if sub and keep(t) then sub[#sub+1] = t end
+      end
+    end
+    return list, sub
+  end
+  -- An edge tile's cover as a number: bit BIT[size] when no turret engaging that size reaches it, bit BIT[size] * 16 when
+  -- only turrets `keep` leaves out do (not armed now; ghosts)
+  local BIT = {small=1, medium=2, big=4, huge=8}
+  local function edge_mask(grid, x, y, keep, kinds)
+    local list, sub = reach_list(grid, x + 0.5, y + 0.5, keep)
+    local bs = by_size(list, kinds)
+    local ba = sub and by_size(sub, kinds) or bs
+    local m = 0
+    for _, size in ipairs(SIZES) do
+      if not bs[size].covered then m = m + BIT[size] elseif not ba[size].covered then m = m + BIT[size] * 16 end
+    end
+    return m
+  end
+  -- tile (x, y) of the hull `set` into `sides` ({name: {edge, list {x, y, m}}}) for each side with empty space beside it,
+  -- its cover read once
+  local function edge_tile(set, grid, x, y, keep, kinds, sides)
+    local m
+    for _, d in ipairs(SIDES) do
+      if not set[key(x + d[1], y + d[2])] then
+        m = m or edge_mask(grid, x, y, keep, kinds)
+        local sd = sides[d[3]]
+        if not sd then sd = {edge=0, list={}}; sides[d[3]] = sd end
+        sd.edge = sd.edge + 1
+        sd.list[sd.edge] = {x=x, y=y, m=m}
+      end
+    end
+  end
+  -- the sides' rows and lines: each side's tiles sorted once along it, then split by size in that order; runs of the
+  -- uncovered ones, the longest first
+  local function side_lines(sides, field, words_second, lines, prefix)
+    local side_rows = {}
+    for _, d in ipairs(SIDES) do
+      local sd = sides[d[3]]
+      if sd then
+        -- runs of uncovered edge tiles: along x for north/south, along y for east/west
+        local along = (d[3] == 'north' or d[3] == 'south')
+        table.sort(sd.list, function(u, v)
+          if along then if u.y ~= v.y then return u.y < v.y end return u.x < v.x end
+          if u.x ~= v.x then return u.x < v.x end return u.y < v.y end)
+        local open, size_open, size_second = {}, {small={}, medium={}, big={}, huge={}}, {small={}, medium={}, big={}, huge={}}
+        for _, e in ipairs(sd.list) do
+          local m = e.m
+          if m % 16 ~= 0 then open[#open+1] = e end
+          for _, size in ipairs(SIZES) do
+            local bit = BIT[size]
+            if math.floor(m / bit) % 2 == 1 then local o = size_open[size]; o[#o+1] = e
+            elseif math.floor(m / (bit * 16)) % 2 == 1 then local o = size_second[size]; o[#o+1] = e end
+          end
+        end
+        local function gaps_of(list, most)
+          local runs = {}
+          for _, t in ipairs(list) do
+            local r = runs[#runs]
+            if r and math.abs((along and t.x or t.y) - (along and r.x1 or r.y1)) <= 2 and math.abs((along and t.y or t.x) - (along and r.y1 or r.x1)) <= 2 then
+              r.x1, r.y1, r.n = t.x, t.y, r.n + 1
+            else runs[#runs+1] = {x0=t.x, y0=t.y, x1=t.x, y1=t.y, n=1} end
+          end
+          table.sort(runs, function(u, v) return u.n > v.n end)
+          local gaps = {}
+          for i, r in ipairs(runs) do if i <= most then gaps[i] = string.format('(%d,%d)-(%d,%d) %d tile%s', r.x0, r.y0, r.x1, r.y1, r.n, r.n == 1 and '' or 's') end end
+          return gaps, #runs
+        end
+        local gaps = gaps_of(open, GAPS)
+        local per, words = {}, {}
+        for _, size in ipairs(SIZES) do
+          local o = size_open[size]
+          local g, n = gaps_of(o, 3)
+          per[size] = {uncovered=#o, gaps=g}
+          words[#words+1] = #o == 0 and size .. ' all covered' or string.format('%s %d uncovered (%s%s)', size, #o, table.concat(g, '; '), n > 3 and string.format('; +%d more runs', n - 3) or '')
+          local u = size_second[size]
+          if #u > 0 then
+            local ug, un = gaps_of(u, 3)
+            per[size][field], per[size][field:gsub('_only$', '') .. '_gaps'] = #u, ug
+            words[#words] = words[#words] .. string.format(', %d %s (%s%s)', #u, words_second, table.concat(ug, '; '), un > 3 and string.format('; +%d more runs', un - 3) or '')
+          end
+        end
+        side_rows[#side_rows+1] = {side=d[3], edge_tiles=sd.edge, uncovered=#open, gaps=gaps, by_size=per}
+        lines[#lines+1] = string.format('%s%s side: %d edge tiles, %d where a size is not covered; %s', prefix or '', d[3], sd.edge, #open, table.concat(words, '; '))
+      end
+    end
+    return side_rows
+  end
+  local plan_store
+  local function hull_sides(tiles, turrets, keep, kinds, field, words_second, lines, prefix)
+    local set = {}
+    for _, t in ipairs(tiles) do set[key(t.x, t.y)] = true end
+    local grid = reach_grid(turrets)
+    local sides = {}
+    for _, t in ipairs(tiles) do edge_tile(set, grid, t.x, t.y, keep, kinds, sides) end
+    return side_lines(sides, field, words_second, lines, prefix)
   end
   local function size_words(bs)
     local w = {}
@@ -291,6 +442,202 @@ return function(api)
     end
     return lines, rows
   end
+  -- (d21 batch72 AH2, Astra #1741: Asterion's 15,357-tile hull staged as ghosts, and reviews drew railgun circles) the
+  -- planned defense: our turret ghosts with the built turrets, on the hull with our foundation tile ghosts, each turret
+  -- by its prototype's range, minimum range and arc by its facing and the priority list it carries; cover per asteroid
+  -- size as the built read gives it, and apart from it what only ghosts cover. Ghosts hold no ammunition and draw no
+  -- power: planned cover is reach alone.
+  M.PLANNED_NOTE = 'planned cover is reach alone: a ghost holds no ammunition and draws no power, so it fires at nothing until it is built, fed and powered (ammo turrets: ammunition; laser turrets: power; fluid turrets: fluid)'
+  function M.planned(pl, s, force, turrets, kinds, lines)
+    local ghosts, by_name = {}, {}
+    for _, g in ipairs(s.find_entities_filtered{type='entity-ghost', ghost_type=TURRETS, force=force, limit=MAX_TURRETS}) do
+      if g.valid then
+        local info = ghost_info(g)
+        info.idx = #turrets + #ghosts + 1
+        ghosts[#ghosts+1] = info
+        by_name[info.name] = (by_name[info.name] or 0) + 1
+      end
+    end
+    local all = {}
+    for _, t in ipairs(turrets) do all[#all+1] = t end
+    for _, g in ipairs(ghosts) do all[#all+1] = g end
+    -- the planned hull's sides: the last background read of this platform kept PLAN_KEEP ticks, else one begun now
+    local P = plan_store()
+    local done, job = P.done[pl.index], P.jobs[pl.index]
+    if done and game.tick - done.start > M.PLAN_KEEP then done = nil end
+    if not done and not job then M.plan_start(pl, all, kinds) end
+    local names = {}
+    for n, c in pairs(by_name) do names[#names+1] = n .. ' ' .. c end
+    table.sort(names)
+    lines[#lines+1] = string.format('planned: %d built turret%s and %d turret ghost%s%s; %s',
+      #turrets, #turrets == 1 and '' or 's', #ghosts, #ghosts == 1 and '' or 's', #names > 0 and ' (' .. table.concat(names, ', ') .. ')' or '', M.PLANNED_NOTE)
+    -- the ghosts with an arc, one line each (up to 16), and the rest by name, range and what they engage
+    local arcs, plain, grows = 0, {}, {}
+    for i, g in ipairs(ghosts) do
+      if g.arc and arcs < 16 then
+        arcs = arcs + 1
+        lines[#lines+1] = string.format('planned: %s ghost %s %s, range %g%s, engages %s', g.name, at(g.position), g.arc, g.range,
+          g.min_range > 0 and string.format(', not within %g', g.min_range) or '', g.engages)
+      elseif not g.arc then
+        local k = string.format('%s ghosts: range %g%s, aim all round, engage %s', g.name, g.range, g.min_range > 0 and string.format(', not within %g', g.min_range) or '', g.engages)
+        plain[k] = (plain[k] or 0) + 1
+      end
+      if g.arc and #grows < 16 then grows[#grows+1] = {name=g.name, position=g.position, facing=g.facing, arc_degrees=g.arc_degrees, range=g.range, min_range=g.min_range > 0 and g.min_range or nil, engages=g.engages, unarmed=g.unarmed} end
+    end
+    local pk = {}
+    for k, n in pairs(plain) do pk[#pk+1] = n .. ' ' .. k end
+    table.sort(pk)
+    for _, k in ipairs(pk) do lines[#lines+1] = 'planned: ' .. k end
+    -- the collectors built and planned, against every turret built and planned, and the built turrets alone: one line
+    -- by size (how many none reaches, how many only ghosts reach), then up to 8 collectors a size leaves uncovered
+    local collectors, open_by, ghost_by, open_list, nopen = {}, {}, {}, {}, 0
+    local function collector(pos, front, ghost, cname)
+      local list, nearest, nd, outside = covering(all, front)
+      local built = {}
+      for _, t in ipairs(list) do if not t.ghost then built[#built+1] = t end end
+      local bs, bb = by_size(list, kinds), by_size(built, kinds)
+      local open, ghost_only = {}, {}
+      for _, size in ipairs(SIZES) do
+        if not bs[size].covered then open[#open+1] = size; open_by[size] = (open_by[size] or 0) + 1
+        elseif not bb[size].covered then ghost_only[#ghost_only+1] = size; ghost_by[size] = (ghost_by[size] or 0) + 1 end
+      end
+      local row = {position=pos, ghost=ghost or nil, covered_by=#list, ghosts=#list - #built, uncovered=#open > 0 and open or nil, ghost_only=#ghost_only > 0 and ghost_only or nil}
+      if #outside > 0 then
+        row.outside_arc = {}
+        for i, o in ipairs(outside) do if i <= 4 then row.outside_arc[i] = {name=o.turret.name, ghost=o.turret.ghost or nil, position=o.turret.position, off_degrees=math.floor(o.off + 0.5)} end end
+      end
+      collectors[#collectors+1] = row
+      if #open > 0 then nopen = nopen + 1 end
+      if #open > 0 and #open_list < 8 then
+        open_list[#open_list+1] = string.format('%s%s %s (front %s): %s%s', cname, ghost and ' ghost' or '', at(pos), at(front),
+          #list > 0 and string.format('%d reach it (%d ghosts), none for %s', #list, #list - #built, table.concat(open, '/'))
+            or (nearest and string.format('NO built or planned turret reaches it (nearest %s%s %s, %.0f tiles past its range %g)', nearest.name, nearest.ghost and ' ghost' or '', at(nearest.position), nd, nearest.range) or 'NO turret built or planned'),
+          #outside > 0 and '; in range but outside the arc, not counted: ' .. outside_words(outside) or '')
+      end
+    end
+    for _, c in ipairs(s.find_entities_filtered{type='asteroid-collector', force=force}) do collector(c.position, front_of(c.prototype, c.position, c.direction), false, c.name) end
+    for _, g in ipairs(s.find_entities_filtered{type='entity-ghost', ghost_type='asteroid-collector', force=force}) do
+      collector(g.position, front_of(g.ghost_prototype, g.position, g.direction), true, g.ghost_name)
+    end
+    if #collectors > 0 then
+      local w = {}
+      for _, size in ipairs(SIZES) do
+        w[#w+1] = string.format('%s: %d uncovered, %d covered only by ghosts', size, open_by[size] or 0, ghost_by[size] or 0)
+      end
+      lines[#lines+1] = string.format('planned: %d collector%s (built and ghosts) by size: %s%s', #collectors, #collectors == 1 and '' or 's', table.concat(w, '; '),
+        #open_list > 0 and '; uncovered: ' .. table.concat(open_list, '; ') .. (nopen > #open_list and string.format(' (+%d more: collectors rows)', nopen - #open_list) or '') or '')
+    end
+    local out = {note=M.PLANNED_NOTE, built_turrets=#turrets, turret_ghosts=#ghosts, ghosts_by_name=by_name, capped=#ghosts >= MAX_TURRETS or nil,
+      ghosts=grows, collectors=collectors}
+    if done then
+      out.sides, out.sides_as_of, out.foundation_tiles, out.foundation_ghosts, out.sides_capped = done.sides, done.start, done.built, done.ghosts, done.capped
+      lines[#lines+1] = string.format('planned: the hull read at tick %d (%ds ago): %d foundation tiles and %d foundation tile ghosts%s, with the turrets and ghosts standing then',
+        done.start, math.floor((game.tick - done.start) / 60), done.built, done.ghosts, done.capped and string.format(' (capped at %d)', MAX_TILES) or '')
+      for _, l in ipairs(done.lines) do lines[#lines+1] = l end
+    else
+      local j = P.jobs[pl.index]
+      out.sides_pending = string.format('the planned hull is being read in the background since tick %d (%d tiles so far, about %d tiles a second: a 15,000-tile hull takes about 20 s); call again then for its sides',
+        j.start, #j.keys, M.PLAN_WORK * 60)
+      lines[#lines+1] = 'planned: ' .. out.sides_pending
+    end
+    return out
+  end
+  -- (AH2) The planned hull's sides in the background: a synchronous read of Asterion's 15,357 tiles took 120 ms on the
+  -- private copy (12,197 tile ghosts' positions alone 13 ms). A job per platform, in storage: the chunks from the hub's
+  -- out to each neighbour of a chunk with foundation or a tile ghost (a hull part a whole empty chunk away from the rest
+  -- is not read), one chunk a tick; then PLAN_EDGES tiles a tick into the sides with each edge tile's cover; then the
+  -- lines. Kept PLAN_KEEP ticks; at most PLAN_JOBS at once, one at a time, paced by work: PLAN_WORK units a tick (a tile
+  -- found or checked one, an edge tile sorted into the lines 4, a chunk's finds 32), kept up to PLAN_CAP; unpaced, three
+  -- jobs (Asterion, Kestrel II, Prospect) put up to 66 ms into one second.
+  M.PLAN_KEEP, M.PLAN_EDGES, M.PLAN_JOBS, M.PLAN_WORK, M.PLAN_CAP = 1800, 500, 4, 60, 120
+  plan_store = function()
+    local st = api.state()
+    st.platplan = st.platplan or {jobs={}, done={}}
+    return st.platplan
+  end
+  function M.plan_start(pl, all, kinds)
+    local P = plan_store()
+    local n = 0
+    for _ in pairs(P.jobs) do n = n + 1 end
+    if n >= M.PLAN_JOBS then return end
+    local tl, ghosts = {}, false
+    for i, t in ipairs(all) do
+      if t.ghost then ghosts = true end
+      tl[i] = {position={x=t.position.x, y=t.position.y}, face=t.face, half=t.half, range=t.range, min_range=t.min_range, only=t.only, ghost=t.ghost, idx=i}
+    end
+    local seen = {}
+    local queue = {{0, 0}, {-1, -1}, {-1, 0}, {0, -1}}
+    for _, c in ipairs(queue) do seen[key(c[1], c[2])] = true end
+    P.jobs[pl.index] = {force=pl.force.name, start=game.tick, stage='chunks', turrets=tl, kinds=kinds, ghosts=ghosts or nil, queue=queue, qi=1, seen=seen,
+      set={}, keys={}, built=0, tile_ghosts=0, ei=1, sides={}}
+  end
+  local function plan_step(index, job)
+    local f = game.forces[job.force or 'player']
+    local pl = f and f.platforms[index]
+    local s = pl and pl.valid and pl.surface
+    local P = plan_store()
+    if not s then P.jobs[index] = nil; return end
+    job.credit = math.min(M.PLAN_CAP, (job.credit or 0) + M.PLAN_WORK * math.max(0, game.tick - (job.paced or game.tick - 1)))
+    job.paced = game.tick
+    if job.credit <= 0 then return end
+    if job.stage == 'chunks' then
+      local c = job.queue[job.qi]
+      if not c or #job.keys >= MAX_TILES then job.stage = 'edges'; return end
+      job.qi = job.qi + 1
+      local area = {{c[1] * 32, c[2] * 32}, {c[1] * 32 + 32, c[2] * 32 + 32}}
+      local found = 0
+      for _, t in ipairs(s.find_tiles_filtered{area=area, name='space-platform-foundation'}) do
+        local q = t.position
+        local k = key(q.x, q.y)
+        if not job.set[k] and #job.keys < MAX_TILES then job.set[k] = true; job.keys[#job.keys+1] = k; job.built = job.built + 1 end
+        found = found + 1
+      end
+      -- a tile ghost over empty space: on a platform only foundation goes there
+      for _, t in ipairs(s.find_tiles_filtered{area=area, has_tile_ghost=true, force=pl.force}) do
+        local q = t.position
+        local k = key(q.x, q.y)
+        if not job.set[k] and #job.keys < MAX_TILES then job.set[k] = true; job.keys[#job.keys+1] = k; job.tile_ghosts = job.tile_ghosts + 1 end
+        found = found + 1
+      end
+      job.credit = job.credit - 32 - found
+      if found > 0 then
+        for dx = -1, 1 do for dy = -1, 1 do
+          local k = key(c[1] + dx, c[2] + dy)
+          if not job.seen[k] then job.seen[k] = true; job.queue[#job.queue+1] = {c[1] + dx, c[2] + dy} end
+        end end
+      end
+    elseif job.stage == 'edges' then
+      memo = {}
+      local grid = reach_grid(job.turrets)
+      local keep = job.ghosts and function(t) return not t.ghost end or nil
+      local last = math.min(#job.keys, job.ei + M.PLAN_EDGES - 1)
+      for i = job.ei, last do
+        local k = job.keys[i]
+        edge_tile(job.set, grid, math.floor(k / 65536) - 32768, k % 65536 - 32768, keep, job.kinds, job.sides)
+      end
+      job.credit = job.credit - (last - job.ei + 1)
+      job.ei = last + 1
+      if job.ei > #job.keys then job.stage = 'lines' end
+    else
+      local lines = {}
+      local edges = 0
+      for _, sd in pairs(job.sides) do edges = edges + sd.edge end
+      if job.credit < edges * 4 and not job.waited then job.waited = true; job.credit = job.credit - edges * 4; return end
+      local rows = side_lines(job.sides, 'ghost_only', 'more covered only by turret ghosts', lines, 'planned: ')
+      P.done[index] = {start=job.start, tick=game.tick, sides=rows, lines=lines, built=job.built, ghosts=job.tile_ghosts, capped=#job.keys >= MAX_TILES or nil}
+      P.jobs[index] = nil
+    end
+  end
+  function M.tick(tick)
+    local st = api.state and api.state()
+    local P = st and st.platplan
+    if not P then return end
+    local index, job = next(P.jobs)
+    if index then plan_step(index, job) end
+    -- results kept past PLAN_KEEP are dropped (one a tick)
+    local di, d = next(P.done)
+    if di and tick - d.start > M.PLAN_KEEP * 4 then P.done[di] = nil end
+  end
   function M.num(v) if v >= 100 then return string.format('%d', math.floor(v + 0.5)) elseif v >= 1 then return string.format('%.1f', v) else return string.format('%.3g', v) end end
   function M.read(p, a)
     memo = {}
@@ -311,17 +658,7 @@ return function(api)
     -- collectors' fronts
     local collectors = {}
     for _, c in ipairs(s.find_entities_filtered{type='asteroid-collector', force=force}) do
-      local front
-      for _, rule in ipairs(try(function() return c.prototype.tile_buildability_rules end) or {}) do
-        local empty = false
-        for l in pairs(rule.required_tiles and rule.required_tiles.layers or {}) do if l == 'empty_space' then empty = true end end
-        if empty then
-          local cx, cy = (rule.area.left_top.x + rule.area.right_bottom.x) / 2, (rule.area.left_top.y + rule.area.right_bottom.y) / 2
-          local rx, ry = rotate(cx, cy, c.direction)
-          front = {x=c.position.x + rx, y=c.position.y + ry}
-        end
-      end
-      front = front or c.position
+      local front = front_of(c.prototype, c.position, c.direction)
       local list, nearest, nd, outside = covering(turrets, front)
       local words = {}
       for i, t in ipairs(list) do if i <= 4 then words[i] = string.format('%s %s %s, engages %s, fed by %s', t.name, at(t.position), t.ammo, t.engages, t.feed) end end
@@ -352,70 +689,12 @@ return function(api)
     end
     -- hull edges by side
     local tiles = s.find_tiles_filtered{name='space-platform-foundation', limit=MAX_TILES}
-    local set = {}
-    for _, t in ipairs(tiles) do set[key(t.position.x, t.position.y)] = true end
-    local sides = {}
+    local xy = {}
+    for i, t in ipairs(tiles) do xy[i] = t.position end
     local live_turrets, all_armed = {}, true
     for _, t in ipairs(turrets) do if t.armed then live_turrets[#live_turrets+1] = t else all_armed = false end end
-    for _, t in ipairs(tiles) do
-      local x, y = t.position.x, t.position.y
-      for _, d in ipairs(SIDES) do
-        if not set[key(x + d[1], y + d[2])] then
-          local sd = sides[d[3]] or {edge=0, open={}, size_open={small={}, medium={}, big={}, huge={}}, size_unarmed={small={}, medium={}, big={}, huge={}}}
-          sides[d[3]] = sd
-          sd.edge = sd.edge + 1
-          local bs = cover_at(turrets, x + 0.5, y + 0.5, kinds)
-          local ba = not all_armed and cover_at(live_turrets, x + 0.5, y + 0.5, kinds) or bs
-          local any = false
-          for _, size in ipairs(SIZES) do
-            if not bs[size].covered then any = true; local o = sd.size_open[size]; o[#o+1] = {x=x, y=y}
-            elseif not ba[size].covered then local o = sd.size_unarmed[size]; o[#o+1] = {x=x, y=y} end
-          end
-          if any then sd.open[#sd.open+1] = {x=x, y=y} end
-        end
-      end
-    end
-    local side_rows = {}
-    for _, d in ipairs(SIDES) do
-      local sd = sides[d[3]]
-      if sd then
-        -- runs of uncovered edge tiles: along x for north/south, along y for east/west
-        local along = (d[3] == 'north' or d[3] == 'south')
-        local function gaps_of(open, most)
-          table.sort(open, function(u, v)
-            if along then if u.y ~= v.y then return u.y < v.y end return u.x < v.x end
-            if u.x ~= v.x then return u.x < v.x end return u.y < v.y end)
-          local runs = {}
-          for _, t in ipairs(open) do
-            local r = runs[#runs]
-            if r and math.abs((along and t.x or t.y) - (along and r.x1 or r.y1)) <= 2 and math.abs((along and t.y or t.x) - (along and r.y1 or r.x1)) <= 2 then
-              r.x1, r.y1, r.n = t.x, t.y, r.n + 1
-            else runs[#runs+1] = {x0=t.x, y0=t.y, x1=t.x, y1=t.y, n=1} end
-          end
-          table.sort(runs, function(u, v) return u.n > v.n end)
-          local gaps = {}
-          for i, r in ipairs(runs) do if i <= most then gaps[i] = string.format('(%d,%d)-(%d,%d) %d tile%s', r.x0, r.y0, r.x1, r.y1, r.n, r.n == 1 and '' or 's') end end
-          return gaps, #runs
-        end
-        local gaps, nruns = gaps_of(sd.open, GAPS)
-        local per, words = {}, {}
-        for _, size in ipairs(SIZES) do
-          local o = sd.size_open[size]
-          local g, n = gaps_of(o, 3)
-          per[size] = {uncovered=#o, gaps=g}
-          words[#words+1] = #o == 0 and size .. ' all covered' or string.format('%s %d uncovered (%s%s)', size, #o, table.concat(g, '; '), n > 3 and string.format('; +%d more runs', n - 3) or '')
-          -- covered by reach, but only by turrets not armed now
-          local u = sd.size_unarmed[size]
-          if #u > 0 then
-            local ug, un = gaps_of(u, 3)
-            per[size].unarmed_only, per[size].unarmed_gaps = #u, ug
-            words[#words] = words[#words] .. string.format(', %d more covered only by turrets not armed now (%s%s)', #u, table.concat(ug, '; '), un > 3 and string.format('; +%d more runs', un - 3) or '')
-          end
-        end
-        side_rows[#side_rows+1] = {side=d[3], edge_tiles=sd.edge, uncovered=#sd.open, gaps=gaps, by_size=per}
-        lines[#lines+1] = string.format('%s side: %d edge tiles, %d where a size is not covered; %s', d[3], sd.edge, #sd.open, table.concat(words, '; '))
-      end
-    end
+    local side_rows = hull_sides(xy, turrets, not all_armed and function(t) return t.armed end or nil, kinds, 'unarmed_only', 'more covered only by turrets not armed now', lines)
+    local planned = a.planned == true and M.planned(pl, s, force, turrets, kinds, lines) or nil
     local empty, hand, idle = {}, 0, {}
     for _, t in ipairs(turrets) do
       if t.empty then empty[#empty+1] = t.name .. ' ' .. at(t.position) end
@@ -505,9 +784,9 @@ return function(api)
     end
     return {platform=pl.name, lines=lines, collectors=collectors, sides=side_rows, turrets=trows, feed=feed, destroyed_by_ours=#own_rows > 0 and own_rows or nil,
       route=conn and conn.name or nil, damage=drows and #drows > 0 and drows or nil, ammo_use=ammo_rows and #ammo_rows > 0 and ammo_rows or nil,
-      kinds=kinds, note='a turret reaches what lies within its attack range of its centre and past its minimum range, and a turret whose base has a direction (railgun-turret: 72 degrees) only within its arc centred on its facing (outside_arc: in range, not counted); it engages what its priority list allows (ignore unprioritised targets on: only those listed), by size: small, medium, big, huge, each covered where every kind of that size (kinds) is engaged by a turret reaching it; a collector\'s front is the middle of its collection area; the hull\'s edge tiles are foundation tiles with empty space beside them'}
+      kinds=kinds, planned=planned, note='a turret reaches what lies within its attack range of its centre and past its minimum range, and a turret whose base has a direction (railgun-turret: 72 degrees) only within its arc centred on its facing (outside_arc: in range, not counted); it engages what its priority list allows (ignore unprioritised targets on: only those listed), by size: small, medium, big, huge, each covered where every kind of that size (kinds) is engaged by a turret reaching it; a collector\'s front is the middle of its collection area; the hull\'s edge tiles are foundation tiles with empty space beside them'}
   end
-  M.schema = {platform_defense = {ammo_use='optional: default the ammo turrets aboard with each ammunition they hold and the hub\'s of their categories; "all": every ammo turret with every ammunition of its categories too (normal quality); false: none. ammo_use [{turret, quality, turrets, ammo, ammo_quality, where held|hub|any, category, cooldown_ticks (the turret\'s cooldown x the ammunition\'s cooldown modifier over 1 + shooting_speed_bonus), base_cooldown_ticks, shooting_speed_bonus, shots_per_min, rounds_per_shot, magazine_size, items_per_shot, items_per_min (one turret), items_per_min_all (the turrets counted), damage_per_shot, damage {type: amount} (the ammunition\'s x quality_multiplier x (1 + damage_bonus) x (1 + turret_attack_bonus), before resistances), damage_bonus, turret_attack_bonus, quality_multiplier, sources {shooting_speed, damage, turret_attack}: the technologies and levels researched, and any part not from research, line}]: at full fire, one target in reach',route='optional "FROM->TO" (planets) or a space connection name; default the schedule\'s next leg (or the connection it flies): damage per asteroid that spawns there: its health and resistances, per turret and the ammo it holds now the damage a second after them against its listed damage, together and the time to kill one; under 10% of listed: reached, little damage (damage [{asteroid, hp, dps, kill_s, little}], lines)',platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
+  M.schema = {platform_defense = {planned='optional true: the planned defense apart from the built one (planned {note, built_turrets, turret_ghosts, ghosts_by_name, ghosts [{name, position, facing, arc_degrees, range, min_range, engages, unarmed}] (the ghosts with an arc, up to 16), collectors [{position, ghost, covered_by, ghosts, uncovered (sizes no built or planned turret reaches), ghost_only (sizes only ghosts reach), outside_arc}], sides [{side, edge_tiles, uncovered, gaps, by_size {size: {uncovered, gaps, ghost_only, ghost_gaps (covered only by turret ghosts)}}}] with sides_as_of, foundation_tiles and foundation_ghosts: the hull read in the background (a few seconds; kept 30 s; until then sides_pending), and lines beginning planned:): our turret ghosts with the built turrets, each by its prototype\'s range, minimum range and arc by its facing (railgun-turret 72 degrees) and the priority list it carries, on the hull with our foundation tile ghosts, collectors built and planned; a ghost holds no ammunition and draws no power: planned cover is reach alone',ammo_use='optional: default the ammo turrets aboard with each ammunition they hold and the hub\'s of their categories; "all": every ammo turret with every ammunition of its categories too (normal quality); false: none. ammo_use [{turret, quality, turrets, ammo, ammo_quality, where held|hub|any, category, cooldown_ticks (the turret\'s cooldown x the ammunition\'s cooldown modifier over 1 + shooting_speed_bonus), base_cooldown_ticks, shooting_speed_bonus, shots_per_min, rounds_per_shot, magazine_size, items_per_shot, items_per_min (one turret), items_per_min_all (the turrets counted), damage_per_shot, damage {type: amount} (the ammunition\'s x quality_multiplier x (1 + damage_bonus) x (1 + turret_attack_bonus), before resistances), damage_bonus, turret_attack_bonus, quality_multiplier, sources {shooting_speed, damage, turret_attack}: the technologies and levels researched, and any part not from research, line}]: at full fire, one target in reach',route='optional "FROM->TO" (planets) or a space connection name; default the schedule\'s next leg (or the connection it flies): damage per asteroid that spawns there: its health and resistances, per turret and the ammo it holds now the damage a second after them against its listed damage, together and the time to kill one; under 10% of listed: reached, little damage (damage [{asteroid, hp, dps, kill_s, little}], lines)',platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
     returns='cover is per asteroid size (small, medium, big, huge): a turret engages what its priority list allows (ignore unprioritised targets on: only those listed; every turret, asteroid and ammo prototype has the same target mask) and reaches within its range and past its minimum range, a turret whose base has a direction (railgun-turret) only within its arc (turn_range, 72 degrees, centred on its facing; turrets rows: facing, arc_degrees; a collector in range of one but outside its arc: outside_arc [{name, position, facing, arc_degrees, off_degrees}], not counted) (a rocket turret: 15 tiles); a size is covered where every kind of it (kinds: metallic, carbonic, oxide, promethium when a turret lists one) is engaged by a turret reaching it. lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (by size: turrets engaging that size, none for the kinds no turret engages; each turret\'s ammo, what it engages, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with, per size, the edge tiles no turret engaging it reaches as runs, the longest first; by their priority lists: the turrets engaging only part of the asteroids; the turrets (empty, fed by hand); then the ammunition: what can reach a turret (turrets, the belts on their ways, sources, the hub when an inserter takes from it toward one) against what is stranded (on belts no turret\'s way reaches, by group with their area), and each turret low or stopped: what it holds, what can reach it (each inserter and its way: the hub, a chest or machine, or a belt with the ammo on the belts upstream and who puts items on them) and what stops it (STOPPED: no feeder, a filter leaving its ammo out, belts nothing feeds: dry after what is on them), apart from what is held off now (NOW: an inserter or belt its circuit or logistic condition holds off, gated closed now, with its condition and the values on its wires; the route through it is traced on to its source, and what waits behind it is counted as behind a link gated closed now, not as reaching). Every turret\'s reach in one line (ammunition that can reach each turret), and per stranded group the belts holding it (most first) and the call that would recover it: pickup {belt, area} when your character stands on that surface, else deconstruct {platform, area, entity_types: the belts} (the hub takes the belts and the items on them; the other belts of ours in that area named), and whether the hub\'s ammunition reaches a turret. feed {reaches, stranded, stranded_groups, stranded_recover [{count, belts, area, other_belts_in_area}], hub_reaches, via_hub (ammo on belts running back into the hub, counted as reaching when the hub feeds a turret), at_end and at_end_rows (ammo on a belt ending just past a pickup on a turret\'s way: not stranded), turrets [{position, holds, reaches, stopped, gated (a link on its way gated closed now), behind_gate (its ammo waiting behind such a link), replenished (what refills its way, through a gated link too: maker, a machine aboard making ammunition it takes; hub; chest, chests only; preload, no route to a source; none, no inserter feeds it), replenished_gated (every source of that kind is behind a link gated closed now)}], gates [{name, position, condition, turrets}] (each link gated closed now on a turret\'s way), lines (with replenishment by turret, the links gated closed now, wrong ammunition on turrets\' ways, and inserters whose circuit sets more filters than their slots)}. collectors [{position, front, covered_by, by_size {size: {covered, turrets, missing}}, armed_by and by_size_armed (when a turret reaching it is not armed now: no ammo, energy or fluid)}], sides [{side, edge_tiles, uncovered (a size not covered), gaps, by_size {size: {uncovered, gaps, unarmed_only, unarmed_gaps (covered by reach only by turrets not armed now)}}}], turrets [{name, position, range, min_range, engages, ammo, armed, unarmed, feed, destroyed_ours}], kinds; destroyed_by_ours [{name, position, destroyed, loss, ago_s}]: what turrets of ours destroyed here, per turret (the loss incidents kept, apart from asteroid hits). Read only'}}
   return M
 end
