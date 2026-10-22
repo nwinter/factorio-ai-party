@@ -88,6 +88,17 @@ return function(api)
   -- Every 30 s: which pole stands for each electric network (one per network
   -- id), how many poles it has and where; and the logistic networks' robots
   -- and requests. Every 5 s: each network's draw.
+  -- A platform's own network (d20 batch71 AG4, Astra #1699: Prospect's power read pole network 13880 with 0 capacity
+  -- and the surface-wide 13369 with no draw). Read on 2.0.77 (private copy, a new platform): a platform surface has
+  -- has_global_electric_network true; every machine, solar panel and accumulator on it is on that one network, also
+  -- one in a pole's supply area and one built after the pole; a pole gets a network id of its own (poles wired
+  -- together share one) that no machine or panel joins, and its electric_network_statistics give the same figures as
+  -- the surface's global_electric_network_statistics.
+  local function global_stats(surface)
+    if not (surface and try(function() return surface.has_global_electric_network end)) then return nil end
+    return try(function() return surface.global_electric_network_statistics end)
+  end
+  M.global_stats = global_stats
   local function pole_into(map, e, surface, f)
     local id = e.valid and try(function() return e.electric_network_id end)
     if id then
@@ -105,8 +116,8 @@ return function(api)
       end
     end
     n.map, n.map_tick = map, game.tick
-    for id in pairs(n.samples) do if not map[id] then n.samples[id] = nil end end
-    for id in pairs(n.acc_refs or {}) do if not map[id] then n.acc_refs[id] = nil end end
+    for id in pairs(n.samples) do if not map[id] and not (n.global or {})[id] then n.samples[id] = nil end end
+    for id in pairs(n.acc_refs or {}) do if not map[id] and not (n.global or {})[id] then n.acc_refs[id] = nil end end
   end
   -- The pole map in the background (operator 04:00: the view's map step found
   -- every pole on every surface at once each minute, 122 ms in one game
@@ -135,7 +146,7 @@ return function(api)
       -- (a map made since the walk started is newer: the walk's is dropped)
       if snapfail.older(job.start, n.map_tick) then return end
       n.map, n.map_tick = job.map, job.start
-      for id in pairs(n.samples) do if not n.map[id] then n.samples[id] = nil end end
+      for id in pairs(n.samples) do if not n.map[id] and not (n.global or {})[id] then n.samples[id] = nil end end
       return
     end
     local f, s = game.forces[pr.force], game.get_surface(pr.surface)
@@ -151,9 +162,21 @@ return function(api)
       if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
     end
   end
+  -- The statistics a network is read through: a pole of it, or a platform's own network its surface's (AG4).
+  local function stats_of(n, id)
+    local m = n.map and n.map[id]
+    local stats = m and m.pole and m.pole.valid and try(function() return m.pole.electric_network_statistics end)
+    if stats then return stats end
+    local g = n.global and n.global[id]
+    return g and global_stats(game.get_surface(g.surface)) or nil
+  end
+  M.stats_of = function(id) return stats_of(store(), id) end
   local function sample(n)
-    for id, m in pairs(n.map) do
-      local stats = m.pole.valid and try(function() return m.pole.electric_network_statistics end)
+    local ids = {}
+    for id in pairs(n.map) do ids[#ids+1] = id end
+    for id in pairs(n.global or {}) do if not n.map[id] then ids[#ids+1] = id end end
+    for _, id in ipairs(ids) do
+      local stats = stats_of(n, id)
       if stats then
         local by, kw = {}, 0
         local accs, acc = acc_names(), 0
@@ -538,11 +561,17 @@ return function(api)
       for id, m in pairs(n.map) do if m.surface == surface.name and m.force == f.name and not pm[id] then n.map[id] = nil end end
       for id, m in pairs(pm) do n.map[id] = m end
     end
+    -- (AG4) the surface's own network is learnt again from its machines and panels this view (on_entity)
+    local global = global_stats(surface) and true or nil
+    if global then
+      n.global = n.global or {}
+      for id, g in pairs(n.global) do if g.surface == surface.index and g.force == f.name then g.stale = true end end
+    end
     local nets = {}
     for id, m in pairs(n.map) do
       if m.surface == surface.name and m.force == f.name then nets[id] = new_net(id, m.poles, m.sx / m.poles, m.sy / m.poles) end
     end
-    return {nets=nets, seg_net={}, steam={}, platform=plat and true or nil}
+    return {nets=nets, seg_net={}, steam={}, platform=plat and true or nil, global=global, surface_index=surface.index, force=f.name}
   end
   -- The network of an entity; on a platform one with no pole mapped is made from the entity.
   local function on_entity(ctx, e)
@@ -550,6 +579,13 @@ return function(api)
     if not id then return nil end
     local net = ctx.nets[id]
     if not net and ctx.platform then net = new_net(id, 0, e.position.x, e.position.y); ctx.nets[id] = net end
+    -- (AG4) a network no pole of ours is in, on a surface with a network of its own: that one, read through the surface
+    if net and ctx.global and net.poles == 0 then
+      net.global = true
+      local g = store().global or {}
+      store().global = g
+      g[id] = {surface=ctx.surface_index, force=ctx.force}
+    end
     return net
   end
   -- One generator, solar panel or accumulator into its network.
@@ -655,6 +691,16 @@ return function(api)
   local function e_rows(ctx, n, surface, f)
     local nets = ctx.nets
     local rows = {}
+    for id, g in pairs(n.global or {}) do if g.stale and g.surface == surface.index and g.force == f.name then n.global[id] = nil end end
+    -- (AG4) on a surface with a network of its own, a pole network no machine, panel or accumulator is on: named on
+    -- that network's row, not a row of its own (its statistics are the surface's)
+    local pole_only, pole_only_n = {}, 0
+    if ctx.global then
+      for id, net in pairs(nets) do
+        if net.poles > 0 and net.machines == 0 and net.gens == 0 then pole_only[#pole_only+1] = '#' .. id; pole_only_n = pole_only_n + net.poles; nets[id] = nil end
+      end
+      table.sort(pole_only)
+    end
     for _, net in pairs(nets) do
       -- (on a platform every network with a machine or a pole: a platform is small and Astra's Starling had 1)
       if net.poles > 2 or net.gens > 0 or net.none > 0 or (ctx.platform and (net.machines > 0 or net.poles > 0)) then
@@ -733,11 +779,12 @@ return function(api)
           net.fuel_low = low
         end
         local parts = {string.format('%s electric #%d (%s near %s)', plat and plat.name .. ' (platform)' or surface.name, net.id,
-          net.poles > 0 and net.poles .. ' poles' or 'no pole of ours found', at(net.center.x, net.center.y))}
+          net.global and 'the platform\'s own network: every machine, panel and accumulator on it, no pole needed' or net.poles > 0 and net.poles .. ' poles' or 'no pole of ours found',
+          at(net.center.x, net.center.y))}
         if d then
           parts[#parts+1] = string.format('draw %s avg over %s (now %s) of %s capacity%s', mw(d.avg), d.span_s >= 300 and '5 min' or d.span_s .. ' s',
             mw(d.now), mw(net.capacity_kw), net.capacity_kw > 0 and string.format(' (%d%%)', math.floor(100 * d.avg / net.capacity_kw + 0.5)) or '')
-        elseif net.poles == 0 then
+        elseif net.poles == 0 and not net.global then
           parts[#parts+1] = string.format('capacity %s; no draw figures (the game gives a network\'s statistics through its poles)', mw(net.capacity_kw))
         else parts[#parts+1] = string.format('capacity %s; no draw sample yet', mw(net.capacity_kw)) end
         -- the dry part of the rating (#527): what can supply now
@@ -804,6 +851,11 @@ return function(api)
             end
             parts[#parts+1] = 'feed chests: ' .. table.concat(shown, '; ') .. (#rates > 2 and string.format(' (+%d more)', #rates - 2) or '')
           end
+        end
+        if net.global and #pole_only > 0 then
+          net.pole_networks = pole_only
+          parts[#parts+1] = string.format('%d pole%s of ours (network%s %s) with no machine, panel or accumulator on them: the game keeps those on this network, and a pole\'s statistics are this network\'s',
+            pole_only_n, pole_only_n == 1 and '' or 's', #pole_only == 1 and '' or 's', table.concat(pole_only, ', '))
         end
         net.line = table.remove(parts, 1) .. ': ' .. table.concat(parts, '; ')
         rows[#rows+1] = net
@@ -1676,8 +1728,7 @@ return function(api)
   end
   -- The network's draw now: its statistics' production over the last 5 s, from one of its poles (fresh: true).
   local function draw_now(n, id)
-    local m = n.map and n.map[id]
-    local stats = m and m.pole and m.pole.valid and try(function() return m.pole.electric_network_statistics end)
+    local stats = stats_of(n, id)
     if not stats then return nil end
     local kw = 0
     for name in pairs(try(function() return stats.output_counts end) or {}) do
@@ -2476,6 +2527,108 @@ return function(api)
   -- from its network's statistics (the 5-second average, as power reads it): what all of its name on that network make
   -- or draw, since the game counts power by prototype, not by entity. nil for an entity with no electric part.
   local function kw(j) return math.floor(j * 60 / 1000 * 10 + 0.5) / 10 end
+  -- (AG4) A platform's own network read whole from its surface: its draw and production now (the surface's statistics,
+  -- 5 s), its capacity (its solar panels at the solar power where it is, and its generators' rating), its accumulators,
+  -- and how its machines are supplied (each machine's power bar is its buffer: full when supplied, the share delivered
+  -- a tick when short). Every entity of ours on the platform is read (a platform is small); nil off a platform.
+  local PLAT_GEN = {['solar-panel']=true, accumulator=true, generator=true, ['burner-generator']=true, ['fusion-generator']=true, ['electric-energy-interface']=true}
+  function M.platform_power(surface, f)
+    local stats = global_stats(surface)
+    if not stats then return nil end
+    local P = defines.flow_precision_index.five_seconds
+    local function total(category, counts)
+      local kw, by = 0, {}
+      for name in pairs(counts or {}) do
+        local v = try(function() return stats.get_flow_count{name=name, category=category, precision_index=P} end)
+        if v and v > 0 then kw = kw + v * 60 / 1000; by[#by+1] = {name=name, kw=math.floor(v * 60 / 1000 + 0.5)} end
+      end
+      table.sort(by, function(a, b) return a.kw > b.kw or (a.kw == b.kw and a.name < b.name) end)
+      return kw, by
+    end
+    local draw, consumers = total('input', try(function() return stats.input_counts end))
+    local made, producers = total('output', try(function() return stats.output_counts end))
+    local sun = M.solar(surface)
+    local out = {tick=game.tick, solar={count=0, kw=0}, generators={count=0, kw=0}, accumulators={count=0, j=0, buf=0}, machines={count=0, low_power=0, no_power=0},
+      poles=0, pole_networks={}}
+    local fill, filled, lfill = 0, 0, 0
+    local st = defines.entity_status
+    local seen_pole, on, list = {}, {}, {}
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{force=f, limit=MAX_SCAN} end) or {}) do
+      local nid = e.valid and try(function() return e.electric_network_id end)
+      if nid then
+        if e.type == 'electric-pole' then
+          out.poles = out.poles + 1
+          if not seen_pole[nid] then seen_pole[nid] = true; out.pole_networks[#out.pole_networks+1] = nid end
+        else on[nid] = (on[nid] or 0) + 1; list[#list+1] = {e=e, id=nid} end
+      end
+    end
+    -- the platform's network: the one most of them are on that no pole of ours is in; a pole network one is on is
+    -- electrically its own (left to the pole rows)
+    local id, most = nil, 0
+    for nid, c in pairs(on) do if not seen_pole[nid] and c > most then id, most = nid, c end end
+    table.sort(out.pole_networks)
+    local separate = {}
+    for _, pid in ipairs(out.pole_networks) do if on[pid] then separate[#separate+1] = pid end end
+    out.separate_pole_networks = #separate > 0 and separate or nil
+    for _, x in ipairs(list) do
+      local e = x.e
+      if x.id == id then
+          if e.type == 'solar-panel' then
+            out.solar.count = out.solar.count + 1
+            out.solar.kw = out.solar.kw + (try(function() return e.prototype.get_max_energy_production(e.quality) end) or 0) * 60 / 1000 * sun.percent / 100
+          elseif e.type == 'accumulator' then
+            local a = out.accumulators
+            a.count, a.j, a.buf = a.count + 1, a.j + (e.energy or 0), a.buf + (e.electric_buffer_size or 0)
+          elseif PLAT_GEN[e.type] then
+            if e.type ~= 'electric-energy-interface' then out.generators.count = out.generators.count + 1; out.generators.kw = out.generators.kw + max_output(e) * 60 / 1000 end
+          else
+            local buf = try(function() return e.electric_buffer_size end) or 0
+            if buf > 0 then
+              local m = out.machines
+              m.count = m.count + 1
+              local bar = math.min(1, (e.energy or 0) / buf)
+              if e.status == st.low_power then m.low_power, lfill = m.low_power + 1, lfill + bar elseif e.status == st.no_power then m.no_power = m.no_power + 1 end
+              fill, filled = fill + bar, filled + 1
+            end
+          end
+      end
+    end
+    out.network = id
+    out.draw_kw, out.production_kw = math.floor(draw + 0.5), math.floor(made + 0.5)
+    out.consumers, out.producers = consumers, producers
+    out.capacity_kw = math.floor(out.solar.kw + out.generators.kw + 0.5)
+    out.solar.kw, out.generators.kw = math.floor(out.solar.kw + 0.5), math.floor(out.generators.kw + 0.5)
+    out.solar.solar_power, out.solar.text = math.floor(sun.percent + 0.5), sun.text
+    local a = out.accumulators
+    if a.count > 0 then out.accumulators = {count=a.count, mj=math.floor(a.j / 1e5 + 0.5) / 10, max_mj=math.floor(a.buf / 1e5 + 0.5) / 10, pct=a.buf > 0 and math.floor(100 * a.j / a.buf + 0.5) or 0}
+    else out.accumulators = nil end
+    if out.generators.count == 0 then out.generators = nil end
+    out.satisfaction = {machines=out.machines.count, low_power=out.machines.low_power, no_power=out.machines.no_power,
+      power_bars_pct=filled > 0 and math.floor(100 * fill / filled + 0.5) or nil,
+      low_power_bars_pct=out.machines.low_power > 0 and math.floor(100 * lfill / out.machines.low_power + 0.5) or nil}
+    out.machines = nil
+    local parts = {string.format('%s electric #%s, the platform\'s own network (every machine, panel and accumulator of ours on it; no pole needed), at tick %d',
+      try(function() return surface.platform.name end) or surface.name, tostring(id or '?'), game.tick)}
+    parts[#parts+1] = string.format('draw %s now, production %s (the last 5 s)', mw(out.draw_kw), mw(out.production_kw))
+    parts[#parts+1] = string.format('capacity %s: %d solar panel%s giving up to %s at %s%s', mw(out.capacity_kw), out.solar.count, out.solar.count == 1 and '' or 's', mw(out.solar.kw), sun.text,
+      out.generators and string.format(', %d generator%s rated %s', out.generators.count, out.generators.count == 1 and '' or 's', mw(out.generators.kw)) or '')
+    if out.accumulators then parts[#parts+1] = string.format('accumulators %d at %d%% (%.1f of %.1f MJ)', out.accumulators.count, out.accumulators.pct, out.accumulators.mj, out.accumulators.max_mj) end
+    local sa = out.satisfaction
+    parts[#parts+1] = string.format('machines %d: %d low power, %d no power%s', sa.machines, sa.low_power, sa.no_power,
+      sa.power_bars_pct and string.format('; their power bars %d%% full on average%s', sa.power_bars_pct,
+        sa.low_power_bars_pct and string.format(', those on low power %d%%', sa.low_power_bars_pct) or '') or '')
+    if out.poles > 0 then
+      local carry = {}
+      for _, pid in ipairs(out.pole_networks) do if not on[pid] then carry[#carry+1] = '#' .. pid end end
+      local sep = {}
+      for _, pid in ipairs(separate) do sep[#sep+1] = '#' .. pid end
+      parts[#parts+1] = string.format('%d pole%s of ours%s%s', out.poles, out.poles == 1 and '' or 's',
+        #carry > 0 and string.format(' (network%s %s: no machine, panel or accumulator on them; a pole\'s statistics there are this network\'s)', #carry == 1 and '' or 's', table.concat(carry, ', ')) or '',
+        #sep > 0 and string.format('; electrically apart with machines or panels on them: %s (their own rows)', table.concat(sep, ', ')) or '')
+    end
+    out.line = table.concat(parts, '; ')
+    return out
+  end
   function M.entity_power(e)
     if not (e and e.valid) then return nil end
     local proto, q = e.prototype, try(function() return e.quality end)
@@ -2510,18 +2663,21 @@ return function(api)
     if not id then out.now = 'no electric network: no pole reaches it'; return out end
     local m = store().map[id]
     local pole = e.type == 'electric-pole' and e or (m and m.pole and m.pole.valid and m.pole)
+    -- (AG4) a machine, panel or accumulator on a platform: the platform's own network, read through the surface
+    local gstats = e.type ~= 'electric-pole' and global_stats(e.surface)
+    if gstats then pole = nil end
     -- Not in the pole map (Astra, 14:05: an assembler on Starling): a pole of that network within 64 tiles.
-    if not pole then
+    if not pole and not gstats then
       for _, x in ipairs(try(function() return e.surface.find_entities_filtered{type='electric-pole', position=e.position, radius=64, force=e.force, limit=200} end) or {}) do
         if x.valid and try(function() return x.electric_network_id end) == id then pole = x; break end
       end
     end
-    local stats = pole and try(function() return pole.electric_network_statistics end)
+    local stats = gstats or pole and try(function() return pole.electric_network_statistics end)
     local v = stats and try(function() return stats.get_flow_count{name=e.name, category=category, precision_index=defines.flow_precision_index.five_seconds} end)
     if v then
       out.now_kw_all_of_name = kw(v)
-      out.now = string.format('all %s on electric network #%d %s %s now (5 s average); the game counts power by prototype, not per entity',
-        e.name, id, category == 'output' and 'make' or 'draw', mw(v * 60 / 1000))
+      out.now = string.format('all %s on electric network #%d%s %s %s now (5 s average); the game counts power by prototype, not per entity',
+        e.name, id, gstats and ' (the platform\'s own network)' or '', category == 'output' and 'make' or 'draw', mw(v * 60 / 1000))
     elseif not pole then
       out.now = string.format('electric network #%d: no pole of ours in it within 64 tiles, and the game gives a network\'s statistics through its poles', id)
     else out.now = string.format('electric network #%d: its pole gave no statistics', id) end

@@ -5920,6 +5920,9 @@ fh watch    # deploy on every change
   default, 32 with `limit`): `holders` keeps only those kinds of place (provider, storage, requester, buffer, chest,
   machine, wagon, pad, vehicle); each place now says its `kind` and `reserved` (robots' pickup reservations there). On
   the copy: copper cable, providers and storage, 4 places in 3 ms in the container.
+  `holders_left_out` gives the kinds the filter left out (count and places each); when no place passes it the summary
+  says so with them ("no place of the holders asked (provider, storage, machine) holds it; by holder kind: requester 48
+  in 1 place"; before, Grok's call failed "attempt to index local 'near'", d20 batch65 AA7).
 - `reservations {network, item?, surface?}` (Luna 06:20: on Gleba 23 nutrients were all reserved across 14
   requesters, 245 short, while 44 robots sat idle; the cause was chests full of seeds and spoilage), read only: pickup
   reservations at each provider and storage chest; each requester or buffer short or with deliveries on the way (per
@@ -10219,6 +10222,25 @@ fh watch    # deploy on every change
   `totals` are apart. On the copy (the sampling end moved to 1 s ahead in the mod's storage so it expired through the
   tick): "the last stretch (expired: it ended 7 s ago at tick 29469592): 1743 MJ of fuel over 17 s covered (100 MW
   average, 100%), burning 17 s, 0 gaps; this read began a new stretch". Tests: tests/d21_batch64c.lua.
+- AG4 (#1699, Astra: on Prospect at tick 43217816 power read network 13880 with 3 poles, 0 capacity and 180 kW now,
+  and the surface-wide 13369 with 180 kW capacity and no draw figures). Main before: power and the networks view read
+  a network's statistics only through a pole of it. What 2.0.77 does, on a private copy with a new platform: its
+  surface has has_global_electric_network true; every machine, solar panel and accumulator on it is on that one
+  network (also one in a pole's supply area, and one built after the pole); a pole gets a network id of its own (poles
+  wired together share one) that no machine or panel joins; a pole's electric_network_statistics give the same figures
+  as the surface's global_electric_network_statistics. Now: power on a platform gives platform_power {network, tick,
+  draw_kw, production_kw, consumers, producers, capacity_kw (solar at the solar power where it is, plus generators'
+  rating), solar, generators, accumulators, satisfaction {machines, low_power, no_power, power_bars_pct,
+  low_power_bars_pct}, poles, pole_networks, separate_pole_networks, line}, read from all of our entities on the
+  platform and the surface's statistics. The platform's network row has platform_network true and the figures. Pole
+  networks with nothing on them are no rows of their own (pole_networks_folded names them). A pole network with a
+  machine or panel on it stays a row (separate_pole_networks). The networks view samples the platform's network
+  through the surface, so its line has the draw, and inspect's electricity reads it the same way. On the copy, 1
+  panel and 9 assemblers (3 poles: #1457 alone, #1458 two wired): "draw 180 kW now, production 180 kW (the last 5 s);
+  capacity 180 kW: 1 solar panel giving up to 180 kW at solar power 300% at nauvis; machines 9: 6 low power, 0 no
+  power; their power bars 55% full on average". The whole-platform scan took 0.6-1.1 ms on the copy's largest
+  platform (Swift, 488 entities). No GUI on the headless copy: a pole's GUI shows its statistics, which are the
+  platform's. Tests: tests/d21_batch71.lua.
 
 ## d21 batch64 (eng/d20-batch64)
 
@@ -10779,3 +10801,44 @@ silo.").
     consumer wooden-chest (-43.5,134.5) is in no logistic network". The silo: in #243, no blocker.
   - The events were stored for the setter in order (blocked, no longer blocked, blocked by network). The copy's
     replies to that bot carried no team block, so team.alerts delivery is checked by the fake engine only.
+
+## d21 batch66 AB6 (eng/d20-batch66)
+
+AB6 (viewer Aurora, 16:02 PDT: "Could delivery watches flag competing pad demand along the route? Nauvis's obsolete
+CF500 request diverted K2 cargo intended for Aquilo before it reached the named consumer.").
+- Game rules read on the headless copy (2.0.77), with a test platform AB6t at Fulgora:
+  - A platform stopped above a planet (paused or waiting) sends pods from its hub to that planet's landing pad
+    requests. Fulgora's pad requests of 20 gears (import from nauvis, the default), 20 cable (nauvis) and 20 pipe
+    (fulgora), and its standing request of 10 cliff explosives imported from vulcanus, all drew from the hub. A pad
+    request's import planet does not stop it.
+  - Robots took each landing out of the pad, so the pad held 0 again and the hub sent again: 10 cliff explosives
+    each 30 s until the hub had none.
+  - The hub's own request for the item keeps it aboard: asking pipe 10 (no max) or 200, the hub kept all 60 it held;
+    asking 10..20, it sent 40 down and kept 20.
+- delivery_watch, down, while the carrier's hub holds the item and its schedule stops at the destination (delivwatch.lua;
+  runtime deploy needed):
+  - each planet it stops at from now until the destination's stop (and the planet it is stopped at, if that is not
+    its current stop) is read for landing pads of ours asking the item (active sections, min > 0; the census pass's
+    pad list);
+  - stopped there now: a blocker, "K is stopped at nauvis (stop 2 of its schedule) with 600 carbon-fiber in its hub,
+    before aquilo; the landing pad (52,54) there asks 500 carbon-fiber (holds 0): while it is stopped there its hub
+    sends pods of it down to that pad";
+  - a stop ahead: `risks`, "K stops at nauvis (stop 2 of its schedule) before aquilo; the landing pad (52,54) there
+    asks 500 carbon-fiber (holds 0): ... (the hub holds 600 now)";
+  - none when the hub's own requests keep all it holds; "its hub's own request keeps N of it aboard" when they keep
+    part;
+  - a pod of the item received by a pad (or landed) on another planet: `diversions` [{tick, count, planet, where,
+    text}] and `diverted` (their sum), with the pad's request then ("10 cliff-explosives received by
+    cargo-landing-pad (74,208) on fulgora, which asks 10 of it (holds 0 now), before gleba"). It is not the landed
+    stage.
+  - The setter hears each blocker and risk once (a pad's count changing is not new), and each diversion with the
+    running total ("; 40 of it diverted since the watch was set": the board shows the same alert text once in its
+    repeat window). The status line (the deadline alert, the row's line) names risks and diversions.
+  - freight's receipts_since rows carry `stop` (where the platform was).
+  - Cost on the copy: the added reads, 0.05 ms a check with the census pad list (5 ms on the fallback path that finds
+    pads on two planets).
+- Headless copy: watch #5 (30 cliff explosives from AB6t to Gleba's pad) read the blocker at Fulgora, then four
+  diversions of 10 to Fulgora's pad (74,208), each in team.alerts. Watch #6 (200 processing units to Aquilo's pad)
+  read the risk at Gleba (stop 2), whose pad asks 1000, and team.alerts carried it. Watches cleared, pad slots 2 to 4
+  removed, AB6t destroyed.
+
