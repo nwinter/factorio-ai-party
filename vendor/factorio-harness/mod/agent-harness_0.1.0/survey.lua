@@ -192,6 +192,17 @@ return function(api)
   local BELT_TYPES={'transport-belt','underground-belt','splitter','loader','loader-1x1','lane-splitter','linked-belt'}
   local STEP={[0]={0,-1},[4]={1,0},[8]={0,1},[12]={-1,0}}
   local MAX_LISTED=4
+  -- (d22 batch93 BC1, viewer Aurora 13:13: "the belt warning lists only 4 of 11 locations") every place a warning counts
+  -- is kept (up to LIST_MAX a kind) and status {list: KIND, page?} pages them (LIST_PAGE a page); a warning that shows
+  -- fewer than it counts says how many more and that call.
+  local LIST_MAX,LIST_PAGE=500,50
+  M.LIST_KINDS={belts_stuck='belts that point into a belt they cannot feed',belts_unpaired='unpaired undergrounds',
+    no_fuel='burners with no fuel',last_fuel='burners burning their last fuel',ammo_empty='ammo turrets with no ammo',ammo_low='ammo turrets low on ammo'}
+  local function more(shown,total,kind)
+    if total<=shown then return '' end
+    return string.format(', +%d more (status {list: "%s"} lists all %d)',total-shown,kind,total)
+  end
+  local function first(t,n) local o={} for i=1,math.min(#t,n) do o[i]=t[i] end return o end
   local function at(e) return string.format('(%s,%s)',e.position.x,e.position.y) end
   -- One underground or transport belt into the belt tally b.
   local function belt_one(b,surface,force,e,kind)
@@ -206,14 +217,12 @@ return function(api)
   end
   local function belts_done(b,warnings,detail)
     local unpaired,stuck,ends=b.unpaired,b.stuck,b.ends
-    local function list(t)
+    local function list(t,kind)
       table.sort(t)
-      local shown={}
-      for i=1,math.min(#t,MAX_LISTED) do shown[i]=t[i] end
-      return table.concat(shown,', ')..(#t>MAX_LISTED and ', ...' or '')
+      return table.concat(first(t,MAX_LISTED),', ')..more(MAX_LISTED,#t,kind)
     end
-    if #unpaired>0 then warnings[#warnings+1]=string.format('belts: %d unpaired undergrounds: %s',#unpaired,list(unpaired)) end
-    if #stuck>0 then warnings[#warnings+1]=string.format('belts: %d belts point into a belt they cannot feed: %s',#stuck,list(stuck)) end
+    if #unpaired>0 then warnings[#warnings+1]=string.format('belts: %d unpaired undergrounds: %s',#unpaired,list(unpaired,'belts_unpaired')) end
+    if #stuck>0 then warnings[#warnings+1]=string.format('belts: %d belts point into a belt they cannot feed: %s',#stuck,list(stuck,'belts_stuck')) end
     table.sort(ends)
     local listed={}
     for i=1,math.min(#ends,16) do listed[i]=ends[i] end
@@ -249,13 +258,13 @@ return function(api)
             f.empty=f.empty+1
             -- where (D1, Gemini 16:51 and 18:24: 'heating-tower 2/2 no_fuel' named no place)
             f.empty_at=f.empty_at or {}
-            if #f.empty_at<6 then f.empty_at[#f.empty_at+1]=string.format('(%g,%g)',e.position.x,e.position.y) end
+            if #f.empty_at<LIST_MAX then f.empty_at[#f.empty_at+1]=string.format('(%g,%g)',e.position.x,e.position.y) end
           elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then
             f.low=f.low+1
             -- Each burner on its last fuel, where and about how long it burns on (Luna 04:51: two biochambers low, one
             -- named): at its full draw, the time the fuel left in it lasts.
             f.last=f.last or {}
-            if #f.last<8 then
+            if #f.last<LIST_MAX then
               local usage=0
               pcall(function() usage=e.prototype.get_max_energy_usage(e.quality) end)
               if usage<=0 then pcall(function() usage=e.prototype.energy_usage or 0 end) end
@@ -297,8 +306,8 @@ return function(api)
           t.total=t.total+1
           -- Where to go: the first few empty and low turrets by position.
           local at=string.format('(%g,%g)',e.position.x,e.position.y)
-          if n==0 then t.empty=t.empty+1; if #t.empty_at<6 then t.empty_at[#t.empty_at+1]=at end
-          elseif n<LOW_AMMO then t.low=t.low+1; if #t.low_at<6 then t.low_at[#t.low_at+1]=at end end
+          if n==0 then t.empty=t.empty+1; if #t.empty_at<LIST_MAX then t.empty_at[#t.empty_at+1]=at end
+          elseif n<LOW_AMMO then t.low=t.low+1; if #t.low_at<LIST_MAX then t.low_at[#t.low_at+1]=at end end
         elseif e.type=='fluid-turret' then
           -- all it holds, its own buffer too (flameroil.lua; Astra, shift11 16:36: fluidbox[1] alone read all 12 dry)
           local ok,amount,cap,fluid=pcall(flameroil.read,e)
@@ -346,38 +355,60 @@ return function(api)
     end
     table.sort(fuel_order)
     local fuel_parts={}
+    -- (BC1) every place, by kind: the warning shows the first 6 (8 burning their last fuel) of each entity name
+    local lists={belts_stuck={},belts_unpaired={},no_fuel={},last_fuel={},ammo_empty={},ammo_low={}}
+    local counts={belts_stuck=#b.stuck,belts_unpaired=#b.unpaired,no_fuel=0,last_fuel=0,ammo_empty=0,ammo_low=0}
+    local cut={}
     for _,name in ipairs(fuel_order) do
       local f=fuel[name]
+      for _,x in ipairs(f.empty_at or {}) do if #lists.no_fuel<LIST_MAX then lists.no_fuel[#lists.no_fuel+1]=name..' '..x end end
+      for _,x in ipairs(f.last or {}) do if #lists.last_fuel<LIST_MAX then lists.last_fuel[#lists.last_fuel+1]=name..' '..x end end
+      counts.no_fuel=counts.no_fuel+f.empty; counts.last_fuel=counts.last_fuel+f.low
       if f.empty>0 or f.low>0 or (f.rot or 0)>0 or (f.stuck or 0)>0 then
+        local ea,la=f.empty_at and first(f.empty_at,6),f.last and first(f.last,8)
+        if f.empty>#(ea or {}) then cut.no_fuel=true end
+        if f.low>#(la or {}) then cut.last_fuel=true end
         fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)
-          ..(f.empty_at and ' at '..table.concat(f.empty_at,' ')..(f.empty>#f.empty_at and ' ...' or '') or '')..(f.low>0 and ', '..f.low..' burning their last fuel'
-          ..(f.last and ' ('..table.concat(f.last,', ')..(f.low>#f.last and ', ...' or '')..')' or '') or '')
+          ..(ea and ' at '..table.concat(ea,' ')..(f.empty>#ea and string.format(' +%d more',f.empty-#ea) or '') or '')..(f.low>0 and ', '..f.low..' burning their last fuel'
+          ..(la and ' ('..table.concat(la,', ')..(f.low>#la and string.format(', +%d more',f.low-#la) or '')..')' or '') or '')
           ..((f.stuck or 0)>0 and string.format(', %d stopped by a full burnt-result slot or unusable fuel (the first at %s: %s)',f.stuck,f.stuck_at.at,f.stuck_at.burnt) or '')
           ..(f.first and (f.rot or 0)>0 and string.format(', fuel spoils within %ds in %d (the first: %s in %s at %s)',ROT_SOON/60,f.rot,f.first.item,
             duration(math.max(0,f.first.tick-game.tick)),f.first.at) or '')
       end
     end
     local where=surface and surface.valid and ' on '..surface.name or ''
-    if #fuel_parts>0 then warnings[#warnings+1]='fuel'..where..': '..table.concat(fuel_parts,'; ') end
+    local fuel_more={}
+    if cut.no_fuel then fuel_more[#fuel_more+1]=string.format('status {list: "no_fuel"} lists all %d with no fuel',counts.no_fuel) end
+    if cut.last_fuel then fuel_more[#fuel_more+1]=string.format('status {list: "last_fuel"} all %d on their last fuel',counts.last_fuel) end
+    if #fuel_parts>0 then warnings[#warnings+1]='fuel'..where..': '..table.concat(fuel_parts,'; ')..(#fuel_more>0 and '; '..table.concat(fuel_more,', ') or '') end
     table.sort(turret_order)
     local ammo_parts={}
     for _,name in ipairs(turret_order) do
       local t=turrets[name]
+      for _,x in ipairs(t.empty_at) do if #lists.ammo_empty<LIST_MAX then lists.ammo_empty[#lists.ammo_empty+1]=name..' '..x end end
+      for _,x in ipairs(t.low_at) do if #lists.ammo_low<LIST_MAX then lists.ammo_low[#lists.ammo_low+1]=name..' '..x end end
+      counts.ammo_empty=counts.ammo_empty+t.empty; counts.ammo_low=counts.ammo_low+t.low
       if t.empty+t.low>0 then
+        local ea,la=first(t.empty_at,6),first(t.low_at,6)
+        if t.empty>#ea then cut.ammo_empty=true end
+        if t.low>#la then cut.ammo_low=true end
         ammo_parts[#ammo_parts+1]=string.format('%s %d/%d empty',name,t.empty,t.total)
-          ..(t.empty>0 and ' at '..table.concat(t.empty_at,' ')..(t.empty>#t.empty_at and ' ...' or '') or '')
-          ..(t.low>0 and ', '..t.low..' below '..LOW_AMMO..' at '..table.concat(t.low_at,' ')..(t.low>#t.low_at and ' ...' or '') or '')
+          ..(t.empty>0 and ' at '..table.concat(ea,' ')..(t.empty>#ea and string.format(' +%d more',t.empty-#ea) or '') or '')
+          ..(t.low>0 and ', '..t.low..' below '..LOW_AMMO..' at '..table.concat(la,' ')..(t.low>#la and string.format(' +%d more',t.low-#la) or '') or '')
       end
     end
-    if #ammo_parts>0 then warnings[#warnings+1]='ammo: '..table.concat(ammo_parts,'; ')..'; rearm radius=R walks every turret below count' end
+    local ammo_more={}
+    if cut.ammo_empty then ammo_more[#ammo_more+1]=string.format('status {list: "ammo_empty"} lists all %d empty',counts.ammo_empty) end
+    if cut.ammo_low then ammo_more[#ammo_more+1]=string.format('status {list: "ammo_low"} all %d low',counts.ammo_low) end
+    if #ammo_parts>0 then warnings[#warnings+1]='ammo: '..table.concat(ammo_parts,'; ')..(#ammo_more>0 and '; '..table.concat(ammo_more,', ') or '')..'; rearm radius=R walks every turret below count' end
     table.sort(flamer_order)
     local oil_parts={}
     for _,name in ipairs(flamer_order) do
       local t=flamers[name]
       if t.dry+t.low>0 then
         oil_parts[#oil_parts+1]=string.format('%s %s; %d/%d dry',name,flameroil.summary(t.rows,1),t.dry,t.total)
-          ..(t.dry>0 and ' at '..table.concat(t.dry_at,' ')..(t.dry>#t.dry_at and ' ...' or '') or '')
-          ..(t.low>0 and ', '..t.low..' below '..math.floor(LOW_OIL*100)..'% at '..table.concat(t.low_at,', ')..(t.low>#t.low_at and ' ...' or '') or '')
+          ..(t.dry>0 and ' at '..table.concat(t.dry_at,' ')..(t.dry>#t.dry_at and string.format(' +%d more',t.dry-#t.dry_at) or '') or '')
+          ..(t.low>0 and ', '..t.low..' below '..math.floor(LOW_OIL*100)..'% at '..table.concat(t.low_at,', ')..(t.low>#t.low_at and string.format(', +%d more',t.low-#t.low_at) or '') or '')
       end
     end
     if #oil_parts>0 then warnings[#warnings+1]='flamer oil: '..table.concat(oil_parts,'; ')..'; fh call flamers shows each one and what is in its arc' end
@@ -388,7 +419,7 @@ return function(api)
         if c[1]>0 then
           local at=a.power_at and a.power_at[c[2]]
           parts[#parts+1]=(#parts==0 and c[1]..' of '..powered..' machines ' or c[1]..' ')..c[2]
-            ..(at and ': '..table.concat(at,', ')..(c[1]>#at and ', ...' or '') or '')
+            ..(at and ': '..table.concat(at,', ')..(c[1]>#at and string.format(', +%d more',c[1]-#at) or '') or '')
         end
       end
       warnings[#warnings+1]='power'..where..': '..table.concat(parts,'; ')..' (fh call power lists them)'
@@ -415,12 +446,16 @@ return function(api)
       if a>0 or b>0 then plates[#plates+1]=string.format('%s %s|%s',name,round(a),round(b)) end
     end
     local belt_ends,end_positions=belts_done(b,warnings,true)
+    for _,k in ipairs({'belts_stuck','belts_unpaired'}) do
+      local src=k=='belts_stuck' and b.stuck or b.unpaired
+      for i=1,math.min(#src,LIST_MAX) do lists[k][i]=src[i] end
+    end
     local factory={belt_ends=belt_ends,science=#science>0 and table.concat(science,', ')..' /min (1m|10m)' or nil,
       research=research_line(force,warnings,lab_count),
       plates=#plates>0 and table.concat(plates,', ')..' /min (1m|10m)' or nil,
       hand=hand_line(stats)}
     if end_positions and #end_positions>0 then detail.belt_ends=end_positions end
-    return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings,
+    return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings,lists=lists,list_counts=counts,
       digest={tick=game.tick,machines=machines,fuel=fuel,belts={ends=#b.ends,unpaired=#b.unpaired,misdirected=#b.stuck}}}
   end
   -- All at once (machines=true, a surface's first survey, tests without the job).
@@ -547,6 +582,38 @@ return function(api)
       machine_positions=detail and entry.positions or nil,warnings=#warnings>0 and warnings or nil,
       as_of=entry.tick<game.tick and entry.tick or nil,age_s=entry.tick<game.tick and math.floor((game.tick-entry.tick)/60) or nil,
       refresh_failed=snapfail.line('the factory survey',entry.tick,entry.refresh_failed)}
+  end
+  -- status {list: KIND, page?} (BC1): every place a factory warning counts, from the survey the warnings come from (the
+  -- last finished one; a first status on this surface takes one), LIST_PAGE a page.
+  function M.list(p,kind,page)
+    local kinds={}
+    for k in pairs(M.LIST_KINDS) do kinds[#kinds+1]=k end
+    table.sort(kinds)
+    assert(type(kind)=='string' and M.LIST_KINDS[kind],'list is one of '..table.concat(kinds,', '))
+    assert(page==nil or (type(page)=='number' and page>=1 and page==math.floor(page)),'page is 1 or more')
+    page=page or 1
+    local st=api.state()
+    local cache=st.survey_cache or {}
+    st.survey_cache=cache
+    local key=p.force.name..'/'..p.surface.index
+    local entry=cache[key]
+    if not (entry and entry.lists) then entry=survey(p); cache[key]=entry end
+    st.survey_read=st.survey_read or {}
+    st.survey_read[key]=game.tick
+    local rows=entry.lists[kind] or {}
+    local count=entry.list_counts and entry.list_counts[kind] or #rows
+    local pages=math.max(1,math.ceil(#rows/LIST_PAGE))
+    local shown={}
+    for i=(page-1)*LIST_PAGE+1,math.min(#rows,page*LIST_PAGE) do shown[#shown+1]=rows[i] end
+    local out={list=kind,what=M.LIST_KINDS[kind],surface=p.surface.name,count=count,rows=shown,page=page,pages=pages,
+      as_of=entry.tick<game.tick and entry.tick or nil,age_s=entry.tick<game.tick and math.floor((game.tick-entry.tick)/60) or nil}
+    if page<pages then out.next=string.format('status {list: "%s", page: %d}',kind,page+1) end
+    if count>#rows then out.note=string.format('the survey keeps the first %d of %d',#rows,count) end
+    local from,to=(page-1)*LIST_PAGE+1,math.min(#rows,page*LIST_PAGE)
+    out.line=string.format('%s on %s: %d%s',M.LIST_KINDS[kind],p.surface.name,count,
+      #shown>0 and string.format('; %d-%d of them (page %d of %d)%s: %s',from,to,page,pages,out.next and ', next: '..out.next or '',table.concat(shown,', '))
+      or (count==0 and '' or string.format('; page %d of %d is past them',page,pages)))
+    return out
   end
   return M
 end
