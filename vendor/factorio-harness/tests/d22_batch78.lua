@@ -79,18 +79,18 @@ do
   local p={index=3}
   eq(C.start(p,pl,60,'test'),nil)
   local job=states.collector_tally[3]
-  eq(#job.prev,1)
+  eq(#job.prev,2,'the one in reach and the one 0.5 beyond it (d22 batch81: watched within 2 tiles of a reach)')
   table.remove(chunks,1)
   produced['metallic-asteroid-chunk']=11
   game.tick=1010; C.tick(1010)
   local t=C.tally(p,pl)
-  eq(t.taken_seen,1); eq(t.collectors[1].taken,1); eq(t.collectors[1].taken_by_type,'1 metallic-asteroid-chunk'); eq(t.collected,1)
+  eq(t.gone_in_reach_total,1); eq(t.collectors[1].gone_in_reach,1); eq(t.collectors[1].gone_in_reach_by_type,'1 metallic-asteroid-chunk'); eq(t.collected,1)
   -- a chunk drifting through a reach is not taken
   chunk('oxide-asteroid-chunk',57,119.5,1/60,0)
   game.tick=1020; C.tick(1020)
   chunks[#chunks].position={x=57+10/60,y=119.5}
   game.tick=1030; C.tick(1030)
-  eq(C.tally(p,pl).taken_seen,1,'a drifting chunk found where its drift put it')
+  eq(C.tally(p,pl).gone_in_reach_total,1,'a drifting chunk found where its drift put it')
   -- measures: the watch is running, then done and read
   local Mz=dofile('mod/agent-harness_0.1.0/measures.lua'){state=function() return states end}
   local w=Mz.list(3,1030)[1]

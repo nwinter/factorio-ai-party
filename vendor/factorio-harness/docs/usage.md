@@ -11124,3 +11124,36 @@ nothing more (a chunk placed at (4,1) stayed 765 ticks, power full, output empty
 the copy (x86 under Rosetta, about 12 UPS), timed in the same minute: the read 24-26 ms on Asterion (55 ms the first
 call) and 19-21 ms on Anvil (157 chunks), the existing platform_supply read on Asterion 18-23 ms; the extent, chunk
 and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
+
+## d22 batch81 AQ1: the collector tally is inferred, by filter, beside the exact count (Sol #1852)
+
+- Sol's case: Spindle's collector at (5.5,-22.5) takes oxide only, and the collector_tally credited it 92 metallic, 54
+  carbonic and 33 oxide (242 in all) while production statistics said the platform collected 132.
+- Seen on a copy of world n's `_autosave5` (tick 46892405, Spindle over Fulgora, three collectors: (-13.5,-0.5) west,
+  metallic only; (5.5,-22.5) north, oxide only; (17.5,-0.5) east, every type):
+  - main's tally over 103.5 s credited the oxide collector 4 metallic, 4 oxide and 7 carbonic, and the metallic
+    collector 1 oxide, against 21 collected;
+  - every chunk round Spindle read every tick for 14,034 ticks: 103 vanished. 70 vanished where their drift put them
+    on a platform tile (they struck the hull: the oxide collector stands on the hull's north edge and its reach covers
+    the hull behind it), 20 left the 128-tile area read, and 13 as the platform's count rose (16 collected);
+  - each collected chunk vanished 1-4 ticks before the count rose, at 0.18 inside to 0.92 outside the fitted reach
+    (one at 2.77): a collector takes a chunk as it crosses into its reach, so a chunk read inside a reach at one
+    10-tick read is rarely there at the next.
+- 2.0.77 has no per-collector catch count: no event for a collected chunk (defines.events has only map chunk events),
+  the collector's arm inventory (`defines.inventory.asteroid_collector_arm`) reads nil, the output inventory is
+  emptied by its inserter within ticks, and production statistics are the platform's.
+- The tally now (collectreach.lua):
+  - watches chunks within 2 tiles (plus a read's drift) of the reach of a collector whose filters take their type;
+  - a watched chunk gone from where its drift puts it at the next read counts as `gone_in_reach` for the collector
+    whose reach its drift's path came nearest, within 1 tile; a chunk is never credited to a collector whose filters
+    exclude it;
+  - not counted: one found where its drift puts it (it drifted on), one gone where its drift puts it on a platform
+    tile (`hit_hull`), one whose path came near no such reach (`gone_elsewhere`);
+  - the fields and lines say inferred (`gone_in_reach`, `gone_in_reach_total`; `taken` and `taken_seen` are gone);
+    beside them `collected` (production statistics, exact, the platform's), `inferred_minus_collected` and `by_type`
+    [{name, inferred, collected, difference}];
+  - the read gives each collector's `in_reach_it_takes` beside `in_reach`, and its line names its filters.
+- On the logged ticks, replayed at the watch's 10-tick reads: the old rules gave 15 (8 of them against the
+  collector's filter), the new 11 of the 16 collected, each credited to a collector that takes its type (the oxide
+  collector its 2 oxide). A chunk taken without being seen near a reach first is missed, so the inferred sum can fall
+  short of the exact count; the line says by how much.
