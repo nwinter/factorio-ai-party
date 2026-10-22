@@ -187,6 +187,14 @@ past 96 KB packed (3247 chunks of world n: 21.6 KB). The map draws it under the 
 transparent) and dims both once; the legend says how many chunks and when the newest was read; a frame 30 min or more
 older than now is labelled at its corner ("terrain from 2 h ago", the newest of frames whose corners are within 60 px)
 and the scale line says the frames' and the ground's ages.
+(d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero? Vulcanus
+currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") A disabled layer's
+tooltip says why (mapview.js absentWhy): "not read: ..." where the state has no read of it (the game has made no networks
+map of Vulcanus, naming the planets that have one; no map of the planet; a layer read on Nauvis only; pollution, read on
+the surfaces an agent is on), "not read yet: ..." where the state lists one this page has not had, and "none: ..." only
+where a read says zero (a networks map with no electric or logistic network or no item, a planet map with no building,
+the base read with no turret, spawner or worm, library areas read with none on the planet, no agent or attention mark
+there now). The item picker's tooltip says the same.
 The map is Nauvis: an agent whose `surface` is another planet, or with `on_platform` or `travel` set (a cargo pod), is
 listed in its bottom-left corner instead ("Luna · Vulcanus", "Opus · Solstice (platform)") and takes no part in
 the framing; each agent row carries `surface`, `where`, `on_platform` and `travel` from the stream service for that.

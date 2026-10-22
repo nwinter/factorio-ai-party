@@ -1061,6 +1061,54 @@
   var PAIRS = [['terrain', 'networks'], ['combat', 'team']];
   var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
     ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
+  // (d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero?
+  // Vulcanus currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") Why a
+  // layer has nothing on the surface shown: "not read" with why (no read of it in the state, a read this page has not
+  // had yet, a layer read on Nauvis only, a read that covers some surfaces only), or "none" where a read says zero.
+  function absentWhy(data, d, k) {
+    var where = cap(d.surface || 'nauvis'), home = d.surface === 'nauvis';
+    var listed = function (list) { return Array.isArray(list) ? list.filter(function (x) { return x && x.surface === d.surface; })[0] || null : undefined; };
+    var names = function (list) { return (list || []).map(function (x) { return cap(x.surface); }).join(', '); };
+    if (k === 'power' || k === 'robots' || k === 'item') {
+      if (d.net) {
+        var age = num(d.net.tick) && d.now_tick != null ? ' (read ' + ago(Math.max(0, (d.now_tick - d.net.tick) / 60)) + ')' : '';
+        return k === 'power' ? 'none: the networks map of ' + where + age + ' has no electric network'
+          : k === 'robots' ? 'none: the networks map of ' + where + age + ' has no logistic network (no roboport of ours)'
+          : 'none: the networks map of ' + where + age + ' has no item source or consumer';
+      }
+      var l = listed(data.net_list);
+      if (l) return 'not read yet: a networks map of ' + where + ' is listed (game tick ' + l.tick + '); it comes with a later update';
+      if (l === null) return 'not read: the game has made no networks map of ' + where + (data.net_list.length ? ' (it has: ' + names(data.net_list) + ')' : '');
+      return 'not read: no networks maps in the live state yet';
+    }
+    if (k === 'buildings') {
+      if (home) return 'not read: no base map in the live state yet';
+      var pm = data.planets && data.planets[d.surface];
+      if (pm && Array.isArray(pm.rows) && !pm.rows.length) return 'none: the map of ' + where + ' read shows no building of ours';
+      var lp = listed(data.planet_list);
+      if (lp) return 'not read yet: a map of ' + where + ' is listed; it comes with a later update';
+      return 'not read: no map of ' + where + ' in the live state';
+    }
+    if (k === 'terrain' || k === 'ore' || k === 'coverage' || k === 'readiness' || k === 'nests' || k === 'alerts') {
+      var what = { terrain: 'terrain', ore: 'ore', coverage: 'turrets', readiness: 'turret states', nests: 'nests', alerts: 'fights and alert pins' }[k];
+      if (!home) return 'not read: ' + what + (k === 'terrain' || k === 'ore' ? ' is' : ' are') + ' read on Nauvis only';
+      if (k === 'terrain') return 'not read: no terrain frame or charted ground in the live state yet';
+      if (k === 'ore') return 'not read: no ore grid in the live state yet';
+      if (k === 'readiness') return 'not read: no turret state in the live state yet';
+      if (k === 'alerts') return 'none: no fight or alert pin now';
+      if (!d.base) return 'not read: no base map in the live state yet';
+      return k === 'coverage' ? 'none: the base read lists no turret' : 'none: the base read lists no spawner or worm near the base';
+    }
+    if (k === 'cloud') {
+      var read = (data.clouds || []).filter(function (c) { return c && c.surface; });
+      return 'not read: the last pollution read has no row for ' + where + ' (it reads the surfaces an agent is on' +
+        (read.length ? '; it has: ' + read.map(function (c) { return cap(c.surface); }).join(', ') : '') + ')';
+    }
+    if (k === 'library') return data.library_read === false ? 'not read: no library areas in the live state yet' : 'none: no placed library area on ' + where;
+    if (k === 'agents') return 'none: no agent on ' + where + ' now';
+    if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
+    return 'none on ' + where + ' now';
+  }
   Viewer.prototype.renderLayers = function () {
     var self = this, box = this.root.querySelector('.mapview-layers');
     // other surfaces with a map (another planet's buildings) or a cloud: a switch between them and Nauvis
@@ -1078,7 +1126,9 @@
     });
     var where = cap(this.d.surface || 'nauvis');
     var sig = 'item:' + (this.item || '') + ':' + names.length + ':' + (this.d.net ? this.d.net.tick : '') + '|' + LAYERS.map(function (l) { return had[l[0]] ? l[0] + (has(self.d, l[0]) ? 1 : 0) + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
-      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '') + (had.item ? '|item' : '');
+      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '') + (had.item ? '|item' : '') +
+      // (AK10) a disabled layer's reason can change with nothing else (a map listed, then read)
+      '|' + LAYERS.concat([['item']]).map(function (l) { return had[l[0]] && !has(self.d, l[0]) ? absentWhy(self.data, self.d, l[0]) : ''; }).join(',');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     var byKey = {}, short = {};
@@ -1094,12 +1144,12 @@
       var buttons = keys.map(function (k) {
         var text = k === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : k === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : short[k];
         var here = has(self.d, k);
-        var title = here ? LONG[k] : byKey[k] + ': none on ' + where + ' now';
+        var title = here ? LONG[k] : byKey[k] + ': ' + absentWhy(self.data, self.d, k);
         return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled') + (title ? ' title="' + esc(title) + '"' : '') +
           ' data-layer="' + k + '" aria-pressed="' + (self.on[k] ? 'true' : 'false') + '">' + esc(text) + '</button>';
       }).join('');
       // (AK7) the narrow picker says "Item: -" where no networks map is; why, in its tooltip
-      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled title="' + esc('no networks map of ' + where + ' yet') + '"') +
+      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled title="' + esc('Item: ' + absentWhy(self.data, self.d, 'item')) + '"') +
         ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: -</option>' + names.map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
         }).join('') : '<option value="">Item: -</option>') + '</select>';
@@ -1306,7 +1356,7 @@
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
     prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
-    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S, GROUPS: GROUPS,
+    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S, GROUPS: GROUPS, absentWhy: absentWhy,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);

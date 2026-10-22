@@ -742,6 +742,7 @@
       planets: keepPlanets(s), now_tick: s.tick,
       now: typeof s.now === 'number' ? s.now : Date.now() / 1000,  // (AK9) the terrain's age is the live map's: from now
       library_areas: s.library_areas && Array.isArray(s.library_areas.areas) ? s.library_areas.areas : [],  // (AD2) placed library areas
+      library_read: !!(s.library_areas && Array.isArray(s.library_areas.areas)),  // (AK10) read at all: "none" vs "not read"
       net_maps: keepNets(s),  // (AD3) electric and logistic networks, items' sources and consumers
       // (AK1) the newest tick of each planet's maps the state lists, and the surfaces dropped (keepUp)
       planet_list: Array.isArray(s.planets) ? s.planets : null, net_list: Array.isArray(s.net_maps) ? s.net_maps : null, gone: keepUp(s),
