@@ -12,7 +12,8 @@ return function(api)
   local MAX_BOARD_LINES, MAX_ALERT_LINES, REPEAT_ATTACK = 5, 8, 7200
   local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true, project=true, lesson=true}
   -- The team plan: one living item (kind plan) with goals and a line per agent.
-  local PLAN_GOALS, PLAN_LINE, PLAN_LINES, PLAN_HISTORY = 600, 160, 24, 10
+  -- (d22 batch90 AZ3) a doing line up to 240: 101 refusals at 160 in s57, 27% of writes, the median refused 179
+  local PLAN_GOALS, PLAN_LINE, PLAN_LINES, PLAN_HISTORY = 600, 240, 24, 10
   local STATUSES = {open=true, claimed=true, doing=true, done=true, blocked=true, dropped=true}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   local OPERATOR = 'operator'
@@ -1328,7 +1329,7 @@ return function(api)
       returns='the plain read (no filter, no limit) lists active items only (open, claimed, doing, blocked) and says how many finished ones it left out (finished_left_out); plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones (empty is refused, naming the current goals; clear: true clears them)',
       clear='boolean: true clears the goals (fh board plan goals "")',
-      doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
+      doing='one line of what an agent is on, 1..240 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
     board_post = {kind='task|request|claim|note|project', title='1..120 characters (longer is refused)',
       owner='agent name or display name (task/request/project; a request without owner is shown to everyone until taken; a project may have none)',
@@ -2080,7 +2081,7 @@ return function(api)
     local wait = {}
     for _, t in ipairs(box.unread or {}) do if not shown[t.seq] then wait[#wait+1] = t end end
     if #wait == 0 then return nil end
-    local out = {string.format('%d unread tell%s (chat_ack {seq} or "all", or a tells read, marks them read):', #wait, #wait == 1 and '' or 's')}
+    local out = {string.format('%d unread tell%s (chat_ack {seq: N} or {seq: "all"}, or a tells read, marks them read):', #wait, #wait == 1 and '' or 's')}
     for i = 1, math.min(#wait, M.UNREAD_SHOW) do
       local t = wait[i]
       out[#out+1] = string.format('unread #%d %s, waiting %s: %s', t.seq, t.from, ago(game.tick - t.tick), clip(t.text, 100))

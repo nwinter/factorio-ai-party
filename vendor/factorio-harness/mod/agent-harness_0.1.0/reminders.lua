@@ -127,7 +127,15 @@ return function(api)
       if job.steps then st = string.format('%s, %d of %d steps done', st, steps_done(job, name), #job.steps) end
       return st, pd
     end
-    if job.acked and job.acked[name] then return 'acknowledged' end
+    if job.acked and job.acked[name] then
+      -- (d22 batch90 AZ2) an ack is not the linked board item done: said while that item has not changed since
+      local i = job.board_item and api.item and api.item(job.board_item)
+      if i and i.status ~= 'done' and i.status ~= 'dropped' and (i.updated_tick or i.created_tick or 0) <= job.acked[name] then
+        return string.format('acknowledged, not done: board #%d (%s) unchanged since the ack, last change %s ago', i.id or job.board_item,
+          tostring(i.status), ago(game.tick - (i.updated_tick or i.created_tick or 0)))
+      end
+      return 'acknowledged'
+    end
     return job.enabled and 'scheduled' or (job.done and 'done' or 'off')
   end
   -- (AF2) one recipient's latest: acknowledged (when, with what, by whom) or waiting since when, runs missed.
@@ -437,6 +445,15 @@ return function(api)
     local me = api.who(p)
     assert(a.all == nil or type(a.all) == 'boolean', 'all must be true or false')
     assert(a.pending == nil or type(a.pending) == 'boolean', 'pending must be true or false')
+    -- (d22 batch90 AZ3: reminders {id} refused 21 times in s55-57; the whole read it fell back to was 30-98 KB) one job
+    if a.id ~= nil then
+      assert(type(a.id) == 'number', 'id is a reminder number')
+      local job = store().jobs[a.id]
+      assert(job, 'no reminder #' .. tostring(a.id) .. ' (reminders lists them)')
+      if job.serves then pcall(Sv().check, job.serves) end
+      local r = row(job, me)
+      return {reminders={r}, lines={r.line}, count=1, tick=game.tick}
+    end
     -- pending (B1): the grouped read: what waits for you now, each at its next step
     if a.pending then
       local ids, out, lines = {}, {}, {}
@@ -577,7 +594,7 @@ return function(api)
       next_in_ticks='optional 60..: the next run that many ticks from now (that run only), with the ack', every_ticks='optional, its owner: a new cadence from now (e.g. 18000, 5 min), with the ack',
       returns='acknowledged, was_pending, missed (runs folded into the line), missed_runs (how many and the ticks of the first and last), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
     reminder_snooze = {id='reminder number', ticks='60..: the next run that many ticks from now (the next run only)', returns='snoozed, next_due_tick, reminder; its owner or a recipient'},
-    reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, serves {count, last_seen_tick, gone, gone_tick, line}, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed, the owner told, the backup told; steps done), missed {name: runs}, backup, latest [{name, state, acked_tick, acked_ago_s, result, by (the backup or owner who recorded it for them), waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick, line}] (each recipient\'s latest result or wait), yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
+    reminders = {id='optional: one reminder number: that one only (anyone\'s)', all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, serves {count, last_seen_tick, gone, gone_tick, line}, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed, the owner told, the backup told; steps done), missed {name: runs}, backup, latest [{name, state, acked_tick, acked_ago_s, result, by (the backup or owner who recorded it for them), waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick, line}] (each recipient\'s latest result or wait), yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
   }
   return M
 end

@@ -19,7 +19,7 @@
   60 s of game time), the team's own narrative history in your words. Viewers read it on the site by shift, beside the
   platforms built and lost; the reply names the harness events it is filed beside.
   Example: `./fh chronicle "The first rocket left Nauvis at 41h." --title "First launch"`
-- `chat_ack {seq}`: closes unanswered mentions (`seq`: one, an array, or "all"). A viewer's @mention, a teammate's
+- `chat_ack {seq}`: closes unanswered mentions (`seq`: one, an array, or "all"; `{all: true}` too). A viewer's @mention, a teammate's
   @mention, and a mention or tell that asks stay open until you answer (a say or tell naming them, a tell to the asker,
   or `reply_to: SEQ` on say or tell) or ack them; reading chat does not close them. A viewer's line closes by name only
   while it is that viewer's one open line to you; `reply_to` closes only the line it names, and a say's `left_open`

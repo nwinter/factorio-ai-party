@@ -4357,7 +4357,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   active items only (viewer Foobator, d15 09:46: done and dropped items filled it): `finished_left_out: 3 finished (done
   or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them`.
 - The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
-  characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
+  characters) replaces the goals, `doing` (up to 240) sets one agent's line, yours unless `agent` names another; `""`
   removes a line. Empty `goals` is refused unless `clear: true` (Opus, shift17 12:20: `fh board plan goals` with no
   text wiped them): nothing changes and the error names the goals, who set them and when; `{clear: true}` clears them,
   and so does `fh board plan goals ""` (the CLI with no text, or `-` with empty stdin, sends the refused form; `doing`
@@ -9237,9 +9237,27 @@ fh watch    # deploy on every change
 - Compact replies (batch39 C1, Astra, about 30 times a shift with a local JSON projection). `fields: [...]` (a list,
   or one string joined by `|` or `,`, as scan's) on platform, platforms, inspect and status returns only those fields.
   A field is matched as a top-level key, a key of each row, or one level down (`"hub.cargo"`). Rows are platforms'
-  rows and inspect's results or entities, and each row keeps its name and position. A name that matches nothing is
-  refused with the names the reply has. The read runs whole (M.project cuts the reply), so the game-side cost is the
+  rows and inspect's results or entities, and each row keeps its name and position. A name this reply lacks that the
+  read can have (its describe text names it, or an earlier reply had it: eta_min, leg, freshness in some states only)
+  is listed in `absent` (batch90 AZ3: 177 such refusals in s55-57); a name the read never has is refused with the names
+  the reply has. The read runs whole (M.project cuts the reply), so the game-side cost is the
   same; the agent's context is what shrinks.
+- The refusals the harness's own wording invited (batch90 AZ3, the AU1 review's finding 6: unknown-argument refusals
+  rose 115, 151, 179 over shifts 55-57):
+  - `board_plan {doing}` takes up to 240 characters (at 160, 101 refusals in s57, 27% of writes; the median refused
+    line was 179).
+  - `chat_ack {all: true}` is `{seq: "all"}`; the unread-tells line reads `chat_ack {seq: N} or {seq: "all"}`.
+  - Aliases: `scan {centre}`, `inspect {at}` and `nearest {centre}` are `position`; `rates {items}` is `item`;
+    `nearest {count}` is `limit`, `{entity_names}` is `name`.
+  - `describe {action}` (a name or a list of 1..16) returns only those entries, and for a name there is not, the
+    closest real ones (`unknown`).
+  - `reminders {id}` reads that one reminder (the whole read it fell back to was 30-98 KB).
+  - An unknown action is refused naming the closest real ones (`unsupported action; closest: technologies; call
+    describe`): one that contains the name or that it contains, or a typo of up to 2 letters, else one sharing a
+    word of 3+ letters, at most 6; the host adds their reference topics.
+  - `fh call help|more|wait ...` runs `fh help`, `fh more` or `fh wait`.
+  - `nearest {surface | platform}` reads there by remote view, as scan does: what the map shows there, charted chunks
+    only (a planet needs `position` there; a platform is centred on its hub).
 - A whole leg's production (batch39 C2, Sol: a wrapper sampled every 1-2 min, and dock bursts looked sustainable).
   freight.lua's segments (each stop and each leg) now keep thruster fuel and oxidizer made and used (fluid statistics
   totals) at their start and end, beside the ammunition counts they kept already. `platform_production {platform,

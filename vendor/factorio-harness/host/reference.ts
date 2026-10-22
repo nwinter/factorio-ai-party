@@ -72,10 +72,12 @@ export function addReference(reply: { ok?: boolean; error?: { code?: string; mes
   const name = step?.[1] ?? action;
   let hint: string;
   if (/^unsupported action/.test(message)) {
-    const near = nearNames([...topics.keys()], name).slice(0, 6);
+    // (d22 batch90 AZ3) the runtime names the closest real actions itself: only their topics here
+    const given = /; closest: ([a-z0-9_, ]+);/.exec(message)?.[1]?.split(', ');
+    const near = given ?? nearNames([...topics.keys()], name).slice(0, 6);
     const where = [...new Set(near.map(n => topics.get(n)).filter(t => t && t !== 'core'))];
-    hint = near.length ? `similar: ${near.join(', ')}; reference: ${where.map(t => `./fh help ${t}`).join(', ') || 'AGENTS.md'}`
-      : 'reference: ./fh help lists the topics';
+    const refs = `reference: ${where.map(t => `./fh help ${t}`).join(', ') || 'AGENTS.md'}`;
+    hint = given ? refs : near.length ? `similar: ${near.join(', ')}; ${refs}` : 'reference: ./fh help lists the topics';
   } else {
     const topic = topics.get(name);
     if (!topic) return undefined;

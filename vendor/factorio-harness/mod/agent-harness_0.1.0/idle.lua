@@ -161,7 +161,8 @@ return function(api)
       return
     end
     if WAITS[action] then b.waits[action] = (b.waits[action] or 0) + 1; return end
-    if TALK[action] or api.is_talk and api.is_talk(action) then b.talk = b.talk + 1; return end
+    -- (d22 batch90 AZ2) reminder_add, _ack, _snooze ... are talk: an ack (s55-57: luna's 222 acks of #71) is not game work
+    if TALK[action] or action:match('^reminder_') or api.is_talk and api.is_talk(action) then b.talk = b.talk + 1; return end
     if api.is_read(action) or action:match('^queue_') then b.reads = b.reads + 1; return end
     if noop(result) then b.noops = b.noops + 1; return end
     b.acts = b.acts + 1

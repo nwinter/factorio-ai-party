@@ -719,9 +719,12 @@ const FLAGS_GAME = ['player','host','port','timeout','session','bridge-socket','
 const FLAGS_WAIT = ['wait','no-wait','wait-timeout','wait-through-tells','wake-on-tells','wake-from','wake-local','no-operator-wake','wake-on-viewers','no-urgent','urgent-radius','wake-near','wake-on-orders','no-board-wake'];
 const FLAGS_CALL = [...FLAGS_GAME, ...FLAGS_WAIT, 'args', 'args-file', 'since', 'limit', 'peek'];
 const MESSAGE_FLAGS = ['text-file','aloud','look','fyi','wake','title'];
+// (d22 batch90 AZ3: fh call help, more and wait sent as actions in s55-57) fh call help|more|wait runs that subcommand.
+const CALL_SUBCOMMANDS = ['help', 'more', 'wait'];
 function commandFlags(positionals: string[]): {label: string, own: string[], flags: Set<string>} {
   let command = positionals[0] ?? '', sub = positionals[1];
   if (command === 'call' && sub && ['say','confess','tell','operator','chronicle'].includes(sub)) { command = sub; sub = undefined; }
+  if (command === 'call' && sub && CALL_SUBCOMMANDS.includes(sub)) { command = sub; sub = positionals[2]; }
   const own: Record<string, string[]> = {
     help:FLAGS_GAME, more:FLAGS_GAME, start:['name','factorio','save','headless','niri','space-age','bridge'],
     connect:['name','server','factorio','space-age','password-file','player-data','mods','niri'], 'stop-session':['session','name'], install:['mods'],
@@ -791,6 +794,7 @@ function parseCli() {
 }
 async function main() {
   const { values, positionals } = parseCli();
+  if (positionals[0] === 'call' && CALL_SUBCOMMANDS.includes(positionals[1] ?? '')) positionals.shift();
   let command = positionals[0];
   // fh help ACTION (or fh call ACTION --help): that action's arguments, about 1 KB.
   if (values.help && command === 'call' && positionals[1]) { command = 'help'; positionals.splice(0, 2, 'help', positionals[1]); }
