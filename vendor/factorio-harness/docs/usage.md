@@ -11157,6 +11157,26 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   collector's filter), the new 11 of the 16 collected, each credited to a collector that takes its type (the oxide
   collector its 2 oxide). A chunk taken without being seen near a reach first is missed, so the inferred sum can fall
   short of the exact count; the line says by how much.
+- Filters are read at each read of the watch (`filters_changed` counts changes): on the copy the east collector's
+  filters changed 17 times in a 300 s watch (metallic, carbonic and oxide at first; metallic and oxide; carbonic and
+  oxide; oxide), so filters taken once at the start credited metallic it no longer took and missed carbonic.
+- Live on the copy, 300 s with filters read at each read: 71 collected (34 oxide, 28 metallic, 9 carbonic), 53
+  inferred (24 metallic to the metallic collector, 15 oxide to the oxide collector, 7 carbonic and 7 oxide to the east
+  one), 18 fewer than collected; 5 struck the hull, 28 gone away from every reach.
+- Cost (profile_ticks 60 s, a watch running on Spindle; the copy's chunk count changed from run to run):
+
+  | run | chunks in view | collector_tally.tick over 3,600 ticks | a tick | worst second |
+  |---|---|---|---|---|
+  | main, baseline | 11-30 | 160.8 ms | 0.045 ms | 29.1 ms |
+  | main, round 1 | 56 | 296.8 ms | 0.082 ms | 227.1 ms |
+  | main, round 2 | 135 | 169.2 ms | 0.047 ms | 28.0 ms |
+  | branch, round 1 | 77 | 77.5 ms | 0.022 ms | 8.9 ms |
+  | branch, round 2 | 102 | 70.2 ms | 0.019 ms | 15.4 ms |
+  | branch, round 3 | 55 | 36.9 ms | 0.010 ms | 2.4 ms |
+  | branch, filters at each read | 109 | 185.6 ms | 0.052 ms | 24.0 ms |
+
+  The sample builds no position tables and keeps only the chunks near a reach of a collector that takes them for the
+  match.
 ## d20 batch79 AO1 (eng/d20-batch79): uptime, when the non-working samples fell (Astra #1845)
 
 - Astra's 600 s watch of six Vulcanus machines from tick 46697072 read "low power 0%" for 3 of 601 samples, with no
