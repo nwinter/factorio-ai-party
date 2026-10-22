@@ -16145,7 +16145,9 @@ function M.queue_waits(action,kind)
 end
 end local conditions=conditions_module{losses_since=function(f,s,since,names,max) return M.lostlog.since(f,s,since,names,max) end,platform_hits=function(pl) return M.platalerts.hit_ring(pl),M.platalerts.HIT_RING end,leg=function(pl) return M.freight.leg(pl) end,receipts=function(pl,since) return M.freight.receipts_since(pl,since) end,drop_record=function(id) return M.drops.find(id) end,last_drop=function(name) return M.drops.last_of(name) end,known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
-  platform_where=function(pl) return M.freight and M.freight.where(pl) end}
+  platform_where=function(pl) return M.freight and M.freight.where(pl) end,
+  -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
+  left_since=function(name,force,location,since) return M.freight and M.freight.left_since(name,force,location,since) end}
 M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
