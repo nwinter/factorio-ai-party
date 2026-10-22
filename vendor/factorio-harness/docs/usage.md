@@ -4872,7 +4872,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator census (census.lua; operator 22:00, task-slowreads: the host services' periodic reads counted with one find
   over every surface in a tick, 32 to 169 ms on world n): `census {part, ore?}` (read; part `extras`, `snapshot`,
   `machines` or `basemap`) gives the last complete background pass (every surface walked in bands of at most 32 chunks
-  by the harness tick, a slice of 200 entities a step, a pass about every 30 s): `extras` `electric_machines, starved`
+  by the harness tick, paced by work since d21 batch73: about 8 entities read a tick, a pass of world n's about 4-5
+  minutes, the next begun when it ends and at least 30 s after the last began): `extras` `electric_machines, starved`
   (assembling machines, labs, drills, furnaces and inserters with an electric source; low or no power), `snapshot`
   `entities {name: count}` (the force's engine counts of the analyst's building types) and `surfaces_with_buildings`,
   `machines {name|recipe: {status: count}}`, `basemap` (the site's live map as tools/stream/harness.py BASEMAP_LUA draws

@@ -5,7 +5,7 @@ return function(api)
   local M={}
   local BELT={['transport-belt']=true,['underground-belt']=true,splitter=true,['linked-belt']=true}
   local TYPES={'transport-belt','underground-belt','splitter','linked-belt','entity-ghost'}
-  local function key(x,y) return x..','..y end
+  local key=require('numtext').pair  -- x..','..y, fast (numtext; d21 batch73 AI)
   local function id(f,s,x,y) return f.name..'|'..s.name..'|'..key(x,y) end
   local function store()
     local s=api.state();s.belt_memory=s.belt_memory or {chunks={},order={},next=1};return s.belt_memory
@@ -47,10 +47,11 @@ return function(api)
   -- Each belt's previous item observation survives an empty sample. Missing
   -- tiles become alerts only after a later visible chunk snapshot confirms it.
   local function item_count(e) return e.get_item_count() end
-  function M.remember(c,e,tiles,p)
+  function M.remember(c,e,tiles,p,pos)
     local et=e.type
     local ghost=et=='entity-ghost';local t=ghost and e.ghost_type or et
-    local pos,user=e.position,e.last_user
+    pos=pos or e.position
+    local user=e.last_user
     local row={name=ghost and e.ghost_name or e.name,position={x=pos.x,y=pos.y},direction=e.direction,
       ghost=ghost or nil,type=t,tick=game.tick,by=user and user.name or nil}
     local old=c.tiles and c.tiles[key(math.floor(pos.x),math.floor(pos.y))]
@@ -81,6 +82,41 @@ return function(api)
         end
       end
     end
+  end
+  -- (d21 batch73 AI) observe() for the census: its type and position read, its chunk (cx, cy) in sight; ctx is the
+  -- census step's ({belt = {}, force, surface}): each chunk's memory registered once a step.
+  -- A one-tile belt seen as it was (same name, place and direction) has its row brought up to date where it is: the same
+  -- fields as remember() gives it, without a new row, position and bounding box each pass.
+  function M.observe_seen(e,t,pos,cx,cy,ctx)
+    local ghost=t=='entity-ghost'
+    if ghost then t=e.ghost_type end
+    if not BELT[t] then return end
+    local ck=cx*1048576+cy
+    local c=ctx.belt[ck]
+    if not c then c=register(ctx.force,ctx.surface,cx,cy);ctx.belt[ck]=c end
+    if not ghost and t~='splitter' and c.tiles then
+      local k=key(math.floor(pos.x),math.floor(pos.y))
+      local old=c.tiles[k]
+      if old and not old.ghost and old.type==t and old.position.x==pos.x and old.position.y==pos.y and old.name==e.name
+        and old.direction==e.direction then
+        local user=e.last_user
+        old.tick=game.tick;old.by=user and user.name or nil
+        local ok,n=pcall(item_count,e)
+        old.carried_tick=ok and n>0 and game.tick or old.carried_tick
+        old.items=ok and n or nil
+        if t=='underground-belt' then
+          old.belt_to_ground_type=e.belt_to_ground_type
+          local other=e.neighbours
+          local op=other and other.valid and other.position
+          if op and e.force.is_chunk_visible(e.surface,{x=math.floor(op.x/32),y=math.floor(op.y/32)}) then
+            old.paired_with={x=op.x,y=op.y}
+          else old.paired_with=nil end
+        end
+        if c.cuts then c.cuts[k]=nil end
+        return
+      end
+    end
+    M.remember(c,e,nil,nil,pos)
   end
   local function compare(c,tiles,tick)
     c.cuts=c.cuts or {}

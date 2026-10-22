@@ -15,6 +15,7 @@
 -- sight are read from the memory alone.
 return function(api)
   local M = {}
+  local pair = require('numtext').pair
   local MAX_CHUNKS, MAX_ROWS = api.max_chunks or 4096, 1024
   -- Not buildings, or moving, or belts (belt memory has those).
   local SKIP = {character=true, resource=true, ['entity-ghost']=true, ['tile-ghost']=true, ['item-entity']=true,
@@ -72,6 +73,44 @@ return function(api)
       c.n = c.n + 1
     end
     c.rows[rk] = e.name .. '|' .. (e.supports_direction and e.direction or 0) .. '|' .. (status or '')
+    c.seen = game.tick
+  end
+  -- (d21 batch73 AI) note() for the census: its type and position read, its chunk (cx, cy) in sight, status a function
+  -- of the entity; ctx is the census step's ({fog = {}, fog_prefix = 'force|surface|'}): each chunk's table found once
+  -- a step, the row keys fast (numtext) and the texts made once, the same rows as note() writes.
+  local SUPDIR, TEXT = {}, {}
+  function M.note_seen(e, t, pos, cx, cy, status, ctx)
+    if SKIP[t] then return end
+    local ck = cx * 1048576 + cy
+    local c = ctx.fog[ck]
+    if not c then
+      local m = store()
+      local k = ctx.fog_prefix .. pair(cx, cy)
+      c = m.chunks[k]
+      if not c then
+        if m.n >= MAX_CHUNKS then evict(m) end
+        c = {force=ctx.force_name, surface=ctx.surface_name, x=cx, y=cy, rows={}, n=0}
+        m.chunks[k] = c; m.order[#m.order+1] = k; m.n = m.n + 1
+      end
+      ctx.fog[ck] = c
+    end
+    local rk = pair(pos.x, pos.y)
+    if not c.rows[rk] then
+      if c.n >= MAX_ROWS then return end
+      c.n = c.n + 1
+    end
+    local name = e.name
+    local sd = SUPDIR[name]
+    if sd == nil then sd = e.supports_direction and true or false; SUPDIR[name] = sd end
+    local dir = sd and e.direction or 0
+    local st = status(e) or ''
+    local a = TEXT[name]
+    if not a then a = {}; TEXT[name] = a end
+    local b = a[dir]
+    if not b then b = {}; a[dir] = b end
+    local text = b[st]
+    if not text then text = name .. '|' .. dir .. '|' .. st; b[st] = text end
+    c.rows[rk] = text
     c.seen = game.tick
   end
   -- A building of ours gone where our force saw it go (mined, deconstructed, or destroyed in sight).
