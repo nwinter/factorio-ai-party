@@ -282,6 +282,15 @@ none and Nauvis's last `basemap` while a state has none. A map the state lists a
 held: its tab gives its age ("Gleba · 5 min old"), the scale line says "(kept until a newer one arrives)", and so does
 the networks or pollution legend line beside its read age.
 
+(d22 batch75 AK3, viewer Aurora, site:4119: "Could the map separate planet tabs from layer filters? Give planets their
+own row, group layers below (terrain, networks, combat), and keep the item filter in a consistent spot.") The map's
+planet tabs are a row of their own; below them the layers sit in groups under labels: Terrain (terrain, ore, buildings,
+pollution or spores), Networks (the item picker first, power, logistic), Combat (turret range, turret state, nests,
+fights) and Team (agents, attention, blueprints). A layer the page has had once keeps its button and its place on every
+planet, disabled where the planet shown has none of it ("Power networks: none on Aquilo now"); the item picker is
+disabled where no networks map is read and has a fixed width, so a planet switch or a push moves no control. Each
+layer's on/off is kept in the browser (`pog-live-map-layers`) across planet switches and reloads.
+
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
 `rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
 plain. On world n's state at 08:45 PDT d21 that took the push from 200-205 KB to 187-188 KB (the basemap 46.0 KB to
