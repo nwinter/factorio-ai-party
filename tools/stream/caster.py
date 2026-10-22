@@ -2047,9 +2047,49 @@ WORKERS_8008 = re.compile(r'"code"\s*:\s*8008\b|\bAiError\b.*\b8008\b')
 
 
 def spoke_by(tts):
-    """{provider, voice} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS objects)."""
+    """{provider, voice, cached, mood} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS
+    objects)."""
     last = tts.last_here() if hasattr(tts, "last_here") else dict(getattr(tts, "last", None) or {})
-    return {k: last[k] for k in ("provider", "voice", "cached") if last.get(k) is not None} or {"provider": tts.backend}
+    return {k: last[k] for k in ("provider", "voice", "cached", "mood") if last.get(k) is not None} or {"provider": tts.backend}
+
+
+# (d22 batch99 BI1, viewer Aurora site:4295: "Routine words like still or broken can trigger frustration. Use a natural
+# default, infer emotion from context") A line's mood (voices.MOODS) comes from its moment, never from its words: the
+# hosts' exchange from the event it calls; an agent's line from a strong moment of the last MOMENT_S seconds about
+# that agent (its death, a fight or loss naming it) or on its surface (a fight, a loss, a death); else neutral.
+MOMENT_MOOD = {"attack": "tense", "loss": "concerned", "death": "concerned", "headline": "concerned"}
+# space moments that are the team's firsts (model.py _space_moments); a platform's first orbit of a planet or its first
+# arrival back somewhere are routine trips by now (shift58: 41 of 53 space lines, "This one's routine now")
+FIRST_SPACE = ("first_rocket", "shift_rocket", "first_platform", "new_platform", "maiden_flight", "landing")
+MOOD_RANK = {"concerned": 3, "tense": 2, "excited": 1, "neutral": 0}
+MOMENT_S = 90
+
+
+def moment_mood(e):
+    """The mood of an event's moment: a fight tense; a loss, a death or a destroyed platform concerned; a space first
+    (the run's or the shift's first rocket, a new platform or its maiden flight, a planet first landed on, the team's
+    first arrival somewhere) excited; else neutral."""
+    e = e or {}
+    if e.get("kind") == "space":
+        fa = e.get("facts") or {}
+        return "excited" if fa.get("headline") in FIRST_SPACE or fa.get("team_first") else "neutral"
+    return MOMENT_MOOD.get(e.get("kind"), "neutral")
+
+
+def agent_mood(moments, agent, surface, now, window=MOMENT_S):
+    """An agent line's mood from the strong moments (dicts {t, mood, agent, surface}) of the last `window` seconds: one
+    naming the agent, or (a fight, loss or death) on its surface; the strongest (concerned, tense, excited). A space
+    moment counts only when it names the agent. Else neutral."""
+    low = lambda x: str(x or "").strip().lower()  # noqa: E731
+    best = "neutral"
+    for m in moments or []:
+        if now - m["t"] > window or now < m["t"] - 5:
+            continue
+        mine = agent and low(m.get("agent")) == low(agent)
+        here = surface and low(m.get("surface")) == low(surface) and m["mood"] != "excited"
+        if (mine or here) and MOOD_RANK[m["mood"]] > MOOD_RANK[best]:
+            best = m["mood"]
+    return best
 
 
 def second_voice(voice):
@@ -2173,6 +2213,11 @@ class Caster:
             for e in self.differ.diff(s):
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
+                if moment_mood(e) != "neutral":  # (BI1) the moments an agent's line may take its mood from
+                    fa = e.get("facts") or {}
+                    self.__dict__.setdefault("moments", deque(maxlen=32)).append(
+                        {"t": now, "mood": moment_mood(e), "agent": e.get("agent") or fa.get("agent"),
+                         "surface": e.get("surface") or fa.get("planet") or fa.get("surface"), "kind": e["kind"]})
                 if story:
                     story.note(e, now)
                 if e["kind"] == "operator":  # voiced by the chat thread at once, outside the agents' pacing
@@ -2698,7 +2743,7 @@ class Caster:
         def synth(item):
             who, line = item
             try:
-                return self.speak_clip(tts, line, voices.CASTERS[who], caster=who)  # eng/voices' TTS preps the text
+                return self.speak_clip(tts, line, voices.CASTERS[who], caster=who, mood=moment_mood(e))  # eng/voices' TTS preps the text
             except Exception as x:
                 return x
 
@@ -2784,13 +2829,14 @@ class Caster:
             self.agent_free = time.time() + len(text) / 15.0 + 8.0
             self.stats["agent_lines"] += 1
             log(f"[voice:{names.get(m['agent'])}/{vmap.get(m['agent'])}] ({label}) {text}")
+            mood = agent_mood(self.__dict__.get("moments"), m["agent"], ag.get("surface"), time.time())
             dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
                              {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
                               "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20,
                               # the line as said and its say look= (the director's cue when it starts playing)
                               "seq": m.get("seq"), "said": m.get("text"), "look": m.get("look")},
                              {"type": "agent", "agent": m["agent"], "label": label, "line": text},
-                             hold=lambda: self.caster_free)  # only a caster clip already pushed: agents go first
+                             hold=lambda: self.caster_free, mood=mood)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4
             if dur:  # the hosts may call back to it: shake4 rejected Grok 19 s after Grok spoke aloud (04:42:22)
                 self.history.append(f"aloud at {spoken_time(s.get('game_time'))}: "
@@ -2807,7 +2853,7 @@ class Caster:
                              "event": {"kind": "chat", "agent": m["agent"], "text": text, "label": label, "react": True,
                                        "prio": PRIORITY["chat"], "t": time.time()} if react else None}
 
-    def voice(self, text, voice_id, caster, meta, rec, hold=None):
+    def voice(self, text, voice_id, caster, meta, rec, hold=None, mood=None):
         """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed). `hold()` gives a time
         to wait for (at most 10 s) between synthesis and push, so the other channel's clip can finish first."""
         est = len(text) / 15.0
@@ -2823,7 +2869,7 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
             return est
         try:
-            audio, ctype, dur, lat, spoke = self.speak_clip(tts, text, voice_id, caster=caster)
+            audio, ctype, dur, lat, spoke = self.speak_clip(tts, text, voice_id, caster=caster, mood=mood)
             if tts is self.tts:
                 self.breakers["tts"].good()
             meta = dict(meta, duration=round(dur, 2), voice=spoke.get("voice") or voice_id)
@@ -2842,19 +2888,19 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, error=str(x)[:200])
             return est
 
-    def speak_clip(self, tts, text, voice, caster=None):
+    def speak_clip(self, tts, text, voice, caster=None, mood=None):
         """tts.speak -> (audio, ctype, seconds, latency, {provider, voice[, retried]}): the record logs who spoke
         (shake3 logged a constant, so whether the hosts were on OpenAI or Aura-2 had to be guessed from cost). A
         Workers AI 8008 error ("Internal server error", 11 lines lost in shake3) retries once on a second voice."""
         try:
-            audio, ctype, dur, lat = tts.speak(text, voice, caster=caster)
+            audio, ctype, dur, lat = tts.speak(text, voice, caster=caster, **({"mood": mood} if mood and mood != "neutral" else {}))
             return audio, ctype, dur, lat, spoke_by(tts)
         except Exception as x:
             if not WORKERS_8008.search(str(x)):
                 raise
             alt = second_voice(voice)
             log(f"[tts:{tts.backend}] Workers AI 8008 on {voice}; retrying once on {alt}")
-            audio, ctype, dur, lat = tts.speak(text, alt)
+            audio, ctype, dur, lat = tts.speak(text, alt, **({"mood": mood} if mood and mood != "neutral" else {}))
             return audio, ctype, dur, lat, dict(spoke_by(tts), retried="8008")
 
     def cost(self):

@@ -64,15 +64,13 @@ check("caster role voices never assigned", not set(voices.assign_voices([{"name"
       & {x for vs in voices.ROLE_VOICES.values() for x in vs})
 
 # ---- moods ----
-check("mood excited", voices.mood("Red science is ONLINE!") == "excited")
-check("mood frustrated", voices.mood("Ugh, the inserters are stuck again.") == "frustrated")
-check("mood deadpan", voices.mood("Iron plates. Again. I have become the iron plate.") == "deadpan")
-check("mood: 'again!' in a happy line is excited",
-      voices.mood("Roboports are up, the bots are flying, and I am never placing a chest by hand again!") == "excited")
-check("mood: a strong complaint with a '!' is frustrated",
-      voices.mood("Seriously, Grok, that is the third time the power has gone out. Build more steam engines!")
-      == "frustrated")
-check("mood: casters are never frustrated", voices.mood("Ugh, the bus is broken!", "pbp") == "excited")
+# (d22 batch99 BI1) the mood is the moment's, never the words': neutral unless the caller names one
+check("mood: words alone are neutral", all(voices.mood(t) == "neutral" for t in (
+      "Red science is ONLINE!", "Ugh, the inserters are stuck again.", "Kestrel IVc is still on the way from Aquilo.",
+      "Iron plates. Again. I have become the iron plate.")))
+check("mood: the moment names it", voices.mood("Biters on the wall.", "pbp", "tense") == "tense"
+      and voices.mood("x", None, "concerned") == "concerned" and voices.mood("x", None, "furious") == "neutral")
+check("style: every mood has a delivery", all(voices.style_for("x", None, m)[1] for m in voices.MOODS))
 
 # ---- routing without keys ----
 tone = voices.TTS("tone")
@@ -143,7 +141,7 @@ check("auto loads every provider with a key",
       sorted(auto.providers) == ["cartesia", "eleven", "eleven-fast", "inworld", "openai"],
       str(sorted(auto.providers)))
 calls.clear()
-audio, ctype, dur, lat = auto.speak("Sol finally got red science ONLINE!", "el-george")
+audio, ctype, dur, lat = auto.speak("Sol finally got red science ONLINE!", "el-george", mood="excited")
 c = calls[-1]
 check("eleven v4 request", c["url"].startswith("https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb")
       and c["body"]["model_id"] == "eleven_v4" and c["headers"]["xi-api-key"] == "test-elevenlabs-key", c["url"])
@@ -169,8 +167,12 @@ finally:
 
 auto.speak("Ugh, Grok, the belt is stuck again.", "oa-cedar")
 c = calls[-1]
+check("openai: a routine line reads natural", "natural and conversational" in c["body"]["instructions"].lower()
+      and "frustrated" not in c["body"]["instructions"].lower(), json.dumps(c["body"]))
+auto.speak("Ugh, Grok, the belt is stuck again.", "oa-cedar", mood="concerned")
+c = calls[-1]
 check("openai request", c["url"] == "https://api.openai.com/v1/audio/speech" and c["body"]["voice"] == "cedar"
-      and c["body"]["model"] == "gpt-4o-mini-tts" and "frustrated" in c["body"]["instructions"].lower()
+      and c["body"]["model"] == "gpt-4o-mini-tts" and "concerned" in c["body"]["instructions"].lower()
       and c["headers"]["Authorization"] == "Bearer test-openai-key", json.dumps(c["body"]))
 check("openai gets the respelling", "Grock" in c["body"]["input"])
 
@@ -199,7 +201,7 @@ c = calls[-1]
 check("inworld request", c["url"] == "https://api.inworld.ai/tts/v1/voice" and c["body"]["voiceId"] == "Dennis"
       and c["body"]["modelId"] == "inworld-tts-2" and c["headers"]["Authorization"] == "Basic test-inworld-key"
       and "/mjuːz/" in c["body"]["text"] and c["body"]["instruction"], json.dumps(c["body"]))
-auto.speak("Sol is on it!", "ca-daniel")
+auto.speak("Sol is on it!", "ca-daniel", mood="excited")
 c = calls[-1]
 check("cartesia request", c["url"] == "https://api.cartesia.ai/tts/bytes" and c["body"]["model_id"] == "sonic-3.6"
       and c["body"]["voice"] == {"id": "47c38ca4-5f35-497b-b1a3-415245fb35e1"}
