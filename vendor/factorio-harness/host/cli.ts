@@ -2200,9 +2200,19 @@ async function main() {
       // (d20 batch59 U2) a library entry's string goes to blueprints/NAME.txt in the workspace unless --out names a file.
       const exportTo = values.out ?? (typeof args.name === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/.test(args.name) ? join('blueprints', `${args.name}.txt`) : undefined);
       if (reply.ok && action === 'blueprint_export' && !args.layout && exportTo && typeof reply.result?.blueprint === 'string') {
+        // (d22 batch80 AP1) a whole platform's string comes in pages: read on from next_from.
+        let text = reply.result.blueprint as string;
+        let next = reply.result.next_from;
+        let pages = 1;
+        while (typeof next === 'number' && args.from === undefined) {
+          const more = await execute(action,{...args,from:next});
+          if (!more.ok || typeof more.result?.blueprint !== 'string') { output(more); setExit(more); return; }
+          text += more.result.blueprint; next = more.result.next_from; pages++;
+        }
         await mkdir(dirname(resolve(exportTo)),{recursive:true});
-        await writeFile(exportTo,reply.result.blueprint+'\n');
-        output({...reply,result:{...reply.result,blueprint:undefined,path:resolve(exportTo)}});
+        await writeFile(exportTo,text+'\n');
+        output({...reply,result:{...reply.result,blueprint:undefined,next_from:undefined,blueprint_page:undefined,
+          pages:pages > 1 ? pages : undefined,path:resolve(exportTo)}});
       } else {
         // (d17 batch34 C3) a walk's --wait reply says first whether it arrived
         const walk = values.wait ? walkLine(action, reply, exitCode(reply)) : undefined;

@@ -266,6 +266,20 @@ test('a library entry\'s export goes to blueprints/NAME.txt in the workspace wit
     assert.equal(reply.result.path,join(await (await import('node:fs/promises')).realpath(dir),'blueprints','smelter-row.txt'));
     assert.equal(await readFile(join(dir,'blueprints','smelter-row.txt'),'utf8'),'0eNqA\n');
   });
+  // (d22 batch80 AP1) a whole platform's string in pages: the file gets every page, in order.
+  const froms:unknown[]=[];
+  await engine(request=>{
+    froms.push(request.args.from);
+    const pages:Record<string,any>={'undefined':{blueprint:'0eA',next_from:3},'3':{blueprint:'BC',next_from:5},'5':{blueprint:'D'}};
+    return {ok:true,result:{name:'asterion',...pages[String(request.args.from)],blueprint_page:'bytes'}};
+  },async port=>{
+    const {stdout}=await exec(process.execPath,[join(process.cwd(),'dist/host/cli.js'),'--format','json','--port',String(port),'call','blueprint_export','--args','{"name":"asterion"}'],
+      {cwd:dir,env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    const reply=JSON.parse(stdout);
+    assert.deepEqual(froms,[undefined,3,5]);
+    assert.equal(reply.result.pages,3); assert.equal(reply.result.next_from,undefined); assert.equal(reply.result.blueprint,undefined);
+    assert.equal(await readFile(join(dir,'blueprints','asterion.txt'),'utf8'),'0eABCD\n');
+  });
   // A slot's export without --out stays in the reply, as before.
   await engine(()=>({ok:true,result:{slot:'clipboard',blueprint:'0eNqB'}}),async port=>{
     const {stdout}=await cli(port,['call','blueprint_export']);
