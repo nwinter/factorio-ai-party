@@ -11585,3 +11585,29 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   `targets` (enemies within range: units, spawners, worms, segmented and spider units; up to 64, `more` at 64),
   `farthest`, `nearest`, `box`. One bounded find, only while seated in a spidertron; on a copy of world n, 0.025 ms.
   The director frames the spidertron's fight with it (docs/STREAM-NOTES.md, "A spidertron's fight on camera").
+
+## d22 batch101 BK1: a spidertron's route as its remote gives it (viewer Aurora site:4308)
+
+- `vehicle {go_to}` used to append every target (`add_autopilot_destination`). The game walks a spidertron in a
+  straight line toward its next target and keeps a target its legs cannot reach: speed 0, the target kept, nothing
+  said. On world n's save (d22 14:38) Opus's spidertron #23036938 stood at a lake's edge at (-133.9,-433) with
+  [(185,175), (-60,-300)] queued since shift59 22:28 (the first across deep water, the detour behind it), and #22731300
+  at (-40,498) with [(-70,545), (-72,545)] since shift58 19:28. Opus's shift58 calls show the trap: at 20:46 the
+  spidertron stood at (-102.05,-680.04) with (-16,-962) ahead, and three more go_to calls in two minutes queued behind it.
+- Now `go_to` replaces the route by default, as a click on the spidertron remote does; `mode: "append"` adds at the
+  end, as a shift-click; `go_to` takes one point or a list of 1..16; `clear: true` empties the route. The default is
+  replace: a call to a spidertron with no route behaves as before either way, and a call meant as "go there now"
+  (every one in shifts 58-59) no longer waits behind an unreachable target. The reply carries `route` (the targets in
+  order), `route_line`, `replaced` (the targets it dropped), `cleared` (how many).
+- `vehicle {position}` (or `remote: true, vehicle`) of a spidertron with nothing else reads `route`, `route_line` and,
+  when stalled, `stalled` {since_tick, for_s, position, target, ahead, line}; a spidertron no one sent this way is
+  sampled from that read on (`sampling`). Any other vehicle with only a position is refused as before.
+- spiderroute.lua samples each spidertron sent by go_to every 60 ticks: no move of 0.5 tiles and no nearer to its
+  target for 600 ticks while it has a target is a stall. The sender gets one line in its next reply ("spidertron
+  #23036938: no progress toward (185,175) for 10s, standing at (-133.9,-433) (687 tiles from it); on the straight line
+  ahead: water at (-133.5,-432.5), 1 tile ahead (collision layers it shares with the legs: player); its route: ..."),
+  and one when it moves again; status lists `spidertrons` with a route and their stalls. "Ahead": the first tile or
+  entity within 24 tiles on the straight line whose collision mask shares a layer with the leg prototype's.
+- Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
+  the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
+
