@@ -132,8 +132,12 @@ return function(api)
     end
     -- source: where the viewer wrote (youtube or site), shown with the line (Luna 13:54)
     assert(a.source == nil or type(a.source) == 'string', 'source must be youtube or site')
-    local seq = api.post_viewer(name, text, a.source)
-    return {posted=true, seq=seq, from='viewer ' .. name, text=text, source=a.source}
+    -- (d22 batch75 AK6, viewer Aurora: "preserve source message IDs through the harness and reply feed") id: the line's own
+    -- id where the viewer wrote it (site:4175, yt:...), kept on the chat line (source_id) and on every reply to it; one
+    -- that is not like those is left out (the line still goes)
+    local id = type(a.id) == 'string' and #a.id <= 120 and a.id:match('^%l+:[%w._:=%-]+$') and a.id or nil
+    local seq = api.post_viewer(name, text, a.source, id)
+    return {posted=true, seq=seq, from='viewer ' .. name, text=text, source=a.source, id=id}
   end
   return M
 end

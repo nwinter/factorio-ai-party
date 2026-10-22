@@ -1946,7 +1946,11 @@ return function(api)
     local text = m.text:lower()
     local everyone = to_everyone(text)
     -- (d17 batch14 B1) an agent's say answers what it names the sender of (owed.lua)
-    if M.owed and m.player then pcall(M.owed.said, m.player, m.text, m.reply_to) end  -- reply_to: a viewer line it is linked to
+    if M.owed and m.player then  -- reply_to: a viewer line it is linked to
+      local ok, _, closed = pcall(M.owed.said, m.player, m.text, m.reply_to)
+      -- (d22 batch75 AK6) the viewer lines it answered by name (their one open line each): chat.lua links the say to them
+      if ok and m.reply_to == nil and type(closed) == 'table' and #closed > 0 then m.named_closed = closed end
+    end
     local asks = m.text:find('?', 1, true) ~= nil
     for _, a in ipairs(agents()) do
       if a.index ~= m.player then

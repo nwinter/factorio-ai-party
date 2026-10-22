@@ -309,7 +309,7 @@ first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves 
 
 `viewer_replies` (d15 08:07) is the agents' and the Operator's game-chat lines that answer a viewer or speak to the
 viewers, newest 40, oldest first: `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
-to [viewer names], link?, answers? {name, text?, t, source, id?}, part? [k, n]}]` (tools/stream/viewer_replies.py, kept by model.py so they
+to [viewer names], link?, answers? {name, text?, t, source, id?}, also? [{name, text?, t, source, id?}], part? [k, n]}]` (tools/stream/viewer_replies.py, kept by model.py so they
 outlive the chat window). A reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
 ("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."), or was said with `reply_to` a viewer line's seq (d20
 batch50); "Viewers, ..." and the like speak to the viewers. `answers` is the one viewer line it answers, and `link` says
@@ -325,6 +325,25 @@ agents' replies to viewers" hides them (kept in localStorage `chatReplies`). The
 threads by the same rule (site/longrun.py). Shifts 46-47: 145 replies were threaded by name only; 7 sat under a line
 they did not answer (2 of them Muse's, with reply_to lines 90 and 110 minutes old that the 15-minute list no longer
 held); with this rule 50 of 157 are not linked, and 2 of the 107 linked ones are under the wrong line.
+
+(d22 batch75 AK6, viewer Aurora site:4175: "Many AI replies are unlinked. Could you preserve source message IDs through
+the harness and reply feed, then thread by those IDs? Allow one answer to link to several messages." and site:4176:
+"Could replies show a short clickable quote of the source message, with a reply count on the original? Keep new replies
+easy to spot without scattering unrelated conversations.") Shift57: 101 of 180 agent lines answered a viewer (named
+one, or followed a viewer line to that agent within 5 minutes); 9 carried `reply_to`, all Muse's (Muse passed it on 12
+of 16 says, the other agents on none of 245); Muse's 19841 (`reply_to` a list of 5 viewer lines, the harness kept the
+first) and 19844 answered shift56 lines the stream service's log did not hold, and both were dropped as no reply. Now
+the relay passes each viewer line's own id (`site:4175`, `yt:...`) to `viewer_say` and the game line keeps it
+(`source_id`); a say's `reply_to` may be a list, and the line keeps every viewer line it answers as `replies_to`
+[{seq, name, id, source, tick, text (160 bytes)}], so the stream service links it without the line itself; a say
+without `reply_to` that closes a viewer's one open line to the agent by name is linked to that line by the harness
+(`linked_by: "name"`, `link: "name"`: "linked by name: NAME's open line to AGENT"). `answers.id` is the line's id and
+`also` the other lines one reply answers. The Chat pane finds each line by its id first (a site line by seq, a YouTube
+line by id), then by the viewer's name and words; over a reply a short quote of each line it answers ("↪ Foobator:
+“is the south wall closed?”") is a button to that line (the quote alone when the list does not show it); each line
+answered shows its reply count, a button to the first reply. A reply threads under its first line when that line is
+at most 20 minutes older, else it stays in time order at the bottom with its quote; a reply from the last 10 minutes
+is marked new. A reply with `reply_to` whose line nothing kept (a runtime from before) is still a reply, linked to none.
 
 The Operator names the line it answers with `tools/opreply.py` (d20 batch65 AA2, viewer Aurora 04:28: "Could replies
 keep the original question ID through delivery, split parts and history?"; shift50's 04:20 two-line artillery answer

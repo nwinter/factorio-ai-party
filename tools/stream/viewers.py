@@ -913,6 +913,9 @@ class ReplayChat:
 
 
 # ---- relay into the game -----------------------------------------------------------------------------------------
+RELAY_ID = re.compile(r"^[a-z]+:[\w.:=-]{1,110}$")  # (AK6) the ids viewer_say keeps (audience.lua)
+
+
 class Relay:
     """Posts passed messages into the game as `viewer NAME: text` through the harness's operator `viewer_say`
     (audience.lua: a dispatch with operator=true and no player; it rate-limits too and refuses muted viewers). Runs only
@@ -1049,6 +1052,10 @@ class Relay:
             # runtime from before ignores it)
             if msg.get("source") in ("youtube", "site"):
                 line["source"] = msg["source"]
+            # (d22 batch75 AK6, viewer Aurora: "preserve source message IDs through the harness and reply feed") the line's
+            # own id (site:4175, yt:...): the game line keeps it, and every reply to it (a runtime from before ignores it)
+            if RELAY_ID.match(str(msg.get("id") or "")):
+                line["id"] = msg["id"]
             out.append(line)
         return out
 

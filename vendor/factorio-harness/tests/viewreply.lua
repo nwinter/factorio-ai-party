@@ -109,6 +109,11 @@ assert(un:find('1 unanswered',1,true) and un:find('#'..e1.seq..':',1,true),un)
 -- now the one open line: a say naming them closes it
 r=muse('say',{text='Enginerd, more accumulators are going in.'})
 eq(r.left_open,nil); eq(muse('status').unanswered,nil)
+-- (d22 batch75 AK6) that say closed Enginerd's one open line by name: linked to it as reply_to would
+eq(r.linked,'linked to #'..e1.seq..' Enginerd (it names them; their one open line to you), as reply_to: '..e1.seq..' would')
+local ln=muse('chat',{since=r.seq-1}).messages[1]
+eq(ln.reply_to,e1.seq); eq(ln.linked_by,'name'); eq(ln.replies_to[1].seq,e1.seq); eq(ln.replies_to[1].name,'Enginerd')
+eq(ln.replies_to[1].text,'Okay, so add more power.','the relay\'s @muse left out')
 -- a teammate's mentions still close by name
 sol('say',{text='@muse wall status?'}); sol('say',{text='@muse and the north gate?'})
 muse('say',{text='@sol both hold.'})
@@ -121,4 +126,27 @@ local box=muse('status').team
 local found=false
 for _,l in ipairs(box and box.tells or {}) do if l:find('say reply_to: '..e3.seq..', or chat_ack',1,true) then found=true end end
 assert(found,'reminder names reply_to: '..tostring(box and table.concat(box.tells or {},' | ')))
+-- (d22 batch75 AK6, viewer Aurora site:4175: "preserve source message IDs through the harness and reply feed, then thread by
+-- those IDs? Allow one answer to link to several messages.") viewer_say keeps the line's own id; a say with reply_to
+-- several viewer lines keeps each (seq, name, id, text), puts "@Name " in front of each one it names nowhere, and the
+-- chat read and the reply say so
+jump(1300)
+local f1=op('viewer_say',{name='Foobator',text='@muse is the south wall closed?',source='site',id='site:4175'})
+eq(f1.id,'site:4175')
+local a1=op('viewer_say',{name='Aurora',text='@muse and the west one?',source='youtube',id='yt:Ugx-1.2'})
+local vl=muse('chat',{since=f1.seq-1}).messages
+eq(vl[1].source_id,'site:4175'); eq(vl[2].source_id,'yt:Ugx-1.2')
+r=muse('say',{text='Both walls are closed: 76 sections south, 40 west.',reply_to={f1.seq,s.seq,a1.seq}})
+eq(r.reply_to.seq,f1.seq); eq(r.reply_to.to,'Foobator'); eq(r.reply_to.addressed,'@Foobator @Aurora put in front')
+eq(#r.reply_to.also,1); eq(r.reply_to.also[1].seq,a1.seq); eq(r.reply_to.also[1].to,'Aurora')
+ln=muse('chat',{since=r.seq-1}).messages[1]
+eq(ln.text,'@Foobator @Aurora Both walls are closed: 76 sections south, 40 west.')
+eq(ln.reply_to,f1.seq); eq(#ln.replies_to,2); eq(ln.linked_by,nil)
+eq(ln.replies_to[1].id,'site:4175'); eq(ln.replies_to[1].source,'site'); eq(ln.replies_to[1].text,'is the south wall closed?')
+eq(ln.replies_to[2].id,'yt:Ugx-1.2'); eq(ln.replies_to[2].name,'Aurora')
+un=muse('status').unanswered
+assert(un:find('1 unanswered',1,true) and un:find('#'..e3.seq..':',1,true),un) -- both closed (Enginerd's e3 stays)
+-- an id that is not like those is left out; the line still goes
+local k=op('viewer_say',{name='Kai',text='@muse hi',id='not an id'})
+eq(k.posted,true); eq(k.id,nil); eq(muse('chat',{since=k.seq-1}).messages[1].source_id,nil)
 print('viewreply: ok')

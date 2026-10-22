@@ -473,6 +473,18 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
   text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .vchat .c-delivery-replied:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .vchat li.is-flash { background-color: rgba(var(--fx-orange-rgb), .22); }
+/* (d22 batch75 AK6, viewer Aurora) over a reply, a short quote of each line it answers (a button to it); on a line, its
+   reply count (a button to the first reply); a reply from the last ten minutes marked new */
+.vchat .c-quotes { display: block; }
+.vchat .c-quote { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit;
+  font-size: 0.8em; color: var(--muted); background: none; border: 0; padding: 0; text-align: left; }
+.vchat button.c-quote { cursor: pointer; }
+.vchat button.c-quote:hover, .vchat .c-replies:hover { color: var(--ink); text-decoration: underline; }
+.vchat .c-replies { font: inherit; font-size: 0.8em; color: var(--muted); background: none; border: 1px solid var(--line);
+  border-radius: 9px; padding: 0 6px; margin-left: 4px; cursor: pointer; }
+.vchat .c-quote:focus-visible, .vchat .c-replies:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vchat .c-agent.c-new { background-color: rgba(var(--fx-orange-rgb), .08); }
+.vchat .c-new-tag { font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--fx-orange, #e39827); }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
 .vchat-filter label { display: inline-flex; align-items: center; gap: 6px; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }

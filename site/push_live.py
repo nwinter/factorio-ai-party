@@ -199,7 +199,7 @@ def public_delivery(status, keep=150):
 
 
 REPLY_MAX = 40  # agents' replies to viewers in the state (newest kept); the live page's chat shows them
-LINKS = ("reply_to", "only_line", "only_to", "time", "none")  # viewer_replies.classify's link
+LINKS = ("reply_to", "name", "only_line", "only_to", "time", "none")  # name (AK6): the harness linked it by the name it says  # viewer_replies.classify's link
 
 
 def public_replies(rows, hidden=None):
@@ -217,14 +217,24 @@ def public_replies(rows, hidden=None):
             row["history"] = True
         if r.get("link") in LINKS:  # (d20 batch57 S1) how its viewer line was found; "none": linked to no line
             row["link"] = r["link"]
-        a = r.get("answers")
-        if isinstance(a, dict) and a.get("name"):
+        def answer(a):
+            """A viewer line it answers, or None when the site hides that line (its viewer's name left out of `to`)."""
             if hidden and hidden.hides(a.get("name"), a.get("text")):
                 row["to"] = [n for n in row["to"] if n.lower() != str(a["name"]).lower()]
-            else:
-                row["answers"] = {"name": str(a["name"]), "text": str(a.get("text") or ""), "t": a.get("t"), "source": a.get("source")}
-                if re.fullmatch(r"(site|yt):[\w.:-]{1,80}", str(a.get("id") or "")):  # (d20 batch65 AA2) the line the Operator named
-                    row["answers"]["id"] = str(a["id"])
+                return None
+            out = {"name": str(a["name"]), "text": str(a.get("text") or ""), "t": a.get("t"), "source": a.get("source")}
+            # (d20 batch65 AA2) the line the Operator named; (d22 batch75 AK6) any line's own id where it was written
+            if re.fullmatch(r"(site|yt):[\w.:=-]{1,110}", str(a.get("id") or "")):
+                out["id"] = str(a["id"])
+            return out
+        a = r.get("answers")
+        if isinstance(a, dict) and a.get("name"):
+            a = answer(a)
+            if a:
+                row["answers"] = a
+        also = [x for x in (answer(x) for x in (r.get("also") or [])[:7] if isinstance(x, dict) and x.get("name")) if x]
+        if also:  # (AK6) the other lines one reply answers
+            row["also"] = also
         p = r.get("part")  # (AA2) one of a split reply's parts: [k, n]
         if isinstance(p, list) and len(p) == 2 and all(isinstance(x, int) for x in p) and 1 <= p[0] <= p[1] and p[1] > 1:
             row["part"] = p
