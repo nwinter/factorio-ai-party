@@ -406,10 +406,20 @@
   // and reset the selected planet") A push brings one planet's map, and a planet or a cloud can be missing from one:
   // every surface seen once keeps its switch and its last map (memo {planets, seen}, the viewer's own), the newer of
   // two maps by tick. data.now_tick (the state's game tick) gives each kept map's age; OLD_S and older says it.
+  // (d22 batch75 AK1, viewer Aurora: "Planet buttons and network layers disappear between refreshes. Could each planet
+  // keep its last valid map and overlays, with their age shown, until a replacement arrives?") data.gone (live.js: a
+  // world rolled back, a planet left out of the listings for an hour) drops a surface's maps. A kept map is held
+  // (heldAge) when the state lists a newer one for its planet (planet_list, net_list) or does not list it; live.js marks
+  // Nauvis's basemap and the clouds it kept while a state had none (home_held, clouds_held: seconds since they came).
+  // The switch, the scale line and the legend give a held map's age.
   var OLD_S = 600;
   function remember(memo, data) {
     data = data || {};
-    memo.planets = memo.planets || {}; memo.seen = memo.seen || {};
+    memo.planets = memo.planets || {}; memo.seen = memo.seen || {}; memo.nets = memo.nets || {};
+    (Array.isArray(data.gone) ? data.gone : []).forEach(function (k) {
+      delete memo.planets[k]; delete memo.nets[k];
+      if (memo.seen[k] && memo.seen[k].planet) delete memo.seen[k];
+    });
     var ps = data.planets && typeof data.planets === 'object' ? data.planets : {};
     Object.keys(ps).sort().forEach(function (k) {
       var m = ps[k];
@@ -426,12 +436,20 @@
     var planets = {};
     Object.keys(memo.planets).forEach(function (k) { planets[k] = memo.planets[k]; });
     // (AD3) a push brings one planet's networks map: each kept, the newer by tick
-    memo.nets = memo.nets || {};
     var nm = data.net_maps && typeof data.net_maps === 'object' ? data.net_maps : {};
     Object.keys(nm).forEach(function (k) { var m = nm[k], old = memo.nets[k]; if (m && (!old || !(old.tick > m.tick))) memo.nets[k] = m; });
     var nets = {};
     Object.keys(memo.nets).forEach(function (k) { nets[k] = memo.nets[k]; });
     return Object.assign({}, data, { planets: planets, seen: seen, net_maps: nets });
+  }
+  // (AK1) a kept map's age in game seconds when it is held: the state lists a newer one for its planet (list: data.planet_list
+  // or data.net_list, [{surface, tick}]) or none; null when it is the newest listed, or without a listing.
+  function heldAge(data, list, m, k) {
+    if (!m || !Array.isArray(list)) return null;
+    var row = list.filter(function (x) { return x && x.surface === k; })[0];
+    if (row && !(isFinite(row.tick) && isFinite(m.tick) && m.tick < row.tick)) return null;
+    var now = data.now_tick;
+    return isFinite(m.tick) && isFinite(now) && now >= m.tick ? (now - m.tick) / 60 : -1;
   }
   // A kept planet map's age in game seconds (null without both ticks), and how a switch or the scale line says it.
   function mapAge(data, k) {
@@ -439,6 +457,7 @@
     return m && isFinite(m.tick) && isFinite(now) && now >= m.tick ? (now - m.tick) / 60 : null;
   }
   function ageText(sec) {
+    if (sec < 60) return 'under 1 min';
     var m = Math.floor(sec / 60);
     return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min';
   }
@@ -447,8 +466,8 @@
   function switchList(data) {
     var seen = (data && data.seen) || {}, planets = [], clouds = [];
     Object.keys(seen).sort().forEach(function (k) {
-      var age = mapAge(data, k);
-      var row = { surface: k, text: seen[k].text + (age != null && age >= OLD_S ? ' · ' + ageText(age) + ' old' : ''), age: age };
+      var age = mapAge(data, k), held = heldAge(data, data.planet_list, data.planets && data.planets[k], k) != null;
+      var row = { surface: k, text: seen[k].text + (age != null && (age >= OLD_S || held) ? ' · ' + ageText(age) + ' old' : ''), age: age, held: held };
       (data.planets && data.planets[k] ? planets : clouds).push(row);
     });
     var others = planets.concat(clouds);
@@ -965,6 +984,9 @@
     // (AD1) the buildings' read on every surface: Nauvis's basemap once a minute, a planet's kept map
     var age = mapAge(this.data, this.d.surface);
     var old = age == null ? '' : ' · map from ' + (age < 60 ? 'under a minute' : ageText(age)) + ' ago';
+    // (AK1) the last map this page has, kept while the state brings none newer
+    var held = this.d.surface === 'nauvis' ? this.data.home_held != null : heldAge(this.data, this.data.planet_list, this.data.planets[this.d.surface], this.d.surface) != null;
+    if (held && this.d.base) old += ' (kept until a newer one arrives)';
     this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + old + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
@@ -1015,7 +1037,8 @@
     if (d.cloud && on.cloud) {
       var cc = d.cloud.color || {}, rgb = [cc.r, cc.g, cc.b].map(function (x) { return Math.round(255 * (x || 0)); }).join(', ');
       h += '<li><i class="mv-cloud" style="background: linear-gradient(90deg, rgba(' + rgb + ', .2), rgba(' + rgb + ', .6))"></i>' +
-        esc((d.cloud.pollutant === 'spores' ? 'Spores' : 'Pollution') + ' per chunk, up to ' + d.cloud.max) + '</li>';
+        esc((d.cloud.pollutant === 'spores' ? 'Spores' : 'Pollution') + ' per chunk, up to ' + d.cloud.max +
+          (this.data.clouds_held != null ? ', read ' + agoText((d.cloud.age_s || 0) + this.data.clouds_held) + ' ago (kept until a newer one arrives)' : '')) + '</li>';
       if ((d.cloud.reached || []).length) h += '<li><i class="mv-reached"></i>Nests it reached</li>';
     }
     if (d.turrets.length && on.coverage) h += '<li' + (d.turretsCapped ? ' class="mv-incomplete"' : '') + '><i class="mv-range"></i>Turret range' +
@@ -1028,6 +1051,8 @@
         '<li><i class="mv-area" style="border: 2px solid #6fd36f"></i>' + esc(n3.ok + ' check passed, every hookup joined') + '</li>';
     }
     var net = d.net, netAge = net && isFinite(d.now_tick) && isFinite(net.tick) && d.now_tick >= net.tick ? ', read ' + agoText((d.now_tick - net.tick) / 60) + ' ago' : '';
+    // (AK1) the last one this page has while the state lists a newer one or none
+    if (net && heldAge(this.data, this.data.net_list, this.data.net_maps[d.surface], d.surface) != null) netAge += ' (kept until a newer one arrives)';
     if (net && net.grid && on.power) {
       h += net.nets.slice(0, 6).map(function (n) {
         return '<li><i style="background: ' + netColour(NET_LETTERS.indexOf(n.letter), 0.6) + '"></i>' + esc('Electric network #' + n.id + ': ' + n.poles + ' pole' + (n.poles === 1 ? '' : 's')) + '</li>';
@@ -1184,7 +1209,7 @@
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
     prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
-    remember: remember, switchList: switchList, mapAge: mapAge, OLD_S: OLD_S,
+    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -258,6 +258,20 @@ is outside every logistic network, its network holds no source (a consumer) or n
 are on no electric network. On the d17 copy: a map 3.2-19.6 KB in a push (Nauvis 19.6 KB with one position a group),
 a read 0.9-1.7 ms in the game.
 
+(d22 batch75 AK1, viewer Aurora, site:4011: "Planet buttons and network layers disappear between refreshes. Could each
+planet keep its last valid map and overlays, with their age shown, until a replacement arrives?") `planet_maps`
+`{surface: map}` carries the other planets' maps beside `planet_map`, the ones after it in turn while they fit 24 KB
+(packed, a planet's map is 2-4 KB), so a page just loaded has every planet's tab and map at once; `net_map` stays one
+a push. The stream service keeps both kinds of map in `runs/RUN/map-memory.json` (at most once a minute) and starts
+with the newest along the `resumed-from` chain, so a restart or a shift change lists every planet at once (shift57's
+start, d22 06:21, listed Aquilo alone, then Aquilo and Fulgora for minutes); a planet the census has not listed for 30
+minutes goes. The live page keeps both kinds of map in the browser's storage (`pog-live-kept`) across page loads,
+drops a map whose tick is past the state's (a world rolled back) and a planet the states have left out of `planets`
+and `net_maps` for an hour, and does not read storage older than 12 hours; it keeps the last `clouds` while a state has
+none and Nauvis's last `basemap` while a state has none. A map the state lists a newer one of, or does not list, is
+held: its tab gives its age ("Gleba · 5 min old"), the scale line says "(kept until a newer one arrives)", and so does
+the networks or pollution legend line beside its read age.
+
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
 `rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
 plain. On world n's state at 08:45 PDT d21 that took the push from 200-205 KB to 187-188 KB (the basemap 46.0 KB to
