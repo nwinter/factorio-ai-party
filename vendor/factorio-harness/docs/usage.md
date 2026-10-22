@@ -11001,3 +11001,18 @@ pass began as the last ended.
 - The read without planned is itself over 10 ms on these platforms: Asterion 28-44 ms before this change, 17-19 ms
   after (the same cover code), Kestrel IVc 34-36 ms; with the default ammo_use Kestrel IVc read 139-194 ms on its
   first calls (not changed here).
+
+## d20 batch76 (eng/d20-batch76)
+
+- AL1 (#1828, Sol: Meridian-V blueprint_place Meridian-design-preserved56, anchor saved, forced,
+  preserve_existing_settings_and_wires true, threw "attempt to index local 'e' (a nil value)" at tick 46345565 after
+  its floor ghosts were placed). Reproduced on a private headless copy of world n's save shift57 (tick 46372665, after
+  Sol's call), with world n's runtime: the same call gave the same error. The cause: all 1251 of the blueprint's
+  entities already stood there (built or as ghosts), so the paste carried its tiles only, and reading it back by the
+  saved anchor looked for the layout's offset from its first entity, which there was none of. Now (blueprints.lua): a
+  paste with no entity left is read back from where its center was put; after a preserve paste the read-back uses the
+  whole blueprint's paste position (the subset's moves with its center); a failure while reading a made paste back is
+  given as report_error with count and by_name, and does not fail the action. On the copy with the fix: the same call
+  returned count 0, preserved "1251 of the blueprint's entities already stood there ...", anchor aligned true; with 40
+  of Sol's floor ghosts removed first, count 40 (space-platform-foundation); with 5 entity ghosts removed (4
+  fast-inserters, a crusher), count 5, each at its spot, 1 wire joined to what stood. Tests: tests/blueprints.lua.

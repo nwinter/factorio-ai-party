@@ -138,7 +138,8 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
      the newest save written after the stop, whatever its name; with no record (an older stop-team, or a crash
      restart mid-run) the newest save, whatever its name;
    - refused (`refuse=REASON`, start-team stops) when no save was written after the stop, or the one taken is older
-     than the newest autosave or the stop by more than 10 minutes (the world ran on after its stop).
+     than the newest autosave or the stop by more than 18 minutes (`-MaxGapMinutes`; the world ran on after its stop;
+     world n autosaves every 15 minutes since 2026-10-22 06:15, 5 before; new instances get 15).
    A copy keeps its source's time (`shift13b.zip`, restored from `shift12r.zip` at 16:57, reads 15:56), so step 3
    checks the tick too. `POG_WIN_TESTS=1 tools/test_resume_save.py` runs the script on the box against a scratch
    instance (`D:\pog\inst\zz-resumetest`); `POG_DRY_RUN=1 POG_DRY_RUN_PICK=1` start-team prints what it would take.
@@ -150,8 +151,8 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
 3. The server starts on `RUN.zip`; describe + deploy as before; then `pog.py resume` (a save made while tick-paused
    would load paused) and the log line from `tools/resume_guard.py`: `world n: resumed at tick T (game Nm) from SAVE;
    the previous run's last tick P (stopped.json: its stop save RUN.zip): +D ticks` (else its last score). A world
-   more than `POG_RESUME_TICK_SLACK` ticks behind (default 36000, 10 game minutes) is paused and start-team stops
-   before any agent starts: `the world went back 3h00m of game time, more than 10m: an old save; refusing ...`.
+   more than `POG_RESUME_TICK_SLACK` ticks behind (default 64800, 18 game minutes: a crash restart's autosave is up to
+   15 minutes behind) is paused and start-team stops before any agent starts: `the world went back 3h00m of game time, more than 18m: an old save; refusing ...`.
 4. Directors join as before. `tools/team_bots.py` lists the save's bots (operator `bots`) and creates only members
    it lacks ("haiku kept (alive, at -24,-13)", "luna created ..."; bots not in the team are listed and left alone).
    Fresh worlds go through the same script (every member created).
