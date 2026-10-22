@@ -908,10 +908,16 @@ return function(api)
   function M.get(pl, max_age, background)
     local J = jobs()
     local n = J and (try(function() return pl.surface.count_entities_filtered{type=BELTS, force=pl.force} end) or 0) or 0
-    if not J or n <= M.SYNC_BELTS and not background then return M.trace(pl) end
+    if not J or n <= M.SYNC_BELTS and not background then
+      local tr = M.trace(pl)
+      tr.read_tick, tr.read_started = game.tick, game.tick
+      return tr
+    end
     local d = J.done[pl.index]
     if not d or game.tick - d.tick >= (max_age or M.FRESH) then M.start(pl) end
     if d and d.tr then
+      -- (d21 batch72 AH1) when the read began and ended (flightwatch.lua: a turret's feed in its empty run)
+      d.tr.read_tick, d.tr.read_started = d.tick, d.started
       d.tr.as_of = string.format('read over %d ticks in the background (%d belts, %d a tick), %ds ago', d.tick - d.started, n, M.READ_PER_TICK,
         math.floor((game.tick - d.tick) / 60))
       return d.tr
