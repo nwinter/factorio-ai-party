@@ -28,10 +28,23 @@ def record(plan, items, open_unowned, tick, now=None):
             name, _, text = str(line).partition(": ")
             lines.append({"agent": name, "text": re.sub(r" \(set by [^)]*\)$", "", text), "by": None, "tick": None})
     projects = []
+    by_id = {it.get("id"): it for it in items if isinstance(it, dict)}
     for it in sorted((it for it in items if it.get("kind") == "project" and it.get("status") in ACTIVE),
                      key=lambda it: -(it.get("updated_tick") or 0)):
-        projects.append({"id": it.get("id"), "title": it.get("title"), "owner": it.get("owner"), "status": it.get("status"),
-                         "progress": it.get("progress"), "next": _next(it.get("next_steps")), "goal": it.get("goal")})
+        row = {"id": it.get("id"), "title": it.get("title"), "owner": it.get("owner"), "status": it.get("status"),
+               "progress": it.get("progress"), "next": _next(it.get("next_steps")), "goal": it.get("goal")}
+        # (d22 batch75 AK11, viewer Foobator site:4284) what blocks it as the board holds it: the open items in its
+        # blocked_by, and its newest note when it is blocked
+        by = [{"id": b, "title": by_id[b].get("title"), "status": by_id[b].get("status")} for b in it.get("blocked_by") or []
+              if b in by_id and by_id[b].get("status") in ACTIVE]
+        if by:
+            row["blocked_by"] = by
+        notes = [n for n in it.get("notes") or [] if isinstance(n, dict) and n.get("text")]
+        if (it.get("status") == "blocked" or by) and notes:
+            row["note"] = {"by": notes[-1].get("by"), "text": notes[-1]["text"]}
+        projects.append(row)
+    # doing first, then the blocked ones, then the rest (the latest changed first within each)
+    projects.sort(key=lambda r: 0 if r["status"] == "doing" else 1 if (r["status"] == "blocked" or r.get("blocked_by")) else 2)
     in_progress = sum(1 for it in items if it.get("kind") in ("task", "request") and it.get("status") in ("claimed", "doing"))
     return {"goals": plan.get("goals"), "goals_tick": plan.get("goals_tick"), "lines": lines, "edited": plan.get("edited"),
             "updated_tick": plan.get("updated_tick"), "projects": projects, "open_unowned": open_unowned,

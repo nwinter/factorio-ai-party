@@ -723,6 +723,10 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .board-projects details.project > summary .project-head::after { content: "▸ steps"; font-size: .75rem; color: var(--fx-muted, #999); }
 .board-projects details.project[open] > summary .project-head::after { content: "▾ steps"; }
 .board-projects .plan-next { display: block; }
+/* (d22 batch75 AK11) a project's status chip and why it is blocked, under its title */
+.board-projects .project-status { font-size: .72rem; padding: 0 6px; margin-left: 4px; vertical-align: 1px; }
+.board-projects .project-fact { display: block; color: var(--fx-muted, #999); }
+.board-projects .project-fact:first-of-type { margin-top: 1px; }
 .project-progress .fx-progress { display: block; }
 .project-body { margin: 4px 0 2px 32px; font-size: .85rem; }
 .project-steps { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 2px; }

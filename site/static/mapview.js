@@ -41,6 +41,8 @@
   function agoText(s) { s = Math.max(0, Math.round(s)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h'; }
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
   var TERRAIN_DESAT = 0.6, TERRAIN_DIM = 0.45;  // how much colour the terrain loses, and how far it fades to the ground
+  function num(x) { return typeof x === 'number' && isFinite(x); }
+  var OLD_TERRAIN_S = 30 * 60;  // (AK9) a terrain frame this old on the live map is labelled with its age
 
   // (d21 batch68 AD1) a grid push_live run-length packs (rle: "12A" is twelve A cells), unpacked once; others as they are
   function unpack(g) {
@@ -60,7 +62,7 @@
       var m = data.net_maps[k];
       if (m && typeof m === 'object') nets[k] = Object.assign({}, m, { electric: unpack(m.electric) });
     });
-    return Object.assign({}, data, { base: unpack(data.base), core: unpack(data.core), ore: unpack(data.ore), planets: planets, net_maps: nets });
+    return Object.assign({}, data, { base: unpack(data.base), core: unpack(data.core), ore: unpack(data.ore), ground: unpack(data.ground), planets: planets, net_maps: nets });
   }
   function validGrid(g) {
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
@@ -289,6 +291,20 @@
     var core = validGrid(fine) && fine.w > 0 ? fine : null;
     var d = { surface: surface, now_tick: isFinite(data.now_tick) ? data.now_tick : null, base: base, fine: core, ore: home && validGrid(data.ore) ? data.ore : null,
       ground: home && validGrid(data.ground) ? data.ground : null };
+    // (d22 batch75 AK9, viewer Aurora site:4272: "Terrain is blank north of the base where Opus explored ... make newly
+    // charted areas appear automatically with visible terrain freshness") the charted ground read from the game
+    // (tools/stream/terrain_grid.py: each chunk's tiles at 8-tile cells in the game's map colours, cliffs): its own
+    // palette, its age (the newest read, the oldest chunk's) beside the frames' capture times
+    if (d.ground) {
+      var pal = (Array.isArray(data.ground.palette) ? data.ground.palette : []).filter(function (p) {
+        return Array.isArray(p) && typeof p[0] === 'string' && p[0].length === 1 && /^#[0-9a-f]{6}$/i.test(p[1]);
+      });
+      d.groundPal = pal.length ? pal : GROUND;
+      var nowT = num(data.now) ? data.now : Date.now() / 1000;
+      d.groundAge = num(data.ground.t) ? Math.max(0, nowT - data.ground.t) : num(data.ground.age_s) ? data.ground.age_s : null;
+      d.groundOldest = num(data.ground.oldest_tick) && d.now_tick != null ? Math.max(0, (d.now_tick - data.ground.oldest_tick) / 60) : null;
+      d.groundChunks = num(data.ground.chunks) ? data.ground.chunks : null;
+    }
     // the clouds: the one of the surface shown, and the surfaces that have one (the switch)
     d.clouds = (Array.isArray(data.clouds) ? data.clouds : []).filter(function (c) {
       return c && c.surface && Array.isArray(c.cells) && c.cells.length && c.cells.every(function (x) { return x && isFinite(x[0]) && isFinite(x[1]) && x[2] > 0; });
@@ -322,6 +338,7 @@
     }).sort(function (a, b) { return (a.tick || 0) - (b.tick || 0); });
     // (d19 batch42 B3, viewer Aurora) when the frames drawn were captured: the newest and oldest wall time (or game tick)
     var caps = d.terrain.map(function (t) { return isFinite(t.t) ? t.t : null; }).filter(function (t) { return t != null; });
+    d.terrainNow = num(data.now) ? data.now : null;
     d.terrainNote = !d.terrain.length ? '' : caps.length ? 'captured ' + when(Math.min.apply(0, caps)) +
       (Math.max.apply(0, caps) - Math.min.apply(0, caps) > 600 ? ' to ' + when(Math.max.apply(0, caps)) : '')
       : 'captured at game tick ' + d.terrain[d.terrain.length - 1].tick;
@@ -541,8 +558,19 @@
     var place = function (g) { return { x: px(g.x0), y: py(g.y0), s: g.cell * k, runs: runs(g) }; };
     sc.terrain = on.terrain ? d.terrain.filter(function (t) {
       return t.x1 > v.cx - hw && t.x0 < v.cx + hw && t.y1 > v.cy - hh && t.y0 < v.cy + hh;
-    }).map(function (t) { return { src: t.src, x: px(t.x0), y: py(t.y0), w: (t.x1 - t.x0) * k, h: (t.y1 - t.y0) * k, tick: t.tick }; }) : [];
+    }).map(function (t) { return { src: t.src, x: px(t.x0), y: py(t.y0), w: (t.x1 - t.x0) * k, h: (t.y1 - t.y0) * k, tick: t.tick, t: t.t }; }) : [];
     sc.ground = on.terrain && d.ground ? place(d.ground) : null;
+    if (sc.ground) { sc.ground.pal = d.groundPal || GROUND; sc.ground.gw = d.ground.w; sc.ground.gh = d.ground.h; }
+    // (AK9) on the live map (data.now; not the run pages' time-lapse), each frame OLD_TERRAIN_S or more old and not
+    // under a newer frame: "terrain from 2 h ago" at its top-left corner (kept inside the map)
+    var tNow = d.terrainNow;
+    sc.terrainAges = sc.terrain.filter(function (t, i) {
+      if (!num(tNow) || !num(t.t) || tNow - t.t < OLD_TERRAIN_S) return false;
+      return !sc.terrain.slice(i + 1).some(function (u) { return u.x <= t.x + 1 && u.y <= t.y + 1 && u.x + u.w >= t.x + t.w - 1 && u.y + u.h >= t.y + t.h - 1; });
+    }).map(function (t) { return { x: Math.max(6, t.x + 6), y: Math.max(16, t.y + 16), text: 'terrain from ' + ago(tNow - t.t) }; })
+      .reverse().filter(function (l, i, all) {  // the newest first; none within 60 px of one kept
+        return !all.slice(0, i).some(function (m) { return m.kept && Math.abs(m.x - l.x) < 60 && Math.abs(m.y - l.y) < 60; }) && (l.kept = true);
+      });
     sc.ore = on.ore && d.ore ? place(d.ore) : null;
     // the cloud: each chunk in view in the pollutant's map colour, stronger where there is more (as the overlay draws it)
     sc.cloud = null;
@@ -710,24 +738,32 @@
   function paint(ctx, sc, images, font, offscreen) {
     var W = sc.W, H = sc.H;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // (AK9) the ground read from the game first, the frames over it (where a frame has no charted ground it is
+    // transparent and the ground shows), then one dimming pass over both
+    if (sc.ground) fillRuns(ctx, sc.ground, sc.ground.pal || GROUND, 1);
     var shown = sc.terrain.filter(function (t) {
       var img = images && images(t.src);
       if (img) { ctx.imageSmoothingEnabled = t.w < img.width; ctx.drawImage(img, t.x, t.y, t.w, t.h); }
       return !!img;
     });
     ctx.imageSmoothingEnabled = true;
-    if (shown.length) {
+    if (shown.length || sc.ground) {
       // terrain is the background: part of its colour taken out (a grey 'saturation' blend), then dimmed toward the
       // map's ground colour, so buildings, nests and agents stand out (and the frame's own alert icons recede);
       // composite modes rather than ctx.filter, which older Safari ignores. One path: overlapping frames dim once.
       ctx.save();
       ctx.beginPath();
       shown.forEach(function (t) { ctx.rect(t.x, t.y, t.w, t.h); });
+      if (sc.ground) ctx.rect(sc.ground.x, sc.ground.y, sc.ground.gw * sc.ground.s, sc.ground.gh * sc.ground.s);
       ctx.globalCompositeOperation = 'saturation'; ctx.globalAlpha = TERRAIN_DESAT; ctx.fillStyle = '#808080'; ctx.fill();
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = TERRAIN_DIM; ctx.fillStyle = C.bg; ctx.fill();
       ctx.restore();
     }
-    if (sc.ground) fillRuns(ctx, sc.ground, GROUND, 0.9);
+    // (AK9) an old frame's age at its corner
+    (sc.terrainAges || []).forEach(function (l) {
+      ctx.font = '600 10px ' + font; ctx.textAlign = 'left'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, .75)';
+      ctx.strokeText(l.text, l.x, l.y); ctx.fillStyle = 'rgba(232, 230, 225, .8)'; ctx.fillText(l.text, l.x, l.y);
+    });
     ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
     sc.grid.xs.forEach(function (x) { ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, H); });
     sc.grid.ys.forEach(function (y) { ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); });
@@ -989,6 +1025,11 @@
     // (AK1) the last map this page has, kept while the state brings none newer
     var held = this.d.surface === 'nauvis' ? this.data.home_held != null : heldAge(this.data, this.data.planet_list, this.data.planets[this.d.surface], this.d.surface) != null;
     if (held && this.d.base) old += ' (kept until a newer one arrives)';
+    // (AK9) the terrain's age where it is older than the ground read: the newest frame drawn
+    var tf = this.sc.terrain.filter(function (t) { return num(t.t); }), tn = this.d.terrainNow;
+    var newest = tf.length && num(tn) ? Math.max.apply(0, tf.map(function (t) { return t.t; })) : null;
+    if (newest != null && tn - newest >= OLD_TERRAIN_S) old += ' · terrain frames from ' + ago(tn - newest) + (this.d.groundAge != null ? ', ground read ' + ago(this.d.groundAge) : '');
+    else if (this.sc.ground && this.d.groundAge != null) old += ' · ground read ' + ago(this.d.groundAge);
     this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + old + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
@@ -1020,6 +1061,54 @@
   var PAIRS = [['terrain', 'networks'], ['combat', 'team']];
   var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
     ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
+  // (d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero?
+  // Vulcanus currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") Why a
+  // layer has nothing on the surface shown: "not read" with why (no read of it in the state, a read this page has not
+  // had yet, a layer read on Nauvis only, a read that covers some surfaces only), or "none" where a read says zero.
+  function absentWhy(data, d, k) {
+    var where = cap(d.surface || 'nauvis'), home = d.surface === 'nauvis';
+    var listed = function (list) { return Array.isArray(list) ? list.filter(function (x) { return x && x.surface === d.surface; })[0] || null : undefined; };
+    var names = function (list) { return (list || []).map(function (x) { return cap(x.surface); }).join(', '); };
+    if (k === 'power' || k === 'robots' || k === 'item') {
+      if (d.net) {
+        var age = num(d.net.tick) && d.now_tick != null ? ' (read ' + ago(Math.max(0, (d.now_tick - d.net.tick) / 60)) + ')' : '';
+        return k === 'power' ? 'none: the networks map of ' + where + age + ' has no electric network'
+          : k === 'robots' ? 'none: the networks map of ' + where + age + ' has no logistic network (no roboport of ours)'
+          : 'none: the networks map of ' + where + age + ' has no item source or consumer';
+      }
+      var l = listed(data.net_list);
+      if (l) return 'not read yet: a networks map of ' + where + ' is listed (game tick ' + l.tick + '); it comes with a later update';
+      if (l === null) return 'not read: the game has made no networks map of ' + where + (data.net_list.length ? ' (it has: ' + names(data.net_list) + ')' : '');
+      return 'not read: no networks maps in the live state yet';
+    }
+    if (k === 'buildings') {
+      if (home) return 'not read: no base map in the live state yet';
+      var pm = data.planets && data.planets[d.surface];
+      if (pm && Array.isArray(pm.rows) && !pm.rows.length) return 'none: the map of ' + where + ' read shows no building of ours';
+      var lp = listed(data.planet_list);
+      if (lp) return 'not read yet: a map of ' + where + ' is listed; it comes with a later update';
+      return 'not read: no map of ' + where + ' in the live state';
+    }
+    if (k === 'terrain' || k === 'ore' || k === 'coverage' || k === 'readiness' || k === 'nests' || k === 'alerts') {
+      var what = { terrain: 'terrain', ore: 'ore', coverage: 'turrets', readiness: 'turret states', nests: 'nests', alerts: 'fights and alert pins' }[k];
+      if (!home) return 'not read: ' + what + (k === 'terrain' || k === 'ore' ? ' is' : ' are') + ' read on Nauvis only';
+      if (k === 'terrain') return 'not read: no terrain frame or charted ground in the live state yet';
+      if (k === 'ore') return 'not read: no ore grid in the live state yet';
+      if (k === 'readiness') return 'not read: no turret state in the live state yet';
+      if (k === 'alerts') return 'none: no fight or alert pin now';
+      if (!d.base) return 'not read: no base map in the live state yet';
+      return k === 'coverage' ? 'none: the base read lists no turret' : 'none: the base read lists no spawner or worm near the base';
+    }
+    if (k === 'cloud') {
+      var read = (data.clouds || []).filter(function (c) { return c && c.surface; });
+      return 'not read: the last pollution read has no row for ' + where + ' (it reads the surfaces an agent is on' +
+        (read.length ? '; it has: ' + read.map(function (c) { return cap(c.surface); }).join(', ') : '') + ')';
+    }
+    if (k === 'library') return data.library_read === false ? 'not read: no library areas in the live state yet' : 'none: no placed library area on ' + where;
+    if (k === 'agents') return 'none: no agent on ' + where + ' now';
+    if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
+    return 'none on ' + where + ' now';
+  }
   Viewer.prototype.renderLayers = function () {
     var self = this, box = this.root.querySelector('.mapview-layers');
     // other surfaces with a map (another planet's buildings) or a cloud: a switch between them and Nauvis
@@ -1037,7 +1126,9 @@
     });
     var where = cap(this.d.surface || 'nauvis');
     var sig = 'item:' + (this.item || '') + ':' + names.length + ':' + (this.d.net ? this.d.net.tick : '') + '|' + LAYERS.map(function (l) { return had[l[0]] ? l[0] + (has(self.d, l[0]) ? 1 : 0) + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
-      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '') + (had.item ? '|item' : '');
+      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '') + (had.item ? '|item' : '') +
+      // (AK10) a disabled layer's reason can change with nothing else (a map listed, then read)
+      '|' + LAYERS.concat([['item']]).map(function (l) { return had[l[0]] && !has(self.d, l[0]) ? absentWhy(self.data, self.d, l[0]) : ''; }).join(',');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     var byKey = {}, short = {};
@@ -1053,12 +1144,12 @@
       var buttons = keys.map(function (k) {
         var text = k === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : k === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : short[k];
         var here = has(self.d, k);
-        var title = here ? LONG[k] : byKey[k] + ': none on ' + where + ' now';
+        var title = here ? LONG[k] : byKey[k] + ': ' + absentWhy(self.data, self.d, k);
         return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled') + (title ? ' title="' + esc(title) + '"' : '') +
           ' data-layer="' + k + '" aria-pressed="' + (self.on[k] ? 'true' : 'false') + '">' + esc(text) + '</button>';
       }).join('');
       // (AK7) the narrow picker says "Item: -" where no networks map is; why, in its tooltip
-      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled title="' + esc('no networks map of ' + where + ' yet') + '"') +
+      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled title="' + esc('Item: ' + absentWhy(self.data, self.d, 'item')) + '"') +
         ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: -</option>' + names.map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
         }).join('') : '<option value="">Item: -</option>') + '</select>';
@@ -1075,6 +1166,12 @@
   Viewer.prototype.renderLegend = function () {
     var d = this.d, on = this.on, h = '';
     if (d.terrain.length && on.terrain) h += '<li><i class="mv-terrain"></i>Terrain: the game\'s map view, ' + esc(d.terrainNote) + '</li>';
+    // (AK9) the charted ground read from the game, and how fresh it is
+    if (d.ground && on.terrain && d.groundPal !== GROUND) {
+      h += '<li><i class="mv-terrain" style="background: ' + esc((d.groundPal[0] || [])[1] || '#555') + '"></i>' + esc('Charted ground, read from the game' +
+        (d.groundChunks != null ? ' (' + d.groundChunks + ' chunks)' : '') + (d.groundAge != null ? ': newest read ' + ago(d.groundAge) : '') +
+        (d.groundOldest != null && d.groundOldest > OLD_TERRAIN_S ? ', oldest ' + ago(d.groundOldest) : '')) + '</li>';
+    }
     if (d.base && on.buildings) {
       var seen = {};
       [d.base, d.fine].forEach(function (g) { if (g) Object.keys(runs(g)).forEach(function (c) { seen[c] = 1; }); });
@@ -1259,7 +1356,7 @@
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
     prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
-    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S, GROUPS: GROUPS,
+    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S, GROUPS: GROUPS, absentWhy: absentWhy,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);

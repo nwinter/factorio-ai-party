@@ -16,6 +16,7 @@ import chronicle_log
 import operator_inbox
 import planlog
 import pacing
+import terrain_grid
 from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
@@ -23,6 +24,7 @@ from waitcard import WaitFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
+PROGRESS_EVERY = 120  # (d22 batch75 AK11) seconds between board_progress reads
 FOCUS_RETRY = 600  # board_focus with no rows (a runtime before d20 batch54 N3): asked again after 10 min
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
@@ -153,6 +155,9 @@ class LiveSource:
         self.net_map_every = 20.0
         self.net_map_seen = {}  # surface -> the tick of the map read
         self.net_map_listed = []  # the last read's [{surface, tick}]
+        # (d22 batch75 AK9) the charted ground's tiles (terrain_grid.py; serve.py gives it its file); None: no reads
+        self.terrain = None
+        self.terrain_sent = False
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -467,6 +472,35 @@ class LiveSource:
             self.focus_retry_t = time.time() + FOCUS_RETRY
         return rows if self.focus_ok else None
 
+    def read_progress(self, errors):
+        """(d22 batch75 AK11, viewer Foobator site:4284: "can projects that are actively being worked on and blocked projects
+        be easier to see on site? also, could you show blocker reason?") board_progress with no arguments: the stored
+        checks of every owned open item (progress.lua: state, stalled, unchanged_checks, check_error, checked_s,
+        last_change_s), rows by id; None when the runtime gives none (asked again after FOCUS_RETRY) or the read fails."""
+        if getattr(self, "progress_ok", None) is False and time.time() < getattr(self, "progress_retry_t", 0):
+            return None
+        # 5.7 ms on world n (57 rows, 24 KB, d22 14:40): once every PROGRESS_EVERY, the last rows between
+        if time.time() < getattr(self, "progress_next", 0):
+            return getattr(self, "progress_rows", None)
+        self.progress_next = time.time() + PROGRESS_EVERY
+        try:
+            pr, _ = self.read("board_progress", {}, **self.reader())
+        except Exception as e:
+            if "unsupported action" in str(e) or "unknown action" in str(e):
+                self.progress_ok, self.progress_retry_t = False, time.time() + FOCUS_RETRY
+            else:
+                errors["board_progress"] = str(e)
+            return None
+        rows = pr.get("rows") if isinstance(pr, dict) else None
+        if rows == {}:  # table_to_json writes an empty table as {}: no owned open item
+            rows = []
+        self.progress_ok = isinstance(rows, list)
+        if not self.progress_ok:
+            self.progress_retry_t = time.time() + FOCUS_RETRY
+            return None
+        self.progress_rows = [r for r in rows if isinstance(r, dict) and r.get("id") is not None]
+        return self.progress_rows
+
     def notes_job(self, name):
         """The agent's job line from runs/RUN/AGENT/notes.md "## Now" (model.notes_job), or None."""
         path = os.path.join(self.journals, name, "notes.md")
@@ -715,6 +749,22 @@ class LiveSource:
         if isinstance(res.get("areas"), (list, dict)):
             obs["library_areas"] = dict(res, areas=res["areas"] if isinstance(res["areas"], list) else [])
 
+    def observe_terrain(self, obs, errors):
+        """(d22 batch75 AK9) the charted ground under the map (terrain_grid.py): a read every terrain_grid.EVERY seconds
+        (the chunks next to the known ground, those under the agents; about 3 ms on world n), and obs["terrain_grid"]
+        after each read, and once at the start from the grid kept in the run."""
+        t = getattr(self, "terrain", None)
+        if t is None:
+            return
+        ran = t.due() and t.read(self.h.lua, terrain_grid.seeds_from(obs.get("agents")))
+        if ran or not getattr(self, "terrain_sent", False):
+            g = t.grid()
+            if g:
+                obs["terrain_grid"] = g
+                self.terrain_sent = True
+        if t.error:
+            errors["terrain_grid"] = t.error
+
     def observe_net_map(self, obs, errors):
         """A planet's networks map (operator read `net_map`), every net_map_every seconds: the first listed planet whose map
         is newer than the one read (none: the listing only). obs["net_map"] is that map, obs["net_map_listed"] the planets
@@ -754,6 +804,7 @@ class LiveSource:
         self.observe_clouds(obs, errors)
         self.observe_library_areas(obs, errors)
         self.observe_net_map(obs, errors)
+        self.observe_terrain(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})
@@ -857,7 +908,8 @@ class LiveSource:
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
                          + (projects.get("items") or []) + ((active or {}).get("items") or [])}
                 focus = self.read_focus(errors)
-                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus,
+                progress = self.read_progress(errors)  # (d22 batch75 AK11) the progress checks' facts per owned item
+                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus, "progress": progress,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
                                 "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)
