@@ -30,18 +30,21 @@ return function(api)
   local function inventory(p, id)
     return id and try(function() return p.get_inventory(id) end) or nil
   end
-  -- A grid's equipment by name (most first), shield and battery charge, size.
+  -- A grid's equipment by name and quality (most first), shield and battery charge, size.
   local function grid_view(out, grid)
     if grid then
       local by, order = {}, {}
       for _, e in ipairs(try(function() return grid.equipment end) or {}) do
         local name = try(function() return e.name end)
         if name then
-          if not by[name] then by[name] = {name=name, type=try(function() return e.type end), count=0}; order[#order+1] = by[name] end
-          by[name].count = by[name].count + 1
+          -- (d22 batch94 BD1) by name and quality
+          local q = quality(try(function() return e.quality end))
+          local key = q and name .. '@' .. q or name
+          if not by[key] then by[key] = {name=name, quality=q, type=try(function() return e.type end), count=0}; order[#order+1] = by[key] end
+          by[key].count = by[key].count + 1
         end
       end
-      table.sort(order, function(a, b) return a.count > b.count or (a.count == b.count and a.name < b.name) end)
+      table.sort(order, function(a, b) return a.count > b.count or (a.count == b.count and (a.name < b.name or (a.name == b.name and (a.quality or '') < (b.quality or '')))) end)
       out.equipment = order
       local shield, max_shield = try(function() return grid.shield end), try(function() return grid.max_shield end)
       if max_shield and max_shield > 0 then out.shield = {now=math.floor(shield + 0.5), max=math.floor(max_shield + 0.5)} end

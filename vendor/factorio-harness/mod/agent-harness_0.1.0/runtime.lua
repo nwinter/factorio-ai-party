@@ -163,7 +163,10 @@ M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(in
   -- Whether a hand-laid tile goes on a tile, what blocks it and what it takes away (dryrun.lua hand_tile).
   hand_tile=function(surface,force,item,x,y) return M.dryrun and M.dryrun.hand_tile(surface,force,item,x,y) end,
   removes_text=function(list) return M.dryrun and M.dryrun.removes_text(list) end,
-  profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b) end}
+  profile=function(index) return M.profiles.get(index) end,on_spawn=function(b,kind) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b)
+    -- (d22 batch94 BD1) a respawn runs the reminders set on.respawn for that agent
+    if kind=='respawn' and M.reminders then pcall(M.reminders.trigger,'respawn',{name=b.name}) end
+  end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
 M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
@@ -2014,7 +2017,7 @@ function handlers.describe(_,a)
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       character_settings={personal_logistics='optional boolean: the personal logistics switch (the master switch of your requests; off: no request is made)',personal_roboport='optional boolean: the personal roboport switch (off: it sends no construction robots)',movement_bonus='optional boolean: the equipment movement bonus switch (off: exoskeletons give no speed)',filters='optional 1..200 {slot, item, quality?}: main inventory slot filters as a middle-click sets them (item false clears one); a slot that holds an item takes a filter for that item only',returns='personal_logistics, personal_roboport, movement_bonus (on|off), filters [{slot, item, quality, holds}], filters_line, networks {logistic, construction, personal_roboport, not_dispatched (what the game shows stops robots now), unfilled (as requests)}; with an edit: changed ["what was -> now"] or unchanged. Every argument is checked before anything changes; an edit changes only what it names'},
-      equipment={operation='insert|remove|list (default list)',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal',vehicle='optional: a vehicle\'s grid instead of your armor\'s, by unit_number or {x,y} (a tank 6x8 and a spidertron 10x6 have one; a car, locomotive or wagon does not); insert and remove in reach or seated, as its GUI allows; list also by remote view in a chunk our force sees',returns='insert/remove: what moved, where, grid (size, equipment, free_cells, shield, battery_mj); list: the same with rows (each piece at its cell)'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
+      equipment={operation='insert|remove|list (default list)',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal',vehicle='optional: a vehicle\'s grid instead of your armor\'s, by unit_number or {x,y} (a tank 6x8 and a spidertron 10x6 have one; a car, locomotive or wagon does not); insert and remove in reach or seated, as its GUI allows; list also by remote view in a chunk our force sees',returns='insert/remove: what moved, where, grid (size, equipment (name*count; name@quality*count above normal), free_cells, shield, battery_mj); list: the same with rows (each piece at its cell, its quality) and armor (the armor worn, name@quality above normal)'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
       shoot={fire_anyway='optional true: fire area ammunition (explosive rockets and shells) even when the blast at the target reaches our own entities; without it such a shot is refused, naming them, and auto fire holds at such a target (last: held_blast)',retreat='optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): checked every 5 ticks; when the health (or the armor\'s shield) falls under it during the action, the action ends retreated and you go back to `to` at once (on foot walking with avoid_enemies and the guns on auto while ammunition lasts; driving: the vehicle driven back); last.retreated: why, from, health, to; the walk back ends retreated on arrival; false: not even the standing retreat_guard',position='{x,y} or auto=true',ticks='1..600',vehicle='optional: the vehicle whose guns fire (unit_number or {x,y}): the one you sit in as its gunner; a vehicle you drive by remote view is refused (its guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player); a whole drive\'s fire: vehicle {drive, combat: true}',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
@@ -12703,7 +12706,7 @@ function handlers.equipment(p,a)
   local op=a.operation or 'list'
   assert(op=='insert' or op=='remove' or op=='list','operation must be insert, remove or list')
   local grid,where=M.grids.target(p,a,op=='list')
-  if op=='list' then local out=M.grids.view(grid,true); out.where=where; return out end
+  if op=='list' then local out=M.grids.view(grid,true); out.where=where; out.armor=where=='armor' and M.grids.armor(p.character) or nil; return out end
   local inv=p.get_main_inventory()
   if op=='insert' then
     assert(type(a.item)=='string','item required')
@@ -16422,8 +16425,16 @@ M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(na
 function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 -- Reminder and review jobs (reminders.lua; viewer Foobator, design from Astra and Sol 05:16): lines only, never game acts.
+-- (d22 batch94 BD1) gapfacts.lua: the facts beside a gear gap, gear items, a recipient's own armor read.
+M.gapfacts=require('gapfacts'){}
+function M.agent_player(name)
+  for _,a in ipairs(M.board.agents()) do if a.name==name then return M.lookup(a.index) end end
+end
 M.reminders=require('reminders'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
-  item=function(id) return M.board.items()[id] end}
+  item=function(id) return M.board.items()[id] end,
+  check_items=M.gapfacts.check_items,item_known=M.gapfacts.item_known,technology_known=M.gapfacts.technology_known,is_gear=M.gapfacts.is_gear,
+  gap_facts=function(name,items) local p=M.agent_player(name); return p and M.gapfacts.facts(p,items) or nil end,
+  gear=function(name) local p=M.agent_player(name); return p and M.gapfacts.gear_line(p,M.grids) or 'no character' end}
 for name,handler in pairs(M.reminders.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
@@ -18447,7 +18458,8 @@ M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.b
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
-M.freight=require('freight'){leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
+M.freight=require('freight'){delivered=function(info) if M.reminders then M.reminders.trigger('delivered',info) end end,
+  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
@@ -19598,7 +19610,7 @@ function M.tick_body(event)
   if state().uptime then pcall(M.timed,'uptime.tick',M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
-  if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
+  if event.tick%60==0 and M.freight then pcall(M.timed,'freight.pod_tick',M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
   if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
   if event.tick%60==13 and state().clear_jobs then pcall(M.clearobs.tick) end  -- clear_obstacles waits (clearobs.lua)
   if event.tick%600==29 then pcall(M.timed,'hubfull.tick',M.hubfull.tick,event.tick) end  -- a hub too full for its payload (hubfull.lua)
@@ -19773,6 +19785,10 @@ function M.on_event(event)
   if event.name==defines.events.on_research_finished or event.name==defines.events.on_research_queued then
     local ok,err=pcall(event.name==defines.events.on_research_finished and M.research.on_finished or M.research.on_queued,event)
     if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+    -- (d22 batch94 BD1) the reminders set on.research
+    if event.name==defines.events.on_research_finished and M.reminders and event.research and event.research.valid and event.research.force==game.forces.player then
+      pcall(M.reminders.trigger,'research',{name=event.research.name,gear=M.gapfacts.unlocks_gear(event.research)})
+    end
     return
   end
   -- Rocket launches for the silo read (silo.lua): like research news, faults are counted.
