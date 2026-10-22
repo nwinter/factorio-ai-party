@@ -15856,7 +15856,7 @@ function M.settings_dry(p,entry,kind,args)
     local secs={sections_count=1,get_section=function(i) return i==1 and {index=1,is_manual=true} or nil end}
     space.check_requests(p,args,'chest',{valid=true,name=name,type=t},secs)
   elseif kind=='circuit' then
-    M.circuits.dry_set(name,args)
+    M.circuits.dry_set(name,args,p.force)
   elseif kind=='configure' then
     local rname=args.recipe or entry.recipe
     if args.recipe~=nil then M.configure_check(p,args,ghost,false) end
@@ -18472,7 +18472,7 @@ M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.i
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
-M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
+M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,

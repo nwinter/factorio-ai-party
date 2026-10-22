@@ -421,7 +421,7 @@ do
   setmetatable(pl,{__index=function(_,k) if k=='schedule' then return {current=cur,records=recs} end end})
   local wires={['thruster-fuel']=4660,['thruster-oxidizer']=30000}
   local net={get_signal=function(sg) return wires[sg.name] or 0 end}
-  local hubinv={get_item_count=function(n) return n=='firearm-magazine' and 800 or 0 end}
+  local hubinv={get_item_count=function(n) if type(n)=='table' then if (n.quality or 'normal')~='normal' then return 0 end n=n.name end return n=='firearm-magazine' and 800 or 0 end}
   pl.hub={valid=true,get_circuit_network=function(id) return id==1 and net or nil end,get_inventory=function() return hubinv end}
   local p={force={platforms={pl}}}
   local st={platform_stops={[3]={at='nauvis',tick=4000}}}

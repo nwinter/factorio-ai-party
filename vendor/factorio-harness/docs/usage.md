@@ -264,6 +264,21 @@ fh call status
   `circuit_set {position, ...}` changes what the entity's circuit GUI holds; `circuit` is its old name (a direct call
   runs as `circuit_set` and says so in `corrected`). `platform: "Sunward"` acts on that platform (platform coordinates,
   hub at 0,0); `surface: "vulcanus"` (a planet, a platform's name or its surface name) on another surface by remote view.
+- Quality on circuit signals (d22 batch87 AW1, Astra #1875, Sol #1874: a Nauvis landing pad's circuit set_requests
+  could not be given uncommon agricultural science, as `signals: [{"signal": ..., "quality": "uncommon", "count": 20}]`
+  was refused). In 2.0.77 a signal carries a quality (SignalID {type, name, quality}). Every signal `circuit_set` takes
+  (constant combinator `signals`, `enable` and `logistic` conditions, decider conditions and outputs, arithmetic first,
+  second and output, selector signals, signal `settings`) is written `"name"`, `"name@quality"`
+  (`"agricultural-science-pack@uncommon"`), `"type:name@quality"` or `{type?, name, quality?}`; a constant combinator
+  entry is `{signal, count, quality?}` and a decider output `{signal, quality?, copy_input | constant, networks}`, the
+  record's `quality` going on its signal (one the signal also names must be the same). A quality is one our force has
+  unlocked (`LuaForce.is_quality_unlocked`, as the GUI's quality picker offers only those; a refusal lists them); left
+  out it is normal, as before. The selector's `quality_filter.quality` and `quality_source_static` are checked the same
+  way. Reads keep the quality as `name@quality` (normal: the bare name): `inspect`'s circuit block (constant signals,
+  networks, combinator conditions and outputs, `output`), the belt reader's held and wired counts, `circuit_audit`'s feeder
+  lines, `gates`, and the train and platform wait conditions' text. Checked on a copy of world n: a landing pad
+  in circuit set_requests mode with `agricultural-science-pack@uncommon` 20 on its wire requests 20 uncommon
+  agricultural science packs.
 - A combinator's description (d20 batch56 R4, Astra #1399 for viewer Foobator): in 2.0.77 the description a player
   writes in the GUI is `LuaEntity.combinator_description`, read and written on arithmetic, decider, selector and
   constant combinators and their ghosts only (any other entity raises "Entity is not arithmetic-combinator or ..."). The
@@ -6390,12 +6405,12 @@ fh watch    # deploy on every change
   call. The ended action's result is now given (outcome, details), with the note, never an error exit.
 - `platform_endurance {forecast: true, pessimistic?}` (E11, Astra 19:50): per leg of the route, the asteroid kinds its
   space connection spawns (mean spawn chance over the leg, beside the legs flown in the last 2 hours), shots per
-  asteroid for each ammunition aboard (prototype health against damage after resistances and our ammo and turret
-  bonuses; `none hurt`; rockets' projectile damage is not readable), and the use: the moving rate measured on the
-  legs flown (B3) times how much more shooting this leg's asteroids take, what is made meanwhile and what is left at
-  each arrival; `pessimistic {speed: 0.1..1, dwell_s}`. On the copy, Swift gleba-aquilo-gleba: firearm-magazine 89
-  shots per medium asteroid, big ones none hurt (Gleba's legs spawn none), about 200 used a leg; 42 ms in the
-  container.
+  asteroid for each ammunition aboard (prototype health against the damage a hit does after resistances; `none hurt`;
+  the shot's damage is platform_defense ammo_use's since d22 batch88 AX1, lines `damage a shot ...`), and the use:
+  the moving rate measured on the legs flown (B3) times how much more shooting this leg's asteroids take, what is
+  made meanwhile and what is left at each arrival; `pessimistic {speed: 0.1..1, dwell_s}`. On the copy, Swift
+  gleba-aquilo-gleba: firearm-magazine 89 shots per medium asteroid (no bonus was read then: AX1), big ones none hurt
+  (Gleba's legs spawn none), about 200 used a leg; 42 ms in the container.
 - `place_ghosts`/`paste`/`build` dry run (E12, Astra): blocked entities are listed first and all of them in `blocked`
   (up to 200, `blocked_more`) apart from needs_tiles. On the copy, a hub collision listed ahead of two turrets needing
   foundation.
@@ -8845,7 +8860,7 @@ fh watch    # deploy on every change
   field the record does not take is refused, naming the fields it takes and what was likely meant: `requests set[1]:
   count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count:
   min is how much it asks for, max caps it)`. An object where an array goes is refused with the shape: `circuit_set
-  signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
+  signals must be an array of {signal, count, quality?, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
   not read as one` (the map form `{name: count}` stays where the docs give it: requests set, load_silo, silo_stage,
   deliver). The fields are those each action's parser reads (build and ghost entries also take configure, requests,
   circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7
@@ -11314,3 +11329,34 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   ammo reads were spread, one read of all 91 turrets in a second fell in a garbage collection: 18.9 ms. Events with
   the watch on: on_entity_damaged 66 us and on_entity_died 98 us a call, against 47 and 81 us without it. Seconds
   where the whole harness took 700-1300 ms (the Lua heap fell by 75-180 MB) happened with and without the watch.
+
+### d22 batch88: the endurance forecast's damage is ammo_use's
+
+- AX1 (Astra #1876: Asterion's forecast read 3 rockets a 400 hp medium asteroid and 89 magazines, where
+  platform_defense ammo_use gave 1160 explosion and 51.2 physical a shot, and a 300 s drill used 160 rockets for 160
+  kills). 2.0.77 keeps an ammunition's category on its item prototype (`ammo_category`); `get_ammo_type().category`
+  reads nil (read on a private copy of world n's 10:18 autosave), so the forecast found no damage bonus and no turret
+  (routeammo.lua). It now takes the shot from `ammorate.row` with platdefense's damage reader, which is what ammo_use
+  uses: the ammunition's damage, times its quality's multiplier (the quality the turrets hold), times (1 + the damage
+  bonus), times (1 + the turret's attack bonus). Against each asteroid of the route, and its fragments, it applies the
+  game's resistance rule. The forecast adds a block of lines, one per ammunition and one per asteroid; asteroids alike
+  in health and resistances share a line:
+  `rocket (rocket-turret, normal): 1160 explosion a shot = 200 explosion x (1 +480% rocket damage) x (1 +0%
+  rocket-turret attack)`, then `medium-carbonic/metallic/oxide-asteroid 400 hp: explosion (1160 - 0 flat) x (1 - 30%)
+  = 812 a hit: 1 shot`. The reply adds `forecast_damage [{ammo, ammo_quality, turret, damage, damage_per_shot, asteroid,
+  hp, per_hit, shots}]`. The uncalibrated-route warning is unchanged.
+- On the copy (Asterion, nauvis-gleba-aquilo-gleba-nauvis), before and after:
+
+  | Ammunition, asteroid | Before | After |
+  |---|---|---|
+  | rocket, medium | 3 | 1 |
+  | rocket, big | 12 | 2 |
+  | firearm-magazine, small | 20 | 2 |
+  | firearm-magazine, medium | 89 | 9 |
+  | firearm-magazine, big | none hurt | none hurt (under the 2000 flat) |
+  | railgun-ammo, any size | 1 | 1 |
+
+  Measured with the asteroid watch (`platform_defense {asteroids: true, seconds: 120}`, gleba->nauvis):
+  - the front rocket turrets: 84 hits and 84 kills, 68,208 damage, so 812 a hit and 1 a kill;
+  - the gun turrets: 459 hits and 219 kills, 2.1 a kill, at 50.9 damage a hit (smalls take 51.2 a hit, 2 shots;
+    mediums 46.1, 9 shots).

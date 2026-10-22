@@ -7,6 +7,8 @@
 -- MAX_CHESTS chests a network looked at.
 return function(api)
   local M = {}
+  -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
+  local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
   -- PAGE and CHEST_BUDGET as timed on world n: about 50 us an entity read, 3 us a chest looked at, 2 ms to sort 1024
   local MAX_LINES, MAX_CHESTS, PAGE, CHEST_BUDGET = 64, 256, 128, 512
   local budget = CHEST_BUDGET
@@ -96,7 +98,7 @@ return function(api)
     if type(c.enable) == 'string' then
       local cond = try(function() return cb.circuit_condition end)
       local v = api.wire_value and cond and cond.first_signal and try(function() return api.wire_value(e, cond.first_signal) end)
-      parts[#parts+1] = string.format('circuit condition %s%s: %s now', c.enable, v and string.format(' (%s %d on its wires)', cond.first_signal.name, v) or '',
+      parts[#parts+1] = string.format('circuit condition %s%s: %s now', c.enable, v and string.format(' (%s %d on its wires)', sigtext(cond.first_signal), v) or '',
         c.enable_met == true and 'true' or c.enable_met == false and 'false' or 'unknown')
     end
     if type(c.logistic) == 'string' then
