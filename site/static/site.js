@@ -96,8 +96,8 @@
       row(dl, 'Guns', guns.join('; '));
       var ar = lo.armor;
       if (ar) {
-        row(dl, 'Armor', words(ar.name));
-        row(dl, 'Equipment', (ar.equipment || []).map(function (e) { return (e.count > 1 ? e.count + '× ' : '') + words(e.name.replace(/-equipment$/, '')); }).join(', '));
+        row(dl, 'Armor', words(ar.name) + (ar.quality ? ' (' + ar.quality + ')' : ''));
+        row(dl, 'Equipment', (ar.equipment || []).map(function (e) { return (e.count > 1 ? e.count + '× ' : '') + words(e.name.replace(/-equipment$/, '')) + (e.quality ? ' (' + e.quality + ')' : ''); }).join(', '));
         if (ar.shield) row(dl, 'Shield', Math.round(ar.shield.now) + ' / ' + Math.round(ar.shield.max));
       }
       if (lo.health) row(dl, 'Health', Math.round(lo.health.now) + ' / ' + Math.round(lo.health.max));

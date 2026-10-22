@@ -197,6 +197,7 @@
   Example: `./fh call vehicle --args '{"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}' --wait`
 - `equipment {vehicle?, operation, item?}`: works a tank's (6x8) or spidertron's (10x6) equipment grid in reach or
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.
+  The list counts pieces by name and quality (`name@rare*1`), with rows, shield, battery, free cells and `armor`.
   Example: `./fh call equipment --args '{"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}'`
 - The walking tours (rearm, refuel, feed, collect, transfer `walk`) and `mine` check each place for enemies as
   `move_to` does, at the call too: `left_out` names the stops left out, and a tour whose every stop lies in such a
