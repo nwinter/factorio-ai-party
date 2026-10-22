@@ -11141,3 +11141,36 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   64 s to 69 s (ticks 46746161-46746429), at most 5 samples in a row".
 - Cost (profile_ticks 60 s on the copy, the watch running): uptime.tick 28.2 ms over 3600 ticks before, 26.4 ms after
   (0.008 and 0.007 ms a tick). Tests: tests/d21_batch79.lua.
+
+## d22 batch82 AR1 (eng/d20-batch82): platform_defense {platform, asteroids: true, seconds} (Astra #1855)
+
+- Astra (Nick's note): Asterion's side weapons shoot asteroids that pass harmlessly; the defense read gives geometric
+  reach only. Main before: nothing read asteroids' paths; turret_tally gives each turret's kills and damage dealt, not
+  on what.
+- What 2.0.77 gives (private copy of world n's _autosave6, tick 46946172; Asterion flying Nauvis to Gleba, 110
+  asteroids on its surface, 91 ammo turrets): an asteroid is an entity (type asteroid, force enemy) with a position and
+  no movement or speed to read; between reads it moves in a straight line against the platform (0.031-0.039 tiles a
+  tick south, about 2 tiles a second, then 0.4 tiles a second later in the flight). A turret's shot on one is an
+  on_entity_damaged event with the turret as cause, its kill an on_entity_died with the turret as cause; an asteroid's
+  hit on us an on_entity_damaged on our entity with the asteroid as cause (69.4 damage from a medium one). Reading all
+  19,321 foundation tiles took 948 ms on the copy, so the hull is found from its chunks and a binary search of strips.
+- The watch (asteroidwatch.lua; measures kind asteroid_watch, one an agent): every 15 ticks the asteroids in the view
+  (the foundation's chunks, 32 tiles out), each one's velocity from its last two positions; its approach by where its
+  straight line from where it was first seen enters the hull's box (widened by its radius); a straight-line projection
+  over foundation tiles (8-tile cells with no foundation counted once and crossed without reading their tiles, at most
+  600 lookups a read); outcomes and turret hits, kills and damage from the events, classed when the result is read;
+  each turret's ammo slot read once a second. platform_defense's other arguments are unchanged; seconds and reason go
+  with asteroids only. It is a mode of platform_defense so the Codex core (21995 of 22000 bytes) needs no new index
+  entry.
+- Checked on the copy: with the turrets on, 120 s: 87 asteroids seen (44 front crossing foundation, 32 side crossing,
+  1 front missing, 10 clear), none hit; the front gun groups put 6 hits each on clear asteroids. With Asterion's 91
+  turrets switched off (active false), 150 s: 29 seen, 18 hit the platform, every one projected to cross foundation
+  and hitting within 1-2 tiles of the projected tile (e.g. "medium-carbonic-asteroid hit arithmetic-combinator
+  (23,-45.5) at +2.3s for 69.4 (approach front; projected: crosses foundation at (23.5,-45.5))"); the clear one left
+  the view; the 2 side ones projected to miss were still in view at the end.
+- Cost (profile_ticks 60 s on the copy, about 60 UPS under Rosetta, the watch running on Asterion with its turrets on):
+  asteroid_watch.tick 278.5 ms over 3600 ticks (0.077 ms a tick), worst game second 9.6 ms; of it the asteroid find
+  210 ms (240 reads of the view), projections 4.1 ms, ammo 29.7 ms (a quarter of the turrets each read). Before the
+  ammo reads were spread, one read of all 91 turrets in a second fell in a garbage collection: 18.9 ms. Events with
+  the watch on: on_entity_damaged 66 us and on_entity_died 98 us a call, against 47 and 81 us without it. Seconds
+  where the whole harness took 700-1300 ms (the Lua heap fell by 75-180 MB) happened with and without the watch.
