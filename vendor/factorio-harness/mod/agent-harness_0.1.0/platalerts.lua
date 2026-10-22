@@ -100,7 +100,24 @@ return function(api)
       if cause then t.by[cause] = (t.by[cause] or 0) + 1 end
     end
     r.seq = r.seq + 1; r.last_hit = event.tick
+    -- (d22 batch92 BB1, BB2) the last HIT_RING hits, one row each (hit number, tick, entity, where, damage, the
+    -- platform's damage total after it, by what), for platform_hit (conditions.lua); with no cause, the damage type.
+    -- Each row is written over in place (0.8 us a hit on the copy; a new table each hit 2.7 us and garbage).
+    local ring = r.ring
+    if not ring then ring = {}; r.ring = ring end
+    local i = (r.seq - 1) % M.HIT_RING + 1
+    local row = ring[i]
+    if not row then row = {}; ring[i] = row end
+    local pos = e.position
+    row.s, row.t, row.n, row.x, row.y, row.d, row.D = r.seq, event.tick, e.name, pos.x, pos.y, d, r.total.damage
+    row.c, row.k = cause or nil, not cause and try(function() return event.damage_type.name end) or nil
     return e.type ~= 'character'
+  end
+  M.HIT_RING = 64
+  -- A platform's hit count and its last HIT_RING hits ({seq, ring?}: no ring before its first hit since this runtime),
+  -- or nil before its first hit.
+  function M.hit_ring(pl)
+    return store().by[pl.index]
   end
 
   -- A request naming platform= (or platform_create's new platform): who

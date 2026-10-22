@@ -22,7 +22,16 @@
   view, in a charted chunk, in the remote lane too; `platform_loss` (`platform`, `at_least?`,
   `names?`, `since_tick?`: our entities on that platform destroyed since the wait or guard began; saw names each, where,
   by what and when; a remote and platform lane wait and guard, met on a one-shot loss that ammo_below misses, e.g.
-  `{"until":"platform_loss","platform":"Edge5"}`); `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
+  `{"until":"platform_loss","platform":"Edge5"}`); `platform_hit` (`platform_damage` too: `platform`, `at_least?` hits,
+  `damage?` summed, `entity_names?`, `since_tick?`: hits on our entities on that platform by asteroids or enemies since
+  the wait or guard began, a hit repaired since still counted; met on the first hit, or at at_least or damage, whichever
+  comes first; saw names the first hits, where, damage, by what, when; a fired guard keeps them in its queue history;
+  remote and platform lanes, e.g. `{"until":"platform_hit","platform":"Edge5"}`); `platform_energy_below` (`platform`,
+  `fraction`: its accumulators together hold under that share of their capacity; remote and platform lanes);
+  `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
+  in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
+  guard keeps the progress and leg; remote and platform lanes);
+  `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
   remote lane too; a machine gone from its tile or whose recipe changed since the wait began fails it, naming the
