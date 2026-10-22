@@ -578,6 +578,8 @@ def main():
         host, _, port = a.obs.partition(":")
         night = NightLift(obs=OBS(host, int(port or 4455)), **(run.get("night") or {}))
     model = Model(run)
+    if hasattr(director, "route_source"):  # (d22 batch83 AS1) the routes each platform flew: news or routine departures
+        director.route_source = model
     # token use per agent this shift, from the agents' CLI session logs (tokens.py): a thread of its own reads them
     tokens_feed = None
     if run.get("tokens", True) is not False:
