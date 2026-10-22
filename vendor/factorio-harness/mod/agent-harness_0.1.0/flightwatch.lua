@@ -9,6 +9,13 @@
 -- - damage taken (platalerts.lua's running totals of hits by other forces), entities lost (lostlog.lua), repair packs
 --   used (the platform's item production statistics, consumed) and the hub's packs at the start and the end;
 -- - thruster fuel and oxidizer held (thrusters and tanks; endurance.lua's fuel outlook) at the start and the end.
+-- (d22 batch98 BH1, Astra #1900: proof that every railgun recharges under load) each sample also reads the platform's
+-- accumulators together (their energy over their buffers: the least fraction, at the start, now) and each ammo turret
+-- with an electric buffer (railguns): its energy (least, at the start, now) and the samples it read below one shot's
+-- energy, as empty runs are kept. 2.0.77 gives no energy_per_shot on the prototype; a railgun's is its 10 MJ buffer in
+-- the game's data (railgun-turret: buffer_capacity 10MJ, energy_per_shot 10MJ), so below means under its buffer. Its
+-- hits, damage and kills come from on_entity_damaged and on_entity_died with it as cause (as asteroidwatch.lua reads
+-- them); shots that hit are the ticks it hit something (a railgun shot hits everything on its line in one tick).
 -- Kept in storage (a save keeps it) until cleared; a result read is kept KEEP_READ ticks after its first read. The
 -- setter hears in team.alerts when a watch begins after a departure and when it ends.
 return function(api)
@@ -17,6 +24,7 @@ return function(api)
   M.SHOW = 24             -- turret rows in a read
   M.FEED_EVERY, M.FEED_SOON = 3600, 600  -- a feed trace asked once a minute a watch; 10 s after a turret begins to read empty
   M.MAX_MIN, M.DEFAULT_MIN, M.EVENTS = 480, 120, 32
+  M.MAX_ACCUMULATORS, M.SHOW_POWERED = 1024, 64
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function secs(t)
@@ -107,14 +115,48 @@ return function(api)
   local function add_turret(w, e, tick)
     if #w.turrets >= M.MAX_TURRETS then w.capped = true; return end
     local n, name = ammo_of(e)
-    w.turrets[#w.turrets+1] = {e=e, unit=e.unit_number, name=e.name, position={x=e.position.x, y=e.position.y}, min=n, min_tick=tick,
+    local t = {e=e, unit=e.unit_number, name=e.name, position={x=e.position.x, y=e.position.y}, min=n, min_tick=tick,
       first=n, now=n, ammo=name, empty_samples=0, empty_ticks=0, runs=0, longest=0, added=tick ~= w.start and tick or nil}
+    w.turrets[#w.turrets+1] = t
     w.by_unit[e.unit_number] = #w.turrets
+    -- (BH1) a turret with an electric buffer (a railgun): its energy, and what it hit
+    local buf = try(function() return e.electric_buffer_size end) or 0
+    if buf > 0 then
+      local en = try(function() return e.energy end) or 0
+      t.buffer, t.emin, t.emin_tick, t.efirst, t.enow = buf, en, tick, en, en
+      t.low_samples, t.low_ticks, t.low_runs, t.low_longest = 0, 0, 0, 0
+      t.hits, t.shots, t.damage, t.kills = 0, 0, 0, 0
+      local st = store()
+      st.powered = st.powered or {}
+      st.powered[e.unit_number] = true
+    end
+  end
+  -- (BH1) the platform's accumulators, found at the start and each minute with the turrets
+  local function find_accumulators(w, pl)
+    local list = try(function() return pl.surface.find_entities_filtered{type='accumulator', force=pl.force, limit=M.MAX_ACCUMULATORS + 1} end) or {}
+    w.acc_capped = #list > M.MAX_ACCUMULATORS or nil
+    local accs, cap = {}, 0
+    for i = 1, math.min(#list, M.MAX_ACCUMULATORS) do
+      local e = list[i]
+      local b = try(function() return e.electric_buffer_size end) or 0
+      if b > 0 then accs[#accs+1] = e; cap = cap + b end
+    end
+    w.accs, w.acc_cap = accs, cap
+  end
+  local function acc_fraction(w)
+    if not w.accs or #w.accs == 0 or w.acc_cap <= 0 then return nil end
+    local n, cap = 0, 0
+    for _, e in ipairs(w.accs) do
+      if e.valid then n = n + e.energy; cap = cap + e.electric_buffer_size end
+    end
+    return cap > 0 and n / cap or nil
   end
   local function find_turrets(w, pl, tick)
     for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
       if e.unit_number and not w.by_unit[e.unit_number] then add_turret(w, e, tick) end
     end
+    find_accumulators(w, pl)
+    w.acc_n = #w.accs
     w.refound = tick
   end
   -- The trace's rows into each turret's feed: at the start, after it first read empty (the first trace begun since),
@@ -149,6 +191,9 @@ return function(api)
     w.at_start, w.flew = w.leg, flying(pl)
     w.turrets, w.by_unit = {}, {}
     find_turrets(w, pl, tick)
+    local f = acc_fraction(w)
+    w.acc = {first=f, min=f, min_tick=tick, now=f}
+    w.acc_n = #(w.accs or {})
     w.hits0, w.fuel0, w.repair0, w.packs0 = hits(pl), fuel(pl), repair_used(pl), hub_packs(pl)
     w.samples, w.last_sample = 0, tick - M.EVERY
     w.asked = nil
@@ -194,8 +239,10 @@ return function(api)
     end
     w.state, w.ended, w.why = 'done', tick, why
     for _, t in ipairs(w.turrets or {}) do t.e = nil end
+    w.accs = nil
+    M.reindex()
     if not w.start then push(w, string.format('flight watch #%d on %s ended before it began (%s)', w.id, w.platform, why)); return end
-    push(w, string.format('flight watch #%d on %s ended (%s) after %s: %s; flight_watch {id: %d} reads it', w.id, w.platform, why, secs(tick - w.start), M.worst(w), w.id))
+    push(w, string.format('flight watch #%d on %s ended (%s) after %s: %s%s; flight_watch {id: %d} reads it', w.id, w.platform, why, secs(tick - w.start), M.worst(w), M.power_text(w), w.id))
   end
   -- The turrets in one phrase: how many read empty, the longest run.
   function M.worst(w)
@@ -208,6 +255,81 @@ return function(api)
     if n == 0 then return 'no ammo turret aboard' end
     if empty == 0 then return string.format('none of %d ammo turrets read empty', n) end
     return string.format('%d of %d ammo turrets read empty; the longest run %gs (%d ticks), %s %s #%d from +%s', empty, n, math.floor(long / 6 + 0.5) / 10, long, lt.name, at(lt.position), lt.unit, secs(lt.long_from - w.start))
+  end
+  -- (BH1) the units of the powered turrets watched now, for the damage events' quick test
+  function M.reindex()
+    local st = api.state().flightwatch
+    if not st then return end
+    local idx = {}
+    for _, w in ipairs(st.list) do
+      if w.state == 'watching' then
+        for _, t in ipairs(w.turrets or {}) do if t.buffer and t.e then idx[t.unit] = true end end
+      end
+    end
+    st.powered = next(idx) and idx or nil
+  end
+  local function powered_turret(st, unit)
+    for _, w in ipairs(st.list) do
+      if w.state == 'watching' and w.by_unit then
+        local i = w.by_unit[unit]
+        local t = i and w.turrets[i]
+        if t and t.buffer then return t end
+      end
+    end
+  end
+  -- A hit by a watched powered turret on anything not of its force: its hits, damage, and shots that hit (ticks).
+  function M.on_damaged(event)
+    local st = api.state().flightwatch
+    local idx = st and st.powered
+    if not idx then return end
+    local c = event.cause
+    if not (c and c.valid) then return end
+    local u = c.unit_number
+    if not (u and idx[u]) then return end
+    local e = event.entity
+    if e and e.valid and e.force == c.force then return end
+    local t = powered_turret(st, u)
+    if not t then return end
+    t.hits, t.damage = t.hits + 1, t.damage + (event.final_damage_amount or 0)
+    if t.last_hit ~= event.tick then t.last_hit, t.shots = event.tick, t.shots + 1 end
+  end
+  function M.on_died(event)
+    local st = api.state().flightwatch
+    local idx = st and st.powered
+    if not idx then return end
+    local c = event.cause
+    if not (c and c.valid) then return end
+    local u = c.unit_number
+    if not (u and idx[u]) then return end
+    local t = powered_turret(st, u)
+    if t then t.kills = t.kills + 1 end
+  end
+  local function pct(f) return f and string.format('%g%%', math.floor(f * 1000 + 0.5) / 10) or '?' end
+  local function mj(j) return string.format('%g MJ', math.floor((j or 0) / 1e5 + 0.5) / 10) end
+  -- The accumulators and the powered turrets in one phrase (empty when the platform has neither).
+  function M.power_text(w)
+    local parts = {}
+    local a = w.acc
+    if a and a.first then
+      parts[#parts+1] = string.format('accumulators (%d%s): least %s at +%s, %s at the start, %s now', w.acc_n or #(w.accs or {}), w.acc_capped and ', capped' or '',
+        pct(a.min), secs((a.min_tick or w.start) - w.start), pct(a.first), pct(a.now))
+    end
+    local n, low, hits, shots, dmg, kills, long, lt = 0, 0, 0, 0, 0, 0, 0, nil
+    for _, t in ipairs(w.turrets or {}) do
+      if t.buffer then
+        n = n + 1
+        if t.low_samples > 0 then low = low + 1 end
+        hits, shots, dmg, kills = hits + t.hits, shots + t.shots, dmg + t.damage, kills + t.kills
+        if t.low_longest > long then long, lt = t.low_longest, t end
+      end
+    end
+    if n > 0 then
+      parts[#parts+1] = string.format('%d powered turrets (railguns): %s; %d hits (%d shots that hit), %g damage, %d kills', n,
+        low == 0 and 'none read below a shot\'s energy (its full buffer)' or string.format('%d read below a shot\'s energy (its full buffer) in some sample, the longest run %gs (%d ticks), %s %s #%d from +%s',
+          low, math.floor(long / 6 + 0.5) / 10, long, lt.name, at(lt.position), lt.unit, secs(lt.low_long_from - w.start)),
+        hits, shots, math.floor(dmg + 0.5), kills)
+    end
+    return #parts > 0 and '; ' .. table.concat(parts, '; ') or ''
   end
   -- One sample of a watching watch.
   local function sample(w, pl, tick)
@@ -232,7 +354,24 @@ return function(api)
             if t.run > t.longest then t.longest, t.long_from = t.run, t.run_from end
           elseif t.run_from then t.run_from, t.run = nil, nil end
         end
+        if t.buffer then
+          local en = t.e.energy
+          t.enow = en
+          if en < t.emin then t.emin, t.emin_tick = en, tick end
+          if en < t.buffer then
+            t.low_samples, t.low_ticks = t.low_samples + 1, t.low_ticks + dt
+            if not t.low_from then t.low_from, t.low_run, t.low_runs = tick, 0, t.low_runs + 1 end
+            t.low_run = t.low_run + dt
+            if t.low_run > t.low_longest then t.low_longest, t.low_long_from = t.low_run, t.low_from end
+          elseif t.low_from then t.low_from, t.low_run = nil, nil end
+        end
       elseif t.e then t.gone, t.e = tick, nil end
+    end
+    local f = acc_fraction(w)
+    if f and w.acc then
+      w.acc.now = f
+      if not w.acc.min or f < w.acc.min then w.acc.min, w.acc.min_tick = f, tick end
+      w.acc.first = w.acc.first or f
     end
     take_feed(w, pl, tick, new_run)
   end
@@ -324,16 +463,48 @@ return function(api)
         M.feed_text(x.feed_start), x.feed_empty and '; after it first read empty: ' .. M.feed_text(x.feed_empty) or '', M.feed_text(x.feed_last))
     end
     if full then r.turrets, r.lines = rows, lines end
-    r.line = string.format('flight watch #%d on %s, %s: %s for %s (%d samples)%s; %s; damage taken %g in %d hit%s%s; %d lost; repair packs used %s (hub %s -> %s); %s',
-      w.id, w.platform, w.leg or '?', w.state == 'done' and 'watched' or 'watching', secs(now - w.start), w.samples or 0,
-      w.state == 'done' and ', ended: ' .. tostring(w.why) or string.format(', until its arrival or %s more', secs(w.until_tick - now)), M.worst(w),
+    -- (BH1) the sample interval, the accumulators together, and each powered turret (railgun)
+    r.sample_ticks = M.EVERY
+    if w.acc and w.acc.first then
+      local q = function(f) return f and math.floor(f * 10000 + 0.5) / 10000 or nil end
+      r.accumulators = {count=w.acc_n, capped=w.acc_capped and M.MAX_ACCUMULATORS or nil, least_fraction=q(w.acc.min), least_tick=w.acc.min_tick,
+        at_start=q(w.acc.first), now=q(w.acc.now)}
+    end
+    if full then
+      local pw = {}
+      for _, x in ipairs(w.turrets or {}) do if x.buffer then pw[#pw+1] = x end end
+      table.sort(pw, function(a, b)
+        if a.low_longest ~= b.low_longest then return a.low_longest > b.low_longest end
+        if a.emin ~= b.emin then return a.emin < b.emin end
+        return a.unit < b.unit
+      end)
+      local prow, plines = {}, {}
+      for i = 1, math.min(#pw, M.SHOW_POWERED) do
+        local x = pw[i]
+        prow[#prow+1] = {unit_number=x.unit, name=x.name, position=x.position, shot_energy=x.buffer, least_energy=math.floor(x.emin), least_tick=x.emin_tick,
+          energy_at_start=math.floor(x.efirst), energy_now=math.floor(x.enow), below_samples=x.low_samples, below_ticks=x.low_ticks, below_runs=x.low_runs,
+          longest_below_ticks=x.low_longest, longest_below_from_tick=x.low_long_from, below_now=x.low_from and true or nil,
+          hits=x.hits, shots_hit=x.shots, damage=math.floor(x.damage * 10 + 0.5) / 10, kills=x.kills, gone_tick=x.gone}
+        plines[#plines+1] = string.format('%s %s #%d: energy least %s (%s of a shot) at +%s, %s at the start, %s now; %s; %d hits (%d shots that hit), %g damage, %d kills', x.name, at(x.position), x.unit,
+          mj(x.emin), pct(x.emin / x.buffer), secs((x.emin_tick or w.start) - w.start), mj(x.efirst), mj(x.enow),
+          x.low_samples == 0 and 'never below a shot\'s energy in a sample' or string.format('below a shot\'s energy in %d sample%s (%d ticks) over %d run%s, the longest %d ticks from +%s',
+            x.low_samples, x.low_samples == 1 and '' or 's', x.low_ticks, x.low_runs, x.low_runs == 1 and '' or 's', x.low_longest, secs((x.low_long_from or w.start) - w.start)),
+          x.hits, x.shots, math.floor(x.damage + 0.5), x.kills)
+      end
+      if #pw > 0 then r.railguns, r.railgun_lines, r.railguns_more = prow, plines, #pw > M.SHOW_POWERED and #pw - M.SHOW_POWERED or nil end
+    end
+    r.line = string.format('flight watch #%d on %s, %s: %s for %s (%d samples, one every %d ticks)%s; %s%s; damage taken %g in %d hit%s%s; %d lost; repair packs used %s (hub %s -> %s); %s',
+      w.id, w.platform, w.leg or '?', w.state == 'done' and 'watched' or 'watching', secs(now - w.start), w.samples or 0, M.EVERY,
+      w.state == 'done' and ', ended: ' .. tostring(w.why) or string.format(', until its arrival or %s more', secs(w.until_tick - now)), M.worst(w), M.power_text(w),
       t.damage.damage, t.damage.hits, t.damage.hits == 1 and '' or 's', #t.damage.entities > 0 and ' (' .. table.concat(t.damage.entities, ', ') .. ')' or '', t.lost_n,
       t.repair_used and tostring(t.repair_used) or '?', tostring(t.packs_start), tostring(t.packs_end), fuel_text(t.fuel_start, t.fuel_end))
     return r
   end
-  M.NOTE = 'read once a second: an empty run is the samples in a row that read 0 in the turret\'s ammo slots, each counting the ticks since the sample before, so a turret empty for under a second between two samples can be missed; '
+  M.NOTE = 'read once a second (sample_ticks): an empty run is the samples in a row that read 0 in the turret\'s ammo slots, each counting the ticks since the sample before, so a turret empty for under a second between two samples can be missed; '
     .. 'feed: the platform\'s ammunition trace (maker, hub, chest, preload: only what is on its way now, none: no inserter feeds it), taken at most once a minute, and asked again 10 s after the last ask when a turret begins to read empty (feed_empty: the first trace begun after it first read empty, empty or refilled by then); '
-    .. 'damage: hits on our entities aboard by other forces; repair packs used: the platform\'s item production statistics, consumed'
+    .. 'damage: hits on our entities aboard by other forces; repair packs used: the platform\'s item production statistics, consumed; '
+    .. 'accumulators: their energy over their buffers together, each sample; railguns (ammo turrets with an electric buffer): energy each sample, below a shot\'s energy meaning under its full buffer (2.0.77 gives no energy_per_shot; the game\'s data has 10 MJ a shot and a 10 MJ buffer, filled at most 10 MW), so a recharge shorter than a second between two samples can be missed; '
+    .. 'hits, damage and kills from the game\'s damage and death events with the railgun as cause, shots_hit the ticks it hit something (one shot hits all on its line in one tick; a shot that hits nothing is not counted)'
   function M.call(p, a)
     local st = store()
     local who = api.who and api.who(p) or p.name
@@ -341,7 +512,7 @@ return function(api)
       assert(type(a.id) == 'number', 'id: a watch\'s number (flight_watch {} lists them)')
       for i, w in ipairs(st.list) do
         if w.id == a.id and w.force == p.force.name then
-          if a.clear == true then table.remove(st.list, i); return {cleared=a.id, line='flight watch #' .. a.id .. ' cleared'} end
+          if a.clear == true then table.remove(st.list, i); M.reindex(); return {cleared=a.id, line='flight watch #' .. a.id .. ' cleared'} end
           if w.state == 'done' and not w.read_tick then w.read_tick = game.tick end
           local r = M.row(w, true)
           r.note = M.NOTE
@@ -370,6 +541,7 @@ return function(api)
           w.state == 'done' and 'done and not read' or w.state, w.id))
         replaced = w.id
         table.remove(st.list, i)
+        M.reindex()
         break
       end
     end
@@ -388,7 +560,9 @@ return function(api)
     else w.seen_stopped = not flying(pl) end
     local r = M.row(w, false)
     r.replaced = replaced
-    return {watch=r, line=from == 'now' and string.format('flight watch #%d on %s: watching %d ammo turrets once a second from now until its next arrival or %d min', w.id, pl.name, #w.turrets, minutes)
+    local np = 0
+    for _, t in ipairs(w.turrets or {}) do if t.buffer then np = np + 1 end end
+    return {watch=r, line=from == 'now' and string.format('flight watch #%d on %s: watching %d ammo turrets (%d railguns) and %d accumulators once a second from now until its next arrival or %d min', w.id, pl.name, #w.turrets, np, w.acc_n or 0, minutes)
       or string.format('flight watch #%d on %s: begins at its next departure%s and runs until the arrival after it or %d min', w.id, pl.name, w.seen_stopped and '' or ' (it flies now: the departure after its next stop)', minutes),
       note=M.NOTE}
   end
@@ -409,6 +583,7 @@ return function(api)
     id='alone: read that watch in full (a done one is then kept 1 h); with clear: true, drop it', clear='true, with id: drop it',
     returns='start: watch, line, note; {}: watches (the force\'s) and lines; id: watch {id, platform, setter, state (armed: waiting for the departure, watching, done), from, minutes, set_tick, start_tick, end_tick, until_tick, ended_by, leg, samples, seconds, '
       .. 'turrets (up to 24: those that read empty, the longest run first, then the lowest on ammo; turrets_more and turrets_more_line count the rest) [{unit_number, name, position, ammo, least, least_tick, at_start, now, empty_samples, empty_ticks, empty_runs, longest_empty_ticks, longest_from_tick, empty_now, gone_tick, added_tick, feed_start, feed_empty (the first trace begun after it first read empty), feed_end: {kind (maker, hub, chest, preload, none), gated, reaches, stop, tick}}], '
+      .. 'sample_ticks, accumulators {count, capped, least_fraction, least_tick, at_start, now}, railguns (ammo turrets with an electric buffer, up to 64, the longest run below a shot\'s energy first) [{unit_number, name, position, shot_energy, least_energy, least_tick, energy_at_start, energy_now, below_samples, below_ticks, below_runs, longest_below_ticks, longest_below_from_tick, below_now, hits, shots_hit, damage, kills, gone_tick}], railgun_lines, '
       .. 'damage {hits, damage, entities (damage by entity name), by (hits by cause)}, lost (up to 8), lost_count, repair_packs_used, hub_repair_packs {start, end}, fuel {start, end: {thruster-fuel, thruster-oxidizer: {held, in_tanks}}}, lines, line, note}. '
       .. 'Sampled once a second; at most 128 ammo turrets a watch (turrets built meanwhile are added within a minute), 8 watches a force; kept in the save until cleared; the setter hears in team.alerts when one begins at a departure and when one ends'}}
   return M
