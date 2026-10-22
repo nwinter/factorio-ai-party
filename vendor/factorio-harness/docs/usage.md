@@ -945,8 +945,9 @@ fh call status
   change by default, naming the fluid; `fluid: "drain"` (or `"keep"`, `force: true`) flushes any box that has a
   segment, makes the change and reads the machine after: `fluid` (what left, anything still in it by box) and
   `fluid_flushed` {fluid: amount gone}.
-- `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
-  pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
+- `flush {position, fluid?, index?, platform?, dry_run?}` is the fluid GUI's flush: it empties the fluid segment (the
+  connected pipes, tanks and machine fluidboxes; a pump bounds it) the entity at `position` belongs to, every fluid or
+  only `fluid` (d22 batch91 BA2: before, with no `fluid` it flushed nothing).
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
   error lists them. Returns `flushed {fluid: amount}`, `amount`, `index` and `segment {id, extent, size, capacity,
   entities}`. It leaves the running action and queue alone, and the `pog-guest` group cannot flush.
@@ -11366,7 +11367,7 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   - the gun turrets: 459 hits and 219 kills, 2.1 a kill, at 50.9 damage a hit (smalls take 51.2 a hit, 2 shots;
     mediums 46.1, 9 shots).
 
-### d22 batch91: quality in silo and shipment
+### d22 batch91: quality in silo and shipment, a pipe's fluid flush
 
 - BA1 (Sol #1881: Meridian-V asked thruster@legendary 4 from Vulcanus and silo/shipment read "holds 0" and "the
   network can give 0" while 4 legendary sat in storage). On 2.0.77 `get_item_count(name)` counts normal quality alone
@@ -11400,3 +11401,20 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   already use the least constant. Checked on a copy of world n's 10:33 save: the dry run at Sol's machine (21.5,263.5)
   writes `thruster < -2147483648` and `steel-plate < -2147483648`; circuit_set with it on the output inserter reads
   `logistic_met: false`.
+- BA2 (Sol #1882: Meridian-V's speed governor kept about 5k of fluid past its pumps, and the thrusters ran 43 s after a
+  pump cut; Sol asked for the GUI's flush). `flush` already did this (the GUI's flush, `LuaFluidBox.flush`, reach or
+  remote view as `configure`, `platform=` on a platform). Read on the copy (Meridian-V):
+  - Without a fluid name 2.0.77's `flush(index)` removes nothing and returns `{}`, so `flush {position}` flushed
+    nothing. It now flushes each fluid the segment holds, by name, as the GUI's button empties the segment.
+  - The flush is the segment only. Emptying the thrusters' oxidizer segment left the pipes on the other side of the
+    pump at 7205 before and after; a pump's own box is in no segment and kept its 400.
+  - The game's count can be more than the segment read: the fuel segment read 12100 (its 7 thrusters' boxes, 1000 each,
+    within it) and the flush returned 19100. The reply gives both: `flushed` (the game's count), `held_before` and
+    `held_after` (the segment read before and after), and a line.
+  - `dry_run: true`: `would_flush {fluid: amount}`, `amount`, `segment {id, extent, size, capacity, entities}` and a
+    line (`would flush thruster-oxidizer 7205.5 from the segment of pipe (-14.5,36.5) (65 entities with fluidboxes,
+    33x38 tiles); a pump bounds it: ...`), nothing flushed.
+  - No other fluid edit and no spawning; the guest group cannot flush (`flush_opened_entity_fluid`).
+  - Cost on the copy (x86 under Rosetta, a dispatch timed with the game's profiler, by remote view on Meridian-V): a
+    57-entity, 33x28-tile segment took 5.8-15.3 ms a dry run (median 10.4; most of it counts the segment's entities in
+    its box, up to 2000) and 3.4 ms a flush.
