@@ -406,11 +406,14 @@ V3_TAG = {"excited": "[excited]", "tense": "", "concerned": "", "neutral": ""}
 CARTESIA_EMOTION = {"excited": "excited", "tense": "neutral", "concerned": "calm", "neutral": "neutral"}
 
 
-def style_for(text, caster=None, context=None):
-    """(mood, instruction text)."""
+def style_for(text, caster=None, context=None, direction=None):
+    """(mood, instruction text). (d22 batch99 BI2) `direction`: the writer's delivery for this line (tone, emphasis,
+    pacing), in place of the mood's sentence (the writer read the line and its moment; both at once contradicted on a
+    copy: "concerned" beside "bright on the departure, then a small wince"); the mood stays for the engines without
+    an instruction. The voice's persona and accent come from the role and the voice itself."""
     m = mood(text, caster, context)
     base = ROLE_STYLE.get(caster, "A player in a live co-op Factorio stream, speaking to teammates.")
-    return m, base + " " + MOOD_STYLE[m]
+    return m, base + " " + ("This line: " + direction if direction else MOOD_STYLE[m])
 
 
 # ---- HTTP ---------------------------------------------------------------------------------------------------------
@@ -877,12 +880,14 @@ class TTS:
         pool = sorted(r for p, r, _, _ in PREMIUM.values() if FAMILY.get(p) == fam)
         return pool[int(hashlib.sha1(aura.encode()).hexdigest(), 16) % len(pool)]
 
-    def speak(self, text, voice, caster=None, mood=None):
+    def speak(self, text, voice, caster=None, mood=None, direction=None):
         """-> (audio bytes, content type, duration seconds, latency seconds). `text` is the caption text; the
-        lexicon is applied here, for the provider that speaks it. `mood`: the line's moment (MOODS; default neutral)."""
+        lexicon is applied here, for the provider that speaks it. `mood`: the line's moment (MOODS; default neutral).
+        `direction`: a delivery direction in words; only the engines that take an instruction use it (OpenAI
+        gpt-4o-mini-tts `instructions`, Inworld `instruction`); ElevenLabs, Cartesia, Aura and say ignore it."""
         t0 = time.time()
         prov, ref = self.route(voice, caster)
-        m, instruction = style_for(text, caster, mood)
+        m, instruction = style_for(text, caster, mood, direction)
         key = None
         if self.cache:
             key = hashlib.sha1(json.dumps([prov, getattr(self.providers.get(prov), "model", ""), ref, m, instruction,
@@ -1138,6 +1143,7 @@ if __name__ == "__main__":
     ap.add_argument("--voice", default="orion", help="voice id, or 'all' to render every voice")
     ap.add_argument("--caster", choices=list(CASTERS), help="speak as this caster (role voice and delivery)")
     ap.add_argument("--mood", choices=list(MOODS), help="the line's moment (default neutral)")
+    ap.add_argument("--direction", help="a delivery direction in words (OpenAI and Inworld only)")
     ap.add_argument("--out", default=".", help="directory for the mp3 files")
     ap.add_argument("--check", action="store_true",
                     help="also measure loudness and transcribe each clip back with Whisper (word accuracy)")
@@ -1153,7 +1159,7 @@ if __name__ == "__main__":
     tts = TTS(a.tts)
     whisper = 0.0
     for v in (voice_ids() if a.voice == "all" else [a.voice]):
-        audio, ctype, dur, lat = tts.speak(speakable(a.text), v, caster=a.caster, mood=a.mood)
+        audio, ctype, dur, lat = tts.speak(speakable(a.text), v, caster=a.caster, mood=a.mood, direction=a.direction)
         path = os.path.join(a.out, f"{a.tts}-{v}.mp3")
         open(path, "wb").write(audio)
         row = {"voice": v, "file": path, "seconds": round(dur, 2), "latency": round(lat, 2), **tts.last}
