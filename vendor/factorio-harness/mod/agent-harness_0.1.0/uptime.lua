@@ -281,6 +281,31 @@ return function(api)
     end
     rs.last = now
   end
+  -- (d20 batch79 AO1, Astra #1845: five machines read 3 low_power samples of 601 with no way to tell when) per machine,
+  -- each status other than working: its first and last sample tick and the longest run of samples in a row; and the
+  -- last CHANGES status changes with their ticks
+  M.CHANGES = 8
+  local QUIET = {working=true, normal=true}
+  local function note_status(m, st, tick)
+    if st ~= m.prev then
+      if m.prev then
+        local c = m.changes or {}
+        c[#c+1] = {tick, m.prev, st}
+        if #c > M.CHANGES then table.remove(c, 1) end
+        m.changes = c
+      end
+      m.prev, m.run = st, 0
+    end
+    m.run = m.run + 1
+    if not QUIET[st] then
+      local runs = m.runs or {}
+      m.runs = runs
+      local r = runs[st]
+      if not r then r = {first=tick, longest=0}; runs[st] = r end
+      r.last = tick
+      if m.run > r.longest then r.longest = m.run end
+    end
+  end
   function M.sample(job)
     job.samples = job.samples + 1
     if job.research then M.sample_research(job) end
@@ -290,10 +315,12 @@ return function(api)
       elseif m.lab then
         local st = api.status_name and api.status_name(e) or 'unknown'
         m.status[st] = (m.status[st] or 0) + 1
+        note_status(m, st, game.tick)
         M.sample_lab(m, e)
       else
         local st = api.status_name and api.status_name(e) or 'unknown'
         m.status[st] = (m.status[st] or 0) + 1
+        note_status(m, st, game.tick)
         local r, rq = recipe_of(e)
         local rn = r and r.name or 'none'
         -- an idle furnace reads no recipe: the last one seen is kept
@@ -316,8 +343,8 @@ return function(api)
             else have = inv and try(function() return inv.get_item_count({name=ing.name, quality=rq or 'normal'}) end) or 0 end
             if have < (ing.amount or 0) then
               local key = ing.type == 'fluid' and ing.name or qlabel(ing.name, rq)
-              local s = m.short[key] or {samples=0, least=have, need=ing.amount}
-              s.samples = s.samples + 1
+              local s = m.short[key] or {samples=0, least=have, need=ing.amount, first=game.tick}
+              s.samples, s.last = s.samples + 1, game.tick
               if have < s.least then s.least = have end
               m.short[key] = s
             end
@@ -331,11 +358,41 @@ return function(api)
     job.sampled, job.all_gone = game.tick, not live or nil
   end
   local function r2(v) return math.floor(v * 100 + 0.5) / 100 end
+  -- (AO1) a machine's statuses other than working: status_runs {status = {samples, first_tick, last_tick, first_s,
+  -- last_s, longest_run}}, changes (its last status changes, 'tick: from -> to'; only with such a status) and the
+  -- line's part; nil for a machine that only worked
+  function M.timing(job, m)
+    if not m.runs then return nil end
+    local list = {}
+    for st, r in pairs(m.runs) do list[#list+1] = {st=st, r=r, n=m.status[st] or 0} end
+    table.sort(list, function(x, y) return x.n > y.n or (x.n == y.n and x.st < y.st) end)
+    local runs, parts = {}, {}
+    local function sec(t) return math.floor((t - job.start) / 60 + 0.5) end
+    for _, x in ipairs(list) do
+      local r = x.r
+      runs[x.st] = {samples=x.n, first_tick=r.first, last_tick=r.last, first_s=sec(r.first), last_s=sec(r.last), longest_run=r.longest}
+      parts[#parts+1] = r.first == r.last and string.format('%s at %d s (tick %d)', (x.st:gsub('_', ' ')), sec(r.first), r.first)
+        or string.format('%s from %d s to %d s (ticks %d-%d), at most %d sample%s in a row', (x.st:gsub('_', ' ')), sec(r.first), sec(r.last), r.first, r.last,
+          r.longest, r.longest == 1 and '' or 's')
+    end
+    local changes
+    for _, c in ipairs(m.changes or {}) do
+      changes = changes or {}
+      changes[#changes+1] = string.format('%d: %s -> %s', c[1], c[2], c[3])
+    end
+    return {status_runs=runs, changes=changes, text='when: ' .. table.concat(parts, '; ')}
+  end
+  -- a status's share of the samples; (AO1) one that rounds to 0% gives its count too
+  local function share_text(st, n, samples)
+    local v = math.floor(n / math.max(1, samples) * 100 + 0.5)
+    return string.format('%s %d%%%s', (st:gsub('_', ' ')), v, v == 0 and n > 0 and string.format(' (%d of %d samples)', n, samples) or '')
+  end
+  M.share_text = share_text
   local function status_parts(m, samples)
     local states, parts = {}, {}
     for k, n in pairs(m.status) do states[#states+1] = {k, n} end
     table.sort(states, function(x, y) return x[2] > y[2] or (x[2] == y[2] and x[1] < y[1]) end)
-    for _, s in ipairs(states) do parts[#parts+1] = string.format('%s %d%%', (s[1]:gsub('_', ' ')), math.floor(s[2] / math.max(1, samples) * 100 + 0.5)) end
+    for _, s in ipairs(states) do parts[#parts+1] = share_text(s[1], s[2], samples) end
     return parts
   end
   function M.lab_row(job, m, secs)
@@ -354,9 +411,10 @@ return function(api)
     for n, c in pairs(m.spoiled) do spoiled[#spoiled+1] = string.format('%s %d', n, c) end
     table.sort(spoiled)
     local parts = status_parts(m, job.samples)
+    local tm = M.timing(job, m)
     local row = {kind='lab', name=m.name, position=m.position, samples=m.status, working_share=job.samples > 0 and math.floor((m.status.working or 0) / job.samples * 100 + 0.5) or nil,
-      packs=packs, spoil_results=#spoiled > 0 and spoiled or nil, gone=m.gone and 'removed' or nil}
-    row.line = string.format('%s %s: %s; %s%s%s%s', m.name, at(m.position), #parts > 0 and table.concat(parts, ', ') or 'no sample yet',
+      packs=packs, spoil_results=#spoiled > 0 and spoiled or nil, gone=m.gone and 'removed' or nil, status_runs=tm and tm.status_runs, changes=tm and tm.changes}
+    row.line = string.format('%s %s: %s%s; %s%s%s%s', m.name, at(m.position), #parts > 0 and table.concat(parts, ', ') or 'no sample yet', tm and '; ' .. tm.text or '',
       #packs > 0 and string.format('packs used in %ds (durability drained): %s; held at the samples: %s', math.floor(secs + 0.5), table.concat(used, ', '), table.concat(held, ', ')) or 'held no science packs',
       #unknown > 0 and '; used unknown for ' .. table.concat(unknown, '; ') or '',
       #spoiled > 0 and '; spoil results in its trash: ' .. table.concat(spoiled, ', ') or '', m.gone and '; removed during the watch' or '')
@@ -505,10 +563,13 @@ return function(api)
       local share = {}
       for _, s in ipairs(states) do
         share[s[1]] = s[2]
-        parts[#parts+1] = string.format('%s %d%%', (s[1]:gsub('_', ' ')), math.floor(s[2] / math.max(1, job.samples) * 100 + 0.5))
+        parts[#parts+1] = share_text(s[1], s[2], job.samples)
       end
       local short = {}
-      for n, s in pairs(m.short) do short[#short+1] = string.format('%s short in %d sample%s (least %g of %g a craft)', n, s.samples, s.samples == 1 and '' or 's', s.least, s.need) end
+      for n, s in pairs(m.short) do
+        short[#short+1] = string.format('%s short in %d sample%s (least %g of %g a craft%s)', n, s.samples, s.samples == 1 and '' or 's', s.least, s.need,
+          s.first and (s.first == s.last and string.format('; tick %d', s.first) or string.format('; ticks %d-%d', s.first, s.last)) or '')
+      end
       table.sort(short)
       local function pm(n) return secs > 0 and math.floor(n / secs * 600 + 0.5) / 10 or 0 end
       local cpm, dpm = crafts and pm(crafts), pm(done)
@@ -520,6 +581,8 @@ return function(api)
         samples=share, short=#short > 0 and short or nil, recipe_changed=m.recipe_changed, gone=m.gone and 'removed' or nil,
         outputs_by_quality=m.products and m.out_intervals and (m.outputs or {}) or nil, outputs_unknown_intervals=m.products and (m.out_unknown or 0) > 0 and m.out_unknown or nil,
         outputs_intervals=m.products and m.out_intervals or nil}
+      local tm = M.timing(job, m)
+      if tm then row.status_runs, row.changes = tm.status_runs, tm.changes end
       local otext = outputs_text(m)
       local made
       if unknown then
@@ -531,8 +594,8 @@ return function(api)
           prod > 0 and string.format(' and %d productivity completion%s (%s): %d completions, %g/min against %s/min at full speed', bonus, bonus == 1 and '' or 's',
             prod_text(m), done, dpm, full_done and string.format('%g', full_done) or '?') or '')
       end
-      row.line = string.format('%s %s %s: %s; %s%s%s%s', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), made,
-        #parts > 0 and table.concat(parts, ', ') or 'no sample yet', #short > 0 and '; ' .. table.concat(short, '; ') or '', otext and '; ' .. otext or '',
+      row.line = string.format('%s %s %s: %s; %s%s%s%s%s', m.name, at(m.position), qlabel(m.recipe, m.recipe_quality), made,
+        #parts > 0 and table.concat(parts, ', ') or 'no sample yet', tm and '; ' .. tm.text or '', #short > 0 and '; ' .. table.concat(short, '; ') or '', otext and '; ' .. otext or '',
         m.gone and '; removed during the watch' or m.recipe_changed and '; recipe changed: ' .. m.recipe_changed or '')
       rows[#rows+1] = row
       lines[#lines+1] = row.line
@@ -670,6 +733,6 @@ return function(api)
     area='or {left_top={x,y}, right_bottom={x,y}} (up to 200 tiles a side): the crafting machines of ours in it, up to 64', recipe='optional with area: only those on this recipe', quality='optional with recipe: its quality',
     items='optional 1..8 items, a name (read at every quality) or {name, quality}: their production statistics on the surface by quality over the watch (alone, with no machines, a statistics-only watch)',
     seconds='optional 10..3600 (default 600): how long to watch', surface='optional planet name (by remote view)', platform='optional platform name',
-    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; a lab\'s row (kind lab): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); lines; left_out (what the watch does not see). Read only'}}
+    returns='a watch, one an agent (a new one replaces it): the start returns baseline (each machine\'s completions so far) and line; uptime {} reads it so far (watching) or done: per machine crafts (base crafts finished in the window), crafts_per_min against full_speed_per_min (its recipe at its speed), completions (the game\'s count: crafts and productivity completions), bonus_completions, completions_per_min against full_speed_completions_per_min (with its productivity), productivity (the game\'s sum: the machine\'s with modules and beacons, and the recipe\'s research, capped at the recipe\'s maximum), productivity_research, crafts_unknown (base crafts and bonus_completions left out when productivity changed during the watch or could not be read, or the recipe changed), working_share (% of samples working), samples by status (the GUI\'s status line, once a second), recipe_quality (the quality its recipe runs at), short (each ingredient under one craft in its input at the samples that read short of ingredients, items counted at the recipe\'s quality and named with it: how many samples, the least held), recipe_changed, gone; status_runs (each status other than working the machine read: {samples, first_tick, last_tick, first_s, last_s (seconds into the watch), longest_run (samples in a row)}; its line\'s when: part) and changes (its last 8 status changes, \'tick: from -> to\'), only for a machine that read such a status; short gives the ticks of its first and last short sample; a share that rounds to 0% gives its count (d20 batch79 AO1); a lab\'s row (kind lab, with status_runs and changes too): samples by status (working, missing science packs, no power, ...), working_share, packs [{name, used (packs: their durability drained between samples; 2.0.77 keeps no count per lab), held_least, held_most, empty_samples, unknown_intervals, of_intervals, unknown_why (a lab that could use a whole pack between samples, a spoilable pack spoiled, packs above normal quality)}], spoil_results (what spoiled packs left in its trash); with a lab, research {technology, units (the force\'s progress gained, every lab), finished, changed, line} and packs_used_up {by_pack, line} (the surface\'s production statistics: whole packs, every lab there); machine_rows (above 16 machines the rows above are left out and lines has each machine; group rows up to 8 groups, flow rows up to 10), groups (with 2 or more machines: per recipe and quality, machines, completions and completions_per_min against full_speed_completions_per_min, crafts and crafts_per_min against full_speed_per_min when every machine\'s are known, status_shares of all their samples, line) and group_lines; outputs_by_quality per machine ({product: {quality: count}} its output slot gained over the intervals whose gain matched its completions; outputs_unknown_intervals of outputs_intervals with completions: products taken out or spoiled between samples, or none when a product comes by chance or in a range); items_recent at the start (the statistics\' last 10 minutes) and flows {surface, rows [{name, quality, produced, consumed, net, produced_per_min, consumed_per_min}], line} (the production statistics over the watch: every machine and hand on the surface); lines; left_out (what the watch does not see). Read only'}}
   return M
 end

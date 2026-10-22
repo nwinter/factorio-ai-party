@@ -262,7 +262,7 @@ do
   eq(out.done,true); eq(out.samples,11)
   local row=out.machines[1]
   eq(row.crafts,7); eq(row.samples.working,8); eq(row.samples.item_ingredient_shortage,3)
-  eq(row.short[1],'advanced-circuit short in 3 samples (least 1 of 3 a craft)')
+  eq(row.short[1],'advanced-circuit short in 3 samples (least 1 of 3 a craft; ticks 1067-1201)')
   has(row.line,'7 crafts in 10s (42/min, 350% of its 12/min at full speed); working 73%, item ingredient shortage 27%')
   has(out.left_out,'a stop shorter than a second may not be seen')
   fails(function() U.handler({index=1},{positions={{x=1,y=1}},seconds=5}) end,'seconds: 10..3600')
