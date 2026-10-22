@@ -54,6 +54,10 @@ test('circuit_set: an entity a condition keeps off ends on the warning line (fri
     condition_ignored:'fast-inserter (-65.5,95.5): its circuit condition electromagnetic-science-pack < 0 is ignored: no red or green wire connects it, and the game counts a circuit condition only with a circuit connection'}};
   assert.match(formatCompact(ignored), /\nwarning: condition ignored: fast-inserter \(-65\.5,95\.5\): its circuit condition .* is ignored: no red or green wire connects it/);
 });
+test('place_ghosts: a circuit setting with no red or green wire planned ends on the warning line (d20 batch65 AA8, Astra)', () => {
+  const reply = {ok:true,id:'x',result:{placed:1,unwired:'fast-inserter (3.5,4.5): no red or green wire connects it (none in this call, none on what stands there): once built, its enable condition signal-check > 0: the game ignores this condition and the fast-inserter runs'}};
+  assert.equal(finalLine(reply), 'warning: unwired: fast-inserter (3.5,4.5): no red or green wire connects it (none in this call, none on what stands there): once built, its enable condition signal-check > 0: the game ignores this condition and the fast-inserter runs');
+});
 test('a count of 0 is no warning line: a tile deconstruct that refused nothing (platformtiles2)', () => {
   const none = {ok:true,id:'x',result:{mode:'mark',tiles:true,tiles_marked:1,tiles_refused:0}};
   assert.doesNotMatch(formatCompact(none), /warning:/);
