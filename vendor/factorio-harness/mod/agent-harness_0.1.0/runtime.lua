@@ -1253,6 +1253,45 @@ end
 -- it aims at, or the fixed spot of a shoot at a position), fired_tick (the last tick it fired at something: an enemy in
 -- range, or the fixed spot), kills_10s (kills by the character or its vehicle in the last 10 s) and hurt (hurt_row).
 -- A shoot auto with nothing in range has no target and no recent fired_tick.
+-- (d22 batch93 BC2, viewer Foobator 13:33: "could the camera on spidertrons zoom out a bit more when rockets are fired?
+-- half the action is not on cam") While the character drives a spidertron: its guns' reach (the prototype's longest
+-- gun range; 2.0.77: four rocket launchers, 36 tiles), the rockets loaded, and the enemies within that reach, which it
+-- fires at on its own: how many (up to 64), the farthest and nearest distance, their box. One bounded find, only seated
+-- in a spidertron; nil otherwise. The stream's director frames them (onecam.py).
+local spider_range={}
+function M.vehicle_fire(p)
+  local v=p.driving and p.vehicle
+  if not (v and v.valid and v.type=='spider-vehicle') then return nil end
+  local range=spider_range[v.name]
+  if not range then
+    range=0
+    for _,g in pairs(v.prototype.guns or {}) do
+      local ok,r=pcall(function() return g.attack_parameters.range end)
+      if ok and type(r)=='number' and r>range then range=r end
+    end
+    spider_range[v.name]=range
+  end
+  local inv=v.get_inventory(defines.inventory.spider_ammo)
+  local out={vehicle=v.name,unit_number=v.unit_number,range=range,ammo=inv and inv.get_item_count() or 0,targets=0}
+  if range<=0 then return out end
+  local pos=v.position
+  local found=v.surface.find_entities_filtered{force='enemy',position=pos,radius=range,type={'unit','unit-spawner','turret','segmented-unit','spider-unit'},limit=64}
+  local far,near,l,t,r,b=0,nil
+  for _,e in ipairs(found) do
+    local q=e.position
+    local d=((q.x-pos.x)^2+(q.y-pos.y)^2)^0.5
+    if d>far then far=d end
+    if not near or d<near then near=d end
+    l=l and math.min(l,q.x) or q.x; t=t and math.min(t,q.y) or q.y; r=r and math.max(r,q.x) or q.x; b=b and math.max(b,q.y) or q.y
+  end
+  out.targets=#found
+  if #found>0 then
+    out.farthest=math.floor(far*10+0.5)/10; out.nearest=math.floor(near*10+0.5)/10
+    out.box={left_top={x=math.floor(l),y=math.floor(t)},right_bottom={x=math.ceil(r),y=math.ceil(b)}}
+    out.more=#found>=64 or nil
+  end
+  return out
+end
 function M.combat_row(index,p)
   local combat=state().combat and state().combat[index]
   if not combat then return false end
@@ -2258,7 +2297,7 @@ function handlers.describe(_,a)
     local d=description.actions[name]
     if d then d.clear_obstacles='optional true: the trees and rocks in the entries\' footprints are marked for deconstruction, those in reach mined by hand (a timed construct over them), the rest left to the construction robots; once all are gone the call runs again (watched 10 min; last.cleared); none in the way: the call runs at once (cleared says so); returns cleared, mining, robots, then_runs. The dry run lists them in trees_rocks' end
   end
-  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
+  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, vehicle_fire (seated in a spidertron: its guns\' range, rockets loaded, and the enemies within range it fires at: targets, farthest, nearest, box), alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older, factory_age_s its age; factory_refresh_failed and chart.refresh_failed when the last background refresh failed: when, the error, the age kept)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   -- (d20 batch70 AF3, viewer Aurora: "Sonnet's plan still says free while sampling Cinder") the site's agent cards
   -- (d20 batch70 AF4, Astra #1718) inspect of a logistic or construction robot
@@ -2711,6 +2750,7 @@ function handlers.status(p,a)
   if a.brief==true then
     return {brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,flight=alive and M.flight_row(p) or nil,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
+      vehicle_fire=alive and (function() local ok,v=pcall(M.vehicle_fire,p); return ok and v or nil end)() or nil,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
       alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),

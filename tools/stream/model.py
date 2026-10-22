@@ -668,6 +668,7 @@ class Agent:
         self.combat = False  # in a fight now: hit lately or fighting (combat_state)
         self.resting = None  # a rest between turns (pacing.py: {since, until, reason}), or None
         self.combat_state = None  # "hurt" | "fighting" | "guard" | None
+        self.vehicle_fire = None  # (d22 batch93 BC2) driving a spidertron: {range, ammo, targets, farthest, box, ...}
         self.combat_info = {}
         self.plan = None  # the action running now with its bounds (live.py `plan`; onecam.py looks ahead with it)
         self.auto = None  # a standing order running for it (live.py `auto`, orders.lua): {name, reason, step, steps}
@@ -1169,6 +1170,7 @@ class Model:
         # neither, and its action is "guard", not "shoot" (the director's fight kinds and the hosts' "fighting" are for
         # fights; viewer Joonazan, 13:36)
         state, info = combat_state(a.get("combat"), a.get("hurt"), self.tick)
+        ag.vehicle_fire = a.get("vehicle_fire") if isinstance(a.get("vehicle_fire"), dict) else None
         if state == "guard" and str(active).split(":")[0] == "shoot":
             active = "guard"
         if active and active != ag.active:
@@ -2549,6 +2551,7 @@ class Model:
                 "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
                 # hurt | fighting | guard | None, and who hit it or what it shoots at (combat_state)
                 "combat_state": ag.combat_state, "combat_info": ag.combat_info or None,
+                "vehicle_fire": ag.vehicle_fire,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,

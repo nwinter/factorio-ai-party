@@ -11504,3 +11504,11 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   - power and flamer oil keep their own reads (`power`, `flamers`); their "..." is now `+N more`.
   - Checked on a copy of world n's 12:04 autosave: the same 11 and 8; `status {list: "belts_stuck"}` gave all 11
     positions.
+### d22 batch93 BC2: status brief's vehicle_fire
+
+- Viewer Foobator (13:33): the stream's camera on a spidertron firing rockets left half the action out. `status {brief:
+  true}` (what the stream reads per agent) adds `vehicle_fire` while the character drives a spidertron: `vehicle`,
+  `unit_number`, `range` (the prototype's longest gun range; 2.0.77: 36 tiles), `ammo` (rockets in its ammo slots),
+  `targets` (enemies within range: units, spawners, worms, segmented and spider units; up to 64, `more` at 64),
+  `farthest`, `nearest`, `box`. One bounded find, only while seated in a spidertron; on a copy of world n, 0.025 ms.
+  The director frames the spidertron's fight with it (docs/STREAM-NOTES.md, "A spidertron's fight on camera").
