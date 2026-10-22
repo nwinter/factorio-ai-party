@@ -58,10 +58,11 @@ def main():
           "core": {"cell": 1, "x0": 0, "y0": 0, "w": 12, "h": 2, "rows": ["AAAAAAEEEE", "..LLL"]}}
     gl = {"tick": 90, "cell": 8, "x0": 0, "y0": 0, "w": 2, "h": 1, "rows": ["SS"], "buildings": 2}
     push_live._planet_turn["i"] = 0
-    listing, pm = push_live.public_planets({"aquilo": aq, "gleba": gl})
+    listing, pm, others = push_live.public_planets({"aquilo": aq, "gleba": gl})
     check("listing", [x["surface"] for x in listing] == ["aquilo", "gleba"], listing)
     check("aquilo's core packed", pm["surface"] == "aquilo" and pm["core"]["rows"] == ["6A4E", "..3L"] and pm["core"]["rle"] == 1 and pm["rows"] == ["AAE"], pm)
-    _, pm2 = push_live.public_planets({"aquilo": aq, "gleba": gl})
+    check("(AK1) the others beside it", list(others) == ["gleba"] and others["gleba"]["rows"] == ["SS"], others)
+    _, pm2, _ = push_live.public_planets({"aquilo": aq, "gleba": gl})
     check("gleba without a core sends none", pm2["surface"] == "gleba" and "core" not in pm2, pm2)
     # a core over the budget: twice the cell until it fits
     worst = {"cell": 1, "x0": 5, "y0": 3, "w": 160, "h": 160, "rows": ["AB" * 80] * 160}

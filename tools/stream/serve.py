@@ -243,6 +243,24 @@ class AudioHub:
         return out
 
 
+def map_memory_paths(run_dir, hops=5):
+    """(d22 batch75 AK1) run_dir/map-memory.json, and the same file in the runs it resumed from (resumed-from, followed
+    back up to hops runs), nearest first."""
+    path = os.path.join(run_dir, "map-memory.json")
+    earlier, d = [], run_dir
+    for _ in range(hops):
+        try:
+            with open(os.path.join(d, "resumed-from")) as f:
+                up = f.readline().strip()
+        except OSError:
+            break
+        if not up or "/" in up:
+            break
+        d = os.path.join(os.path.dirname(d), up)
+        earlier.append(os.path.join(d, "map-memory.json"))
+    return path, earlier
+
+
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
                  platform=None, look=None, show=None, host=None):
     audio = audio or AudioHub()
@@ -571,6 +589,8 @@ def main():
             tokens_feed = tokens.TokenFeed(os.path.dirname(os.path.abspath(a.run))).start()
     if a.run and not a.mock:  # where each platform has been, kept across restarts (no false "first" arrivals)
         model.set_space_memory(os.path.join(os.path.dirname(os.path.abspath(a.run)), "space-memory.json"))
+        # (d22 batch75 AK1) each planet's last map and networks map, from this run or the runs it resumed from
+        model.set_map_memory(*map_memory_paths(os.path.dirname(os.path.abspath(a.run))))
         # each platform's creation and departures along the run chain: a first departure is a maiden flight
         import chronicle_log
         model.set_platform_history(chronicle_log.path_for(os.path.dirname(os.path.abspath(a.run))))
