@@ -723,14 +723,23 @@ class Model:
         self.links_path, self.links_mtime, self.links = path, None, {}
 
     def reply_links(self):
+        """(d22 batch89 AY4) this run's file and the two runs' before it (viewer_replies.links_files), a newer record over an older one."""
         if not self.links_path:
             return {}
-        try:
-            m = os.stat(self.links_path).st_mtime_ns
-        except OSError:
+        files = viewer_replies.links_files(self.links_path)
+        m = []
+        for p in files:
+            try:
+                m.append(os.stat(p).st_mtime_ns)
+            except OSError:
+                m.append(None)
+        if not any(m):
             return {}
         if m != self.links_mtime:
-            self.links_mtime, self.links = m, viewer_replies.read_links(self.links_path)
+            links = {}
+            for p in files:
+                links.update(viewer_replies.read_links(p))
+            self.links_mtime, self.links = m, links
         return self.links
 
     def __init__(self, run):
