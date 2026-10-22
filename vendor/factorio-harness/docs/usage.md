@@ -9776,6 +9776,28 @@ fh watch    # deploy on every change
   work}` took 12 ms over RCON for Sol on the private copy (3.6 KB). push_live keeps the cards' work lines within
   12 KB (the longest card's last line first; `work_cut` counts them). Tests: tools/stream/test_workcard.py,
   tests/d21_batch70.lua.
+- Robots' cargo and orders (d20 batch70 AF4, Astra #1718: on Aquilo 4-5 robots read no_storage near (-20,-14) while
+  31 storage chests were full; scan's inventory and inspect over an area said every robot held nothing, robots at one
+  spot with no unit_number). Area rows and scan's inventory read only the inventories in runtime.lua's table, which
+  has no robot cargo. 2.0.77 gives a robot its one cargo slot (defines.inventory.robot_cargo), robot_order_queue (each
+  order: type, target entity, target_item {name, quality}, target_count) and its logistic network; the no_storage alert
+  targets the robot itself. Nothing in the game records where a robot picked up what it carries. robotread.lua reads
+  them for:
+  - inspect of a robot: `robot {unit_number, name, position, cargo {name, quality, count}, orders (up to 3: type,
+    item, quality, count, target, target_position, target_unit_number, line), orders_queued, network, line}` and holds;
+  - inspect over an area: a robot's row has unit_number, `holds` (`cryogenic-science-pack*3`) and `order` (`no order`,
+    `deliver solid-fuel 3 to requester-chest (-76.5,-3.5) #3462854`); compact lines say `carries ...; order`;
+  - scan `fields: inventory`: a robot's cargo; any area or scan rows at one position carry their unit_number;
+  - game_alerts `no_storage` groups: `robots`, up to 4 a group as the scan read them, and the line adds them
+    (`; robots: logistic-robot #2788748 at (-72.5,-2): carries cryogenic-science-pack 3; no order | ... | +2 more`).
+  Read on the private copy (no connected player there, so its alert scan has no reader; the console read the alerts'
+  robots): Aquilo network #348 has no storage chest; 22 of its 23 robots held cryogenic science packs, 18 with no
+  order, 10 at one roboport's spot; of the 31 no_storage alerts each player holds, 13 target robots (each with cargo
+  and no order) and 18 robots gone. World n, Aquilo (one command, 0.16 ms): 3 no_storage alerts, network #348, no
+  order on any: one robot with 4 carbon-fiber, one with 2 low-density-structure, one with nothing. inspect over the
+  10 robots' area took 7.2 ms on the copy. What a player sees hovering a robot was not checked (a headless server has
+  no GUI); a robot's order target is not shown in the game's GUI (a player sees where it flies). Tests:
+  tests/d21_batch70.lua.
 - N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
   7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
   read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;

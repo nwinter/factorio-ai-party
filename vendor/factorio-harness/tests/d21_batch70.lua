@@ -123,3 +123,62 @@ do
   game=nil
 end
 print('d21_batch70 AF3 card watches and queue runs: ok')
+
+-- AF4 (#1718, Astra: on Aquilo 4-5 robots read no_storage while 31 storage chests were full; scan's inventory and
+-- inspect over an area said every robot held nothing, robots at one spot with no unit_number): robotread, and the
+-- no_storage alert groups with each robot's unit number, cargo and orders.
+do
+  defines={inventory={robot_cargo=1,turret_ammo=7},robot_order_type={construct=0,pickup=1,deliver=2,repair=3,deconstruct=4},
+    alert_type={entity_destroyed=1,no_storage=9,custom=5},entity_status={working=0}}
+  local Q={rare={name='rare'},normal={name='normal'}}
+  local function quality(n) return setmetatable({}, {__index=Q[n]}) end  -- a prototype: not a string, not a plain table
+  local chest={valid=true,name='requester-chest',position={x=-76.5,y=-3.5},unit_number=3462854}
+  local function robot(u,x,y,stack,orders,kind)
+    local slot=stack and {valid_for_read=true,name=stack[1],count=stack[2],quality=quality(stack[3] or 'normal')} or {valid_for_read=false}
+    return {valid=true,name=kind or 'logistic-robot',type=kind or 'logistic-robot',unit_number=u,position={x=x,y=y},
+      get_inventory=function(i) assert(i==1); return {slot} end,robot_order_queue=orders or {},logistic_network={network_id=348}}
+  end
+  local R=dofile('mod/agent-harness_0.1.0/robotread.lua'){}
+  local stuck=robot(2788748,-72.5,-2,{'cryogenic-science-pack',3})
+  local rare=robot(19244048,2.5,20,{'carbon-fiber',4,'rare'})
+  local busy=robot(4977221,-26.5,-1.7,{'solid-fuel',3},{{type=2,target=chest,target_item={name={name='solid-fuel'},quality=quality('normal')},target_count=3}})
+  local gone={valid=false}
+  local two=robot(4977329,-31.2,-2.7,nil,{{type=1,target=gone,target_item={name='solid-fuel',quality='normal'},target_count=3},{type=2,target=chest},{type=2},{type=2}})
+  local r=R.row(stuck)
+  eq(r.unit_number,2788748); eq(r.cargo.name,'cryogenic-science-pack'); eq(r.cargo.count,3); eq(r.cargo.quality,'normal'); eq(r.orders,nil); eq(r.network,348)
+  eq(r.line,'logistic-robot #2788748 at (-72.5,-2): carries cryogenic-science-pack 3; no order')
+  eq(R.holds(rare),'carbon-fiber@rare*4'); eq(R.row(rare).line,'logistic-robot #19244048 at (2.5,20): carries carbon-fiber@rare 4; no order')
+  r=R.row(busy)
+  eq(r.orders[1].type,'deliver'); eq(r.orders[1].item,'solid-fuel'); eq(r.orders[1].count,3); eq(r.orders[1].target_unit_number,3462854)
+  eq(r.line,'logistic-robot #4977221 at (-26.5,-1.7): carries solid-fuel 3; deliver solid-fuel 3 to requester-chest (-76.5,-3.5) #3462854')
+  r=R.row(two)
+  eq(#r.orders,3); eq(r.orders_queued,4)
+  eq(r.line,'logistic-robot #4977329 at (-31.2,-2.7): carries nothing; pickup solid-fuel 3 (its target gone) (4 orders queued)')
+  eq(R.holds(two),'empty')
+  -- the alert groups: each no_storage robot's row (up to 4), the count, and the line
+  game={tick=1000}
+  local force={name='player',players={}}
+  local aquilo={name='aquilo',index=5,find_entities_filtered=function() return {} end}
+  game.surfaces={[5]=aquilo}
+  game.get_surface=function(n) if n=='aquilo' then return aquilo end end
+  local robots_here={stuck,robot(19244049,-68,-4,{'carbon-fiber',4,'rare'}),robot(2788750,-72.5,-2,{'cryogenic-science-pack',3}),robot(2788751,-72.5,-2,{'cryogenic-science-pack',3}),
+    robot(2788752,-72.5,-2,{'tungsten-plate',3}),robot(5,-70,-3,{'carbon',1},nil,'construction-robot')}
+  local list={}
+  for _,e in ipairs(robots_here) do list[#list+1]={target=e} end
+  list[#list+1]={target={valid=false},position={x=-71,y=-2}}
+  local reader={get_alerts=function() return {[5]={[9]=list}} end}
+  local st={board={items={}}}
+  local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=1,name='astra'}} end,who=function(p) return p.name end,
+    place=function() return {key='aquilo',position={x=0,y=0}} end,alert_reader=function() return reader end}
+  local astra={name='astra',force=force,surface=aquilo}
+  local g=A.read(astra,{kind='no_storage'}).groups
+  eq(#g,1,'one area'); g=g[1]
+  eq(g.count,7); eq(#g.robots,4,'up to 4 robots')
+  local seen={}
+  for _,x in ipairs(g.robots) do seen[x.unit_number]=x end
+  assert(seen[2788748] and seen[2788748].cargo.name=='cryogenic-science-pack', 'the robot and its cargo')
+  assert(g.line:find('; robots: logistic-robot #',1,true) and g.line:find(' | +2 more',1,true), g.line)
+  game=nil; defines=nil
+end
+print('d21_batch70 AF4 robot cargo, orders and no_storage robots: ok')
