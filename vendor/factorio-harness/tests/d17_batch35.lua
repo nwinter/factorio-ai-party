@@ -273,8 +273,8 @@ do
   fails(function() check('requests',{platform='Wren',set={{item='iron-plate',min=200,import_from='vulcanus'}}}) end,
     'requests set[1]: import_from is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for import_from: from)')
   fails(function() check('circuit_set',{position={x=1,y=2},signals={['iron-plate']=5}}) end,
-    'circuit_set signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is not read as one')
-  fails(function() check('circuit_set',{position={x=1,y=2},signals={'iron-plate'}}) end,'circuit_set signals[1] must be a signal {signal, count, name?}, not a string')
+    'circuit_set signals must be an array of {signal, count, quality?, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is not read as one')
+  fails(function() check('circuit_set',{position={x=1,y=2},signals={'iron-plate'}}) end,'circuit_set signals[1] must be a signal {signal, count, quality?, name?}, not a string')
   fails(function() check('train',{position={x=1,y=2},schedule={station='A'}}) end,'train schedule must be an array of {station, wait?}')
   fails(function() check('train',{position={x=1,y=2},schedule={{station='A',wait={{type='time',seconds=30}}}}}) end,
     'train schedule[1].wait[1]: seconds is not a train wait field: type, ticks?, compare?, condition? (for seconds: ticks (60 a second))')

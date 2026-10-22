@@ -264,6 +264,21 @@ fh call status
   `circuit_set {position, ...}` changes what the entity's circuit GUI holds; `circuit` is its old name (a direct call
   runs as `circuit_set` and says so in `corrected`). `platform: "Sunward"` acts on that platform (platform coordinates,
   hub at 0,0); `surface: "vulcanus"` (a planet, a platform's name or its surface name) on another surface by remote view.
+- Quality on circuit signals (d22 batch87 AW1, Astra #1875, Sol #1874: a Nauvis landing pad's circuit set_requests
+  could not be given uncommon agricultural science, as `signals: [{"signal": ..., "quality": "uncommon", "count": 20}]`
+  was refused). In 2.0.77 a signal carries a quality (SignalID {type, name, quality}). Every signal `circuit_set` takes
+  (constant combinator `signals`, `enable` and `logistic` conditions, decider conditions and outputs, arithmetic first,
+  second and output, selector signals, signal `settings`) is written `"name"`, `"name@quality"`
+  (`"agricultural-science-pack@uncommon"`), `"type:name@quality"` or `{type?, name, quality?}`; a constant combinator
+  entry is `{signal, count, quality?}` and a decider output `{signal, quality?, copy_input | constant, networks}`, the
+  record's `quality` going on its signal (one the signal also names must be the same). A quality is one our force has
+  unlocked (`LuaForce.is_quality_unlocked`, as the GUI's quality picker offers only those; a refusal lists them); left
+  out it is normal, as before. The selector's `quality_filter.quality` and `quality_source_static` are checked the same
+  way. Reads keep the quality as `name@quality` (normal: the bare name): `inspect`'s circuit block (constant signals,
+  networks, combinator conditions and outputs, `output`), the belt reader's held and wired counts, `circuit_audit`'s feeder
+  lines, `gates`, and the train and platform wait conditions' text. Checked on a copy of world n: a landing pad
+  in circuit set_requests mode with `agricultural-science-pack@uncommon` 20 on its wire requests 20 uncommon
+  agricultural science packs.
 - A combinator's description (d20 batch56 R4, Astra #1399 for viewer Foobator): in 2.0.77 the description a player
   writes in the GUI is `LuaEntity.combinator_description`, read and written on arithmetic, decider, selector and
   constant combinators and their ghosts only (any other entity raises "Entity is not arithmetic-combinator or ..."). The
@@ -8845,7 +8860,7 @@ fh watch    # deploy on every change
   field the record does not take is refused, naming the fields it takes and what was likely meant: `requests set[1]:
   count is not a request field: item, min?, max?, quality?, from?, min_payload?, minimum_delivery_count? (for count:
   min is how much it asks for, max caps it)`. An object where an array goes is refused with the shape: `circuit_set
-  signals must be an array of {signal, count, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
+  signals must be an array of {signal, count, quality?, name?}: [{"signal":"iron-plate","count":5}]; an object {iron-plate} is
   not read as one` (the map form `{name: count}` stays where the docs give it: requests set, load_silo, silo_stage,
   deliver). The fields are those each action's parser reads (build and ghost entries also take configure, requests,
   circuit, wires, settings). In shifts 32-35 the journals hold 26 requests with `import_from`, 10 with `count`, 7

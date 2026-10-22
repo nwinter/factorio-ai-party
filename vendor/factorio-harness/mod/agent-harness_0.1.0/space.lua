@@ -4,6 +4,8 @@
 -- are always shown in remote view, so none of this needs the character there.
 return function(api)
   local M={}
+  -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
+  local function sigtext(s) local q=s.quality; if q and type(q)~='string' then q=q.name end; return q and q~='normal' and s.name..'@'..q or s.name end
   M.waitgroups=require('waitgroups')()  -- (d18 batch36 A3) the waits' and/or chain: groups, the mixed refusal, the readback
   M.reqgroups=require('reqgroups')()  -- (d20 batch53 L3, L4) sections added and removed, named logistic groups
   local function invert(t) local out={} for k,v in pairs(t or {}) do out[v]=k end return out end
@@ -809,7 +811,7 @@ return function(api)
         local text
         if f=='signal-dot' and c.constant==-2147483648 then text='the harness sends it on'
         elseif w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit' then
-          text=w.type..(f and ' '..f..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '?')..' '..tostring(c.constant or (c.second_signal and c.second_signal.name) or 0) or ' with no condition')
+          text=w.type..(f and ' '..sigtext(c.first_signal)..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '?')..' '..tostring(c.constant or (c.second_signal and sigtext(c.second_signal)) or 0) or ' with no condition')
         else text=w.type..(w.ticks and ' '..math.floor(w.ticks/60)..'s' or '') end
         return text
       end
@@ -1165,8 +1167,8 @@ return function(api)
   local function secs(t) t=math.max(0,math.floor(t/60+0.5)); return t>=120 and string.format('%dm%02ds',math.floor(t/60),t%60) or t..'s' end
   local function cond_text(c)
     if type(c)~='table' then return '' end
-    local first=c.first_signal and c.first_signal.name or '?'
-    local right=c.second_signal and c.second_signal.name or tostring(c.constant or 0)
+    local first=c.first_signal and c.first_signal.name and sigtext(c.first_signal) or '?'
+    local right=c.second_signal and c.second_signal.name and sigtext(c.second_signal) or tostring(c.constant or 0)
     local cmp=({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '<'
     return first..' '..cmp..' '..right
   end
@@ -1236,7 +1238,7 @@ return function(api)
       if a==nil then text=text..': the hub has no circuit wire (the condition reads 0)'
       else
         local met=compare(a,c.comparator or '<',b)
-        text=text..string.format(': the hub\'s wires read %s %d%s (%s)',c.first_signal.name,a,c.second_signal and string.format(', %s %d',c.second_signal.name,b) or '',met and 'met' or 'not met')
+        text=text..string.format(': the hub\'s wires read %s %d%s (%s)',sigtext(c.first_signal),a,c.second_signal and string.format(', %s %d',sigtext(c.second_signal),b) or '',met and 'met' or 'not met')
       end
     elseif t=='all_requests_satisfied' or t=='any_request_satisfied' or t=='any_request_not_satisfied' or t=='request_satisfied' or t=='request_not_satisfied' then
       local rows,total=unmet(pl)
@@ -1685,7 +1687,7 @@ return function(api)
         if w.type=='fluid_count' then assert(st=='fluid',what..': fluid_count takes a fluid signal ("thruster-fuel >= 10000")') end
         assert(w.type=='item_count' or w.type=='fluid_count' or w.type=='circuit',what..': a condition goes with type item_count, fluid_count or circuit')
       end
-      local text=w.type..(cond and ' '..cond.first_signal.name..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[cond.comparator] or cond.comparator)..' '..tostring(cond.constant or (cond.second_signal and cond.second_signal.name)) or '')
+      local text=w.type..(cond and ' '..sigtext(cond.first_signal)..' '..(({['≥']='>=',['≤']='<=',['≠']='!='})[cond.comparator] or cond.comparator)..' '..tostring(cond.constant or (cond.second_signal and sigtext(cond.second_signal))) or '')
         ..(w.ticks and ' '..math.floor(w.ticks/60)..'s' or '')
       if w.harness then
         assert(cond.constant~=nil,'stop '..i..' wait '..j..': a harness fluid_count compares with a number ("thruster-fuel >= 24000")')
@@ -1926,7 +1928,7 @@ return function(api)
           local left=(w.ticks or 0)-(game.tick-arrived.tick)
           return left<=0,string.format('time %s: %s',secs(w.ticks or 0),left<=0 and 'passed' or secs(left)..' left')
         elseif w.type=='item_count' and c and c.first_signal and c.constant then
-          local held=try(function() return pl.hub.get_inventory(defines.inventory.hub_main).get_item_count(c.first_signal.name) end) or 0
+          local held=try(function() return pl.hub.get_inventory(defines.inventory.hub_main).get_item_count({name=c.first_signal.name,quality=c.first_signal.quality or 'normal'}) end) or 0
           local ok=compare(held,c.comparator or '<',c.constant)
           return ok,string.format('item_count %s: the hub holds %d',cond_text(c),held)
         elseif w.type=='circuit' and c and c.first_signal then

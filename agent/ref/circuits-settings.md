@@ -26,6 +26,10 @@
     networks that read their contents with each one's mode (this one marked; `belt_readers`) and the other entities
     on them.
   - An unknown argument's refusal names the closest valid name and what that entity takes (on `configure` too).
+  - Quality: every signal is `"name"`, `"name@quality"` (`"iron-plate@uncommon"`), `"type:name@quality"` or `{type?,
+    name, quality?}`; a `signals` entry `{signal, count, quality?}` and a decider output `{signal, quality?, ...}` take
+    `quality` too. Left out it is normal; a quality our force has not unlocked is refused. Reads show `name@quality`.
+    A landing pad with circuit `set_requests` requests each item at its signal's quality.
   Example: `./fh call circuit_set --args '{"platform":"Starling","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
 - `wire {from, to, color?, from_side?, to_side?, disconnect?, platform? | surface?}`: connects and removes red, green
   and copper wires (no `color`: copper), in reach or by remote view as `circuit_set`; `inspect` reads each wire's far

@@ -15814,7 +15814,7 @@ function M.settings_dry(p,entry,kind,args)
     local secs={sections_count=1,get_section=function(i) return i==1 and {index=1,is_manual=true} or nil end}
     space.check_requests(p,args,'chest',{valid=true,name=name,type=t},secs)
   elseif kind=='circuit' then
-    M.circuits.dry_set(name,args)
+    M.circuits.dry_set(name,args,p.force)
   elseif kind=='configure' then
     local rname=args.recipe or entry.recipe
     if args.recipe~=nil then M.configure_check(p,args,ghost,false) end

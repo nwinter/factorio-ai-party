@@ -280,12 +280,14 @@ return function(api)
   -- a memo for the feeders of one read (cleared after)
   function M.feeders_begin(budget) memo = {contents={}, cover={}, members={}, walked=0, budget=budget} end
   function M.feeders_end() memo = {} end
+  -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
+  local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
   local function net_of(c) return try(function() return c.owner.get_circuit_network(c.wire_connector_id) end) end
   local function signals_text(net, limit)
     local sigs = try(function() return net.signals end) or {}
     table.sort(sigs, function(x, y) return math.abs(x.count) > math.abs(y.count) end)
     local parts = {}
-    for i, sg in ipairs(sigs) do if i <= (limit or 6) and sg.signal then parts[#parts+1] = sg.signal.name .. ' ' .. sg.count end end
+    for i, sg in ipairs(sigs) do if i <= (limit or 6) and sg.signal then parts[#parts+1] = sigtext(sg.signal) .. ' ' .. sg.count end end
     return #parts > 0 and table.concat(parts, ', ') .. (#sigs > #parts and ', ...' or '') or 'no signal'
   end
   function M.feeder(ins)
