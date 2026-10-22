@@ -518,7 +518,8 @@
           pending = null;
           if (res.d && res.d.message) chatMsgs = mergeChat(chatMsgs, [res.d.message]);
           if (textIn.value.trim() === body.text) textIn.value = '';
-          chatNote.textContent = '';
+          // (d22 batch75 AK12) a blank name: the Worker's guest name for this poster ("Guest abcd"), said once
+          chatNote.textContent = res.d && res.d.guest_name ? 'Sent as ' + res.d.guest_name + ' (type a name above to use your own).' : '';
           renderChat();
           pollChat();
         })

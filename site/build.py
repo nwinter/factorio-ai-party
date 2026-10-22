@@ -1755,7 +1755,7 @@ def live_app(heading, sample_href):
           <span id="vchat-host" class="vchat-host" hidden>Signed in as host <button class="fx-btn fx-btn--small" type="button" id="vchat-host-forget">Forget</button></span></div>
         <ol id="vchat" class="vchat" aria-live="polite"></ol>
         <form id="vchat-form" class="vchat-form" autocomplete="off">
-          <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
+          <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name (blank: a guest name)" title="Blank: you post as Guest and four letters or digits, the same each time">
           <input class="fx-textfield" name="text" maxlength="200" placeholder="Say something" aria-label="Message" required>
           <button class="fx-btn" type="submit">Send</button>
           <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
@@ -1812,7 +1812,7 @@ replaces the earlier one), with an optional comment. Results show after you vote
 <p class="muted small">A question and 2 to 6 answers. Ideas go to the operator only, who decides whether to run them.
 No links; chat's rules apply.</p>
 <form id="poll-idea" class="poll-idea" autocomplete="off">
-  <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
+  <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name (blank: a guest name)" title="Blank: you post as Guest and four letters or digits, the same each time">
   <input class="fx-textfield" name="question" maxlength="200" placeholder="Question" aria-label="Question" required>
   <div class="poll-idea-opts">{opts}</div>
   <input class="fx-textfield" name="hours" type="number" min="1" max="72" step="1" placeholder="Hours open (optional)" aria-label="Hours open">
