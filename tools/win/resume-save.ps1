@@ -9,7 +9,9 @@
 #   - else the newest save written at or after -StopUtc, whatever its name;
 #   - else (no stop record, an older stop-team, or a crash restart mid-run) the newest save, whatever its name.
 #   Refused (refuse=REASON, exit 1) when no save was written after the stop, or when the one taken is older than the
-#   newest autosave or the stop by more than -MaxGapMinutes. Times are UTC on this box's clock. A copy keeps its
+#   newest autosave or the stop by more than -MaxGapMinutes (default 18: world n autosaves every 15 minutes since
+#   d22 06:15, so a save from just before a crash can be one interval older than the next autosave). Times are UTC on
+#   this box's clock. A copy keeps its
 #   source's time (shift13b.zip, copied from shift12r.zip at 16:57, reads 15:56), so start-team also checks the tick.
 # Prints key=value lines: seen= (the newest saves), save=, save_time=, base_time=, stop_time=, why=, space_age=, mods=.
 param(
@@ -18,7 +20,7 @@ param(
   [string]$To = '',
   [string]$StopUtc = '',
   [string]$StopSave = '',
-  [int]$MaxGapMinutes = 10,
+  [int]$MaxGapMinutes = 18,
   [switch]$Check
 )
 $ErrorActionPreference = 'Stop'

@@ -25,7 +25,7 @@ $server = [ordered]@{
   max_players = 0; visibility = @{public=$false; lan=$false}
   username = ''; password = ''; token = ''; game_password = ''
   require_user_verification = $false; allow_commands = 'admins-only'
-  autosave_interval = 5; autosave_slots = 12; afk_autokick_interval = 0
+  autosave_interval = 15; autosave_slots = 12; afk_autokick_interval = 0
   auto_pause = $true; auto_pause_when_players_connect = $false
   only_admins_can_pause_the_game = $true; autosave_only_on_server = $true; non_blocking_saving = $false
 }
