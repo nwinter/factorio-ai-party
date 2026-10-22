@@ -5,7 +5,9 @@
 1. News (on air depart_hold, as before): a maiden flight, a route the platform has not flown in depart_news_h (6 game
    hours), a leg to or from the solar system edge or the shattered planet, a planet new to the platform.
 2. Routine (anything else): on air depart_routine_hold (25 s) at most once per depart_routine_every (20 min) across
-   all platforms and once per depart_route_every (2 h) per route; else in the inset when it is free, else not shown.
+   all platforms and once per depart_route_every (2 h) per route; else in the inset when it is free, at most once per
+   depart_inset_every (10 min) and once per depart_inset_route_every (2 h) per route (AS2, operator 09:47: 53 insets
+   in shift57's 3 hours were the same repetition, smaller), else not shown.
    Each decision is logged with its reason ("departure routine (inset): Cinder Nauvis->Gleba flown 6 min ago").
 3. The model's route memory (model.add_route / route_last): the score's reads and the chronicle's platform_left
    events, one record per departure; kept in space-memory.json and read back along the run chain; seeded from the
@@ -95,9 +97,21 @@ def rules():
     assert d.departs[-1][3].startswith("Cinder Gleba->Nauvis flown 31 min ago; a routine departure went on air 7 min ago"), d.departs
     pub = d.public(t + 4)
     assert pub["inset"]["platform"]["name"] == "Cinder" and not main_platform(d, t + 4), pub
-    # another while the inset is up: not shown
+    # another right after (AS2: one routine inset each 10 min): not shown
     depart(d, "Cinder", "nauvis", "gleba", t + 6, tick + 6 * 60, steps=2)
-    assert d.departs[-1][1:3] == ("Cinder", "none") and "an inset is up" in d.departs[-1][3], d.departs
+    assert d.departs[-1][1:3] == ("Cinder", "none") and \
+        d.departs[-1][3].endswith("; a routine departure went in the inset 0 min ago"), d.departs
+    # the inset's own spacing (AS2): 10 min across platforms, 2 h for the same route; then the inset being up
+    assert d.routine_turn(("Kestrel", "nauvis", "gleba"), 1401 + 599, inset=True) == \
+        "a routine departure went in the inset 10 min ago"
+    assert d.routine_turn(("Kestrel", "nauvis", "gleba"), 1401 + 600, inset=True) is None
+    assert d.routine_turn(("Cinder", "gleba", "nauvis"), 1401 + 3600, inset=True) == \
+        "this route went in the inset 60 min ago"
+    assert d.routine_turn(("Cinder", "gleba", "nauvis"), 1401 + 7200, inset=True) is None
+    saved, d.routine_inset_t = d.routine_inset_t, []
+    depart(d, "Cinder", "gleba", "nauvis", t + 10, tick + 10 * 60, steps=2)
+    assert d.departs[-1][1:3] == ("Cinder", "none") and d.departs[-1][3].endswith("; an inset is up"), d.departs
+    d.routine_inset_t = saved
     # news: a route not flown in 6 game hours (Spindle Nauvis->Vulcanus, 7 h), at once, on main for depart_hold
     t = 1500
     depart(d, "Spindle", "nauvis", "vulcanus", t, tick + 100 * 60)
@@ -128,7 +142,7 @@ def rules():
     # each decision is in the director log with its reason
     rows = [json.loads(l) for l in open(log)]
     dep = [r for r in rows if r.get("departure")]
-    assert [r["departure"]["decision"] for r in dep] == ["main", "inset", "none", "main"], dep
+    assert [r["departure"]["decision"] for r in dep] == ["main", "inset", "none", "none", "main"], dep
     assert dep[1]["reason"].startswith("departure routine (inset): Cinder Gleba->Nauvis flown 31 min ago"), dep[1]
     os.remove(log)
     # a maiden flight stays news: a routine route with the routine budget spent, its maiden moment in the same read
@@ -269,12 +283,15 @@ def replay(news_h=None, step=2, end=11100):
         if e[3]:
             src.m.platform_course.setdefault(name, {"visited": set()})["visited"].add(e[3])
         return e[3] or "nauvis"
-    main_s = 0.0
+    main_s = inset_s = 0.0
     for t in range(-20, end, step):
         d.step(snap([plat(n, at(n, t)) for n in ships], T0 + t * 60), t)
         if main_platform(d, t).get("why") == "departure":
             main_s += step
+        if ((d.public(t).get("inset") or {}).get("platform") or {}).get("why") == "departure":
+            inset_s += step
     count = {k: sum(1 for x in d.departs if x[2] == k) for k in ("main", "inset", "none")}
+    d.inset_minutes = inset_s / 60
     return count, main_s / 60, d
 
 
@@ -283,10 +300,12 @@ def shift57():
     after, after_min, d = replay()
     news = [x for x in d.departs if x[2] == "main" and ":" in x[3].split(";")[0] and "flown" not in x[3]]
     print(f"shift57 06:21-09:24, 72 departures: before {before['main']} on main for {before_min:.1f} min "
-          f"(the log: 55 for 51.8); after {after['main']} on main for {after_min:.1f} min, {after['inset']} in the inset, "
+          f"(the log: 55 for 51.8); after {after['main']} on main for {after_min:.1f} min, {after['inset']} in the inset "
+          f"for {d.inset_minutes:.1f} min, "
           f"{after['none']} not shown; news: {[x[3] for x in news]}")
     assert before["main"] >= 50 and before_min >= 45, (before, before_min)
     assert after["main"] <= 15 and after_min <= 12, (after, after_min)
+    assert after["inset"] <= 183 // 10 + 1, after  # (AS2) one routine inset each 10 min at most
     assert sum(after.values()) == 72, after  # each departure decided once
     return before, before_min, after, after_min, d
 
@@ -295,5 +314,5 @@ if __name__ == "__main__":
     rules()
     memory()
     shift57()
-    print("departnews: ok (news on main, routine rationed to one each 20 min and a route each 2 h, else the inset or "
-          "nothing, each decision logged; route memory in space-memory.json and from the chronicle; shift57 replayed)")
+    print("departnews: ok (news on main, routine rationed to one each 20 min and a route each 2 h, else the inset "
+          "(one each 10 min, a route each 2 h) or nothing, each decision logged; route memory in space-memory.json and from the chronicle; shift57 replayed)")

@@ -54,7 +54,8 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
     chronicle), a leg to or from the solar system edge or the shattered planet, or a planet new to the platform.
     Anything else is routine: on air for `depart_routine_hold` (25 s) at most once per `depart_routine_every` (20 min)
     across all platforms and once per `depart_route_every` (2 h) for one route, else in the inset when it is free and
-    nothing else is up, else not shown; each decision is logged with its reason ("departure routine (inset): Cinder
+    nothing else is up, at most once per `depart_inset_every` (10 min) and once per `depart_inset_route_every` (2 h)
+    for one route (AS2), else not shown; each decision is logged with its reason ("departure routine (inset): Cinder
     Nauvis->Gleba flown 41 min ago");
   - an agent's platform action (snapshot `work` on a platform: place_ghosts, paste, deconstruct, inspect, configure,
     launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
@@ -208,7 +209,10 @@ ONECAM = {
     "depart_routine_every": 1200.0,   # a routine departure on air at most this often, all platforms together
     "depart_route_every": 7200.0,     # ... and the same platform and route at most this often
     "depart_routine_hold": 25.0,      # a routine departure on air (or in the inset) this long
-    "depart_inset": True,             # a routine departure off the main camera may go in a free inset
+    "depart_inset": True,             # a routine departure off the main camera may go in a free inset ...
+    # (d22 batch83 AS2, operator 09:47: 53 insets in shift57's 3 hours were the same repetition, smaller)
+    "depart_inset_every": 600.0,      # ... at most this often, all platforms together
+    "depart_inset_route_every": 7200.0,  # ... and the same platform and route at most this often
     # A maiden flight (viewer Foobator, d17 14:24: "please show new ships on their maiden flight"): a platform's first
     # departure since it was built (model.py's maiden_flight moment, from the chronicle), also with one camera
     "maiden_hold": 105.0,     # on it this long: the departure and the first minute and a half of flight
@@ -445,6 +449,7 @@ class OneCam(Director):
         self.route_source = None  # (AS1) the model (serve.py): route_last and platform_visited across restarts
         self.route_ticks = {}     # (name, from, to) -> game ticks of the departures this director saw
         self.routine_main = []    # (t, route): routine departures that went on air
+        self.routine_inset_t = []  # (t, route): routine departures that went in the inset (AS2)
         self.departs = []         # (t, name, decision, why): each departure's decision (main, inset, none)
         self.maiden_done = set()  # maiden_flight moment ids already taken (once per platform)
         self.work_shown = {}   # (agent, platform) -> when its work went on air
@@ -2153,15 +2158,18 @@ class OneCam(Director):
             return True, route, f"{text}: last flown {ago / 3600:.1f} h ago"
         return False, route, f"{text} flown {round(ago / 60)} min ago"
 
-    def routine_turn(self, route, now):
-        """None when a routine departure may go on air now, else why not."""
+    def routine_turn(self, route, now, inset=False):
+        """None when a routine departure may go on air now (inset: in the inset, AS2), else why not."""
         cfg = self.cfg
-        last = max((t for t, _ in self.routine_main), default=None)
-        if last is not None and now - last < cfg["depart_routine_every"]:
-            return f"a routine departure went on air {round((now - last) / 60)} min ago"
-        same = max((t for t, r in self.routine_main if r == route), default=None)
-        if same is not None and now - same < cfg["depart_route_every"]:
-            return f"this route went on air {round((now - same) / 60)} min ago"
+        shown, where = (self.routine_inset_t, "in the inset") if inset else (self.routine_main, "on air")
+        every, route_every = (cfg["depart_inset_every"], cfg["depart_inset_route_every"]) if inset else \
+            (cfg["depart_routine_every"], cfg["depart_route_every"])
+        last = max((t for t, _ in shown), default=None)
+        if last is not None and now - last < every:
+            return f"a routine departure went {where} {round((now - last) / 60)} min ago"
+        same = max((t for t, r in shown if r == route), default=None)
+        if same is not None and now - same < route_every:
+            return f"this route went {where} {round((now - same) / 60)} min ago"
         return None
 
     def log_departure(self, d, decision, why, now):
@@ -2461,11 +2469,13 @@ class OneCam(Director):
 
     def routine_inset(self, d, why, scores, now, segment=None):
         """(AS1) A routine departure off the main camera: in the inset for depart_routine_hold when no inset is up and
-        nothing holds the program (a replay, a trio, a segment, a cut being framed), else not shown."""
+        nothing holds the program (a replay, a trio, a segment, a cut being framed), at most once per depart_inset_every
+        and once per depart_inset_route_every for its route (AS2); else not shown."""
         cur = self.state.get(self.onair) or {}
         sb = self.standbys()
         busy = ("routine departures not in the inset (depart_inset)" if not self.cfg["depart_inset"]
-                else "an inset is up" if self.inset else "a replay or a trio" if self.hold_layout or self.mode != "onecam"
+                else self.routine_turn(d["route"], now, inset=True))
+        busy = busy or ("an inset is up" if self.inset else "a replay or a trio" if self.hold_layout or self.mode != "onecam"
                 else "a segment" if segment else "a cut being framed" if self.pending or self.trio_pending
                 else "the ship is on air" if (cur.get("platform") or {}).get("name") == d["name"]
                 else "no client free for an inset" if len(sb) < 2 else None)
@@ -2476,6 +2486,7 @@ class OneCam(Director):
             return
         self.frame_on(sb[-1], t, f"inset departure: {d['label']}", scores, now)
         self.inset = {"slot": sb[-1]["slot"], "until": until, "why": "departure", "platform": d["name"]}
+        self.routine_inset_t.append((now, d["route"]))
         self.log_departure(d, "inset", why, now)
 
     def watch_maiden(self, snapshot, now):
