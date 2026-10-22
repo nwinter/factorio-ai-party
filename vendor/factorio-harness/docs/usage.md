@@ -11002,6 +11002,23 @@ pass began as the last ended.
   after (the same cover code), Kestrel IVc 34-36 ms; with the default ammo_use Kestrel IVc read 139-194 ms on its
   first calls (not changed here).
 
+## d22 batch77 AM1: assembler_batch at the recipe's quality (Sol #1805)
+
+- `assembler_batch` reads the machine's recipe quality (the second value of `get_recipe()`, as the machine's GUI shows
+  it). Before, it counted, asked for and waited for every item by name alone, which is normal quality in 2.0: Sol's
+  rare pipe batch staged normal iron-plate.
+- Now each item ingredient's `requests set` entry and staged `wait_until item_count` carry that quality, the machine's
+  input, the requester's holdings and the products are counted at it, and the made wait counts the product at it.
+  Fluids have no quality and are not staged, as before.
+- A machine whose modules give quality (`effects.quality` above 0) makes some products above the recipe's quality: its
+  made wait and the products it holds now are counted at every quality (`quality: "any"`), and the plan says so.
+- `other_quality` and a plan line: what the requester holds of an ingredient at another quality (for example
+  `20 normal steel-plate`); the machine does not take it.
+- A normal recipe's plan is as before (no quality argument in its steps).
+- Seen on a copy of world n's `_autosave8` (tick 46406483): the Fulgora machine at (17.5,230.5) now makes rare
+  crushers; the dry run on main staged and waited for normal steel-plate, electric-engine-unit and
+  low-density-structure. With this change the requester's section read rare for all three and the staged waits read
+  `(rare quality)`.
 ## d20 batch76 (eng/d20-batch76)
 
 - AL1 (#1828, Sol: Meridian-V blueprint_place Meridian-design-preserved56, anchor saved, forced,
