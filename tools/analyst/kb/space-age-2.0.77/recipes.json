@@ -2,6 +2,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -31,6 +34,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -45,11 +51,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "battery",
 "type": "item"
 }
@@ -59,6 +67,9 @@
 {
 "allow_productivity": false,
 "category": "chemistry-or-cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -96,6 +107,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -130,6 +144,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -144,16 +161,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-chest",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -231,6 +251,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.375,
 "hidden": true,
@@ -245,11 +268,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "plastic-bar",
 "type": "item"
 },
@@ -298,6 +323,9 @@
 {
 "allow_productivity": true,
 "category": "oil-processing",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -488,6 +516,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -503,6 +534,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "agricultural-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -513,6 +545,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -552,6 +587,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -566,11 +604,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
@@ -581,6 +621,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "landfill",
 "type": "item"
 }
@@ -652,6 +693,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -681,6 +725,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -695,11 +742,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-cable",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -750,6 +799,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -764,16 +816,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.05000000074505806,
 "name": "jellynut-seed",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "nutrients",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "landfill",
 "type": "item"
 }
@@ -824,6 +879,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -838,16 +896,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.05000000074505806,
 "name": "yumako-seed",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "nutrients",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "landfill",
 "type": "item"
 }
@@ -857,6 +918,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -896,6 +960,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -910,11 +977,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "radar",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "calcite",
 "type": "item"
 },
@@ -934,6 +1003,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 40,
 "hidden": false,
@@ -973,6 +1045,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 2.5,
 "hidden": true,
@@ -1002,6 +1077,7 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 }
@@ -1011,6 +1087,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 4,
 "hidden": false,
@@ -1055,6 +1134,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -1089,6 +1171,7 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 }
@@ -1098,6 +1181,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -1132,6 +1218,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -1146,16 +1235,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -1165,6 +1257,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -1204,6 +1299,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -1218,21 +1316,25 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "assembling-machine-1",
 "type": "item"
 }
@@ -1242,6 +1344,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -1271,6 +1376,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -1285,6 +1393,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "assembling-machine-2",
 "type": "item"
 },
@@ -1299,6 +1408,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -1333,6 +1445,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -1357,6 +1472,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -1366,6 +1482,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 50,
 "hidden": false,
@@ -1400,6 +1519,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.125,
 "hidden": true,
@@ -1414,11 +1536,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "explosives",
 "type": "item"
 },
@@ -1462,6 +1586,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -1477,6 +1604,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "automation-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -1511,6 +1639,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -1526,6 +1657,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 }
@@ -1535,6 +1667,9 @@
 {
 "allow_productivity": true,
 "category": "oil-processing",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -1592,6 +1727,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -1621,6 +1759,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -1635,11 +1776,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "battery",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -1649,6 +1792,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -1683,6 +1829,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -1697,16 +1846,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "battery-equipment",
 "type": "item"
 },
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "low-density-structure",
 "type": "item"
 }
@@ -1716,6 +1868,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -1745,6 +1900,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -1759,11 +1917,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "battery-mk2-equipment",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "supercapacitor",
 "type": "item"
 }
@@ -1773,6 +1933,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -1787,11 +1950,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "copper-plate",
 "type": "item"
 }
@@ -1801,6 +1966,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -1840,6 +2008,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -1864,11 +2035,13 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "copper-cable",
 "type": "item"
 }
@@ -1878,6 +2051,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -1907,6 +2083,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -1921,11 +2100,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -1935,6 +2116,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -1969,6 +2153,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -1988,6 +2175,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
@@ -2002,6 +2190,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -2053,6 +2244,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -2067,6 +2261,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electric-mining-drill",
 "type": "item"
 },
@@ -2077,11 +2272,13 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "electric-engine-unit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -2091,6 +2288,9 @@
 {
 "allow_productivity": false,
 "category": "organic-or-assembling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 20,
 "hidden": false,
@@ -2142,6 +2342,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -2156,11 +2359,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "nutrients",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "pentapod-egg",
 "type": "item"
 },
@@ -2171,11 +2376,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "landfill",
 "type": "item"
 }
@@ -2214,6 +2421,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.375,
 "hidden": true,
@@ -2229,6 +2439,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "bioflux",
 "probability": 0.25,
 "type": "item"
@@ -2239,6 +2450,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -2283,6 +2497,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -2298,6 +2515,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "biolab",
 "probability": 0.25,
 "type": "item"
@@ -2390,6 +2608,9 @@
 {
 "allow_productivity": false,
 "category": "captive-spawner-process",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -2408,6 +2629,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -2423,6 +2647,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "biter-egg",
 "probability": 0.25,
 "type": "item"
@@ -2433,6 +2658,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2448,6 +2676,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "blueprint-book",
 "probability": 0.25,
 "type": "item"
@@ -2458,6 +2687,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2473,6 +2705,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "blueprint",
 "probability": 0.25,
 "type": "item"
@@ -2483,6 +2716,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -2512,6 +2748,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2526,6 +2765,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "stone-furnace",
 "type": "item"
 },
@@ -2540,6 +2780,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2555,6 +2798,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "bottomless-chest",
 "probability": 0.25,
 "type": "item"
@@ -2565,6 +2809,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -2599,6 +2846,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2613,16 +2863,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-chest",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -2632,6 +2885,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -2671,6 +2927,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2685,21 +2944,25 @@
 "products": [
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "fast-inserter",
 "type": "item"
 }
@@ -2709,6 +2972,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2724,6 +2990,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "burner-generator",
 "probability": 0.25,
 "type": "item"
@@ -2734,6 +3001,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": false,
@@ -2763,6 +3033,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2777,11 +3050,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 }
@@ -2791,6 +3066,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 2,
 "hidden": false,
@@ -2825,6 +3103,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -2839,16 +3120,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "stone-furnace",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "iron-plate",
 "type": "item"
 }
@@ -2882,6 +3166,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -2897,6 +3184,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "calcite",
 "probability": 0.25,
 "type": "item"
@@ -2907,6 +3195,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -2941,6 +3232,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -2955,16 +3249,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "plastic-bar",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "explosives",
 "type": "item"
 }
@@ -2974,6 +3271,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -3013,6 +3313,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -3028,6 +3331,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "captive-biter-spawner",
 "probability": 0.25,
 "type": "item"
@@ -3038,6 +3342,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -3077,6 +3384,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -3091,11 +3401,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "flying-robot-frame",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
@@ -3106,6 +3418,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 }
@@ -3115,6 +3428,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -3149,6 +3465,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -3173,6 +3492,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 }
@@ -3240,6 +3560,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -3255,6 +3578,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "carbon-fiber",
 "probability": 0.25,
 "type": "item"
@@ -3265,6 +3589,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -3280,6 +3607,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "carbon",
 "probability": 0.25,
 "type": "item"
@@ -3290,6 +3618,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -3305,6 +3636,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "carbonic-asteroid-chunk",
 "probability": 0.25,
 "type": "item"
@@ -3344,6 +3676,9 @@
 {
 "allow_productivity": false,
 "category": "crushing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -3380,6 +3715,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -3414,6 +3752,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -3438,6 +3779,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -3447,6 +3789,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -3481,6 +3826,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -3500,11 +3848,13 @@
 },
 {
 "amount": 6,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 }
@@ -3514,6 +3864,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -3548,6 +3901,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -3562,6 +3918,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
@@ -3735,6 +4092,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -3759,6 +4119,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -3812,6 +4175,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 4,
 "hidden": false,
@@ -3851,6 +4217,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -3870,6 +4239,7 @@
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
@@ -3889,6 +4259,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -3928,6 +4301,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -3942,21 +4318,25 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "pipe",
 "type": "item"
 }
@@ -4000,6 +4380,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.5,
 "hidden": true,
@@ -4015,6 +4398,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "chemical-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -4025,6 +4409,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -4064,6 +4451,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -4078,21 +4468,25 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "explosives",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "calcite",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "grenade",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -4102,6 +4496,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -4136,6 +4533,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -4150,16 +4550,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.75,
 "name": "grenade",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "explosives",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 }
@@ -4193,6 +4596,7 @@
 "products": [
 {
 "amount": 90,
+"ignored_by_productivity": 25,
 "name": "heavy-oil",
 "type": "fluid"
 },
@@ -4212,6 +4616,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -4227,6 +4634,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "coal",
 "probability": 0.25,
 "type": "item"
@@ -4271,6 +4679,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -4286,6 +4697,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "coin",
 "probability": 0.25,
 "type": "item"
@@ -4296,6 +4708,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -4335,6 +4750,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -4349,21 +4767,25 @@
 "products": [
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "copper-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "wood",
 "type": "item"
 }
@@ -4373,6 +4795,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -4441,6 +4866,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -4455,11 +4883,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "stone-brick",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.02500000037252903,
 "name": "iron-ore",
 "type": "item"
 }
@@ -4469,6 +4899,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -4498,6 +4931,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -4512,11 +4948,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-cable",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -4526,6 +4964,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -4555,6 +4996,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -4569,11 +5013,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "flying-robot-frame",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -4656,6 +5102,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -4671,6 +5120,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "copper-bacteria",
 "probability": 0.25,
 "type": "item"
@@ -4705,6 +5155,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -4720,6 +5173,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "copper-plate",
 "type": "item"
 }
@@ -4729,6 +5183,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -4744,6 +5201,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "copper-ore",
 "probability": 0.25,
 "type": "item"
@@ -4778,6 +5236,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.2,
 "hidden": true,
@@ -4793,6 +5254,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "copper-plate",
 "probability": 0.25,
 "type": "item"
@@ -4803,6 +5265,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -4823,6 +5289,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "crude-oil-barrel",
 "type": "item"
 }
@@ -4832,6 +5299,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -4847,6 +5317,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -4856,6 +5327,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -4890,6 +5364,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -4909,11 +5386,13 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "electric-engine-unit",
 "type": "item"
 }
@@ -4923,6 +5402,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics-or-assembling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -4969,6 +5451,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -5037,6 +5522,7 @@
 },
 {
 "amount": 3,
+"ignored_by_productivity": 3,
 "name": "fluoroketone-hot",
 "type": "fluid"
 }
@@ -5053,6 +5539,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -5068,6 +5557,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "cryogenic-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -5078,6 +5568,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -5107,6 +5600,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -5121,11 +5617,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-cable",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -5135,6 +5633,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -5150,6 +5651,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "deconstruction-planner",
 "probability": 0.25,
 "type": "item"
@@ -5160,6 +5662,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -5194,6 +5699,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -5208,16 +5716,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "piercing-rounds-magazine",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "iron-gear-wheel",
 "type": "item"
 }
@@ -5227,6 +5738,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -5242,6 +5756,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "depleted-uranium-fuel-cell",
 "probability": 0.25,
 "type": "item"
@@ -5252,6 +5767,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -5286,6 +5804,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -5310,6 +5831,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -5319,6 +5841,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -5353,6 +5878,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -5367,6 +5895,7 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
@@ -5377,6 +5906,7 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "laser-turret",
 "type": "item"
 }
@@ -5386,6 +5916,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -5415,6 +5948,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -5429,11 +5965,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -5443,6 +5981,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -5472,6 +6013,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -5491,6 +6035,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -5500,6 +6045,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -5529,6 +6077,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -5563,6 +6114,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -5582,11 +6136,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -5596,6 +6152,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -5635,6 +6194,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -5654,16 +6216,19 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "spoilage",
 "type": "item"
 }
@@ -5673,6 +6238,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -5687,11 +6255,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -5701,6 +6271,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -5716,6 +6289,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "electric-energy-interface",
 "probability": 0.25,
 "type": "item"
@@ -5760,6 +6334,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -5774,11 +6351,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "engine-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -5788,6 +6367,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -5822,6 +6404,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -5836,16 +6421,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "stone-brick",
 "type": "item"
 }
@@ -5855,6 +6443,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -5889,6 +6480,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -5903,16 +6497,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -5956,6 +6553,9 @@
 {
 "allow_productivity": false,
 "category": "electronics-or-assembling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -6002,6 +6602,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6016,21 +6619,25 @@
 "products": [
 {
 "amount": 37,
+"extra_count_fraction": 0.5,
 "name": "holmium-plate",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "refined-concrete",
 "type": "item"
 }
@@ -6086,6 +6693,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6101,6 +6711,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "electromagnetic-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -6140,6 +6751,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -6154,11 +6768,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "copper-cable",
 "type": "item"
 }
@@ -6168,6 +6784,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6182,11 +6802,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "crude-oil",
 "type": "fluid"
 }
@@ -6196,6 +6818,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6210,11 +6836,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "fluoroketone-cold",
 "type": "fluid"
 }
@@ -6224,6 +6852,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6238,11 +6870,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "fluoroketone-hot",
 "type": "fluid"
 }
@@ -6252,6 +6886,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6266,11 +6904,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "heavy-oil",
 "type": "fluid"
 }
@@ -6280,6 +6920,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6294,11 +6938,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "light-oil",
 "type": "fluid"
 }
@@ -6308,6 +6954,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6322,11 +6972,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "lubricant",
 "type": "fluid"
 }
@@ -6336,6 +6988,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -6351,6 +7006,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "empty-module-slot",
 "probability": 0.25,
 "type": "item"
@@ -6361,6 +7017,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6375,11 +7035,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "petroleum-gas",
 "type": "fluid"
 }
@@ -6389,6 +7051,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6403,11 +7069,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "sulfuric-acid",
 "type": "fluid"
 }
@@ -6417,6 +7085,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -6431,11 +7103,13 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "barrel",
 "type": "item"
 },
 {
 "amount": 50,
+"ignored_by_productivity": 50,
 "name": "water",
 "type": "fluid"
 }
@@ -6445,6 +7119,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -6474,6 +7151,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6488,11 +7168,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -6502,6 +7184,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -6536,6 +7221,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6550,16 +7238,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "energy-shield-equipment",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "low-density-structure",
 "type": "item"
 }
@@ -6603,6 +7294,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6617,16 +7311,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "pipe",
 "type": "item"
 }
@@ -6636,6 +7333,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -6670,6 +7370,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6684,11 +7387,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "electric-engine-unit",
 "type": "item"
 },
@@ -6703,6 +7408,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -6737,6 +7445,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -6751,16 +7462,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "plastic-bar",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "explosives",
 "type": "item"
 }
@@ -6770,6 +7484,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -6799,6 +7516,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -6813,11 +7533,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "rocket",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "explosives",
 "type": "item"
 }
@@ -6827,6 +7549,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 12,
 "hidden": false,
@@ -6856,6 +7581,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.75,
 "hidden": true,
@@ -6870,11 +7598,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "explosive-cannon-shell",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "uranium-238",
 "type": "item"
 }
@@ -6918,6 +7648,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -6933,6 +7666,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "explosives",
 "probability": 0.25,
 "type": "item"
@@ -6943,6 +7677,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": true,
@@ -6972,6 +7709,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -6986,11 +7726,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "express-transport-belt",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "fast-loader",
 "type": "item"
 }
@@ -7000,6 +7742,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid-or-metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -7039,6 +7784,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -7053,16 +7801,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "fast-splitter",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -7072,6 +7823,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid-or-metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -7106,6 +7860,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -7120,11 +7877,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "fast-transport-belt",
 "type": "item"
 }
@@ -7134,6 +7893,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid-or-metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -7168,6 +7930,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -7187,6 +7952,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "fast-underground-belt",
 "type": "item"
 }
@@ -7196,6 +7962,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -7230,6 +7999,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -7244,16 +8016,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "inserter",
 "type": "item"
 }
@@ -7263,6 +8038,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": true,
@@ -7292,6 +8070,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -7306,11 +8087,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "fast-transport-belt",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "loader",
 "type": "item"
 }
@@ -7320,6 +8103,9 @@
 {
 "allow_productivity": false,
 "category": "pressing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -7354,6 +8140,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -7368,16 +8157,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "splitter",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -7387,6 +8179,9 @@
 {
 "allow_productivity": false,
 "category": "pressing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -7416,6 +8211,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -7430,11 +8228,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "transport-belt",
 "type": "item"
 }
@@ -7444,6 +8244,9 @@
 {
 "allow_productivity": false,
 "category": "pressing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -7473,6 +8276,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -7492,6 +8298,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "underground-belt",
 "type": "item"
 }
@@ -7501,6 +8308,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1,
 "hidden": false,
@@ -7525,6 +8335,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -7549,6 +8362,10 @@
 {
 "allow_productivity": false,
 "category": "organic-or-chemistry",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 6,
 "hidden": false,
@@ -7574,6 +8391,7 @@
 "products": [
 {
 "amount": 3,
+"ignored_by_productivity": 2,
 "name": "raw-fish",
 "type": "item"
 }
@@ -7590,6 +8408,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -7624,6 +8445,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -7643,6 +8467,7 @@
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "low-density-structure",
 "type": "item"
 },
@@ -7657,6 +8482,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -7686,6 +8514,9 @@
 {
 "allow_productivity": false,
 "category": "chemistry",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 6,
 "hidden": false,
@@ -7715,6 +8546,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.375,
 "hidden": true,
@@ -7730,6 +8564,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "flamethrower-ammo",
 "probability": 0.25,
 "type": "item"
@@ -7740,6 +8575,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -7754,11 +8592,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 }
@@ -7768,6 +8608,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 20,
 "hidden": false,
@@ -7807,6 +8650,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -7821,21 +8667,25 @@
 "products": [
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "pipe",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "engine-unit",
 "type": "item"
 }
@@ -7845,6 +8695,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1.5,
 "hidden": false,
@@ -7884,6 +8737,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.09375,
 "hidden": true,
@@ -7898,6 +8754,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
@@ -7913,6 +8770,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "storage-tank",
 "type": "item"
 }
@@ -7962,6 +8820,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -7982,6 +8844,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "fluoroketone-cold-barrel",
 "type": "item"
 }
@@ -7991,6 +8854,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -8006,6 +8872,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -8015,6 +8882,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -8030,6 +8900,7 @@
 "products": [
 {
 "amount": 10,
+"ignored_by_productivity": 10,
 "name": "fluoroketone-cold",
 "temperature": -150,
 "type": "fluid"
@@ -8040,6 +8911,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -8060,6 +8935,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "fluoroketone-hot-barrel",
 "type": "item"
 }
@@ -8069,6 +8945,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -8084,6 +8963,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -8132,6 +9012,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -8146,21 +9029,25 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electric-engine-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "battery",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -8170,6 +9057,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -8214,6 +9104,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -8252,6 +9145,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy-or-assembling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -8303,6 +9199,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -8317,16 +9216,19 @@
 "products": [
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "tungsten-carbide",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
@@ -8341,6 +9243,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -8382,6 +9287,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -8406,6 +9314,7 @@
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "quantum-processor",
 "type": "item"
 }
@@ -8449,6 +9358,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -8464,6 +9376,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "fusion-power-cell",
 "probability": 0.25,
 "type": "item"
@@ -8474,6 +9387,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -8515,6 +9431,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -8564,6 +9483,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -8578,16 +9500,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "fission-reactor-equipment",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "fusion-power-cell",
 "type": "item"
 },
 {
 "amount": 62,
+"extra_count_fraction": 0.5,
 "name": "tungsten-plate",
 "type": "item"
 },
@@ -8598,11 +9523,13 @@
 },
 {
 "amount": 6,
+"extra_count_fraction": 0.25,
 "name": "supercapacitor",
 "type": "item"
 },
 {
 "amount": 62,
+"extra_count_fraction": 0.5,
 "name": "quantum-processor",
 "type": "item"
 }
@@ -8612,6 +9539,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -8636,6 +9566,7 @@
 },
 {
 "amount": 62,
+"extra_count_fraction": 0.5,
 "name": "quantum-processor",
 "type": "item"
 }
@@ -8645,6 +9576,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -8679,6 +9613,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -8693,16 +9630,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "stone-wall",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -8712,6 +9652,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -8741,6 +9684,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -8755,11 +9701,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "coal",
 "type": "item"
 }
@@ -8769,6 +9717,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -8803,6 +9754,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -8817,11 +9771,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "copper-plate",
 "type": "item"
 },
@@ -8836,6 +9792,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.25,
 "hidden": false,
@@ -8860,6 +9819,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.015625,
 "hidden": true,
@@ -8875,6 +9837,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "concrete",
 "type": "item"
 }
@@ -8884,6 +9847,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": false,
@@ -8918,6 +9884,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -8932,6 +9901,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
@@ -8942,6 +9912,7 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "pipe",
 "type": "item"
 }
@@ -8951,6 +9922,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": true,
@@ -8980,6 +9954,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -8994,11 +9971,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "heat-pipe",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -9008,6 +9987,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -9037,6 +10019,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -9051,6 +10036,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
@@ -9065,6 +10051,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -9099,6 +10088,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -9113,11 +10105,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "boiler",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "heat-pipe",
 "type": "item"
 },
@@ -9132,6 +10126,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -9161,6 +10158,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -9180,6 +10180,7 @@
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -9189,6 +10190,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -9209,6 +10214,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "heavy-oil-barrel",
 "type": "item"
 }
@@ -9218,6 +10224,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -9233,6 +10242,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -9242,6 +10252,9 @@
 {
 "allow_productivity": true,
 "category": "organic-or-chemistry",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -9270,6 +10283,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9285,6 +10301,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "holmium-ore",
 "probability": 0.25,
 "type": "item"
@@ -9319,6 +10336,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -9334,6 +10354,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "holmium-plate",
 "probability": 0.25,
 "type": "item"
@@ -9402,6 +10423,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -9431,6 +10455,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -9446,6 +10473,7 @@
 "products": [
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "ice",
 "type": "item"
 }
@@ -9455,6 +10483,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9470,6 +10501,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "ice",
 "probability": 0.25,
 "type": "item"
@@ -9480,6 +10512,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9495,6 +10530,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "infinity-cargo-wagon",
 "probability": 0.25,
 "type": "item"
@@ -9505,6 +10541,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": true,
@@ -9534,6 +10573,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9548,11 +10590,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-chest",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -9562,6 +10606,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": true,
@@ -9591,6 +10638,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9605,11 +10655,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "pipe",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -9619,6 +10671,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -9653,6 +10708,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9667,16 +10725,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -9759,6 +10820,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -9774,6 +10838,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "iron-bacteria",
 "probability": 0.25,
 "type": "item"
@@ -9784,6 +10849,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": false,
@@ -9808,6 +10876,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9856,6 +10927,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9871,6 +10945,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -9880,6 +10955,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9895,6 +10973,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "iron-ore",
 "probability": 0.25,
 "type": "item"
@@ -9929,6 +11008,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.2,
 "hidden": true,
@@ -9944,6 +11026,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "iron-plate",
 "probability": 0.25,
 "type": "item"
@@ -9978,6 +11061,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -9993,6 +11079,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "iron-plate",
 "type": "item"
 }
@@ -10002,6 +11089,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10017,6 +11107,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "item-unknown",
 "probability": 0.25,
 "type": "item"
@@ -10027,6 +11118,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10042,6 +11136,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "jelly",
 "probability": 0.25,
 "type": "item"
@@ -10081,6 +11176,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10096,6 +11194,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "jellynut",
 "probability": 0.25,
 "type": "item"
@@ -10106,6 +11205,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10121,6 +11223,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "jellynut-seed",
 "probability": 0.25,
 "type": "item"
@@ -10131,6 +11234,9 @@
 {
 "allow_productivity": true,
 "category": "centrifuging",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -10150,11 +11256,13 @@
 "products": [
 {
 "amount": 41,
+"ignored_by_productivity": 40,
 "name": "uranium-235",
 "type": "item"
 },
 {
 "amount": 2,
+"ignored_by_productivity": 2,
 "name": "uranium-238",
 "type": "item"
 }
@@ -10164,6 +11272,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -10198,6 +11309,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -10212,11 +11326,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
@@ -10231,6 +11347,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -10260,6 +11379,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -10274,11 +11396,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.0625,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "explosives",
 "type": "item"
 }
@@ -10288,6 +11412,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -10312,6 +11439,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10327,6 +11457,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "landfill",
 "probability": 0.25,
 "type": "item"
@@ -10337,6 +11468,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10352,6 +11486,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "lane-splitter",
 "probability": 0.25,
 "type": "item"
@@ -10362,6 +11497,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 20,
 "hidden": false,
@@ -10396,6 +11534,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -10429,6 +11570,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3,
 "hidden": false,
@@ -10453,6 +11597,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -10477,6 +11624,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -10497,6 +11648,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "light-oil-barrel",
 "type": "item"
 }
@@ -10506,6 +11658,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -10521,6 +11676,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -10530,6 +11686,9 @@
 {
 "allow_productivity": true,
 "category": "organic-or-chemistry",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -10558,6 +11717,9 @@
 {
 "allow_productivity": false,
 "category": "electromagnetics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -10604,6 +11766,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -10618,6 +11783,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "lightning-rod",
 "type": "item"
 },
@@ -10628,6 +11794,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "accumulator",
 "type": "item"
 }
@@ -10637,6 +11804,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -10678,6 +11848,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -10711,6 +11884,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10726,6 +11902,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "linked-belt",
 "probability": 0.25,
 "type": "item"
@@ -10736,6 +11913,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -10751,6 +11931,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "linked-chest",
 "probability": 0.25,
 "type": "item"
@@ -10819,6 +12000,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.4,
 "hidden": true,
@@ -10834,6 +12018,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "lithium-plate",
 "probability": 0.25,
 "type": "item"
@@ -10844,6 +12029,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -10859,6 +12047,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "lithium",
 "probability": 0.25,
 "type": "item"
@@ -10869,6 +12058,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": true,
@@ -10913,6 +12105,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -10927,26 +12122,31 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "inserter",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "transport-belt",
 "type": "item"
 }
@@ -10956,6 +12156,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 4,
 "hidden": false,
@@ -10990,6 +12193,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -11009,11 +12215,13 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -11023,6 +12231,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -11052,6 +12263,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -11066,11 +12280,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "flying-robot-frame",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -11109,6 +12325,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.375,
 "hidden": true,
@@ -11124,6 +12343,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "logistic-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -11134,6 +12354,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -11168,6 +12391,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -11182,16 +12408,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "inserter",
 "type": "item"
 }
@@ -11235,6 +12464,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -11249,6 +12481,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
@@ -11259,6 +12492,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "plastic-bar",
 "type": "item"
 }
@@ -11268,6 +12502,9 @@
 {
 "allow_productivity": true,
 "category": "chemistry",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -11292,6 +12529,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -11312,6 +12553,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "lubricant-barrel",
 "type": "item"
 }
@@ -11321,6 +12563,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -11336,6 +12581,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -11345,6 +12591,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -11389,6 +12638,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -11403,6 +12655,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "power-armor-mk2",
 "type": "item"
 },
@@ -11418,11 +12671,13 @@
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "supercapacitor",
 "type": "item"
 }
@@ -11432,6 +12687,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -11466,6 +12724,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -11485,11 +12746,13 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "copper-cable",
 "type": "item"
 }
@@ -11499,6 +12762,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -11514,6 +12780,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "metallic-asteroid-chunk",
 "probability": 0.25,
 "type": "item"
@@ -11553,6 +12820,9 @@
 {
 "allow_productivity": false,
 "category": "crushing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -11630,6 +12900,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -11645,6 +12918,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "metallurgic-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -11689,6 +12963,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -11704,6 +12981,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "military-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -11714,6 +12992,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -11743,6 +13024,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -11757,11 +13041,13 @@
 "products": [
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -11895,6 +13181,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -11924,6 +13213,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -11938,11 +13230,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -11981,6 +13275,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 5.625,
 "hidden": true,
@@ -11995,11 +13292,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "uranium-235",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "rocket-fuel",
 "type": "item"
 }
@@ -12032,6 +13331,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -12071,6 +13373,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -12133,6 +13438,9 @@
 {
 "allow_productivity": true,
 "category": "organic-or-assembling",
+"effects_not_allowed": [
+"quality"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -12157,6 +13465,10 @@
 {
 "allow_productivity": false,
 "category": "organic-or-assembling",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -12229,6 +13541,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -12244,6 +13559,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "spoilage",
 "type": "item"
 }
@@ -12253,6 +13569,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -12282,6 +13601,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -12296,11 +13618,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "pipe",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 }
@@ -12310,6 +13634,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -12354,6 +13681,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -12368,26 +13698,31 @@
 "products": [
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "stone-brick",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "pipe",
 "type": "item"
 }
@@ -12397,6 +13732,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -12412,6 +13750,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "one-way-valve",
 "probability": 0.25,
 "type": "item"
@@ -12422,6 +13761,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -12437,6 +13779,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "overflow-valve",
 "probability": 0.25,
 "type": "item"
@@ -12498,6 +13841,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -12512,21 +13858,25 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "artificial-jellynut-soil",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "jellynut-seed",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "biter-egg",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "spoilage",
 "type": "item"
 }
@@ -12587,6 +13937,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -12601,21 +13954,25 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "artificial-yumako-soil",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "yumako-seed",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "biter-egg",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "spoilage",
 "type": "item"
 }
@@ -12625,6 +13982,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -12640,6 +14000,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "oxide-asteroid-chunk",
 "probability": 0.25,
 "type": "item"
@@ -12679,6 +14040,9 @@
 {
 "allow_productivity": false,
 "category": "crushing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -12825,6 +14189,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -12859,6 +14226,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -12873,16 +14243,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-chest",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -12917,6 +14290,7 @@
 "products": [
 {
 "amount": 2,
+"ignored_by_productivity": 1,
 "name": "pentapod-egg",
 "type": "item"
 }
@@ -12933,6 +14307,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -12948,6 +14325,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "pentapod-egg",
 "probability": 0.25,
 "type": "item"
@@ -12958,6 +14336,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -12992,6 +14373,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -13011,11 +14395,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "low-density-structure",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "laser-turret",
 "type": "item"
 }
@@ -13025,6 +14411,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -13064,6 +14453,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -13078,6 +14470,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 },
@@ -13093,6 +14486,7 @@
 },
 {
 "amount": 11,
+"extra_count_fraction": 0.25,
 "name": "battery",
 "type": "item"
 }
@@ -13102,6 +14496,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 20,
 "hidden": false,
@@ -13136,6 +14533,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -13150,16 +14550,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "personal-roboport-equipment",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 }
@@ -13169,6 +14572,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -13189,6 +14596,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "petroleum-gas-barrel",
 "type": "item"
 }
@@ -13198,6 +14606,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -13213,6 +14624,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -13222,6 +14634,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 6,
 "hidden": false,
@@ -13256,6 +14671,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.375,
 "hidden": true,
@@ -13270,16 +14688,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "firearm-magazine",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "copper-plate",
 "type": "item"
 }
@@ -13289,6 +14710,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -13323,6 +14747,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -13337,16 +14764,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "shotgun-shell",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -13356,6 +14786,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -13380,6 +14813,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -13395,6 +14831,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -13404,6 +14841,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -13433,6 +14873,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -13447,11 +14890,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "pipe",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.625,
 "name": "iron-plate",
 "type": "item"
 }
@@ -13461,6 +14906,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": true,
@@ -13490,6 +14938,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -13504,11 +14955,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -13547,6 +15000,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -13562,6 +15018,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "plastic-bar",
 "probability": 0.25,
 "type": "item"
@@ -13572,6 +15029,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -13606,6 +15066,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -13620,16 +15083,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "coal",
 "type": "item"
 }
@@ -13639,6 +15105,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 20,
 "hidden": false,
@@ -13673,6 +15142,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 25,
 "hidden": false,
@@ -13717,6 +15189,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.5625,
 "hidden": true,
@@ -13751,6 +15226,7 @@
 },
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "low-density-structure",
 "type": "item"
 }
@@ -13760,6 +15236,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -13793,6 +15272,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -13827,6 +15309,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -13841,16 +15326,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-cable",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -13894,6 +15382,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -13913,6 +15404,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -13956,6 +15448,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.3125,
 "hidden": true,
@@ -13971,6 +15466,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "production-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -13981,6 +15477,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -14010,6 +15509,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -14044,6 +15546,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -14063,11 +15568,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -14077,6 +15584,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -14116,6 +15626,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -14135,16 +15648,19 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "biter-egg",
 "type": "item"
 }
@@ -14154,6 +15670,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -14168,11 +15687,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -14182,6 +15703,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -14221,6 +15745,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -14235,6 +15762,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "iron-plate",
 "type": "item"
 },
@@ -14245,6 +15773,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-cable",
 "type": "item"
 },
@@ -14259,6 +15788,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -14274,6 +15806,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "promethium-asteroid-chunk",
 "probability": 0.25,
 "type": "item"
@@ -14325,6 +15858,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -14340,6 +15876,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "promethium-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -14350,6 +15887,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -14365,6 +15905,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "proxy-container",
 "probability": 0.25,
 "type": "item"
@@ -14375,6 +15916,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -14409,6 +15953,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -14423,16 +15970,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "engine-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "pipe",
 "type": "item"
 }
@@ -14442,6 +15992,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -14481,6 +16034,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -14495,21 +16051,25 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "pipe",
 "type": "item"
 }
@@ -14519,6 +16079,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -14548,6 +16111,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -14582,6 +16148,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -14601,11 +16170,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -14615,6 +16186,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -14654,6 +16228,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -14673,16 +16250,19 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "superconductor",
 "type": "item"
 }
@@ -14692,6 +16272,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -14706,11 +16289,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -14765,6 +16350,7 @@
 },
 {
 "amount": 5,
+"ignored_by_productivity": 5,
 "name": "fluoroketone-hot",
 "temperature": 180,
 "type": "fluid"
@@ -14782,6 +16368,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -14796,26 +16385,31 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "tungsten-carbide",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "superconductor",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "carbon-fiber",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "lithium-plate",
 "type": "item"
 }
@@ -14825,6 +16419,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -14859,6 +16456,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -14873,16 +16473,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -14892,6 +16495,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -14926,6 +16532,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -14955,6 +16564,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -14969,11 +16581,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -14983,6 +16597,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -15017,6 +16634,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15041,6 +16661,7 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -15050,6 +16671,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15064,16 +16688,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "stone",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "iron-stick",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "steel-plate",
 "type": "item"
 }
@@ -15083,6 +16710,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -15112,6 +16742,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15126,11 +16759,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -15140,6 +16775,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -15169,6 +16807,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15188,6 +16829,7 @@
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 }
@@ -15197,6 +16839,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -15236,6 +16881,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 25,
 "hidden": false,
@@ -15270,6 +16918,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.5625,
 "hidden": true,
@@ -15284,16 +16935,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "copper-cable",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "explosives",
 "type": "item"
 }
@@ -15303,6 +16957,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -15317,11 +16974,13 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "tungsten-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 },
@@ -15336,6 +16995,9 @@
 {
 "allow_productivity": false,
 "category": "cryogenics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -15380,6 +17042,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -15399,11 +17064,13 @@
 },
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "tungsten-plate",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 },
@@ -15418,6 +17085,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15433,6 +17103,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "raw-fish",
 "probability": 0.25,
 "type": "item"
@@ -15443,6 +17114,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -15454,6 +17128,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": false,
@@ -15500,6 +17177,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -15514,6 +17194,7 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
@@ -15538,6 +17219,9 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -15577,6 +17261,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -15591,16 +17278,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "concrete",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.20000000298023224,
 "name": "iron-stick",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.02500000037252903,
 "name": "steel-plate",
 "type": "item"
 }
@@ -15610,6 +17300,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.25,
 "hidden": false,
@@ -15634,6 +17327,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.015625,
 "hidden": true,
@@ -15649,6 +17345,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "refined-concrete",
 "type": "item"
 }
@@ -15658,6 +17355,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -15687,6 +17387,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15701,11 +17404,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 }
@@ -15715,6 +17420,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -15749,6 +17457,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -15763,16 +17474,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-chest",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -15782,6 +17496,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -15816,6 +17533,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -15830,16 +17550,19 @@
 "products": [
 {
 "amount": 11,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 11,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 11,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -15849,6 +17572,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 4,
 "hidden": false,
@@ -15941,6 +17667,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -15956,6 +17685,7 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "solid-fuel",
 "type": "item"
 }
@@ -15965,6 +17695,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -15999,6 +17732,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -16013,16 +17749,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -16066,6 +17805,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.25,
 "hidden": true,
@@ -16080,11 +17822,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "explosives",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -16094,6 +17838,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -16138,6 +17885,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -16181,6 +17931,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -16225,6 +17978,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -16268,6 +18024,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16283,6 +18042,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "science",
 "probability": 0.25,
 "type": "item"
@@ -16293,6 +18053,9 @@
 {
 "allow_productivity": false,
 "category": "recycling-or-hand-crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -16383,6 +18146,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16398,6 +18164,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "selection-tool",
 "probability": 0.25,
 "type": "item"
@@ -16408,6 +18175,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -16437,6 +18207,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16451,11 +18224,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "decider-combinator",
 "type": "item"
 }
@@ -16465,6 +18240,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -16504,6 +18282,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -16518,21 +18299,25 @@
 "products": [
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "copper-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "wood",
 "type": "item"
 }
@@ -16542,6 +18327,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": false,
@@ -16571,6 +18359,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -16585,11 +18376,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "copper-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -16633,6 +18426,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16648,6 +18444,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "simple-entity-with-force",
 "probability": 0.25,
 "type": "item"
@@ -16658,6 +18455,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16673,6 +18473,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "simple-entity-with-owner",
 "probability": 0.25,
 "type": "item"
@@ -16683,6 +18484,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 8,
 "hidden": false,
@@ -16717,6 +18521,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": true,
@@ -16731,16 +18538,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "coal",
 "type": "item"
 }
@@ -16750,6 +18560,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -16779,6 +18592,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16793,11 +18609,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "wood",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "copper-cable",
 "type": "item"
 }
@@ -16807,6 +18625,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -16841,6 +18662,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -16855,16 +18679,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "copper-cable",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 }
@@ -16874,6 +18701,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -16908,6 +18738,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -16942,6 +18775,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -16956,16 +18792,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "solar-panel",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 }
@@ -16975,6 +18814,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -16989,16 +18831,19 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-plate",
 "type": "item"
 }
@@ -17109,6 +18954,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -17124,6 +18972,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "solid-fuel",
 "probability": 0.25,
 "type": "item"
@@ -17134,6 +18983,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -17163,6 +19015,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -17191,6 +19046,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -17206,6 +19064,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "space-platform-hub",
 "probability": 0.25,
 "type": "item"
@@ -17216,6 +19075,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -17250,6 +19112,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -17324,6 +19189,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -17339,6 +19207,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "space-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -17349,6 +19218,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 15,
 "hidden": false,
@@ -17378,6 +19250,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -17412,6 +19287,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -17431,11 +19309,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 }
@@ -17445,6 +19325,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 60,
 "hidden": false,
@@ -17484,6 +19367,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 3.75,
 "hidden": true,
@@ -17503,16 +19389,19 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "tungsten-carbide",
 "type": "item"
 }
@@ -17522,6 +19411,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.9375,
 "hidden": true,
@@ -17536,11 +19428,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 }
@@ -17550,6 +19444,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -17594,6 +19491,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -17613,21 +19513,25 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "fission-reactor-equipment",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "rocket-turret",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "radar",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "raw-fish",
 "type": "item"
 }
@@ -17637,6 +19541,9 @@
 {
 "allow_productivity": false,
 "category": "pressing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -17671,6 +19578,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -17685,11 +19595,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
@@ -17704,6 +19616,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -17719,6 +19634,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "spoilage",
 "probability": 0.25,
 "type": "item"
@@ -17729,6 +19645,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -17768,6 +19687,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -17782,21 +19704,25 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "bulk-inserter",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "carbon-fiber",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "jelly",
 "type": "item"
 }
@@ -17806,6 +19732,10 @@
 {
 "allow_productivity": false,
 "category": "chemistry-or-cryogenics",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -17830,6 +19760,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -17864,6 +19797,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -17883,11 +19819,13 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "pipe",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -17897,6 +19835,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": false,
@@ -17931,6 +19872,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -17945,11 +19889,13 @@
 "products": [
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "copper-plate",
 "type": "item"
 },
@@ -17964,6 +19910,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -17988,6 +19937,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -18012,6 +19964,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": false,
@@ -18041,6 +19996,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -18055,11 +20013,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "stone-brick",
 "type": "item"
 }
@@ -18093,6 +20053,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1,
 "hidden": true,
@@ -18108,6 +20071,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "steel-plate",
 "probability": 0.25,
 "type": "item"
@@ -18142,6 +20106,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.2,
 "hidden": true,
@@ -18157,6 +20124,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "stone-brick",
 "probability": 0.25,
 "type": "item"
@@ -18167,6 +20135,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": false,
@@ -18191,6 +20162,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -18206,6 +20180,7 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "stone",
 "type": "item"
 }
@@ -18215,6 +20190,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -18230,6 +20208,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "stone",
 "probability": 0.25,
 "type": "item"
@@ -18240,6 +20219,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -18264,6 +20246,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -18279,6 +20264,7 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "stone-brick",
 "type": "item"
 }
@@ -18288,6 +20274,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -18322,6 +20311,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -18336,16 +20328,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "steel-chest",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -18355,6 +20350,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 3,
 "hidden": false,
@@ -18384,6 +20382,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.1875,
 "hidden": true,
@@ -18403,6 +20404,7 @@
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "steel-plate",
 "type": "item"
 }
@@ -18412,6 +20414,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -18446,6 +20451,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -18460,16 +20468,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "copper-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 }
@@ -18479,6 +20490,9 @@
 {
 "allow_productivity": false,
 "category": "electronics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -18513,6 +20527,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -18527,16 +20544,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.5,
 "name": "copper-cable",
 "type": "item"
 }
@@ -18575,6 +20595,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -18590,6 +20613,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "sulfur",
 "probability": 0.25,
 "type": "item"
@@ -18634,6 +20658,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -18654,6 +20682,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "sulfuric-acid-barrel",
 "type": "item"
 }
@@ -18663,6 +20692,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -18678,6 +20710,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -18731,6 +20764,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -18745,11 +20781,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "holmium-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 },
@@ -18760,6 +20798,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "battery",
 "type": "item"
 }
@@ -18808,6 +20847,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -18823,6 +20865,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "superconductor",
 "probability": 0.25,
 "type": "item"
@@ -18833,6 +20876,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 5,
 "hidden": false,
@@ -18872,6 +20918,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.3125,
 "hidden": true,
@@ -18891,16 +20940,19 @@
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "iron-gear-wheel",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "advanced-circuit",
 "type": "item"
 }
@@ -18910,6 +20962,9 @@
 {
 "allow_productivity": false,
 "category": "electromagnetics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -18944,6 +20999,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -18958,11 +21016,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "supercapacitor",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "plastic-bar",
 "type": "item"
 }
@@ -18972,6 +21032,9 @@
 {
 "allow_productivity": false,
 "category": "electromagnetics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -19016,6 +21079,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -19030,21 +21096,25 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "teslagun",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "supercapacitor",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 12,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 }
@@ -19054,6 +21124,9 @@
 {
 "allow_productivity": false,
 "category": "electromagnetics",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 30,
 "hidden": false,
@@ -19093,6 +21166,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.875,
 "hidden": true,
@@ -19107,16 +21183,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "holmium-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "superconductor",
 "type": "item"
 },
 {
 "amount": 7,
+"extra_count_fraction": 0.5,
 "name": "plastic-bar",
 "type": "item"
 }
@@ -19126,6 +21205,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -19232,6 +21314,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -19246,16 +21331,19 @@
 "products": [
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "steel-plate",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electric-engine-unit",
 "type": "item"
 }
@@ -19265,6 +21353,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -19294,6 +21385,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -19308,11 +21402,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "advanced-circuit",
 "type": "item"
 },
 {
 "amount": 2,
+"extra_count_fraction": 0.5,
 "name": "carbon-fiber",
 "type": "item"
 }
@@ -19322,6 +21418,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19337,6 +21436,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "top-up-valve",
 "probability": 0.25,
 "type": "item"
@@ -19347,6 +21447,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -19386,6 +21489,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19400,21 +21506,25 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "electronic-circuit",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.5,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 1,
+"extra_count_fraction": 0.5,
 "name": "iron-stick",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.75,
 "name": "steel-plate",
 "type": "item"
 }
@@ -19424,6 +21534,9 @@
 {
 "allow_productivity": false,
 "category": "pressing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": false,
@@ -19453,6 +21566,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19467,11 +21583,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.125,
 "name": "iron-gear-wheel",
 "type": "item"
 }
@@ -19481,6 +21599,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19496,6 +21617,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "tree-seed",
 "probability": 0.25,
 "type": "item"
@@ -19540,6 +21662,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -19555,6 +21680,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "tungsten-carbide",
 "probability": 0.25,
 "type": "item"
@@ -19565,6 +21691,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19580,6 +21709,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "tungsten-ore",
 "probability": 0.25,
 "type": "item"
@@ -19619,6 +21749,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -19634,6 +21767,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "tungsten-plate",
 "probability": 0.25,
 "type": "item"
@@ -19644,6 +21778,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 20,
 "hidden": true,
@@ -19673,6 +21810,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.25,
 "hidden": true,
@@ -19687,11 +21827,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "turbo-transport-belt",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "express-loader",
 "type": "item"
 }
@@ -19701,6 +21843,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -19747,6 +21892,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -19761,16 +21909,19 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "express-splitter",
 "type": "item"
 },
 {
 "amount": 3,
+"extra_count_fraction": 0.75,
 "name": "tungsten-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "processing-unit",
 "type": "item"
 }
@@ -19780,6 +21931,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 0.5,
 "hidden": false,
@@ -19821,6 +21975,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19835,11 +21992,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "tungsten-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "express-transport-belt",
 "type": "item"
 }
@@ -19849,6 +22008,9 @@
 {
 "allow_productivity": false,
 "category": "metallurgy",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 2,
 "hidden": false,
@@ -19890,6 +22052,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.125,
 "hidden": true,
@@ -19909,6 +22074,7 @@
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "express-underground-belt",
 "type": "item"
 }
@@ -19918,6 +22084,9 @@
 {
 "allow_productivity": false,
 "category": "pressing",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 1,
 "hidden": false,
@@ -19947,6 +22116,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0625,
 "hidden": true,
@@ -19961,11 +22133,13 @@
 "products": [
 {
 "amount": 1,
+"extra_count_fraction": 0.25,
 "name": "iron-plate",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.625,
 "name": "transport-belt",
 "type": "item"
 }
@@ -19975,6 +22149,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -19990,6 +22167,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "upgrade-planner",
 "probability": 0.25,
 "type": "item"
@@ -20000,6 +22178,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20015,6 +22196,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "uranium-235",
 "probability": 0.25,
 "type": "item"
@@ -20025,6 +22207,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20040,6 +22225,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "uranium-238",
 "probability": 0.25,
 "type": "item"
@@ -20050,6 +22236,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 12,
 "hidden": false,
@@ -20079,6 +22268,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.75,
 "hidden": true,
@@ -20093,11 +22285,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "cannon-shell",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "uranium-238",
 "type": "item"
 }
@@ -20141,6 +22335,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -20156,6 +22353,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "uranium-fuel-cell",
 "probability": 0.25,
 "type": "item"
@@ -20166,6 +22364,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20181,6 +22382,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "uranium-ore",
 "probability": 0.25,
 "type": "item"
@@ -20221,6 +22423,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": false,
 "energy": 10,
 "hidden": false,
@@ -20250,6 +22455,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.625,
 "hidden": true,
@@ -20264,11 +22472,13 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "piercing-rounds-magazine",
 "type": "item"
 },
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "uranium-238",
 "type": "item"
 }
@@ -20312,6 +22522,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 1.3125,
 "hidden": true,
@@ -20327,6 +22540,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "utility-science-pack",
 "probability": 0.25,
 "type": "item"
@@ -20337,6 +22551,10 @@
 {
 "allow_productivity": false,
 "category": "crafting-with-fluid",
+"effects_not_allowed": [
+"productivity",
+"quality"
+],
 "enabled": false,
 "energy": 0.2,
 "hidden": false,
@@ -20357,6 +22575,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "water-barrel",
 "type": "item"
 }
@@ -20366,6 +22585,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.0125,
 "hidden": true,
@@ -20381,6 +22603,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.25,
 "name": "barrel",
 "type": "item"
 }
@@ -20421,6 +22644,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20436,6 +22662,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "wood",
 "probability": 0.25,
 "type": "item"
@@ -20446,6 +22673,9 @@
 {
 "allow_productivity": false,
 "category": "crafting",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.5,
 "hidden": false,
@@ -20470,6 +22700,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20485,6 +22718,7 @@
 "products": [
 {
 "amount": 0,
+"extra_count_fraction": 0.5,
 "name": "wood",
 "type": "item"
 }
@@ -20494,6 +22728,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20509,6 +22746,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "yumako-mash",
 "probability": 0.25,
 "type": "item"
@@ -20548,6 +22786,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20563,6 +22804,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "yumako",
 "probability": 0.25,
 "type": "item"
@@ -20573,6 +22815,9 @@
 {
 "allow_productivity": false,
 "category": "recycling",
+"effects_not_allowed": [
+"productivity"
+],
 "enabled": true,
 "energy": 0.03125,
 "hidden": true,
@@ -20588,6 +22833,7 @@
 "products": [
 {
 "amount": 1,
+"ignored_by_productivity": 1,
 "name": "yumako-seed",
 "probability": 0.25,
 "type": "item"

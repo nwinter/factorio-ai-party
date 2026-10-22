@@ -4,7 +4,7 @@ tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph 
 
   workspace: DIR/tools/ (the agent's own scripts), DIR/team-tools -> ../team-tools (shared with the run's other
              agents), DIR/gamedata/ (a read-only copy of the prototype dump in tools/analyst/kb: recipes, items,
-             entities, fluids, technologies, locations, and asteroids from a Space Age dump) and the "Your tools"
+             entities, fluids, technologies, locations, qualities, and asteroids from a Space Age dump) and the "Your tools"
              paragraph for KIND in AGENTS.md.
   claude:    merges into DIR/.claude/settings.json: subagents, web search and fetch, background-job tools allowed;
              the sandbox may write team-tools; other agents' workspaces are unreadable except their notes.md.
@@ -35,7 +35,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB = os.path.join(ROOT, "tools", "analyst", "kb")
 # Prototype facts only: settings.json is the map settings of the world the dump came from, not this world's.
 # asteroids: Space Age dumps only (each route's and orbit's asteroid spawns, the asteroids' health and resistances).
-GAMEDATA = ["recipes", "items", "entities", "fluids", "technologies", "locations", "asteroids"]
+GAMEDATA = ["recipes", "items", "entities", "fluids", "technologies", "locations", "asteroids", "qualities"]
 # Claude Code tools on top of the game set (Bash, Read, Edit, Write, Grep, Glob); the --tools list is in
 # tools/profile-flags.sh ($claude_tools_full).
 CLAUDE_EXTRA = ["Agent", "WebSearch", "WebFetch", "TaskStop", "Monitor"]
