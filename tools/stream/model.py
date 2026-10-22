@@ -723,14 +723,23 @@ class Model:
         self.links_path, self.links_mtime, self.links = path, None, {}
 
     def reply_links(self):
+        """(d22 batch89 AY4) this run's file and the two runs' before it (viewer_replies.links_files), a newer record over an older one."""
         if not self.links_path:
             return {}
-        try:
-            m = os.stat(self.links_path).st_mtime_ns
-        except OSError:
+        files = viewer_replies.links_files(self.links_path)
+        m = []
+        for p in files:
+            try:
+                m.append(os.stat(p).st_mtime_ns)
+            except OSError:
+                m.append(None)
+        if not any(m):
             return {}
         if m != self.links_mtime:
-            self.links_mtime, self.links = m, viewer_replies.read_links(self.links_path)
+            links = {}
+            for p in files:
+                links.update(viewer_replies.read_links(p))
+            self.links_mtime, self.links = m, links
         return self.links
 
     def __init__(self, run):
@@ -1862,7 +1871,11 @@ class Model:
             found.append(("rocket", {"kind": "first_rocket", "title": "First rocket launched",
                                      "facts": {"rockets": sp["rockets"]}}))
         if self.rockets_at_start is None:
+            # (d22 batch89 AY3) seeded once a shift, at its first service start, and kept in space-memory.json: a
+            # mid-shift restart re-seeded it from the live count, and the next rocket read as "the first this shift"
+            # (shift57 09:02, rocket 20001, with the shift's first at 06:21)
             self.rockets_at_start = sp.get("rockets") or 0
+            self._save_space_memory()
         elif (sp.get("rockets") or 0) > self.rockets_at_start:  # the shift's first rocket (a headline)
             found.append(("shift_rocket", {"kind": "shift_rocket",
                                            "title": f"Rocket {sp['rockets']} launched, the first this shift",
@@ -1968,6 +1981,8 @@ class Model:
             if isinstance(stop, dict) and isinstance(stop.get("at"), str) and isinstance(stop.get("tick"), int):
                 self.platform_course.setdefault(name, {"visited": set()})["stop"] = {"at": stop["at"], "tick": stop["tick"], "seen": bool(stop.get("seen"))}
         self.planets_reached.update(mem.get("reached") or [])
+        if isinstance(mem.get("rockets_at_start"), int):  # (AY3) this run's own file only: earlier runs give stops
+            self.rockets_at_start = mem["rockets_at_start"]
 
     ROUTE_KEEP = 4         # departure ticks kept per platform and route
     ROUTE_SAME = 2 * 3600  # two records of one departure (the score's read and the chronicle's event) this close: one
@@ -2045,6 +2060,8 @@ class Model:
                "reached": sorted(self.planets_reached),
                "stops": {n: c["stop"] for n, c in sorted(self.platform_course.items()) if c.get("stop")},
                "routes": {n: dict(sorted(r.items())) for n, r in sorted(self.platform_routes.items())}}
+        if self.rockets_at_start is not None:
+            mem["rockets_at_start"] = self.rockets_at_start
         if mem == getattr(self, "_space_memory_saved", None):
             return
         try:

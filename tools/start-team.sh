@@ -310,10 +310,16 @@ if [ "${POG_CASTER:-1}" != 0 ]; then
 fi
 # The companion site's live page (site/push_live.py; token in site/worker/.secrets.json, gitignored).
 # POG_PUSH_LIVE=0: not pushed (test runs, which must not show on the public site).
+# (d22 batch89 AY2) one pusher at a time: one already running (a shift not stopped, or one started by hand) is left
+# alone and named; push_live.py's own lock refuses a second copy too.
 if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; }; then
-  nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
-  echo $! >> "$rundir/stream-service.pid"
-  helpers+=("push-live:$!:$rundir/push-live.log")
+  if running=$(pgrep -f "site/push_live.py --source" | tr '\n' ' ') && [ -n "$running" ]; then
+    log "push_live already runs (pid $running): not started again; tools/stop-team.sh stops it with its run"
+  else
+    nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
+    echo $! >> "$rundir/stream-service.pid"
+    helpers+=("push-live:$!:$rundir/push-live.log")
+  fi
 fi
 # The site's polls (site/polls_relay.py): RUN/polls.json for ./fh poll, the agents' team-block line, the stream's poll
 # strip and the hosts; agents' votes (./fh poll vote) posted with the token; agents' and viewers' poll ideas into the

@@ -15,7 +15,8 @@ t, source}, parts}), then posts each part to the game chat over RCON as the oper
 stream service (model.py) reads that file: every part threads under the named line, at any age and after a restart,
 and the site shows "part 1 of 2". A reply sent without this tool is matched by name as before (viewer_replies.py).
 
---world: POG_WORLD, else n. --run: the run folder (default: the runs/shift* folder whose chat.jsonl changed last).
+--world: POG_WORLD, else n. --run: the run folder (default: the runs/shift* folder whose chat.jsonl changed last, the
+live one); an inbox line from the 2 runs before it is found too, and the record still goes to this run (d22 batch89 AY4).
 """
 import argparse, datetime, glob, json, os, re, sys, time, urllib.request
 
@@ -34,20 +35,23 @@ def latest_run(root):
     return runs[-1] if runs else None
 
 
-def inbox_rows(run):
-    """The viewer rows of RUN/operator-inbox.jsonl, oldest first."""
+def inbox_rows(run, back=viewer_replies.LINKS_BACK):
+    """The viewer rows of RUN/operator-inbox.jsonl and of the `back` runs it resumed from, oldest first, each with
+    "_run" (its run folder's name). (d22 batch89 AY4) a line from an earlier shift is answered from the live run:
+    with --run shift56 during shift57 the record went into shift56's file, which shift57's service did not read."""
     rows = []
-    try:
-        with open(os.path.join(run, "operator-inbox.jsonl")) as f:
-            for raw in f:
-                try:
-                    r = json.loads(raw)
-                except ValueError:
-                    continue
-                if isinstance(r, dict) and r.get("viewer") and str(r.get("agent") or "").startswith("viewer "):
-                    rows.append(r)
-    except OSError:
-        pass
+    for path in viewer_replies.links_files(os.path.join(run, "operator-inbox.jsonl"), back):
+        try:
+            with open(path) as f:
+                for raw in f:
+                    try:
+                        r = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if isinstance(r, dict) and r.get("viewer") and str(r.get("agent") or "").startswith("viewer "):
+                        rows.append(dict(r, _run=os.path.basename(os.path.dirname(path))))
+        except OSError:
+            pass
     return rows
 
 
@@ -81,7 +85,7 @@ def resolve(to, run, fetch=None):
         return to, got["name"], {"text": got["text"], "t": got["t"], "source": "site"}
     for r in reversed(rows):
         if r.get("id") == to:
-            return to, r["agent"][7:], {"text": r.get("text"), "t": r.get("t"), "source": r.get("source")}
+            return to, r["agent"][7:], {"text": r.get("text"), "t": r.get("t"), "source": r.get("source"), "run": r["_run"]}
     m = re.fullmatch(r"(.+)@(\d{1,2}):(\d{2})", to)
     if m:
         name, at = m.group(1).lstrip("@"), "%02d:%s" % (int(m.group(2)), m.group(3))
@@ -90,7 +94,7 @@ def resolve(to, run, fetch=None):
             sys.exit(f"opreply: no inbox line from {name} at {at} in {run}")
         r = hits[-1]
         ident = r.get("id") or f"inbox:{r['agent'][7:]}@{r['t']}"
-        return ident, r["agent"][7:], {"text": r.get("text"), "t": r.get("t"), "source": r.get("source")}
+        return ident, r["agent"][7:], {"text": r.get("text"), "t": r.get("t"), "source": r.get("source"), "run": r["_run"]}
     sys.exit(f"opreply: --to is site:N, an inbox id or NAME@HH:MM, not {to!r}")
 
 
@@ -162,7 +166,8 @@ def main(argv=None):
     ap.add_argument("--list", nargs="?", const="", metavar="NAME", help="recent inbox lines from viewers (or NAME) with their ids")
     ap.add_argument("--world", default=os.environ.get("POG_WORLD", "n"))
     ap.add_argument("--port", type=int)
-    ap.add_argument("--run", help="the run folder (default: the latest runs/shift*)")
+    ap.add_argument("--run", help="the run folder the record goes to (default: the live one, the runs/shift* whose chat.jsonl "
+                    "changed last); --to finds inbox lines there and in the 2 runs it resumed from")
     ap.add_argument("--dry-run", action="store_true", help="print the parts and the record; send and write nothing")
     ap.add_argument("--sent", nargs="+", metavar="SEQ", help="link Operator lines already in the game chat (RUN/chat.jsonl seqs, in order); sends nothing")
     a = ap.parse_args(argv)
@@ -177,10 +182,12 @@ def main(argv=None):
     if not a.to or not (a.text or a.sent) or (a.text and a.sent):
         ap.error("--to and the reply text (or --sent SEQ ...) are needed, or --list")
     ident, name, question = resolve(a.to, run)
+    found_in = question.pop("run", None)
     lines = sent_lines(run, a.sent) if a.sent else parts(name, a.text)
     rec = {"t": round(time.time(), 1), "to": ident, "name": name, "question": question, "parts": lines, "world": a.world}
     path = os.path.join(run, viewer_replies.LINKS_NAME) if run else None
-    print(f"answers {ident} ({name}, {hm(question['t']) if isinstance(question.get('t'), (int, float)) else '?'}): {str(question.get('text'))[:100]}")
+    print(f"answers {ident} ({name}, {hm(question['t']) if isinstance(question.get('t'), (int, float)) else '?'}): {str(question.get('text'))[:100]}"
+          + (f" (from {found_in}'s inbox; the record goes to {os.path.basename(run)})" if found_in and found_in != os.path.basename(run) else ""))
     for line in lines:
         print("  " + line)
     if a.sent:
