@@ -91,7 +91,7 @@ defines.wire_connector_id={circuit_red=1,circuit_green=2,combinator_input_red=1,
   pole_copper=5,power_switch_left_copper=5,power_switch_right_copper=6}
 defines.wire_type={red=1,green=2,copper=3}
 defines.wire_origin={player=0,radars=1,script=2}
-defines.control_behavior={type={inserter=1,constant_combinator=2,arithmetic_combinator=3,decider_combinator=4,space_platform_hub=5,lamp=6,wall=7,container=8,generic_on_off=9,logistic_container=20},
+defines.control_behavior={type={inserter=1,constant_combinator=2,arithmetic_combinator=3,decider_combinator=4,space_platform_hub=5,lamp=6,wall=7,container=8,generic_on_off=9,logistic_container=20,selector_combinator=21},
   inserter={hand_read_mode={hold=0,pulse=1}},logistic_container={exclusive_mode={send_contents=0,set_requests=1,none=2}}}
 local CB=defines.control_behavior.type
 -- A character reaches 15 tiles here, on its own surface.
@@ -515,4 +515,49 @@ local train2=setmetatable({valid=true,manual_mode=true,get_schedule=function() r
 local loco2=thing('locomotive','locomotive',16,nil); loco2.train=train2
 astra('train',{position={x=16,y=0},schedule={{station='A'},{station='B'}},current=2})
 eq(#recs,2); eq(recs[2].station,'B'); eq(sched.at,2)
+-- d22 batch87 AW1 (Astra #1875, Sol #1874: a landing pad's circuit set_requests could not be given an uncommon item, as
+-- circuit_set signals refused {signal, quality, count}): quality on every signal circuit_set takes, checked against the
+-- qualities our force has unlocked, and kept in every read.
+prototypes.quality={normal={name='normal',level=0},uncommon={name='uncommon',level=1},rare={name='rare',level=2},
+  legendary={name='legendary',level=5},['quality-unknown']={name='quality-unknown',level=0,hidden=true}}
+force.is_quality_unlocked=function(q) q=type(q)=='table' and q.name or q; return q=='normal' or q=='uncommon' or q=='rare' end
+r=astra('circuit_set',{position={x=4,y=0},on=true,signals={{signal='iron-plate',quality='uncommon',count=20},{signal={name='iron-plate',quality='rare'},count=5},
+  {signal='iron-plate',count=500},{signal='iron-plate@rare',quality='rare',count=1}}})
+eq(section.filters[1].value.quality,'uncommon'); eq(section.filters[1].min,20); eq(section.filters[2].value.quality,'rare')
+eq(section.filters[3].value.quality,'normal'); eq(section.filters[4].value.quality,'rare')
+eq(r.circuit.signals[1].name,'iron-plate@uncommon'); eq(r.circuit.signals[2].name,'iron-plate@rare'); eq(r.circuit.signals[3].name,'iron-plate')
+fails(function() astra('circuit_set',{position={x=4,y=0},signals={{signal='iron-plate@rare',quality='uncommon',count=1}}}) end,
+  'signals 1: quality uncommon and the signal\'s rare differ')
+fails(function() astra('circuit_set',{position={x=4,y=0},signals={{signal='iron-plate',quality='legendary',count=1}}}) end,
+  'signals 1.quality: quality legendary is not unlocked (unlocked: normal, uncommon, rare)')
+fails(function() astra('circuit_set',{position={x=4,y=0},signals={{signal='iron-plate',quality='shiny',count=1}}}) end,
+  'signals 1.quality: unknown quality shiny (normal, uncommon, rare)')
+fails(function() astra('circuit_set',{position={x=4,y=0},signals={{signal='iron-plate',qualty='rare',count=1}}}) end,'qualty is not a signal field: signal, count, quality?')
+-- conditions, outputs (a decider output's own quality too), arithmetic, signal settings and the selector
+r=astra('circuit_set',{position={x=8,y=0},decider={conditions={'iron-plate@uncommon > 0',{signal={name='iron-plate',quality='rare'},comparator='<',signal2='ice@uncommon',compare='and'}},
+  outputs={{signal='iron-plate',quality='uncommon',copy_input=true},{signal='signal-A@rare',constant=2}}}})
+local dp=decider_cb.parameters
+eq(dp.conditions[1].first_signal.quality,'uncommon'); eq(dp.conditions[2].first_signal.quality,'rare'); eq(dp.conditions[2].second_signal.quality,'uncommon')
+eq(dp.outputs[1].signal.quality,'uncommon'); eq(dp.outputs[2].signal.quality,'rare')
+eq(r.circuit.decider.conditions[1],'iron-plate@uncommon > 0 [reads red+green]'); eq(r.circuit.decider.conditions[2],'AND iron-plate@rare < ice@uncommon [reads red+green, red+green]')
+eq(r.circuit.decider.outputs[1],'iron-plate@uncommon = the input count (copy) [from red+green]'); eq(r.circuit.decider.outputs[2],'signal-A@rare = constant 2 [from red+green]')
+fails(function() astra('circuit_set',{position={x=8,y=0},decider={conditions={'iron-plate@legendary > 0'},outputs={'iron-plate'}}}) end,'quality legendary is not unlocked')
+r=astra('circuit_set',{position={x=6,y=0},arithmetic={first='iron-plate@uncommon',operation='*',constant=-1,output={name='iron-plate',quality='uncommon'}}})
+eq(arith_cb.parameters.first_signal.quality,'uncommon'); eq(arith_cb.parameters.output_signal.quality,'uncommon')
+eq(r.circuit.arithmetic.text,'iron-plate@uncommon * -1 -> iron-plate@uncommon')
+r=astra('circuit_set',{position={x=2,y=0},settings={circuit_stack_control_signal='signal-S@rare'},enable='iron-plate@uncommon < 10'})
+eq(inserter_cb.circuit_stack_control_signal.quality,'rare'); eq(inserter_cb.circuit_condition.first_signal.quality,'uncommon')
+eq(r.circuit.settings.circuit_stack_control_signal,'signal-S@rare')
+fails(function() astra('circuit_set',{position={x=2,y=0},enable='iron-plate@quality-unknown < 10'}) end,'quality quality-unknown is not unlocked')
+NAMES['selector-combinator']=1
+local selector_cb=cb_of('selector_combinator')
+thing('selector-combinator','selector-combinator',20,selector_cb)
+r=astra('circuit_set',{position={x=20,y=0},selector={operation='quality-transfer',quality_source_static='uncommon',quality_destination_signal='signal-A'}})
+eq(selector_cb.parameters.quality_source_static.name,'uncommon'); eq(r.circuit.selector.quality_source_static,'uncommon')
+-- the game reads a quality back as its prototype
+selector_cb.parameters={operation='quality-filter',quality_filter={quality={name='rare'},comparator='>='}}
+eq(astra('inspect',{position={x=20,y=0}}).circuit.selector.quality_filter,'>= rare')
+fails(function() astra('circuit_set',{position={x=20,y=0},selector={operation='quality-filter',quality_filter={quality='legendary',comparator='>='}}}) end,
+  'selector.quality_filter: quality legendary is not unlocked')
+force.is_quality_unlocked=nil
 print('circuits and trains: ok')

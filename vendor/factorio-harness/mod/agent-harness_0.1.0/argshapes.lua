@@ -9,7 +9,7 @@ return function()
   -- {label, fields (in order; '?' optional), hint (for a field it does not take: what it may have meant)}
   local REQUEST = {label='request', fields={'item', 'min?', 'max?', 'quality?', 'from?', 'min_payload?', 'minimum_delivery_count?'},
     hint={count='min is how much it asks for, max caps it', name='item', import_from='from', amount='min', planet='from', import='from'}}
-  local SIGNAL = {label='signal', fields={'signal', 'count', 'name?'}, hint={value='count', constant='count', min='count'}}
+  local SIGNAL = {label='signal', fields={'signal', 'count', 'quality?', 'name?'}, hint={value='count', constant='count', min='count'}}
   local DROP_ITEM = {label='drop item', fields={'item', 'count?', 'quality?'}, hint={name='item', amount='count'}}
   local CARGO_ITEM = {label='cargo item', fields={'item', 'count', 'quality?', 'name?'}, hint={amount='count'}}
   -- An entry's settings (entryset.lua: configure, requests, circuit, wires, settings) and the setting keys it sends
