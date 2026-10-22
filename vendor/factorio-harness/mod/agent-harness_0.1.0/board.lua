@@ -2368,6 +2368,11 @@ return function(api)
       local ok, list = pcall(api.delivery_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A flight watch begun at a departure or ended, to its setter (flightwatch.lua; d21 batch72 AH1).
+    if api.flight_lines then
+      local ok, list = pcall(api.flight_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Hand-fed burner machines running dry within 10 minutes (burnerfuel.lua).
     if api.burner_lines then
       local ok, list = pcall(api.burner_lines, p, h)

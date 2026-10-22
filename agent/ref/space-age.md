@@ -271,6 +271,14 @@
   platform stops at before the destination (pad, request, count, which stop) is a blocker while it is stopped there and
   in `risks` before (a pad request's import planet does not stop it; the hub's own request for the item keeps up to its
   max aboard, all with no max); a pod of it landing on another planet is in `diversions` (`diverted`: their sum).
+- `flight_watch {platform, from?: "now" | "departure", minutes?}`: one platform watched once a second from now (or its
+  next departure) to its next arrival or `minutes` (1..480, default 120). Per ammo turret (unit_number, position):
+  `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
+  the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it
+  first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
+  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them. The
+  setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
+  two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and

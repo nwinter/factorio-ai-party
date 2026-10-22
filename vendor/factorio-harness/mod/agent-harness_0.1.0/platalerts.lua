@@ -252,14 +252,19 @@ return function(api)
     local hub = counts(sc.hub_ammo, 3)
     return string.format('turrets hold %d rounds, the hub %s', sc.rounds, hub ~= '' and hub or 'no ammo')
   end
-  -- The platforms read's row (space.lua): fresh, not cached.
+  -- The platforms read's row (space.lua): fresh, not cached; (d21 batch72 AH1, Sol #1720) sampled_tick says so.
   function M.defense(pl)
     if not pl.surface then return nil end
     local sc = read(pl)
-    return {hub_health=sc.health and sc.max and string.format('%d/%d', round(sc.health), round(sc.max)) or nil,
+    return {sampled_tick=sc.tick, hub_health=sc.health and sc.max and string.format('%d/%d', round(sc.health), round(sc.max)) or nil,
       turrets=sc.turrets > 0 and string.format('%d %s%s: %d empty, %d low (under %d rounds)', sc.turrets, sc.turret_name,
         sc.turrets == 1 and '' or 's', sc.empty, sc.low, LOW_AMMO) or 'none',
       ammo=ammo_text(sc)}
+  end
+  -- (d21 batch72 AH1) the running totals of hits on a platform's entities by other forces (flightwatch.lua), or nil.
+  function M.hits(pl)
+    local r = store().by[pl.index]
+    return r and r.total
   end
   -- For the alerts: read at most every 10 s per platform.
   local function scan(pl, r)

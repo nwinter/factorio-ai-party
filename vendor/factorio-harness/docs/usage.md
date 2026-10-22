@@ -10820,3 +10820,47 @@ CF500 request diverted K2 cargo intended for Aquilo before it reached the named 
   read the risk at Gleba (stop 2), whose pad asks 1000, and team.alerts carried it. Watches cleared, pad slots 2 to 4
   removed, AB6t destroyed.
 
+
+## d21 batch72 AH1 (eng/d20-batch72)
+
+- AH1 (Sol #1720: Kestrel IVc's `platform` read gave "11 turrets: 1 empty" at tick 43697882 and `platform_defense` at
+  43698251 read all 11 armed; two reads 6 s apart tell neither which turret nor how long). Main had the parts:
+  `platform`'s defense row (platalerts.defense, counted at the reply's tick), platalerts' running hit totals,
+  `losses` (lostlog.lua), the ammunition trace (ammofeed.lua), the fuel outlook (endurance.lua) and `turret_tally`'s
+  one-second sampling. Nothing kept a platform's turrets' ammunition over a leg.
+- New: `flight_watch {platform, from?: "now" | "departure", minutes?: 1..480, replace?}` (flightwatch.lua; runtime
+  deploy needed). `{id}` reads one in full, `{}` lists the force's, `{id, clear: true}` drops one.
+  - Armed from "departure": it begins on the first sample that reads the platform flying after one that read it
+    stopped. It ends at the first sample stopped at a location after it flew, or at `minutes`, or with the platform
+    gone. Armed 24 h with no departure, it ends unbegun.
+  - Once a second (tick % 60 == 51), each ammo turret aboard (found at the start and again each minute: up to 128):
+    the item count in its ammo slots. Kept: least and its tick, at the start, now, empty_samples, empty_ticks (each
+    empty sample counts the ticks since the sample before), empty_runs, longest_empty_ticks and longest_from_tick,
+    gone_tick, added_tick.
+  - Feed: the background ammunition trace (`ammofeed.get(pl, age, true)`: never the synchronous trace), asked once a
+    minute, or 10 s after the last ask when a turret begins to read empty. Each turret gets feed_start, feed_empty
+    (the first trace begun after it first read empty) and feed_end: `{kind (supply_kind: maker, hub, chest,
+    preload, none), gated, reaches, stop, tick}`. ammofeed.get's trace now carries read_started and read_tick.
+  - Damage: the change in platalerts' running totals (hits by forces other than ours), by entity and by cause.
+    Losses: lostlog.since from the start. Repair packs used: the change in the platform surface's item production
+    statistics, consumed, of every repair-tool item; the hub's packs at the start and the end. Thruster fuel and
+    oxidizer held (thrusters and tanks) at the start and the end, from the fuel outlook.
+  - Kept in storage until cleared. A done watch read once is dropped an hour after that read. At most 8 a force; a
+    new one drops the oldest read one, else is refused. A second watch on the same platform, while the first runs or
+    is unread, needs `replace: true`. The setter hears in team.alerts when one begins at a departure and when one
+    ends (with the turrets in one phrase). A read gives up to 24 turret rows: those that read empty, the longest run
+    first, then the lowest on ammo; `turrets_more` and `turrets_more_line` count the rest.
+  - The `platform` read's defense row gives `sampled_tick`, the tick its turrets were counted (the reply's: it is not
+    cached).
+- Headless copy (private container, the d17 save): Swift, 6 gun turrets fed from the hub.
+  - Armed from "departure" at Gleba, it began at the first sample after the schedule sent it on (23 ticks after the watch was set).
+  - Mid-flight, a turret was damaged by 300 (enemy force), a belt was killed, and a turret's ammo slots were cleared.
+    The read gave: damage 300 in 1 hit (gun-turret 300); 1 lost, transport-belt (-10.5,-0.5) at +2m49s; repair packs
+    used 5 (hub 169 -> 164; the statistics counted the packs the hub's repair used); the cleared turret least 0, 1
+    empty sample (60 ticks), feed after it first read empty "hub, 635 can reach it", from a trace begun 2 ticks after.
+  - A watch from now survived `/server-save` and a restart from that save, and kept sampling.
+  - Gleba to Nauvis, it ended "arrived at nauvis" after 4m13s and 255 samples. A 1-minute watch ended at its limit,
+    and the next reply's team.alerts carried the end line.
+  - Cost on the copy (x86 under Rosetta): a sample 0.05-0.08 ms with 6 turrets, peaks 0.16-0.28 ms when it asks for
+    a trace or looks for new turrets. A full read is 7.6-8.7 ms against 3.6-7.7 ms for `clock` by the same dispatch;
+    the list is 5.8 ms.

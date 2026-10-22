@@ -2147,6 +2147,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.delivwatch and M.delivwatch.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.flightwatch and M.flightwatch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.gap and M.gap.schema or {}) do description.actions[name]=schema end
@@ -16149,7 +16150,7 @@ M.board=require('board'){state=state,on_update=function(by,item) return M.progre
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,speaker_lines=function(p,h) return M.pushalerts.speaker_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   death_lines=function(p,h) return M.death_lines(p,h) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -16502,6 +16503,8 @@ passive.min_payload=true; passive.platform_rename=true; passive.platform_delete=
 passive.character_settings=true
 -- (d21 batch66 AB5) delivery_watch sets the harness's own watch: no walk, no queue stop.
 passive.delivery_watch=true
+-- (d21 batch72 AH1) flight_watch likewise
+passive.flight_watch=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
@@ -18197,6 +18200,13 @@ function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- (d21 batch66 AB5, viewer Aurora) delivery_watch: a count of an item followed to a named consumer (delivwatch.lua)
 M.delivwatch=require('delivwatch'){state=state,who=function(p) return M.board.who(p) end,freight=M.freight,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
 function handlers.delivery_watch(p,a) return M.delivwatch.call(p,a) end
+-- (d21 batch72 AH1, Sol #1720) flight_watch: a platform's turrets' ammunition, damage, losses, repair packs and fuel
+-- once a second from now or its next departure to its next arrival (flightwatch.lua)
+M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
+  fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
+  losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
+  supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end}
+function handlers.flight_watch(p,a) return M.flightwatch.call(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
   shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -19307,6 +19317,7 @@ function M.tick_body(event)
   if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
+  if event.tick%60==51 and state().flightwatch then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
