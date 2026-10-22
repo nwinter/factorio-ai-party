@@ -345,14 +345,26 @@ do
   end
   -- the verdict (runtime.lua M.dry_verdict, read from the source): the refused tiles and the unbuilt ones fail it
   local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
-  local body = src:match('\n(function M%.dry_verdict%(out,a%).-\nend)\n')
+  -- the function's text: from its line to the first line-start end at which it loads (the compacted modules' run
+  -- strips indentation, so earlier line-start ends are nested ones)
   local R = {}
   local env = setmetatable({M=R}, {__index=_G})
-  load(body, 'dry_verdict', 't', env)()
-  local v = R.dry_verdict({dry_run=true, tiles=cb.tiles}, {dry_run=true})
-  eq(v.dry_run_ok, false)
-  has(v.verdict, 'fails: 9 foundation tiles refused in front of asteroid collectors (tiles.collector_clearance), '..cb.tiles.unbuilt_count..' foundation tile'..(cb.tiles.unbuilt_count == 1 and '' or 's')..' the hub never builds')
-  eq(R.dry_verdict({dry_run=true, tiles={planned=3}}, {dry_run=true}).verdict, 'ok: every entry places and every setting is taken')
+  local from = src:find('\nfunction M%.dry_verdict%(out,a%)')
+  local at, chunk = from, nil
+  while from and not chunk do
+    local e = src:find('\nend', at + 1, true)
+    if not e then break end
+    chunk = load(src:sub(from + 1, e + 3), 'dry_verdict', 't', env)
+    at = e
+  end
+  assert(chunk, 'M.dry_verdict not read from runtime.lua')
+  do
+    chunk()
+    local v = R.dry_verdict({dry_run=true, tiles=cb.tiles}, {dry_run=true})
+    eq(v.dry_run_ok, false)
+    has(v.verdict, 'fails: 9 foundation tiles refused in front of asteroid collectors (tiles.collector_clearance), '..cb.tiles.unbuilt_count..' foundation tile'..(cb.tiles.unbuilt_count == 1 and '' or 's')..' the hub never builds')
+    eq(R.dry_verdict({dry_run=true, tiles={planned=3}}, {dry_run=true}).verdict, 'ok: every entry places and every setting is taken')
+  end
 end
 -- A platform powers every machine with no pole (d15 batch5 A1, Sol: check_inserters refused every platform inserter).
 ps.has_global_electric_network = true
