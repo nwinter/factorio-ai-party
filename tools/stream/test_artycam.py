@@ -107,6 +107,19 @@ def spacing_and_more_shells():
     print("3. once per arty_gap; more shells at its target hold it longer: ok")
 
 
+def two_shells_one_read():
+    """(d22 batch89 AY5) two shells in one read: the first cuts, the second (beside it) holds that shot; shift57
+    07:50:12 raised KeyError 'until' on the state that had been on air."""
+    d, _ = world(map_every=0)
+    t = settled(d, 1000)
+    d.state[d.onair].pop("until", None)  # the state on air has no until (shift57's)
+    d.step(snap(team(), [shell(key="a", eta=150), shell(key="b", eta=240, x=410.5, y=-325.5)], read_at=t), t)
+    assert [a[1] for a in d.artys] == ["cut"], d.artys
+    framed = d.state[d.pending["slot"]]
+    assert framed["artillery"]["shells"] == 2 and framed["until"] >= t + 4 + 0.5, framed
+    print("7. two shells in one read: the second holds the new shot: ok")
+
+
 def outranked():
     d, _ = world(map_every=0)
     t = settled(d, 1000)
@@ -151,6 +164,7 @@ def main():
     cut_and_back()
     lead_and_once()
     spacing_and_more_shells()
+    two_shells_one_read()
     outranked()
     one_client()
     service()

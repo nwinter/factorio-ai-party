@@ -151,6 +151,12 @@ ONECAM = {
     "inset_hold": 20.0,     # an inset stays up this long after its alert
     "inset_min": 8.0,       # an alert's inset is not replaced by another alert's inside this (a death or agent may)
     "inset_repeat": 120.0,  # an alert of a fight whose inset went up this recently is a repeat (no new inset)
+    # (d22 batch89 AY5) one place, one inset a while: "Base under attack near (-144, -560): laser turret" went up 38
+    # times in shift55 and 38 in shift56, a median 322 s apart, each a new alert key; an alert within inset_area tiles
+    # of an inset shown less than inset_area_gap s ago is skipped unless it is worse (a loss after an attack, a death,
+    # more pieces lost)
+    "inset_area": 64.0,
+    "inset_area_gap": 600.0,
     "onair_edge": 3.0,      # tiles: an alert inside the on-air frame (this far from its border) needs no cut or inset
     "loss_recut": 180.0,    # a loss within this long of the last loss cut is an inset, not a cut
     "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
@@ -468,6 +474,7 @@ class OneCam(Director):
         self.last_battle_end = -1e9
         self.last_alert_cut = -1e9  # the last cut an alert made (the attack_spacing between alert cuts)
         self.inset_keys = {}        # alert key -> when its inset went up (repeats of a fight drop)
+        self.inset_spots = []       # (AY5) {position, t, worse} of the insets shown lately, by place
         self.last_battle = None  # the battle that ended last (it resumes within battle_spacing)
         self.cues_seen = set()  # voice clip ids already judged
         self.cue_last = {}      # agent -> when its last cue was shown
@@ -606,6 +613,25 @@ class OneCam(Director):
         return bool(ins.get("why") == "alert" and p and position and
                     (p.get("surface") or "nauvis") == (position.get("surface") or "nauvis") and dist(p, position) <= 40)
 
+    INSET_KIND = {"attack": 0, "loss": 1, "death": 2}
+
+    def inset_worse(self, al):
+        """(AY5) how bad an alert is, to compare with an earlier inset at its place: its kind, then pieces lost."""
+        return (self.INSET_KIND.get(al.get("kind"), 0), loss_pieces(al.get("text")))
+
+    def inset_area_repeat(self, al, position, now):
+        """(AY5) an inset shown within inset_area tiles less than inset_area_gap s ago, this alert no worse: its age."""
+        if not position:
+            return None
+        self.inset_spots = [sp for sp in self.inset_spots if now - sp["t"] < self.cfg["inset_area_gap"]]
+        worse = self.inset_worse(al)
+        for sp in self.inset_spots:
+            p = sp["position"]
+            if (p.get("surface") or "nauvis") == (position.get("surface") or "nauvis") and \
+                    dist(p, position) <= self.cfg["inset_area"] and worse <= sp["worse"]:
+                return now - sp["t"]
+        return None
+
     def fight_zoom(self, extent):
         return round(max(0.4, super().fight_zoom(extent) * self.cfg["view_frac"]), 2)
 
@@ -689,6 +715,10 @@ class OneCam(Director):
             if ins.get("why") == "alert":
                 ins["until"] = max(ins["until"], now + self.cfg["inset_hold"] / 2)  # still going: up a little longer
             return skip("the same fight as an inset shown lately", score, parts)
+        if al["kind"] != "death" and not subject:
+            age = self.inset_area_repeat(al, position, now)
+            if age is not None:
+                return skip(f"an inset {int(age)} s ago within {int(self.cfg['inset_area'])} tiles, this one no worse", score, parts)
         ins = self.inset or {}
         urgent_kind = al["kind"] == "death" or bool(subject)  # a death, an agent under attack
         if ins.get("why") == "enemy" and not urgent_kind:
@@ -710,6 +740,8 @@ class OneCam(Director):
                       "position": position or (by_name.get(subject) or {}).get("position"), "urgent": urgent_kind}
         if al.get("key"):
             self.inset_keys[al["key"]] = now
+        if position and not subject:
+            self.inset_spots.append({"position": position, "t": now, "worse": self.inset_worse(al)})
         if score is not None:
             self.log_threat({"t": round(now, 1), "threat": "loss inset", "key": al.get("key") or al["text"],
                              "score": score, "parts": parts, "decision": "take", "why": "a real loss away from the story"})
@@ -1807,6 +1839,10 @@ class OneCam(Director):
                 if self.pending:  # framed on a standby: cut in time for the impact
                     self.pending["ready_s"] = max(0.2, min(cfg["ready_s"], lead - 0.5))
                 self.last_arty = now
+                # (d22 batch89 AY5) the next shells of this read hold the new shot, not the state that was on air
+                # (shift57 07:50:12: KeyError 'until' on a state without one); urgent() keeps a copy, on air or on the
+                # standby, sharing this shot
+                cur = next((st for st in self.state.values() if isinstance(st, dict) and st.get("artillery") is shot), target)
             self.artys.append((now, decision, why, label))
             entry = {"key": key, "decision": decision, "why": why, "label": label, "lead": round(lead, 2)}
             if self.log_path:
