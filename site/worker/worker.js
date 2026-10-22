@@ -58,12 +58,29 @@ const LEET = {"0": "o", "1": "i", "l": "i", "|": "i", "3": "e", "4": "a", "@": "
 const RESERVED_CONTAINS = ["nickwinter", "nickw"];
 const RESERVED_EXACT = ["nick", "winter", "astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse", "fable", "server", "operator", "mod", "moderator", "admin", "caster", "system", "playerofgames", "pog"];
 const RESERVED_NEAR = ["nickwinter", "operator"];
+// (d22 batch75 AK12, viewer Aurora site:4296: "The site defaults blank names to viewer, but the relay rejects viewer as
+// impersonation:name. Please align the name rules") the relay's own reserved words (tools/stream/viewers.py RESERVED,
+// matched there on the name folded, spaces out): refused here too, so a name the relay would drop is turned back when
+// it is posted, never relayed to nobody. site/worker/test_api.py checks the two lists are the same.
+export const RELAY_RESERVED = ["operator", "op", "mod", "moderator", "admin", "caster", "host", "hosts", "system", "server", "narrator",
+  "announcer", "director", "harness", "board", "team", "viewer", "viewers", "agent", "agents", "nick"];
+const RELAY_N = new Set(RELAY_RESERVED);
+// A blank name's default: "Guest" and four hex digits of the poster's salted client hash (who), the same for a poster
+// each time, different between posters, and a name the relay takes (it was "viewer", which the relay drops).
+export function guestName(who) { return "Guest " + String(who || "0000").slice(0, 4); }
 export function normalizeName(name) {
   let s = [...String(name == null ? "" : name)].filter((c) => !ZERO_WIDTH.has(c.codePointAt(0))).join("");
   s = [...s].map((c) => HOMOGLYPHS[c] || c).join("");
   s = s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
   s = [...s].map((c) => HOMOGLYPHS[c] || LEET[c] || c).join("");
   return s.replace(/[^a-z]/g, "");
+}
+// (AK12) a name as the relay folds it for its reserved words (viewers.py fold: NFKD, accents and case dropped, its
+// leetspeak table undone), spaces out
+const RELAY_LEET = {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"};
+export function relayFold(name) {
+  const s = String(name == null ? "" : name).normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+  return [...s].map((c) => RELAY_LEET[c] || c).join("").replace(/\s+/g, "");
 }
 function distance(a, b, cap = 3) {
   if (Math.abs(a.length - b.length) >= cap) return cap;
@@ -496,7 +513,7 @@ export class Live {
       const limited = this.hostLimit(now);
       if (limited) return limited;
     } else {
-      name = this.viewerName(body.name);
+      name = this.viewerName(body.name, who);
       if (name.error) return json(name, 400);
       const limited = this.limit(who, now);
       if (limited) return limited;
@@ -513,7 +530,7 @@ export class Live {
     this.sql.exec("DELETE FROM chat WHERE seq <= ?", row.seq - CHAT.keep);
     const out = { seq: row.seq, t, name: name.name, text: msg, channel };
     if (host) out.host = true;
-    return json({ ok: true, message: out });
+    return json(name.guest ? { ok: true, message: out, guest_name: name.name } : { ok: true, message: out });
   }
 
   // The host link on a post (chat, a poll vote or idea): {host: true} for a matching X-Host-Token, {host: false} without
@@ -531,12 +548,15 @@ export class Live {
     return null;
   }
 
-  // A viewer's name, as chat takes it: {name} or {error}.
-  viewerName(raw) {
-    const name = tidy(raw).slice(0, 20) || "viewer";
+  // A viewer's name, as chat takes it: {name} or {error}; blank: guestName(who) (AK12).
+  viewerName(raw, who) {
+    const typed = tidy(raw).slice(0, 20);
+    const name = typed || guestName(who);
     if (!/^[\p{L}\p{N} _.'-]{2,20}$/u.test(name)) return { error: "names are 2-20 letters, digits, spaces or _ . ' -" };
     if (reservedName(name)) return { error: "that name is reserved" };
-    return { name };
+    // the relay's words, as the relay folds a name (lowercase, spaces out; leetspeak undone)
+    if (typed && RELAY_N.has(relayFold(name))) return { error: "that name is reserved" };
+    return typed ? { name } : { name, guest: true };
   }
 
   // Chat's per-client and global limits (a blueprint post counts as a message): a 429 response, or null.
@@ -576,7 +596,7 @@ export class Live {
       const had = this.sql.exec(`SELECT ${cols} FROM blueprints WHERE cid = ? AND who = ?`, cid, who).toArray();
       if (had.length) return json({ ok: true, repeat: true, blueprint: had[0] });
     }
-    const name = this.viewerName(body.name);
+    const name = this.viewerName(body.name, who);
     if (name.error) return json(name, 400);
     const title = tidy(body.title);
     if (!title) return json({ error: "a title, please" }, 400);
@@ -743,7 +763,7 @@ export class Live {
     if (!Number.isInteger(option) || option < 0 || option >= JSON.parse(p.options).length) {
       return json({ error: "option must be one of the poll's (0, 1, ...)" }, 400);
     }
-    const name = host.host ? { name: HOST.name } : this.viewerName(body.name);
+    const name = host.host ? { name: HOST.name } : this.viewerName(body.name, who);
     if (name.error) return json(name, 400);
     const comment = tidy(body.comment);
     if ([...comment].length > POLL.maxComment) return json({ error: `comments are at most ${POLL.maxComment} characters` }, 400);
@@ -830,7 +850,7 @@ export class Live {
     if (cid && this.sql.exec("SELECT 1 FROM poll_ideas WHERE cid = ? AND who = ?", cid, who).toArray().length) {
       return json({ ok: true, repeat: true });
     }
-    const name = host.host ? { name: HOST.name } : this.viewerName(body.name);
+    const name = host.host ? { name: HOST.name } : this.viewerName(body.name, who);
     if (name.error) return json(name, 400);
     const q = this.pollText(body, true);
     if (q.error) return json(q, 400);
