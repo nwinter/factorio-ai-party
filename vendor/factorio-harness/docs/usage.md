@@ -11033,3 +11033,15 @@ pass began as the last ended.
   returned count 0, preserved "1251 of the blueprint's entities already stood there ...", anchor aligned true; with 40
   of Sol's floor ghosts removed first, count 40 (space-platform-foundation); with 5 entity ghosts removed (4
   fast-inserters, a crusher), count 5, each at its spot, 1 wire joined to what stood. Tests: tests/blueprints.lua.
+- AL2 (#1752, Sol: Spindle's place_ghosts dry run of foundation over (-14,-23)-(10,-14) at tick 44806748 said "ok:
+  every entry places" with 12 tiles refused in front of the asteroid collector (-0.5,-13.5); live, 118 ghosts were
+  placed and 19 stayed unbuilt). Reproduced on the private copy of shift57 (tick 46372665), where Sol's attempt had
+  been taken back: the same dry run gave planned 31, already 185, collector_clearance 12, verdict ok. The cause: the
+  hub's build rules were played over every planned tile, the 12 the real call refuses among them, so the empty space
+  they keep was counted as floor and no hole was seen. Now (dryrun.lua): those tiles are left out of the play
+  (tiles.collector_refused counts them), so the tiles round the empty space they keep show in tiles.unbuilt; the
+  verdict (runtime.lua dry_verdict) fails on refused collector tiles and on tiles the hub never builds. On the copy with
+  the fix: unbuilt_count 19, verdict "fails: 12 foundation tiles refused in front of asteroid collectors
+  (tiles.collector_clearance), 19 foundation tiles the hub never builds ((-13.5,-21.5): building it would split the
+  empty space beside it ...)". Then placed for real on the copy (19 ghosts placed, 100 foundation in the hub, the game
+  unpaused): after 42 s all 19 were still ghosts and the hub still held 100. Tests: tests/dryrun.lua.

@@ -323,6 +323,49 @@ for y = 2, 4 do col[#col+1] = {name='space-platform-foundation', position={x=6.5
 local split = dryrun.check({surface=ps2, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=col})
 eq(split.tiles.holes, 12); eq(split.tiles.holes_other, 12)
 has(split.tiles.holes_note, '12 more enclosed empty tiles are left out')
+-- (d20 batch76 AL2, Sol #1752: Spindle's floor dry run said ok with 12 tiles refused in front of a collector; live, 19
+-- ghosts round that empty space were never built) a planned block east of the deck, x 6..10, y -2..2, whose middle
+-- x 7..9, y -1..1 a collector keeps empty: those 9 are refused and left out of the hub's rules, so the ring of 16 round
+-- them closes a hole and its last tiles are never built
+do
+  local keep = placewhy.collector_ahead
+  placewhy.collector_ahead = function(_, _, x, y)
+    if x >= 7 and x <= 9 and y >= -1 and y <= 1 then return 'in front of asteroid-collector (8,3) facing north: its tile rule 2 keeps tiles x 7..9, y -1..1 empty space (its collection area)' end
+  end
+  local block = {}
+  for x = 6, 10 do for y = -2, 2 do block[#block+1] = {name='space-platform-foundation', position={x=x+0.5, y=y+0.5}} end end
+  local cb = dryrun.check(pp, {kind='ghosts', entities={}, tiles=block})
+  placewhy.collector_ahead = keep
+  eq(cb.tiles.collector_refused, 9); has(cb.tiles.collector_clearance, '9 new foundation tiles are refused in front of asteroid collectors')
+  assert((cb.tiles.unbuilt_count or 0) > 0, 'the ring round the kept-empty tiles closes a hole: some of it is never built')
+  for _, row in ipairs(cb.tiles.unbuilt) do
+    local x, y = row:match('^%((%-?[%d.]+),(%-?[%d.]+)%)')
+    x, y = tonumber(x) - 0.5, tonumber(y) - 0.5
+    assert(not (x >= 7 and x <= 9 and y >= -1 and y <= 1), 'a refused tile is not called unbuilt: '..row)
+  end
+  -- the verdict (runtime.lua M.dry_verdict, read from the source): the refused tiles and the unbuilt ones fail it
+  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  -- the function's text: from its line to the first line-start end at which it loads (the compacted modules' run
+  -- strips indentation, so earlier line-start ends are nested ones)
+  local R = {}
+  local env = setmetatable({M=R}, {__index=_G})
+  local from = src:find('\nfunction M%.dry_verdict%(out,a%)')
+  local at, chunk = from, nil
+  while from and not chunk do
+    local e = src:find('\nend', at + 1, true)
+    if not e then break end
+    chunk = load(src:sub(from + 1, e + 3), 'dry_verdict', 't', env)
+    at = e
+  end
+  assert(chunk, 'M.dry_verdict not read from runtime.lua')
+  do
+    chunk()
+    local v = R.dry_verdict({dry_run=true, tiles=cb.tiles}, {dry_run=true})
+    eq(v.dry_run_ok, false)
+    has(v.verdict, 'fails: 9 foundation tiles refused in front of asteroid collectors (tiles.collector_clearance), '..cb.tiles.unbuilt_count..' foundation tile'..(cb.tiles.unbuilt_count == 1 and '' or 's')..' the hub never builds')
+    eq(R.dry_verdict({dry_run=true, tiles={planned=3}}, {dry_run=true}).verdict, 'ok: every entry places and every setting is taken')
+  end
+end
 -- A platform powers every machine with no pole (d15 batch5 A1, Sol: check_inserters refused every platform inserter).
 ps.has_global_electric_network = true
 local pw = dryrun.check(pp, {kind='ghosts', entities={{index=1, name='assembling-machine-1', position={x=-2.5, y=-2.5}}}})
