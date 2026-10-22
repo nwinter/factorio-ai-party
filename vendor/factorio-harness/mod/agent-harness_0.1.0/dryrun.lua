@@ -1453,15 +1453,22 @@ return function(api)
             #loose, #loose == 1 and ' touches' or 's touch', table.concat(shown, ' '), #loose > 6 and ' ...' or '', #loose == 1 and 'it stays' or 'these stay')
         end
         -- in front of an asteroid collector (A5, Astra 01:50): each planned tile its collection area keeps empty space
+        -- (d20 batch76 AL2, Sol #1752: Spindle's dry run said ok with 12 such tiles; the live call left them empty space and
+        -- 19 ghosts round that hole were never built) the tiles refused there are left out of the floor play below, as
+        -- the real call leaves them out
+        local refused_here = {}
         if api.placewhy and api.placewhy.collector_ahead then
           local ahead, first = 0, nil
-          for _, c0 in pairs(new) do
+          for k, c0 in pairs(new) do
             if not c0.pending then
               local why = api.placewhy.collector_ahead(s, force, c0[1], c0[2])
-              if why then ahead = ahead + 1; first = first or tile_text(c0[1], c0[2]) .. ' ' .. why end
+              if why then ahead = ahead + 1; refused_here[k] = true; first = first or tile_text(c0[1], c0[2]) .. ' ' .. why end
             end
           end
-          if ahead > 0 then t.collector_clearance = string.format('%d new foundation tile%s refused in front of asteroid collectors (their tile rule keeps their collection area empty space): %s', ahead, ahead == 1 and ' is' or 's are', first) end
+          if ahead > 0 then
+            t.collector_clearance = string.format('%d new foundation tile%s refused in front of asteroid collectors (their tile rule keeps their collection area empty space): %s', ahead, ahead == 1 and ' is' or 's are', first)
+            t.collector_refused = ahead
+          end
         end
         -- (d17 batch22 A1, Sol and Astra: a sparse Kestrel floor refused ~100 placements while footprint audits said
         -- clear) the hub's build rules (tilecheck.lua, as the game showed them on a copy of world n) played over the new
@@ -1471,7 +1478,7 @@ return function(api)
           local hubf = try(function() return s.platform.hub end)
           local thr = try(function() return s.find_entities_filtered{type='thruster', limit=64} end) or {}
           local ghosts = {}
-          for _, c0 in pairs(new) do ghosts[#ghosts+1] = {c0[1], c0[2], 'space-platform-foundation'} end
+          for k, c0 in pairs(new) do if not refused_here[k] then ghosts[#ghosts+1] = {c0[1], c0[2], 'space-platform-foundation'} end end
           local tc = {}
           -- (d17 batch33 A1, Sol: Wayfarer's 3318 tiles; the old play stopped at 4096 steps and read the rest as 107
           -- unbuildable) INLINE_CHECKS rule checks in this tick; a set they do not finish is handed to a check across
