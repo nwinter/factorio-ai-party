@@ -105,6 +105,12 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
     sha256.
 - The agy loop sleeps through a quota error (`tools/agy-quota.py` writes `agy-quota` to `context.log`) and stops
   when the reset falls after the deadline.
+- The agy memory guard (`tools/agy_memguard.py`, d22 09:27: one agy turn grew to 21 GiB and filled the Mac's swap
+  because agy loads every untracked file at a fresh session, and `runs/` was not ignored; `.gitignore` has `runs/`
+  since then) kills a process under a run's `.agy-loop.sh` whose footprint passes 4 GiB (TERM, then KILL after 5 s).
+  It logs to `runs/RUN/agy-memguard.log` and to the workspace's `context.log` (`agy-memguard`). start-team starts it
+  when the team has an agy agent, one per Mac (lock `/tmp/pog-agy-memguard.lock`), and stop-team leaves it running.
+  `tools/agy_memguard.py --check` says whether one runs.
 - No compaction in an agent's last 2 minutes: Claude Code's `PreCompact` hook blocks it, and the agy loop starts no
   fresh conversation; Grok, Codex and Muse have no control for it.
 - `tools/supervise.sh` logs how each nudge was delivered (falls back to typing into the pane when

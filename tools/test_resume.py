@@ -123,6 +123,7 @@ def dry_run():
         assert "WARNING quota codex_account_b (luna) Codex · Weekly: 100% used" in out, out
         assert "no ai-usage profile" in out and "(route claude-b)" in out, out
         assert "code ok: " in out or "WARNING code: " in out, out
+        assert "agy memory guard" not in out, out  # no agy agent in the team (tools/test_agy_memguard.py)
         assert "5. agents launch; 6." in out, out   # POG_FULL_TOOLS unset
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_FULL_TOOLS="1"), capture_output=True, text=True, cwd=ROOT)
