@@ -1023,8 +1023,21 @@ def plan_html(p):
     lines = "".join(f'<li>{who(l["agent"])} <span class="c-text">{esc(l["text"])}</span>'
                     + (f' <span class="muted small">set at {esc(l["game"])}{" by " + esc(l["by"]) if l.get("by") else ""}</span>'
                        if l.get("game") or l.get("by") else "") + '</li>' for l in p["lines"])
-    projects = "".join(f'<li><b>{esc(x["title"])}</b> <span class="muted small">{esc(x["owner"] or "no owner")}'
-                       f'{", " + esc(x["progress"]) if x.get("progress") else ""}{", blocked" if x.get("status") == "blocked" else ""}</span>'
+    # (d22 batch75 AK11, viewer Foobator site:4284) each project's board status as a chip (doing, blocked), and what
+    # blocked it: the open items in its blocked_by, its newest note (plan.json since AK11)
+    chip = {"doing": "fx-chip--green", "blocked": "fx-chip--red"}
+
+    def blockers(x):
+        rows = [f'Blocked by #{b.get("id")} {b.get("title") or ""} ({b.get("status")})' for b in x.get("blocked_by") or [] if isinstance(b, dict)]
+        n = x.get("note") if isinstance(x.get("note"), dict) else None
+        if n and n.get("text"):
+            rows.append(("Marked blocked; newest note" if x.get("status") == "blocked" else "Newest note")
+                        + (f' by {n["by"]}' if n.get("by") else "") + f': {n["text"]}')
+        return "".join(f'<br><span class="muted small">{esc(r)}</span>' for r in rows)
+    projects = "".join(f'<li><b>{esc(x["title"])}</b>'
+                       + (f' <span class="fx-chip {chip.get(x.get("status"), "fx-chip--grey")} small">{esc(x["status"])}</span>' if x.get("status") else "")
+                       + f' <span class="muted small">{esc(x["owner"] or "no owner")}{", " + esc(x["progress"]) if x.get("progress") else ""}</span>'
+                       + blockers(x)
                        + (f'<br><span class="muted small">Next:</span> {esc(x["next"])}' if x.get("next") else "") + '</li>'
                        for x in p["projects"])
     counts = [f'{p["open_unowned"]} open requests nobody was on' if p.get("open_unowned") is not None else "",

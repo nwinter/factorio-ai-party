@@ -377,6 +377,23 @@ def fitted(core, limit=PLANET_CORE_BYTES):
     return out
 
 
+TERRAIN_GRID_KEYS = ("cell", "x0", "y0", "w", "h", "rows", "palette", "chunks", "tick", "oldest_tick", "t", "age_s")
+TERRAIN_GRID_BYTES = 96 * 1024
+
+
+def public_terrain_grid(g, limit=TERRAIN_GRID_BYTES):
+    """(d22 batch75 AK9) the state's terrain_grid packed (pack), its palette checked; None when it has no rows or is
+    over limit bytes packed (the map shows the frames alone)."""
+    if not isinstance(g, dict) or not isinstance(g.get("rows"), list) or not g["rows"]:
+        return None
+    pal = [p for p in g.get("palette") or [] if isinstance(p, list) and len(p) == 3 and isinstance(p[0], str) and len(p[0]) == 1
+           and not p[0].isdigit() and isinstance(p[1], str) and re.fullmatch(r"#[0-9a-f]{6}", p[1])]
+    out = pack(dict({k: g[k] for k in TERRAIN_GRID_KEYS if k in g}, palette=pal))
+    if len(json.dumps(out, separators=(",", ":"))) > limit:
+        return None
+    return out
+
+
 def public_basemap(bm):
     """The basemap with its coarse grid, dense core and ore packed (pack)."""
     if not isinstance(bm, dict):
@@ -564,6 +581,10 @@ def public_state(s):
         out["planet_maps"] = others
     if "basemap" in out:
         out["basemap"] = public_basemap(out["basemap"])
+        # (d22 batch75 AK9) the charted ground under it (tools/stream/terrain_grid.py), packed; dropped past its byte cap
+        tg = public_terrain_grid(s.get("terrain_grid"))
+        if tg:
+            out["basemap"] = dict(out["basemap"], terrain_grid=tg)
     areas = public_library_areas(s.get("library_areas"))
     if areas:
         out["library_areas"] = areas
