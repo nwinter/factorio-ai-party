@@ -356,6 +356,7 @@ return function(api)
     end
     for _, v in pairs(action) do if type(v) == 'table' then damages(v, out, from_data) end end
   end
+  M.damages = damages  -- (d22 batch88 AX1) endurance's forecast reads a shot's damage the same way (routeammo.lua)
   local function after(amount, res)
     local d, pct = res and res.decrease or 0, res and res.percent or 0
     local v = amount > d and amount - d or 1 / (2 + d - amount)

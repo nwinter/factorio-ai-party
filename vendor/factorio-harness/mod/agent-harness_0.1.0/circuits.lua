@@ -74,7 +74,7 @@ return function(api)
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
       settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line). A belt\'s read_contents_mode (with read_contents: true): pulse (each item as it enters this tile), hold (what this tile holds now), entire_belt_hold (what the whole belt holds: inspect\'s circuit.belt_segment names the physical segment and the whole belt apart, with the wires\' read)',
-      signals='constant combinator: [{signal, count}] (first section; [] clears)',
+      signals='constant combinator: [{signal, count, quality?}] (first section; [] clears). A signal anywhere in circuit_set (these, conditions, decider and arithmetic, selector, signal settings) is "name", "name@quality" ("iron-plate@uncommon"), "type:name@quality" or {type?, name, quality?}; a quality is one our force has unlocked; left out it is normal. A decider output takes quality too',
       description='an arithmetic, decider, selector or constant combinator (or its ghost): the description its GUI shows (LuaEntity.combinator_description), up to 500 bytes, newlines kept; "" or false clears it; reads show it as description; blueprints keep it',
       on='constant combinator: on/off',
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
@@ -102,6 +102,34 @@ return function(api)
     local list = prototypes[SIGNAL_TYPES[kind]]
     return list ~= nil and list[name] ~= nil
   end
+  -- The force whose unlocked qualities a signal's quality is checked against, as the GUI's quality picker offers only
+  -- those (set by circuit_set, its dry run and speaker_alert; nil: any quality the game has).
+  local qforce
+  local function unlocked(name)
+    if not qforce then return true end
+    local ok, v = pcall(function() return qforce.is_quality_unlocked(name) end)
+    return not ok or v ~= false
+  end
+  local function qualities_text()
+    local list = {}
+    for name, q in pairs(prototypes.quality) do
+      if not q.hidden and unlocked(name) then list[#list+1] = {q.level or 0, name} end
+    end
+    table.sort(list, function(x, y) return x[1] < y[1] end)
+    for i, x in ipairs(list) do list[i] = x[2] end
+    return table.concat(list, ', ')
+  end
+  -- A quality as written ("rare"); normal or nil as given.
+  local function quality_of(q, what)
+    if q == nil or q == 'normal' then return q end
+    if type(q) ~= 'string' or not prototypes.quality[q] then
+      error(what .. ': unknown quality ' .. tostring(q) .. ' (' .. qualities_text() .. ')', 0)
+    end
+    if not unlocked(q) then
+      error(what .. ': quality ' .. q .. ' is not unlocked (unlocked: ' .. qualities_text() .. ')', 0)
+    end
+    return q
+  end
   -- A signal as written: "iron-plate", "water", "signal-A", "recipe:NAME",
   -- "iron-plate@rare", or {type, name, quality}.
   local function signal(v, what)
@@ -122,10 +150,24 @@ return function(api)
       for _, k in ipairs(PLAIN) do if proto(k, name) then kind = k; break end end
       if not kind then error(what .. ': unknown signal ' .. name .. ' (an item, fluid or virtual signal such as signal-A; others as recipe:NAME, entity:NAME)', 0) end
     end
-    if quality ~= nil and quality ~= 'normal' and not (type(quality) == 'string' and prototypes.quality and prototypes.quality[quality]) then
-      error(what .. ': unknown quality ' .. tostring(quality), 0)
+    return {type=kind, name=name, quality=quality_of(quality, what)}
+  end
+  -- A record's own quality ({signal, quality, count}; a decider output {signal, quality, ...}) put on its signal; one
+  -- the signal says too ("name@rare", {name, quality}) must be the same.
+  local function signal_q(v, q, what)
+    local id = signal(v, what)
+    if q ~= nil then
+      q = quality_of(q, what .. '.quality')
+      if id.quality ~= nil and id.quality ~= q then
+        error(string.format('%s: quality %s and the signal\'s %s differ', what, q, id.quality), 0)
+      end
+      id.quality = q
     end
-    return {type=kind, name=name, quality=quality}
+    return id
+  end
+  local function qname(q)
+    if type(q) == 'string' then return q end
+    return q and try(function() return q.name end) or 'normal'
   end
   -- A signal read from the game as signal() reads it back (an item's type is nil).
   local function signal_text(s)
@@ -331,11 +373,11 @@ return function(api)
     local out = {}
     for k, v in pairs(p) do
       if type(v) == 'table' and v.name and k:find('signal') then out[k] = signal_text(v)
-      elseif type(v) ~= 'table' then out[k] = v end
+      elseif k == 'quality_source_static' then out[k] = qname(v)
+      elseif type(v) ~= 'table' and type(v) ~= 'userdata' then out[k] = v end
     end
     if type(p.quality_filter) == 'table' then
-      local q = p.quality_filter.quality
-      out.quality_filter = (ASCII[p.quality_filter.comparator] or p.quality_filter.comparator or '=') .. ' ' .. tostring(type(q) == 'table' and q.name or q)
+      out.quality_filter = (ASCII[p.quality_filter.comparator] or p.quality_filter.comparator or '=') .. ' ' .. qname(p.quality_filter.quality)
     end
     return out
   end
@@ -477,6 +519,8 @@ return function(api)
       for k = 1, 2 do
         for _, c in ipairs(try(function() return b.get_transport_line(k).get_contents() end) or {}) do
           local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
+          local q = qname(c.quality)
+          if n and q ~= 'normal' then n = n .. '@' .. q end
           if n then held[n] = (held[n] or 0) + c.count end
         end
       end
@@ -515,6 +559,8 @@ return function(api)
       local net = try(function() return e.get_circuit_network(w) end)
       for _, sg in ipairs(net and try(function() return net.signals end) or {}) do
         local n = sg.signal and sg.signal.name
+        local q = sg.signal and qname(sg.signal.quality)
+        if n and q ~= 'normal' then n = n .. '@' .. q end
         if n then wired[n] = (wired[n] or 0) + (sg.count or 0) end
       end
     end
@@ -535,6 +581,8 @@ return function(api)
       for k2 = 1, 2 do
         for _, c in ipairs(try(function() return b.get_transport_line(k2).get_contents() end) or {}) do
           local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
+          local q = qname(c.quality)
+          if n and q ~= 'normal' then n = n .. '@' .. q end
           if n then whole[n] = (whole[n] or 0) + c.count end
         end
       end
@@ -804,6 +852,7 @@ return function(api)
     end
     if type(spec) ~= 'table' then error('speaker_alert is {show_alert?, show_on_map?, message?, icon?, condition?, speaker_sound?}', 0) end
     for k in pairs(spec) do if not SPEAKER_KEYS[k] then error('speaker_alert takes show_alert, show_on_map, message, icon, condition and speaker_sound, not ' .. tostring(k), 0) end end
+    qforce = e.force
     local cond = spec.condition ~= nil and condition(spec.condition, 'speaker_alert.condition') or nil
     local sp, scp
     if spec.speaker_sound ~= nil then sp, scp = sound_spec(e, try(function() return e.get_control_behavior() end), spec.speaker_sound) end
@@ -1130,7 +1179,7 @@ return function(api)
         if type(o) ~= 'table' then error(what .. ' is {signal, copy_input (true: the input count) | constant N, networks}', 0) end
         local copy = o.copy_input; if copy == nil then copy = o.copy_count_from_input end
         if copy == true and o.constant ~= nil then error(what .. ': copy_input (the input count) or constant, not both', 0) end
-        outs[i] = {signal=signal(o.signal, what .. '.signal'), copy_count_from_input=copy == true,
+        outs[i] = {signal=signal_q(o.signal, o.quality, what .. '.signal'), copy_count_from_input=copy == true,
           constant=o.constant ~= nil and int(o.constant, what .. '.constant') or nil, networks=networks(o.networks, what .. '.networks')}
       end
     else
@@ -1166,7 +1215,10 @@ return function(api)
         elseif k == 'index_constant' or k == 'random_update_interval' then params[k] = int(v, 'selector.' .. k)
         elseif k == 'quality_filter' then
           if type(v) ~= 'table' then error('selector.quality_filter is {quality, comparator}', 0) end
-          params[k] = {quality=v.quality, comparator=v.comparator or '='}
+          params[k] = {quality=quality_of(v.quality, 'selector.quality_filter') or 'normal', comparator=v.comparator or '='}
+        elseif k == 'quality_source_static' then
+          -- the game keeps it as {name} (a bare name is dropped without an error: copy of world n, d22)
+          params[k] = {name=quality_of(type(v) == 'table' and v.name or v, 'selector.quality_source_static') or 'normal'}
         else params[k] = v end
       end
     end
@@ -1177,7 +1229,7 @@ return function(api)
     local filters = {}
     for i, s in ipairs(list) do
       if type(s) ~= 'table' or type(s.count) ~= 'number' then error('signals ' .. i .. ' needs signal and count', 0) end
-      local id = signal(s.signal or s.name, 'signals ' .. i)
+      local id = signal_q(s.signal or s.name, s.quality, 'signals ' .. i)
       filters[i] = {value={type=id.type, name=id.name, quality=id.quality or 'normal', comparator='='}, min=int(s.count, 'signals ' .. i .. '.count')}
     end
     return filters
@@ -1375,7 +1427,7 @@ return function(api)
     ['linked-container']='container', ['offshore-pump']='generic_on_off', ['power-switch']='generic_on_off', ['electric-pole']=false}
   -- A place_ghosts dry run (d17 batch18 A3, Sol): circuit_set's checks for an entity of that name, on a stand-in of
   -- it (no entity is read or written). Errors as circuit_set would.
-  function M.dry_set(name, a)
+  function M.dry_set(name, a, force)
     local proto = prototypes.entity[name]
     if not proto then return end
     local reach = try(function() return proto.get_max_circuit_wire_distance() end)
@@ -1386,12 +1438,14 @@ return function(api)
       error(string.format('%s has no circuit connection: the game gives it no circuit wires or circuit settings', name), 0)
     end
     local e = {valid=true, name=name, type=proto.type, prototype=proto, position=a.position or {x=0, y=0}}
+    qforce = force
     plan_set(e, {type=id, circuit_enable_disable=false}, a, 'dry run')
   end
   function M.handlers.circuit_set(p, a)
     local e, by = target(p, a, 'target')
     local cb = behavior(e)
     local steps, out, chest_notes
+    qforce = e.force
     steps, out, chest_notes, a = plan_set(e, cb, a, by)
     local done = {}
     for _, s in ipairs(steps) do

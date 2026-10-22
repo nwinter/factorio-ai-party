@@ -3,6 +3,8 @@
 -- conditions) and automatic/manual mode. Rails, stops, locomotives and
 -- wagons are built with build/place_ghosts like anything else.
 return function(api)
+  -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
+  local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
   local M = {handlers={}}
   local WAITS = {time=true, inactivity=true, full=true, empty=true, item_count=true, fluid_count=true, circuit=true,
     passenger_present=true, passenger_not_present=true, fuel_item_count_all=true, fuel_item_count_any=true,
@@ -32,7 +34,7 @@ return function(api)
       local t = w.type .. (w.ticks and ' ' .. math.floor(w.ticks / 60) .. 's' or '')
       if w.condition and w.condition.first_signal then
         local c = w.condition
-        t = t .. ' ' .. c.first_signal.name .. ' ' .. (c.comparator or '<') .. ' ' .. tostring(c.constant or 0)
+        t = t .. ' ' .. sigtext(c.first_signal) .. ' ' .. (c.comparator or '<') .. ' ' .. tostring(c.constant or (c.second_signal and sigtext(c.second_signal)) or 0)
       end
       return t
     end)

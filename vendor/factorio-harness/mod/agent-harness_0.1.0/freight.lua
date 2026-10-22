@@ -22,6 +22,8 @@
 -- in flight (their unit numbers and cargo).
 return function(api)
   local M = {}
+  -- a signal's name, with @quality when not normal (d22 batch87 AW1: an uncommon signal read as the normal one)
+  local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
   M.KEEP, M.SHOW, M.ITEMS, M.RECEIPTS = 8, 6, 6, 16
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function secs(ticks)
@@ -537,7 +539,7 @@ return function(api)
     if w.ticks then t = t .. ' ' .. math.floor(w.ticks / 60) .. 's' end
     local cond = w.condition
     if type(cond) == 'table' and cond.first_signal then
-      t = t .. ' ' .. tostring(cond.first_signal.name) .. ' ' .. tostring(cond.comparator or '<') .. ' ' .. tostring(cond.constant or (cond.second_signal and cond.second_signal.name) or 0)
+      t = t .. ' ' .. sigtext(cond.first_signal) .. ' ' .. tostring(cond.comparator or '<') .. ' ' .. tostring(cond.constant or (cond.second_signal and sigtext(cond.second_signal)) or 0)
     end
     return t
   end
