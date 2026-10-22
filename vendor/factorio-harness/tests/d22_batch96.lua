@@ -8,33 +8,66 @@ local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '
 defines={inventory={hub_main=1,hub_trash=2,turret_ammo=3,assembling_machine_output=4},flow_precision_index={ten_minutes=1}}
 game={tick=3600*10}
 
--- 1. stock_places takes the census pass's belts and hands and its turrets and machines: no find over the platform
+-- 1. stock_places: belts and inserter hands from the platform's background read (freight.belt_tick), else the census
+-- pass's, else read now; the hub, turrets and machines read now
 do
   local finds={}
   local function inv(list) return {get_contents=function() return list end} end
   local hub={valid=true,get_inventory=function(i) return i==1 and inv({{name='rocket',count=40}}) or nil end}
   local turret={valid=true,get_inventory=function() return inv({{name='rocket',count=10}}) end}
   local machine={valid=true,get_output_inventory=function() return inv({{name='rocket',count=2}}) end}
-  local surface={index=7,find_entities_filtered=function(f) finds[#finds+1]=f; return {} end}
-  local pl={surface=surface,force={name='player'},hub=hub}
+  local belt={valid=true,type='transport-belt',get_max_transport_line_index=function() return 2 end,
+    get_transport_line=function() return {get_contents=function() return {{name='rocket',count=5}} end} end}
+  local surface={index=7,find_entities_filtered=function(f)
+    finds[#finds+1]=f
+    if f.type=='ammo-turret' then return {turret} end
+    if type(f.type)=='table' and f.type[1]=='assembling-machine' then return {machine} end
+    if type(f.type)=='table' and f.type[1]=='transport-belt' then return {belt} end
+    return {}
+  end}
+  local pl={index=4,surface=surface,force={name='player'},hub=hub}
+  local st={}
   local idx={belts={rocket=300,['iron-plate']=50},hands={rocket=3},as_of=3600*9}
-  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end,
-    census_where=function(f,s) eq(s,surface); return idx end,
-    census_typed=function(f,s,t) if t=='ammo-turret' then return {turret} end return {machine} end}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end,census_where=function(f,s) eq(s,surface); return idx end}
   local ALL=setmetatable({},{__index=function() return true end})
+  -- no background read yet: the census pass's belts and hands
   local sp=F.stock_places(pl,ALL)
-  eq(#finds,0,'no find over the platform')
-  eq(sp.hub.rocket,40); eq(sp.turrets.rocket,10); eq(sp.belts.rocket,300); eq(sp.hands.rocket,3); eq(sp.machines.rocket,2)
-  eq(sp.total.rocket,355); eq(sp.total['iron-plate'],50); eq(sp.from_census,true); eq(sp.as_of,3600*9)
-  -- want: only those items
+  eq(sp.belts.rocket,300); eq(sp.hands.rocket,3); eq(sp.from_census,true); eq(sp.as_of,3600*9)
+  eq(sp.hub.rocket,40); eq(sp.turrets.rocket,10); eq(sp.machines.rocket,2); eq(sp.total.rocket,355)
+  for _,f in ipairs(finds) do assert(not (type(f.type)=='table' and f.type[1]=='transport-belt'),'no belt find') end
+  eq(st.platform_belts[4].wanted,game.tick,'marked as read')
+  -- a background read done: its belts and hands, as of its tick
+  st.platform_belts[4].done={tick=3600*9.5,belts={rocket=120},hands={rocket=1},belt_entities=40}
   sp=F.stock_places(pl,{rocket=true})
-  eq(sp.belts['iron-plate'],nil); eq(sp.total.rocket,355)
-  -- a surface the census has not walked: read now, as before
+  eq(sp.belts.rocket,120); eq(sp.hands.rocket,1); eq(sp.from_belt_read,true); eq(sp.as_of,3600*9.5); eq(sp.belt_entities,40); eq(sp.total.rocket,173)
+  -- neither: all read now, as before
   local F2=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end,census_where=function() return nil end}
   sp=F2.stock_places(pl,ALL)
-  assert(#finds>0,'read now'); eq(sp.from_census,nil); eq(sp.hub.rocket,40)
+  eq(sp.belts.rocket,10); eq(sp.from_census,nil); eq(sp.from_belt_read,nil)
+
+  -- belt_tick: the platform read lately, a band of its chunks every BELT_STEP ticks, until the walk is done
+  local bands={{belt,{valid=true,type='inserter',held_stack={valid_for_read=true,name='rocket',count=2}}},{belt}}
+  local bi=0
+  local walk={band=function(w) eq(w.max,1); bi=bi+1; return bands[bi] end}
+  local st2={}
+  local F3=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st2 end,walk=walk,census_where=function() return nil end}
+  surface.get_chunks=function() local done=false; return function() if done then return nil end done=true; return {x=0,y=0} end end
+  local pf={name='player',platforms={pl}}
+  pl.valid=true
+  game.forces={player=pf}
+  F3.stock_places(pl,ALL)  -- read now, and wanted
+  local t=game.tick - game.tick % F3.BELT_STEP
+  F3.belt_tick(t)  -- starts the job
+  eq(st2.platform_belts.active,4)
+  F3.belt_tick(t+F3.BELT_STEP); F3.belt_tick(t+2*F3.BELT_STEP); F3.belt_tick(t+3*F3.BELT_STEP)
+  local done=st2.platform_belts[4].done
+  eq(done.belts.rocket,20,'two belts, two lines of 5'); eq(done.hands.rocket,2); eq(done.belt_entities,2); eq(done.tick,t)
+  eq(st2.platform_belts.active,nil)
+  -- not again before BELT_EVERY
+  F3.belt_tick(t+4*F3.BELT_STEP); eq(st2.platform_belts.active,nil)
+  game.forces=nil
 end
-print('d22_batch96 BF1 stock_places from the census: ok')
+print('d22_batch96 BF1 stock_places from the background belt read: ok')
 
 -- 2. the census counts an underground exit's buried lines once (its entrance's), as stock_places does
 do

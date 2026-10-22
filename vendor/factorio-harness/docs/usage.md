@@ -11518,10 +11518,14 @@ best of three.
   ms, of it `freight.stock_places` 36-49 (its 6,651 belts found in 24 ms and read in 44), the damaged list 4-5 (a find
   of every entity aboard: 7,957 in 33 ms, and its limit of 5,000 left 2,957 unread), the ammo model's quarter-minute
   stepping up to 5.9 ms a row, and the hub inserters (every inserter aboard, at most 500).
-  - `stock_places` (the platform read, platform_endurance, preflight's ammo) takes belts and inserter hands from the
-    census pass (its background walk; the ammo rows say `belts and inserter hands as the census pass read them N ago`),
-    and its turrets and machines from the census's lists; the hub and every turret and machine output are read now.
-    A surface the census has not walked is read as before.
+  - `stock_places` (the platform read, platform_endurance, preflight's ammo, freight's snapshots at a leg's ends)
+    takes belts and inserter hands from the platform's last background read (`freight.belt_tick`). That read covers
+    each platform read in the last 10 minutes, refreshed after a minute. A band of the platform's chunks is found
+    every 3 ticks and at most 100 of what it found is read a step. On the copy, all 19 platforms (12,218 belts) were
+    read within 60 s; `freight.belts` took 0.38 ms a step, a median 3.2 ms a game second (90th percentile 20.9). The
+    ammo rows say `belts and inserter hands as read in the background N ago`. The hub, turrets and machine outputs
+    are read now. Before a platform's first background read, the census pass's belts and hands are used (its pass
+    takes about 10 minutes, said as its age), else all are read now as before.
   - The census counts an underground exit's buried lines once (its entrance's), as stock_places did (`where_is`
     counted them twice).
   - The damaged list: the game's damage events on our platform entities (platalerts.lua, up to 512 a platform) after
@@ -11535,9 +11539,10 @@ best of three.
 
     | | median | worst |
     |---|---|---|
-    | main | 15.8 ms | 73.1 ms (Asterion) |
-    | this branch | 11.3 ms | 17.5 ms (Asterion) |
+    | main | 15.5-15.9 ms | 52.6-73.1 ms (Asterion, Petrel II) |
+    | this branch | 11.4-11.8 ms | 16.5-18.5 ms (Meridian-V, Spindle) |
 
-    Replies are the same size (13.8 KB median, 26.8 KB at most), plus the census age note.
-  - Asterion's 17.5 ms is still over 10. It is the thrust lines' upstream walk of its pipes (2.1 ms), the ammo rows
-    (3.7), defense (1.4), blockers (1.3), the jobs lines (1.1) and the reply's encoding.
+    Replies are the same size (13.3 KB median, 26 KB at most), plus the belt read's age note. Each read had one
+    warm-up call first: the first call after a deploy fills caches.
+  - The worst platforms are still over 10 ms. On Asterion (16-19 ms) that is the thrust lines' upstream walk of its
+    pipes (2.1 ms), the ammo rows (3.7), defense (1.4), blockers (1.3), the jobs lines (1.1) and the reply's encoding.
