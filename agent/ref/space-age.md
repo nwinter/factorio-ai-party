@@ -183,6 +183,13 @@
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
+- `platform_defense {platform, asteroids: true, seconds: N}` (10..1800) starts a watch of the asteroids in view of the
+  platform (its foundation's chunks, 32 tiles out) and its turrets; the same without `seconds` reads it. Each asteroid:
+  its approach (the platform faces north: front, side or rear by where its straight line enters the box round the
+  hull's foundation; clear: it never enters it), a straight-line projection of whether it crosses foundation (a
+  projection, not what happened), and its outcome from the game's events (destroyed and by what, hit an entity of
+  ours, left the view, still in view); `class_lines`, `platform_hit_lines`. Each turret: hits, kills and damage on
+  asteroids by those classes, ammo used; `turret_group_lines` by name and hull region; `trajectories` for 24 asteroids.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in

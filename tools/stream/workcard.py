@@ -38,7 +38,7 @@ REPEAT_SKIP = {"sleep", "sleep_check", "status", "chat", "describe", "profiles",
                "wait_ticks", "board", "board_events", "board_plan", "board_focus", "reminders", "tells", "inbox",
                "help", "whoami", "pending", "chat_ack", "reminder_ack", "conflicts"}
 KIND_WORDS = {"uptime": ("uptime",), "turret_tally": ("turret", "tally"), "belt_flow": ("belt", "flow"),
-              "collector_tally": ("collector", "tally")}
+              "collector_tally": ("collector", "tally"), "asteroid_watch": ("asteroid", "watch")}
 STOP_WORDS = {"with", "from", "into", "onto", "then", "that", "this", "wait", "ticks", "until", "step", "steps", "more"}
 
 

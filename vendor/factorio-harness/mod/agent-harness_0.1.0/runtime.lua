@@ -2139,6 +2139,10 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.minpayload and M.minpayload.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platbom and M.platbom.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
+  -- (d22 batch82 AR1) platform_defense's asteroid watch: its arguments and what it returns (asteroidwatch.lua)
+  if description.actions.platform_defense and M.asteroidwatch then
+    for k,v in pairs(M.asteroidwatch.ARGS) do description.actions.platform_defense[k]=v end
+  end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.logaudit and M.logaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.stage and M.stage.schema or {}) do description.actions[name]=schema end
@@ -2221,7 +2225,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -15401,6 +15405,9 @@ function handlers.uptime(p,a) return M.uptime.handler(p,a) end
 -- turret_tally (turrettally.lua, d20 batch60 V3, Astra #1521): turrets' kills and damage dealt over a window; inspect's too.
 M.turrettally=require('turrettally'){state=state,reason=function(v) return M.measures.reason(v) end,remote_entity=remote_entity,on_platform=on_platform,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.turret_tally(p,a) return M.turrettally.handler(p,a) end
+-- asteroid_watch (asteroidwatch.lua, d22 batch82 AR1, Astra #1855): a platform's asteroids, their straight-line paths
+-- against its foundation, and its turrets' fire by those classes, over a window.
+M.asteroidwatch=require('asteroidwatch'){state=state,reason=function(v) return M.measures.reason(v) end,on_platform=on_platform,timed=M.timed}
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
   entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
@@ -18141,7 +18148,12 @@ do
     return place(p,a)
   end
 end
-function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
+function handlers.platform_defense(p,a)
+  -- (d22 batch82 AR1) asteroids: true: the asteroid watch (asteroidwatch.lua)
+  if a.asteroids~=nil then return M.asteroidwatch.handler(p,a) end
+  assert(a.seconds==nil and a.reason==nil,'seconds and reason go with asteroids: true')
+  return M.platdefense.read(p,a)
+end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
 function handlers.platform_gate(p,a) return space.gate(p,a) end
 -- A turret ghost's targeting kept through its build (turretwatch.lua; backlog #569, Astra).
@@ -19427,6 +19439,7 @@ function M.tick_body(event)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
+  if state().asteroid_watch then pcall(M.timed,'asteroid_watch.tick',M.asteroidwatch.tick,event.tick) end  -- (AR1) asteroid_watch: a read every 15 ticks
   if state().collector_tally then pcall(M.timed,'collector_tally.tick',M.collectreach.tick,event.tick) end  -- (AN2) collector_tally watches: a read every 10 ticks  -- turret_tally watches (turrettally.lua): a read a second
   if state().uptime then pcall(M.timed,'uptime.tick',M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
@@ -19644,6 +19657,11 @@ function M.on_event(event)
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
   elseif event.name==defines.events.on_entity_damaged then
+    -- (AR1) an asteroid shot, or an asteroid's hit on us, on a platform an asteroid_watch watches (asteroidwatch.lua)
+    if state().asteroid_watch then
+      local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
+      if not oka then local s=state(); s.asteroid_watch_errors={count=((s.asteroid_watch_errors or {}).count or 0)+1,last=tostring(erra),tick=game.tick} end
+    end
     -- A unit a driving bot's vehicle hits counts as rammed (vehicles.lua).
     local cause=event.cause
     if cause and cause.valid and cause.type=='car' then
@@ -19663,6 +19681,11 @@ function M.on_event(event)
     if not okh then local s=state(); s.hurt_errors={count=((s.hurt_errors or {}).count or 0)+1,last=tostring(errh),tick=game.tick} end
   elseif event.name==defines.events.on_entity_died then
     local cause=event.cause
+    -- (AR1) an asteroid destroyed on a platform an asteroid_watch watches (asteroidwatch.lua)
+    if state().asteroid_watch then
+      local oka,erra=pcall(M.asteroidwatch.on_died,event)
+      if not oka then local s=state(); s.asteroid_watch_errors={count=((s.asteroid_watch_errors or {}).count or 0)+1,last=tostring(erra),tick=game.tick} end
+    end
     -- An enemy a character or a vehicle of ours killed (status combat.kills_10s).
     if cause and cause.valid and event.entity and event.entity.valid and event.entity.force ~= cause.force then pcall(M.note_kill,cause,event.tick) end
     if cause and cause.valid and cause.type=='character' then

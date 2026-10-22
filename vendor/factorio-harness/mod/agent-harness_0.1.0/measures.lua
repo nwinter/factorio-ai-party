@@ -12,9 +12,9 @@
 return function(api)
   local M = {}
   M.LATE, M.STALE = 300, 600
-  M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally'}
+  M.KINDS = {'uptime', 'turret_tally', 'belt_flow', 'collector_tally', 'asteroid_watch'}
   -- how each kind's final is read (default: KIND {})
-  M.READ = {collector_tally='platform_supply {platform, collection: true}'}
+  M.READ = {collector_tally='platform_supply {platform, collection: true}', asteroid_watch='platform_defense {platform, asteroids: true}'}
   -- (d20 batch70 AF1, operator d21 13:18) the agent's own reason to wait, given with a watch or a sleep: up to REASON
   -- characters, shown back as given; nil when none.
   M.REASON = 200
@@ -114,6 +114,15 @@ return function(api)
     end
     return {units=n, gone=gone, scope=string.format('%d collector%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
       sample=string.format('%d chunks gone inside a reach (inferred)', seen), empty=n == 0}
+  end
+  -- (d22 batch82 AR1) a platform's asteroids and turrets: asteroidwatch.lua
+  function DESCRIBE.asteroid_watch(job)
+    local n = 0
+    for _ in pairs(job.turrets or {}) do n = n + 1 end
+    if not job.turrets and job.result then for _ in ipairs(job.result.turrets or {}) do n = n + 1 end end
+    local seen = job.nast or (job.result and job.result.asteroids) or 0
+    return {units=1, gone=job.gone and 1 or 0, scope=string.format('asteroids and %d turret%s on %s', n, n == 1 and '' or 's', tostring(job.platform)),
+      sample=string.format('%d asteroids seen, %d in view, %d hits on the platform', seen, job.in_view or 0, #(job.hits or {})), empty=false}
   end
   -- One watch's row; tick = now.
   local function row(kind, job, tick)
