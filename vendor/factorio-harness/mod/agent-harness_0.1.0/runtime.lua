@@ -6309,7 +6309,7 @@ local function placement_error(p,proto,pos,direction,near)
   local ok_fix,fixes=pcall(function() return not ruled and M.dryrun and M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction) end)
   for _,f in ipairs(ok_fix and fixes or {}) do
     if not tiles[f.tile] then tiles[f.tile]=true; tiles[#tiles+1]=f.tile end
-    local item=f.item or f.locked
+    local item=f.item or f.locked or f.two
     if item and not items[item] then items[item]=true; items[#items+1]=item end
   end
   for _,tile in pairs(#tiles==0 and not ruled and p.surface.find_tiles_filtered{area=area,limit=16} or {}) do
@@ -14284,7 +14284,16 @@ local function place_ghost(p,spec)
     direction=sig.direction
   elseif spec.rail_layer~=nil then error('rail_layer goes with rail signals and chain signals',0) end
   if not sig and not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
-    error(placement_error(p,proto,pos,direction),0)
+    -- (d22 batch95 BE1, Astra #1892: a decider on Aquilo's rough ice) tiles a forced placement does not lay (concrete;
+    -- ice platform then concrete): tile entries before it lay their ghosts first, and the game takes its ghost over them
+    local err=placement_error(p,proto,pos,direction)
+    if err:find(' by tiles: ',1,true) then
+      local okf,fx=pcall(M.dryrun.tile_fixes,p.surface,p.force,proto,pos,direction)
+      local f=okf and fx and fx[1]
+      local what=f and (f.item or f.two)
+      if what then err=err..'; '..what..' as tile entries ({name, position}) before it in this place_ghosts call lay those tile ghosts first, and the game takes its ghost over them' end
+    end
+    error(err,0)
   end
   -- Tiles it cannot stand on (water, Gleba wetland): the forced ghost check
   -- takes them once the force has landfill, because a player's forced
@@ -14311,7 +14320,7 @@ local function place_ghost(p,spec)
     for _,b in ipairs(blockers or {}) do if not b.obstacle then others[#others+1]=b end end
     if not f.result or #others>0 or (blockers and #blockers==0) then
       error(string.format('placement blocked by tiles: %s at (%g,%g)%s',f.tile,f.x,f.y,
-        f.locked and ' (needs '..f.locked..')' or #others>0 and ': its '..f.item..' is blocked by '..table.concat(M.dryrun.blocker_texts({others}),', ')
+        f.locked and ' (needs '..f.locked..')' or f.two and ' (needs '..f.two..': as tile entries before it)' or #others>0 and ': its '..f.item..' is blocked by '..table.concat(M.dryrun.blocker_texts({others}),', ')
         or f.result and ' (the game refuses '..f.item..' there)' or ' (no tile item makes it buildable)'),0)
     end
   end
@@ -15946,6 +15955,9 @@ function M.dry_verdict(out,a)
     if e.status=='exists' then exists=exists+1; first_exists=first_exists or string.format('#%s %s (%g,%g)',tostring(e.index),tostring(e.name),e.position and e.position.x or 0,e.position and e.position.y or 0) end
   end
   if exists>0 then parts[#parts+1]=string.format('%d entr%s where ours stands already (%s)',exists,exists==1 and 'y' or 'ies',first_exists) end
+  -- (d22 batch95 BE1, Astra #1892) entries on tiles the game refuses them on, whose tiles place_ghosts does not lay
+  local untiled=out.refused_until_tiles or 0
+  if untiled>0 then parts[#parts+1]=string.format('%d entr%s the game refuses on the tiles there now, with no tile entry before %s (%s)',untiled,untiled==1 and 'y' or 'ies',untiled==1 and 'it' or 'them',tostring(out.refused_until_tiles_first)) end
   local recipes=#(out.recipes_refused or {})
   if recipes>0 then parts[#parts+1]=string.format('%d refused for the recipe (%s)',recipes,out.recipes_refused[1]) end
   -- (d20 batch76 AL2, Sol #1752) foundation tiles the real call refuses in front of asteroid collectors
