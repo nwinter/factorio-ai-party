@@ -702,6 +702,8 @@ class Agent:
         self.interest_t = now
 
 
+PROJECTS_SHOWN_MAX = 8  # (d22 batch75 AK11) projects worked on or blocked the board card shows before "show all"
+
 class Model:
     def set_inbox(self, path):
         """runs/RUN/operator-inbox.jsonl: its viewer rows count as viewer lines for the Operator's replies."""
@@ -1426,6 +1428,8 @@ class Model:
         if isinstance(b, dict) and "focus" in b:  # each agent's board_focus row by name; None: the runtime gave none
             rows = b["focus"]
             board["focus"] = {r["agent"]: r for r in rows if isinstance(r, dict) and r.get("agent")} if isinstance(rows, list) else None
+        if isinstance(b, dict) and isinstance(b.get("progress"), list):  # (AK11) board_progress rows by id (None: kept)
+            board["progress"] = {r["id"]: r for r in b["progress"] if isinstance(r, dict) and r.get("id") is not None}
         if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
             board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
         for it in items:
@@ -1600,6 +1604,8 @@ class Model:
                           and not it.get("owner"))
         doing = sum(1 for it in items if it.get("kind") in ("task", "request") and it.get("status") in ("claimed", "doing"))
         projects = self.projects_snapshot()
+        # (AK11) the card shows every project worked on or blocked (up to PROJECTS_SHOWN_MAX), at least 4
+        shown = max(4, min(PROJECTS_SHOWN_MAX, sum(1 for r in projects if r.get("state"))))
         open_items, doing_items = self.jobs_snapshot()
         return {
             "available": b["available"],
@@ -1611,10 +1617,10 @@ class Model:
             "claims_total": len(claims),
             "changelog": list(b["changelog"])[-2:],
             "plan": self.plan_snapshot(),
-            "projects": projects[:4],
+            "projects": projects[:shown],
             "projects_total": len(projects),
             # the projects the card hides, and the last finished ones (Foobator 08:31: "no way to browse hidden projects")
-            "projects_more": projects[4:30],
+            "projects_more": projects[shown:30],
             "projects_done": self.done_projects_snapshot(),
             # the jobs behind the two counts (viewer joonazan, d15 08:19): open tasks and requests nobody owns, and those
             # claimed or being done, the latest changed first, JOBS_MAX each; absent until an active read listed them
@@ -1643,9 +1649,14 @@ class Model:
         return open_, doing
 
     def projects_snapshot(self):
-        """Open projects (board kind project) for the board widget and the site, the latest changed first: title,
-        owner, progress ("3 of 7 steps") and its numbers for a bar."""
-        return [self.project_row(it) for it in self._projects(("open", "claimed", "doing", "blocked"))]
+        """Open projects (board kind project) for the board widget and the site: title, owner, progress ("3 of 7 steps")
+        and its numbers for a bar. (d22 batch75 AK11, viewer Foobator site:4284: "can projects that are actively being
+        worked on and blocked projects be easier to see on site?") Those being worked on first (status doing, or an
+        agent's board focus on it), then the blocked ones (status blocked, or an open item in blocked_by), then the rest;
+        the latest changed first within each."""
+        rows = [self.project_row(it) for it in self._projects(("open", "claimed", "doing", "blocked"))]
+        rank = {"active": 0, "blocked": 1}
+        return sorted(rows, key=lambda r: rank.get(r.get("state"), 2))  # stable: the latest changed first within each
 
     def done_projects_snapshot(self):
         """Finished projects (status done) the last board read listed, the latest first: the live page's "show all"."""
@@ -1684,7 +1695,45 @@ class Model:
             row["evidence"] = ev
         if it.get("requested_by") and it.get("requested_by") != it.get("owner"):
             row["requested_by"] = it["requested_by"]
+        row.update(self.project_state(it))
         return row
+
+    def project_state(self, it):
+        """(d22 batch75 AK11) What the board holds on whether a project is worked on or blocked, and why: state "active"
+        (status doing, or an agent's board focus on it), "blocked" (status blocked, or an open item in its blocked_by) or
+        None; focus [{agent, step, blocker}] (the board_focus rows on it); blocked_by [{id, title, status, owner}] (the
+        open ones the board read has; an id alone otherwise); note {by, text, tick} (its newest note, when blocked);
+        check {state, stalled, unchanged_checks, checked_s, last_change_s, error} (progress.lua's last check, board_progress).
+        Facts as the board holds them; nothing judged."""
+        out = {}
+        items = self.board.get("items") or {}
+        focus = [f for f in (self.board.get("focus") or {}).values() if isinstance(f, dict) and f.get("id") == it.get("id")]
+        if focus:
+            out["focus"] = [{k: f.get(k) for k in ("agent", "step", "blocker") if f.get(k)} for f in focus]
+        live = ("open", "claimed", "doing", "blocked")
+        by = []
+        for bid in it.get("blocked_by") or []:
+            o = items.get(bid)
+            if o is None:
+                by.append({"id": bid})
+            elif o.get("status") in live:
+                by.append({"id": bid, "title": clean_text(o.get("title") or ""), "status": o.get("status"), "owner": o.get("owner")})
+        if by:
+            out["blocked_by"] = by
+        blocked = it.get("status") == "blocked" or any(b.get("status") in live for b in by)
+        state = "active" if (it.get("status") == "doing" or focus) else "blocked" if blocked else None
+        if state:
+            out["state"] = state
+        notes = [n for n in it.get("notes") or [] if isinstance(n, dict) and n.get("text")]
+        if blocked and notes:
+            n = notes[-1]
+            out["note"] = {"by": n.get("by"), "text": clean_text(str(n["text"])), "tick": n.get("tick")}
+        pr = (self.board.get("progress") or {}).get(it.get("id"))
+        if isinstance(pr, dict):
+            chk = {"state": pr.get("state"), "stalled": pr.get("stalled") or None, "unchanged_checks": pr.get("unchanged_checks"),
+                   "checked_s": pr.get("checked_s"), "last_change_s": pr.get("last_change_s"), "error": pr.get("check_error")}
+            out["check"] = {k: v for k, v in chk.items() if v is not None}
+        return out
 
     def plan_snapshot(self):
         """The team plan for the board widget and the site's Team plan: goals, each agent's line (agent name matched to

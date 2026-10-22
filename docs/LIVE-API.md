@@ -195,6 +195,17 @@ the surfaces an agent is on), "not read yet: ..." where the state lists one this
 where a read says zero (a networks map with no electric or logistic network or no item, a planet map with no building,
 the base read with no turret, spawner or worm, library areas read with none on the planet, no agent or attention mark
 there now). The item picker's tooltip says the same.
+
+(d22 batch75 AK11, viewer Foobator site:4284: "can projects that are actively being worked on and blocked projects be
+easier to see on site? also, could you show blocker reason?") Each `board.projects` row carries, as the board holds it
+(tools/stream/model.py project_state): `state` "active" (status doing, or an agent's board focus on it) or "blocked"
+(status blocked, or an open item in its blocked_by); `focus` [{agent, step, blocker}]; `blocked_by` [{id, title, status,
+owner}] (the open ones; an id alone for one the read lacks); `note` {by, text, tick} (its newest, when blocked); `check`
+{state, stalled, unchanged_checks, checked_s, last_change_s, error} (progress.lua's last check: the stream reads
+board_progress with no arguments every 2 minutes, 5.7 ms on world n). Those worked on come first, then the blocked
+ones; the card shows every one of them (up to 8). The live page puts the status in a chip (doing green, blocked red), a
+focus chip, and under each title the open blockers, a focus's blocker, the newest note (with its game age) and the
+progress check; the shift pages' team plan (plan.json) shows the chip, the open blockers and the newest note.
 The map is Nauvis: an agent whose `surface` is another planet, or with `on_platform` or `travel` set (a cargo pod), is
 listed in its bottom-left corner instead ("Luna · Vulcanus", "Opus · Solstice (platform)") and takes no part in
 the framing; each agent row carries `surface`, `where`, `on_platform` and `travel` from the stream service for that.

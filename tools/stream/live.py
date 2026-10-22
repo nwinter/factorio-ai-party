@@ -24,6 +24,7 @@ from waitcard import WaitFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
+PROGRESS_EVERY = 120  # (d22 batch75 AK11) seconds between board_progress reads
 FOCUS_RETRY = 600  # board_focus with no rows (a runtime before d20 batch54 N3): asked again after 10 min
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
@@ -469,6 +470,35 @@ class LiveSource:
             self.focus_retry_t = time.time() + FOCUS_RETRY
         return rows if self.focus_ok else None
 
+    def read_progress(self, errors):
+        """(d22 batch75 AK11, viewer Foobator site:4284: "can projects that are actively being worked on and blocked projects
+        be easier to see on site? also, could you show blocker reason?") board_progress with no arguments: the stored
+        checks of every owned open item (progress.lua: state, stalled, unchanged_checks, check_error, checked_s,
+        last_change_s), rows by id; None when the runtime gives none (asked again after FOCUS_RETRY) or the read fails."""
+        if getattr(self, "progress_ok", None) is False and time.time() < getattr(self, "progress_retry_t", 0):
+            return None
+        # 5.7 ms on world n (57 rows, 24 KB, d22 14:40): once every PROGRESS_EVERY, the last rows between
+        if time.time() < getattr(self, "progress_next", 0):
+            return getattr(self, "progress_rows", None)
+        self.progress_next = time.time() + PROGRESS_EVERY
+        try:
+            pr, _ = self.read("board_progress", {}, **self.reader())
+        except Exception as e:
+            if "unsupported action" in str(e) or "unknown action" in str(e):
+                self.progress_ok, self.progress_retry_t = False, time.time() + FOCUS_RETRY
+            else:
+                errors["board_progress"] = str(e)
+            return None
+        rows = pr.get("rows") if isinstance(pr, dict) else None
+        if rows == {}:  # table_to_json writes an empty table as {}: no owned open item
+            rows = []
+        self.progress_ok = isinstance(rows, list)
+        if not self.progress_ok:
+            self.progress_retry_t = time.time() + FOCUS_RETRY
+            return None
+        self.progress_rows = [r for r in rows if isinstance(r, dict) and r.get("id") is not None]
+        return self.progress_rows
+
     def notes_job(self, name):
         """The agent's job line from runs/RUN/AGENT/notes.md "## Now" (model.notes_job), or None."""
         path = os.path.join(self.journals, name, "notes.md")
@@ -876,7 +906,8 @@ class LiveSource:
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
                          + (projects.get("items") or []) + ((active or {}).get("items") or [])}
                 focus = self.read_focus(errors)
-                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus,
+                progress = self.read_progress(errors)  # (d22 batch75 AK11) the progress checks' facts per owned item
+                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus, "progress": progress,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
                                 "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)

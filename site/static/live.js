@@ -1038,11 +1038,37 @@
       (who ? '<p class="small fx-muted">Asked by ' + esc(who) + '</p>' : '');
     return body;
   }
+  // (d22 batch75 AK11, viewer Foobator site:4284: "can projects that are actively being worked on and blocked projects be
+  // easier to see on site? also, could you show blocker reason?") a project's status as the board holds it, a chip
+  // (Doing green, Blocked red, the rest grey; "focus" where an agent's board focus is on it), and under its title why it
+  // is blocked: the open items in its blocked_by, its newest note, a focus's blocker, and the progress check's last state
+  // (tools/stream/model.py project_state). The model puts those worked on, then the blocked ones, first.
+  var STATUS_CHIP = { doing: 'fx-chip--green', blocked: 'fx-chip--red' };
+  function projectFacts(p, byName) {
+    var who = function (n) { var o = byName[n] || {}; return o.display_name || n; };
+    var rows = [];
+    (p.blocked_by || []).forEach(function (b) {
+      rows.push('Blocked by #' + b.id + (b.title ? ' ' + b.title : '') + (b.status ? ' (' + b.status + (b.owner ? ', ' + who(b.owner) : ', no owner') + ')' : ''));
+    });
+    (p.focus || []).forEach(function (f) { if (f.blocker) rows.push(who(f.agent) + '\'s focus blocker: ' + f.blocker); });
+    if (p.note && p.note.text) {
+      var when = p.note.tick != null && lastState ? gameAgo(lastState, p.note.tick) : '';
+      rows.push((p.status === 'blocked' ? 'Marked blocked; newest note' : 'Newest note') + (p.note.by ? ' by ' + who(p.note.by) : '') + (when ? ', ' + when : '') + ': ' + p.note.text);
+    }
+    var c = p.check;
+    if (c && c.state) {
+      rows.push('Progress check' + (c.checked_s != null ? ' ' + ago(c.checked_s) : '') + ': ' + c.state + (c.error ? ' (' + c.error + ')' : '') +
+        (c.last_change_s != null ? '; last board change ' + ago(c.last_change_s) : ''));
+    }
+    return rows.map(function (r) { return '<span class="small project-fact">' + esc(r) + '</span>'; }).join('');
+  }
   function projectItem(p, byName, card, withNext) {
     var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0, key = card + ':' + p.id;
-    var head = avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<span class="project-head"><span><b>' + esc(p.title) + '</b> ' +
-      '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') + (p.status === 'blocked' ? ', blocked' : '') +
-      (p.status === 'done' ? ', finished' : '') + '</span></span>' +
+    var chip = p.status && p.status !== 'done' ? ' <span class="fx-chip ' + (STATUS_CHIP[p.status] || 'fx-chip--grey') + ' project-status">' + esc(p.status) + '</span>' : '';
+    var focus = (p.focus || []).map(function (f) { var fo = byName[f.agent] || {}; return ' <span class="fx-chip fx-chip--grey project-status" title="board focus' + (f.step ? ': ' + esc(f.step) : '') + '">' + esc((fo.display_name || f.agent) + ' focus') + '</span>'; }).join('');
+    var head = avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<span class="project-head"><span><b>' + esc(p.title) + '</b>' + chip + focus + ' ' +
+      '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') +
+      (p.status === 'done' ? ', finished' : '') + '</span></span>' + (p.status !== 'done' ? projectFacts(p, byName) : '') +
       '<span class="project-progress"><span class="fx-progress fx-progress--health fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
       '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.title) + ' progress" style="--fx-value:' + pct + '%"></span>' +
       '<span class="small">' + esc(p.progress || '') + '</span></span>' +

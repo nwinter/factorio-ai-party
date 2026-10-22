@@ -373,8 +373,16 @@ def shift_plan(path, clean=lambda s: s, keep=lambda s: True, game=lambda tick: N
     projects = []
     for p in rec.get("projects") or []:
         if isinstance(p, dict) and text(p.get("title")):
-            projects.append({"title": text(p["title"]), "owner": p.get("owner") if isinstance(p.get("owner"), str) else None,
-                             "status": p.get("status"), "progress": text(p.get("progress")), "next": text(p.get("next"))})
+            row = {"title": text(p["title"]), "owner": p.get("owner") if isinstance(p.get("owner"), str) else None,
+                   "status": p.get("status"), "progress": text(p.get("progress")), "next": text(p.get("next"))}
+            # (d22 batch75 AK11) what blocked it (plan.json since AK11)
+            by = [{"id": b.get("id"), "title": text(b.get("title")), "status": b.get("status")} for b in p.get("blocked_by") or []
+                  if isinstance(b, dict) and isinstance(b.get("id"), int)]
+            if by:
+                row["blocked_by"] = by
+            if isinstance(p.get("note"), dict) and text(p["note"].get("text")):
+                row["note"] = {"by": p["note"].get("by") if isinstance(p["note"].get("by"), str) else None, "text": text(p["note"]["text"])}
+            projects.append(row)
     goals = text(rec.get("goals"))
     if not goals and not lines and not projects:
         return None
