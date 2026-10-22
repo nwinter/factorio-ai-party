@@ -888,7 +888,7 @@
     this.images = {}; this.frame = 0; this.ptrs = {};
     var el = this.root = document.createElement('div');
     el.className = 'mapview';
-    el.innerHTML = '<div class="mapview-layers" role="group" aria-label="Map layers"></div>' +
+    el.innerHTML = '<div class="mapview-layers" role="group" aria-label="Planets and map layers"></div>' +
       '<div class="mapview-stage"><canvas class="mapview-canvas" role="img" aria-label="' + esc(opts.label || 'Map of the base') + '"></canvas>' +
       '<div class="mapview-tools"><button type="button" class="fx-btn fx-btn--icon" data-mv="in" aria-label="Zoom in">+</button>' +
       '<button type="button" class="fx-btn fx-btn--icon" data-mv="out" aria-label="Zoom out">−</button>' +
@@ -1001,6 +1001,14 @@
     }
     return im.ready ? im : null;
   };
+  // (d22 batch75 AK3, viewer Aurora, site:4119: "Could the map separate planet tabs from layer filters? Give planets their
+  // own row, group layers below (terrain, networks, combat), and keep the item filter in a consistent spot.") The planet
+  // tabs in a row of their own; under them the layers in GROUPS, each under its label. A layer the viewer has had once
+  // keeps its button and its spot (disabled where the surface shown has none of it), and the item picker opens the
+  // Networks group on every planet (disabled where no networks map is read), so a planet switch or a push moves nothing.
+  // Each layer's on/off is the viewer's (store: KEY-layers), across planet switches and reloads.
+  var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
+    ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
   Viewer.prototype.renderLayers = function () {
     var self = this, box = this.root.querySelector('.mapview-layers');
     // other surfaces with a map (another planet's buildings) or a cloud: a switch between them and Nauvis
@@ -1008,19 +1016,41 @@
     var surfaces = switchList(this.data);
     var names = this.d.net ? this.d.net.names : [];
     if (this.item && names.indexOf(this.item) < 0) this.item = null;
-    var sig = 'item:' + (this.item || '') + ':' + names.length + ':' + (this.d.net ? this.d.net.tick : '') + '|' + LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
-      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '');
+    var had = this.had = this.had || {};
+    LAYERS.forEach(function (l) { if (has(self.d, l[0])) had[l[0]] = true; });
+    // what another surface has keeps its place here too: a cloud anywhere, a networks map of any planet
+    if (this.d.clouds.length) had.cloud = true;
+    Object.keys(this.data.net_maps || {}).forEach(function (k) {
+      var n = parseNet(self.data.net_maps[k]);
+      if (n) { had.item = true; if (n.grid) had.power = true; if (n.logistic.length) had.robots = true; }
+    });
+    var where = cap(this.d.surface || 'nauvis');
+    var sig = 'item:' + (this.item || '') + ':' + names.length + ':' + (this.d.net ? this.d.net.tick : '') + '|' + LAYERS.map(function (l) { return had[l[0]] ? l[0] + (has(self.d, l[0]) ? 1 : 0) + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
+      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface + (this.d.turretsCapped ? '|capped' : '') + (had.item ? '|item' : '');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
-    box.innerHTML = surfaces.map(function (x) {
+    var byKey = {};
+    LAYERS.forEach(function (l) { byKey[l[0]] = l[1]; });
+    var planets = surfaces.length ? '<div class="mapview-planets" role="group" aria-label="Planet">' + surfaces.map(function (x) {
       return '<button type="button" class="fx-btn small mapview-surface" data-surface="' + esc(x.surface) + '" aria-pressed="' + (self.surface === x.surface ? 'true' : 'false') + '">' + esc(x.text) + '</button>';
-    }).join('') + LAYERS.filter(function (l) { return has(self.d, l[0]); }).map(function (l) {
-      var text = l[0] === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : l[0] === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : l[1];
-      return '<button type="button" class="fx-btn small mapview-layer" data-layer="' + l[0] + '" aria-pressed="' + (self.on[l[0]] ? 'true' : 'false') + '">' + esc(text) + '</button>';
-    }).join('') + (names.length ? '<select class="fx-select small mapview-item" data-item aria-label="An item: its sources and consumers on this planet">' +
-      '<option value="">Item: none</option>' + names.map(function (n) {
-        return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
-      }).join('') + '</select>' : '');
+    }).join('') + '</div>' : '';
+    var groups = GROUPS.map(function (g) {
+      var keys = g[2].filter(function (k) { return had[k]; }), item = g[0] === 'networks' && had.item;
+      if (!keys.length && !item) return '';
+      var buttons = keys.map(function (k) {
+        var text = k === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : k === 'coverage' && self.d.turretsCapped ? 'Turret range (incomplete)' : byKey[k];
+        var here = has(self.d, k);
+        return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled title="' + esc(byKey[k] + ': none on ' + where + ' now') + '"') +
+          ' data-layer="' + k + '" aria-pressed="' + (self.on[k] ? 'true' : 'false') + '">' + esc(text) + '</button>';
+      }).join('');
+      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled') +
+        ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: none</option>' + names.map(function (n) {
+          return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
+        }).join('') : '<option value="">Item: no networks map of ' + esc(where) + ' yet</option>') + '</select>';
+      return '<span class="mapview-group-label" aria-hidden="true">' + esc(g[1]) + '</span><div class="mapview-group" data-group="' + g[0] +
+        '" role="group" aria-label="' + esc(g[1]) + ' layers">' + pick + buttons + '</div>';
+    }).join('');
+    box.innerHTML = planets + (groups ? '<div class="mapview-groups">' + groups + '</div>' : '');
   };
   Viewer.prototype.renderLegend = function () {
     var d = this.d, on = this.on, h = '';
@@ -1209,7 +1239,7 @@
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
     prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
-    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S,
+    remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S, GROUPS: GROUPS,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);
