@@ -10,7 +10,7 @@ return function(api)
   local SEATED = {car=true, ['spider-vehicle']=true, locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
   local ENTER_REACH = 10
   M.schema = {
-    vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight); with no enter, go_to or targeting switch: refused, naming enter: true',
+    vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight); a spidertron with nothing else: a read of its route and stall; another vehicle with no enter, go_to or targeting switch: refused, naming enter: true',
       enter='true: get in (driver seat if free, else a car or spidertron passenger seat); a train you ride runs its schedule as usual',
       exit='true: get out of the vehicle you are in',
       drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s turning room (a square as wide as its diagonal plus a tile): to the target, else to open ground within 8 then 13 tiles of it (last.stopped_short), else for its length or width only when none of our entities lies within its turning room of that path (else unreachable, naming them). It slows to stop before the path\'s end and before sharp turns, steers no more than 2 tiles past a turn, and brakes to stop 0.5 tiles before any of our entities in its way, turning on the spot only with none within its corners\' sweep (last.spared names them; units it pushes through, ours never). Neither moving nor turning for 1.5 s: it backs off 1 s (not into ours) and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front, or the entity of ours it stopped for)',
@@ -18,7 +18,9 @@ return function(api)
       pathfind='with drive: default true; false steers straight at the target',
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
       avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
-      go_to='{x,y}: a spidertron walks there by itself (the one at position in sight, the one you are in, or with remote: true the one vehicle names, by remote view in a chunk our force sees)',
+      go_to='{x,y}, or a list of 1..16: a spidertron walks there by itself (the one at position in sight, the one you are in, or with remote: true the one vehicle names, by remote view in a chunk our force sees). mode "replace" (the default, as a click on its remote): the route becomes these targets; "append" (as a shift-click): they go at the end. Returns route (the targets queued, in order), route_line, replaced (the targets it had); a target its legs cannot reach (deep water, cliffs on the straight line) keeps it standing with the target kept: a stall (spiderroute.lua) is said in your next reply once 10 s pass with no progress, and in status spidertrons',
+      mode='with go_to: "replace" (default) or "append". (d22 batch101 BK1) go_to appended before: replace is the default as a click on the remote replaces the route; a call to a spidertron with no route left does the same either way',
+      clear='true: empty the spidertron\'s route (it stops where it is); with go_to the route becomes go_to',
       auto_target_without_gunner='true or false: the spidertron GUI\'s switch (it fires its own ammo at enemies in range with nobody aboard); the spidertron at position, the one you ride, or with remote: true the one vehicle names; returns targeting (both switches as they stand)',
       auto_target_with_gunner='true or false: the other switch of the spidertron GUI, as auto_target_without_gunner',
       remote='with drive: true: drive one of our cars or tanks by remote view while the character stays where it is, as 2.0 lets a player (operator 08:32: to cut character deaths). vehicle names it. Refused, as the game refuses, when it is in no chunk our force sees now (radar coverage or a character\'s sight; the refusal names the nearest coverage), when someone sits in its driver seat or another agent drives it remotely, and for a spidertron (go_to) or a train. The drive ends out_of_coverage when the vehicle leaves the chunks our force sees, and driver_seated when someone gets into its driver seat. Its guns stay silent: a vehicle\'s guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player',
@@ -184,7 +186,20 @@ return function(api)
     refuse(a.remote == nil or type(a.remote) == 'boolean', 'remote must be true or false')
     local switches = a.auto_target_without_gunner ~= nil or a.auto_target_with_gunner ~= nil
     for _, k in ipairs({'auto_target_without_gunner', 'auto_target_with_gunner'}) do refuse(a[k] == nil or type(a[k]) == 'boolean', k .. ' must be true or false') end
-    refuse(not a.remote or a.drive ~= nil or a.go_to ~= nil or switches, 'remote goes with drive (a car or tank), go_to or the targeting switches (a spidertron)')
+    -- (BK1) remote: true with vehicle alone: a spidertron's route and stall, by remote view (another vehicle: refused)
+    local spider_read = a.remote and a.vehicle ~= nil and a.drive == nil and a.go_to == nil and a.clear == nil and not switches and a.enter == nil and a.exit == nil
+    local read_e
+    if spider_read then
+      local ok, e = pcall(remote_spider, p, a)
+      if ok then read_e = e elseif not tostring(e):find('no spidertron there', 1, true) then error(e, 0) end
+    end
+    refuse(not a.remote or a.drive ~= nil or a.go_to ~= nil or a.clear ~= nil or switches or read_e, 'remote goes with drive (a car or tank), go_to, clear or the targeting switches (a spidertron), or alone with vehicle (a spidertron\'s route)')
+    if read_e then
+      local e = read_e
+      local out = {spidertron=e.name, unit_number=e.unit_number, position=e.position, speed=e.speed and math.floor(e.speed * 216 + 0.5) or nil, by='remote view'}
+      for k, v in pairs(api.spider_facts(e, api.who and api.who(p) or p.name)) do out[k] = v end
+      return out
+    end
     refuse(a.vehicle == nil or a.remote, 'vehicle names the vehicle of a remote call (remote: true)')
     -- The targeting switches (and with go_to, the walk too): the spidertron in reach of its GUI, or by remote view.
     if switches then
@@ -192,17 +207,15 @@ return function(api)
       local spider = a.remote and remote_spider(p, a) or (a.position and find_vehicle(p, a)) or c.vehicle
       refuse(spider and spider.valid and spider.type == 'spider-vehicle', 'the targeting switches are a spidertron\'s (give its position, remote: true with vehicle, or ride it)')
       local out = {spidertron=spider.name, position=spider.position, targeting=targeting(spider, a), by=a.remote and 'remote view' or nil}
-      if a.go_to then
-        local pos = api.position(a.go_to)
-        local ok, err = pcall(function() spider.add_autopilot_destination(pos) end)
-        if not ok then ok, err = pcall(function() spider.autopilot_destination = pos end) end
-        refuse(ok, 'the game refused the destination: ' .. tostring(err))
-        out.go_to = pos
+      if a.go_to ~= nil or a.clear ~= nil then
+        for k, v in pairs(api.spider_set(spider, a, api.who and api.who(p) or p.name)) do out[k] = v end
+        out.go_to = a.go_to
       end
       return out
     end
-    local n = (a.enter and 1 or 0) + (a.exit and 1 or 0) + (a.drive and 1 or 0) + (a.go_to and 1 or 0)
-    assert(n <= 1, 'give one of enter, exit, drive, go_to')
+    local n = (a.enter and 1 or 0) + (a.exit and 1 or 0) + (a.drive and 1 or 0) + ((a.go_to or a.clear) and 1 or 0)
+    assert(n <= 1, 'give one of enter, exit, drive, go_to (or clear)')
+    refuse(a.mode == nil or a.go_to ~= nil, 'mode goes with go_to')
     if a.enter then
       assert(a.enter == true, 'enter must be true')
       assert(not c.vehicle, 'already in a vehicle: vehicle {exit: true} first')
@@ -239,16 +252,14 @@ return function(api)
       assert(not c.vehicle, 'the game kept the character in ' .. v.name)
       return {left=v.name, position=c.position, vehicle=false}
     end
-    if a.go_to then
-      local pos = api.position(a.go_to)
+    if a.go_to ~= nil or a.clear ~= nil then
       local spider
       if a.remote then spider = remote_spider(p, a)
       elseif a.position then spider = find_vehicle(p, a) else spider = c.vehicle end
-      assert(spider and spider.valid and spider.type == 'spider-vehicle', 'go_to is for a spidertron (give its position, remote: true with vehicle, or ride it)')
-      local ok, err = pcall(function() spider.add_autopilot_destination(pos) end)
-      if not ok then ok, err = pcall(function() spider.autopilot_destination = pos end) end
-      assert(ok, 'the game refused the destination: ' .. tostring(err))
-      local out = {spidertron=spider.name, position=spider.position, go_to=pos, by=a.remote and 'remote view' or nil}
+      assert(spider and spider.valid and spider.type == 'spider-vehicle', (a.go_to ~= nil and 'go_to' or 'clear') .. ' is for a spidertron (give its position, remote: true with vehicle, or ride it)')
+      local out = {spidertron=spider.name, unit_number=spider.unit_number, position=spider.position, go_to=a.go_to, by=a.remote and 'remote view' or nil}
+      -- (d22 batch101 BK1) replace (default), append or clear, as the remote does; the route said back
+      for k, v in pairs(api.spider_set(spider, a, api.who and api.who(p) or p.name)) do out[k] = v end
       -- A spidertron with a fuel slot and nothing to burn stands still.
       pcall(function()
         local fuel = spider.get_fuel_inventory and spider.get_fuel_inventory()
@@ -324,6 +335,12 @@ return function(api)
     -- the seat.
     if a.position ~= nil then
       local e, pos = try_vehicle(p, a), api.position(a.position)
+      -- (BK1) a spidertron alone: its route and stall (Opus, shift59 21:42: vehicle {position} to see where it was going)
+      if e and e.type == 'spider-vehicle' then
+        local out = {spidertron=e.name, unit_number=e.unit_number, position=e.position, speed=e.speed and math.floor(e.speed * 216 + 0.5) or nil}
+        for k, v in pairs(api.spider_facts(e, api.who and api.who(p) or p.name)) do out[k] = v end
+        return out
+      end
       error(string.format('position names the vehicle for enter: true (get in), go_to or the targeting switches; with none of them nothing is done%s: vehicle {position: {x: %g, y: %g}, enter: true} gets in%s',
         e and ' (' .. e.name .. ' stands there)' or '', pos.x, pos.y,
         c.vehicle and ' (you are in ' .. c.vehicle.name .. ' now: vehicle {exit: true} gets out first)' or ''), 0)

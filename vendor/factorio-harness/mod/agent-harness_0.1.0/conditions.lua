@@ -718,6 +718,18 @@ return function(api)
       local holder=record or seen_by(c)
       local there=w.stopped==true and (c.location==nil or w.at==c.location)
       holder.platform_began=holder.platform_began or game.tick
+      -- (d22 batch100 BJ1, Sol #1905: a queued platform_left right after the platform_schedule step that sent the platform
+      -- off began with it already on its path and waited for the next departure) a departure in the platform log
+      -- (freight.lua) at or after the baseline counts: since_tick, else in a queue the tick the step before it in the same
+      -- plan started (record.after_step); a lone wait keeps its first check
+      local since=c.since_tick or (record and record.after_step and record.after_step.tick)
+      if since and api.left_since then
+        local e=api.left_since(pl.name,p.force.name,c.location,since)
+        if e then
+          return true,string.format('%s left %s at tick %d (%s); now %s',c.platform,e.at,e.tick,
+            c.since_tick and 'since_tick '..c.since_tick or string.format('after the step before this wait, %s, began at tick %d',tostring(record.after_step.action),since),w.text)
+        end
+      end
       if there then holder.platform_was_there=w.at; return false,c.platform..' '..w.text..' (met when it leaves)' end
       if holder.platform_was_there then return true,c.platform..' left '..holder.platform_was_there..'; now '..w.text end
       -- (d19 batch48 2) a departure made by platform_schedule in the second before this wait began (the same tick, or
@@ -727,7 +739,8 @@ return function(api)
         return true,string.format('%s left %s at tick %d (platform_schedule by %s, %d ticks before this wait began); now %s',c.platform,d.from,d.tick,
           tostring(d.by),math.max(0,holder.platform_began-d.tick),w.text)
       end
-      return false,c.platform..' '..w.text..'; met when it stops '..(c.location and 'at '..c.location or 'somewhere')..' and leaves again (a departure before this wait does not count)'
+      return false,c.platform..' '..w.text..'; met when it stops '..(c.location and 'at '..c.location or 'somewhere')..' and leaves again'
+        ..(since and string.format(' (a departure before tick %d does not count)',since) or ' (a departure before this wait does not count)')
     end,
     -- spoil_within {position, seconds, item?} (batch27 A6, Grok, dozens of times an hour: the copper cultivator dies when
     -- copper ore stays over 300 longer than the bacteria last, ~40 s, and only inspect showed it): the machine at
@@ -1025,6 +1038,8 @@ return function(api)
     if kind=='platform_arrived' or kind=='platform_left' then
       assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
       assert(c.location==nil or (type(c.location)=='string' and prototypes.space_location[c.location]),'location must be a space location (a planet name)')
+      assert(c.since_tick==nil or (kind=='platform_left' and type(c.since_tick)=='number' and c.since_tick>=0 and c.since_tick<=game.tick),
+        kind=='platform_left' and 'platform_left since_tick is a game tick up to now' or 'platform_arrived takes no since_tick')
     end
     return c
   end
