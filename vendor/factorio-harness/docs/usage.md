@@ -11638,3 +11638,41 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   `targets` (enemies within range: units, spawners, worms, segmented and spider units; up to 64, `more` at 64),
   `farthest`, `nearest`, `box`. One bounded find, only while seated in a spidertron; on a copy of world n, 0.025 ms.
   The director frames the spidertron's fight with it (docs/STREAM-NOTES.md, "A spidertron's fight on camera").
+
+## d22 batch100 BJ1 (eng/d20-batch100): a platform_left wait counts the departure just before it (Sol #1905)
+
+- Sol (shift59): queue lane `platform:Meridian-V`, a platform_schedule step (`stops [nauvis (time 0), vulcanus]`,
+  `current: 2`, `paused: false`) then `wait_until platform_left {location: nauvis}`. The wait began with the platform
+  already on its path and read `flying nauvis->vulcanus 12%; met when it stops at nauvis and leaves again (a departure
+  before this wait does not count)`, so the pumps the steps after it switch on stayed off.
+- Reproduced on the private copy (world n's 13:52 autosave, tick 48189019, Sol's queue in it; 200 uranium rounds added
+  to the hub so its fuel and ammo wait was met). With the save's runtime, the platform_schedule step read `on_the_path,
+  nauvis->vulcanus 0%` at tick 48193552 with no `departed` note. The wait began in the same tick and read, a second
+  later, `Meridian-V flying nauvis->vulcanus 11%; ... (a departure before this wait does not count)`.
+- Why: d19 batch48 made platform_schedule record the departure it causes, and a platform_left wait begun within 60
+  ticks counts it. It kept the platform only when `type(platform) == 'table'`. Every game object is userdata in 2.0
+  (read on the copy: a LuaSpacePlatform, LuaForce and LuaSurface are all `userdata`). So no departure was ever recorded
+  on the real engine; the tests' platforms are tables. A direct `platform_schedule {platform: Solstice, current: 2}` on
+  the copy sent Solstice off and recorded nothing either (`schedule_departures` nil).
+- Fixed: space.lua keeps the platform whenever M.platform finds it. The same table check in platform_schedule_call
+  (space.lua) also turns off the platform schedule edit log (`told_of_setting_edit`, `told_of_edit`) on the real
+  engine. That is unchanged here: turning it on would start tells that have never been sent.
+- And: `platform_left` counts a departure in the platform log (freight.lua: arrivals and departures, logged on the game
+  second after, the last 40) at or after a baseline:
+  - `since_tick`, when given (a game tick up to now; platform_left's, as platform_loss's and platform_hit's);
+  - in a queue, the tick the step before it in the same plan began (the scheduler keeps the last started step on the
+    queue and gives the wait `after_step {tick, action}`); a wait that begins a plan has no such step;
+  - else, as before, its first check.
+  saw: `Solstice left nauvis at tick 48194580 (after the step before this wait, wait_ticks, began at tick 48194422);
+  now flying nauvis->gleba 0%`, or `(since_tick T)`; unmet with a baseline, `(a departure before tick T does not
+  count)`.
+- On the copy with the branch runtime (the save loaded again):
+  - Sol's queue: the platform_schedule step's reply has `departed: left nauvis at tick 48193352 (state on_the_path) ...`.
+    The wait was met on its first check, one tick later: `Meridian-V left nauvis at tick 48193352 (platform_schedule by
+    sol, 1 ticks before this wait began)`. The queue went on to its platform_arrived wait at Vulcanus.
+  - A departure the harness did not cause: lane `platform:Solstice`, `wait_ticks 300` then `platform_left {location:
+    nauvis}`. Solstice was sent off by the console during the wait_ticks (go_to_station, tick 48194544). The wait began
+    at 48194722 and was met at once from the log (the line above).
+- Tests: tests/d22_batch100.lua (the departure recorded with a userdata platform; the log against the step before,
+  since_tick, another location, a lone wait as before, since_tick checked; the scheduler's after_step, and none for a
+  wait that begins a plan); tests/d19_batch48.lua and tests/freight.lua unchanged and passing.
