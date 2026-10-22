@@ -127,13 +127,13 @@ return function(api)
     return out
   end
   -- The chunk types a collector takes: its filters, or every type with none set (nil).
-  local function accepts(c)
-    local f = filters(c)
+  local function takes_of(f)
     if #f == 0 then return nil end
     local set = {}
     for _, n in ipairs(f) do set[n] = true end
     return set
   end
+  local function accepts(c) return takes_of(filters(c)) end
   M.accepts = accepts
   -- The read: {view, chunks_in_view, by_type, groups, nearest, in_reach, collectors, collected, lines}
   function M.read(pl)
@@ -295,9 +295,18 @@ return function(api)
   M.on_hull = on_hull
   function M.sample(job, tick)
     local live = false
+    -- the filters at each read: they change while a watch runs (on the copy, a plan of the save changed the east
+    -- collector's from metallic and oxide to carbonic and oxide during a 300 s watch)
     for _, c in ipairs(job.collectors) do
       if not c.gone then
-        if c.e and c.e.valid then live = true else c.gone, c.e = tick, nil end
+        if c.e and c.e.valid then
+          live = true
+          local f = filters(c.e)
+          if #f ~= #(c.filters or {}) or table.concat(f, ',') ~= table.concat(c.filters or {}, ',') then
+            c.filters, c.takes = f, takes_of(f)
+            c.changed = (c.changed or 0) + 1
+          end
+        else c.gone, c.e = tick, nil end
       end
     end
     local now = job.pl and job.pl.valid and try(function() return job.pl.find_asteroid_chunks_filtered{area=job.box} end)
@@ -361,7 +370,7 @@ return function(api)
       local by = {}
       for n, k in pairs(c.by) do by[#by+1] = k .. ' ' .. n; sum_by[n] = (sum_by[n] or 0) + k end
       table.sort(by)
-      rows[#rows+1] = {position=c.position, filters=c.filters and #c.filters > 0 and c.filters or nil, gone_in_reach=c.taken,
+      rows[#rows+1] = {position=c.position, filters=c.filters and #c.filters > 0 and c.filters or nil, filters_changed=c.changed, gone_in_reach=c.taken,
         gone_in_reach_by_type=#by > 0 and table.concat(by, ', ') or nil, gone_s=c.gone and math.floor((c.gone - job.start) / 60) or nil}
       seen = seen + c.taken
       if c.taken == 0 then idle = idle + 1 end

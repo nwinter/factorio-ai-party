@@ -72,6 +72,16 @@ do
   for _,x in ipairs(t.by_type) do if x.name=='metallic-asteroid-chunk' then m=x end end
   eq(m.inferred,0); eq(m.collected,2); eq(m.difference,-2)
   has(t.note,'inferred, not a catch count')
+  -- the filter set to metallic while the watch runs: read at each sample, a metallic in reach then gone is credited
+  col.get_filter=function(i) return i==1 and {name='metallic-asteroid-chunk'} or nil end
+  chunks={}
+  chunk('metallic-asteroid-chunk',5.5,-26)
+  game.tick=1030; C.tick(1030)
+  chunks={}
+  game.tick=1040; C.tick(1040)
+  t=C.tally(p,pl)
+  eq(t.collectors[1].filters[1],'metallic-asteroid-chunk'); eq(t.collectors[1].filters_changed,1)
+  eq(t.collectors[1].gone_in_reach_by_type,'1 metallic-asteroid-chunk, 1 oxide-asteroid-chunk')
   game,defines,prototypes=nil,nil,nil
 end
 print('d22_batch81 AQ1 collector tally by filter, drift and the exact count: ok')
