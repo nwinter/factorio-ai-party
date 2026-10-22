@@ -10973,3 +10973,31 @@ pass began as the last ended.
   tick: 12.1 ms a tick before, 2.4 after. A pass: 35,104 ticks (9.8 min, 33,358 steps); its building counts equal a
   direct count on every planet (Nauvis 45,404, Vulcanus 8,437, Fulgora 5,855, Gleba 4,807, Aquilo 868). WORK is
   the knob: the pass's length goes as 1/WORK and its cost per second as WORK.
+
+## d21 batch72 AH2: platform_defense planned: true (Astra #1741)
+
+- `platform_defense {platform, planned: true}` adds `planned` and lines beginning `planned:`, apart from the built
+  read (which is as before):
+  - our turret ghosts with the built turrets: each ghost by its prototype's attack range, minimum range and turn_range
+    (the railgun-turret's 72 degrees centred on the ghost's facing) and the priority list the ghost carries; rows for
+    the ghosts with an arc, the rest counted by name, range and what they engage;
+  - the collectors, built and ghosts: per size how many no built or planned turret reaches and how many only ghosts
+    reach; up to 8 uncovered named (with a turret in range but outside its arc);
+  - the planned hull (our foundation tiles and foundation tile ghosts): each side's edge tiles per size, uncovered
+    and `ghost_only` (covered only by turret ghosts), as runs;
+  - the note that a ghost holds no ammunition and draws no power: planned cover is reach alone.
+- The hull is read in the background (platdefense.tick): from the hub's chunks out to each neighbour of a chunk with
+  foundation or a tile ghost, then the edge tiles, then the lines; paced at 60 units a tick (a tile found or checked
+  1, a chunk's finds 32, an edge tile sorted 4); one job at a time, at most 4; kept 30 s. A hull part a whole empty
+  chunk away from the rest is not read.
+- Measured on a private copy of world n's 21:01 save (Asterion: 3,910 foundation tiles, 11,447 tile ghosts, 65
+  turret ghosts, 24 collector ghosts):
+  - read synchronously first: 240 ms a call (the cover memo turned turret numbers into text at every edge tile, each
+    edge tile was tested against every turret, and each size's tiles were sorted), then 120 ms after those fixes;
+  - now a call with `planned`: 28-32 ms (without: 17-19 ms); Kestrel IVc (1,720 tiles, 11 turrets): 36-44 ms (without:
+    34-36 ms);
+  - the background job: Asterion 1,197 ticks, Kestrel II (6,978 tiles) 296, Prospect (4,003) 473; platdefense.tick
+    4-17.5 ms a second while jobs run, 0.3 ms a second idle.
+- The read without planned is itself over 10 ms on these platforms: Asterion 28-44 ms before this change, 17-19 ms
+  after (the same cover code), Kestrel IVc 34-36 ms; with the default ammo_use Kestrel IVc read 139-194 ms on its
+  first calls (not changed here).

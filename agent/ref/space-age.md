@@ -173,7 +173,7 @@
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
   Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
-- `platform_defense {platform, feed?, route?, ammo_use?}`: each asteroid collector's front and each hull side against turret ranges: the
+- `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in
   range of a collector whose arc misses it is named under `outside_arc` and not counted. What refills each turret's way (`replenishment by turret`: a machine aboard making its ammo, the hub, chests
@@ -208,6 +208,12 @@
   item, items/min (each and for the turrets), damage a shot (ammunition quality, damage and turret attack bonuses;
   before resistances), and the technologies with levels each bonus comes from. `"all"`: every ammo turret and
   ammunition. Turret quality changes neither rate nor damage; ammunition quality multiplies damage.
+  `planned: true` adds the planned defense apart (lines `planned:`, `planned {...}`): our turret ghosts with the
+  built turrets, each by its prototype's range, minimum range and arc by its facing and its priority list; the
+  collectors built and ghosts by size (uncovered, covered only by ghosts); the hull with our foundation tile ghosts,
+  each side's edge tiles per size uncovered and `ghost_only`. The hull is read in the background: the first call
+  gives `sides_pending`, a later call the sides (`sides_as_of`, kept 30 s; a 15,000-tile hull takes about 20 s). A ghost holds no
+  ammunition and draws no power: planned cover is reach alone.
   `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
 - `platform_digest {platform}`: one read of a platform from `platforms`, `platform_supply`, `platform_endurance` and

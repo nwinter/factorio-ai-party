@@ -17947,7 +17947,7 @@ M.ammofeed=require('ammofeed'){state=state,feeders=M.feeders}
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
 M.ammorate=require('ammorate'){}
-M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
+M.platdefense=require('platdefense'){state=state,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
 do
   local function target_surface(p,a)
     if type(a.platform)=='string' then
@@ -19352,7 +19352,8 @@ function M.tick_body(event)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
-  if M.netmap then pcall(M.timed,'netmap.tick',M.netmap.tick,event.tick) end  -- the live map's networks, a slice a step (netmap.lua)
+  if M.netmap then pcall(M.timed,'netmap.tick',M.netmap.tick,event.tick) end
+  if M.platdefense and M.platdefense.tick then pcall(M.timed,'platdefense.tick',M.platdefense.tick,event.tick) end  -- planned hulls' sides, a chunk or a slice a tick (platdefense.lua)  -- the live map's networks, a slice a step (netmap.lua)
   if M.seeds then pcall(M.timed,'seeds.tick',M.seeds.tick,event.tick) end  -- seed loops running out (seeds.lua)
   if M.floorcheck then pcall(M.timed,'floorcheck.tick',M.floorcheck.tick) end  -- foundation checks across ticks (floorcheck.lua)
   if M.ghosttally then pcall(M.timed,'ghosttally.tick',M.ghosttally.tick) end  -- platform ghost tallies across ticks (ghosttally.lua)
