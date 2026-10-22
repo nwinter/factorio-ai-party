@@ -168,10 +168,20 @@ def cap(text, n):
     return text if len(text) <= n else text[:n - 1].rstrip() + "…"
 
 
+GUEST = "Guest"  # (d22 batch75 AK12) a name that cleans to nothing; the site's blank names are "Guest abcd" (worker.js)
+
+
 def clean_name(name):
     name = clean(name).lstrip("@")
     name = re.sub(r"[^\w .'\-]", "", name)[:20].strip()
-    return name or "viewer"
+    return name or GUEST
+
+
+def legacy_blank(m):
+    """(AK12, viewer Aurora site:4296: "The site defaults blank names to viewer, but the relay rejects viewer as
+    impersonation:name") a site line with no name, or the old Worker's blank-name default "viewer": a guest, never
+    impersonation (the Worker now names a blank poster "Guest" and four hex digits of its client hash)."""
+    return m.get("source") == "site" and not m.get("host") and fold(clean(m.get("name") or "")).strip().lstrip("@") in ("", "viewer")
 
 
 # ---- filters -----------------------------------------------------------------------------------------------------
@@ -426,7 +436,7 @@ class Filter:
         if host:
             return names.HOST_LABEL
         n = clean_name(raw)
-        if n == "viewer" and fold(clean(raw)).lstrip("@") != "viewer":
+        if n == GUEST and not fold(clean(raw)).strip().lstrip("@"):
             return n
         if not staff and self.posing(raw):
             n = cap(n, 11) + " (viewer)"
@@ -444,7 +454,8 @@ class Filter:
         full = cap(clean(m.get("text")), FULL_MAX)
         text = cap(full, TEXT_MAX)
         host = bool(m.get("host"))
-        out = {"id": m["id"], "source": m["source"], "name": self.name(m.get("name"), m.get("staff"), host), "text": text,
+        guest = legacy_blank(m)
+        out = {"id": m["id"], "source": m["source"], "name": GUEST if guest else self.name(m.get("name"), m.get("staff"), host), "text": text,
                "t": float(m.get("t") or now)}
         if host:
             out["host"] = True
@@ -470,7 +481,7 @@ class Filter:
         if not m.get("staff") and not host:  # the YouTube owner and moderators are staff; anyone else posing as staff
             # or an agent or Nick: a site line is dropped (the site has no accounts; the host link marks Nick's own
             # lines, and older Worker rows have no host at all); on YouTube the name gets " (viewer)" (name above)
-            if m.get("source") != "youtube" and self.posing(m.get("name")):
+            if m.get("source") != "youtube" and not guest and self.posing(m.get("name")):
                 reasons.append("impersonation:name")
             # "operator: ..." to the operator is no claim to be one, unless it orders the agents ("Operator: all agents
             # pause") or addresses one ("operator: astra, stop building"). An agent named in the text is not addressed:

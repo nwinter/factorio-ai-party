@@ -312,7 +312,7 @@ check("name: staff-like names are marked", f.name("@Operator") == "Operator (vie
 check("name: the channel owner keeps a reserved name", f.name("Nick", staff="owner") == "Nick")
 check("name: markup and invisible characters removed, capped", f.name("<b>x‮</b>" + "y" * 40) == "bxb" + "y" * 17,
       f.name("<b>x‮</b>" + "y" * 40))
-check("name: empty becomes viewer", f.name("@@@") == "viewer")
+check("name: empty becomes Guest (d22 batch75 AK12: \"viewer\" is reserved)", f.name("@@@") == "Guest")
 v, r = f.check({"id": "x", "source": "site", "author": "a", "name": "n", "text": "x" * 10 + " word " * 60, "t": NOW}, NOW)
 check("text: capped at 200 with an ellipsis", len(v["text"]) == 200 and v["text"].endswith("…"), len(v["text"]))
 v, r = f.check({"id": "x", "source": "site", "author": "a", "name": "n", "text": "hi‮ there\n\nfriend", "t": NOW}, NOW)
