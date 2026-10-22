@@ -174,7 +174,7 @@ return function(api)
     b.character = c; b.position = c.position; b.dead_until_tick = nil
     b.surface = surface.name; b.planet = surface.name
     look(c)
-    if api.on_spawn then api.on_spawn(b) end
+    if api.on_spawn then api.on_spawn(b, kind) end
     return c
   end
   function M.create(name)

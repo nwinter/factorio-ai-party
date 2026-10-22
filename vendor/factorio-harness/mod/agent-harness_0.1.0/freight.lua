@@ -934,12 +934,16 @@ return function(api)
   -- One pod gone: what it carried, counted on its stop by where it went.
   -- (d17 batch23 A3) and a landed receipt per pod, kept apart from the stops (the last RECEIPTS): what, where, when,
   -- which pod, from which stop
-  local function receipt(rec, p, tick, kind, where)
+  -- (d22 batch94 BD1) a pod received by a landing pad goes to api.delivered (reminders' on.delivered)
+  local function receipt(rec, p, tick, kind, where, pl)
     rec.receipts = rec.receipts or {}
     table.insert(rec.receipts, {tick=tick, sent=p.tick, unit=p.unit, cargo=p.cargo, kind=kind, where=where, stop=p.at, stop_start=p.seg, dest=p.dest})
     while #rec.receipts > M.RECEIPTS do table.remove(rec.receipts, 1) end
+    if kind == 'received' and api.delivered then
+      pcall(api.delivered, {surface=p.dest and p.dest.surface or (p.last and p.last.surface), from=pl and try(function() return pl.name end), cargo=p.cargo, where=where})
+    end
   end
-  local function pod_done(rec, p, tick, hub_dead)
+  local function pod_done(rec, p, tick, hub_dead, pl)
     local seg = seg_at(rec, p.seg) or {}
     seg.pods = seg.pods or {}
     local here = p.last and p.last.surface
@@ -955,7 +959,7 @@ return function(api)
       if p.dest and p.dest.pad then
         local where = string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here)
         tally(seg.pods, 'received', p.cargo, where)
-        receipt(rec, p, tick, 'received', where)
+        receipt(rec, p, tick, 'received', where, pl)
       else
         -- The container it became, where it stands (Sonnet, shift14 22:50: a rounded spot sent a transfer a tile off);
         -- else the pod's last sighting, to a tenth of a tile.
@@ -990,12 +994,18 @@ return function(api)
   -- pod gone (it reached the platform) gives its launch-to-arrival time (to POD_TICKS), the last UP_TIMES kept; one
   -- followed past UP_MAX is dropped.
   local UP_TIMES, UP_MAX = 8, 3600
-  function M.up_settle(rec, tick)
+  function M.up_settle(rec, tick, pl)
     local keep = {}
     for _, r in ipairs(rec.incoming or {}) do
       if r.pod and try(function() return r.pod.valid end) then
         if tick - r.tick < UP_MAX then keep[#keep+1] = r end
       else
+        -- (BD1) a rocket's pod gone: it reached the platform's hub (api.delivered)
+        if pl and api.delivered then
+          local name = try(function() return pl.name end)
+          pcall(api.delivered, {surface=try(function() return pl.surface.name end), platform=name, from=r.from, cargo=r.cargo,
+            where=string.format('%s\'s hub (a rocket from %s)', tostring(name), tostring(r.from))})
+        end
         rec.up_times = rec.up_times or {}
         rec.up_times[#rec.up_times+1] = tick - r.tick
         while #rec.up_times > UP_TIMES do table.remove(rec.up_times, 1) end
@@ -1030,7 +1040,7 @@ return function(api)
   function M.pod_watch(pl, tick)
     local rec = store()[pl.index]
     if not rec then return end
-    pcall(M.up_settle, rec, tick)
+    pcall(M.up_settle, rec, tick, pl)
     -- The pods followed: where they are, and the ones gone.
     local keep = {}
     local hub_dead = not try(function() return pl.hub.valid end)
@@ -1043,7 +1053,7 @@ return function(api)
         keep[#keep+1] = p
       else
         p.pod = nil
-        pod_done(rec, p, tick, hub_dead)
+        pod_done(rec, p, tick, hub_dead, pl)
       end
     end
     rec.pods = keep

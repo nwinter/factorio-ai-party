@@ -68,9 +68,9 @@ do
   has(row.states,'luna acknowledged, not done: board #1514 (doing) unchanged since the ack, last change 3m18s ago')
   has(row.latest[1].state,'acknowledged, not done'); eq(row.yours:sub(1,22),'acknowledged, not done')
   items[1514].updated_tick=12000                          -- the item moved after the ack
-  eq(R.handlers.reminders(luna,{}).reminders[1].yours,'acknowledged')
-  items[1514].updated_tick=100; items[1514].status='done'  -- done: plain
-  eq(R.handlers.reminders(luna,{}).reminders[1].yours,'acknowledged')
+  eq(R.handlers.reminders(luna,{}).reminders[1].yours,'done')
+  items[1514].updated_tick=100; items[1514].status='done'  -- done: plain (d22 batch94 BD1: an ack with a result reads done)
+  eq(R.handlers.reminders(luna,{}).reminders[1].yours,'done')
   game=nil
   print('AZ2 reminder acks are talk; acknowledged, not done: ok')
 end

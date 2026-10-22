@@ -140,6 +140,17 @@ process.stdout.write(JSON.stringify(out));
     assert "Astra: waiting 143 min, 15 runs missed, backup told; last acknowledged 147 min ago:</span> K2 Fulgora PU777/1000" in out, out
     assert "Sol: acknowledged 1 min ago by Astra for them:</span> pod ledger: PU 346 landed" in out, out
     assert "luna: acknowledged 2 min ago, no result given" in out and "grok: scheduled, never acknowledged" in out, out
+    # (d22 batch94 BD1) open and deferred stay open on the panel, done is green
+    j = job(114, name="personal-equipment-standard", states="haiku open (gap: energy-shield-mk2-equipment); sol done; luna deferred (open): until Thursday", latest=[
+        {"name": "haiku", "state": "open (gap: energy-shield-mk2-equipment)", "acked_ago_s": 60, "result": "shield mk2 missing"},
+        {"name": "sol", "state": "done", "acked_ago_s": 120, "result": "300/300"},
+        {"name": "luna", "state": "deferred (open): until Thursday", "acked_ago_s": 180}])
+    js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [j], "total": 1}) + ", team));"
+    r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
+    out = r.stdout
+    assert r.returncode == 0 and "acknowledged 1 min ago (open (gap: energy-shield-mk2-equipment)):</span> shield mk2 missing" in out, out + r.stderr
+    assert "acknowledged 3 min ago (deferred (open): until Thursday), no result given" in out, out
+    assert 'fx-chip fx-chip--green">Sol done' in out and 'fx-chip fx-chip--orange">' in out and 'deferred (open): until Thursday</span>' in out, out
     # an older state without them: nothing added
     js = JS_STUB.replace("STORE", "{}") + fn + "process.stdout.write(remindersHtml(" + json.dumps({"jobs": [job(1)], "total": 1}) + ", team));"
     r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
