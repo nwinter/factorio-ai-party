@@ -4,6 +4,7 @@
 return function(api)
   local H = {}
   local MAX_ENTITIES, MAX_TILES, MAX_STRING, MAX_SLOTS = 4096, 8192, 1000000, 32
+  local PASTE = {entities=MAX_ENTITIES, tiles=MAX_TILES} -- (d22 batch80 AP1) for code below a local MAX_TILES of its own
   -- Factorio 2.0 remote view can place ghosts and order deconstruction on any
   -- charted chunk; robots still have to fly there and use real items.
   local MAX_AREA, MAX_AREA_ENTITIES = 256, 16384
@@ -42,16 +43,18 @@ return function(api)
     assert(ok, result)
     return result
   end
+  -- (d22 batch80 AP1) the refusals name the counts and the limits.
   local function validate(stack)
     assert(stack.valid_for_read and stack.is_blueprint, 'an individual blueprint is required')
     assert(stack.is_blueprint_setup(), 'blueprint is empty')
-    assert(stack.get_blueprint_entity_count()<=MAX_ENTITIES, 'blueprint entity limit exceeded')
+    local count=stack.get_blueprint_entity_count()
+    assert(count<=MAX_ENTITIES, string.format('blueprint entity limit exceeded (%d entities; at most %d)',count,MAX_ENTITIES))
     local entities, tiles = stack.get_blueprint_entities() or {}, stack.get_blueprint_tiles() or {}
-    assert(#tiles<=MAX_TILES, 'blueprint tile limit exceeded')
+    assert(#tiles<=MAX_TILES, string.format('blueprint tile limit exceeded (%d tiles; at most %d)',#tiles,MAX_TILES))
     for _, list in ipairs({entities,tiles}) do
       for _, item in ipairs(list) do
         local pos=api.position(item.position)
-        assert(math.abs(pos.x)<=128 and math.abs(pos.y)<=128, 'blueprint extent exceeds limit')
+        assert(math.abs(pos.x)<=128 and math.abs(pos.y)<=128, 'blueprint extent exceeds limit (128 tiles from its 0,0)')
       end
     end
     return entities, tiles
@@ -148,7 +151,13 @@ return function(api)
     local value
     if a.name ~= nil then
       assert(a.slot == nil, 'give name (a library entry) or slot, not both')
-      value = library_entry(a.name).string
+      local e = library_entry(a.name)
+      -- (d22 batch80 AP1) a whole-platform entry past a paste's limits
+      if e.big then
+        error(string.format('%s holds %d entities and %d tiles (%gx%g), more than a paste or layout takes (%d entities, %d tiles, 128 tiles from its 0,0); blueprint_export {name} gives its string',
+          e.name,e.entities,e.tiles,e.footprint.w,e.footprint.h,MAX_ENTITIES,MAX_TILES),0)
+      end
+      value = e.string
     else
       value = slots(p)[slot_name(a)]
       assert(value, 'blueprint slot is empty')
@@ -169,6 +178,11 @@ return function(api)
       end
     end
     return {left_top=lt,right_bottom=rb}
+  end
+  -- (d22 batch80 AP1) an area over MAX_AREA either way.
+  local function wide(a)
+    local lt,rb=api.position(a.area.left_top),api.position(a.area.right_bottom)
+    return rb.x-lt.x>MAX_AREA or rb.y-lt.y>MAX_AREA
   end
   -- Resource tiles are never selected by planners, so they must not consume the budget.
   local function candidates(p, box)
@@ -202,6 +216,10 @@ return function(api)
   local function capture(p,a,cut)
     permission(p,cut and 'deconstruct' or 'copy')
     permission(p,'select_blueprint_entities')
+    -- (d22 batch80 AP1) a platform's whole goes to the library
+    if api.own_platform and api.own_platform(p) and type(a.area)=='table' and wide(a) then
+      error('area must have positive dimensions at most '..MAX_AREA..' by '..MAX_AREA..'; blueprint_save {name, platform} without area saves the whole platform as a library entry',0)
+    end
     local box=area(p,a)
     candidates(p,box) -- Bound work before asking Factorio to capture the region.
     local name=slot_name(a)
@@ -351,9 +369,14 @@ return function(api)
     local function add(x1,y1,x2,y2)
       l,t=math.min(l or x1,x1),math.min(t or y1,y1); r,b=math.max(r or x2,x2),math.max(b or y2,y2)
     end
+    local dims={} -- a prototype's size by name (d22 batch80 AP1: 7803 lookups were 23 ms on the copy)
     for _,e in ipairs(entities) do
-      local proto=prototypes.entity[e.name]
-      local w,h=proto and proto.tile_width or 1,proto and proto.tile_height or 1
+      local d=dims[e.name]
+      if not d then
+        local proto=prototypes.entity[e.name]
+        d={proto and proto.tile_width or 1,proto and proto.tile_height or 1}; dims[e.name]=d
+      end
+      local w,h=d[1],d[2]
       if (e.direction or 0)%8==4 then w,h=h,w end
       add(e.position.x-w/2,e.position.y-h/2,e.position.x+w/2,e.position.y+h/2)
     end
@@ -1341,10 +1364,124 @@ return function(api)
       e.last_used and 'last used '..ago(game.tick-e.last_used) or 'never used, saved '..ago(game.tick-e.saved_tick)),0)
   end
   local function key(e) return e.unit_number or (e.name..'@'..e.position.x..','..e.position.y) end
+  -- (d22 batch80 AP1, Astra #1851: Asterion's hull (-58,-49)..(58,234), 7803 entities and 19295 tiles, past an
+  -- area's 256 tiles and a blueprint's 4096 entities and 8192 tiles) a whole platform in one blueprint, as a player
+  -- selects one from remote view: blueprint_save on our platform without area (or with an area over 256 tiles or 4096
+  -- entities) saves our entities on it with their wires and settings, and its foundation (tiles: false leaves it out;
+  -- an area takes it with tiles: true), up to PLATFORM. The engine's export writes each number slowly (on the copy
+  -- the tiles were 1.45 of the 2.3 s), so export_stack writes the entities and the tiles' JSON (whole numbers) is added
+  -- here: 1.04-1.39 s for Asterion on the copy under Rosetta (0.87-1.01 s the entities' export), the same string as the
+  -- game's own export (decoded: the same entities, tiles, wires and keys). A paste
+  -- or layout of an entry over MAX_ENTITIES, MAX_TILES or 128 tiles from its 0,0 is refused; its export is the stored
+  -- string (label and description in it), paged (EXPORT_PAGE).
+  local PLATFORM={entities=16384,tiles=32768,extent=512}
+  local FOUNDATION='space-platform-foundation'
+  -- The platform's extent: the chunks holding foundation.
+  local function platform_box(surface)
+    local l,t,r,b
+    for c in surface.get_chunks() do
+      if surface.count_tiles_filtered{area=c.area,name=FOUNDATION,limit=1}>0 then
+        l,t=math.min(l or c.x,c.x),math.min(t or c.y,c.y); r,b=math.max(r or c.x,c.x),math.max(b or c.y,c.y)
+      end
+    end
+    assert(l,'the platform has no foundation')
+    return {left_top={x=l*32,y=t*32},right_bottom={x=r*32+32,y=b*32+32}}
+  end
+  local function platform_save(p,a,name,old,lib)
+    local whole=a.area==nil
+    local box=platform_box(p.surface)
+    if not whole then
+      assert(type(a.area)=='table','area requires left_top and right_bottom')
+      local lt,rb=api.position(a.area.left_top),api.position(a.area.right_bottom)
+      assert(lt.x<rb.x and lt.y<rb.y,'area must have positive dimensions')
+      box={left_top={x=math.max(lt.x,box.left_top.x),y=math.max(lt.y,box.left_top.y)},
+        right_bottom={x=math.min(rb.x,box.right_bottom.x),y=math.min(rb.y,box.right_bottom.y)}}
+      assert(box.left_top.x<box.right_bottom.x and box.left_top.y<box.right_bottom.y,'the area holds none of the platform')
+    end
+    candidates(p,box)
+    local anchor=a.anchor~=nil and api.position(a.anchor) or nil
+    assert(not anchor or (anchor.x>=box.left_top.x and anchor.x<=box.right_bottom.x and anchor.y>=box.left_top.y and anchor.y<=box.right_bottom.y),
+      'anchor must lie in the saved area')
+    local with_tiles=a.tiles==true or (whole and a.tiles~=false)
+    local inv=game.create_inventory(1)
+    local ok,out=pcall(function()
+      local stack=inv[1]
+      stack.set_stack{name='blueprint',count=1}
+      local mapping=stack.create_blueprint{surface=p.surface,force=p.force,area=box,always_include_tiles=false,
+        include_entities=true,include_modules=true,include_station_names=false,include_trains=false,include_fuel=false}
+      local entities=stack.get_blueprint_entities() or {}
+      assert(#entities>0,'nothing to save: no entity or ghost of ours '..(whole and 'on the platform' or 'in the area'))
+      assert(#entities<=PLATFORM.entities,string.format('blueprint entity limit exceeded (%d entities; at most %d on a platform)',#entities,PLATFORM.entities))
+      local ghosts=0
+      for _,e in ipairs(entities) do local w=mapping[e.entity_number]; if w and w.valid and w.type=='entity-ghost' then ghosts=ghosts+1 end end
+      local origin=rebase_origin(box,entities)
+      if origin.x~=0 or origin.y~=0 then
+        for _,e in ipairs(entities) do e.position={x=e.position.x-origin.x,y=e.position.y-origin.y} end
+        stack.set_blueprint_entities(entities)
+      end
+      -- The foundation, read from the surface (the tiles a blueprint of the platform holds); its JSON is written here.
+      local tiles=with_tiles and p.surface.find_tiles_filtered{area=box,name=FOUNDATION,limit=PLATFORM.tiles+1} or {}
+      assert(#tiles<=PLATFORM.tiles,string.format('blueprint tile limit exceeded (over %d tiles on a platform)',PLATFORM.tiles))
+      local l,t,r,b=extent(entities)
+      local parts,fmt,ox,oy={},string.format,origin.x,origin.y
+      for i,tile in ipairs(tiles) do
+        local at=tile.position
+        local x,y=at.x-ox,at.y-oy
+        if x<l then l=x end; if y<t then t=y end; if x+1>r then r=x+1 end; if y+1>b then b=y+1 end
+        parts[i]=fmt('{"position":{"x":%d,"y":%d},"name":"%s"}',x,y,FOUNDATION)
+      end
+      assert(math.max(-l,-t,r,b)<=PLATFORM.extent,string.format('blueprint extent exceeds limit (%d tiles from its 0,0 on a platform)',PLATFORM.extent))
+      local description=a.description and a.description:gsub('%s+',' ') or nil
+      stack.label=name
+      if description then stack.blueprint_description=description end
+      local value=stack.export_stack()
+      if #parts>0 then
+        local json=helpers.decode_string(value:sub(2))
+        local head=json and json:match('^(.*)}%s*}%s*$')
+        assert(head,'the exported blueprint did not read back')
+        value='0'..helpers.encode_string(head..',"tiles":['..table.concat(parts,',')..']}}')
+      end
+      assert(#value<=MAX_STRING,string.format('blueprint export exceeds size limit (%g KB; at most %g)',kb(#value),kb(MAX_STRING)))
+      room_for(name,#value)
+      local counts={}
+      for _,e in ipairs(entities) do counts[e.name]=(counts[e.name] or 0)+1 end
+      lib.revision=lib.revision+1
+      local entry={name=name,author=api.who(p),string=value,entities=#entities,tiles=#tiles,counts=counts,
+        footprint={w=r-l,h=b-t},anchor=anchor and {x=anchor.x-origin.x,y=anchor.y-origin.y} or nil,surface=p.surface.name,
+        description=description,saved_tick=game.tick,rev=lib.revision,uses=0,
+        captured={left_top=box.left_top,right_bottom=box.right_bottom},platform=p.surface.platform.name,whole=whole or nil,labelled=true,
+        big=(#entities>PASTE.entities or #tiles>PASTE.tiles or math.max(-l,-t,r,b)>128) or nil}
+      lib.entries[name]=entry
+      local row_out=row(entry)
+      row_out.replaced=old and old.author or nil
+      row_out.retired_cleared=retired_line(old)
+      row_out.ghosts=ghosts>0 and ghosts or nil
+      row_out.platform=entry.platform
+      row_out.whole=entry.whole
+      -- each wire is listed at both its ends
+      local wires,seen=0,{}
+      for _,e in ipairs(entities) do
+        for _,w in ipairs(e.wires or {}) do
+          local s1,c1,s2,c2=w[1] or e.entity_number,w[2],w[3],w[4]
+          if s1>s2 or (s1==s2 and c1>c2) then s1,c1,s2,c2=s2,c2,s1,c1 end
+          local k=s1..':'..c1..'-'..s2..':'..c2
+          if not seen[k] then seen[k]=true; wires=wires+1 end
+        end
+      end
+      row_out.note=(whole and 'the whole platform' or 'the area on the platform')..string.format(': %d entities, %d tiles, %d wire%s',#entities,#tiles,wires,wires==1 and '' or 's')
+        ..(entry.big and string.format('; over a paste\'s %d entities, %d tiles or 128 tiles from its 0,0: blueprint_export {name} gives its string, blueprint_place refuses it',PASTE.entities,PASTE.tiles) or '')
+      return row_out
+    end)
+    inv.destroy()
+    assert(ok,out)
+    return out
+  end
   function H.blueprint_save(p,a)
     permission(p,'copy'); permission(p,'select_blueprint_entities')
     local name=entry_name(a.name)
-    assert((a.area==nil)~=(a.positions==nil),'give area or positions (the entities to keep), one of them')
+    local plat=api.own_platform and api.own_platform(p)
+    assert(not (a.area~=nil and a.positions~=nil) and (plat or a.area~=nil or a.positions~=nil),
+      'give area or positions (the entities to keep), one of them'..(plat and '' or '; on a platform (platform=NAME) neither saves the whole platform'))
     assert(a.description==nil or (type(a.description)=='string' and #a.description<=MAX_DESCRIPTION),'description must be text of up to '..MAX_DESCRIPTION..' characters')
     local lib=library()
     local old=lib.entries[name]
@@ -1352,6 +1489,10 @@ return function(api)
     else
       local n=0; for _ in pairs(lib.entries) do n=n+1 end
       assert(n<MAX_LIBRARY,'the library holds '..MAX_LIBRARY..' entries, its limit; blueprint_delete frees one')
+    end
+    -- (d22 batch80 AP1) a whole platform, or an area of one too large for the capture below.
+    if plat and a.positions==nil and (a.area==nil or wide(a)) then
+      return platform_save(p,a,name,old,lib)
     end
     local box,keep
     if a.positions~=nil then
@@ -1368,7 +1509,9 @@ return function(api)
       end
       box=area(p,{area={left_top={x=l,y=t},right_bottom={x=r,y=b}}})
     else box=area(p,a) end
-    candidates(p,box)
+    if #candidates(p,box)>MAX_ENTITIES and a.positions==nil and plat then
+      return platform_save(p,a,name,old,lib)
+    end
     local anchor=a.anchor~=nil and api.position(a.anchor) or nil
     assert(not anchor or (anchor.x>=box.left_top.x and anchor.x<=box.right_bottom.x and anchor.y>=box.left_top.y and anchor.y<=box.right_bottom.y),
       'anchor must lie in the saved area')
@@ -1520,6 +1663,19 @@ return function(api)
     if a.name~=nil then return library_import(p,a) end
     return slot_import(p,a)
   end
+  -- (d22 batch80 AP1) a long string in pages: bytes from..from+EXPORT_PAGE-1, and where the next page starts.
+  local EXPORT_PAGE=262144
+  local function page(out,value,a)
+    local from=a.from==nil and 1 or api.integer(a.from,1,1,math.max(1,#value),'from')
+    if from==1 and #value<=EXPORT_PAGE then out.blueprint=value; return out end
+    local last=math.min(#value,from+EXPORT_PAGE-1)
+    out.blueprint=value:sub(from,last)
+    out.blueprint_bytes=#value
+    out.next_from=last<#value and last+1 or nil
+    out.blueprint_page=string.format('bytes %d-%d of %d%s',from,last,#value,
+      out.next_from and string.format('; blueprint_export {name, from: %d} gives the next',out.next_from) or '; the last')
+    return out
+  end
   -- A library entry's export (blueprint_export {name}): its string carries the entry's name as label and its
   -- description, as a player's exported string does; the reply gives what blueprint_import {name} takes back.
   local slot_export=H.blueprint_export
@@ -1527,10 +1683,18 @@ return function(api)
     if a.name==nil or a.layout==true then return slot_export(p,a) end
     permission(p,'export_blueprint')
     local e=library_entry(a.name)
+    local function head()
+      return {name=e.name,author=e.author,kind='blueprint',entities=e.entities,tiles=e.tiles,description=e.description,anchor=e.anchor,
+        size_kb=kb(#e.string),retired=retired_line(e),platform=e.platform,whole=e.whole}
+    end
+    -- (d22 batch80 AP1) a whole-platform entry's string has its label and description already: it goes as stored,
+    -- EXPORT_PAGE bytes a reply.
+    if e.labelled then return page(head(),e.string,a) end
+    assert(a.from==nil,'from pages a string over '..EXPORT_PAGE..' bytes; this one comes whole')
     return load(p,a,function(stack)
       if e.description then pcall(function() stack.blueprint_description=e.description end) end
-      local out={name=e.name,author=e.author,kind='blueprint',entities=e.entities,tiles=e.tiles,description=e.description,anchor=e.anchor,
-        size_kb=kb(#e.string),retired=retired_line(e),blueprint=stack.export_stack()}
+      local out=head()
+      out.blueprint=stack.export_stack()
       return out
     end)
   end
