@@ -11738,3 +11738,11 @@ Tests use userdata fakes (a file handle with its own metatable), never table fak
 - tests/d22_batch100.lua (BJ1's platform and force).
 
 Each fails on the code before the fix.
+- BJ3 (operator: a failing read, not a new message): robotloss.lua kept a lost robot's order item as the item
+  prototype (2.0.77's `target_item.name`, userdata). When the order had no target, the group line joined it and raised
+  `attempt to concatenate a userdata value` (robotloss.lua:54), in `robot_losses` and in `alert_groups`. That failed
+  the read, and since the alert groups are built for the whole force at once, it dropped every robots_lost alert of that
+  force while the record was kept (KEEP, 15 minutes).
+  - Now the item is kept by its name, from a name, the prototype, or `target_item.name`. A record noted before the fix,
+    holding the prototype, is read by its name.
+  - Test tests/d22_batch100c.lua (userdata fakes; on the old code both calls raise at robotloss.lua:54).
