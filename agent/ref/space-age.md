@@ -28,7 +28,9 @@
   --until`, `./fh sleep --until`, `wait_until`, queue steps and guards, and a standing order's `when`.
   `platform_arrived` holds while the platform is stopped at `location` (a planet; without one, at any stop).
   `platform_left` waits for its next departure from `location` (without one, from any stop): seen stopped there during
-  the wait, then gone; one begun in flight waits for the next stop and its departure. With no `timeout` (queued or
+  the wait, then gone; one begun in flight waits for the next stop and its departure. In a queue it also counts a
+  departure after the step before it began (a `platform_schedule` step that sent it off); `since_tick` counts one from
+  that tick. With no `timeout` (queued or
   direct) either wait goes on past its default 60 s while the ETA is known: to the ETA plus a quarter and 10 s, at
   most 54000 ticks (`extended` says so). The team alerts say when a platform stops at or leaves your planet.
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
