@@ -232,10 +232,15 @@ def guard():
         assert (tick, source) == (9800000, "stopped.json: its stop save shift13.zip"), source
         # The 15:55 change: shift13 started from the 10:48 save, 3 game hours behind shift12r's stop.
         ok, line = resume_guard.check(9800000 - 3 * 216000, tick, source, "shift13.zip")
-        assert not ok and "the world went back 3h00m of game time, more than 10m: an old save; refusing" in line, line
+        assert not ok and "the world went back 3h00m of game time, more than 18m: an old save; refusing" in line, line
         assert line.startswith("resumed at tick 9152000 (game 42h22m) from shift13.zip; the previous run's last tick 9800000"), line
         # The stop save itself, or an autosave a few minutes older: on.
         assert resume_guard.check(9800000, tick, source)[0] and resume_guard.check(9800000 - 6 * 3600, tick, source)[0]
+        # d22 06:15, autosaves every 15 minutes: a crash restart's autosave 14 game minutes behind is on, 20 refused.
+        assert resume_guard.check(9800000 - 14 * 3600, tick, source)[0]
+        ok, line = resume_guard.check(9800000 - 20 * 3600, tick, source, "_autosave3.zip")
+        assert not ok and "went back 20m of game time, more than 18m" in line, line
+        assert resume_guard.SLACK == 18 * 3600
         assert resume_guard.check(9800000 + 120, tick, source)[1].endswith(": +120 ticks")
         assert resume_guard.check(5, None, "no stopped.json")[0]
         r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "resume_guard.py"), tmp, "9152000"], capture_output=True,
@@ -244,6 +249,11 @@ def guard():
         r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "resume_guard.py"), tmp, "9800010", "shift13.zip"],
                            capture_output=True, text=True)
         assert r.returncode == 0 and r.stdout.strip().endswith("+10 ticks"), r.stdout
+        env = {k: v for k, v in os.environ.items() if k != "POG_RESUME_TICK_SLACK"}
+        for behind, code in ((14, 0), (20, 1)):  # the script's default slack, 18 game minutes
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "resume_guard.py"), tmp,
+                                str(9800000 - behind * 3600), "_autosave3.zip"], capture_output=True, text=True, env=env)
+            assert r.returncode == code, (behind, r.stdout)
     finally:
         shutil.rmtree(tmp)
     print("resume_guard: ok")

@@ -12,7 +12,7 @@
 # starts on the previous run's stop save (its stopped.json, written by tools/stop-team.sh), else the newest save
 # written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
 # resumes at is checked against the previous run's last (tools/resume_guard.py; refused when it went back more than
-# POG_RESUME_TICK_SLACK ticks, default 10 game minutes); existing bots are kept, and each agent starts from its
+# POG_RESUME_TICK_SLACK ticks, default 18 game minutes); existing bots are kept, and each agent starts from its
 # notes.md of that run. POG_SPACE_AGE must match the instance's mods.
 # POG_RESUME_DIR: the previous run's directory (default runs/PREVIOUS_RUN here, else in ~/code/player-of-games).
 # POG_DRY_RUN=1: check what can be checked here and print the plan; touches nothing. With POG_RESUME, POG_DRY_RUN_PICK=1
