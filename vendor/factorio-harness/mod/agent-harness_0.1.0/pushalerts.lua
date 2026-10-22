@@ -945,6 +945,19 @@ return function(api)
   -- a read spreads over its 30 s.
   local SLICE = 150
   local NET_SLICE = 2   -- networks whose alert groups one step of the background read makes
+  -- (d22 batch96 BF1: on world n at 14:06 a game second held 164 ms of slices and another 141 ms of depleted-drill
+  -- lookups) the job's work in units of about a microsecond on a copy of world n: an entity a slice reads by its type
+  -- (fitted to 838 slices of a pass: 8 us a chest to 276 a silo), the other steps by what they did. A slice stops at
+  -- SLICE_COST, and after a step the job waits its cost's share of SECOND_COST a second (a slice of 5,000: 15 ticks),
+  -- so any 60 ticks hold at most SECOND_COST and one step.
+  local COST = {['rocket-silo']=280, ['agricultural-tower']=270, ['cargo-landing-pad']=150, ['mining-drill']=110,
+    radar=100, reactor=80, furnace=80, ['assembling-machine']=75, ['ammo-turret']=65, boiler=40, inserter=30, roboport=25,
+    ['entity-ghost']=25, ['electric-turret']=20}
+  local COST_OTHER, COST_STEP, SLICE_COST, SECOND_COST = 10, 500, 5000, 20000
+  -- the other steps, from a 60 s profile on the copy: a band 0.3 ms, networks 0.4-1, a strike step 1.3-2.6, a frozen
+  -- step 1.7-3.7, the game alerts 2.8-5.8, the merge (its cells' keys now written with string.format) up to 10
+  local KIND_COST = {band=500, networks=1000, strike=2000, frozen=3000, alerts=5000, merge=10000}
+  M.SECOND_COST = SECOND_COST
   local walk = api.walk or require('walk'){state=api.state}
   local function planets()
     local out = {}
@@ -1175,7 +1188,7 @@ return function(api)
   local function mine_group(force, m)
     local s = game.surfaces[m.surface]
     local f = s and api.mine_forecast and api.mine_forecast(s, force, m, MINE_DRILLS)
-    if not (f and f.half_min and f.half_min <= MINE_HORIZON) then return nil end
+    if not (f and f.half_min and f.half_min <= MINE_HORIZON) then return nil, f and f.drills or 0 end
     local by, names = {}, {}
     for _, e in ipairs(f.entities or {}) do
       local b = builder(e)
@@ -1188,9 +1201,17 @@ return function(api)
     return {key='mine_depleting|' .. m.surface .. '|' .. cx .. ',' .. cy, kind='mine_depleting', surface=m.surface, n=f.drills, names=names, by=by, at={},
       center={x=math.floor(m.centre.x + 0.5), y=math.floor(m.centre.y + 0.5)}, observed_tick=game.tick,
       line=string.format('mine running out near (%d,%d): %s%s', math.floor(m.centre.x + 0.5), math.floor(m.centre.y + 0.5), f.line,
-        u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %d%s', m.name, u.x, u.y, u.d, math.floor(u.amount or 0), terr and ', ' .. terr or '') or '; no untapped patch of it in the survey')}
+        u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %d%s', m.name, u.x, u.y, u.d, math.floor(u.amount or 0), terr and ', ' .. terr or '') or '; no untapped patch of it in the survey')}, f.drills
   end
   M.mine_patches, M.mine_group = mine_patches, mine_group
+  -- (d22 batch96 BF1) a cell's x,y as the text x .. ',' .. y gives, by string.format for integers (numtext.lua's pair,
+  -- inlined): merge built a key for every cell and its 8 neighbours, two number-to-text conversions each (8-22 us apiece
+  -- on a copy of world n, string.format 0.3); the step was 45-70 ms there
+  local function num(x)
+    if x ~= 0 and x > -1e15 and x < 1e15 and x == math.floor(x) then return string.format('%d', x) end
+    return x .. ''
+  end
+  local function pair(x, y) return num(x) .. ',' .. num(y) end
   local function merge(groups, extra, mining, force)
     name_unknown_ore(groups, mining)
     -- Cells of one kind on one surface that touch (8 neighbours) are one area:
@@ -1216,11 +1237,11 @@ return function(api)
         while #queue > 0 do
           local c = table.remove(queue)
           if fuel_cells then fuel_cells[#fuel_cells+1] = c end
-          local k = kind .. '|' .. surface .. '|' .. c[1] .. ',' .. c[2]
+          local k = kind .. '|' .. surface .. '|' .. pair(c[1], c[2])
           local part = groups[k]
           if near then
             for dx = -1, 1 do for dy = -1, 1 do
-              local mk = surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
+              local mk = surface .. '|' .. pair(c[1] + dx, c[2] + dy)
               if not near[mk] then near[mk] = true; area.still = area.still + (((mining or {})[mk] or {})[ore] or 0) end
             end end
           end
@@ -1248,7 +1269,7 @@ return function(api)
           for _, r in ipairs(part.robots or {}) do area.robots = area.robots or {}; if #area.robots < MAX_DETAIL then area.robots[#area.robots+1] = r end end
           if part.nrobots then area.nrobots = (area.nrobots or 0) + part.nrobots end
           for dx = -1, 1 do for dy = -1, 1 do
-            local nk = kind .. '|' .. surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
+            local nk = kind .. '|' .. surface .. '|' .. pair(c[1] + dx, c[2] + dy)
             if groups[nk] and not done[nk] then done[nk] = true; queue[#queue+1] = {c[1] + dx, c[2] + dy} end
           end end
         end
@@ -1260,7 +1281,7 @@ return function(api)
           local rot, seen = {}, {}
           for _, c in ipairs(fuel_cells) do
             for dx = -1, 1 do for dy = -1, 1 do
-              local rk = 'rot|' .. surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
+              local rk = 'rot|' .. surface .. '|' .. pair(c[1] + dx, c[2] + dy)
               if not seen[rk] then
                 seen[rk] = true
                 for name, r in pairs(mining[rk] or {}) do
@@ -1353,13 +1374,15 @@ return function(api)
         local mem, tmem = inserter_memory(force), turret_memory(force)
         mem.gen, tmem.gen = mem.gen + 1, tmem.gen + 1
         job.tgen = tmem.gen
-      elseif job and walk.due(job, tick, SCAN_TICKS) then
+      elseif job and tick >= (job.next_ok or 0) and walk.due(job, tick, SCAN_TICKS) then
         job.steps = job.steps + 1
         local stage = job.stages[job.i]
         -- (each kind of step its own profile part, pushalerts.<kind>: operator 18:12, pushalerts.tick 487 ms in one
         -- game second at 17:53)
         local kind = stage.surface and (job.list and 'slice' or 'band') or stage.frozen and 'frozen' or stage.strike and 'strike' or stage.step
+        job.cost = KIND_COST[kind] or COST_STEP
         timed('pushalerts.' .. kind, step_do, s, force, tick, job, stage)
+        job.next_ok = tick + math.floor(job.cost * 60 / M.SECOND_COST)
       end
     end
   end
@@ -1408,7 +1431,14 @@ return function(api)
         if list then job.list, job.at = list, 1; job.budget = job.budget - #list
         else job.walk = nil; job.i = job.i + 1 end
       else
-        local last = math.min(#job.list, job.at + SLICE - 1)
+        -- up to SLICE entities, and as many as SLICE_COST covers
+        local last, cost = job.at - 1, 0
+        while last < #job.list and last - job.at + 1 < SLICE and cost < SLICE_COST do
+          last = last + 1
+          local e = job.list[last]
+          cost = cost + (e.valid and COST[e.type] or COST_OTHER)
+        end
+        job.cost = cost
         read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
         job.at = last + 1
         if job.at > #job.list then job.list, job.at = nil, nil end
@@ -1439,6 +1469,8 @@ return function(api)
         local g=groups[job.site_index];job.site_index=job.site_index+1
         if api.drill_site and g.drill and g.ore~='unknown' then
           g.drill_site=try(function() return api.drill_site(force,g) end)
+          -- a lookup made now (not the 60 s cache): up to about 10 ms on the copy
+          job.cost=g.drill_site and g.drill_site.tick==game.tick and 10000 or COST_STEP
           return
         end
       end
@@ -1446,7 +1478,10 @@ return function(api)
       if api.mine_forecast and not job.mines then job.mines=try(function() return mine_patches(force) end) or {}; job.mine_i=1 end
       if job.mines and job.mine_i<=#job.mines then
         local m=job.mines[job.mine_i]; job.mine_i=job.mine_i+1
-        local g=try(function() return mine_group(force,m) end)
+        local g,n=nil,0
+        pcall(function() g,n=mine_group(force,m) end)
+        -- a forecast reads each drill's ore: about 80 us a drill on the copy
+        job.cost=COST_STEP+80*(n or 0)
         if g then groups[#groups+1]=g end
         return
       end

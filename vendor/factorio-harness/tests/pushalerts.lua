@@ -202,6 +202,8 @@ ents.nauvis={}; ents.vulcanus={}
 for i=1,3 do ent('nauvis','stone-furnace','furnace',i*2,2,{status=3}) end
 for i=1,2 do ent('vulcanus','gun-turret','ammo-turret',i,1) end
 force.players={{}}; game.forces={player=force}
+-- (the walk's pace alone here: d22_batch96 tests the pace by each step's cost)
+C.SECOND_COST=math.huge
 local function run(n) for _=1,n do game.tick=game.tick+1; finds={}; C.tick(game.tick); assert(#finds<=1,'at most one find a tick') end end
 run(1); eq(#finds,0,'the job starts'); assert(st5.push_jobs.player)
 local stages=#st5.push_jobs.player.stages

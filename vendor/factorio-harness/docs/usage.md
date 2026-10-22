@@ -11690,6 +11690,26 @@ best of three.
   - The departure lines (agents' queues and orders that send a platform on) come from one walk for every platform,
     the jobs lines only for the rows the reply has, and a hub's request counts are written with string.format (in
     the game's Lua `..` with a number costs 8-22 us on the copy, string.format 0.3).
+- Part 3, the alerts' background read (world n: `pushalerts.drill_sites` 140.8 ms in a game second, `pushalerts.slice`
+  up to 164 ms). On the copy, main's runtime: drill_sites 394 ms in one second (29 steps), slices 147 ms (42 steps).
+  - `drill_sites` (the depleted-drill lookup, also the `drill_sites` read): its chunk keys were text (`cx..','..cy`)
+    for every ore tile and candidate centre, and its 1,200-odd candidates were tables sorted with a Lua comparison.
+    Now the keys are numbers, the distances are sorted as numbers (each distance's centres kept in x, then y order),
+    a candidate's table is made when it is examined, and the drills and entity ghosts round the candidates are found
+    once (a spot no box touches needs no find of its own). 44 lookups on the copy gave the same replies: 1,055 ms in
+    all before (the worst 58.6), 318 after (the worst 15.2, under load).
+  - The mine forecast (`ores {forecast}` and the alerts' mine_depleting) keyed each ore tile by text: a 34x32 stone
+    patch was 28 ms, now 2.6.
+  - The merge step keyed every cell and its 8 neighbours by text: 45-70 ms a step, now 12.5.
+  - The job is paced by its work: each step has a cost in units of about a microsecond on the copy (a slice's
+    entities by type, fitted to 838 slices: 8 a chest to 276 a silo; a depleted-drill lookup made now 10,000; a
+    forecast 500 and 80 a drill; the other steps by kind). A slice stops at 5,000 (and 150 entities), and after a step
+    the job waits its cost's share of 20,000 a second (`SECOND_COST`).
+  - profile_ticks on the copy, 60 s each, part 2's runtime against this one: pushalerts' worst second 467 ms against
+    67 (a garbage collection second; the next 58.7, then 33.8-35.8); seconds over 30 ms 16 against 13; drill_sites'
+    worst second 394 against 13.2; slices' 147 against 49.6 (that same second), then 35.5.
+  - The cost: a pass takes 42-47 s on the copy (2,539-2,829 ticks), where it started every 30 s; the alerts it finds
+    are that much older at most. `SECOND_COST` sets the trade.
 
 ### d22 batch93 BC2: status brief's vehicle_fire
 
