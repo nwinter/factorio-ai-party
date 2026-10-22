@@ -71,6 +71,7 @@ if [ -n "$resume" ]; then
   [ -n "$stop_save" ] && stop_args+=(-StopSave "$stop_save")
 fi
 members=$(awk -F'\t' '!/^#/ && NF {print $1}' "$team")
+has_agy=$(awk -F'\t' '!/^#/ && NF && $2 == "agy" {f = 1} END {print f + 0}' "$team")
 # Quota headroom per route from ai-usage, read-only (docs/studies/shake5.md, P1 item 6: Gemini began shake5 at 72% of
 # its 5-hour window and ran dry 47 minutes in). Warnings only; the run starts anyway. POG_QUOTA_BRIEF: a saved
 # `ai-usage agent --json` to use instead (tests).
@@ -114,6 +115,9 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     echo "    then tools/obs-steps.sh --stream: $(tools/obs-steps.sh --stream --dry-run | sed 's/^.*plan: //')"
   fi
   [ "${POG_BROKER:-0}" = 1 ] && echo "4b. RCON broker (POG_BROKER=1): sockets runs/$run/.sock/NAME.sock for $(echo $members); no key in the run"
+  if [ "$has_agy" = 1 ]; then
+    echo "4d. agy memory guard (an agy agent in the team): $(python3 tools/agy_memguard.py --check || true); started if not, log runs/$run/agy-memguard.log"
+  fi
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
@@ -397,6 +401,18 @@ fi
 if [ "${POG_FULL_TOOLS:-0}" = 1 ]; then
   nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+fi
+
+# The agy memory guard (tools/agy_memguard.py; d22 09:27: one agy turn of Gemini's grew to 21 GiB and filled the
+# Mac's swap): kills a process under a run's .agy-loop.sh past 4 GiB. One per Mac (its lock), started here when the
+# team has an agy agent, before the agents; not a supervisor: stop-team leaves it running for the next shift.
+if [ "$has_agy" = 1 ]; then
+  if guard=$(python3 tools/agy_memguard.py --check); then
+    log "$guard"
+  else
+    nohup python3 tools/agy_memguard.py --log "$rundir/agy-memguard.log" >/dev/null 2>&1 &
+    log "agy memory guard started: pid $!, cap 4 GiB, log $rundir/agy-memguard.log (it runs across shifts)"
+  fi
 fi
 
 # 5. Agents: three per Herdr tab, real time, team playbook.
