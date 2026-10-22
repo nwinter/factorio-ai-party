@@ -205,7 +205,7 @@ do
   eq(table.concat(labels,' / '),'hold output / input held / clear requester / stage / staged steel-plate / staged low-density-structure / staged processing-unit / staged / input on / made / input off / release output')
   local stage=r.steps[4].args.set
   eq(stage[1].item,'steel-plate'); eq(stage[1].min,160); eq(stage[1].max,160,'what it holds plus what is to come')
-  eq(r.steps[1].args.logistic,'cargo-bay < 0'); eq(r.steps[12].args.logistic,false)
+  eq(r.steps[1].args.logistic,'cargo-bay < -2147483648'); eq(r.steps[2].args.logistic:sub(-13),'< -2147483648'); eq(r.steps[12].args.logistic,false)
   eq(r.steps[10].args.at_least,8)
   eq(sub(),nil)
   -- more than the batch needs already there: said

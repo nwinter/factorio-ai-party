@@ -4227,6 +4227,7 @@ function handlers.platforms(p,a)
   assert(type(a.eta_to)=='string' and prototypes.space_location[a.eta_to],'eta_to is a planet or space location name')
   local rest={}
   for k,v in pairs(a) do if k~='eta_to' then rest[k]=v end end
+  if rest.compact==nil then rest.compact=false end  -- (AZ4) each row's ETA: the rows, not the compact lines
   local out=space.platforms(p,rest)
   local lines={}
   for _,row in ipairs(out.platforms or {}) do
@@ -18199,6 +18200,8 @@ for _,name in ipairs({'platforms','inspect','status'}) do
     if type(a)~='table' or a.fields==nil then return h(p,a) end
     local rest={}
     for k,v in pairs(a) do if k~='fields' then rest[k]=v end end
+    -- (d22 batch90 AZ4) fields picks from the full rows, platforms' compact default aside
+    if name=='platforms' and rest.compact==nil then rest.compact=false end
     return M.project(h(p,rest),a.fields,name)
   end
 end
