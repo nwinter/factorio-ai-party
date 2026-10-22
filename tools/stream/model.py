@@ -492,6 +492,13 @@ DETAIL_ZOOM = (0.55, 1.0)  # (d20 batch50 A2) a detail pan's zoom: at least 0.55
 #                            ~18 px at 1080p), at most 1.0
 DETAIL_CROSS_S = 15.0       # a detail pan moves one view height in this long (~70 px/s at 1080p)
 DETAIL_BOW_S = 8.0          # a detail pan rests this long on the bow first, where asteroids come from in flight
+# (d22 batch99 BI4, viewer Foobator site:4332: "the camera up and down on ships does not show enough north and south
+# for large ships like asterion") a detail pan longer than this many view heights is not used: Asterion in flight
+# (60 x 275 tiles of hull, guns reaching 37 ahead) was a 0.55 view 62 tiles high panning 254 tiles at 4.1 tiles/s,
+# 70 s from bow to stern, so a 20 s visit showed its bow and a quarter of the hull. Such a ship gets the whole-frame
+# shot instead: the zoom that fits it (at least 0.3, cameras.lua's least: 113 tiles high) and the pan over the shot
+# (OneCam pan_y, and a visit held long enough for one view height in PAN_VIEW_S).
+LONG_VIEWS = 2.5
 
 
 def gun_reach(view):
@@ -545,9 +552,9 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
         out["fit_zoom"] = out["zoom"]
     if travelling and reach:
         detail = max(DETAIL_ZOOM[0], min(DETAIL_ZOOM[1], 60.0 * frac / w))
-        if detail > zoom + 0.05:
-            dh = 34.0 / round(detail, 2)
-            y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
+        dh = 34.0 / round(detail, 2)
+        y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
+        if detail > zoom + 0.05 and (y1 - y0) <= LONG_VIEWS * dh:
             out.update(zoom=round(detail, 2), position={"x": out["position"]["x"], "y": round(y0, 1)},
                        pan={"y0": round(y0, 1), "y1": round(y1, 1), "speed": round(dh / DETAIL_CROSS_S, 2),
                             "bow_s": DETAIL_BOW_S, "detail": True})
