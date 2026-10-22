@@ -117,14 +117,24 @@ return function(api)
     end
     return out
   end
-  -- The hub's items, its main inventory and its trash, by name.
-  function M.hub_counts(pl)
+  -- The hub's items, its main inventory and its trash, by name (every quality together); by_quality (d22 batch91 BA1):
+  -- by "name@quality" instead.
+  function M.hub_counts(pl, by_quality)
     local hub = try(function() return pl.hub end)
     if not (hub and hub.valid) then return nil end
     local out = {}
     for _, id in ipairs({'hub_main', 'hub_trash'}) do
       local inv = defines.inventory[id] and try(function() return hub.get_inventory(defines.inventory[id]) end)
-      if inv then add_contents(out, try(function() return inv.get_contents() end)) end
+      local list = inv and try(function() return inv.get_contents() end)
+      if by_quality then
+        for _, v in pairs(list or {}) do
+          local q = type(v) == 'table' and (type(v.quality) == 'string' and v.quality or type(v.quality) == 'table' and v.quality.name) or 'normal'
+          if type(v) == 'table' and type(v.name) == 'string' and (v.count or 0) > 0 then
+            local k = v.name .. '@' .. q
+            out[k] = (out[k] or 0) + v.count
+          end
+        end
+      elseif inv then add_contents(out, list) end
     end
     return out
   end

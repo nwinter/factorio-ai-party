@@ -17,8 +17,11 @@ return function(api)
     return 'network'
   end
   -- {plain, requesters, network (per network id), outputs}: each {count, places, list {pos, count}}.
-  function M.read(force, surface, item)
-    local key = surface.index .. '|' .. force.name .. '|' .. item
+  -- quality (d22 batch91 BA1): that quality alone (get_item_count(name) counts normal alone on 2.0.77)
+  function M.read(force, surface, item, quality)
+    local key = surface.index .. '|' .. force.name .. '|' .. item .. '|' .. (quality or 'normal')
+    local name = item
+    if quality and quality ~= 'normal' then item = {name=name, quality=quality} end
     local c = cache[key]
     if c and game.tick - c.tick < M.FRESH then return c.out end
     local out = {plain={count=0, places=0, list={}}, requesters={count=0, places=0, list={}}, outputs={count=0, places=0, list={}}, networks={}}
@@ -65,8 +68,8 @@ return function(api)
   -- One line: what the surface holds of item that the network `ln` (nil: none) cannot give, nearest `to` first; nil when
   -- it holds none outside it.
   -- no_networks: leave other networks out (the silo's request rows name them already).
-  function M.line(force, surface, item, ln, to, no_networks)
-    local r = M.read(force, surface, item)
+  function M.line(force, surface, item, ln, to, no_networks, quality)
+    local r = M.read(force, surface, item, quality)
     local parts, total = {}, 0
     if r.plain.count > 0 then
       total = total + r.plain.count
@@ -90,7 +93,7 @@ return function(api)
     end
     if total == 0 then return nil, 0 end
     if not r.listed then parts[#parts+1] = 'chests not read: the census pass has not listed them yet' end
-    return string.format('%s holds %d %s %s: %s', surface.name, total, item, mine and ('that network ' .. mine .. ' cannot give') or 'outside the logistic networks\' providers and storage', table.concat(parts, '; ')), total
+    return string.format('%s holds %d %s%s %s: %s', surface.name, total, item, quality and quality ~= 'normal' and ' (' .. quality .. ')' or '', mine and ('that network ' .. mine .. ' cannot give') or 'outside the logistic networks\' providers and storage', table.concat(parts, '; ')), total
   end
   return M
 end

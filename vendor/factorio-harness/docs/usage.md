@@ -11342,3 +11342,26 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   - the front rocket turrets: 84 hits and 84 kills, 68,208 damage, so 812 a hit and 1 a kill;
   - the gun turrets: 459 hits and 219 kills, 2.1 a kill, at 50.9 damage a hit (smalls take 51.2 a hit, 2 shots;
     mediums 46.1, 9 shots).
+
+### d22 batch91: quality in silo and shipment
+
+- BA1 (Sol #1881: Meridian-V asked thruster@legendary 4 from Vulcanus and silo/shipment read "holds 0" and "the
+  network can give 0" while 4 legendary sat in storage). On 2.0.77 `get_item_count(name)` counts normal quality alone
+  (a copy of world n's 11:19 autosave: Meridian-V's hub read 2 solar-panel by name and held 4 epic; network 22 read 0
+  accumulator by name and held 12 epic).
+  - What the reads count: silo's platform request rows (`silo`, `shipment {ready}`, the auto-wait line) and shipment's
+    up rows now count by the request's quality and comparator (its value `{name, quality, comparator}`; "=" when none;
+    `>=`, `<=`, `>`, `<`, `!=` count each quality whose level passes). That covers what the hub holds, what is on the
+    way, the silo network's stock (providers and storage) and other networks', the silo's own request against its
+    rocket, and the planet's stock elsewhere (with "=").
+  - Rows: they add `quality`, `comparator` and `custom_minimum` (the request's min payload). Lines name the quality
+    when it is not normal, with the comparator when it is not "=": `Meridian-V asks accumulator (epic) 8 (holds 4,
+    lacks 4), min payload 1 (its custom minimum), the silo's network can give 12 now (provider chests 0, storage chests
+    12 ...)`. Normal "=" requests read as before.
+  - The game's pick: shipment's up rows add `picked_silo` (a silo whose automatic requests fill a rocket for this
+    platform now, its `transitional_request_target`), and a waiting line ends `the game's pick: rocket-silo at (15,141)
+    fills a rocket for Meridian-V now` or `the game's pick: no silo on vulcanus fills a rocket for Meridian-V now`.
+  - Not told apart: a rocket on its way keeps its cargo by name (`carries 1 of any quality` on a quality request). The
+    down rows (pads' asks) stay by name.
+  - Checked on the copy: Meridian-V's accumulator (epic) 8 read holds 4, network 12 (storage 12), `matched`; before,
+    holds 0, network 0, `below_min_payload`.
