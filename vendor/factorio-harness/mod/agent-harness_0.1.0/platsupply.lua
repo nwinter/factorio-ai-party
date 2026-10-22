@@ -163,6 +163,19 @@ return function(api)
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
+    -- (d22 batch78 AN2, Astra #1774) the floating chunks and the collectors' reach (collectreach.lua)
+    if a.collection ~= nil then
+      assert(a.collection == true, 'collection is true')
+      local r = api.collectreach.read(pl)
+      if a.seconds ~= nil then
+        local reason = api.reason and api.reason(a.reason)
+        r.replaced = api.collectreach.start(p, pl, a.seconds, reason) and 'your earlier collector_tally watch, still running, was replaced' or nil
+      end
+      r.tally = api.collectreach.tally(p, pl)
+      r.platform = pl.name
+      return r
+    end
+    assert(a.seconds == nil and a.reason == nil, 'seconds and reason go with collection: true')
     -- (d17 batch31 B5, Sol) the fuel feedstock trace from the thrusters back (fuelstock.lua)
     if a.fuel ~= nil then
       assert(a.fuel == true, 'fuel is true')
@@ -279,6 +292,9 @@ return function(api)
       chunk_flags=okt and flags and #flags > 0 and flags or nil, trace_error=not okt and tostring(chunks) or nil}
   end
   M.schema = {platform_supply = {platform='platform name',
+    collection='optional true: the asteroid chunks floating in view of the platform (its foundation\'s chunks, 32 tiles out) and its collectors\' reach, instead: chunks_in_view, by_type, groups (by type in 16-tile cells: count, box, drift in tiles a second), nearest (12 chunks nearest a reach: name, position, drift, collector, outside: tiles beyond its reach, 0 inside), in_reach, outside_reach, collectors [{position, direction, quality, reach {from, to, radius}, status, holds, filters, in_reach, in_reach_by_type, nearest_outside, line}], collected (each chunk type in the platform\'s production statistics: total, last_1m, last_10m), tally (your collector_tally watch of this platform: so far, or done), lines, note. Reach: within collection_radius (7.5, the Space Age data) of the line from the collector\'s centre to the point collection_box_offset (5) tiles in front, as chunks taken on a copy of world n fit',
+    seconds='with collection: 10..3600: start a collector_tally watch (one an agent; a new one replaces it): every 10 ticks the chunks in the collectors\' reach: one in a reach at a read and gone from where its drift puts it at the next counts as taken by that collector; and the chunks the platform collected (production statistics) from the start; platform_supply {platform, collection: true} reads it: collected, collected_by_type, collectors [{position, taken, taken_by_type, gone_s}], taken_seen, line',
+    reason='with seconds: optional text, up to 200 characters: your own reason to wait for it, shown with the watch',
     fuel='optional true: the fuel feedstock trace instead, from the thrusters back: thruster-fuel and thruster-oxidizer in the thrusters\' boxes, the pipes they join (through pumps, each with its state; what they hold, tanks) and the machines making the fluid there; per maker each ingredient against one craft, through the inserters dropping into it (static filters), from a machine making it, the hub (when it holds none: the machines making it that unload into it), a collector (chunks) or a chest, or a belt walked upstream (what it holds of the item, the inserters dropping onto it, a start nothing feeds, an underground exit with no entrance, an underground span over empty space); a fluid through its pipes to its makers; and so on down to crushers, ice melters and collectors. Returns {lines (first missing link first, then the links indented by level), first_missing, cut}. first_missing: the first consumer short of an ingredient whose way is broken, else the first missing link below its sources, else a source not working, else its sources working while it is short',
     returns='lines, in the chain\'s order: first stop (the first of these not working: a collector (not working, no inserter takes from it, or foundation ghosts in its open space), a crusher, a fuel or oxidizer maker, a thruster under half, an empty gun); collectors (status, chunks held, filters, the inserters taking from them and where they put the chunks); crushers (recipe, status, input and output); thruster-fuel and thruster-oxidizer makers (status, what they hold, fluids); thrusters; guns (an empty one with what feeds it); ghosts by name, apart. first_stop; stops (every one not working, in that order). chunks: each asteroid chunk type its collectors take, where it goes through the inserters (their filters) and belts: the crushers (one whose recipe does not take it says so), the hub. chunk_flags: a static inserter filter (whitelist or blacklist set in its GUI) that keeps a collected type out, and a crusher stopped with its output full while its output inserters drop into a hub with no free slot. Read only'}}
   return M

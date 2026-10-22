@@ -124,6 +124,14 @@
   hold, the inserters dropping onto them, a start nothing feeds, an underground exit with no entrance or a span over
   empty space), the hub (with none: the machines that unload it there), crushers, ice melters, collectors.
   `first_missing`: the first consumer short of a craft whose way is broken, else the first missing link below it.
+  `platform_supply {platform, collection: true}`: the asteroid chunks in view of the platform (its foundation's
+  chunks, 32 tiles out): by type, in 16-tile groups (count, box, drift in tiles a second) and the 12 nearest a
+  collector's reach (`outside`: tiles beyond it); each collector's `reach` (within 7.5 of the line from its centre to
+  the point 5 tiles in front), status, what its output holds, the chunks in its reach now and the nearest outside it;
+  `collected`: each chunk type in the platform's production statistics over the last minute and 10 minutes. With
+  `seconds: N` (10..3600) it starts a collector_tally watch: every 10 ticks a chunk in a reach that is gone from
+  where its drift puts it counts as taken by that collector, beside the platform's collected count; the same read
+  gives `tally` (so far, or done).
 - `platform_plan {platform, floor?, page?, ready?, salvage?, support?, floor_check?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor_check: true` plays the hub's
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles

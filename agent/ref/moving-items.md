@@ -117,7 +117,9 @@
   - Nothing to do: `nothing` says why, `nearest_outside` names the nearest dry burner outside the area.
   Example: `./fh call refuel --args '{"radius":40,"from":"nearest","count":20}' --wait`
 - `pickup {area | position, radius?, items?} | {belt: true, item, count, to?}`: picks up items by hand (timed),
-  walking to them. Items on the ground show in `scan` and `observe` (`ground_items`); `status` `alerts.ground_items`
+  walking to them. Items on the ground show in `scan` and `observe` (`ground_items`, by item, with `fresh`: the
+  stalest stack's freshness %); `scan {type: "item-entity"}` rows and `inspect` of one (or of an area with
+  `types: ["item-entity"]`) give each `stack {name, quality, count, fresh}`; `status` `alerts.ground_items`
   names full landing pads that spill and piles near buildings; `deconstruct {area, items_on_ground: true}` marks them
   for construction robots (`entity_types: ["item-entity"]` is the same; with `cancel: true` the reply counts the
   stacks unmarked, the robot orders cancelled and the robots freed). `belt: true` takes items off belt lanes (belts within 1 tile, walking to them; areas on the

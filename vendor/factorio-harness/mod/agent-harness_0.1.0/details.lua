@@ -445,8 +445,14 @@ return function(api)
     out.requests = table.concat(parts, ', ') .. (circuit and '; a section set by circuit' or '')
   end
   local robots = require('robotread'){}
+  local groundstack = require('groundstack')
   function M.inspect(e, out)
     pcall(M.holds, e, out)
+    -- (d22 batch78 AN1, Astra #1809) items on the ground: the stack as hovering it shows (groundstack.lua)
+    if e.type == 'item-entity' then
+      local st = groundstack.stack(e)
+      out.stack = st; out.holds = groundstack.holds(st)
+    end
     -- (d20 batch70 AF4, Astra #1718) a robot: what it carries and where it flies (robotread.lua)
     if robots.ROBOT[e.type] then
       local ok, r = pcall(robots.row, e)

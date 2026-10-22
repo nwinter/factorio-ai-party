@@ -11063,3 +11063,64 @@ pass began as the last ended.
   fusion reactors and generators 2000) and fusion-plasma 60 (6).
 - Cost: the scan finds 725 entities on Asterion against 719 before; 10 scans each, alternating, took 2.2-4.8 ms
   with either filter on the copy.
+### Items on the ground: the stack in inspect and scan (d22 batch78 AN1, Astra #1809)
+
+Astra: "Gleba has thousands of dropped items. inspect item-on-ground gives no stack name/count and scan
+inventory/spoil also omits it." Reproduced on a private copy of world n's shift57 save (05:16 PDT): inspect of an
+item-on-ground on Vulcanus gave `inventories: {}` and no stack; `scan {type: "item-entity", fields: [inventory,
+spoil]}` gave rows with name and position only; `inspect {area, types: ["item-entity"]}` said "no item-entity of
+ours" (ground items belong to no force). That save held no ground items on Gleba (Vulcanus 895, Nauvis 175). Now, as
+hovering a stack shows (groundstack.lua):
+- inspect of one: `stack {name, quality, count, fresh}` (fresh: percent fresh, only for an item that spoils) and
+  `holds` (`yumako*3, 61% fresh`);
+- inspect over an area with `types: ["item-entity"]` or `name: "item-on-ground"`: the ground stacks are listed (each
+  row with `stack` and `holds`, compact lines `item-on-ground (x,y): yumako*3, 61% fresh`) and `ground_items`, all of
+  them by item;
+- scan: each item-entity row has `stack`; fields `inventory` (`yumako*3`) and `spoil` (`yumako*3 61%`) read it;
+  `ground_items` is given with a name or type filter too, summed over every stack found before `limit`;
+- `ground_items` items (scan, observe, inspect) carry `fresh`: the stalest stack's freshness, for an item that spoils.
+Area inspect also checks sight once per chunk (it checked each entity) and reads each position once for its sort.
+Measured on the copy with 2,880 stacks spilled on Gleba (32-tile radius; x86 under Rosetta, the JSON encoding slow
+there), before -> after: scan unfiltered 67-73 -> 70-77 ms; scan `type: item-entity` with fields inventory and spoil
+(256 rows) 295-301 -> 124-140 ms (the inventory field tried every inventory kind on each stack); the same with limit
+1024 and no fields 177-190 -> 235-330 ms (each row now carries its stack: 69 -> 147 KB); inspect of the 30x32 area
+(refused before) 59-63 ms; inspect of one stack 3.5-4.3 -> 3.4-4.0 ms. Tests: tests/d22_batch78.lua.
+
+### Floating asteroid chunks and collector reach (d22 batch78 AN2, Astra #1774)
+
+Astra: "Asterion reports about 90 asteroid_chunks but 24 collectors have collected zero past 10 min. scan cannot name
+chunk prototypes; platform_supply gives connections but no geometry of uncollected chunks." Reproduced on a private
+copy of world n's shift57 save (05:16 PDT): Asterion over Nauvis, 89 chunks (33 carbonic, 38 metallic, 18 oxide), 12
+collectors in two columns at x = -53.5 (facing west) and 53.5 (facing east), y 119.5 to 134.5; `platforms` gave only
+the count by type. `platform_supply {platform, collection: true}` (collectreach.lua) now gives, read only:
+- the view: the chunks of the platform's surface holding foundation, 32 tiles out on every side (Asterion:
+  (-96,-96)-(96,288)); chunks in it by type, in 16-tile groups (count, box, drift in tiles a second), and the 12
+  nearest a collector's reach (`outside`: tiles beyond it, 0 inside);
+- each collector: `reach` {from, to, radius}: every point within `collection_radius` of the line from its centre to
+  the point `collection_box_offset` tiles in front. 2.0.77 gives the offset on LuaEntityPrototype (5) but not the
+  radius (7.5 in space-age/prototypes/entity/entities.lua, kept in collectreach.lua's RADIUS). The shape is fitted to
+  what the copy's collectors took (below), not read from the game; status, filters, what its output
+  holds (the arm's load has no inventory to read: get_inventory gives only the output), the chunks in its reach now
+  and the nearest outside it;
+- `collected`: each chunk type's count in the platform's production statistics (the production GUI) over the last
+  minute and 10 minutes, and its total;
+- with `seconds` (10..3600): a collector_tally watch (one an agent, a bounded watch in measures.lua: idle checks and
+  the agent cards show it): every 10 ticks, a chunk in a reach at one read that is gone from where its drift puts it
+  at the next counts as taken by that collector (the one deepest in whose reach it lay). This is an estimate beside the
+  exact platform count: on the copy, rises in each collector's output saw 1 of 4 collected chunks (the inserters
+  empty it within 10 ticks); vanishing from a circle around the front point saw 6 of 12; from the line-shaped reach,
+  3 of 4 over 120 s, all 3 metallic where the platform collected 2 metallic, 1 carbonic and 1 oxide. Chunks also
+  vanish where they hit the hull and where they leave the view, outside every reach. The watch's tick: 0.007 ms a tick
+  on average (profile_ticks over 1,801 ticks with it running: 12.9 ms in all, worst game second 0.84 ms; the harness
+  tick 3.09 ms); with no watch, one state check a tick.
+On the copy, Asterion's chunks drift at about 1 tile a second; at the reads none was in a reach and the nearest was
+0.2 tiles outside one; the platform collected 13-22 of each type in 10 minutes. Logging every chunk that vanished
+near Asterion over 7,025 ticks (8 collected): 9 vanished in empty space within 7.6 tiles of a collector's front line,
+several 7.3-7.6 tiles beside a collector's centre, outside a circle around the front point; hence the line shape. Reach check on the east-facing collector at (53.5,119.5), chunks placed at rest (offsets: x in
+front, y to the side): with its neighbours on, it took 12 and 12.4 in front (beyond any neighbour's reach) and left
+12.7, 13.2 and 14; with the other collectors switched off, it took (2,0), (1.6,3), (3,6.8) and (9,6) and left
+(1.2,0), (0,3), (-1,0), (11,4), (2.5,-6) and (5,-7.4), all within the line-shaped reach; after those captures it took
+nothing more (a chunk placed at (4,1) stayed 765 ticks, power full, output empty), which this read does not explain. Cost on
+the copy (x86 under Rosetta, about 12 UPS), timed in the same minute: the read 24-26 ms on Asterion (55 ms the first
+call) and 19-21 ms on Anvil (157 chunks), the existing platform_supply read on Asterion 18-23 ms; the extent, chunk
+and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
