@@ -11703,3 +11703,33 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
 - Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
   the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
 
+## d22 batch97 BG3 cp2 (eng/d20-batch97): the `chart` operator read, for the site's chart
+
+Nick asked for a map like the Galaxy of Fame's; batch97's study recommends drawing it from data. The stream service
+(tools/stream/chart.py, cp3) draws every planet and platform as 384-tile cells at 1 px a tile in the game's map colours
+from this read. New operator read `chart` (chart.lua; describe's operator_reads lists it; agents cannot call it), read
+only:
+- `chart {surfaces: true}`: every planet and platform surface: `[{name, index, platform, dirty, read}]` (2.3 ms on the
+  d22 copy of world n, 23 surfaces).
+- `chart {protos: true}`: one string, `E name type w h friendly enemy map` a line per entity prototype (colours rrggbb,
+  `-` none; `friendly_map_color` is set on every entity prototype, `map_color` only on resources, trees, rocks, cliffs
+  and rails) and `T name map` a tile (419 lines, 18 KB, 11.6 ms; read once a service start).
+- `chart {surface, list: [cx0, cy0, cx1, cy1]}`: which chunks our force has charted in that box, a string of 0 and 1 a
+  chunk row, at most 4096 chunks (6.2 ms for 4096; Nauvis has 3,214 charted in the 64x64 chunks round the origin).
+- `chart {surface, chunks: [cx, cy, ...]}` and `chart {surface, dirty: N, min_age?, check?}`: rows for those chunks, or
+  for up to N chunks marked dirty (oldest mark first), each last read at least `min_age` ticks ago (default 36000, 10
+  game minutes) or never. A read stops after 6 chunks or once 1200 entities are read (at least one chunk); `rest` the
+  chunks left. `check: K` first counts the entities in up to K (at most 128) read chunks from a rotating cursor
+  (count_entities_filtered with the read's filter) and marks a chunk whose count changed: robot builds, since
+  control.lua forwards no on_robot_built_entity. Reply `{tick, surface, chunks, entities, rest, tn, en, rows}`, plus
+  `waiting, checked, marked` for dirty; `rows` one string: `C cx cy`, `T` 32 tile rows of `index,run ...` joined by `|`
+  (indices into `tn`), `E index x2 y2 direction force` an entity whose position is in the chunk (index into `en`,
+  position in half tiles, force 1 ours, 2 enemy, 0 neutral), `R x2 y2 recipe`, `S x2 y2 stop name`; `U cx cy` a chunk
+  not charted. Characters, units, corpses, ghosts, robots, rolling stock, fish and other short-lived types are left out.
+- The dirty set: a forwarded on_built_entity, on_player_mined_entity, on_robot_mined_entity or on_entity_died marks the
+  entity's chunk (one table write; ghosts and enemy units not); a read clears it. Kept in storage per surface: the
+  dirty marks, each read chunk's read tick and entity count (Nauvis about 3,200 chunks).
+Cost on the x86 private copy (world n's _autosave11 of d22): a read of the base's densest chunks 7.5-10.2 ms (3 to 6
+chunks, 788-1,551 entities, 17-30 KB), 6 outer chunks 4.5-5.2 ms, `check` 64 or 128 with `dirty` 1.5 ms (about 0.06
+ms a dense chunk counted). The event marks: see BG3 cp2 in the batch report (profile_ticks). Strings rather than
+tables of numbers: table_to_json takes about 28 us a number on that copy. Tests: tests/d22_batch97.lua.

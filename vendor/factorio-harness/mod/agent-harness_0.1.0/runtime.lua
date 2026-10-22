@@ -2012,7 +2012,7 @@ function handlers.describe(_,a)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live','library_areas','net_map'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','haul_feed','loadout','clouds','efficiency','census','chronicle','artillery_live','library_areas','net_map','chart'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (out of reach within 32 tiles, transfer, collect, feed, rearm, refuel, mine, build, rotate and configure by hand walk into reach first: walk; inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, and their reach and sight come from its position; reads see by remote view, as the map does: inspect, belt_flow, trace and screenshot with position in any chunk our force sees now on your surface, scan, observe and nearest centred on any charted chunk, surface= and platform= elsewhere',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -17385,7 +17385,7 @@ function M.dispatch_inner(request)
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.rests.operator[request.action] or M.lessonbook.operator[request.action] or M.bplibrary_operator[request.action]
-        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action])
+        or (M.artycam and M.artycam.operator[request.action]) or (M.fogmem and M.fogmem.operator[request.action]) or (M.libareas and M.libareas.operator[request.action]) or (M.netmap and M.netmap.operator[request.action]) or (M.chart and M.chart.operator[request.action])
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -18071,6 +18071,7 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
   fog_note_seen=function(e,t,pos,cx,cy,status,ctx) return M.fogmem.note_seen(e,t,pos,cx,cy,status,ctx) end,
   belt_observe_seen=function(e,t,pos,cx,cy,ctx) return M.beltgaps.observe_seen(e,t,pos,cx,cy,ctx) end}
 M.census=require('census'){state=state,timed=M.timed,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end}
+M.chart=require('chart'){state=state}  -- (d22 batch97 BG3) the site's chart: the dirty chunk set and the chart operator read
 -- The hub's foundation rules over a large tile set, across ticks (floorcheck.lua; batch33 A1).
 M.floorcheck=require('floorcheck'){state=state}
 -- Every ghost of a large platform counted across ticks for the hub's blockers read (ghosttally.lua; batch33 A1).
@@ -19778,6 +19779,8 @@ M.operator={
   end}
 end do local MAX_ALERTS=64
 function M.on_event(event)
+  -- (d22 batch97 BG3) a chunk something was built in by hand, mined in or died in is marked for the chart (chart.lua)
+  if M.chart and M.chart.events[event.name] then pcall(M.chart.mark,event) end
   -- The player log must never quarantine the runtime: its faults are counted.
   if M.players.events[event.name] then
     local ok,err=pcall(M.players.on_event,event)
