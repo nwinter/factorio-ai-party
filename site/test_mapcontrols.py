@@ -141,6 +141,11 @@ def main():
     check("Aquilo: no networks map: the item picker disabled, in its place", ("Networks", ["item (disabled)", "power (disabled) on", "robots (disabled)"]) in ga, ga)
     check("Aquilo: why disabled", 'title="Power networks: none on Aquilo now"' in o["aquilo"] and "Item: no networks map of Aquilo yet" in o["aquilo"], o["aquilo"])
     check("Gleba's items", "Bioflux" in o["gleba"] and "Iron plate" not in o["gleba"], o["gleba"])
+    # (d22 batch75 AK5) each group a box, its label over its buttons; the network toggles Power and Logistics, the full
+    # names in their tooltips
+    check("group boxes", o["nauvis"].count('<div class="mapview-gbox"><span class="mapview-group-label"') == 4, o["nauvis"])
+    check("short network labels", re.search(r'title="Power networks" data-layer="power" aria-pressed="\w+">Power<', o["nauvis"])
+          and re.search(r'title="Logistic networks" data-layer="robots" aria-pressed="\w+">Logistics<', o["nauvis"]), o["nauvis"])
     check("Gleba's spores", ("Terrain", ["buildings on", "cloud on"]) in gg and ">Spores<" in o["gleba"], gg)
     check("a reload keeps the layers", groups(o["reload"]) == [("Terrain", ["buildings on", "cloud (disabled) on"]), ("Networks", ["item", "power on", "robots"]),
                                                                 ("Combat", ["coverage", "nests"]), ("Team", ["agents on"])], groups(o["reload"]))

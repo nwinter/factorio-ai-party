@@ -291,7 +291,10 @@ pollution or spores), Networks (the item picker first, power, logistic), Combat 
 fights) and Team (agents, attention, blueprints). A layer the page has had once keeps its button and its place on every
 planet, disabled where the planet shown has none of it ("Power networks: none on Aquilo now"); the item picker is
 disabled where no networks map is read and has a fixed width, so a planet switch or a push moves no control. Each
-layer's on/off is kept in the browser (`pog-live-map-layers`) across planet switches and reloads.
+layer's on/off is kept in the browser (`pog-live-map-layers`) across planet switches and reloads. (d22 batch75 AK5,
+viewer Aurora: "Please compact the toolbar") Two groups a row, Terrain beside Networks and Combat beside Team, each label
+over its buttons; when the toolbar is under 34rem wide (a phone) one group a row with its label at the left. The picker
+is 8rem wide; the network toggles read "Power" and "Logistics" (their full names in the tooltip).
 
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
 `rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is
