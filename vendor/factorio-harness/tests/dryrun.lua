@@ -267,7 +267,8 @@ local gr = {}
 for _, r in ipairs(g.entities) do gr[r.index] = r end
 eq(gr[1].status, 'ok'); has(gr[1].why, 'place_ghosts marks tree-01 (-8,6) for removal (construct mines trees and rocks)')
 eq(gr[1].footprint, '-9,5..-8,6', 'details: footprints')
-eq(gr[2].status, 'after_tiles'); has(gr[2].why, 'placeable once the tiles under it are laid; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts')
+-- (d22 batch95 BE1) the tiles argument is laid after every entry: the entity ghost first is refused
+eq(gr[2].status, 'blocked'); has(gr[2].why, 'the tiles argument lays tiles under it after every entry: place_ghosts places entries in order, and the game refuses its ghost on the tiles there now (list the tile entries before it)')
 eq(gr[3].status, 'ok'); has(gr[3].why, 'replaces assembling-machine-1 (-10.5,-6.5)')
 eq(g.tiles.planned, 4); eq(g.tiles.refused, 1); has(g.tiles.refused_rows[1], '(0.5,5.5) landfill: landfill cannot go on grass-1')
 eq(g.standing.reach, 10); eq(g.entities[1].reach, nil, 'ghosts: reach is no problem of the plan')
@@ -1164,4 +1165,74 @@ end)()
   eq(row.status,'exists','existing ramp ghosts are still recognized')
   eq(row.collisions,nil,'ghosts are not physical collisions')
 end)()
+-- d22 batch95 BE1 (Astra #1892: on Aquilo a decider's dry run said ok and the placement was refused on rough ice,
+-- concrete needed; brash ice read "no tile item makes it buildable" though ice platform, then concrete, makes it so).
+-- The rules as 2.0.77 has them: rough ice is ground and meltable, brash ice water; concrete goes on any non-water tile,
+-- ice platform (meltable) on brash ice only; a decider collides with meltable. The game's ghost check refuses the
+-- decider on either, and lays no concrete under it.
+do
+  local MELT = mask('object', 'water_tile', 'player', 'item', 'meltable')
+  prototypes.tile['ice-rough'] = {name='ice-rough', collision_mask=mask('ground_tile', 'meltable')}
+  prototypes.tile['brash-ice'] = {name='brash-ice', collision_mask=mask('water_tile', 'item', 'player')}
+  prototypes.tile['snow-flat'] = {name='snow-flat', collision_mask=mask('ground_tile')}
+  prototypes.tile.concrete = {name='concrete', collision_mask=mask('ground_tile'), items_to_place_this={{name='concrete', count=1}}}
+  prototypes.tile['ice-platform'] = {name='ice-platform', collision_mask=mask('ground_tile', 'meltable'), items_to_place_this={{name='ice-platform', count=1}}}
+  prototypes.item.concrete = {name='concrete', place_as_tile_result={result=prototypes.tile.concrete, condition=mask('water_tile')}}
+  prototypes.item['ice-platform'] = {name='ice-platform', place_as_tile_result={result=prototypes.tile['ice-platform'], condition=mask('ground_tile'), tile_condition={'brash-ice'}}}
+  prototypes.entity['decider-combinator'] = {name='decider-combinator', type='decider-combinator', tile_width=1, tile_height=2, collision_box=box(0.35), collision_mask=MELT}
+  force.recipes.concrete = {enabled=true}; force.recipes['ice-platform'] = {enabled=true}
+  local function aquilo(x, y)
+    if x >= -40 and x <= -37 and y >= 2 and y <= 4 then return 'ice-rough' end
+    if x >= -41 and x <= -38 and y >= -1 and y <= 0 then return 'brash-ice' end
+    return 'snow-flat'
+  end
+  local as = world(aquilo, {})
+  local ap = {surface=as, force=force, position={x=-38, y=2}, build_distance=10, character={name='character', type='character', position={x=-38, y=2}},
+    get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+  local adr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(api)
+  local function row(out, i) for _, r in ipairs(out.entities or {}) do if r.index == i then return r end end end
+  local D = {index=1, name='decider-combinator', position={x=-38, y=3.5}, direction=4}
+  -- the decider alone on rough ice: needs concrete, and the real call refuses it (no concrete ghost laid under it)
+  local a1 = adr.check(ap, {kind='ghosts', entities={D}})
+  local r1 = row(a1, 1)
+  eq(r1.status, 'needs_tiles')
+  has(r1.why, 'stands on 2 ice-rough tiles: needs 2 concrete first; the game refuses its ghost on ice-rough now, and place_ghosts lays no concrete ghost under it: concrete tile entries before it in this call lay them first')
+  eq(a1.refused_until_tiles, 1); has(a1.refused_until_tiles_first, '#1 decider-combinator (-38,3.5): stands on 2 ice-rough tiles')
+  -- concrete tile entries before it: placeable once laid (the game takes its ghost over them); after it: refused
+  local function C(i, x, y) return {index=i, name='concrete', position={x=x, y=y}} end
+  local before = adr.check(ap, {kind='ghosts', entities={{index=3, name='decider-combinator', position={x=-38, y=3.5}, direction=4}},
+    tiles={C(1, -38.5, 3.5), C(2, -37.5, 3.5)}})
+  eq(row(before, 3).status, 'after_tiles'); has(row(before, 3).why, 'place_ghosts lays the tile entries before it first, and the game takes its ghost over their tile ghosts')
+  eq(before.refused_until_tiles, nil)
+  local after = adr.check(ap, {kind='ghosts', entities={D}, tiles={C(2, -38.5, 3.5), C(3, -37.5, 3.5)}})
+  eq(row(after, 1).status, 'blocked'); has(row(after, 1).why, 'entry #3 lays a tile under it after this one: place_ghosts places entries in order')
+  -- brash ice: no one tile item, two do; ice platform then concrete as entries before it: placeable
+  local B = {index=5, name='decider-combinator', position={x=-39, y=-0.5}, direction=4}
+  local b1 = adr.check(ap, {kind='ghosts', entities={B}})
+  eq(row(b1, 5).status, 'blocked')
+  has(row(b1, 5).why, '(-39.5,-0.5) brash-ice (no one tile item makes it buildable; two do: ice-platform, then concrete on it, as tile entries before it)')
+  local I = function(i, x, y) return {index=i, name='ice-platform', position={x=x, y=y}} end
+  local b2 = adr.check(ap, {kind='ghosts', entities={B}, tiles={I(1, -39.5, -0.5), I(2, -38.5, -0.5), C(3, -39.5, -0.5), C(4, -38.5, -0.5)}})
+  eq(b2.tiles.refused or 0, 0, 'concrete over the planned ice platform is taken'); eq(row(b2, 5).status, 'after_tiles')
+  eq(adr.remedy2(force, 'brash-ice', MELT.layers), 'ice-platform, then concrete on it')
+  eq(adr.remedy2(force, 'ice-rough', MELT.layers), nil, 'one item does there')
+  -- the verdict fails on the decider alone
+  local src = io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  local R = {}
+  local env = setmetatable({M=R}, {__index=_G})
+  local from = src:find('\nfunction M%.dry_verdict%(out,a%)')
+  local at, chunk = from, nil
+  while from and not chunk do
+    local e = src:find('\nend', at + 1, true)
+    if not e then break end
+    chunk = load(src:sub(from + 1, e + 3), 'dry_verdict', 't', env)
+    at = e
+  end
+  chunk()
+  local v = R.dry_verdict(a1, {dry_run=true})
+  eq(v.dry_run_ok, false)
+  has(v.verdict, 'fails: 1 entry the game refuses on the tiles there now, with no tile entry before it (#1 decider-combinator (-38,3.5): stands on 2 ice-rough tiles: needs 2 concrete first')
+  eq(R.dry_verdict(before, {dry_run=true}).dry_run_ok, true)
+  eq(R.dry_verdict(after, {dry_run=true}).dry_run_ok, false)
+end
 print('dryrun: ok')
