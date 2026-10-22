@@ -337,7 +337,7 @@ def pack(g):
 
 
 PLANET_CORE_BYTES = 12 * 1024  # (AD1) a planet's packed core a push at most; a bigger one is sent at twice the cell
-RANK = {"D": 12, "R": 11, "O": 10, "A": 9, "S": 8, "M": 7, "E": 6, "L": 5, "I": 4, "B": 3, "T": 2, "P": 1}  # census.lua's
+RANK = {"D": 13, "W": 12, "R": 11, "O": 10, "A": 9, "S": 8, "M": 7, "E": 6, "L": 5, "I": 4, "B": 3, "T": 2, "P": 1}  # census.lua's
 
 
 def coarser(g, rank=RANK):

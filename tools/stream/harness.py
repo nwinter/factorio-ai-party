@@ -123,8 +123,9 @@ rcon.print(helpers.table_to_json(out))
 """
 
 # The base for the site's live map: every building of ours on nauvis (poles left out), from one
-# find_entities_filtered, in two grids of category letters. Each cell takes its most telling building (defence > labs >
-# oil > assembly > smelting > mining > power > logistics > inserters > belts > rails > pipes).
+# find_entities_filtered, in two grids of category letters. Each cell takes its most telling building (defence (turrets)
+# > walls and gates (W, d22 batch75 AK4) > labs > oil > assembly > smelting > mining > power > logistics > inserters >
+# belts > rails > pipes).
 # - rows: the whole base in CELL-tile cells (doubled until it fits MAXC cells a side), for the overview and outposts.
 # - core: the dense core at 1 or 2 tiles a cell (doubled until it fits CMAX), each building's whole footprint filled.
 #   The core is the biggest 8-connected group of 32-tile blocks holding at least a fifth of the busiest block's
@@ -147,7 +148,7 @@ if CELL == 4 and MAXCELLS == 128 and CMAX == 160 then
 end
 local s = game.surfaces.nauvis
 local f = game.forces.player
-local CAT = {["ammo-turret"]="D",["electric-turret"]="D",["fluid-turret"]="D",["artillery-turret"]="D",["wall"]="D",["gate"]="D",
+local CAT = {["ammo-turret"]="D",["electric-turret"]="D",["fluid-turret"]="D",["artillery-turret"]="D",["wall"]="W",["gate"]="W",
   ["lab"]="R",["assembling-machine"]="A",["rocket-silo"]="A",["furnace"]="S",["mining-drill"]="M",["offshore-pump"]="M",
   ["boiler"]="E",["generator"]="E",["solar-panel"]="E",["accumulator"]="E",["reactor"]="E",["burner-generator"]="E",
   ["container"]="L",["logistic-container"]="L",["roboport"]="L",["train-stop"]="L",["transport-belt"]="B",
@@ -158,7 +159,7 @@ local EXTRA = {["lane-splitter"]="B",["cargo-landing-pad"]="L",["agricultural-to
   ["fusion-generator"]="E",["lightning-attractor"]="E",["rail-ramp"]="T",["rail-support"]="T",
   ["elevated-straight-rail"]="T",["elevated-curved-rail-a"]="T",["elevated-curved-rail-b"]="T",["elevated-half-diagonal-rail"]="T"}
 local OIL = {["oil-refinery"]=true,["chemical-plant"]=true,["pumpjack"]=true}
-local RANK = {D=12,R=11,O=10,A=9,S=8,M=7,E=6,L=5,I=4,B=3,T=2,P=1}
+local RANK = {D=13,W=12,R=11,O=10,A=9,S=8,M=7,E=6,L=5,I=4,B=3,T=2,P=1}
 local LINE = {P=true,B=true,I=true,T=true}
 local types, all = {}, {}
 for t, c in pairs(CAT) do types[#types+1] = t all[t] = c end

@@ -192,7 +192,9 @@ the rest in the stream's order with "waiting 12 min" ("12+ min" with `waited_mor
 `basemap` is the base as a coarse grid, read once a minute by the stream service (`BASEMAP_LUA` in
 `tools/stream/harness.py`, an operator read like the score): every building of ours on nauvis except electric poles,
 binned into `cell`-tile cells (4, doubled until the grid fits 128 cells a side), each cell labelled by its most telling
-building: `D` defence (turrets, walls, gates), `R` labs, `O` oil and chemistry (refineries, chemical plants,
+building: `D` defence (turrets), `W` walls and gates (d22 batch75 AK4, viewer Foobator: "can walls be a separate
+item?"; under `D` where both share a cell, so the turret sweep's defence cells still hold every turret; grids read before
+it have walls in `D`), `R` labs, `O` oil and chemistry (refineries, chemical plants,
 pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drills, offshore pumps), `E` power,
 `K` storage, `B` belts and inserters, `P` pipes, `.` nothing. Cell (c, r) covers tiles `x0 + c*cell` to
 `x0 + (c+1)*cell` and the same for y. Trailing empty cells are left off each row. It is absent until the first read.

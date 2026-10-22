@@ -466,7 +466,7 @@ do
   eq(l.packs[1].used,0); eq(l.packs[1].held_least,10)
   eq(l.packs[7].name,'agricultural-science-pack'); eq(l.packs[7].unknown_intervals,1); eq(l.packs[7].unknown_why,'packs spoiled'); eq(l.packs[7].held_least,0)
   eq(l.spoil_results[1],'spoilage 3')
-  assert(l.line:find('lab (100.5,-63.5): missing science packs 100%; packs used in 60s (durability drained): automation-science-pack 0,',1,true),l.line)
+  assert(l.line:find('lab (100.5,-63.5): missing science packs 100%; when: missing science packs from 0 s to 60 s (ticks 10000-13600), at most 61 samples in a row; packs used in 60s (durability drained): automation-science-pack 0,',1,true),l.line)
   assert(l.line:find('agricultural-science-pack 0-3 (none in 31 samples); used unknown for agricultural-science-pack in 1 of 60 intervals (packs spoiled); spoil results in its trash: spoilage 3',1,true),l.line)
   eq(b.working_share,100); eq(b.samples.working,61)
   local function r2(v) return math.floor(v*100+0.5)/100 end

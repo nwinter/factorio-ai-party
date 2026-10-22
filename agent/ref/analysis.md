@@ -242,8 +242,10 @@
   Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
 - `uptime {positions, seconds?}`: up to 64 crafting machines or labs (or `area` {left_top, right_bottom} with an optional
   `recipe`) watched for seconds (10..3600, default 600), a status sample a second, in the background; `uptime {}` reads it
-  so far or done: each machine's crafts finished and crafts a minute against its full speed, status shares, the
-  ingredients short at the samples that read short (at the recipe's quality), outputs by quality from its output slot,
+  so far or done: each machine's crafts finished and crafts a minute against its full speed, status shares, when each
+  status other than working was read (`status_runs`: first and last tick, longest run of samples in a row; `changes`:
+  its last 8 status changes), the ingredients short at the samples that read short (at the recipe's quality, with
+  their first and last tick), outputs by quality from its output slot,
   totals by recipe (`groups`), `left_out`; rows above 16 machines are left out (`lines` has each). `items` (up to 8, a
   name for every quality or {name, quality}): the surface's production statistics by quality over the watch.
   While an `uptime`, `turret_tally` or `belt_flow` watch of yours runs, your idle count reads it as measuring (the clock

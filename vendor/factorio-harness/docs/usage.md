@@ -11184,3 +11184,20 @@ nothing more (a chunk placed at (4,1) stayed 765 ticks, power full, output empty
 the copy (x86 under Rosetta, about 12 UPS), timed in the same minute: the read 24-26 ms on Asterion (55 ms the first
 call) and 19-21 ms on Anvil (157 chunks), the existing platform_supply read on Asterion 18-23 ms; the extent, chunk
 and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
+
+## d20 batch79 AO1 (eng/d20-batch79): uptime, when the non-working samples fell (Astra #1845)
+
+- Astra's 600 s watch of six Vulcanus machines from tick 46697072 read "low power 0%" for 3 of 601 samples, with no
+  way to tell startup from brownout. Reproduced on a private copy of world n's _autosave2 (tick 46730508) with world
+  n's runtime: the same six machines over 120 s gave shares only (no machine read low power in that window).
+- Now (uptime.lua): per machine and lab, each status other than working (low power, no power, an ingredient shortage,
+  full output, disabled by control behavior, ...) gives status_runs {samples, first_tick, last_tick, first_s, last_s
+  (seconds into the watch), longest_run (samples in a row)} and a "when:" part on its line; changes holds its last 8
+  status changes ("tick: from -> to"); a machine that only worked adds nothing. short gives the ticks of its first and
+  last short sample. A share that rounds to 0% gives its count ("low power 0% (3 of 601 samples)").
+- On the copy with the change, the same watch with Vulcanus's generators, panels and accumulators switched off from
+  tick 46746138 to 46746377: "chemical-plant (-12.5,103.5) acid-neutralisation: ... full output 57%, working 39%, low
+  power 4%; when: full output from 0 s to 120 s (ticks 46742293-46749493), at most 7 samples in a row; low power from
+  64 s to 69 s (ticks 46746161-46746429), at most 5 samples in a row".
+- Cost (profile_ticks 60 s on the copy, the watch running): uptime.tick 28.2 ms over 3600 ticks before, 26.4 ms after
+  (0.008 and 0.007 ms a tick). Tests: tests/d21_batch79.lua.
