@@ -19764,6 +19764,8 @@ function M.on_event(event)
       local oka,erra=pcall(M.asteroidwatch.on_damaged,event)
       if not oka then local s=state(); s.asteroid_watch_errors={count=((s.asteroid_watch_errors or {}).count or 0)+1,last=tostring(erra),tick=game.tick} end
     end
+    -- (BH1) a railgun's hit on a platform a flight_watch watches (flightwatch.lua)
+    if state().flightwatch then pcall(M.flightwatch.on_damaged,event) end
     -- A unit a driving bot's vehicle hits counts as rammed (vehicles.lua).
     local cause=event.cause
     if cause and cause.valid and cause.type=='car' then
@@ -19788,6 +19790,7 @@ function M.on_event(event)
       local oka,erra=pcall(M.asteroidwatch.on_died,event)
       if not oka then local s=state(); s.asteroid_watch_errors={count=((s.asteroid_watch_errors or {}).count or 0)+1,last=tostring(erra),tick=game.tick} end
     end
+    if state().flightwatch then pcall(M.flightwatch.on_died,event) end
     -- An enemy a character or a vehicle of ours killed (status combat.kills_10s).
     if cause and cause.valid and event.entity and event.entity.valid and event.entity.force ~= cause.force then pcall(M.note_kill,cause,event.tick) end
     if cause and cause.valid and cause.type=='character' then
