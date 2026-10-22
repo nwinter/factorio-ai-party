@@ -61,6 +61,7 @@ return function(api)
   -- Each asteroid chunk type from the collectors that take it, through the inserters and belts, to the crushers whose
   -- recipe takes it and to the hub (B3, Astra on Wren 4+ times): where each goes, a static inserter filter that keeps a
   -- collected type out, and a crusher stopped with its output full while the hub it unloads into is full.
+  local CHUNKS
   function M.trace(s, force, hub)
     local by_pickup = {}
     for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=force} end) or {}) do
@@ -72,26 +73,67 @@ return function(api)
       end
     end
     local function takers_of(e) return by_pickup[e.unit_number or e] or {} end
-    local chunks = {}
-    for name in pairs(prototypes.item) do if name:find('%-asteroid%-chunk$') then chunks[#chunks+1] = name end end
-    table.sort(chunks)
+    -- (the chunk items, from every item prototype once a load)
+    if not CHUNKS then
+      CHUNKS = {}
+      for name in pairs(prototypes.item) do if name:find('%-asteroid%-chunk$') then CHUNKS[#CHUNKS+1] = name end end
+      table.sort(CHUNKS)
+    end
+    local chunks = CHUNKS
     local rows, flags, flagged = {}, {}, {}
     local function flag(t) if not flagged[t] then flagged[t] = true; flags[#flags+1] = t end end
+    -- (d22 batch96 BF1) what each chunk type's walk reads of an entity, read once a call: a machine's recipe ingredients,
+    -- an inserter's filter and drop target, a belt's outputs (each chunk type walked the same belts again: Meridian-V's
+    -- trace was 13 ms on a copy of world n)
+    -- (and each entity's unit number and type, by the object the cached lists hand back)
+    local ings, filters, drops, outs, info = {}, {}, {}, {}, {}
     local function takes(cr, chunk)
-      local r = try(function() return cr.get_recipe() end)
-      for _, ing in ipairs(r and try(function() return r.ingredients end) or {}) do if ing.name == chunk then return true end end
-      return false
+      local k = cr.unit_number or cr
+      local set = ings[k]
+      if not set then
+        set = {}
+        local r = try(function() return cr.get_recipe() end)
+        for _, ing in ipairs(r and try(function() return r.ingredients end) or {}) do set[ing.name] = true end
+        ings[k] = set
+      end
+      return set[chunk] == true
+    end
+    local function filter(i)
+      local k = i.unit_number or i
+      local f = filters[k]
+      if not f then f = {filter_of(i)}; filters[k] = f end
+      return f[1], f[2], f[3]
+    end
+    local function drop(i)
+      local k = i.unit_number or i
+      local d = drops[k]
+      if d == nil then d = try(function() return i.drop_target end) or false; drops[k] = d end
+      return d or nil
+    end
+    local function outputs(e)
+      local k = e.unit_number or e
+      local o = outs[k]
+      if not o then
+        o = {}
+        for _, x in ipairs(try(function() return e.belt_neighbours.outputs end) or {}) do o[#o+1] = x end
+        if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then o[#o+1] = try(function() return e.neighbours end) or false end
+        outs[k] = o
+      end
+      return o
     end
     local collectors = try(function() return s.find_entities_filtered{type='asteroid-collector', force=force} end) or {}
     for _, chunk in ipairs(chunks) do
       local from, dest, seen, belts = 0, {}, {}, 0
       local function reach(e, via)
-        if not (e and e.valid) then return end
-        local k = e.unit_number or e
+        if not e then return end
+        local inf = info[e]
+        if inf == nil then inf = e.valid and {k=e.unit_number or e, t=e.type} or false; info[e] = inf end
+        if not inf then return end
+        local k, et = inf.k, inf.t
         if seen[k] then return end
         seen[k] = true
-        if e.type == 'space-platform-hub' then dest['the hub'] = true; return end
-        if e.type == 'assembling-machine' or e.type == 'furnace' then
+        if et == 'space-platform-hub' then dest['the hub'] = true; return end
+        if et == 'assembling-machine' or et == 'furnace' then
           -- an inserter puts a chunk only into a machine whose recipe takes it
           if takes(e, chunk) then
             local crusher = (try(function() return e.prototype.crafting_categories end) or {}).crushing
@@ -99,12 +141,12 @@ return function(api)
           end
           return
         end
-        if BELT[e.type] then
+        if BELT[et] then
           belts = belts + 1
           if belts > 512 then return end
           for _, i in ipairs(takers_of(e)) do
-            local allow, text, static = filter_of(i)
-            local d = try(function() return i.drop_target end)
+            local allow, text, static = filter(i)
+            local d = drop(i)
             if allow(chunk) then reach(d, i)
             elseif static and d and d.valid and (d.type == 'space-platform-hub' or ((d.type == 'assembling-machine' or d.type == 'furnace') and takes(d, chunk))) then
               -- only an inserter that would feed the chunk where it is used: the hub, or a machine whose recipe takes it
@@ -112,12 +154,11 @@ return function(api)
                 d.name, at(d.position), d.type == 'space-platform-hub' and 'store' or 'recipe ' .. (recipe_of(d) or ''), chunk))
             end
           end
-          for _, o in ipairs(try(function() return e.belt_neighbours.outputs end) or {}) do reach(o) end
-          if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then reach(try(function() return e.neighbours end)) end
+          for _, o in ipairs(outputs(e)) do reach(o or nil) end
           return
         end
         -- a chest takes any item; a turret, a ghost or anything else takes no chunk
-        if e.type == 'container' or e.type == 'logistic-container' then dest[string.format('%s %s', e.name, at(e.position))] = true end
+        if et == 'container' or et == 'logistic-container' then dest[string.format('%s %s', e.name, at(e.position))] = true end
       end
       for _, c in ipairs(collectors) do
         local fl, any = {}, false
@@ -129,8 +170,8 @@ return function(api)
         if not any or fl[chunk] then
           from = from + 1
           for _, i in ipairs(takers_of(c)) do
-            local allow, text, static = filter_of(i)
-            if allow(chunk) then reach(try(function() return i.drop_target end), i)
+            local allow, text, static = filter(i)
+            if allow(chunk) then reach(drop(i), i)
             elseif static then flag(string.format('%s %s (%s) takes from collector %s, which collects %s, and keeps it out', i.name, at(i.position), text, at(c.position), chunk)) end
           end
         end

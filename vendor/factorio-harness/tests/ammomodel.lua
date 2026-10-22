@@ -88,7 +88,7 @@ print('ammomodel model: ok')
 -- Endurance: the rows, the departure line, the flight line and the forecast all count the same 138 made and 100 received.
 do
   local r=E.read({},{platform='Kestrel IVa',route={'nauvis','gleba','nauvis'},forecast=true})
-  eq(r.total_minutes,20); eq(bgs[#bgs],false,'endurance traces in the call, as before')
+  eq(r.total_minutes,20); eq(bgs[#bgs],true,'endurance takes the trace\'s background read (d22 batch96 BF1: 64 ms a trace in the call on Kestrel IVb)')
   local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
   local fm=by['firearm-magazine']
   eq(fm.stock,1461); eq(fm.received,100); eq(fm.at_end,299,'1461 + 100 + 138 - 1400')

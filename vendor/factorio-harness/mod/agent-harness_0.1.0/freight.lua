@@ -625,15 +625,25 @@ return function(api)
   end
   -- (K4) The ship as it flies: its thrusters (count) and its hull's width (the foundation's x extent, in tiles, within
   -- 128 tiles of the hub: Swift's 771 tiles read in 0.46 ms on the private copy; read when a leg begins).
+  -- (d22 batch96 BF1) the hull's width from counts of foundation in columns of -128..127, 32 columns at a time and then
+  -- one at a time from each side: every foundation tile read was 14.6 ms of Asterion's platform_endurance on a copy of
+  -- world n (18 platforms: 107 ms read, 11.7 counted, the same widths)
   function M.geometry(pl)
     local s = try(function() return pl.surface end)
     local out = {thrusters=s and try(function() return s.count_entities_filtered{type='thruster', force=pl.force} end) or nil}
-    local tiles = s and try(function() return s.find_tiles_filtered{name='space-platform-foundation', area={{-128, -128}, {128, 128}}} end)
-    if tiles and #tiles > 0 then
-      local lo, hi = math.huge, -math.huge
-      for _, t in pairs(tiles) do local x = t.position.x; if x < lo then lo = x end; if x > hi then hi = x end end
-      out.width = hi - lo + 1
+    local function has(x0, x1)
+      return (try(function() return s.count_tiles_filtered{name='space-platform-foundation', area={{x0, -128}, {x1, 128}}, limit=1} end) or 0) > 0
     end
+    local lo, hi
+    if s then
+      for x = -128, 96, 32 do
+        if has(x, x + 32) then for c = x, x + 31 do if has(c, c + 1) then lo = c; break end end; break end
+      end
+      for x = 96, -128, -32 do
+        if lo and has(x, x + 32) then for c = x + 31, x, -1 do if has(c, c + 1) then hi = c; break end end; break end
+      end
+    end
+    if lo and hi then out.width = hi - lo + 1 end
     return out
   end
   -- The speed an estimate flies at: the higher of now and the cruise (km a tick); nil before any flight seen.

@@ -419,3 +419,66 @@ do
   prototypes=nil
 end
 print('d22_batch96 BF1 drill sites: ok')
+
+-- BF1 part 4: platform_endurance (Kestrel IVb 66 ms on world n) and platform_supply (about 20 ms)
+
+-- 14. the hull's width from foundation counts in columns, no tile read; the same as the first and last column holding one
+do
+  local cols={}
+  for x=-7,12 do cols[x]=true end
+  cols[3]=nil  -- a gap inside does not matter
+  local counts=0
+  local s={count_entities_filtered=function(f) eq(f.type,'thruster'); return 6 end,
+    find_tiles_filtered=function() error('no tile read') end,
+    count_tiles_filtered=function(f)
+      counts=counts+1
+      eq(f.name,'space-platform-foundation'); eq(f.area[1][2],-128); eq(f.area[2][2],128); eq(f.limit,1)
+      for x=f.area[1][1],f.area[2][1]-1 do if cols[x] then return 1 end end
+      return 0
+    end}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
+  local g=F.geometry({surface=s,force={name='player'}})
+  eq(g.width,20); eq(g.thrusters,6)
+  assert(counts<=2*(8+32),'counted by strips: '..counts)
+  cols={}
+  eq(F.geometry({surface=s,force={name='player'}}).width,nil,'no foundation')
+  cols={[-128]=true,[127]=true}
+  eq(F.geometry({surface=s,force={name='player'}}).width,256,'the edges of the area')
+end
+print('d22_batch96 BF1 hull width by counts: ok')
+
+-- 15. platform_supply's chunk trace: each chunk type's walk takes a belt's outputs, an inserter's filter and target and a
+-- machine's recipe from what the first walk read (the same rows)
+do
+  game={tick=0}
+  defines={inventory={hub_main=1},entity_status={working=1,full_output=2}}
+  prototypes={item={['metallic-asteroid-chunk']={},['oxide-asteroid-chunk']={},['carbonic-asteroid-chunk']={}}}
+  local n,reads=0,{}
+  local function ent(t)
+    n=n+1; t.valid=true; t.unit_number=n; t.position=t.position or {x=n,y=0}
+    local raw={}
+    for k,v in pairs(t) do if k=='belt_neighbours' or k=='drop_target' then raw[k]=v; t[k]=nil end end
+    return setmetatable(t,{__index=function(_,k) if raw[k]~=nil then reads[k]=(reads[k] or 0)+1; return raw[k] end end})
+  end
+  local hub=ent{name='space-platform-hub',type='space-platform-hub',get_inventory=function() return {count_empty_stacks=function() return 3 end} end}
+  local cm=ent{name='crusher',type='assembling-machine',status=1,prototype={crafting_categories={crushing=true}},
+    get_recipe=function() reads.recipe=(reads.recipe or 0)+1; return {name='metallic-asteroid-crushing',ingredients={{name='metallic-asteroid-chunk',amount=1}}} end}
+  local b3=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={}}}
+  local b2=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={b3}}}
+  local b1=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={b2}}}
+  local col=ent{name='asteroid-collector',type='asteroid-collector',filter_slot_count=0}
+  local function ins(from,to) return ent{name='inserter',type='inserter',pickup_target=from,drop_target=to,use_filters=false} end
+  local list={ins(col,b1),ins(b3,cm),ins(b3,hub)}
+  local s={find_entities_filtered=function(f)
+    if f.type=='inserter' then return list elseif f.type=='asteroid-collector' then return {col} elseif f.type=='assembling-machine' then return {cm} end
+    return {} end}
+  local P=dofile('mod/agent-harness_0.1.0/platsupply.lua'){}
+  local rows=P.trace(s,{},hub)
+  eq(#rows,3)
+  eq(rows[2],'metallic-asteroid-chunk: 1 collector; goes to crusher (2,0) metallic-asteroid-crushing, the hub (over 3 belt tiles)')
+  eq(rows[1],'carbonic-asteroid-chunk: 1 collector; goes to the hub (over 3 belt tiles)')
+  eq(reads.belt_neighbours,3,'each belt\'s outputs once for 3 chunk types')
+  eq(reads.drop_target,3,'each inserter\'s target once')
+  defines,prototypes=nil,nil
+end
+print('d22_batch96 BF1 chunk trace reads once: ok')

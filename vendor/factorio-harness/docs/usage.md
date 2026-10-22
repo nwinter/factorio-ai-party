@@ -11710,6 +11710,30 @@ best of three.
     worst second 394 against 13.2; slices' 147 against 49.6 (that same second), then 35.5.
   - The cost: a pass takes 42-47 s on the copy (2,539-2,829 ticks), where it started every 30 s; the alerts it finds
     are that much older at most. `SECOND_COST` sets the trade.
+- Part 4, `platform_endurance` (world n: Kestrel IVb 66 ms) and `platform_supply` (about 20 ms). On the copy, main's
+  runtime and this one, each platform's best of three:
+
+  | | median | worst |
+  |---|---|---|
+  | platform_endurance, main | 17.7 ms | 64.9 (Asterion), 62.7 (Meridian-V) |
+  | platform_endurance, now | 7.4 ms | 15.0 (Asterion), 11.3 (Kestrel II) |
+  | with forecast, main | 19.7 ms | 71.2 (Asterion) |
+  | with forecast, now | 11.0 ms | 23.2 (Asterion) |
+  | platform_supply, main | 6.6 ms | 52.9 (Meridian-V), 17.5 (Asterion) |
+  | platform_supply, now | 5.6 ms | 17.3 (Asterion), 15.7 (Meridian-V) |
+
+  - platform_endurance takes the ammunition trace's background read, with its age (`read over 27 ticks in the
+    background (201 belts, 256 a tick), 9s ago`), as the platforms read and preflight do: a platform of up to 400 belts
+    was traced in the call (Kestrel IVb's 201 belts: 64 ms). Before the first background read, the reply says the
+    trace is under way and that stranded ammunition is not told apart until then.
+  - The hull's width (`freight.geometry`, which says whether a speed was measured on the same ship) comes from
+    counts of foundation in columns, 32 at a time and then one at a time from each side: every foundation tile read
+    was 14.6 ms of Asterion's read (18 platforms: 107 ms read, 11.7 counted, the same widths).
+  - platform_supply's chunk trace reads each belt's outputs, each inserter's filter and target, each machine's recipe
+    and each entity's type once a call, where each chunk type's walk read them again; the chunk names come from the
+    item prototypes once a load. The 18 platforms' replies compared equal on the copy.
+  - Over 10 ms still, on Asterion (8,000 entities) and Meridian-V: endurance's plan and forecast lines (3-4 ms each),
+    supply's thrust lines (up to 4.5 ms) and the trace's first walk of each belt (3.6 ms).
 
 ### d22 batch93 BC2: status brief's vehicle_fire
 

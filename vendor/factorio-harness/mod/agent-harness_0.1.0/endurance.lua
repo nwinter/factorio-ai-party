@@ -279,7 +279,9 @@ return function(api)
     -- batch51 H1), what rockets bring, and what can reach no turret: the one model the departure, flight and forecast
     -- lines here and the ammo_rates of preflight and the platforms read use (ammomodel.lua).
     local places = api.stock_places and try(function() return api.stock_places(pl, setmetatable({}, {__index=function() return true end})) end)
-    local model = ammomodel().new(pl, {places=places or false, rate=function(name, cat, fluid) return rate(fluid and fluid_stats or items_stats, name, cat) end,
+    -- (d22 batch96 BF1: the trace of a platform of up to 400 belts ran in this call, 64 ms of Kestrel IVb's 201 belts on
+    -- a copy of world n) the trace's background read, its age said, as the platforms read and preflight take it
+    local model = ammomodel().new(pl, {background=true, places=places or false, rate=function(name, cat, fluid) return rate(fluid and fluid_stats or items_stats, name, cat) end,
       fluid_stock=function(names) return fluid_stock(pl, names) end})
     local held = model.held
     local rows = {}
