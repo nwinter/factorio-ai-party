@@ -11418,3 +11418,44 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   - Cost on the copy (x86 under Rosetta, a dispatch timed with the game's profiler, by remote view on Meridian-V): a
     57-entity, 33x28-tile segment took 5.8-15.3 ms a dry run (median 10.4; most of it counts the segment's entities in
     its box, up to 2000) and 3.4 ms a flush.
+
+## d22 batch95 BE1 (eng/d20-batch95): a place_ghosts dry run that agrees with the placement on tiles (Astra #1892)
+
+- Why: on Aquilo, Astra's dry run of a decider combinator on rough ice said `stands on 1 ice-rough tile: needs 1
+  concrete first`, yet its verdict was `ok: every entry places`. The real call refused it: `placement blocked by
+  tiles: ice-rough (needs concrete)`, with no tile ghost laid. Entries on brash ice and ammoniacal ocean read `no tile
+  item makes it buildable`, though ice platform is made for them.
+- The game's rules (2.0.77, read on the copy of world n):
+  - Rough and smooth ice are ground and meltable. A decider, an assembler, inserters, pipes, belts and heat pipes
+    collide with meltable; a medium pole does not.
+  - Concrete goes on any tile that is not water. Ice platform goes only on ammoniacal ocean (both) and brash ice, and
+    its tile is itself meltable. So a building there needs ice platform, then concrete on it.
+  - The game's forced ghost check lays tile ghosts under an entity only for foundation-like tiles (landfill,
+    foundation, ice platform). It refuses the ghost over tiles that need concrete.
+  - The game takes an entity ghost over concrete tile ghosts. It takes a concrete tile ghost over an ice platform tile
+    ghost. place_ghosts places its entries in order, and its `tiles` argument after them all.
+- Checked on the copy:
+
+  | Case | Dry run before | Real call | Dry run now |
+  |---|---|---|---|
+  | decider alone on rough ice | needs_tiles, verdict ok | refused | fails, naming the concrete |
+  | concrete entries before it | after_tiles, ok | placed 3 | after_tiles, ok |
+  | concrete entries after it | after_tiles, ok | refused | blocked: `entry #3 lays a tile under it after this one` |
+  | decider alone on brash ice or ammoniacal ocean | `no tile item` | refused | blocked: `no one tile item makes it buildable; two do: ice-platform, then concrete on it` |
+  | ice platform, concrete, decider | blocked: `the game refuses concrete there now` | placed 5 | after_tiles, ok |
+
+- What changed:
+  - **Entry note:** an entry that needs tiles the real call does not lay, where the game refuses its ghost now, says
+    `...; the game refuses its ghost on ice-rough now, and place_ghosts lays no concrete ghost under it: concrete tile
+    entries before it in this call lay them first`.
+  - **Verdict:** it fails on those entries, as `1 entry the game refuses on the tiles there now, with no tile entry
+    before it (...)`. The dry run gives `refused_until_tiles` and `refused_until_tiles_first`.
+  - **Tile order:** an entity that tile entries after it (or the `tiles` argument) would make buildable is blocked,
+    naming the order. One whose tile entries come before it is `after_tiles` and passes.
+  - **Planned tiles:** each is checked against what lies under it then: an earlier entry's tile there, a tile ghost
+    there, else the surface's. So concrete over a planned ice platform is taken.
+  - **Two-step tiles:** with no one tile item, the dry run and the real refusal name two that do (`ice-platform, then
+    concrete on it`).
+  - **Real refusal:** place_ghosts' refusal on tiles adds that those tile entries before it lay the tile ghosts first.
+- Tests: tests/dryrun.lua (BE1 block: an Aquilo-like world with rough ice, brash ice, concrete, ice platform and a
+  meltable decider; the three orders, the two-step and the verdict).
