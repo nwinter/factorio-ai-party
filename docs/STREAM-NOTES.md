@@ -422,11 +422,13 @@ comes back afterwards:
   reads and the chronicle's `platform_left`, is kept in `space-memory.json` `routes`, and is seeded from the
   chronicle files along the run chain. Any other departure is routine. It goes on air for `depart_routine_hold`
   (25 s), at most once per `depart_routine_every` (20 min) across all platforms and once per `depart_route_every`
-  (2 h) per route. Otherwise it goes in a free inset (`depart_inset`), else it is not shown. Each decision is a log
+  (2 h) per route. Otherwise it goes in a free inset (`depart_inset`), at most once per `depart_inset_every`
+  (10 min) and once per `depart_inset_route_every` (2 h) per route (AS2, operator 09:47: without these limits the
+  replay put 53 routine departures in the inset). Otherwise it is not shown. Each decision is a log
   line and a director-log row: `departure routine (inset): Cinder Gleba->Nauvis flown 31 min ago; a routine
   departure went on air 7 min ago`. The platform visit (`platform_every`) is unchanged.
-  `tools/stream/test_departnews.py` replays shift57's 72 departures: 9 on air for 5.0 min, 53 in the inset, 10 not
-  shown.
+  `tools/stream/test_departnews.py` replays shift57's 72 departures: 9 on air for 5.0 min, 11 in the inset for
+  5.1 min, 52 not shown.
 - An agent's platform action. The trigger is snapshot `work` with `platform=`. `work.py` now also counts inspect,
   configure, launch, drop, platform_schedule and requests when they carry `platform=`. The shot takes the camera if
   the agent is on air, or if the agent scores `work_ratio` of the agent on air (after onair_dwell, and with no fight
