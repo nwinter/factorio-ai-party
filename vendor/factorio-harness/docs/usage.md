@@ -9798,6 +9798,18 @@ fh watch    # deploy on every change
   10 robots' area took 7.2 ms on the copy. What a player sees hovering a robot was not checked (a headless server has
   no GUI); a robot's order target is not shown in the game's GUI (a player sees where it flies). Tests:
   tests/d21_batch70.lua.
+- AF4 trimmed to what a player sees (d20 batch70 AF5, operator): a robot's order type, target entity, target
+  unit_number and count are gone from inspect, area rows, scan and the no_storage rows and line; what stays is its
+  unit_number, cargo (item, quality, count; its sprite changes when it carries something: idle_with_cargo and
+  in_motion_with_cargo in base/prototypes/entity/flying-robots.lua; the hover panel was not checked, a headless server
+  has no GUI), its network and `heading {x, y}`, where it flies (its first order's target position, as watching it
+  shows; none with no order or its target gone). robotread.lua's `orders`, `orders_queued` and an area row's `order`
+  are replaced by `heading`; lines read `logistic-robot #4977221 at (-26.5,-1.7): carries solid-fuel 3; flying to
+  (-76.5,-3.5) #4977221`. AF5 addition (Astra 18:33 PDT, tick 43918475, runs/shift54/astra/tools/robotcargo54-proof.json:
+  `scan {type: logistic-robot, fields: [inventory]}` near (22.5,-152) gave 7 robot rows with inventory text only and no
+  unit_number): every robot row in scan and in inspect over an area now has `unit_number` and `cargo {name, quality,
+  count}` (none when it carries nothing), and a compact area line ends in ` #unit_number`; other rows still get
+  unit_number only when they share a position. Tests: tests/d21_batch70.lua.
 - N2 in uptime (d20 batch53 M3's machine watch, merged into main after N2's checkpoint): its status samples were at tick
   7 of every second (runtime.lua called uptime.tick at tick % 60 == 7), so a machine working 20 ticks of every 60
   read 100% or 0% by its phase. Sample k now comes at start + 60 k + (7 k mod 60), the last at the window's end;

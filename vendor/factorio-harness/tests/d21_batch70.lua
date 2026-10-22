@@ -126,7 +126,7 @@ print('d21_batch70 AF3 card watches and queue runs: ok')
 
 -- AF4 (#1718, Astra: on Aquilo 4-5 robots read no_storage while 31 storage chests were full; scan's inventory and
 -- inspect over an area said every robot held nothing, robots at one spot with no unit_number): robotread, and the
--- no_storage alert groups with each robot's unit number, cargo and orders.
+-- no_storage alert groups with each robot's unit number, cargo and (AF5) where it flies.
 do
   defines={inventory={robot_cargo=1,turret_ammo=7},robot_order_type={construct=0,pickup=1,deliver=2,repair=3,deconstruct=4},
     alert_type={entity_destroyed=1,no_storage=9,custom=5},entity_status={working=0}}
@@ -145,15 +145,18 @@ do
   local gone={valid=false}
   local two=robot(4977329,-31.2,-2.7,nil,{{type=1,target=gone,target_item={name='solid-fuel',quality='normal'},target_count=3},{type=2,target=chest},{type=2},{type=2}})
   local r=R.row(stuck)
-  eq(r.unit_number,2788748); eq(r.cargo.name,'cryogenic-science-pack'); eq(r.cargo.count,3); eq(r.cargo.quality,'normal'); eq(r.orders,nil); eq(r.network,348)
-  eq(r.line,'logistic-robot #2788748 at (-72.5,-2): carries cryogenic-science-pack 3; no order')
-  eq(R.holds(rare),'carbon-fiber@rare*4'); eq(R.row(rare).line,'logistic-robot #19244048 at (2.5,20): carries carbon-fiber@rare 4; no order')
+  eq(r.unit_number,2788748); eq(r.cargo.name,'cryogenic-science-pack'); eq(r.cargo.count,3); eq(r.cargo.quality,'normal'); eq(r.heading,nil); eq(r.network,348)
+  eq(r.line,'logistic-robot #2788748 at (-72.5,-2): carries cryogenic-science-pack 3')
+  eq(R.holds(rare),'carbon-fiber@rare*4'); eq(R.row(rare).line,'logistic-robot #19244048 at (2.5,20): carries carbon-fiber@rare 4')
+  -- AF5: where it flies, and nothing a player does not see (order type, target entity, its unit number, the count)
   r=R.row(busy)
-  eq(r.orders[1].type,'deliver'); eq(r.orders[1].item,'solid-fuel'); eq(r.orders[1].count,3); eq(r.orders[1].target_unit_number,3462854)
-  eq(r.line,'logistic-robot #4977221 at (-26.5,-1.7): carries solid-fuel 3; deliver solid-fuel 3 to requester-chest (-76.5,-3.5) #3462854')
+  eq(r.heading.x,-76.5); eq(r.heading.y,-3.5); eq(r.orders,nil)
+  eq(r.line,'logistic-robot #4977221 at (-26.5,-1.7): carries solid-fuel 3; flying to (-76.5,-3.5)')
+  for k in pairs(r) do assert(k~='orders' and k~='orders_queued' and k~='order','no order field: '..k) end
+  assert(not r.line:find('deliver') and not r.line:find('requester') and not r.line:find('3462854'), r.line)
   r=R.row(two)
-  eq(#r.orders,3); eq(r.orders_queued,4)
-  eq(r.line,'logistic-robot #4977329 at (-31.2,-2.7): carries nothing; pickup solid-fuel 3 (its target gone) (4 orders queued)')
+  eq(r.heading,nil,'its target gone')
+  eq(r.line,'logistic-robot #4977329 at (-31.2,-2.7): carries nothing')
   eq(R.holds(two),'empty')
   -- the alert groups: each no_storage robot's row (up to 4), the count, and the line
   game={tick=1000}
@@ -181,4 +184,4 @@ do
   assert(g.line:find('; robots: logistic-robot #',1,true) and g.line:find(' | +2 more',1,true), g.line)
   game=nil; defines=nil
 end
-print('d21_batch70 AF4 robot cargo, orders and no_storage robots: ok')
+print('d21_batch70 AF4/AF5 robot cargo, heading and no_storage robots: ok')
