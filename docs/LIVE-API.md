@@ -173,6 +173,39 @@ under one shot's energy; amber) or unknown (`u`: not read since the last full pa
 stream service reads every Nauvis turret in the basemap's defence cells, a pass at most once a minute, one command an
 observe of at most 120 turrets (2.4 ms on world n, 7.0 ms on the d17 headless copy). `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
 left, `x1`, `y1` its bottom right), older frames first, under everything else; `src` must be a site path or an https URL.
+(d22 batch75 AK9, viewer Aurora site:4272: "Terrain is blank north of the base where Opus explored. Please trace charting,
+capture and publishing, then make newly charted areas appear automatically with visible terrain freshness.") The frames
+are OBS screenshots of the director's base map shot, framed on the core and its outposts and placed by matching our
+buildings; every shift58 frame spans y -580 to 546, while the force has charted Nauvis north to y -1024 (Opus worked at
+y -790 to -990), and a frame reaches the map only with a site deploy. So `basemap.terrain_grid` carries the charted
+ground read from the game (tools/stream/terrain_grid.py; a read every 30 s, about 3 ms on world n): {cell 8, x0, y0, w,
+h, rows (run-length packed as the other grids; a letter a cell: the tile at the cell's centre, "c" a cell with a cliff,
+"." not read), palette [[letter, "#rrggbb" (the tile's map colour), tile name]], chunks, tick (the newest sample's),
+oldest_tick, t (the newest read's wall time), age_s}. A chunk charted next to the known ground is in it within about 3
+minutes; the stream keeps it in runs/RUN/terrain-grid.json (read back from the run it resumed from); push_live drops it
+past 96 KB packed (3247 chunks of world n: 21.6 KB). The map draws it under the frames (a frame's uncharted part is
+transparent) and dims both once; the legend says how many chunks and when the newest was read; a frame 30 min or more
+older than now is labelled at its corner ("terrain from 2 h ago", the newest of frames whose corners are within 60 px)
+and the scale line says the frames' and the ground's ages.
+(d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero? Vulcanus
+currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") A disabled layer's
+tooltip says why (mapview.js absentWhy): "not read: ..." where the state has no read of it (the game has made no networks
+map of Vulcanus, naming the planets that have one; no map of the planet; a layer read on Nauvis only; pollution, read on
+the surfaces an agent is on), "not read yet: ..." where the state lists one this page has not had, and "none: ..." only
+where a read says zero (a networks map with no electric or logistic network or no item, a planet map with no building,
+the base read with no turret, spawner or worm, library areas read with none on the planet, no agent or attention mark
+there now). The item picker's tooltip says the same.
+
+(d22 batch75 AK11, viewer Foobator site:4284: "can projects that are actively being worked on and blocked projects be
+easier to see on site? also, could you show blocker reason?") Each `board.projects` row carries, as the board holds it
+(tools/stream/model.py project_state): `state` "active" (status doing, or an agent's board focus on it) or "blocked"
+(status blocked, or an open item in its blocked_by); `focus` [{agent, step, blocker}]; `blocked_by` [{id, title, status,
+owner}] (the open ones; an id alone for one the read lacks); `note` {by, text, tick} (its newest, when blocked); `check`
+{state, stalled, unchanged_checks, checked_s, last_change_s, error} (progress.lua's last check: the stream reads
+board_progress with no arguments every 2 minutes, 5.7 ms on world n). Those worked on come first, then the blocked
+ones; the card shows every one of them (up to 8). The live page puts the status in a chip (doing green, blocked red), a
+focus chip, and under each title the open blockers, a focus's blocker, the newest note (with its game age) and the
+progress check; the shift pages' team plan (plan.json) shows the chip, the open blockers and the newest note.
 The map is Nauvis: an agent whose `surface` is another planet, or with `on_platform` or `travel` set (a cargo pod), is
 listed in its bottom-left corner instead ("Luna · Vulcanus", "Opus · Solstice (platform)") and takes no part in
 the framing; each agent row carries `surface`, `where`, `on_platform` and `travel` from the stream service for that.
