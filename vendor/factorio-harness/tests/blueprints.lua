@@ -516,6 +516,33 @@ eq(r4.existing_entities,1,'the platform\'s hub stands where the blueprint\'s goe
 local r5=H.paste(pp4,{slot='offhub',position={x=0,y=0}}); eq(asked.x,3.5); eq(r5.anchor.aligned,true)
 -- turned east, the hub's offset from the center turns too
 H.paste(pp4,{slot='offhub',direction='east'}); eq(asked.x,0); eq(math.abs(asked.y),3.5)
+-- (d20 batch76 AL1, Sol #1828: Meridian-V's preserve paste threw "attempt to index local 'e' (a nil value)" after its
+-- floor ghosts were placed) every entity of the blueprint stands: a paste of its tiles only, read back by the hub
+do
+  sources.allstand={kind='blueprint',entities={{entity_number=1,name='space-platform-hub',position={x=0,y=0}},
+    {entity_number=2,name='chest',position={x=10.5,y=0.5},wires={{2,1,1,1}}}},tiles={{name='space-platform-foundation',position={x=12,y=0}}}}
+  H.blueprint_import(p,{blueprint='allstand',slot='allstand'})
+  local area_find=s4.find_entities_filtered
+  s4.find_entities_filtered=function(f)
+    if not f.position then return area_find(f) end
+    local out={}
+    for _,e in ipairs(w4) do if e.valid and (e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2<=f.radius^2 then out[#out+1]=e end end
+    return out
+  end
+  local sent
+  game.create_inventory=function() local inv=make(); rawset(inv[1],'build_blueprint',function(args)
+    sent={position=args.position,entities=#(inv[1].get_blueprint_entities() or {}),tiles=#(inv[1].get_blueprint_tiles() or {})}
+    unit=unit+1
+    w4[#w4+1]={valid=true,name='tile-ghost',type='tile-ghost',ghost_name='space-platform-foundation',position={x=12.5,y=0.5},force=p.force,unit_number=unit}
+  end); return inv end
+  local r=H.paste(pp4,{slot='allstand',preserve_existing_settings_and_wires=true})
+  eq(sent.entities,0); eq(sent.tiles,1)
+  eq(r.count,1); eq(r.by_name['space-platform-foundation'],1); eq(r.report_error,nil)
+  assert(r.preserved:find('2 of the blueprint\'s entities already stood there',1,true),r.preserved)
+  eq(r.anchor.by,'hub'); eq(r.anchor.aligned,true); eq(r.origin_at.x,0); eq(r.origin_at.y,0)
+  s4.find_entities_filtered=area_find
+  game.create_inventory=make
+end
 game.create_inventory=make
 fails(function() H.paste(p,{slot='offhub',position={x=0,y=0},anchor='hub'}) end,'anchor hub works on a platform')
 fails(function() H.paste(pp4,{slot='ferry-module-audit-north',anchor='hub'}) end,'holds no space%-platform%-hub')

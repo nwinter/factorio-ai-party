@@ -8,7 +8,7 @@ One Windows desktop does all the game work: the Factorio server for the run's wo
 
 - CPU Intel i7-10700K, 32 GB of RAM, an NVIDIA RTX 2070 Super with 8 GB, and the CPU's Intel graphics.
 - Factorio 2.0.77 with Space Age, Quality and Elevated Rails. The mods on the world are base, elevated-rails, quality, space-age and the project's own agent-harness mod.
-- The server is the Windows game binary started in server mode, bound to the box itself. It autosaves every 5 minutes into 12 slots and has auto-pause on: with no player connected the game stops. The three camera clients are the only connected players, so they are what keeps the world running at full speed.
+- The server is the Windows game binary started in server mode, bound to the box itself. It autosaves every 15 minutes (every 5 until Oct 22) into 12 slots and has auto-pause on: with no player connected the game stops. The three camera clients are the only connected players, so they are what keeps the world running at full speed.
 - The agents never run a game client. Each agent is a character on the server with no client behind it (a "bot" in the harness's words), moved only by the commands the agent sends.
 - Every server and client runs as a scheduled task in the desktop session, so they survive a dropped SSH connection and the clients draw on screen, where OBS captures their windows.
 - The save grew from 12.1 MB at shift 13 (Oct 14) to 16.4 MB at shift 27 (Oct 17). A save takes about 0.15 s.

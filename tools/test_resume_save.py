@@ -9,7 +9,8 @@ shift12/13 (operator 17:00), relative to a stop time T:
 - _autosave1..3 from T-1h to T-30m (the stale shift13 that ran from the 10:48 state), _autosave4 at T-2m.
 Checks the old script's pick (shift13.zip: the trap) and the new one's in each case: an old stop-team's /server-save
 into the loaded shift13b.zip, the new stop record (game.server_save into shift13.zip), a stop with no save after it,
-a world that ran on 15 min after its stop, and the copy (-To) with its refusal when the target exists.
+an autosave 14 min after the stop save (accepted: autosaves every 15 minutes since d22 06:15), a world that ran on 20 min
+after its stop (refused: -MaxGapMinutes 18), a crash with no stop record whose newest autosave is 14 min old, and the copy (-To) with its refusal when the target exists.
 """
 import datetime
 import os
@@ -59,10 +60,12 @@ def main():
     except Exception as e:  # noqa: BLE001
         print(f"skipped: the Windows box is not reachable ({e})")
         return
-    old_script = os.path.join(HERE, ".resume-save-main.ps1")
-    with open(old_script, "w") as f:
-        f.write(subprocess.run(["git", "show", "main:tools/win/resume-save.ps1"], capture_output=True, text=True, cwd=ROOT,
-                               check=True).stdout)
+    # The script before the 17:00 fix (the trap) and the 10-minute one before AJ1, pinned to their commits (main moves).
+    old_script, ten_script = os.path.join(HERE, ".resume-save-old.ps1"), os.path.join(HERE, ".resume-save-ten.ps1")
+    for path, rev in ((old_script, "6c637656"), (ten_script, "0b71cc61")):
+        with open(path, "w") as f:
+            f.write(subprocess.run(["git", "show", f"{rev}:tools/win/resume-save.ps1"], capture_output=True, text=True,
+                                   cwd=ROOT, check=True).stdout)
     T = datetime.datetime(2026, 10, 15, 2, 55, 0)
     h, m = datetime.timedelta(hours=1), datetime.timedelta(minutes=1)
     crash = {"shift12.zip": T - 5 * h, "shift13.zip": T - 5 * h, "shift12r.zip": T - 4 * h, "shift13b.zip": T - 4 * h,
@@ -93,12 +96,29 @@ def main():
         assert "save" not in new and new["refuse"].startswith("no save written at or after the previous run's stop"), raw
         assert "_autosave4.zip" in new["refuse"], raw
         print(f"no save after the stop: refuse={new['refuse']}")
-        # 4. The world ran on 15 min after its stop (autosaves after the stop save): refused.
-        files = dict(crash, **{"shift13.zip": T, "_autosave4.zip": T + 15 * m})
+        # 4. An autosave 14 min after the stop save (15-minute autosaves, d22 06:15): the stop save, accepted; the old
+        # script's 10 minutes refused it.
+        files = dict(crash, **{"shift13.zip": T, "_autosave4.zip": T + 14 * m})
+        setup(files)
+        old, _ = winps("-Name", INST, "-From", "shift13", "-StopUtc", iso(T), "-StopSave", "shift13.zip", "-Check",
+                       script=ten_script)
+        assert "refuse" in old, old
+        new, raw = winps("-Name", INST, "-From", "shift13", "-StopUtc", iso(T), "-StopSave", "shift13.zip", "-Check")
+        assert new.get("save") == "shift13.zip" and "refuse" not in new, raw
+        print("an autosave 14 min after the stop: shift13.zip (the old script refused it)")
+        # The world ran on 20 min after its stop (autosaves after the stop save): refused.
+        files = dict(crash, **{"shift13.zip": T, "_autosave4.zip": T + 20 * m})
         setup(files)
         new, raw = winps("-Name", INST, "-From", "shift13", "-StopUtc", iso(T), "-StopSave", "shift13.zip", "-Check")
         assert "older than the newest autosave _autosave4.zip" in new.get("refuse", ""), raw
-        print(f"ran on after the stop: refuse={new['refuse']}")
+        assert "by more than 18 min" in new["refuse"], raw
+        print(f"ran on 20 min after the stop: refuse={new['refuse']}")
+        # A crash (no stop record): the newest save, an autosave 14 min older than the crash, is taken.
+        files = dict(crash, **{"_autosave4.zip": T - 14 * m})
+        setup(files)
+        new, raw = winps("-Name", INST, "-From", "shift13", "-Check")
+        assert new.get("save") == "_autosave4.zip" and "refuse" not in new, raw
+        print("a crash, newest autosave 14 min old: _autosave4.zip")
         # 5. The copy: shift14.zip from the stop save; a second copy is refused (the target exists).
         files = dict(crash, **{"shift13.zip": T + datetime.timedelta(seconds=3)})
         setup(files)
@@ -111,6 +131,7 @@ def main():
     finally:
         stop_save.ps(f"Remove-Item -Recurse -Force '{DIR}' -ErrorAction SilentlyContinue")
         os.remove(old_script)
+        os.remove(ten_script)
     print("resume-save on the box: ok")
 
 

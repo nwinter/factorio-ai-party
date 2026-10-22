@@ -3,7 +3,8 @@
 
 Reads the previous run from RUN_DIR/resumed-from (its directory: runs/PREV here, else ~/code/player-of-games/runs/PREV,
 or --previous DIR) and compares, over RCON and from the files:
-- game time: the world's tick now against the previous run's last score (the save may be up to one autosave older);
+- game time: the world's tick now against the previous run's last score (the save may be up to one autosave older:
+  15 minutes on world n since d22 06:15; flagged past 18);
 - factory: technologies researched and building counts then and now;
 - bots: every team member of this run has a bot, alive or respawning, and what positions they hold;
 - workspaces: each notes.md starts with the carry-over line and holds the previous shift's notes; prompt.md has the
@@ -46,7 +47,7 @@ def compare(prev, now, prev_bots, now_bots, members, workspaces, sentence, promp
     lines, problems = [], []
     pt, nt = (prev or {}).get("tick", 0), now.get("tick", 0)
     lines.append(f"game time: previous run's last score tick {pt} ({pt / 3600:.1f} min), world now {nt} ({nt / 3600:.1f} min)")
-    if nt < pt - 6 * 3600:
+    if nt < pt - 18 * 3600:
         problems.append(f"the world is {(pt - nt) / 3600:.1f} game minutes behind the previous run's last score: an old save?")
     if nt < 3600 and pt > 3600:
         problems.append("the world is at its first game minute: a fresh map, not the save")
