@@ -17887,8 +17887,10 @@ end
 M.readmemory=require('readmemory'){state=state,position=position,visible=M.memory_visible,fog_note=function(e,pos,status) return M.fogmem.note(e,pos,status) end,
   fog_at=function(p,q,name) return M.fog_at(p,q,name) end,ground_state=function(p,q) local ok,g=pcall(M.ground_state,p,q); return ok and g or nil end,
   status_name=function(e) return entity_status_names[e.status] end,
-  belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end}
-M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) return M.readmemory.observe(e) end}
+  belt_observe=function(e,p) return M.beltgaps.observe(e,p) end,belt_trace=function(p,a) return M.beltgaps.trace(p,a) end,
+  fog_note_seen=function(e,t,pos,cx,cy,status,ctx) return M.fogmem.note_seen(e,t,pos,cx,cy,status,ctx) end,
+  belt_observe_seen=function(e,t,pos,cx,cy,ctx) return M.beltgaps.observe_seen(e,t,pos,cx,cy,ctx) end}
+M.census=require('census'){state=state,timed=M.timed,observe_seen=function(e,t,pos,ctx) return M.readmemory.observe_seen(e,t,pos,ctx) end}
 -- The hub's foundation rules over a large tile set, across ticks (floorcheck.lua; batch33 A1).
 M.floorcheck=require('floorcheck'){state=state}
 -- Every ghost of a large platform counted across ticks for the hub's blockers read (ghosttally.lua; batch33 A1).

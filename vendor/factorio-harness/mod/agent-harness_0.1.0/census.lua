@@ -14,6 +14,7 @@
 -- Each part says as_of (the tick its pass started). Robots and vehicles move during a pass: one may count twice or
 -- not at all in a surface's count. Storage only; nothing in the game changes.
 local snapfail = require('snapfail')
+local pair = require('numtext').pair
 return function(api)
   local M = {operator={}}
   local walk = api.walk or require('walk'){state=api.state}
@@ -21,6 +22,12 @@ return function(api)
   -- 770 steps a pass walk.every gives a step every tick, so the Nauvis walk ran 245 ticks at 22-44 ticks/s; at 100
   -- a step is half that and the pass spreads over more of its period. GRID: points a step in the grid stages.
   local SLICE, GRID, PERIOD, NEST_BAND, ORE_BAND, ORE_WANT, ORE_EVERY = 100, 800, 1800, 32, 2, 36000, 18000
+  -- (d21 batch73 AI: census.step took 7.2 ms a tick on world n, d21 19:55, a step every tick and each pass begun as the
+  -- last ended) the pass is paced by work: WORK units a tick, an entity read (with its sighting for the fog and belt
+  -- memory) one unit, an entity a band's find returns FIND_COST, a resource the ore grid counts ORE_COST, a find of a
+  -- band BAND_COST, a point of a coarse grid GRID_COST, of a dense core FINE_COST; measured on the private copy of
+  -- world n (docs/usage.md d21 batch73)
+  local WORK, WORK_CAP, FIND_COST, ORE_COST, BAND_COST, GRID_COST, FINE_COST = 8, 32, 0.2, 0.2, 5, 0.05, 0.2
   local function set(list) local t = {} for _, x in ipairs(list) do t[x] = true end return t end
   local STREAM = set{'assembling-machine', 'lab', 'mining-drill', 'furnace', 'inserter'}
   local SNAP_LIST = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'boiler', 'generator', 'solar-panel', 'accumulator',
@@ -148,19 +155,27 @@ return function(api)
     if f == nil then f = (try(function() return prototypes.item[item].fuel_value end) or 0) > 0; fuel_item[item] = f end
     return f
   end
+  local function behavior(e) local ok, v = pcall(e.get_control_behavior) return ok and v end
+  local fuel_recipe = {}
   local function takes_fuel(e)
     local ok, r = pcall(e.get_recipe)
     if not (ok and r) then return false end
-    for _, ing in ipairs(try(function() return r.ingredients end) or {}) do
-      if (ing.type == nil or ing.type == 'item') and is_fuel(ing.name) then return true end
+    local v = fuel_recipe[r.name]
+    if v == nil then
+      v = false
+      for _, ing in ipairs(r.ingredients or {}) do
+        if (ing.type == nil or ing.type == 'item') and is_fuel(ing.name) then v = true break end
+      end
+      fuel_recipe[r.name] = v
     end
-    return false
+    return v
   end
   local PLANET_MAX, PLANET_CELLS = 60000, 128
   local planet_of = {}
-  local function is_planet(s)
-    local v = planet_of[s.index]
-    if v == nil then v = try(function() return s.planet ~= nil end) == true; planet_of[s.index] = v end
+  local function is_planet(s, i)
+    i = i or s.index
+    local v = planet_of[i]
+    if v == nil then v = try(function() return s.planet ~= nil end) == true; planet_of[i] = v end
     return v
   end
   -- Our crafters, drills and offshore pumps by recipe, resource or fluid (chain.lua; d17 batch31 A1): entity references,
@@ -188,28 +203,40 @@ return function(api)
     if not list then list = {}; c[kind][key] = list end
     list[#list+1] = e; c.n = c.n + 1
   end
-  local function read_entity(job, s, e)
+  -- name|recipe keys of the machines' counts, made once
+  local MKEY = {}
+  local function mkey(name, r)
+    local a = MKEY[name]
+    if not a then a = {}; MKEY[name] = a end
+    local k = a[r]
+    if not k then k = name .. '|' .. r; a[r] = k end
+    return k
+  end
+  -- ctx: the step's lookups for one surface (observe_seen; never in storage)
+  local function read_entity(job, s, e, ctx)
     if not e.valid then return end
     local t, name = e.type, e.name
+    local pos = e.position
+    local si, sn = ctx.si, ctx.surface_name
     if job.fuel and t ~= 'car' and t ~= 'locomotive' and t ~= 'spider-vehicle' and t ~= 'character' then
-      local list = job.fuel[s.index]
+      local list = job.fuel[si]
       if (not list or #list < FUEL_MAX) and (has_burner(name) or ((t == 'assembling-machine' or t == 'furnace') and takes_fuel(e))) then
-        if not list then list = {}; job.fuel[s.index] = list end
+        if not list then list = {}; job.fuel[si] = list end
         list[#list+1] = e
       end
     end
-    if api.observe_entity then api.observe_entity(e) end
+    if api.observe_seen then api.observe_seen(e, t, pos, ctx) end
     -- A pass already running before this index was installed stays incomplete for silo discovery.
     if (t == 'agricultural-tower' or (t == 'entity-ghost' and e.ghost_type == 'agricultural-tower')) and job.towers then
-      job.towers[s.index] = job.towers[s.index] or {}
-      job.towers[s.index][#job.towers[s.index]+1] = e
+      job.towers[si] = job.towers[si] or {}
+      job.towers[si][#job.towers[si]+1] = e
     end
     -- (d17 batch22 B3, Muse) entities that may carry a circuit or logistic condition: those with a control behavior,
     -- for the gates read (at most GATES_MAX a surface)
     if GATE[t] and job.gated then
-      local list = job.gated[s.index]
-      if (not list or #list < GATES_MAX) and try(function() return e.get_control_behavior() end) then
-        if not list then list = {}; job.gated[s.index] = list end
+      local list = job.gated[si]
+      if (not list or #list < GATES_MAX) and behavior(e) then
+        if not list then list = {}; job.gated[si] = list end
         list[#list+1] = e
       end
     end
@@ -218,60 +245,64 @@ return function(api)
       if fl then add_maker(job, s, 'pump', fl, e) end
     end
     if t == 'rocket-silo' and job.silos then
-      job.silos[s.index] = job.silos[s.index] or {}
-      job.silos[s.index][#job.silos[s.index]+1] = e
+      job.silos[si] = job.silos[si] or {}
+      job.silos[si][#job.silos[si]+1] = e
     end
     if STREAM[t] and electric(name) then
       job.machines = job.machines + 1
       local st = e.status
       if st == defines.entity_status.low_power or st == defines.entity_status.no_power then job.starved = job.starved + 1 end
     end
-    if SNAP[t] then job.where[s.name] = (job.where[s.name] or 0) + 1 end
+    if SNAP[t] then job.where[sn] = (job.where[sn] or 0) + 1 end
     -- Per-prototype planetary counts use this same pass, never a second find. Old in-flight jobs have no map.
-    local counts=job.building_counts and job.building_counts[s.index]
+    local counts=job.building_counts and job.building_counts[si]
     if counts and SNAP[t] then counts.entities[name]=(counts.entities[name] or 0)+1 end
     -- (d18 batch37 B1) our chests, entity references (elsewhere.lua counts an item in them without a search: a whole-
     -- surface find of chests took 14-16 ms on Nauvis, world n), at most CRAFTERS_MAX a surface
     if t == 'electric-pole' and job.poles then
-      local list = job.poles[s.index]
-      if not list then list = {}; job.poles[s.index] = list end
+      local list = job.poles[si]
+      if not list then list = {}; job.poles[si] = list end
       if #list < POLES_MAX then list[#list+1] = e end
     end
     if (t == 'container' or t == 'logistic-container') and job.chests then
-      local list = job.chests[s.index]
-      if not list then list = {}; job.chests[s.index] = list end
+      local list = job.chests[si]
+      if not list then list = {}; job.chests[si] = list end
       if #list < CRAFTERS_MAX then list[#list+1] = e end
     end
     -- (d19 batch44 A1, where_is: 111 ms for one Nauvis call on the private copy, every holder, belt and inserter found and
     -- read each call) where_is's holders as entity references, and what our belts and inserters' hands carry by item, as
     -- this pass reads them (the belts' get_contents were 42 ms for 10,552 belts there, spread over the pass's steps)
     if KEEP[t] and job.by_type then
-      local by = job.by_type[s.index]
-      if not by then by = {n=0}; job.by_type[s.index] = by end
+      local by = job.by_type[si]
+      if not by then by = {n=0}; job.by_type[si] = by end
       if by.n < HOLDERS_MAX then
         local list = by[t]
         if not list then list = {}; by[t] = list end
         list[#list+1] = e; by.n = by.n + 1
       end
     elseif BELT[t] and job.belt_items then
-      local tot = job.belt_items[s.index]
-      if not tot then tot = {}; job.belt_items[s.index] = tot end
-      for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do
-        for _, c in ipairs(try(function() return e.get_transport_line(i).get_contents() end) or {}) do tot[c.name] = (tot[c.name] or 0) + c.count end
+      local tot = job.belt_items[si]
+      if not tot then tot = {}; job.belt_items[si] = tot end
+      local ok, lines = pcall(e.get_max_transport_line_index)
+      for i = 1, ok and lines or 0 do
+        local ok2, line = pcall(e.get_transport_line, i)
+        if ok2 and line then
+          for _, c in ipairs(line.get_contents()) do tot[c.name] = (tot[c.name] or 0) + c.count end
+        end
       end
     elseif t == 'inserter' and job.hand_items then
-      local hs = try(function() local h = e.held_stack; return h.valid_for_read and h end)
-      if hs then
-        local tot = job.hand_items[s.index]
-        if not tot then tot = {}; job.hand_items[s.index] = tot end
+      local hs = e.held_stack
+      if hs and hs.valid_for_read then
+        local tot = job.hand_items[si]
+        if not tot then tot = {}; job.hand_items[si] = tot end
         tot[hs.name] = (tot[hs.name] or 0) + hs.count
       end
     end
     -- (d17 batch30 B2) our assemblers and furnaces, entity references (supply requesters reads their recipes now), at
     -- most CRAFTERS_MAX a surface
     if (t == 'assembling-machine' or t == 'furnace') and job.crafters then
-      local list = job.crafters[s.index]
-      if not list then list = {}; job.crafters[s.index] = list end
+      local list = job.crafters[si]
+      if not list then list = {}; job.crafters[si] = list end
       if #list < CRAFTERS_MAX then list[#list+1] = e end
     end
     if MACH[t] then
@@ -289,7 +320,7 @@ return function(api)
       end
       -- (d17 batch31 A1) entity references by recipe (a drill's by the resource it mines), for the chain read
       if r and job.makers and t ~= 'lab' and t ~= 'boiler' and t ~= 'generator' then add_maker(job, s, t == 'mining-drill' and 'mine' or 'craft', r, e) end
-      local key = name .. '|' .. (r or '-')
+      local key = mkey(name, r or '-')
       local st = status_names()[e.status or -1] or 'unknown'
       local row = job.mach[key] or {}
       job.mach[key] = row
@@ -299,11 +330,11 @@ return function(api)
     -- Nauvis only): each one's centre and category, at most PLANET_MAX a planet. (d21 batch68 AD1, viewer Aurora:
     -- "Could Aquilo get a detailed base map using the Nauvis approach?") and its footprint and 32-tile block, for a
     -- dense core as Nauvis's
-    if s.name ~= 'nauvis' and CAT[t] and job.planets and is_planet(s) then
-      local P = job.planets[s.name]
-      if not P then P = {x={}, y={}, c={}, w={}, h={}, blocks={}, top=0, n=0, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[s.name] = P end
+    if sn ~= 'nauvis' and CAT[t] and job.planets and is_planet(s, si) then
+      local P = job.planets[sn]
+      if not P then P = {x={}, y={}, c={}, w={}, h={}, blocks={}, top=0, n=0, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[sn] = P end
       if #P.x < PLANET_MAX then
-        local p = e.position
+        local p = pos
         local i = #P.x + 1
         local cat = OIL[name] and 'O' or CAT[t]
         P.x[i], P.y[i], P.c[i] = p.x, p.y, cat
@@ -312,7 +343,7 @@ return function(api)
         if w ~= h and (e.direction == 4 or e.direction == 12) then w, h = h, w end
         P.w[i], P.h[i] = w, h
         if not LINE[cat] then
-          local k = math.floor(p.x / 32) .. ',' .. math.floor(p.y / 32)
+          local k = pair(math.floor(p.x / 32), math.floor(p.y / 32))
           P.blocks[k] = (P.blocks[k] or 0) + 1
           if P.blocks[k] > P.top then P.top = P.blocks[k] end
           P.n = P.n + 1
@@ -323,12 +354,18 @@ return function(api)
         if p.y > P.maxy then P.maxy = p.y end
       end
     end
-    if s.name == 'nauvis' and CAT[t] then
-      local p = e.position
+    if sn == 'nauvis' and CAT[t] then
+      local p = pos
       local cat = OIL[name] and 'O' or CAT[t]
       local b = job.base
       local i = #b.x + 1
       b.x[i], b.y[i], b.c[i] = p.x, p.y, cat
+      if b.box then
+        if p.x < b.minx then b.minx = p.x end
+        if p.x > b.maxx then b.maxx = p.x end
+        if p.y < b.miny then b.miny = p.y end
+        if p.y > b.maxy then b.maxy = p.y end
+      end
       local sz = size(name)
       local w, h = sz[1], sz[2]
       if w ~= h and (e.direction == 4 or e.direction == 12) then w, h = h, w end
@@ -338,7 +375,7 @@ return function(api)
         if r > 0 then b.turrets[#b.turrets+1] = {math.floor(p.x), math.floor(p.y), r} end
       end
       if not LINE[cat] then
-        local k = math.floor(p.x / 32) .. ',' .. math.floor(p.y / 32)
+        local k = pair(math.floor(p.x / 32), math.floor(p.y / 32))
         b.blocks[k] = (b.blocks[k] or 0) + 1
         if b.blocks[k] > b.top then b.top = b.blocks[k] end
         b.n = b.n + 1
@@ -351,15 +388,19 @@ return function(api)
     local C = CELL
     local n = #b.x
     if n == 0 then return C end
-    local minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
-    for i = 1, n do
-      local x, y = b.x[i], b.y[i]
-      if x < minx then minx = x end
-      if x > maxx then maxx = x end
-      if y < miny then miny = y end
-      if y > maxy then maxy = y end
+    local minx, maxx, miny, maxy = b.minx, b.maxx, b.miny, b.maxy
+    if not b.box then
+      -- (a pass begun before the walk kept its box)
+      minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
+      for i = 1, n do
+        local x, y = b.x[i], b.y[i]
+        if x < minx then minx = x end
+        if x > maxx then maxx = x end
+        if y < miny then miny = y end
+        if y > maxy then maxy = y end
+      end
+      b.minx, b.maxx, b.miny, b.maxy = minx, maxx, miny, maxy
     end
-    b.minx, b.maxx, b.miny, b.maxy = minx, maxx, miny, maxy
     while true do
       local x0, x1, y0, y1 = math.floor(minx / C), math.floor(maxx / C), math.floor(miny / C), math.floor(maxy / C)
       if x1 - x0 < MAXC and y1 - y0 < MAXC then b.x0, b.x1, b.y0, b.y1 = x0, x1, y0, y1; break end
@@ -395,7 +436,7 @@ return function(api)
             group[#group+1] = {bx, by}
             total = total + dense[cur]
             for dx = -1, 1 do for dy = -1, 1 do
-              local nk = (bx + dx) .. ',' .. (by + dy)
+              local nk = pair(bx + dx, by + dy)
               if dense[nk] and not seen[nk] then seen[nk] = true stack[#stack+1] = nk end
             end end
           end
@@ -439,10 +480,11 @@ return function(api)
     local list = {}
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
-    return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
+    return {start=tick, surfaces=list, si=1, steps=0,
       machines=0, starved=0, where={}, mach={}, silos={}, towers={}, gated={}, crafters={}, chests={}, makers={}, building_counts={}, fuel={}, planets={},
       by_type={}, walked={}, belt_items={}, hand_items={}, poles={},
-      base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
+      base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0, box=true, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge},
+      want_ore=want_ore or nil, stage='walk', credit=0, paced=tick}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
   local function bands(ax0, ay0, ax1, ay1, width)
@@ -465,6 +507,11 @@ return function(api)
     return (p.x >= b[1] or b[5]) and (p.x < b[3] or b[6]) and (p.y >= b[2] or b[7]) and (p.y < b[4] or b[8])
   end
 
+  -- Grid points a step from the job's work (GRID at most).
+  local function points(job) return math.max(1, math.min(GRID, math.floor(job.credit / GRID_COST))) end
+  local STAGE = {walk='census.walk', cells='census.cells', fill='census.fill', rows='census.rows', fine='census.fine',
+    crows='census.crows', nests='census.nests', ore='census.ore', done='census.done'}
+  local stage
   function M.step(st, tick)
     local job = st.job
     if not job then
@@ -472,10 +519,19 @@ return function(api)
       st.job = new_job(tick, st)
       return
     end
-    if not walk.due(job, tick, PERIOD) then return end
+    -- (d21 batch73 AI) paced by work, never by the pass's period: WORK units a tick, kept up to WORK_CAP; a step runs
+    -- while the job has any and spends what it did (a pass begun before this pacing starts with none)
+    job.credit = math.min(WORK_CAP, (job.credit or 0) + WORK * math.max(0, tick - (job.paced or tick)))
+    job.paced = tick
+    if job.credit <= 0 then return end
     job.steps = job.steps + 1
     local f = game.forces.player
     if not f then st.job = nil return end
+    -- each stage a part of its own in the operator profiler (census.walk, census.fine, census.planets, ...)
+    local label = job.stage == 'done' and job.planets and next(job.planets) and not job.planets_done and 'census.planets' or STAGE[job.stage] or 'census.other'
+    return timed(label, stage, st, job, f)
+  end
+  function stage(st, job, f)
     if job.stage == 'walk' then
       if job.si > #job.surfaces then job.stage = 'cells' return end
       local s = game.get_surface(job.surfaces[job.si])
@@ -484,15 +540,21 @@ return function(api)
         job.building_counts[s.index]={surface=s.name,entities={}}
       end
       if job.list then
-        local last = math.min(#job.list, job.at + SLICE - 1)
-        for i = job.at, last do read_entity(job, s, job.list[i]) end
+        local last = math.min(#job.list, job.at + math.min(SLICE, math.max(1, math.floor(job.credit))) - 1)
+        local ctx = {p={force=f, surface=s}, force=f, surface=s, force_name=f.name, surface_name=s.name, si=s.index,
+          fog_prefix=f.name .. '|' .. s.name .. '|', vis={}, fog={}, belt={}}
+        for i = job.at, last do read_entity(job, s, job.list[i], ctx) end
+        job.credit = job.credit - (last - job.at + 1)
         job.at = last + 1
         if job.at > #job.list then job.list = nil end
         return
       end
-      job.walk = job.walk or walk.start(s, bot_spots(s))
+      -- (d21 batch73 AI) one chunk a band: a band grown over sparse chunks to 32 found about 30,000 entities in one tick
+      -- on the private copy of world n (460 ms of census.step in that second)
+      job.walk = job.walk or walk.start(s, bot_spots(s), {max_chunks=1})
       local list = walk.band(job.walk, s, {force=f, type=types()})
-      if list then job.list, job.at = list, 1 else job.walk = nil; if job.walked then job.walked[s.index] = true end; job.si = job.si + 1 end
+      if list then job.list, job.at = list, 1; job.credit = job.credit - 1 - #list * FIND_COST
+      else job.walk = nil; if job.walked then job.walked[s.index] = true end; job.si = job.si + 1 end
       return
     end
     local b = job.base
@@ -502,7 +564,8 @@ return function(api)
       job.stage = #b.x > 0 and 'fill' or 'done'
     elseif job.stage == 'fill' then
       local C, cells = job.C, b.cells
-      local last = math.min(#b.x, b.i + GRID - 1)
+      local last = math.min(#b.x, b.i + points(job) - 1)
+      job.credit = job.credit - (last - b.i + 1) * GRID_COST
       for i = b.i, last do
         local cx, cy = math.floor(b.x[i] / C), math.floor(b.y[i] / C)
         local row = cells[cy]
@@ -519,7 +582,8 @@ return function(api)
       b.i = 1
       job.stage = 'fine'
     elseif job.stage == 'fine' then
-      local last = math.min(#b.x, b.i + GRID - 1)
+      local last = math.min(#b.x, b.i + points(job) - 1)
+      job.credit = job.credit - (last - b.i + 1) * FINE_COST
       fine_fill(b.core, b, b.i, last)
       b.i = last + 1
       if b.i > #b.x then job.stage = 'crows' end
@@ -533,7 +597,9 @@ return function(api)
       local band = b.nest_bands[b.ni]
       local s = game.surfaces.nauvis
       if band and s and #b.nests < 200 then
-        for _, e in pairs(s.find_entities_filtered{force='enemy', type={'unit-spawner', 'turret'}, area={{band[1], band[2]}, {band[3], band[4]}}}) do
+        local found = s.find_entities_filtered{force='enemy', type={'unit-spawner', 'turret'}, area={{band[1], band[2]}, {band[3], band[4]}}}
+        job.credit = job.credit - BAND_COST - #found * FIND_COST
+        for _, e in pairs(found) do
           if #b.nests < 200 and in_band(e.position, band) then
             b.nests[#b.nests+1] = {math.floor(e.position.x), math.floor(e.position.y), e.type == 'unit-spawner' and 's' or 'w'}
           end
@@ -554,7 +620,9 @@ return function(api)
       local s = game.surfaces.nauvis
       if band and s then
         local C, cnt = job.C, b.ore_cnt
-        for _, e in pairs(s.find_entities_filtered{area={{band[1], band[2]}, {band[3], band[4]}}, type='resource'}) do
+        local found = s.find_entities_filtered{area={{band[1], band[2]}, {band[3], band[4]}}, type='resource'}
+        job.credit = job.credit - BAND_COST - #found * ORE_COST
+        for _, e in pairs(found) do
           if in_band(e.position, band) then
             local cx, cy = math.floor(e.position.x / C), math.floor(e.position.y / C)
             local row = cnt[cy]
@@ -600,7 +668,8 @@ return function(api)
         P.grid, P.i = {}, 1
       end
       local C, grid = P.cell, P.grid
-      local last = math.min(#P.x, P.i + GRID - 1)
+      local last = math.min(#P.x, P.i + points(job) - 1)
+      job.credit = job.credit - (last - P.i + 1) * (P.core and FINE_COST or GRID_COST)
       if not P.core then
         for i = P.i, last do
           local cx, cy = math.floor(P.x[i] / C), math.floor(P.y[i] / C)

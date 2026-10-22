@@ -4,6 +4,7 @@
 -- (MODDIR runs the same checks on another copy of the modules); no table stored in two places (a bounding box the
 -- engine made for this read may be kept as it is: nothing else holds it); the ring of 2048 summaries.
 local DIR=arg[1] or 'mod/agent-harness_0.1.0'
+package.path=DIR..'/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function same(a,b,path)
   path=path or 'value'

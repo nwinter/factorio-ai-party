@@ -54,6 +54,21 @@ return function(api)
     if api.fog_note then pcall(api.fog_note,e,pos,v.status_name) end  -- (a memory fault never fails a read)
     if api.belt_observe and box then api.belt_observe(e,p) end
   end
+  -- (d21 batch73 AI) The census's sighting: type and position already read; ctx is the census step's, for one force and
+  -- surface (p {force, surface}, vis: whether each chunk is in sight, asked once a step). Fog and belt memory only: the
+  -- summary ring keeps 2048 sightings and a census pass reads about 200,000 entities, so it held the pass's last few
+  -- steps, and its key and copies were most of census.step on world n (d21 19:55: 7.2 ms a tick). An out-of-sight
+  -- inspect with no sighting in the ring reads the fog memory (fog_at).
+  function M.observe_seen(e,t,pos,ctx)
+    if t=='character' or t=='resource' then return end
+    local cx,cy=math.floor(pos.x/32),math.floor(pos.y/32)
+    local ck=cx*1048576+cy
+    local vis=ctx.vis[ck]
+    if vis==nil then vis=api.visible(ctx.p,pos) and true or false;ctx.vis[ck]=vis end
+    if not vis then return end
+    if api.fog_note_seen then pcall(api.fog_note_seen,e,t,pos,cx,cy,api.status_name,ctx) end
+    if api.belt_observe_seen then api.belt_observe_seen(e,t,pos,cx,cy,ctx) end
+  end
   local function kind(action,a) return action=='trace' and ('trace:'..tostring(a.forward==true)..':'..tostring(a.all==true)) or 'inspect' end
   local function recall(p,a,action)
     local q=api.position(a.position);local best,rank

@@ -49,7 +49,8 @@ return function(api)
   -- {surface, whole=true} when nothing tells where to look.
   -- extra: more positions on the surface the box reaches (MARGIN chunks around each), as the players' (census.lua: bot
   -- characters, which are no players).
-  function W.start(s, extra)
+  -- opts.max_chunks: at most this many chunks a band (MAX_CHUNKS by default; the census takes 1, d21 batch73).
+  function W.start(s, extra, opts)
     local built = boxes()[s.index]
     local box = {}
     if built and built.left then
@@ -70,7 +71,9 @@ return function(api)
       end
     end
     if not box.left then return {surface=s.index, whole=true} end
-    return {surface=s.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=math.min(MAX_CHUNKS, box.right - box.left + 1)}
+    local max = opts and opts.max_chunks or MAX_CHUNKS
+    return {surface=s.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=math.min(max, box.right - box.left + 1),
+      max=max ~= MAX_CHUNKS and max or nil}
   end
 
   -- The next band's entities (a table, maybe empty), or nil when the walk is
@@ -103,11 +106,12 @@ return function(api)
     end
     -- The next band: smaller after a full one, larger after a near-empty one.
     local width = b.right - b.left + 1
+    local maxc = w.max or MAX_CHUNKS
     if #list > TARGET then
       w.rows, w.cols = 1, math.max(1, math.floor(w.cols / 2))
     elseif #list * 4 < TARGET then
-      if w.cols < width then w.cols = math.min(width, w.cols * 2, math.max(1, math.floor(MAX_CHUNKS / w.rows)))
-      elseif w.rows < ROWS_MAX and w.rows * 2 * w.cols <= MAX_CHUNKS then w.rows = w.rows * 2 end
+      if w.cols < width then w.cols = math.min(width, w.cols * 2, math.max(1, math.floor(maxc / w.rows)))
+      elseif w.rows < ROWS_MAX and w.rows * 2 * w.cols <= maxc then w.rows = w.rows * 2 end
     end
     w.x = x1 + 1
     if w.x > b.right then w.x = b.left; w.y = y1 + 1 end

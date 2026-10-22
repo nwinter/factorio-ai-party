@@ -4872,7 +4872,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator census (census.lua; operator 22:00, task-slowreads: the host services' periodic reads counted with one find
   over every surface in a tick, 32 to 169 ms on world n): `census {part, ore?}` (read; part `extras`, `snapshot`,
   `machines` or `basemap`) gives the last complete background pass (every surface walked in bands of at most 32 chunks
-  by the harness tick, a slice of 200 entities a step, a pass about every 30 s): `extras` `electric_machines, starved`
+  by the harness tick, paced by work since d21 batch73: about 8 entities read a tick, a pass of world n's about 10
+  minutes, the next begun when it ends and at least 30 s after the last began): `extras` `electric_machines, starved`
   (assembling machines, labs, drills, furnaces and inserters with an electric source; low or no power), `snapshot`
   `entities {name: count}` (the force's engine counts of the analyst's building types) and `surfaces_with_buildings`,
   `machines {name|recipe: {status: count}}`, `basemap` (the site's live map as tools/stream/harness.py BASEMAP_LUA draws
@@ -10940,3 +10941,35 @@ the shipment? Robots moved 300 of Petrel II's packs before its arrival-age check
   packs at 55% from Nauvis's silo to test platform AB7u): "received by AB7u's hub at tick 30152902: 30 (30 at 50-75%
   spoiled ...); AB7u's hub held 220 of it on that tick".
 
+
+## d21 batch73 AI: census.step within the tick budget
+
+World n, d21 19:52-19:55 (operator): 35-55 UPS; in a 60 s profile `census.step` took 7.18 ms a tick, worst second
+1180 ms, and the Lua heap grew 24 MB a second. On the private copy loaded with world n's 19:01 save (x86 under
+Rosetta), before: 9.85 ms a tick, worst second 1734 ms; the pass took 2127 steps, so it stepped every tick and each
+pass began as the last ended.
+- Where it went: the census's sightings (readmemory.observe for every entity read: the summary ring's key and
+  copies, the fog memory's chunk key, row key and row text, belt memory's chunk and tile keys) were 90% of a step,
+  15.5 ms per 100 entities. In the game's Lua a number turned into text by `..` or tostring costs about 8 µs on the
+  copy (string.format('%d') 0.3 µs, a numeric table key 0.2 µs).
+- Now (census.lua, readmemory.observe_seen, fogmem.note_seen, beltgaps.observe_seen, numtext.lua):
+  - number text by numtext (string.format for integers and halves; the same text as before, checked over 52,000
+    positions in the game; -0 and other fractions as before);
+  - each chunk's sight, fog-memory chunk and belt-memory chunk looked up once a step; the row texts made once;
+  - the census no longer writes the summary ring (2048 entries against about 200,000 entities a pass, so it held the
+    last few steps); agents' own reads, builds and inspects still do, and an out-of-sight inspect with no sighting
+    reads the fog memory;
+  - a one-tile belt seen as it was (name, place, direction) keeps its row, brought up to date (tick, items,
+    carried_tick, by, an underground's pairing);
+  - no closures in the per-entity reads; one position read an entity; Nauvis's box kept during the walk;
+  - paced by work: 8 units a tick (an entity read 1, an entity a band's find returns 0.2, a band 1, a grid point
+    0.05, a dense-core point 0.2, an ore resource 0.2, a nest or ore band 5), up to 32 kept; the bands one chunk
+    each (a band grown to 32 sparse chunks found about 30,000 entities in one tick: 460 ms of census.step in that
+    second).
+- After, on the copy (300 s profile, one pass): census.step 0.167 ms a tick (from 9.85), median second 8.3 ms;
+  seconds over 15 ms: 34 of 301, those over 22 ms all in a second where a garbage collection finished (or the next),
+  up to 65 ms, when every part of the tick grows (scheduler.tick 36-43 ms, networks.tick 33 ms). Holding the census
+  idle left the heap's growth at 7.2 MB a second (7.3 with it): the census's garbage is now small. The whole harness
+  tick: 12.1 ms a tick before, 2.4 after. A pass: 35,104 ticks (9.8 min, 33,358 steps); its building counts equal a
+  direct count on every planet (Nauvis 45,404, Vulcanus 8,437, Fulgora 5,855, Gleba 4,807, Aquilo 868). WORK is
+  the knob: the pass's length goes as 1/WORK and its cost per second as WORK.
