@@ -17,10 +17,21 @@
 -- robots took the staged ingredients back to storage and the batch stalled with 3 supercapacitors) a requester with
 -- trash unrequested on has it switched off before its requests are cleared and staged, and back on after the output
 -- is released; the dry run and the plan say so.
+-- (d22 batch77 AM1, Sol #1805: a rare pipe recipe staged and waited for normal iron-plate) the recipe's quality, as the
+-- machine's GUI shows it: every item ingredient is counted, asked for and waited for at that quality, and the products
+-- too (a count by the name alone is normal quality in 2.0); fluids have no quality. A machine whose modules give quality
+-- makes some products a tier or more higher: its product wait counts every quality. What the requester holds of an
+-- ingredient at another quality is said: the machine does not take it.
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
+  local function qualities()
+    local out = {}
+    for q in pairs(prototypes and prototypes.quality or {}) do if q ~= 'quality-unknown' then out[#out+1] = q end end
+    table.sort(out)
+    return out
+  end
   local function same(a, b) return a and b and a.valid and b.valid and a.unit_number == b.unit_number end
 
   -- The inserters round the machine: those that drop into it, and those that pick from it.
@@ -39,7 +50,9 @@ return function(api)
     assert(a.dry_run == nil or type(a.dry_run) == 'boolean', 'dry_run must be true or false')
     local m = api.entity(p, api.position(a.position))
     assert(m and (m.type == 'assembling-machine' or m.type == 'furnace'), 'position: an assembling machine of ours')
-    local recipe = try(function() return m.get_recipe() end)
+    local recipe, rq = nil, nil
+    pcall(function() recipe, rq = m.get_recipe() end)
+    local quality = rq and rq.name or 'normal'
     assert(recipe, string.format('%s %s has no recipe: configure {recipe} first', m.name, at(m.position)))
     local count = api.integer(a.count, nil, 1, 10000, 'count')
     local product, per
@@ -65,24 +78,40 @@ return function(api)
     -- What the batch still needs of each ingredient.
     local mi = try(function() return m.get_inventory(defines.inventory.assembling_machine_input) end)
     local mo = try(function() return m.get_inventory(defines.inventory.assembling_machine_output) end)
-    local function count_in(inv, name) return inv and (try(function() return inv.get_item_count(name) end) or 0) or 0 end
-    local had = count_in(mo, product)
+    -- (the name alone is normal quality)
+    local function id(name, q) q = q or quality; return q == 'normal' and name or {name=name, quality=q} end
+    local function count_in(inv, name, q) return inv and (try(function() return inv.get_item_count(id(name, q)) end) or 0) or 0 end
+    local function q_of(name) return quality == 'normal' and name or string.format('%s (%s)', name, quality) end
+    -- Quality from modules: products above the recipe's quality, so the product counts take every quality.
+    local upgrades = (try(function() return m.effects and m.effects.quality end) or 0) > 0
+    local product_quality = upgrades and 'any' or quality
+    local had = 0
+    if upgrades then
+      for _, q in ipairs(qualities()) do had = had + count_in(mo, product, q) end
+    else had = count_in(mo, product) end
+    local other = {}
     local sets, waits, surplus, lines = {}, {}, {}, {}
     for _, ing in ipairs(recipe.ingredients or {}) do
       if ing.type == 'item' then
         local total = ing.amount * crafts
         local inside = count_in(mi, ing.name)
-        local held = try(function() return req.get_item_count(ing.name) end) or 0
+        local held = try(function() return req.get_item_count(id(ing.name)) end) or 0
         local need = total - inside - held
         if need > 0 then
-          sets[#sets+1] = {item=ing.name, min=need + held, max=need + held}
+          sets[#sets+1] = {item=ing.name, min=need + held, max=need + held, quality=quality ~= 'normal' and quality or nil}
           waits[#waits+1] = {item=ing.name, at_least=need + held}
-          lines[#lines+1] = string.format('%s: %d for %d craft%s, the machine holds %d, the requester %d: %d to come', ing.name, total, crafts,
+          lines[#lines+1] = string.format('%s: %d for %d craft%s, the machine holds %d, the requester %d: %d to come', q_of(ing.name), total, crafts,
             crafts == 1 and '' or 's', inside, held, need)
         else
-          lines[#lines+1] = string.format('%s: %d for %d craft%s, the machine and the requester hold %d already%s', ing.name, total, crafts,
+          lines[#lines+1] = string.format('%s: %d for %d craft%s, the machine and the requester hold %d already%s', q_of(ing.name), total, crafts,
             crafts == 1 and '' or 's', inside + held, need < 0 and string.format(' (%d over)', -need) or '')
-          if need < 0 then surplus[#surplus+1] = string.format('%s %d', ing.name, -need) end
+          if need < 0 then surplus[#surplus+1] = string.format('%s %d', q_of(ing.name), -need) end
+        end
+        for _, q in ipairs(qualities()) do
+          if q ~= quality then
+            local k = try(function() return req.get_item_count(id(ing.name, q)) end) or 0
+            if k > 0 then other[#other+1] = string.format('%d %s %s', k, q, ing.name) end
+          end
         end
       end
     end
@@ -98,26 +127,37 @@ return function(api)
     if #sets > 0 then
       steps[#steps+1] = {action='requests', args={position=rpos, set=sets}, label='stage'}
       for _, w in ipairs(waits) do
-        steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={rpos}, item=w.item, at_least=w.at_least, timeout=54000}, label='staged ' .. w.item}
+        steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={rpos}, item=w.item, quality=quality ~= 'normal' and quality or nil, at_least=w.at_least, timeout=54000}, label='staged ' .. q_of(w.item)}
       end
       steps[#steps+1] = {action='requests', args={position=rpos, clear_all=true}, label='staged'}
     end
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=false}, label='input on'}
-    steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={mpos}, item=product, at_least=had + count, timeout=54000}, label='made'}
+    steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={mpos}, item=product, quality=product_quality ~= 'normal' and product_quality or nil, at_least=had + count, timeout=54000}, label='made'}
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. ' < 0'}, label='input off'}
     steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=false}, label='release output'}
     if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=true}, label='trash unrequested on again'} end
     local plan = {
-      string.format('%d %s: %d craft%s of %s in %s %s (it holds %d of it now)', count, product, crafts, crafts == 1 and '' or 's', recipe.name, m.name, at(m.position), had),
+      string.format('%d %s: %d craft%s of %s in %s %s (it holds %d of it now)', count, upgrades and product or q_of(product), crafts, crafts == 1 and '' or 's', recipe.name, m.name, at(m.position), had)}
+    if quality ~= 'normal' then
+      plan[#plan+1] = string.format('recipe quality %s: each item ingredient is asked for and waited for at %s quality%s', quality, quality,
+        upgrades and '' or ', and the products counted at it')
+    end
+    if upgrades then
+      plan[#plan+1] = string.format('its modules give quality: some products come out above %s, so the products are counted at every quality', quality)
+    end
+    for _, l in ipairs{
       string.format('output inserter %s held (logistic "%s < 0") until the batch is made; input inserter %s held while the requester fills', at(output.position), product, at(input.position)),
-      string.format('requester %s cleared, then asked for exactly what is still to come', at(req.position))}
+      string.format('requester %s cleared, then asked for exactly what is still to come', at(req.position))} do plan[#plan+1] = l end
+    if #other > 0 then
+      plan[#plan+1] = string.format('the requester %s also holds %s: the machine takes only %s quality', at(req.position), table.concat(other, ', '), quality)
+    end
     if trash then
       plan[#plan+1] = string.format('requester %s has trash unrequested on: robots would take the staged ingredients back once its requests are cleared; it is switched off before the requests are cleared and on again after the output is released (a plan stopped between leaves it off: requests {position, trash_unrequested: true})', at(req.position))
     end
     for _, l in ipairs(lines) do plan[#plan+1] = l end
     plan[#plan+1] = string.format('then: its requests cleared, the input on, wait for %d %s in the machine, the input off again (logistic "%s < 0"), the output released',
-      had + count, product, first)
-    local out = {machine=at(m.position), recipe=recipe.name, product=product, crafts=crafts, requester=at(req.position), input=at(input.position),
+      had + count, upgrades and product .. ' (every quality)' or q_of(product), first)
+    local out = {machine=at(m.position), recipe=recipe.name, quality=quality, product=product, other_quality=#other > 0 and other or nil, crafts=crafts, requester=at(req.position), input=at(input.position),
       output=at(output.position), plan=plan, surplus=#surplus > 0 and surplus or nil,
       trash_unrequested=trash ~= nil and (trash and 'on: switched off for the batch and on again after' or 'off') or nil}
     if #surplus > 0 then
@@ -134,6 +174,6 @@ return function(api)
     requester='optional {x,y}: the requester chest that feeds it (default: the one an inserter takes from into it)',
     input='optional {x,y}: that inserter', output='optional {x,y}: the inserter that takes from the machine (default: the one round it)',
     dry_run='true: the read and the plan (steps), nothing queued',
-    returns='trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after the output is released), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
+    returns='quality (the recipe\'s: item ingredients asked for and waited for at it, and the products counted at it; at every quality when the machine\'s modules give quality), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after the output is released), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
   return M
 end
