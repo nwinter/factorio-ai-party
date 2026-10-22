@@ -793,6 +793,9 @@ class Model:
         self.arrivals = []  # (name, planet, came from, its first there, the run's first there) this read
         self.planets_reached = set()  # planets any platform has been at (or our entities stand on)
         self.space_memory = None  # runs/RUN/space-memory.json (set_space_memory): visited and reached across restarts
+        # (d22 batch83 AS1) name -> {"from>to": [game ticks of its latest departures on that route]}: kept in
+        # space-memory.json, seeded from the chronicle along the run chain; the camera tells news from routine by it
+        self.platform_routes = {}
         self.orbit_known = set()  # (platform, planet) visited before this service saw it: no orbit moment for those
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
@@ -1925,6 +1928,17 @@ class Model:
         moment with its segment. (d22 batch75 AK2) Also where each platform stopped and the game tick it got there
         (`stops`); a run without its own file takes those from the newest of earlier (the runs it resumed from)."""
         self.space_memory = path
+        for p in (path, *earlier):  # (AS1) the routes flown, from this run and the runs before it
+            try:
+                with open(p) as f:
+                    for name, routes in (json.load(f).get("routes") or {}).items():
+                        for key, ticks in (routes or {}).items():
+                            frm, _, to = str(key).partition(">")
+                            for tick in ticks if isinstance(ticks, list) else ():
+                                if isinstance(tick, int) and frm and to:
+                                    self.add_route(name, frm, to, tick, save=False)
+            except (OSError, ValueError, AttributeError):
+                continue
         try:
             with open(path) as f:
                 mem = json.load(f)
@@ -1946,6 +1960,36 @@ class Model:
             if isinstance(stop, dict) and isinstance(stop.get("at"), str) and isinstance(stop.get("tick"), int):
                 self.platform_course.setdefault(name, {"visited": set()})["stop"] = {"at": stop["at"], "tick": stop["tick"], "seen": bool(stop.get("seen"))}
         self.planets_reached.update(mem.get("reached") or [])
+
+    ROUTE_KEEP = 4         # departure ticks kept per platform and route
+    ROUTE_SAME = 2 * 3600  # two records of one departure (the score's read and the chronicle's event) this close: one
+
+    def add_route(self, name, frm, to, tick, save=True):
+        """(d22 batch83 AS1) A platform's departure from frm to to (location ids) at a game tick."""
+        ticks = self.platform_routes.setdefault(name, {}).setdefault(f"{frm}>{to}", [])
+        if any(abs(t - tick) < self.ROUTE_SAME for t in ticks):
+            return
+        ticks.append(int(tick))
+        ticks.sort()
+        del ticks[:-self.ROUTE_KEEP]
+        if save:
+            self._save_space_memory()
+
+    def route_last(self, name, frm, to, before):
+        """The game tick of the platform's latest departure from frm to to before tick `before`, or None."""
+        ticks = [t for t in (self.platform_routes.get(name) or {}).get(f"{frm}>{to}") or () if t < before]
+        return max(ticks) if ticks else None
+
+    def platform_visited(self, name):
+        """The locations the platform has been at (space-memory.json visited, and both ends of every route in its route
+        memory: a new shift's file starts without visited), or None when nothing is known of it."""
+        c, routes = self.platform_course.get(name), self.platform_routes.get(name)
+        if not c and not routes:
+            return None
+        out = set((c or {}).get("visited") or ())
+        for key in routes or ():
+            out.update(key.split(">", 1))
+        return out
 
     MAP_MEMORY_EVERY = 60.0
     PLANET_GONE_S = 1800.0
@@ -1991,7 +2035,8 @@ class Model:
             return
         mem = {"visited": {n: sorted(c.get("visited") or ()) for n, c in sorted(self.platform_course.items())},
                "reached": sorted(self.planets_reached),
-               "stops": {n: c["stop"] for n, c in sorted(self.platform_course.items()) if c.get("stop")}}
+               "stops": {n: c["stop"] for n, c in sorted(self.platform_course.items()) if c.get("stop")},
+               "routes": {n: dict(sorted(r.items())) for n, r in sorted(self.platform_routes.items())}}
         if mem == getattr(self, "_space_memory_saved", None):
             return
         try:
@@ -2049,6 +2094,8 @@ class Model:
                 toward = b if c["orbit"] == a else a
             else:
                 toward = b
+            if c.get("moving") is False and c.get("orbit") in (a, b) and self.tick:  # (AS1) seen leaving a stop
+                self.add_route(name, c["orbit"], b if c["orbit"] == a else a, self.tick)
             c.update(conn=(a, b), pct=pct, toward=toward, moving=True)
             c.pop("stop", None)
             if new and p.get("to") in (a, b):  # first seen mid-trip (a restart): it has been where it left
@@ -2109,6 +2156,9 @@ class Model:
                                       "cargo", "cargo_items", "hit_by") if ev.get(k) is not None}
         row["t"] = now
         self.chronicle_events.append(row)
+        if ev.get("kind") == "platform_left" and ev.get("platform") and ev.get("at") and ev.get("to") and \
+                isinstance(ev.get("tick"), (int, float)):
+            self.add_route(ev["platform"], ev["at"], ev["to"], int(ev["tick"]))
         if ev.get("kind") in chronicle_log.PLATFORM_KINDS and ev.get("platform"):
             before = chronicle_log.follow_platform(self.platform_history, ev)
             if before is not None and not before["left"]:
@@ -2123,6 +2173,8 @@ class Model:
         """Each platform's creation and departures from the chronicle files along the run chain (serve.py), so a
         restart or a new shift knows which platforms have flown since they were built."""
         self.platform_history = chronicle_log.platform_history(chronicle_path)
+        for name, frm, to, tick in chronicle_log.departures(chronicle_path) if chronicle_path else ():
+            self.add_route(name, frm, to, tick, save=False)  # (AS1) the routes flown before this service ran
         # the rows earlier shifts wrote: a file carrying them again (before d20 batch65 AA3) does not show them as new
         self.chronicle_earlier = chronicle_log.earlier_keys(chronicle_path) if chronicle_path else set()
 
