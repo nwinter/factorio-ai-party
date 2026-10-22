@@ -11400,3 +11400,22 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   already use the least constant. Checked on a copy of world n's 10:33 save: the dry run at Sol's machine (21.5,263.5)
   writes `thruster < -2147483648` and `steel-plate < -2147483648`; circuit_set with it on the output inserter reads
   `logistic_met: false`.
+
+### d22 batch93: every place a status warning counts
+
+- BC1 (viewer Aurora 13:13: "Haiku says the belt warning lists only 4 of 11 locations"; Haiku's status at 10:32,
+  shift58: `belts: 11 belts point into a belt they cannot feed: (-26.5,-18.5) into underground-belt, ..., ...`).
+  status's factory warnings (survey.lua) listed the first few places and ended in "...", with no way to read the rest.
+  - The survey keeps every place each of these warnings counts (up to 500 a kind): `belts_stuck`, `belts_unpaired`,
+    `no_fuel`, `last_fuel`, `ammo_empty`, `ammo_low`.
+  - A warning that shows fewer places than it counts ends with how many more and the call: `belts: 11 belts point into
+    a belt they cannot feed: (-26.5,-18.5) into underground-belt, ..., (16.5,78.5) into transport-belt, +7 more
+    (status {list: "belts_stuck"} lists all 11)`. The fuel and ammo warnings show 6 (8 burning their last fuel) of each
+    entity name, `+N more` per name, and end with `status {list: "no_fuel"} lists all N with no fuel` (`last_fuel`,
+    `ammo_empty`, `ammo_low` alike).
+  - `status {list: KIND, page?}` returns only that list, from the same survey the warnings come from: `list`, `what`,
+    `surface`, `count`, `rows` (50 a page), `page`, `pages`, `next` (`status {list: "belts_stuck", page: 2}`), `line`,
+    `as_of`/`age_s`, and `note` when the count is past the 500 kept. `page` alone is refused.
+  - power and flamer oil keep their own reads (`power`, `flamers`); their "..." is now `+N more`.
+  - Checked on a copy of world n's 12:04 autosave: the same 11 and 8; `status {list: "belts_stuck"}` gave all 11
+    positions.
