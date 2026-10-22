@@ -18,6 +18,19 @@
 -- run comes while the first waits), until that recipient acknowledges; the backup (or the owner) records a result for a
 -- recipient with reminder_ack {id, for, result}. Each recipient's latest result is kept (results): acknowledged when and
 -- with what, by whom, or waiting since when with the runs missed.
+-- (d22 batch94 BD1, viewer Aurora site:4267-4268 on #114, Astra's equipment reminder: "keep gaps open until fixed or
+-- explicitly deferred"; "Could gear checks run after unlocks, deliveries and respawns?"; "live research and stock checks")
+-- - An ack's state: done with a result; open with none, or with gap_items (what the recipient names as missing);
+--   deferred with deferred (true or the reason). The state shows in states, latest and the recipient's pending read.
+-- - gap_items: beside each, read when the reminder is read: the recipes that make it and whether they are enabled, the
+--   technologies that unlock them and whether they are researched, and how many are in the logistic networks of the
+--   recipient's surface (a platform: its hub) by quality, and in the recipient's inventory. Facts only; nothing refused.
+-- - gear: true on an ack keeps the recipient's own armor and grid read beside the result (what they see in their armor).
+-- - on {research, delivered, respawn}: runs besides the cadence, as the owner sets them: a technology researched (any,
+--   named ones, or "equipment": one unlocking a recipe that makes equipment or armor), an item delivered (a cargo pod
+--   received by a landing pad, or a rocket's pod reaching a platform's hub; the items named or "equipment"; on a
+--   surface, default the reminder's), a recipient's own respawn (that recipient's run only). A recipient whose line
+--   waits gets no second line and no missed run: the trigger is counted beside the wait.
 return function(api)
   local M = {}
   -- (d19 batch41 B2, Sol seq 865: "a 200-character ack hides outcomes") a result up to 1000 characters, kept whole
@@ -92,6 +105,23 @@ return function(api)
     if job.every then return 'every ' .. ago(job.every) end
     return 'once'
   end
+  -- (BD1) the runs besides the cadence, as text
+  local function on_text(job)
+    local o = job.on
+    if not o then return nil end
+    local parts = {}
+    if o.research then
+      parts[#parts+1] = o.research == true and 'a technology researched' or o.research == 'equipment' and 'a technology unlocking equipment or armor researched'
+        or table.concat(o.research, ', ') .. ' researched'
+    end
+    if o.delivered then
+      local where = o.delivered.surface or job.surface
+      parts[#parts+1] = string.format('%s delivered to a landing pad or a platform\'s hub%s', o.delivered.items == 'equipment' and 'equipment or armor'
+        or o.delivered.items and table.concat(o.delivered.items, ', ') or 'any item', where and ' on ' .. where or '')
+    end
+    if o.respawn then parts[#parts+1] = 'a recipient\'s respawn (their run only)' end
+    return table.concat(parts, '; ')
+  end
   -- A checklist's progress for a recipient: {done = {[step] = {result, tick}}, left = tick?, nudged = tick?}.
   local function progress(job, name)
     job.progress = job.progress or {}
@@ -128,13 +158,21 @@ return function(api)
       return st, pd
     end
     if job.acked and job.acked[name] then
+      -- (BD1) deferred, or open (no result, or gap items named), stays open until an ack with a result and no gap
+      local res = job.results and job.results[name]
+      if res and res.deferred then
+        return 'deferred (open' .. (res.gap and ', gap: ' .. table.concat(res.gap, ', ') or '') .. ')' .. (type(res.deferred) == 'string' and ': ' .. res.deferred or '')
+      end
+      if res and res.gap then return 'open (gap: ' .. table.concat(res.gap, ', ') .. ')' end
+      local legacy = not res and job.result_by == name and job.result_tick == job.acked[name] and job.last_result
+      if not job.steps and not (res and res.result) and not legacy then return 'open (acknowledged without a result)' end
       -- (d22 batch90 AZ2) an ack is not the linked board item done: said while that item has not changed since
       local i = job.board_item and api.item and api.item(job.board_item)
       if i and i.status ~= 'done' and i.status ~= 'dropped' and (i.updated_tick or i.created_tick or 0) <= job.acked[name] then
         return string.format('acknowledged, not done: board #%d (%s) unchanged since the ack, last change %s ago', i.id or job.board_item,
           tostring(i.status), ago(game.tick - (i.updated_tick or i.created_tick or 0)))
       end
-      return 'acknowledged'
+      return 'done'
     end
     return job.enabled and 'scheduled' or (job.done and 'done' or 'off')
   end
@@ -150,14 +188,35 @@ return function(api)
     if pd then
       r.waiting_since_tick, r.waiting_s, r.missed = pd.tick, math.floor((game.tick - pd.tick) / 60), pd.missed > 0 and pd.missed or nil
       r.first_missed_tick, r.backup_told_tick = pd.first_missed, pd.told_backup
+      -- (BD1) why this run came (a trigger), and triggers while it waits (no second line, no missed run)
+      r.run_on = pd.why
+      if pd.triggers then r.triggers_while_waiting = pd.triggers; r.last_trigger = pd.trigger_last and pd.trigger_last.why end
+    end
+    -- (BD1) deferred, the gap named with its facts read now, the recipient's own armor read with the ack
+    local extra = {}
+    if res and res.deferred then r.deferred = res.deferred end
+    if res and res.gap then
+      r.gap = res.gap
+      local ok, rows = pcall(function() return api.gap_facts and api.gap_facts(name, res.gap) end)
+      if ok and rows then
+        r.gap_facts = rows
+        for _, x in ipairs(rows) do extra[#extra+1] = 'gap ' .. x.line end
+      elseif not ok then r.gap_facts_error = tostring(rows) end
+      if not (ok and rows) then extra[#extra+1] = 'gap: ' .. table.concat(res.gap, ', ') end
+    end
+    if res and res.gear then
+      r.gear, r.gear_tick = res.gear.line, res.gear.tick
+      extra[#extra+1] = string.format('their armor at the ack (tick %d): %s', res.gear.tick, res.gear.line)
     end
     local short = r.result and (#r.result > 120 and r.result:sub(1, 117) .. '...' or r.result)
     local last = r.acked_tick and string.format('last acknowledged %s ago%s%s', ago(game.tick - r.acked_tick), r.by and ' by ' .. r.by .. ' for them' or '',
       short and ': ' .. short or ' (no result given)') or 'never acknowledged'
     if pd then
-      r.line = string.format('%s: waiting since tick %d (%s)%s; %s', name, pd.tick, ago(game.tick - pd.tick),
-        pd.missed > 0 and ', ' .. missed_text(pd) .. (pd.told_backup and ', backup ' .. tostring(job.backup) .. ' told' or '') or '', last)
+      r.line = string.format('%s: waiting since tick %d (%s)%s%s%s; %s', name, pd.tick, ago(game.tick - pd.tick), pd.why and ', this run on ' .. pd.why or '',
+        pd.missed > 0 and ', ' .. missed_text(pd) .. (pd.told_backup and ', backup ' .. tostring(job.backup) .. ' told' or '') or '',
+        pd.triggers and string.format(', %d trigger%s since (the last: %s)', pd.triggers, pd.triggers == 1 and '' or 's', pd.trigger_last and pd.trigger_last.why or '?') or '', last)
     else r.line = string.format('%s: %s; %s', name, st, last) end
+    if #extra > 0 then r.line = r.line .. '; ' .. table.concat(extra, '; ') end
     return r
   end
   local function row(job, me)
@@ -166,7 +225,8 @@ return function(api)
       next_due_tick=job.enabled and job.next_due or nil, next_due_in_s=job.enabled and math.max(0, math.floor((job.next_due - game.tick) / 60)) or nil,
       last_fired_tick=job.last_fired, last_result=job.last_result, result_by=job.result_by, result_tick=job.result_tick,
       result_age_s=job.result_tick and math.floor((game.tick - job.result_tick) / 60) or nil,
-      board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=job.done or nil, serves=job.serves and Sv().view(job.serves) or nil}
+      board_item=job.board_item, surface=job.surface, expires_tick=job.expires, done=job.done or nil, serves=job.serves and Sv().view(job.serves) or nil,
+      on=on_text(job), last_trigger=job.last_trigger}
     -- (B2) the evidence given with acknowledgments, newest last
     if job.evidence and #job.evidence > 0 then
       r.evidence = {}
@@ -195,8 +255,8 @@ return function(api)
       local nx = me and job.pending and job.pending[me] and next_step(job, me)
       r.next_step = nx and step_text(job, nx) or nil
     end
-    local parts = {string.format('#%d %sby %s (%s, to %s): %s', job.id, job.name and job.name .. ', ' or '', job.owner, cadence(job),
-      r.recipients, job.message)}
+    local parts = {string.format('#%d %sby %s (%s%s, to %s): %s', job.id, job.name and job.name .. ', ' or '', job.owner, cadence(job),
+      r.on and ', and on ' .. r.on or '', r.recipients, job.message)}
     if job.enabled then parts[#parts+1] = 'next in ' .. ago(job.next_due - game.tick) else parts[#parts+1] = job.done and 'done' or 'off' end
     if job.steps then parts[#parts+1] = string.format('checklist of %d steps%s', #job.steps, r.next_step and ', yours next: ' .. r.next_step or '') end
     if job.last_result then parts[#parts+1] = string.format('last result %s ago: %s', ago(game.tick - job.result_tick), job.last_result) end
@@ -259,6 +319,48 @@ return function(api)
       for _, pd in pairs(job.pending or {}) do pd.told_backup = nil end
     end
     if a.serves ~= nil then job.serves = a.serves ~= false and Sv().parse(a.serves, p) or nil end
+    -- (BD1) on: runs besides the cadence; false clears them
+    if a.on ~= nil then
+      if a.on == false then job.on = nil
+      else
+        assert(type(a.on) == 'table', 'on: {research?, delivered?, respawn?}, or false for none')
+        for k in pairs(a.on) do assert(k == 'research' or k == 'delivered' or k == 'respawn', 'on takes research, delivered and respawn, not ' .. tostring(k)) end
+        local o = {}
+        local r = a.on.research
+        if r == true or r == 'equipment' then o.research = r
+        elseif r ~= nil and r ~= false then
+          if type(r) == 'string' then r = {r} end
+          assert(type(r) == 'table' and #r >= 1 and #r <= 16, 'on.research: true (any), "equipment", or 1..16 technology names')
+          o.research = {}
+          for i, n in ipairs(r) do
+            o.research[i] = one_line(n, 80, 'on.research name')
+            assert(not api.technology_known or api.technology_known(o.research[i]), 'on.research: no technology ' .. o.research[i])
+          end
+        end
+        local d = a.on.delivered
+        if d ~= nil and d ~= false then
+          if d == true then d = {} end
+          assert(type(d) == 'table', 'on.delivered: true, or {items?, surface?}')
+          for k in pairs(d) do assert(k == 'items' or k == 'surface', 'on.delivered takes items and surface, not ' .. tostring(k)) end
+          local od = {}
+          if d.items == 'equipment' then od.items = 'equipment'
+          elseif d.items ~= nil then
+            local it = type(d.items) == 'string' and {d.items} or d.items
+            assert(type(it) == 'table' and #it >= 1 and #it <= 16, 'on.delivered.items: "equipment" or 1..16 item names')
+            od.items = {}
+            for i, n in ipairs(it) do
+              od.items[i] = one_line(n, 80, 'on.delivered item')
+              assert(not api.item_known or api.item_known(od.items[i]), 'on.delivered: no item ' .. od.items[i])
+            end
+          end
+          if d.surface ~= nil then od.surface = one_line(d.surface, 40, 'on.delivered.surface') end
+          o.delivered = od
+        end
+        if a.on.respawn ~= nil and a.on.respawn ~= false then assert(a.on.respawn == true, 'on.respawn: true or false'); o.respawn = true end
+        assert(next(o), 'on: research, delivered or respawn')
+        job.on = o
+      end
+    end
     -- steps: a checklist (B1); a change starts every recipient's progress again
     if a.steps ~= nil then
       if a.steps == false then job.steps = nil
@@ -351,6 +453,21 @@ return function(api)
     end
     local result = a.result ~= nil and one_line(a.result, MAX_RESULT, 'result') or nil
     local evidence = a.evidence ~= nil and Ev().check(a.evidence, me) or nil
+    -- (BD1) deferred (true or the reason), gap_items (what is missing), gear (your own armor read kept with the ack)
+    local deferred, gap, gear
+    if a.deferred ~= nil and a.deferred ~= false then
+      deferred = a.deferred == true or one_line(a.deferred, MAX_TEXT, 'deferred')
+    end
+    if a.gap_items ~= nil and a.gap_items ~= false then gap = api.check_items and api.check_items(a.gap_items) or a.gap_items end
+    if a.gear ~= nil then
+      assert(type(a.gear) == 'boolean', 'gear must be true or false')
+      assert(not a.gear or by == me, 'gear: your own armor only (an ack for a recipient takes no gear)')
+      if a.gear then
+        local ok, line = pcall(function() return api.gear and api.gear(me) end)
+        gear = {line=ok and line or ('the armor read failed: ' .. tostring(line)), tick=game.tick}
+      end
+    end
+    assert(not (job.steps and (deferred or gap or gear)), 'deferred, gap_items and gear are for a reminder without steps')
     job.pending = job.pending or {}; job.acked = job.acked or {}
     local was = job.pending[me]
     if evidence then job.evidence = Ev().add(job.evidence, evidence) end
@@ -400,7 +517,7 @@ return function(api)
     assert(a.step == nil and a.leave == nil and a.resume == nil, 'step, leave and resume are for a checklist (reminder_add steps)')
     job.pending[me] = nil; job.acked[me] = game.tick
     job.results = job.results or {}
-    job.results[me] = {result=result, tick=game.tick, by=by ~= me and by or nil}
+    job.results[me] = {result=result, tick=game.tick, by=by ~= me and by or nil, deferred=deferred, gap=gap, gear=gear}
     if result then job.last_result = result; job.result_by = by; job.result_tick = game.tick end
     -- (A1) with the ack: the next run later (next_in_ticks: the next run only), or a slower cadence (every_ticks, its
     -- owner, anchored now)
@@ -415,8 +532,9 @@ return function(api)
       job.next_due = game.tick + ticks_arg(a.next_in_ticks, 60, MAX_EVERY, 'next_in_ticks'); job.enabled = true; job.done = nil
       note = string.format('the next run in %s (that run only; the cadence goes on from its anchor after it)', ago(job.next_due - game.tick))
     end
+    local mine = latest(job, me)
     return {acknowledged=job.id, ['for']=by ~= me and me or nil, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil, missed_runs=missed_text(was),
-      note=note, reminder=row(job, by)}
+      state=mine.state, gap_facts=mine.gap_facts, gear=mine.gear, note=note, reminder=row(job, by)}
   end
   -- (d19 batch41 B3, Astra seq 862 and 864: reminder misses piled up while notes kept hour-old results) what is past its
   -- review time for `name`: runs addressed to them waiting past their cadence (overdue), and recipients of their own
@@ -473,7 +591,18 @@ return function(api)
             ago(game.tick - pd.tick), pr and pr.left and string.format('; left %s ago (resume: reminder_ack {id: %d, resume: true})', ago(game.tick - pr.left), id) or '')
         end
       end
-      return {reminders=out, lines=lines, count=#out, tick=game.tick, note=#out == 0 and 'nothing waits for you' or nil}
+      -- (BD1) and what you acknowledged that stays open: no result, gap items named, or deferred
+      local open = {}
+      for _, id in ipairs(ids) do
+        local job = store().jobs[id]
+        if not (job.pending and job.pending[me]) and job.acked and job.acked[me] then
+          local st = status_of(job, me)
+          if st:find('^open') or st:find('^deferred') then
+            open[#open+1] = string.format('#%d %s: %s, acknowledged %s ago', id, job.name or 'review', st, ago(game.tick - job.acked[me]))
+          end
+        end
+      end
+      return {reminders=out, lines=lines, count=#out, tick=game.tick, open=#open > 0 and open or nil, note=#out == 0 and 'nothing waits for you' or nil}
     end
     local out, lines = {}, {}
     local ids = {}
@@ -493,7 +622,7 @@ return function(api)
       note=#out == 0 and 'no reminders: reminder_add {message, every_ticks or due_in_ticks, recipients?}' or nil}
   end
   -- Delivery: one line in the recipient's next reply, as a tell from "reminder #N" (it wakes a sleep as a tell does).
-  local function deliver(job, name, index, missed)
+  local function deliver(job, name, index, why)
     local text = string.format('%s (%s, %s%s): %s; reminder_ack {id: %d, result} records the result',
       job.name or 'review', job.owner, cadence(job), job.board_item and ', board #' .. job.board_item or '', job.message, job.id)
     local nx = job.steps and next_step(job, name)
@@ -503,7 +632,15 @@ return function(api)
         steps_done(job, name), #job.steps, job.id)
     end
     if job.serves and Sv().gone(job.serves) then text = text .. '; ' .. Sv().line(job.serves) end
+    if why then text = text .. '; this run on ' .. why end
     api.deliver(index, {seq='reminder', tick=game.tick, from='reminder #' .. job.id, text=text, fyi=job.quiet or nil})
+  end
+  -- One recipient's run: its line, and the wait for its ack.
+  local function start_run(job, name, index, why)
+    if job.steps then job.progress = job.progress or {}; job.progress[name] = {done={}, nudged=game.tick} end
+    deliver(job, name, index, why)
+    job.pending[name] = {tick=game.tick, missed=0, why=why}
+    job.acked[name] = nil
   end
   local function fire(job)
     local index = {}
@@ -538,15 +675,60 @@ return function(api)
               job.id, table.concat(others, ', '))})
         end
       elseif index[name] then
-        if job.steps then job.progress = job.progress or {}; job.progress[name] = {done={}, nudged=game.tick} end
-        deliver(job, name, index[name])
-        job.pending[name] = {tick=game.tick, missed=0}
-        job.acked[name] = nil
+        start_run(job, name, index[name])
       end
     end
     job.last_fired = game.tick
     if job.every then job.next_due = next_after(job, game.tick)
     else job.enabled = false; job.done = not job.steps or nil end
+  end
+  -- (BD1) A trigger: what it matches on a job's on, as text for the line (nil: no match).
+  local function matches(job, o, kind, info)
+    if kind == 'research' and o.research then
+      local name = tostring(info.name)
+      if o.research == true then return name .. ' researched' end
+      if o.research == 'equipment' then return info.gear and string.format('%s researched (it unlocks %s)', name, info.gear) or nil end
+      local base = name:gsub('%-%d+$', '')
+      for _, n in ipairs(o.research) do if n == name or n == base then return name .. ' researched' end end
+    elseif kind == 'delivered' and o.delivered then
+      local where = o.delivered.surface or job.surface
+      if where and where ~= info.surface and where ~= info.platform then return nil end
+      local hit = {}
+      for item, n in pairs(info.cargo or {}) do
+        local ok = o.delivered.items == nil
+        if o.delivered.items == 'equipment' then ok = api.is_gear ~= nil and api.is_gear(item) == true
+        elseif type(o.delivered.items) == 'table' then for _, x in ipairs(o.delivered.items) do if x == item then ok = true end end end
+        if ok then hit[#hit+1] = item .. '*' .. tostring(n) end
+      end
+      if #hit == 0 then return nil end
+      table.sort(hit)
+      return string.format('%s delivered to %s', table.concat(hit, ' '), tostring(info.where or info.surface))
+    elseif kind == 'respawn' and o.respawn then return tostring(info.name) .. ' respawned' end
+    return nil
+  end
+  -- trigger(kind, info): research {name, gear (the equipment it unlocks, text)}, delivered {surface, platform?, cargo
+  -- {item: count}, where}, respawn {name}. Each enabled job whose on matches: a run for its recipients (respawn: that
+  -- recipient only); one whose line waits gets none, the trigger counted beside the wait. Returns the runs started.
+  function M.trigger(kind, info)
+    local s = api.state().reminders
+    if not s then return 0 end
+    local n, index = 0, nil
+    for _, job in pairs(s.jobs) do
+      local why = job.enabled and job.on and matches(job, job.on, kind, info or {})
+      if why then
+        if not index then index = {}; for _, a in ipairs(api.agents()) do index[a.name] = a.index end end
+        job.pending = job.pending or {}; job.acked = job.acked or {}
+        job.last_trigger = {tick=game.tick, why=why}
+        for _, name in ipairs(targets(job)) do
+          if index[name] and (kind ~= 'respawn' or name == info.name) then
+            local pd = job.pending[name]
+            if pd then pd.triggers = (pd.triggers or 0) + 1; pd.trigger_last = {tick=game.tick, why=why}
+            else start_run(job, name, index[name], why); n = n + 1 end
+          end
+        end
+      end
+    end
+    return n
   end
   -- A checklist step's own cadence: its line again while it is a recipient's next step (not while left).
   local function nudge(job)
@@ -582,19 +764,23 @@ return function(api)
       recipients='optional: names (sol, luna) or "team"; default yourself', name='optional 1..40 characters', board_item='optional board item number',
       surface='optional surface name', backup='optional: one teammate told when a recipient misses a run (a second run comes while the first waits), once until that recipient acknowledges; it may record a result for them (reminder_ack {id, for, result})', serves='optional {name, position, surface?, radius?}: the machine it serves (an entity of that name of ours within 1 tile of position, on surface, default yours), or with radius 2..64 any such machine within it; checked about once a game minute and when read: serves {count, last_seen_tick, gone, gone_tick, line} in the read, and a line naming it when none is there (the job\'s line and the line it sends name one whose machine is gone)', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
       wake='optional false: its line waits for the recipient\'s next reply and wakes no sleep or wait (a routine check; urgent alerts are apart and still wake)',
+      on='optional {research?: true (any) | "equipment" (a technology unlocking a recipe that makes equipment or armor) | [technology names], delivered?: true | {items?: "equipment" | [item names], surface? (a planet or platform name; default the reminder\'s surface, else any)} (a cargo pod received by a landing pad, or a rocket\'s pod reaching a platform\'s hub), respawn?: true (a recipient\'s respawn, their run only)}: runs besides the cadence; a recipient whose line waits gets no second line and no missed run (the trigger is counted beside the wait)', 
       steps='optional checklist: 1..12 steps, each a name (1..80 characters) or {name, every_ticks? (1800..: its line again that often while it is a recipient\'s next step)}; a run goes out with the next unfinished step, each recipient records steps with reminder_ack (the run is done for them when every step is recorded; a one-time job is done when every recipient\'s is)',
       returns='added (its id), reminder {id, owner, recipients, message, cadence, next_due_tick, next_due_in_s, states, line}. A reminder only sends lines: when due, each recipient gets one private line in their next reply (a tell from "reminder #N", waking a sleep as a tell does); while one has not acknowledged it, later runs fold into it (missed); at 2 runs missed its owner gets one line naming who, the last result and the reminder_edit call that changes the recipients (once until that recipient acknowledges or the recipients change). It never acts in the game; at most 12 a teammate, 48 in all'},
     reminder_edit = {id='reminder number', message='as reminder_add', every_ticks='as reminder_add (sets the anchor now)', due_tick='as reminder_add', due_in_ticks='as reminder_add', recipients='as reminder_add', name='as reminder_add; false clears it',
-      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', backup='as reminder_add; false clears it', serves='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', steps='as reminder_add; false clears them; a change starts every recipient\'s progress again', returns='edited, reminder; its owner only'},
+      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', backup='as reminder_add; false clears it', serves='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', on='as reminder_add; false clears them', steps='as reminder_add; false clears them; a change starts every recipient\'s progress again', returns='edited, reminder; its owner only'},
     reminder_remove = {id='reminder number', returns='removed, was; its owner only'},
     reminder_ack = {id='reminder number', ['for']='optional, its backup or owner: the recipient this ack and result are for (not a checklist)', result='optional 1..1000 characters: what the review found, kept whole (shown with the job and on the site)',
       evidence='optional {metric?, tick?, decision?, result?, owner?, next_check?}, as board_post evidence: kept with the reminder (the newest 5) and shown with it',
       step='a checklist: the step number this records (default: your next unfinished step)', leave='a checklist: true sets it aside (an emergency): no step lines until resume; your progress kept',
       resume='a checklist: true takes it up again at your next unfinished step (any step\'s ack does too)',
+      deferred='optional: true or the reason (1..300 characters): the gap stays open, shown deferred',
+      gap_items='optional 1..8 item names: what is missing; the gap stays open, and each reminder read gives beside it the recipes that make it (enabled?), the technologies that unlock them (researched?), how many are in the logistic networks of your surface by quality (a platform: its hub too) and in your inventory',
+      gear='optional true: your own armor and its grid (equipment by quality, free cells, shield, battery) read now and kept with the ack; not with for',
       next_in_ticks='optional 60..: the next run that many ticks from now (that run only), with the ack', every_ticks='optional, its owner: a new cadence from now (e.g. 18000, 5 min), with the ack',
-      returns='acknowledged, was_pending, missed (runs folded into the line), missed_runs (how many and the ticks of the first and last), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
+      returns='acknowledged, was_pending, missed (runs folded into the line), missed_runs (how many and the ticks of the first and last), state (done with a result; open without one or with gap_items; deferred), gap_facts, gear, note, reminder; without next_in_ticks or every_ticks the cadence stays as it is. A checklist: recorded (the step), step_name, next_step and done (N of M steps) while steps remain; acknowledged and checklist_done once every step is recorded; left and at_step with leave'},
     reminder_snooze = {id='reminder number', ticks='60..: the next run that many ticks from now (the next run only)', returns='snoozed, next_due_tick, reminder; its owner or a recipient'},
-    reminders = {id='optional: one reminder number: that one only (anyone\'s)', all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, serves {count, last_seen_tick, gone, gone_tick, line}, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged, left at step N; runs missed, the owner told, the backup told; steps done), missed {name: runs}, backup, latest [{name, state, acked_tick, acked_ago_s, result, by (the backup or owner who recorded it for them), waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick, line}] (each recipient\'s latest result or wait), yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
+    reminders = {id='optional: one reminder number: that one only (anyone\'s)', all='optional true: the whole team\'s; default yours and those addressed to you', pending='optional true: only what waits for you now, each with its next unfinished step and how long it has waited (lines); open: what you acknowledged that stays open (no result, gap items, deferred)', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, serves {count, last_seen_tick, gone, gone_tick, line}, expires_tick, on (the runs besides the cadence), last_trigger {tick, why}, states (each recipient: scheduled, pending, overdue, done (acknowledged with a result), open (no result, or gap items named), deferred, acknowledged, not done (a board item unchanged since), left at step N; runs missed, the owner told, the backup told; steps done), missed {name: runs}, backup, latest [{name, state, acked_tick, acked_ago_s, result, by (the backup or owner who recorded it for them), waiting_since_tick, waiting_s, missed, first_missed_tick, backup_told_tick, run_on (the trigger of this run), triggers_while_waiting, last_trigger, deferred, gap, gap_facts [{item, recipes [{name, enabled}], technologies [{name, researched}], surface, networks, in_networks {quality: count}, in_hub, held, line}], gear, gear_tick, line}] (each recipient\'s latest result or wait), yours, steps [{step, name, every_ticks, result, done_ago_s}] and next_step (a checklist, your progress), line}], lines, count. Read only'},
   }
   return M
 end

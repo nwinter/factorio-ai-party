@@ -46,8 +46,8 @@ do
   local a=R.handlers.reminder_ack(sol,{id=1,['for']='astra',result='Kestrel II receipts in the pod ledger: PU 346 landed'})
   eq(a['for'],'astra'); eq(a.missed,3)
   l=R.handlers.reminders(astra,{}).reminders[1].latest[1]
-  eq(l.state,'acknowledged'); eq(l.by,'sol'); eq(l.result,'Kestrel II receipts in the pod ledger: PU 346 landed'); eq(l.missed,nil)
-  eq(l.line,'astra: acknowledged; last acknowledged 0s ago by sol for them: Kestrel II receipts in the pod ledger: PU 346 landed')
+  eq(l.state,'done'); eq(l.by,'sol'); eq(l.result,'Kestrel II receipts in the pod ledger: PU 346 landed'); eq(l.missed,nil)
+  eq(l.line,'astra: done; last acknowledged 0s ago by sol for them: Kestrel II receipts in the pod ledger: PU 346 landed')
   eq(R.handlers.reminders(astra,{}).reminders[1].result_by,'sol')
   -- a new miss tells the backup again; a backup who is the recipient is not told; false clears it
   run(36000*2)

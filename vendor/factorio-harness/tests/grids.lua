@@ -25,7 +25,7 @@ local G=dofile('mod/agent-harness_0.1.0/grids.lua'){position=function(v) return 
   out_of_reach=function(_,e) return 'entity is out of reach: '..e.name..' is 14.0 tiles away (to its edge), reach 10' end}
 -- The view: size, equipment by name (most first), free cells, shield and battery; rows on request.
 local v=G.view(tank_grid,true)
-eq(v.grid,'6x8'); eq(v.equipment,'energy-shield-equipment*2 battery-mk2-equipment*1'); eq(v.free_cells,38)
+eq(v.grid,'6x8'); eq(v.equipment,'battery-mk2-equipment*1 energy-shield-equipment*1 energy-shield-equipment@rare*1','by name and quality (d22 batch94 BD1)'); eq(v.free_cells,38)
 eq(v.shield,'60/300'); eq(v.battery_mj,'12/20'); eq(#v.rows,3); eq(v.rows[2].quality,'rare'); eq(v.rows[1].quality,nil)
 eq(G.view({width=10,height=6,equipment={}}).equipment,'empty')
 -- Without vehicle: the armor's grid, or a refusal.

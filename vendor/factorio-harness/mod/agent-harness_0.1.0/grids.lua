@@ -58,6 +58,13 @@ return function(api)
     end
     error(api.out_of_reach(p, v) .. '; equipment goes in and out in reach or seated, as the vehicle\'s GUI allows', 0)
   end
+  -- The armor worn, as its slot shows it: name, or name@quality (BD1).
+  function M.armor(c)
+    local st = try(function() local inv = c.get_inventory(defines.inventory.character_armor); return inv and inv[1] end)
+    if not (st and try(function() return st.valid_for_read end)) then return nil end
+    local q = try(function() return st.quality.name end)
+    return q and q ~= 'normal' and st.name .. '@' .. q or st.name
+  end
   -- A grid as its GUI shows it: size, the equipment by name (most first),
   -- shield and battery charge, free cells; rows: each piece where it sits.
   function M.view(grid, rows)
@@ -68,14 +75,18 @@ return function(api)
     for _, e in ipairs(try(function() return grid.equipment end) or {}) do
       local name = try(function() return e.name end)
       if name then
-        if not by[name] then by[name] = {name=name, count=0}; order[#order+1] = by[name] end
-        by[name].count = by[name].count + 1
+        -- (d22 batch94 BD1, viewer Aurora: "verify each agent's worn gear, grid quality and charge") counted by name
+        -- and quality, as the grid's GUI shows each piece's quality
+        local q = try(function() return e.quality.name end)
+        q = q ~= 'normal' and q or nil
+        local key = q and name .. '@' .. q or name
+        if not by[key] then by[key] = {name=key, count=0}; order[#order+1] = by[key] end
+        by[key].count = by[key].count + 1
         local shape = try(function() return e.shape end) or try(function() return e.prototype.shape end)
         used = used + (shape and (shape.width or 1) * (shape.height or 1) or 1)
         if rows then
           local pos = try(function() return e.position end)
-          local q = try(function() return e.quality.name end)
-          list[#list+1] = {name=name, position=pos, quality=q ~= 'normal' and q or nil}
+          list[#list+1] = {name=name, position=pos, quality=q}
         end
       end
     end
