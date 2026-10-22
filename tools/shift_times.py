@@ -34,10 +34,11 @@ def shift(minutes, next_spec="", now=None):
 
 def earlier_runs(run_dir):
     """The earlier shifts of a resumed run's world, newest first, along runs/RUN/resumed-from (written by
-    tools/start-team.sh with POG_RESUME); [] for a first shift."""
+    tools/start-team.sh with POG_RESUME); [] for a first shift. No cap on its length (d22 batch89 AY1: a 50 cap made every
+    shift from 52 on read as shift 51 to the harness, the hosts and the video titles); a run already in the chain ends it."""
     root, chain = os.path.dirname(os.path.normpath(run_dir)), []
     path = os.path.join(run_dir, "resumed-from")
-    while len(chain) < 50:
+    while True:
         try:
             run = open(path).read().strip()
         except OSError:

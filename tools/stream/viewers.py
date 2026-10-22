@@ -1419,15 +1419,17 @@ class Feed:
                        "text": m.get("text"), "author": m["author"]}
                 self.rec_f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 self.rec_f.flush()
-            if m.get("queued"):
+            if m.get("queued") or m.get("backlog"):
                 # (AA5) read after the last service's cursor: handled already when its verdict refused it, it is in
                 # the inbox or the relayed files (a line still in the relay's queue at the stop keeps the cursor before
-                # it, and the lines after it come again); else it goes through as new, its wait counted from now
+                # it, and the lines after it come again); else it goes through as new, its wait counted from now.
+                # (d22 batch89 AY3) a backlog line read again at a restart too: one already relayed went through the
+                # per-author rate filter again and showed "not relayed: rate" (site:4142, site:4181 in shift57)
                 lg = self.logged.get(m.get("id"))
                 if (lg and not lg[0]) or self.in_inbox(m) or (self.relay and m.get("id") in self.relay.done):
                     self.backlog_status(m)
                     continue
-            elif m.get("backlog") and now - float(m.get("t") or 0) > self.max_age:
+            if m.get("backlog") and not m.get("queued") and now - float(m.get("t") or 0) > self.max_age:
                 self.dropped["backlog"] += 1
                 self.backlog_status(m)
                 continue
