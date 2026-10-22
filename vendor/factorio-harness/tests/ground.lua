@@ -154,9 +154,9 @@ local r=astra('scan',{position={x=25,y=25},radius=16})
 eq(#r.entities,1); eq(r.entities[1].name,'iron-chest')
 eq(r.ground_items.stacks,150); eq(r.ground_items.items[1].name,'iron-plate'); eq(r.ground_items.items[1].count,15000)
 eq(r.ground_items.items[1].box.left_top.x,20); eq(r.ground_items.items[1].box.right_bottom.y,29)
--- Filtered for them: rows, as before.
+-- Filtered for them: rows, each with its stack, and (d22 batch78 AN1) the summary of all of them before the limit.
 r=astra('scan',{position={x=25,y=25},radius=16,type='item-entity',limit=5})
-eq(#r.entities,5); eq(r.truncated,true); eq(r.ground_items,nil)
+eq(#r.entities,5); eq(r.truncated,true); eq(r.ground_items.stacks,150); eq(r.entities[1].stack.count,100)
 -- No items: no ground_items key.
 eq(astra('scan',{position={x=200,y=200},radius=4}).ground_items,nil)
 -- observe: the same summary; rows only with entity filters.

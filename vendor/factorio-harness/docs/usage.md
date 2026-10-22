@@ -11016,3 +11016,25 @@ pass began as the last ended.
   returned count 0, preserved "1251 of the blueprint's entities already stood there ...", anchor aligned true; with 40
   of Sol's floor ghosts removed first, count 40 (space-platform-foundation); with 5 entity ghosts removed (4
   fast-inserters, a crusher), count 5, each at its spot, 1 wire joined to what stood. Tests: tests/blueprints.lua.
+### Items on the ground: the stack in inspect and scan (d22 batch78 AN1, Astra #1809)
+
+Astra: "Gleba has thousands of dropped items. inspect item-on-ground gives no stack name/count and scan
+inventory/spoil also omits it." Reproduced on a private copy of world n's shift57 save (05:16 PDT): inspect of an
+item-on-ground on Vulcanus gave `inventories: {}` and no stack; `scan {type: "item-entity", fields: [inventory,
+spoil]}` gave rows with name and position only; `inspect {area, types: ["item-entity"]}` said "no item-entity of
+ours" (ground items belong to no force). That save held no ground items on Gleba (Vulcanus 895, Nauvis 175). Now, as
+hovering a stack shows (groundstack.lua):
+- inspect of one: `stack {name, quality, count, fresh}` (fresh: percent fresh, only for an item that spoils) and
+  `holds` (`yumako*3, 61% fresh`);
+- inspect over an area with `types: ["item-entity"]` or `name: "item-on-ground"`: the ground stacks are listed (each
+  row with `stack` and `holds`, compact lines `item-on-ground (x,y): yumako*3, 61% fresh`) and `ground_items`, all of
+  them by item;
+- scan: each item-entity row has `stack`; fields `inventory` (`yumako*3`) and `spoil` (`yumako*3 61%`) read it;
+  `ground_items` is given with a name or type filter too, summed over every stack found before `limit`;
+- `ground_items` items (scan, observe, inspect) carry `fresh`: the stalest stack's freshness, for an item that spoils.
+Area inspect also checks sight once per chunk (it checked each entity) and reads each position once for its sort.
+Measured on the copy with 2,880 stacks spilled on Gleba (32-tile radius; x86 under Rosetta, the JSON encoding slow
+there), before -> after: scan unfiltered 67-73 -> 70-77 ms; scan `type: item-entity` with fields inventory and spoil
+(256 rows) 295-301 -> 124-140 ms (the inventory field tried every inventory kind on each stack); the same with limit
+1024 and no fields 177-190 -> 235-330 ms (each row now carries its stack: 69 -> 147 KB); inspect of the 30x32 area
+(refused before) 59-63 ms; inspect of one stack 3.5-4.3 -> 3.4-4.0 ms. Tests: tests/d22_batch78.lua.

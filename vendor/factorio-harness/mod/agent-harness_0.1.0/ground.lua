@@ -4,6 +4,7 @@
 -- as a planner does (robots take them to storage), and picking them up over an
 -- area, walking from one to the next as a player holding the pickup key.
 local snapfail = require('snapfail')
+local groundstack = require('groundstack')
 return function(api)
   local M = {handlers={}}
   local WATCH_EVERY = 1800      -- ticks between watch passes (shared by every agent)
@@ -35,6 +36,9 @@ return function(api)
           by[k] = r; order[#order+1] = r
         end
         r.count = r.count + s.count; r.stacks = r.stacks + 1
+        -- (d22 batch78 AN1) an item that spoils: its stalest stack's freshness, percent
+        local st = groundstack.stack(e)
+        if st and st.fresh and (not r.fresh or st.fresh < r.fresh) then r.fresh = st.fresh end
         local b = r.box
         b.left_top.x = math.min(b.left_top.x, pos.x); b.left_top.y = math.min(b.left_top.y, pos.y)
         b.right_bottom.x = math.max(b.right_bottom.x, pos.x); b.right_bottom.y = math.max(b.right_bottom.y, pos.y)
