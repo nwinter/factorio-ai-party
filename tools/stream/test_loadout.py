@@ -54,6 +54,13 @@ def modes():
     assert m == "combat" and p["why"] == "shooting", p
     assert p["guns"][0] == {"name": "submachine-gun", "ammo": "piercing-rounds-magazine", "count": 187, "selected": True}, p["guns"]
     assert p["guns"][1]["name"] == "pistol" and p["guns"][1]["ammo"] is None and p["armor"]["shield"]["now"] == 37
+    assert "quality" not in p["armor"] and "quality" not in p["armor"]["equipment"][0], p["armor"]
+    # (d22 batch94 BD1) the armor's and each piece's quality above normal ride along
+    lo.ingest([row(shooting=True, armor={"name": "mech-armor", "quality": "rare", "equipment": [
+        {"name": "energy-shield-equipment", "count": 1}, {"name": "energy-shield-equipment", "quality": "epic", "count": 1}]})], off)
+    a = lo.mode("astra", off)[1]["armor"]
+    assert a["quality"] == "rare" and a["equipment"][1] == {"name": "energy-shield-equipment", "count": 1, "quality": "epic"}, a
+    lo.ingest([row(shooting=True)], off)
     # health falling in the last 10 s: under fire; steady again later: not
     lo2 = L.Loadouts()
     lo2.ingest([row(health={"now": 300, "max": 350})], off - 4)

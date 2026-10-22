@@ -51,7 +51,7 @@ end
 trace=trace_at(400,900,'maker',40)
 local r=F.call(p,{platform='Kestrel IVc'})
 eq(r.watch.id,1); eq(r.watch.state,'watching'); eq(r.watch.leg,'aquilo->gleba')
-assert(r.line:find('watching 3 ammo turrets once a second'),r.line)
+assert(r.line:find('watching 3 ammo turrets %(0 railguns%) and 0 accumulators once a second'),r.line)
 local w=st.flightwatch.list[1]
 eq(w.turrets[2].feed_start.kind,'maker','the feed at the start'); eq(w.turrets[2].feed_start.reaches,40)
 -- t2 empties for 3 samples (180 ticks), refills, empties 1 sample; t3 destroyed
