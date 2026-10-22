@@ -121,7 +121,8 @@
   state when named); a loss after it, joining the incident or within 2 tiles of its box, reopens it, and the lines say
   what was lost and when. `recovery: false` clears it; `{incident}` alone reads its row.
 - `fields: [...]` on `inspect`, `status`, `platform` and `platforms`: only those fields of the reply (a row's, or
-  `"hub.cargo"` one level down); an unknown name is refused with the names there are.
+  `"hub.cargo"` one level down); a name this reply lacks but the read can have is listed in `absent`; a name the read
+  never has is refused with the names there are.
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity

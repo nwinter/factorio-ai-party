@@ -89,7 +89,7 @@ eq(t.tells[1],'astra, 0s ago: 29 iron plates in the chest at (-18.5,-34.5) for r
 -- (d17 batch29 C2) shown once in full, then listed as unread with how long it has waited until chat_ack or a tells read
 advance(150)
 t=sol('status').team.tells
-eq(t[1],'1 unread tell (chat_ack {seq} or "all", or a tells read, marks them read):')
+eq(t[1],'1 unread tell (chat_ack {seq: N} or {seq: "all"}, or a tells read, marks them read):')
 eq(t[2],'unread #1 astra, waiting 2s: 29 iron plates in the chest at (-18.5,-34.5) for red science'); eq(#t,2)
 local ack=sol('chat_ack',{seq=1}); eq(ack.read,1)
 eq(sol('status').team,nil)
@@ -261,7 +261,7 @@ local shown=grok('tell',{to='sol',text='sent by grok'}).team.tells
 eq(#shown,36) -- the team block showed each once in full
 -- (d17 batch29 C2) then the newest 8 not fyi stay as unread, 4 shown, until a read
 local u=grok('status').team.tells
-eq(#u,6); eq(u[1],'8 unread tells (chat_ack {seq} or "all", or a tells read, marks them read):'); eq(u[6],'4 more unread (fh tells)')
+eq(#u,6); eq(u[1],'8 unread tells (chat_ack {seq: N} or {seq: "all"}, or a tells read, marks them read):'); eq(u[6],'4 more unread (fh tells)')
 assert(u[2]:find(' astra, waiting 10s: load 23',1,true),u[2]); assert(not u[2]:find('load 21',1,true))
 local h=grok('tells',{}).tells
 eq(#h,30); eq(h[1].text,'load 7'); eq(h[29].text,'load 35'); eq(h[30].text,'team line'); eq(h[30].team,true)
@@ -318,7 +318,7 @@ do
   sol('tell',{to='grok',text=string.rep('y',300)})
   grok('status'); advance(120)
   local u=grok('status').team.tells
-  eq(u[1],'2 unread tells (chat_ack {seq} or "all", or a tells read, marks them read):'); eq(#u,3)
+  eq(u[1],'2 unread tells (chat_ack {seq: N} or {seq: "all"}, or a tells read, marks them read):'); eq(#u,3)
   eq(u[2],'unread #'..a1..' astra, waiting 2s: silo 2 waits for rocket fuel only Nauvis East holds')
   eq(u[3],'unread #'..(a1+3)..' sol, waiting 2s: '..string.rep('y',97)..'...')
   grok('tell',{to='astra',text='on it',reply_to=a1})

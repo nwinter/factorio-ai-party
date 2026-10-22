@@ -139,7 +139,7 @@ return function(api)
     local st = store()
     local r = st.items[i.id]
     local now = evidence(i)
-    if not r then
+    if not r or not r.ev then
       st.items[i.id] = {tick=game.tick, ev=now, unchanged=0, state='first check'}
       return
     end
@@ -178,8 +178,25 @@ return function(api)
         if not r or game.tick - r.tick >= M.CHECK then due[#due+1] = i end
       elseif st.items[id] then st.items[id] = nil end
     end
-    table.sort(due, function(x, y) return ((st.items[x.id] or {}).tick or 0) < ((st.items[y.id] or {}).tick or 0) or x.id < y.id end)
-    if due[1] then local ok, err = pcall(M.check, due[1]); if not ok then M.last_error = err end end
+    table.sort(due, function(x, y)
+      local tx, ty = (st.items[x.id] or {}).tick or 0, (st.items[y.id] or {}).tick or 0
+      if tx ~= ty then return tx < ty end
+      return x.id < y.id
+    end)
+    -- (d22 batch90 AZ1) a check that throws is recorded on its item (when, the error) and the item waits its 10
+    -- minutes like any other: one item's failing read (s55-57: no check line in 214k replies) no longer stops the rest
+    local i = due[1]
+    if i then
+      local ok, err = pcall(M.check, i)
+      local r = st.items[i.id]
+      if ok then if r then r.error = nil end
+      else
+        M.last_error = err
+        r = r or {unchanged=0}
+        st.items[i.id] = r
+        r.tick, r.error, r.state = game.tick, string.sub(tostring(err), 1, 200), 'check failed'
+      end
+    end
   end
   -- The owner's lines (team.alerts), once.
   function M.lines(p, h)
@@ -213,20 +230,25 @@ return function(api)
     end)
     for k, i in ipairs(list) do
       local r = st.items[i.id]
-      local live = r and live_read and changes(i, r.ev, evidence(i)) or {}
+      local live, live_err = {}, nil
+      if r and r.ev and live_read then
+        local ok, v = pcall(function() return changes(i, r.ev, evidence(i)) end)
+        if ok then live = v else live_err = string.sub(tostring(v), 1, 200) end
+      end
       local of = r and (live_read and owner_facts(i, r.tick) or r.owner_facts) or {}
       local state = r and r.state or 'not checked yet'
       local stalled = r and r.unchanged >= M.STALL and #live == 0
       local text = string.format('#%d %s %s (%s, owner %s): last board change %s ago; %s%s%s%s; %s', i.id, i.kind, i.title, i.status, i.owner,
         ago(game.tick - (i.updated_tick or i.created_tick or 0)),
-        r and string.format('checked %s ago: %s', ago(game.tick - r.tick), state) or 'first check within 10 min',
+        r and string.format('checked %s ago: %s', ago(game.tick - r.tick), state) .. (r.error and ' (the game read threw: ' .. r.error .. '; next check in 10 min)' or '') or 'first check within 10 min',
         r and r.parts and #r.parts > 0 and ' (' .. table.concat(r.parts, '; ') .. ')' or '',
-        #live > 0 and '; since that check: ' .. table.concat(live, '; ') or '',
+        #live > 0 and '; since that check: ' .. table.concat(live, '; ') or live_err and '; the read now threw: ' .. live_err or '',
         #of > 0 and '; the owner since then: ' .. table.concat(of, ', ') or '',
         (stalled and rule(i) or (next_text(i) or 'no next action or blocker written')) .. (r and r.focus_flag and '; ' .. r.focus_flag or ''))
       if k <= M.MAX_LINES then lines[#lines+1] = text elseif k == M.MAX_LINES + 1 then lines[#lines+1] = string.format('+%d more (rows lists all; owner narrows it)', #list - M.MAX_LINES) end
       rows[#rows+1] = {id=i.id, kind=i.kind, title=i.title, status=i.status, owner=i.owner, state=state, stalled=stalled or nil,
-        last_change_s=math.floor((game.tick - (i.updated_tick or i.created_tick or 0)) / 60), unchanged_checks=r and r.unchanged or nil}
+        last_change_s=math.floor((game.tick - (i.updated_tick or i.created_tick or 0)) / 60), unchanged_checks=r and r.unchanged or nil,
+        check_error=r and r.error or nil, checked_s=r and math.floor((game.tick - r.tick) / 60) or nil}
     end
     return {lines=#lines > 0 and lines or {'no owned open item'}, rows=rows,
       note='a check every 10 game minutes: our entities in the item\'s area (else its owner\'s claims), the totals of what it needs, shipment lines of platforms it names, its board edits; unchanged across 2 checks: stalled, unless its owner waits (sleep, wait step, queue running)'}
@@ -426,7 +448,7 @@ return function(api)
       step='a project step number, or text', blocker='optional text: what blocks it', verify='optional text: your next verification',
       agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress. The item marked done or dropped (or the focused step done) clears it: that board_update\'s reply has focus_cleared and ready (open unowned tasks and requests, free steps of unblocked projects open to you; those the team plan names first; at most 5), and status says no focus is set until one is'},
     board_progress = {owner='optional agent name: only their items (and what changed since each one\'s last check, read now)',id='optional item number: only that item, read now as with owner',
-      returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written. rows'},
+      returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written; a check whose game read threw: check failed, with the error (rows: check_error, checked_s), checked again in 10 min. rows'},
     board_critical = {returns='blocked: each blocked item (status blocked, or an open item in its blocked_by), those the team plan names (#id) first, then by how many open items wait on it through blocked_by and parent chains, with what it waits on (status, owner, last change); agents_idle_or_waiting: agents standing a minute or more or in a wait, with what they own'},
   }
   return M

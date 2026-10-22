@@ -173,7 +173,7 @@
   `./fh call reminder_ack --args '{"id":3,"result":"all boilers fed","next_in_ticks":36000}'`
   `result` takes up to 1000 characters, kept whole; `evidence` (as on board items, topic team) is kept with the
   reminder (the newest 5) and shown with it.
-- `reminders {pending?}`: lists them, with each recipient's runs missed (`missed`: how many, and the ticks of the first
+- `reminders {pending?}` (`{id}`: that one only): lists them, with each recipient's runs missed (`missed`: how many, and the ticks of the first
   and last); `pending: true` lists only what waits for you, each at its next step. `status` `overdue_reviews` lists
   your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
   `next_check` tick, oldest first.

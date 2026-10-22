@@ -99,6 +99,9 @@ test('fh help TOPIC prints the workspace reference topic and is journaled; fh he
     const journal=join(dir,'journal.jsonl');
     const {stdout}=await exec(process.execPath,['dist/host/cli.js','help','building','--journal',journal],{env});
     assert.equal(stdout,'# building\n\n- `build` places things.\n');
+    // (d22 batch90 AZ3) fh call help|more runs the subcommand (s55-57 sent them as actions)
+    assert.equal((await exec(process.execPath,['dist/host/cli.js','call','help','building'],{env})).stdout,'# building\n\n- `build` places things.\n');
+    assert.match((await exec(process.execPath,['dist/host/cli.js','call','more'],{env:{...env,FH_MORE_FILE:join(dir,'none.txt')}})).stdout,/^nothing more/);
     const line=JSON.parse((await import('node:fs')).readFileSync(journal,'utf8').trim());
     assert.equal(line.event,'help');assert.equal(line.topic,'building');
     const list=await exec(process.execPath,['dist/host/cli.js','help'],{env});
@@ -107,12 +110,15 @@ test('fh help TOPIC prints the workspace reference topic and is journaled; fh he
       if(request.action==='build') return {ok:false,error:{code:'action_failed',message:'unknown argument ghosts for build; valid: position, item'}};
       if(request.action==='queue_submit') return {ok:false,error:{code:'action_failed',message:'steps[2] (transfer): direction is required (to_entity|to_player)'}};
       if(request.action==='buld') return {ok:false,error:{code:'action_failed',message:'unsupported action; call describe'}};
+      if(request.action==='bild') return {ok:false,error:{code:'action_failed',message:'unsupported action; closest: build, place_ghosts; call describe'}};
       return {ok:false,error:{code:'action_failed',message:'entity not found at (1,2)'}};
     },async port=>{
       const run=async(args:string[])=>JSON.parse((await exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),...args],{env}).catch(e=>e)).stdout).error.message;
       assert.equal(await run(['call','build','--args','{"ghosts":1}']),'unknown argument ghosts for build; valid: position, item (reference: ./fh help building)');
       assert.equal(await run(['call','queue_submit','--args','{"steps":[]}']),'steps[2] (transfer): direction is required (to_entity|to_player) (reference: ./fh help moving-items)');
       assert.equal(await run(['call','buld']),'unsupported action; call describe (similar: build; reference: ./fh help building)');
+      // (d22 batch90 AZ3) the runtime's closest names: only their topics added
+      assert.equal(await run(['call','bild']),'unsupported action; closest: build, place_ghosts; call describe (reference: ./fh help building)');
       assert.equal(await run(['call','inspect']),'entity not found at (1,2)', 'a refusal of the game state gets no reference');
     });
   } finally { await rm(dir,{recursive:true,force:true}); }

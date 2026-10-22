@@ -11,8 +11,9 @@ return function(api)
     craft = {item='recipe', name='recipe'},
     move_to = {to='position', pos='position', destination='position', waypoints='via', through='via'},
     map = {center='position', centre='position'},
-    scan = {names='name', entity_names='name', entity='name', entities='name', types='type', range='radius', field='fields', center='position'},
-    nearest = {entity='name', names='name', types='type', center='position'},
+    -- (d22 batch90 AZ3: s55-57 refusals) scan {centre} 11, inspect {at} 8, rates {items} 12
+    scan = {names='name', entity_names='name', entity='name', entities='name', types='type', range='radius', field='fields', center='position', centre='position'},
+    nearest = {entity='name', names='name', entity_names='name', types='type', center='position', centre='position', count='limit'},
     chat = {count='limit', n='limit'},
     tells = {count='limit', n='limit'},
     build = {placements='builds', entities='builds', items='builds', dryrun='dry_run', ['dry-run']='dry_run'},
@@ -29,7 +30,8 @@ return function(api)
     technologies = {search='prefix', name='prefix', filter='prefix', technology='prefix'},
     mine = {entity='name'},
     transfer = {target='position', amount='count', quantity='count', qty='count'},
-    inspect = {target='position', names='name'},
+    inspect = {target='position', names='name', at='position'},
+    rates = {items='item'},
     -- round1650d: fh view {center} (Opus), stock {names} (Gemini), tell {message} (Gemini).
     observe = {center='position', centre='position'},
     stock = {names='item', name='item'},

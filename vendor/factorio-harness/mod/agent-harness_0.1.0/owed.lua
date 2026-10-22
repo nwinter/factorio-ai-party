@@ -146,10 +146,15 @@ return function(api)
       end
     end
   end
-  M.schema = {chat_ack = {seq='a chat line\'s or tell\'s seq (as the unanswered line gives it), an array of them, or "all"',
+  M.schema = {chat_ack = {seq='a chat line\'s or tell\'s seq (as the unanswered line gives it), an array of them, or "all"', all='true: as seq "all"',
     returns='closed (how many unanswered mentions it closed), read (unread tells it marked read), unanswered (the line, or none). A say or tell that names the sender, or reply_to its seq, closes one too (a viewer\'s line by name only while it is their one open line); reading chat does not'}}
   M.handlers = {}
   function M.handlers.chat_ack(p, a)
+    -- (d22 batch90 AZ3: 20 refusals of {all: true} in s55-57) all: true is seq "all"
+    if a.all ~= nil then
+      assert(a.all == true and a.seq == nil, 'all is true, alone (as seq "all")')
+      a = {seq='all'}
+    end
     assert(a.seq == 'all' or type(a.seq) == 'number' or (type(a.seq) == 'table' and #a.seq >= 1), 'seq is a number, an array of them, or "all"')
     local closed, read = M.ack(p.index, a.seq)
     return {closed=closed, read=read > 0 and read or nil, unanswered=M.line(p.index) or 'none'}

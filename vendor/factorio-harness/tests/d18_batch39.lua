@@ -126,7 +126,7 @@ do
   local full=grok('status',{})
   local r=grok('status',{fields={'surface','tick'}})
   eq(r.surface,full.surface); eq(r.fields,'surface, tick'); eq(r.last,nil)
-  fails(function() grok('status',{fields='surface|bogus'}) end,'fields: bogus is not in this reply; its fields: ')
+  fails(function() grok('status',{fields='surface|bogus'}) end,"fields: bogus is never in this read's reply; its fields: ")
   -- rows: each keeps name and position; one level down
   local out=runtime.project({platforms={{name='Petrel',position={x=0,y=0},hub={cargo='iron-plate*5',slots=3},speed_kms=1},{name='Swiftlet',hub={cargo='none'}}},planet='gleba'},{'hub.cargo','planet'})
   eq(out.platforms[1].name,'Petrel'); eq(out.platforms[1].hub.cargo,'iron-plate*5'); eq(out.platforms[1].hub.slots,nil); eq(out.platforms[1].speed_kms,nil)
@@ -190,3 +190,32 @@ do
   fails(function() runtime.eject_end(pp,{to={x=0,y=0},eject='iron-chest'}) end,'is not an inserter')
 end
 print('d18_batch39 C3 belt_route ends where an inserter throws overboard: ok')
+
+-- d22 batch90 AZ3 (the AU1 review's finding 6: refusals the harness's own wording invites), on this runtime.
+do
+  -- fields: a name an earlier reply of the read had (or its describe text names) is absent, not refused
+  local out=runtime.project({platforms={{name='P',state='flying',eta_min=4,leg='nauvis->gleba'}}},{'state'},'platforms')
+  eq(out.absent,nil)
+  out=runtime.project({platforms={{name='P',state='waiting at gleba'}}},{'state','eta_min','leg'},'platforms')
+  eq(out.platforms[1].state,'waiting at gleba'); eq(table.concat(out.absent,','),'eta_min,leg')
+  fails(function() runtime.project({platforms={{name='P'}}},{'state','zzbogus'},'platforms') end,'fields: zzbogus is never in this read\'s reply')
+  -- describe {action}: those entries; a name there is not: the closest real ones
+  local d=grok('describe',{action={'nearest','scna'}})
+  assert(d.actions.nearest and d.actions.nearest.surface,'nearest entry with surface'); eq(d.actions.scan,nil)
+  has(table.concat(d.unknown.scna,','),'scan')
+  -- an unknown action names the closest real ones
+  fails(function() grok('techologies',{}) end,'unsupported action; closest: technologies')
+  -- chat_ack {all: true}, reminders {id}, a doing line of 240
+  eq(grok('chat_ack',{all=true}).unanswered,'none')
+  local id=grok('reminder_add',{message='check the farm',every_ticks=36000}).added
+  local r=grok('reminders',{id=id}); eq(r.count,1); eq(r.reminders[1].id,id)
+  fails(function() grok('reminders',{id=999}) end,'no reminder #999')
+  grok('board_plan',{doing=string.rep('d',240)})
+  fails(function() grok('board_plan',{doing=string.rep('d',241)}) end,'doing')
+  -- aliases: scan {centre}, inspect {at}, rates {items}; nearest {surface, count}
+  has(grok('scan',{centre={x=0,y=0},radius=4}).corrected,'(centre is position)')
+  local okr,rr=pcall(grok,'rates',{items='iron-plate'}); assert(okr or not tostring(rr):find('unknown argument',1,true),tostring(rr))
+  game.forces.player.platforms=game.forces.player.platforms or {}
+  local okn,nr=pcall(grok,'nearest',{surface='nauvis',name='iron-ore',count=2}); assert(okn,tostring(nr))
+end
+print('d18_batch39 d22 batch90 AZ3 fields absent, describe {action}, closest actions, aliases: ok')
