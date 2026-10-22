@@ -11400,3 +11400,44 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   already use the least constant. Checked on a copy of world n's 10:33 save: the dry run at Sol's machine (21.5,263.5)
   writes `thruster < -2147483648` and `steel-plate < -2147483648`; circuit_set with it on the output inserter reads
   `logistic_met: false`.
+
+## d22 batch94 BD1: reminder gaps stay open, triggers besides the cadence, gear facts (viewer Aurora site:4267-4268)
+
+- Reminder #114 personal-equipment-standard is Astra's: added d21 04:22 UTC (shift49) every 1 h to the team, its text
+  edited at 11:30 to "after gear unlock/delivery and hourly, compare grid to stock ...", recipients named at 13:24
+  (shift51), and the cadence set to 6 h on d22 18:38 UTC (shift58) with the text left as it was. "Missed" in
+  reminders.lua: a run that comes while that recipient's line from an earlier run waits for reminder_ack; it folds into
+  the waiting line. Haiku's (and Sonnet's) line waits from the run at tick 46207740 (their last ack: 46000623 and
+  45999459); the six hourly runs from 46423740 to 47503740 are the six missed, the last 475 ticks before the 6 h edit.
+- An ack's state (`states`, `latest[].state`, `yours`, and the ack's own `state`): `done` with a result; `open
+  (acknowledged without a result)`; `open (gap: ITEMS)` with `gap_items`; `deferred (open[, gap: ITEMS])[: REASON]`
+  with `deferred` (true or a reason up to 300 characters). An ack with a result and no gap_items closes it. The batch90
+  AZ2 state (`acknowledged, not done: board #N ... unchanged since the ack`) still applies to a result on a board-linked
+  reminder. `reminders {pending: true}` adds `open`: what the reader acknowledged that stays open. A checklist reads
+  done once every step is recorded; `deferred`, `gap_items` and `gear` are refused on one.
+- `gap_items` (1..8 item names): each read of the reminder gives `latest[].gap_facts` for that recipient, read then
+  (gapfacts.lua): the recipes that make the item (hidden ones, recycling, left out) and whether each is enabled, the
+  technologies whose effects unlock them and whether each is researched, the count in the logistic networks of the
+  recipient's surface by quality (on a platform the hub's too), and the recipient's own count; one `line` each, also in
+  the recipient's `latest` line. Nothing is refused on them.
+- `gear: true` on an ack keeps the acker's own armor read (armor@quality, grid size, equipment by name and quality,
+  free cells, shield, battery) with the result: `latest[].gear`, `gear_tick`, and in the line. Refused with `for` (a
+  teammate's armor is not readable).
+- `on {research?, delivered?, respawn?}` on reminder_add / reminder_edit (`false` clears), the owner's choice:
+  - `research`: `true` (any technology), `"equipment"` (one whose unlock-recipe effects make an item placing as
+    equipment or of type armor), or 1..16 names (a leveled one matches its base name); from on_research_finished.
+  - `delivered`: `true` or `{items?: "equipment" | [names], surface?}`: a cargo pod received by a landing pad (freight's
+    receipt) or a rocket's pod reaching a platform's hub (freight's up_settle), on that surface (a planet name, or a
+    platform's name or surface; default the reminder's `surface`, else any).
+  - `respawn: true`: a recipient's own respawn (bots.lua spawn 'respawn'), that recipient's run only.
+  - A trigger starts a run for each recipient whose line does not wait (the line ends `this run on WHY`); a waiting
+    one gets no second line and no missed run: `latest[].triggers_while_waiting` and `last_trigger` count them. The
+    cadence's next run stays where it was. The row gives `on` (text) and `last_trigger {tick, why}`.
+- `equipment {operation: "list"}` (an agent's own armor): `armor` (the armor worn, name@quality above normal), and
+  `equipment` counts by name and quality (`energy-shield-equipment@rare*1`). The operator's `loadout` groups its
+  equipment rows by quality too (`quality` on each).
+- Checked on a copy of world n's 12:19 save (tick 47868759): a calcite pod from Solstice received at Nauvis's pad
+  (52,54) started #118's run (on.delivered calcite, nauvis) and the next ten pods counted beside the wait;
+  `energy-shield-mk2-equipment` set researched started it again (research "equipment"; captive-biter-spawner did
+  not); Haiku's respawn started Haiku's run. Haiku's gap_facts: energy-shield-mk2-equipment recipe not enabled,
+  technology not researched, 0 in Nauvis's 7 networks; battery-mk2-equipment researched, 963 there.

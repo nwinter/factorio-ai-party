@@ -1027,7 +1027,8 @@
         return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, head + ':') : '<span class="lt-short">' + esc(head) + '</span>';
       }
       if (x.acked_ago_s == null) return '<span class="lt-short">' + esc(who + ': ' + (x.state || 'scheduled') + ', never acknowledged') + '</span>';
-      var line = who + ': acknowledged ' + ago(x.acked_ago_s) + by;
+      var open = /^(open|deferred)/.test(x.state || '') ? ' (' + x.state + ')' : '';
+      var line = who + ': acknowledged ' + ago(x.acked_ago_s) + by + open;
       return x.result ? longText('rem' + j.id + ':latest:' + x.name, x.result, line + ':') : '<span class="lt-short">' + esc(line + ', no result given') + '</span>';
     }).join('');
     var backup = j.backup ? '<span class="fx-muted small">Backup: ' + esc((byName[j.backup] || {}).display_name || j.backup) + '</span>' : '';
@@ -1035,7 +1036,8 @@
   }
   function remindersHtml(rem, byName) {
     if (!rem || !(rem.jobs || []).length) return '';
-    var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green' };
+    // (d22 batch94 BD1) done: acknowledged with a result; open (no result, or a gap named) and deferred stay open
+    var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green', done: 'fx-chip--green', open: 'fx-chip--orange', deferred: 'fx-chip--orange' };
     var jobs = rem.jobs, total = Math.max(rem.total || 0, jobs.length), opened = remAll && total > REM_SHOWN;
     var list = opened ? jobs.filter(function (j) { return remIs(j, remFilter); }) : jobs.slice(0, REM_SHOWN);
     var rows = list.map(function (j) {

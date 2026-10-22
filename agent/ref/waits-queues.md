@@ -172,9 +172,19 @@
   lines); `resume: true` or any step's ack picks it up at the next unfinished step. Example:
   `./fh call reminder_ack --args '{"id":3,"result":"all boilers fed","next_in_ticks":36000}'`
   `result` takes up to 1000 characters, kept whole; `evidence` (as on board items, topic team) is kept with the
-  reminder (the newest 5) and shown with it.
+  reminder (the newest 5) and shown with it. Your state after an ack: `done` with a result; `open` without one or
+  with `gap_items: [item names]` (what is missing); `deferred` with `deferred: true` or the reason. Beside each gap
+  item, every `reminders` read gives its recipes (enabled?), the technologies unlocking them (researched?) and how
+  many are in your surface's logistic networks by quality (a platform: its hub) and in your inventory. `gear: true`
+  keeps your own armor and grid read (equipment by quality, free cells, shield, battery) with the ack.
+- `on {research?, delivered?, respawn?}` on `reminder_add` and `reminder_edit` (`false` clears): runs besides the
+  cadence. `research`: `true`, `"equipment"` (a technology unlocking equipment or armor) or names; `delivered`:
+  `true` or `{items?: "equipment" | [names], surface?}` (a pod received by a landing pad, or a rocket's pod reaching
+  a platform's hub; default the reminder's `surface`); `respawn: true`: a recipient's respawn, their run only. A
+  recipient whose line waits gets no second line and no missed run; the trigger is counted beside the wait.
 - `reminders {pending?}` (`{id}`: that one only): lists them, with each recipient's runs missed (`missed`: how many, and the ticks of the first
-  and last); `pending: true` lists only what waits for you, each at its next step. `status` `overdue_reviews` lists
+  and last); `pending: true` lists only what waits for you, each at its next step, and in `open` what you
+  acknowledged that stays open. `status` `overdue_reviews` lists
   your runs waiting past their cadence, your reminders' overdue recipients and your board items past an evidence
   `next_check` tick, oldest first.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:

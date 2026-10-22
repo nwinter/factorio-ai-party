@@ -69,8 +69,11 @@ class Loadouts:
         a = r.get("armor") or {}
         if not a.get("name"):
             return None
-        eq = [{"name": e["name"], "count": e.get("count", 1)} for e in (a.get("equipment") or [])[:EQUIPMENT]]
-        return {"name": a["name"], "equipment": eq, "shield": a.get("shield"), "battery_mj": a.get("battery_mj")}
+        # (d22 batch94 BD1) the quality above normal, of the armor and of each piece (the runtime counts by both)
+        eq = [dict({"name": e["name"], "count": e.get("count", 1)}, **({"quality": e["quality"]} if e.get("quality") else {}))
+              for e in (a.get("equipment") or [])[:EQUIPMENT]]
+        return dict({"name": a["name"], "equipment": eq, "shield": a.get("shield"), "battery_mj": a.get("battery_mj")},
+                    **({"quality": a["quality"]} if a.get("quality") else {}))
 
     def mode(self, name, now, fight_near=False):
         """(mode, payload) for one agent, or (None, None)."""
