@@ -6128,7 +6128,12 @@ fh watch    # deploy on every change
   594 at 62.5/min; 3319 aboard and about 624 made on the way: 3349 to spare; a rocket lifts 100 of it` on the copy).
 - `platforms {compact: true}` (B4, Astra 13:50): a line a platform: where, ammunition aboard (hub and turrets), thruster
   fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers this agent was not
-  shown in its last compact read (the rest counted).
+  shown in its last compact read (the rest counted). Since batch90 AZ4 (the AU1 review's finding 7: `platforms` with no
+  arguments was 138 KB median, and through the host's pages an agent saw 2 of 19 platforms) it is the default when no
+  platform is named, with a note saying so; `compact: false` gives the full rows (`fields` and `eta_to` read the full
+  rows), and `request_edits` (each hub section's last edit, up to 40 h old) is on a row only with `request_edits: true`.
+  On a copy of world n's save (19 platforms): `platforms {}` 166 KB before, 10.7 KB after; `compact: false` 114 KB;
+  `platform {Spindle}` 38 KB before, 25 KB after.
 - `bottleneck {item}` and its feeders (d20 batch63 Y2, Astra #1523: cryogenic-science-pack named ice the root and offered
   transfers while both cryogenic plants' input inserter was off by "cryogenic-science-pack < 2000" and its requester
   held 101 ice and 100 lithium plate): before a step counts a short maker as lacking an item, it reads the maker's
@@ -9410,7 +9415,7 @@ fh watch    # deploy on every change
   each `platform_schedule` change of a stop's departure conditions (`stops`, or `stop` with `wait`) records the
   editor, the tick, and the old and new text of each section or stop it changed (the last 5 kept). A section reads
   `on: iron-plate 600..inf from nauvis`, a stop `nauvis: time 10s and item_count iron-plate >= 600`. A dry run records
-  nothing. Reads: `requests` sections `last_edit`; `platform {platform}` `request_edits`; `platform_gate` lines end
+  nothing. Reads: `requests` sections `last_edit`; `platform {platform, request_edits: true}` `request_edits`; `platform_gate` lines end
   with the current stop's last edit, and `edits` lists each stop's. Whoever made the previous edit of that section or
   stop, when someone else changes it, gets one tell a call (`changed what you set last: Swift hub request section 6:
   off: ... -> on: ...`), and the reply says `told_of_edit`. Records begin with this deploy: a section nobody edited
@@ -11360,3 +11365,16 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   - the front rocket turrets: 84 hits and 84 kills, 68,208 damage, so 812 a hit and 1 a kill;
   - the gun turrets: 459 hits and 219 kills, 2.1 a kill, at 50.9 damage a hit (smalls take 51.2 a hit, 2 shots;
     mediums 46.1, 9 shots).
+
+## d22 batch90 AZ5: assembler_batch's holds are false at any count (Sol board #1878)
+
+- A logistic condition reads the network's count less what deliveries have reserved, so it goes negative under
+  reservations (Sol's legendary thruster batch read thruster -3): the batch's hold `PRODUCT < 0` held true there, the
+  output inserter ran, and three legendary thrusters left the machine while the staging waited.
+- Every hold the batch writes is now `ITEM < -2147483648` (the least 32-bit constant, as circuit_set `switch_off`
+  writes on signal-dot): false whatever the network count. The output hold, the input hold while the requester fills,
+  and the input off after the batch; `logistic: false` releases each as before. The plan and its schema say it.
+- Audit of the other generated holds: batch.lua held the only fixed `< 0`; circuits.lua `switch_off` and platwait.lua
+  already use the least constant. Checked on a copy of world n's 10:33 save: the dry run at Sol's machine (21.5,263.5)
+  writes `thruster < -2147483648` and `steel-plate < -2147483648`; circuit_set with it on the output inserter reads
+  `logistic_met: false`.

@@ -1,15 +1,19 @@
 -- assembler_batch {position, count, requester?, input?, output?, dry_run?} (d17 batch19 C2, Sol: three silos and eight
 -- cargo bays made by hand-written plans of 14 steps, 40+ calls, two batches that overshot): a finite batch of the
 -- machine's recipe, as one queue plan of the calls Sol made, each step's reply its facts:
--- - circuit_set {output inserter, logistic: "PRODUCT < 0"}: the products stay in the machine; the same on the input
---   inserter ("INGREDIENT < 0"): nothing goes in while the requester fills;
+-- - circuit_set {output inserter, logistic: "PRODUCT < -2147483648"}: the products stay in the machine; the same on the
+--   input inserter ("INGREDIENT < -2147483648"): nothing goes in while the requester fills;
 -- - requests {requester, clear_all}, then requests {requester, set}: exactly what the batch still needs of each
 --   ingredient (crafts x amount, less what the machine's input and the requester hold now), min = max;
 -- - wait_until item_count at the requester for each, then requests {clear_all}: nothing more comes;
 -- - circuit_set {input inserter, logistic: false}: in it goes; wait_until item_count at the machine: the products
 --   (what it held before plus count);
--- - circuit_set {input inserter, logistic: "INGREDIENT < 0"}: the machine gets nothing more (off); circuit_set {output
---   inserter, logistic: false}: the products go on.
+-- - circuit_set {input inserter, logistic: "INGREDIENT < -2147483648"}: the machine gets nothing more (off); circuit_set
+--   {output inserter, logistic: false}: the products go on.
+-- (d22 batch90 AZ5, Sol board #1878: a hold of "thruster < 0" let the inserter run when deliveries had reserved more
+-- thrusters than the network held: the logistic condition read -3, so three legendary thrusters left the machine) a
+-- hold is "ITEM < -2147483648", the 32-bit least value: false whatever the network count, as circuit_set switch_off's
+-- condition is; a negative available count is normal under reservations.
 -- The requester: the chest an inserter takes from to put into the machine (requester), that inserter (input), and the
 -- inserter that takes from the machine (output), found round it unless given. What the requester already holds over
 -- the batch's need is said (surplus): the machine would make more with it. dry_run: the read and the plan.
@@ -24,6 +28,9 @@
 -- ingredient at another quality is said: the machine does not take it.
 return function(api)
   local M = {}
+  -- a logistic condition that never holds: the least 32-bit constant (circuits.lua M.NEVER's)
+  local HOLD = ' < -2147483648'
+  M.HOLD = HOLD
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function qualities()
@@ -120,8 +127,8 @@ return function(api)
     local steps = {}
     local ipos = {x=input.position.x, y=input.position.y}
     local trash = try(function() return req.get_requester_point().trash_not_requested end)
-    steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=product .. ' < 0'}, label='hold output'}
-    steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. ' < 0'}, label='input held'}
+    steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=product .. HOLD}, label='hold output'}
+    steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. HOLD}, label='input held'}
     if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=false}, label='keep staged (trash unrequested off)'} end
     steps[#steps+1] = {action='requests', args={position=rpos, clear_all=true}, label='clear requester'}
     if #sets > 0 then
@@ -133,7 +140,7 @@ return function(api)
     end
     steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=false}, label='input on'}
     steps[#steps+1] = {action='wait_until', args={['until']='item_count', positions={mpos}, item=product, quality=product_quality ~= 'normal' and product_quality or nil, at_least=had + count, timeout=54000}, label='made'}
-    steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. ' < 0'}, label='input off'}
+    steps[#steps+1] = {action='circuit_set', args={position=ipos, logistic=first .. HOLD}, label='input off'}
     steps[#steps+1] = {action='circuit_set', args={position={x=output.position.x, y=output.position.y}, logistic=false}, label='release output'}
     if trash then steps[#steps+1] = {action='requests', args={position=rpos, trash_unrequested=true}, label='trash unrequested on again'} end
     local plan = {
@@ -146,7 +153,7 @@ return function(api)
       plan[#plan+1] = string.format('its modules give quality: some products come out above %s, so the products are counted at every quality', quality)
     end
     for _, l in ipairs{
-      string.format('output inserter %s held (logistic "%s < 0") until the batch is made; input inserter %s held while the requester fills', at(output.position), product, at(input.position)),
+      string.format('output inserter %s held (logistic "%s%s", false whatever the network count, reservations too) until the batch is made; input inserter %s held while the requester fills', at(output.position), product, HOLD, at(input.position)),
       string.format('requester %s cleared, then asked for exactly what is still to come', at(req.position))} do plan[#plan+1] = l end
     if #other > 0 then
       plan[#plan+1] = string.format('the requester %s also holds %s: the machine takes only %s quality', at(req.position), table.concat(other, ', '), quality)
@@ -155,8 +162,8 @@ return function(api)
       plan[#plan+1] = string.format('requester %s has trash unrequested on: robots would take the staged ingredients back once its requests are cleared; it is switched off before the requests are cleared and on again after the output is released (a plan stopped between leaves it off: requests {position, trash_unrequested: true})', at(req.position))
     end
     for _, l in ipairs(lines) do plan[#plan+1] = l end
-    plan[#plan+1] = string.format('then: its requests cleared, the input on, wait for %d %s in the machine, the input off again (logistic "%s < 0"), the output released',
-      had + count, upgrades and product .. ' (every quality)' or q_of(product), first)
+    plan[#plan+1] = string.format('then: its requests cleared, the input on, wait for %d %s in the machine, the input off again (logistic "%s%s"), the output released',
+      had + count, upgrades and product .. ' (every quality)' or q_of(product), first, HOLD)
     local out = {machine=at(m.position), recipe=recipe.name, quality=quality, product=product, other_quality=#other > 0 and other or nil, crafts=crafts, requester=at(req.position), input=at(input.position),
       output=at(output.position), plan=plan, surplus=#surplus > 0 and surplus or nil,
       trash_unrequested=trash ~= nil and (trash and 'on: switched off for the batch and on again after' or 'off') or nil}
@@ -174,6 +181,6 @@ return function(api)
     requester='optional {x,y}: the requester chest that feeds it (default: the one an inserter takes from into it)',
     input='optional {x,y}: that inserter', output='optional {x,y}: the inserter that takes from the machine (default: the one round it)',
     dry_run='true: the read and the plan (steps), nothing queued',
-    returns='quality (the recipe\'s: item ingredients asked for and waited for at it, and the products counted at it; at every quality when the machine\'s modules give quality), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after the output is released), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition, input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
+    returns='quality (the recipe\'s: item ingredients asked for and waited for at it, and the products counted at it; at every quality when the machine\'s modules give quality), other_quality (what the requester holds of an ingredient at another quality: the machine does not take it), trash_unrequested (the requester\'s switch: on is switched off for the batch, before its requests are cleared, and on again after the output is released), plan (the batch, each ingredient: for the crafts, held, to come), crafts, product, requester, input, output, surplus (already more than the batch needs: the machine would make more), queued, queue, line; the plan runs in your queue (queue_status): output held by its logistic condition ("PRODUCT < -2147483648": false whatever the network count, a negative one under reservations too), input held, requester cleared and asked for exactly what is to come, waits for it, requests cleared, input on, waits for the products in the machine, input off, output released. The inserters need a logistic network for their logistic condition'}}
   return M
 end

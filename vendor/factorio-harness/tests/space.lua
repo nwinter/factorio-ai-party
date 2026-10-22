@@ -148,10 +148,14 @@ eq(r.sections[2].off,nil); eq(r.note,nil); eq(hub_sections.get_section(2).active
 fails(function() space.requests(p,{platform='alpha',active='yes'}) end,'active must be true or false')
 -- The platforms row keeps the requests of a section that is off apart.
 hub_sections.get_section(2).active=false
-local offrow=space.platforms(p,{}).platforms[1]
+-- (d22 batch90 AZ4) no platform named: compact by default, saying so; compact: false the full rows
+local cview=space.platforms(p,{})
+assert(cview.compact==true and cview.platforms==nil and #cview.lines>=1 and cview.note:find('compact by default with no platform named',1,true),cview.note)
+assert(space.platforms(p,{compact=true}).note==nil)
+local offrow=space.platforms(p,{compact=false}).platforms[1]
 eq(offrow.requests,nil); eq(offrow.requests_off[1],'iron-plate 100..inf from nauvis'); eq(offrow.requests_off[2],'coal=500 from vulcanus')
 hub_sections.get_section(2).active=true
-eq(space.platforms(p,{}).platforms[1].requests_off,nil)
+eq(space.platforms(p,{compact=false}).platforms[1].requests_off,nil)
 -- A requester chest: its requests and its "request from buffer chests" switch.
 do
   local chest_sections=sections({})
@@ -169,7 +173,7 @@ do
   fails(function() space.requests(p,{platform='alpha',from_buffers=true}) end,'from_buffers is a requester chest setting')
 end
 -- Platform view and schedule.
-local view=space.platforms(p,{})
+local view=space.platforms(p,{compact=false})
 eq(view.platforms[1].state,'paused'); eq(view.platforms[1].at,'nauvis'); eq(view.platforms[1].hub_items,'iron-plate*5')
 eq(view.platforms[1].requests[1],'iron-plate 100..inf from nauvis'); eq(view.silos[1].parts,'10/50'); eq(view.silos[1].status,'building_rocket')
 eq(view.platforms[1].speed,nil,'details only for one named platform')
@@ -207,16 +211,16 @@ do
   eq(row.consumed_10min,'firearm-magazine*20'); eq(row.produced_10min,'solar-panel*4')
   eq(row.thrown_overboard,'firearm-magazine*2 solar-panel*1')
   eq(row.hub_trash,'iron-plate*5')
-  local all=space.platforms(p,{}).platforms[1]
+  local all=space.platforms(p,{compact=false}).platforms[1]
   eq(all.thrown_overboard,nil,'details only for one named platform'); eq(all.hub_trash,'iron-plate*5','every row')
   -- Where the hub's trash goes (operator 09:04: Sunward's trash on Gleba, no landing pad): down to the planet the
   -- platform is stopped at, to its pad or as cargo-pod containers near (0,0); kept while flying.
   eq(all.hub_trash_note,nil,'a location not known as a planet: no note')
   local saved_loc=platform.space_location
   platform.space_location={name='gleba',type='planet'}
-  eq(space.platforms(p,{}).platforms[1].hub_trash_note,'the game sends the hub\'s trash down to gleba in cargo pods while the platform is stopped there: to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)')
+  eq(space.platforms(p,{compact=false}).platforms[1].hub_trash_note,'the game sends the hub\'s trash down to gleba in cargo pods while the platform is stopped there: to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)')
   platform.space_location,platform.space_connection,platform.distance=nil,{from={name='nauvis'},to={name='gleba'},length=15000},0.5
-  eq(space.platforms(p,{}).platforms[1].hub_trash_note,'the hub keeps its trash while flying; when the platform stops at a planet, the game sends it down in cargo pods: to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)')
+  eq(space.platforms(p,{compact=false}).platforms[1].hub_trash_note,'the hub keeps its trash while flying; when the platform stops at a planet, the game sends it down in cargo pods: to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)')
   -- requests on a hub: a max under what it holds is named, with the trash and where it goes.
   hub_inv.get_item_count=function(it) assert(it.name=='iron-plate' and it.quality=='normal'); return 5 end
   local rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=2}}})
@@ -252,7 +256,7 @@ do
   eq(space.platforms(p,{platform='alpha'}).platforms[1].repair_packs,'repair-pack*12')
   -- Every row has the damaged and repair packs (platforms study: hub health and
   -- damage came only from inspect); the most damaged 3 without platform=.
-  local all=space.platforms(p,{}).platforms[1]
+  local all=space.platforms(p,{compact=false}).platforms[1]
   eq(#all.damaged,2); eq(all.repair_packs,'repair-pack*12'); eq(all.speed,nil,'speed only for one named platform')
   assert(space.REPAIR_NOTE:find('one entity at a time',1,true))
   platform.surface.find_entities_filtered,hub_inv.get_contents,prototypes.item['repair-pack']=find,contents,nil
@@ -375,7 +379,7 @@ do
   prototypes.utility_constants={rocket_lift_weight=1000000}
   silo_cargo={get_contents=function() return {{name='solar-panel',count=1},{name='gun-turret',count=4},{name='space-platform-foundation',count=30},
     {name='fast-inserter',count=4},{name='firearm-magazine',count=28}} end}
-  eq(space.platforms(p,{}).silos[1].weight,'1060/1000 kg')
+  eq(space.platforms(p,{compact=false}).silos[1].weight,'1060/1000 kg')
   fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
     'launch refused, overweight by 60 kg: the rocket holds 1060 kg and lifts 1000 kg; take cargo out with transfer {position, direction=to_player, inventory=rocket_silo_rocket, item, count} (cargo: space-platform-foundation*30 at 20 kg, firearm-magazine*28 at 10 kg, fast-inserter*4 at 20 kg, gun-turret*4 at 20 kg, solar-panel*1 at 20 kg)')
   eq(asked,0)
@@ -414,7 +418,7 @@ do
   silo_cargo=saved
   trash={get_contents=function() return {{name='space-platform-foundation',count=40},{name='inserter',count=1}} end}
   eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=true}).trash,'space-platform-foundation*40 inserter*1')
-  eq(space.platforms(p,{}).silos[1].trash,'space-platform-foundation*40 inserter*1')
+  eq(space.platforms(p,{compact=false}).silos[1].trash,'space-platform-foundation*40 inserter*1')
   silo.get_inventory,silo.use_transitional_requests,defines.inventory.rocket_silo_trash=get_inv,nil,nil
 end
 -- Riding needs the silo in reach and a platform; the character goes along.
@@ -709,35 +713,35 @@ fails(function() space.platform_create(p,{}) end,'not unlocked yet')
 -- speed, the schedule's next stop. At nauvis with the schedule heading for vulcanus: no leg yet.
 platform.speed=0; platform.space_location={name='nauvis'}; platform.space_connection=nil
 platform.schedule={current=1,records={{station='vulcanus'},{station='nauvis'}}}
-local row=space.platforms(p,{}).platforms[1]
+local row=space.platforms(p,{compact=false}).platforms[1]
 eq(row.speed_kms,0); eq(row.next_stop,'vulcanus'); eq(row.leg,nil); eq(row.eta_min,nil)
 -- On the way: a connection is measured from its `from` end (nauvis->vulcanus, a quarter of the way).
 platform.space_location=nil; platform.distance=0.25; platform.speed=1.5; platform.last_visited_space_location={name='nauvis'}
 platform.space_connection={name='nauvis-vulcanus',from={name='nauvis'},to={name='vulcanus'},length=15000}
-row=space.platforms(p,{}).platforms[1]
+row=space.platforms(p,{compact=false}).platforms[1]
 eq(row.speed_kms,90); eq(row.leg,'nauvis->vulcanus'); eq(row.heading_to,'vulcanus'); eq(row.leg_km,15000); eq(row.leg_left_km,11250)
 eq(row.eta_min,2.1); eq(row.next_stop,'vulcanus'); eq(row.at,'nauvis->vulcanus 25%')
 -- Flown the other way (the schedule's stop is the connection's from end): the km left are the quarter behind.
 platform.schedule.current=2; platform.last_visited_space_location={name='vulcanus'}
-row=space.platforms(p,{}).platforms[1]
+row=space.platforms(p,{compact=false}).platforms[1]
 eq(row.leg,'vulcanus->nauvis'); eq(row.heading_to,'nauvis'); eq(row.leg_left_km,3750); eq(row.eta_min,0.7); eq(row.next_stop,'nauvis')
 -- A stop past this leg (a longer trip): the end it did not come from.
 platform.schedule={current=1,records={{station='aquilo'}}}; platform.last_visited_space_location={name='vulcanus'}
-row=space.platforms(p,{}).platforms[1]
+row=space.platforms(p,{compact=false}).platforms[1]
 eq(row.heading_to,'nauvis'); eq(row.leg_left_km,3750); eq(row.next_stop,'aquilo')
 -- The unit, from shift08's recorded reads on world n: Sunward flew nauvis->vulcanus back from 80% to 55% in 6631 ticks
 -- at speed 0.556 (game units). km per tick puts it 8313 km from nauvis after those ticks; the read said 55% (8250 km).
 platform.schedule={current=1,records={{station='nauvis'}}}; platform.speed=0.556; platform.distance=0.80
-row=space.platforms(p,{}).platforms[1]
+row=space.platforms(p,{compact=false}).platforms[1]
 eq(row.speed_kms,33.4); eq(row.leg_left_km,12000); eq(row.eta_min,6)
 assert(math.abs((row.leg_left_km-0.556*6631)-0.55*15000)<0.02*15000,'km per tick matches the recorded flight')
 -- No speed: no minutes.
 platform.speed=0
-eq(space.platforms(p,{}).platforms[1].eta_min,nil)
+eq(space.platforms(p,{compact=false}).platforms[1].eta_min,nil)
 -- Waiting at its current stop: the next stop is the one after it.
 platform.space_connection=nil; platform.space_location={name='vulcanus'}
 platform.schedule={current=1,records={{station='vulcanus'},{station='nauvis'}}}
-row=space.platforms(p,{}).platforms[1]
+row=space.platforms(p,{compact=false}).platforms[1]
 eq(row.next_stop,'nauvis'); eq(row.leg,nil); eq(row.at,'vulcanus')
 eq(space.flight(platform).next_stop,'nauvis')
 -- Each stop with its wait conditions, where it waits (with how far each is) or flies to, and the next one
@@ -780,7 +784,7 @@ do
   platform.schedule.records[2].wait_conditions={{type='time',ticks=2147483647}}
   eq(space.stops(platform)[2],'2 nauvis (waiting here): time the maximum (about 414 days)')
   -- The platforms row carries them.
-  eq(space.platforms(p,{}).platforms[1].stops[2],'2 nauvis (waiting here): time the maximum (about 414 days)')
+  eq(space.platforms(p,{compact=false}).platforms[1].stops[2],'2 nauvis (waiting here): time the maximum (about 414 days)')
   platform.schedule,platform.state,platform.space_location,platform.space_connection,platform.hub=saved.sched,saved.state,saved.loc,saved.conn,saved.hub
   platform.get_schedule=nil
 end
@@ -823,7 +827,7 @@ do
   eq(space.hub_chunks(hub),'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)')
   local kept=platform.hub.get_inventory
   platform.hub.get_inventory=function(i) if i==defines.inventory.hub_main then return inv end end
-  eq(space.platforms(p,{}).platforms[1].hub_chunks,'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)','every row')
+  eq(space.platforms(p,{compact=false}).platforms[1].hub_chunks,'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)','every row')
   inv[1],inv[3],inv[4]=empty,empty,empty
   eq(space.hub_chunks(hub),nil,'no chunk in the hub')
   platform.hub.get_inventory=kept
@@ -836,7 +840,7 @@ do
   local row=space4.platforms(p,{platform='alpha'}).platforms[1]
   eq(row.ammo_rates[1],'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191')
   eq(row.incoming_cargo,'1 rocket on the way: firearm-magazine*20'); eq(row.incoming[1],'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)')
-  row=space4.platforms(p,{}).platforms[1]
+  row=space4.platforms(p,{compact=false}).platforms[1]
   eq(row.ammo_rates,nil,'details only for one named platform'); eq(row.incoming_cargo,nil)
 end
 -- A set without section edits the item's slot in the manual section that holds it (Grok, d15 06:20: a hub's set of

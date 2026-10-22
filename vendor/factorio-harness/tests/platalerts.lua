@@ -133,12 +133,12 @@ eq(has(alerts(sol),'turrets empty'),S..': 2 of 2 gun-turrets empty; turrets hold
 jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
 jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
 -- The platforms read: the same defence for every platform, fresh.
-local prow=sol('platforms',{}).platforms[1]
+local prow=sol('platforms',{compact=false}).platforms[1]
 eq(prow.defense.hub_health,'1000/1000'); eq(prow.defense.turrets,'2 gun-turrets: 2 empty, 0 low (under 10 rounds)')
 eq(prow.defense.ammo,'turrets hold 0 rounds, the hub firearm-magazine 920'); eq(prow.repair_packs,'repair-pack*5')
 hub_ammo=0
 t1.rounds,t2.rounds=50,50
-eq(sol('platforms',{}).platforms[1].defense.ammo,'turrets hold 100 rounds, the hub no ammo')
+eq(sol('platforms',{compact=false}).platforms[1].defense.ammo,'turrets hold 100 rounds, the hub no ammo')
 
 -- No repair packs while it takes hits.
 packs=0; hit(hub,10); jump(601)
@@ -151,7 +151,7 @@ opus('status',{brief=true}); jump(601); alerts(astra)  -- a sample at 1000
 hub.health=900; jump(601)
 eq(has(alerts(astra),'hub health'),S..' hub health 900/1000, down 100 in 40s')
 -- The platforms read shows it, and the hub among the damaged.
-prow=sol('platforms',{}).platforms[1]
+prow=sol('platforms',{compact=false}).platforms[1]
 eq(prow.defense.hub_health,'900/1000'); eq(prow.damaged[1],'space-platform-hub (0,0) 900/1000')
 hub.health=880; jump(601); eq(has(alerts(astra),'hub health'),nil,'within the minute')
 jump(3000); hub.health=850; jump(601)
