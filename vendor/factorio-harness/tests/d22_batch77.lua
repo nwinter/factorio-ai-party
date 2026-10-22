@@ -51,3 +51,29 @@ do
   defines,prototypes=nil,nil
 end
 print('d22_batch77 AM1 assembler_batch at the recipe quality: ok')
+
+-- AM2: fluid_count on a platform counts the fusion reactors' and generators' fluidboxes, each kind said; the type filter
+-- names them.
+do
+  defines={inventory={hub_main=1}}
+  prototypes={fluid={['fluoroketone-cold']={},['fusion-plasma']={}}}
+  game={tick=0}
+  local function e(t,n) return {type=t,valid=true,get_fluid_count=function(f) return n[f] or 0 end} end
+  local ents={e('pipe',{['fluoroketone-cold']=150}),e('fusion-reactor',{['fluoroketone-cold']=1000,['fusion-plasma']=10}),
+    e('fusion-reactor',{['fluoroketone-cold']=1000,['fusion-plasma']=10}),e('fusion-generator',{['fusion-plasma']=10})}
+  local types
+  local pl={valid=true,name='Asterion',surface={find_entities_filtered=function(f) types=f.type; return ents end}}
+  local p={force={platforms={pl}}}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){}
+  local cond={['until']='fluid_count',platform='Asterion',fluid='fluoroketone-cold',at_least=2100}
+  C.validate(cond)
+  local met,saw=C.check(p,cond)
+  eq(met,true); eq(saw,'fluoroketone-cold 2150 on Asterion: pipes 150 (1), fusion reactors and generators 2000 (2)')
+  local want={}
+  for _,t in ipairs(types) do want[t]=true end
+  assert(want['fusion-reactor'] and want['fusion-generator'] and want.boiler and want.generator,'the type filter')
+  met,saw=C.check(p,{['until']='fluid_count',platform='Asterion',fluid='fusion-plasma',at_least=30})
+  eq(met,true); eq(saw,'fusion-plasma 30 on Asterion: fusion reactors and generators 30 (3)')
+  defines,prototypes,game=nil,nil,nil
+end
+print('d22_batch77 AM2 fluid_count counts fusion reactors and generators: ok')

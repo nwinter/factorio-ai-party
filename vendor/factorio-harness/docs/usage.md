@@ -11033,3 +11033,21 @@ pass began as the last ended.
   returned count 0, preserved "1251 of the blueprint's entities already stood there ...", anchor aligned true; with 40
   of Sol's floor ghosts removed first, count 40 (space-platform-foundation); with 5 entity ghosts removed (4
   fast-inserters, a crusher), count 5, each at its spot, 1 wire joined to what stood. Tests: tests/blueprints.lua.
+
+## d22 batch77 AM2: fluid_count counts fusion reactors and generators (Astra #1769)
+
+- `wait_until fluid_count` read our storage tanks, pipes, pumps, thrusters, assembling machines and furnaces. Fusion
+  reactors and fusion generators were not in its type filter, so Asterion's wait on fluoroketone-cold read the pipes
+  and left out the 2000 in its two reactors.
+- Now the filter also takes fusion reactors and fusion generators (`fusion reactors and generators N (k)` in `saw`),
+  boilers and generators (heat exchangers, steam engines and turbines: `boilers and generators`) and mining drills
+  (with `machines`).
+- `platform_supply` has no general fluid tally with this filter: its fuel trace reads thruster-fuel and
+  thruster-oxidizer in the thrusters, pipes, pumps and tanks, which hold them. `harness: true` waits (platwait.lua) read
+  the storage tanks, as documented. Neither is changed.
+- Seen on a copy of world n's `_autosave8` (tick 46406483): on main, `fluoroketone-cold` on Asterion read 1612 (pipes
+  1200, machines 412), with 1000 in each of its two reactors left out; `fusion-plasma` read none. Kestrel IVa, Kestrel
+  IVb and Crucible each had a reactor's 1000 left out too. With this change: Asterion 3618 (pipes 1200, machines 418,
+  fusion reactors and generators 2000) and fusion-plasma 60 (6).
+- Cost: the scan finds 725 entities on Asterion against 719 before; 10 scans each, alternating, took 2.2-4.8 ms
+  with either filter on the copy.
