@@ -11586,6 +11586,25 @@ best of three.
     warm-up call first: the first call after a deploy fills caches.
   - The worst platforms are still over 10 ms. On Asterion (16-19 ms) that is the thrust lines' upstream walk of its
     pipes (2.1 ms), the ammo rows (3.7), defense (1.4), blockers (1.3), the jobs lines (1.1) and the reply's encoding.
+- Part 2, `platforms` (world n: 16 calls, 16.5 ms average). Those calls were the stream service's: `platforms
+  {platform: NAME}` for the first 4 platforms every 15 s, 43.6-47.9 ms a game second on world n and 49.9 ms for the
+  same 4 on main's runtime on the copy (so the copy runs these reads about 1.1x slower).
+  - With `fields`, a row makes only the parts those fields name (the reply is the same: tests/platform_inspect.lua,
+    and on the copy all 19 platforms' replies compared equal). The stream asks for its 13 fields (live.py
+    `PLATFORM_FIELDS`): 9.4 ms median, 15.4 worst before; 4.0 and 8.1 now; the first 4 in 14.0 ms.
+  - `compact: false` with no platform named: 2 full rows a page (`page`, `pages`, `count`, `next`: `platforms
+    {compact: false, page: N}`); `page` with the compact read or a platform named is refused. Every full row in one
+    call was 70-84 ms and 118 KB; a page is 5.7-11.9 ms and 3.7-19.7 KB. `eta_to` pages the same way (73-89 ms and
+    133 KB before; 9.2-11.0 ms and 17.9 KB a page).
+  - The compact read (19.3-22.1 ms before, 11.0-15.6 ms now, 12.7 KB either way): ghosts of both kinds counted in one
+    count by name (a count by name took half the time of one by type) and found only when there are some; the tile
+    rules' check only with ghosts; the turrets, thrusters and tanks from the platform's background read when one
+    count finds no other aboard (the finds were 5.7 ms for 19 platforms, the count 1.5), else found; an item's type
+    read once per name; the jobs lines only for full rows.
+  - The departure lines (agents' queues and orders that send a platform on) come from one walk for every platform,
+    the jobs lines only for the rows the reply has, and a hub's request counts are written with string.format (in
+    the game's Lua `..` with a number costs 8-22 us on the copy, string.format 0.3).
+
 ### d22 batch93 BC2: status brief's vehicle_fire
 
 - Viewer Foobator (13:33): the stream's camera on a spidertron firing rockets left half the action out. `status {brief:

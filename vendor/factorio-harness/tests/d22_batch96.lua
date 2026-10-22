@@ -158,3 +158,153 @@ do
 end
 print('d22_batch96 BF1 thrusters once a tick: ok')
 defines,game=nil,nil
+
+-- BF1 part 2: the platforms read (dispatch platforms: the stream's platforms {platform} 4 a second, 43.6-47.9 ms a
+-- second on world n; compact 19-22 ms, every full row 70-84 ms and 118 KB on the copy)
+local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+
+-- 6. full rows 2 a page with no platform named: page, pages, count, next; the departure lines from one walk
+do
+  game={tick=600}
+  defines={space_platform_state={waiting_at_station=2},inventory={hub_main=1,hub_trash=2,turret_ammo=3},flow_precision_index={ten_minutes=1}}
+  prototypes={item={}}
+  local plats={}
+  for i=1,5 do plats[i]={valid=true,name='P'..i,index=i,state=2,space_location={name='nauvis'}} end
+  local p={index=1,force={platforms=plats},surface={find_entities_filtered=function() return {} end}}
+  local st,walks={},0
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,
+    departure_all=function() walks=walks+1; return {P2={'sol\'s queue: platform_schedule P2'}} end,
+    departure=function(name,by) return by[name] end}
+  local r=space.platforms(p,{compact=false})
+  eq(#r.platforms,2); eq(r.platforms[1].name,'P1'); eq(r.page,1); eq(r.pages,3); eq(r.count,5)
+  eq(r.next,'platforms {compact: false, page: 2}')
+  eq(r.platforms[2].departure[1],'sol\'s queue: platform_schedule P2'); eq(walks,1,'one walk a read')
+  r=space.platforms(p,{compact=false,page=3})
+  eq(#r.platforms,1); eq(r.platforms[1].name,'P5'); eq(r.next,nil)
+  eq(#space.platforms(p,{compact=false,page=4}).platforms,0)
+  eq(#space.platforms(p,{compact=false,platform='P4'}).platforms,1,'a platform named: its row, no page')
+  fails(function() space.platforms(p,{page=2}) end,'page goes with every platform')
+  fails(function() space.platforms(p,{compact=false,platform='P1',page=1}) end,'page goes with every platform')
+  fails(function() space.platforms(p,{compact=false,page=0}) end,'page is 1 or more')
+end
+print('d22_batch96 BF1 platforms full rows paged: ok')
+
+-- 7. the compact read: one count of both ghost kinds by name, and no ghost find or tile check with none; the turrets,
+-- thrusters and tanks of the background read when a count finds no other aboard, else found
+do
+  game={tick=600}
+  defines={space_platform_state={waiting_at_station=2},inventory={hub_main=1,hub_trash=2,turret_ammo=3},flow_precision_index={ten_minutes=1}}
+  prototypes={item={['firearm-magazine']={type='ammo'},['iron-plate']={type='item'}}}
+  local function inv(list) return {get_contents=function() return list end,count_empty_stacks=function() return 5 end,get_item_count=function() return 0 end} end
+  local turret={valid=true,type='ammo-turret',get_inventory=function() return inv({{name='firearm-magazine',count=10}}) end}
+  local tank={valid=true,type='storage-tank',fluidbox=setmetatable({},{__len=function() return 1 end,__index=function(_,i) return {name='thruster-fuel',amount=500} end})}
+  local hub={valid=true,get_inventory=function(i) return inv({{name='firearm-magazine',count=40},{name='iron-plate',count=9}}) end,get_logistic_sections=function() return nil end}
+  local finds,counts,aboard={},{},1
+  local surface={find_entities_filtered=function(f) finds[#finds+1]=f
+      if f.type=='ammo-turret' then return {turret} end
+      if type(f.type)=='table' and f.type[1]=='thruster' then return {tank} end
+      return {} end,
+    count_entities_filtered=function(f) counts[#counts+1]=f
+      if f.name then return 0 end
+      return 1+aboard end}
+  local pl={valid=true,name='Kestrel',index=3,state=2,space_location={name='nauvis'},surface=surface,hub=hub,force={name='player',get_fluid_production_statistics=function() return nil end}}
+  local p={index=1,force={platforms={pl}}}
+  local lists={turrets={turret},tanks={tank}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end,
+    platform_lists=function(x) eq(x,pl); return aboard==1 and lists or nil end}
+  local r=space.platforms(p,{})
+  eq(r.compact,true)
+  has(r.lines[1],'ammo firearm-magazine 50'); has(r.lines[1],'thruster fuel 500 units'); has(r.lines[1],'ghosts lack nothing')
+  local ghost_counts=0
+  for _,f in ipairs(counts) do if f.name then ghost_counts=ghost_counts+1; eq(f.name[1],'entity-ghost'); eq(f.name[2],'tile-ghost'); eq(f.limit,1) end end
+  eq(ghost_counts,1,'one ghost count')
+  for _,f in ipairs(finds) do
+    local t=type(f.type)=='table' and f.type[1] or f.type
+    assert(t~='entity-ghost' and t~='tile-ghost','no ghost find with none counted')
+    assert(t~='ammo-turret' and t~='thruster','the listed turrets and tanks')
+  end
+  -- a turret built since the background read: the lists are not used, they are found
+  aboard,finds=2,{}
+  r=space.platforms(p,{})
+  has(r.lines[1],'ammo firearm-magazine 50')
+  local found={}
+  for _,f in ipairs(finds) do found[type(f.type)=='table' and f.type[1] or f.type]=true end
+  eq(found['ammo-turret'],true); eq(found.thruster,true)
+end
+print('d22_batch96 BF1 compact platforms read: ok')
+
+-- 8. freight.platform_lists: the background read's turrets and tanks (valid ones) while a count of them aboard finds
+-- no more; nil before a read and when one was built since
+do
+  game={tick=600}
+  local st={platform_belts={}}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  local n=2
+  local pl={index=4,force={name='player'},surface={count_entities_filtered=function(f)
+    eq(f.type[1],'ammo-turret'); eq(f.type[2],'thruster'); eq(f.type[3],'storage-tank'); eq(f.force.name,'player'); return n end}}
+  eq(F.platform_lists(pl),nil,'no read yet'); eq(st.platform_belts[4].wanted,600,'marked as read lately')
+  local gone={valid=false}
+  st.platform_belts[4].done={tick=500,belts={},hands={},turrets={{valid=true},gone},tanks={{valid=true}}}
+  local l=F.platform_lists(pl)
+  eq(#l.turrets,1); eq(#l.tanks,1); eq(l.tick,500)
+  n=3
+  eq(F.platform_lists(pl),nil,'one more aboard than listed')
+  eq(F.platform_lists({name='fake'}),nil,'no index')
+end
+print('d22_batch96 BF1 platform_lists: ok')
+
+-- 9. departure: every platform's lines from one walk of the queues and orders, the same as one platform's
+do
+  local st={queues={[1]={pending={{action='wait_until',args={['until']='item_count',item='coal'}},{action='platform_schedule',args={platform='A',stops={{station='nauvis'}}}}}}},
+    remote_queues={[2]={current={action='platform_schedule',args={platform='B',stops={{station='vulcanus'}}}}}},
+    orders={[1]={list={{name='ship',when={['until']='time'},steps={{action='platform_schedule',args={platform='A',stops={{station='gleba'}}}}}}}}}}
+  local D=dofile('mod/agent-harness_0.1.0/departure.lua'){state=function() return st end,name_of=function(i) return ({'sol','luna'})[i] end}
+  local all=D.all()
+  eq(#all.A,2); eq(#all.B,1); eq(all.C,nil)
+  for _,name in ipairs({'A','B'}) do
+    local one=D.lines(name)
+    eq(#one,#all[name]); for i,l in ipairs(one) do eq(l,all[name][i]) end
+    eq(D.lines(name,all),all[name])
+  end
+  has(all.A[1],'platform_schedule A'); has(all.B[1],'luna\'s remote queue'); eq(D.lines('C',all),nil)
+end
+print('d22_batch96 BF1 departure lines in one walk: ok')
+
+-- 10. platjobs.all(want): only the rows of the platforms a reply has
+do
+  game={tick=600}
+  local st={queues={[1]={pending={{action='drop',args={platform='A',item='coal',count=5}},{action='drop',args={platform='B',item='coal',count=7}}}}}}
+  local J=dofile('mod/agent-harness_0.1.0/platjobs.lua'){state=function() return st end,remote_keys=function() return {} end,lookup=function() return {name='sol'} end}
+  local all=J.all()
+  assert(all.A and all.B,'both without want')
+  local some=J.all({B=true})
+  eq(some.A,nil); eq(#some.B,1); eq(J.lines('B',some)[1],J.lines('B',all)[1])
+end
+print('d22_batch96 BF1 jobs lines for the rows shown: ok')
+
+-- 11. with fields (__want from the fields wrapper) a row makes only the parts those fields need
+do
+  game={tick=600}
+  defines={space_platform_state={waiting_at_station=2},inventory={hub_main=1,hub_trash=2,turret_ammo=3},flow_precision_index={ten_minutes=1}}
+  prototypes={item={}}
+  local made={}
+  local function count(k,v) return function() made[k]=(made[k] or 0)+1; return v end end
+  local hub={valid=true,position={x=0,y=0},get_inventory=function() return {get_contents=function() return {{name='coal',count=3}} end,count_empty_stacks=function() return 1 end,
+    get_item_count=function() return 0 end} end,get_logistic_sections=count('sections',nil)}
+  local surface={find_entities_filtered=function() return {} end,count_entities_filtered=function() return 0 end}
+  local pl={valid=true,name='P1',index=1,state=2,space_location={name='nauvis'},surface=surface,hub=hub,force={}}
+  local p={index=1,force={platforms={pl}},surface={find_entities_filtered=function() return {} end,planet=nil}}
+  local fr={read=count('freight',{}),receipts=count('landed'),freshness=count('spoiling'),ammo=count('ammo','ammo line'),incoming=count('incoming'),
+    leg=function() return nil end,where=function() return {} end}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end,freight=fr,defense=count('defense','def'),
+    engine=count('engine'),thrust_after=count('thrust'),wait_need=count('wait'),launch_need=count('launch')}
+  local r=space.platforms(p,{platform='P1',compact=false,__want={ammo_rates=true,hub_items=true}})
+  eq(r.platforms[1].ammo_rates,'ammo line'); eq(r.platforms[1].hub_items,'coal*3')
+  eq(made.ammo,1)
+  for _,k in ipairs({'freight','landed','spoiling','incoming','defense','engine','thrust','wait','launch','sections'}) do eq(made[k],nil,k..' not made') end
+  made={}
+  r=space.platforms(p,{platform='P1',compact=false})
+  for _,k in ipairs({'freight','ammo','defense','engine','thrust','wait','launch','sections'}) do eq(made[k],1,k..' made without fields') end
+  eq(r.platforms[1].defense,'def')
+end
+print('d22_batch96 BF1 a row makes only the fields asked: ok')
