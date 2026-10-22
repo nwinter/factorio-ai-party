@@ -134,9 +134,10 @@
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
   - inserters: pickup and drop tiles; a built inserter with no pickup or drop target is flagged (build replies too);
-  - a logistic or construction robot: `robot` {unit_number, cargo (item, quality, count), orders (deliver, pickup,
-    construct, ...: item, count, target with its position and unit_number), network}; area rows give its `holds` and
-    `order`; rows (and `scan` rows) at one position carry `unit_number`. Nothing records where a robot picked up its cargo;
+  - a logistic or construction robot: `robot` {unit_number, cargo (item, quality, count), heading (where it flies),
+    network}; area and `scan` rows of a robot give its `unit_number` and `cargo`, area rows `holds` and `heading` too;
+    other rows at one position carry `unit_number`.
+    Nothing records where a robot picked up its cargo;
   - a fusion reactor: `fusion`: its neighbour reactors (those whose side points meet its own, plasma or coolant side,
     fluid connection or not) and the bonus at full, its most at its quality (coolant and plasma a second, fuel, electric,
     plasma MW alone and with neighbours: formula), and once sampled, fuel burnt over a rolling 30 s (measured) with
@@ -203,7 +204,7 @@
   (`from: "nearest"` for a chest, the belt's position for a belt).
 - `game_alerts {kind?, surface?, compact?}`: the game's alerts and warnings in groups, worst first, after `counts`
   (groups per kind, the most first). `kind` takes several (`["no_storage","no_power"]` or `"no_storage,no_power"`);
-  a `no_storage` group lists up to 4 `robots` as the scan read them (unit_number, cargo, orders), its line too;
+  a `no_storage` group lists up to 4 `robots` as the scan read them (unit_number, cargo, heading), its line too;
   `compact: true` gives `lines`, one a group (`KIND SURFACE: line`), in place of the groups. `claim: 7` (a board
   claim id) or `mine: true` (your open claims): only the groups whose centre lies in it, compact; each such reply
   gives a `cursor`, and `since: CURSOR` (with `mine`, `claim` or `cursor: true`) lists only the groups not in that

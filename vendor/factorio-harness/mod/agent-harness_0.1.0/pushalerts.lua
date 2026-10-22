@@ -132,7 +132,7 @@ return function(api)
     if by then g.by[by] = (g.by[by] or 0) + 1 end
     if #g.at < 8 then g.at[#g.at+1] = {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
     if detail then g.lost = g.lost or {}; if #g.lost < MAX_DETAIL then g.lost[#g.lost+1] = detail end end
-    -- (d20 batch70 AF4, Astra #1718) a robot with nowhere to put what it carries: which one, its cargo and orders
+    -- (d20 batch70 AF4, Astra #1718) a robot with nowhere to put what it carries: which one, its cargo, where it flies
     if kind == 'no_storage' and e and robots.ROBOT[e.type] then
       g.nrobots = (g.nrobots or 0) + 1
       if #(g.robots or {}) < MAX_DETAIL then
@@ -1822,7 +1822,7 @@ return function(api)
     return f
   end
   -- (AF4) a no_storage group's robots: "; robots: logistic-robot #2788748 at (-72.5,-2): carries
-  -- cryogenic-science-pack 3; no order; ... +N more"
+  -- cryogenic-science-pack 3 | ... | +N more"
   local function robots_text(g)
     if not g.robots then return '' end
     local parts = {}
@@ -2418,7 +2418,7 @@ return function(api)
       claim='optional board claim id: only the groups whose centre (or feed chest) lies in that open claim\'s area on its surface (compact)', mine='optional true: the same over your own open claims',
       since='optional: the cursor your last game_alerts reply gave (with claim, mine or cursor: true): only the groups not in that reply (by kind, surface and 32-tile cell), new (how many), gone_since (how many of that reply\'s are gone), compact; every reply with claim, mine, since or cursor gives a new cursor (kept per agent, the last one)',
       cursor='optional true: give a cursor without filtering',
-      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest), robots (no_storage: up to 4 robots at the scan, each {unit_number, name, position, cargo {name, quality, count}, orders [{type, item, quality, count, target, target_position, target_unit_number, line}], network, line}; the line adds them)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
+      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest), robots (no_storage: up to 4 robots at the scan, each {unit_number, name, position, cargo {name, quality, count}, heading {x, y} (where it flies), network, line}; the line adds them)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
 end
