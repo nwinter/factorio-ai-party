@@ -21,7 +21,7 @@ the Operator the viewer lines are the run's inbox rows from viewers (`inbox_line
 Operator ("Operator," / "Operator:" / "@operator" at the start, any case), and "your HH:MM" in the reply names the line
 written at that minute, at any age.
 """
-import datetime, json, re
+import datetime, json, os, re
 
 WINDOW_S = 15 * 60  # a viewer "wrote recently": within this many seconds (game ticks / 60, else wall time)
 LEAD = (r"thanks|thank you|yes|no|yeah|yep|nope|sorry|hi|hey|hello|good|ok|okay|right|fair|true|understood|agreed|"
@@ -172,6 +172,30 @@ def read_links(path):
     except OSError:
         pass
     return out
+
+
+LINKS_BACK = 2  # (d22 batch89 AY4) earlier runs whose operator-replies.jsonl the model reads too
+
+
+def links_files(path, back=LINKS_BACK):
+    """(d22 batch89 AY4) The operator-replies.jsonl files to read, oldest first: up to `back` runs this one resumed from
+    (runs/RUN/resumed-from), then this run's. tools/opreply.py run with --run shift56 during shift57 wrote 6 records
+    into shift56's file, and shift57's service read only its own: the 06:28 replies never reached the reply feed, and
+    one threaded under the wrong line."""
+    out, run_dir = [path], os.path.dirname(path)
+    for _ in range(back):
+        try:
+            prev = open(os.path.join(run_dir, "resumed-from")).readline().strip()
+        except OSError:
+            break
+        if not prev:
+            break
+        run_dir = os.path.join(os.path.dirname(run_dir), prev)
+        p = os.path.join(run_dir, os.path.basename(path))
+        if p in out:
+            break
+        out.append(p)
+    return out[::-1]
 
 
 def link_line(line, links):

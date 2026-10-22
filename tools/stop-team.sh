@@ -9,6 +9,12 @@ tools/.venv/bin/python tools/obs.py replay-stop 2>/dev/null || true
 for f in stream-service.pid overlay-tunnel.pid supervisors.pid score-loop.pid; do
   [ -f "$rundir/$f" ] && while read -r pid; do pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null || true; done < "$rundir/$f"
 done
+# (d22 batch89 AY2) a push_live.py writing this run's push-live.log that no pid file names (one started by hand during
+# the shift kept pushing into shift58): stopped too. Only this run's: a test run's stop leaves the live shift's alone.
+for pid in $(pgrep -f "site/push_live.py" || true); do
+  out=$(lsof -a -p "$pid" -d 1 -Fn 2>/dev/null | sed -n 's/^n//p')
+  case "$out" in */$rundir/push-live.log|$PWD/$rundir/push-live.log) kill "$pid" 2>/dev/null && echo "stopped push_live.py $pid ($out)" || true ;; esac
+done
 # Pause first: directors keep the world running, and shake6 ran 5 unplayed game minutes past its deadline
 # (docs/studies/shake6.md, P1 item 1). A resumed shift unpauses it (tools/start-team.sh, POG_RESUME).
 python3 tools/pog.py --world "$world" pause || true
