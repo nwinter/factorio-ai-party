@@ -11090,6 +11090,7 @@ several 7.3-7.6 tiles beside a collector's centre, outside a circle around the f
 front, y to the side): with its neighbours on, it took 12 and 12.4 in front (beyond any neighbour's reach) and left
 12.7, 13.2 and 14; with the other collectors switched off, it took (2,0), (1.6,3), (3,6.8) and (9,6) and left
 (1.2,0), (0,3), (-1,0), (11,4), (2.5,-6) and (5,-7.4), all within the line-shaped reach; after those captures it took
-nothing more (a chunk placed at (4,1) stayed 765 ticks, power full, output empty), which this read does not explain. Cost on the copy (x86 under Rosetta): the read 22-29 ms on Asterion and
-38-51 ms on Anvil (157 chunks), where the existing platform_supply read takes 40-48 ms; the extent, chunk and collector
-lookups 3.6 ms of it. Tests: tests/d22_batch78.lua.
+nothing more (a chunk placed at (4,1) stayed 765 ticks, power full, output empty), which this read does not explain. Cost on
+the copy (x86 under Rosetta, about 12 UPS), timed in the same minute: the read 24-26 ms on Asterion (55 ms the first
+call) and 19-21 ms on Anvil (157 chunks), the existing platform_supply read on Asterion 18-23 ms; the extent, chunk
+and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
