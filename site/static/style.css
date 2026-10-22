@@ -480,10 +480,29 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
   font-size: 0.8em; color: var(--muted); background: none; border: 0; padding: 0; text-align: left; }
 .vchat button.c-quote { cursor: pointer; }
 .vchat button.c-quote:hover, .vchat .c-replies:hover { color: var(--ink); text-decoration: underline; }
-.vchat .c-replies { font: inherit; font-size: 0.8em; color: var(--muted); background: none; border: 1px solid var(--line);
-  border-radius: 9px; padding: 0 6px; margin-left: 4px; cursor: pointer; }
+.vchat .c-replies { font: inherit; font-size: 0.8em; color: var(--muted); background: none; border: 0; padding: 0;
+  margin-left: 2px; cursor: pointer; white-space: nowrap; }
 .vchat .c-quote:focus-visible, .vchat .c-replies:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .vchat .c-agent.c-new { background-color: rgba(var(--fx-orange-rgb), .08); }
+/* (d22 batch75 AK8, viewer Aurora site:4249/4250) a reply: a one-line header (who, when, to whom, new, Details), its full
+   text below; threaded under its line with no quote of it; Details opens the routing and matching; tighter rows */
+.vchat li { padding: 1px 0; line-height: 1.35; }
+.vchat .c-agent { margin: 0 0 1px; padding: 1px 0 1px 6px; }
+.vchat .c-agent.c-thread { margin-left: 10px; }
+.vchat .c-agent + li:not(.c-agent) { margin-top: 3px; }
+.vchat .c-head { display: block; font-size: .82em; line-height: 1.3; }
+.vchat .c-head .c-time { font-size: 1em; }
+.vchat .c-head .c-src { font-size: .82em; }
+.vchat .c-agent > .c-text { display: block; }
+.vchat .c-details-btn { font: inherit; font-size: .9em; color: var(--muted); background: none; border: 1px solid var(--line);
+  border-radius: 3px; padding: 0 4px; margin-left: 4px; line-height: 1.25; cursor: pointer; vertical-align: 1px; }
+.vchat .c-details-btn[aria-expanded="true"] { color: var(--ink); border-color: var(--muted); }
+.vchat .c-details-btn:hover { color: var(--ink); }
+.vchat .c-details-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vchat .c-details { display: block; font-size: .78em; line-height: 1.3; margin: 1px 0 2px; padding: 2px 6px;
+  border-radius: 3px; background: rgba(255, 255, 255, .04); }
+.vchat .c-details[hidden] { display: none; }
+.vchat .c-det-row { display: block; }
 .vchat .c-new-tag { font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--fx-orange, #e39827); }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
 .vchat-filter label { display: inline-flex; align-items: center; gap: 6px; }
