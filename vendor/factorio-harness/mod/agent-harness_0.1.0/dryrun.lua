@@ -216,6 +216,38 @@ return function(api)
     return v
   end
 
+  -- (d22 batch95 BE1, Astra #1892) no one tile item makes the tile buildable, two laid one on the other do: on Aquilo
+  -- brash ice and ammoniacal ocean take ice platform, whose tile is meltable as ice is, and concrete goes on that
+  -- (2.0.77). 'A, then B on it', the unlocked ones first; nil when no two do.
+  local remedy2_cache = {}
+  local function remedy2(force, tile_name, tile_layers, mask)
+    local k = tile_name..'|'..table.concat((function() local t = {} for l in pairs(mask) do t[#t+1] = l end table.sort(t) return t end)(), '+')
+    if remedy2_cache[k] ~= nil then return remedy2_cache[k] or nil end
+    local function enabled(item)
+      local r = force and try(function() return force.recipes[item] end)
+      return not r or r.enabled
+    end
+    local best, locked
+    for _, a in ipairs(items_for_tiles()) do
+      if placeable_on(a, tile_name, tile_layers) and collide(a.layers, mask) then
+        for _, b in ipairs(items_for_tiles()) do
+          if placeable_on(b, a.result, a.layers) and not collide(b.layers, mask) then
+            local text = a.item..', then '..b.item..' on it'
+            if enabled(a.item) and enabled(b.item) then best = best or text else locked = locked or text..' (not researched)' end
+          end
+        end
+      end
+      if best then break end
+    end
+    local v = best or locked
+    remedy2_cache[k] = v or false
+    return v
+  end
+  M.remedy2 = function(force, tile_name, mask)
+    local t = prototypes.tile[tile_name]
+    return t and remedy2(force, tile_name, layers(t.collision_mask), mask) or nil
+  end
+
   -- For route planners (belt_route), per tile name in the caller's cache (one
   -- plan): whether the entity collides with that tile kind, and the unlocked
   -- tile item that makes it buildable (item; nil when none can).
@@ -249,7 +281,7 @@ return function(api)
     if type(rules) == 'table' and #rules > 0 then return nil end
     local mask = layers(try(function() return proto.collision_mask end))
     if not next(mask) then return nil end
-    remedy_cache = {}
+    remedy_cache, remedy2_cache = {}, {}
     local x0, y0, x1, y1 = span(M.footprint(proto, pos, dir))
     -- (d20 batch61 W1) the game takes a rail support on deep oil ocean once Rail support foundations is researched
     local deep_ok = try(function() return proto.type end) == 'rail-support' and try(function() return force.rail_support_on_deep_oil_ocean end) == true
@@ -268,7 +300,8 @@ return function(api)
           if not laid then
             local fix = name and not tl.out_of_map and remedy(force, name, tl, mask) or nil
             out = out or {}
-            out[#out+1] = {x=x+0.5, y=y+0.5, tile=name or 'out-of-map', item=fix and not fix:find(' ', 1, true) and fix or nil, locked=fix and fix:find(' ', 1, true) and fix or nil}
+            out[#out+1] = {x=x+0.5, y=y+0.5, tile=name or 'out-of-map', item=fix and not fix:find(' ', 1, true) and fix or nil, locked=fix and fix:find(' ', 1, true) and fix or nil,
+              two=not fix and name and not tl.out_of_map and remedy2(force, name, tl, mask) or nil}
           end
         end
       end
@@ -820,12 +853,14 @@ return function(api)
     for _, t in ipairs(plan.tiles or {}) do
       local x, y = math.floor(t.position.x), math.floor(t.position.y)
       local proto = prototypes.tile[t.name]
-      local here = surface_tile(x, y)
       local k = key(x, y)
+      -- (d22 batch95 BE1) what it goes on: an earlier entry's tile there, or a tile ghost there, else the surface's (the
+      -- game takes a tile ghost over a tile ghost: concrete over ice platform on brash ice, the copy of world n)
+      local here = planned[k] or pending[k] or surface_tile(x, y)
       local why, laid
       if not proto then why = 'unknown tile '..tostring(t.name)
       elseif not on_platform and not api.charted(p, {x=x+0.5, y=y+0.5}) then why = 'outside the charted area'
-      elseif here.name == t.name or (pending[k] and pending[k].name == t.name) then tiles_already = tiles_already + 1
+      elseif here.name == t.name then tiles_already = tiles_already + 1
       else
         local item = t.item or try(function() return proto.items_to_place_this[1].name end)
         if item and not M.placeable_on(item, here.name) then why = string.format('%s cannot go on %s', item, here.name)..others_text(force, here.name, here.layers, item)
@@ -852,7 +887,7 @@ return function(api)
       if why then
         tiles_refused = tiles_refused + 1
         if #tile_rows < 10 then tile_rows[#tile_rows+1] = tile_text(x, y)..' '..t.name..': '..why end
-      elseif proto and here.name ~= t.name and not planned[k] and not (pending[k] and pending[k].name == t.name) then
+      elseif proto and here.name ~= t.name then
         tiles_planned = tiles_planned + 1; laid = true
         planned[k] = {name=t.name, layers=layers(proto.collision_mask), index=t.index, x=x, y=y}
       end
@@ -1061,7 +1096,11 @@ return function(api)
                   else
                     local fix = remedy(force, t.name, t.layers, mask)
                     if fix then tile_need[#tile_need+1] = {x=x, y=y, item=fix, tile=t.name}
-                    else tile_bad[#tile_bad+1] = string.format('%s %s (no tile item makes it buildable)', tile_text(x, y), t.name) end
+                    else
+                      local two = remedy2(force, t.name, t.layers, mask)
+                      tile_bad[#tile_bad+1] = two and string.format('%s %s (no one tile item makes it buildable; two do: %s, as tile entries before it)', tile_text(x, y), t.name, two)
+                        or string.format('%s %s (no tile item makes it buildable)', tile_text(x, y), t.name)
+                    end
                   end
                 end
               end
@@ -1147,13 +1186,15 @@ return function(api)
           end
           -- Tiles laid by the plan or already ordered under it, and (a build
           -- batch) the last entry laying one.
-          local covered, last_tile = false, nil
+          local covered, last_tile, from_arg = false, nil, false
           for x = x0, x1 do
             for y = y0, y1 do
               local k = key(x, y)
               local t = planned[k] or pending[k]
               if t then covered = true end
               if planned[k] and planned[k].index and (not last_tile or planned[k].index > last_tile) then last_tile = planned[k].index end
+              -- (place_ghosts lays its tiles argument after every entry)
+              if planned[k] and not planned[k].index then from_arg = true end
             end
           end
           if manual and same and same.type == 'entity-ghost' then same = nil; rec.note = 'builds the ghost there' end
@@ -1223,6 +1264,16 @@ return function(api)
             rec.note = string.format('stands on %d %s tile%s: needs %s first%s', #tile_need, tile_need[1].tile, #tile_need == 1 and '' or 's', table.concat(parts, ', '),
               engine == true and not manual and (kind == 'ghosts' and ' (place_ghosts lays those tile ghosts under it first)'
                 or ' (its ghost goes there now; nothing builds it before that)') or '')
+            -- (d22 batch95 BE1, Astra #1892: a decider on Aquilo's rough ice read ok in the dry run and was refused) the
+            -- game's check refuses it on these tiles now: the real call lays tile ghosts under an entity only where a
+            -- player's forced placement does (landfill, foundation, ice platform), never concrete
+            if engine == false and kind == 'ghosts' then
+              rec.refused = true
+              do
+                rec.note = rec.note..string.format('; the game refuses its ghost on %s now, and place_ghosts lays no %s ghost under it: %s tile entries before it in this call lay them first',
+                  tile_need[1].tile, tile_need[1].item, tile_need[1].item)
+              end
+            end
             if tiles_take then
               took(tiles_take)
               rec.note = rec.note..'; the '..tile_need[1].item..' removes '..M.removes_text(tiles_take)
@@ -1230,10 +1281,19 @@ return function(api)
           elseif engine == true then rec.status = 'ok'
           elseif covered then
             rec.status = 'after_tiles'; rec.note = 'placeable once the tiles under it are laid'
-            -- What the real call does first: place_ghosts places entity ghosts
-            -- before tile ghosts; a build batch goes entry by entry.
+            -- What the real call does: place_ghosts places its entries in order, and the game takes an entity ghost over
+            -- the tile ghosts placed before it (d22 batch95 BE1, on the copy of world n: concrete tile entries, then a
+            -- decider on rough ice; listed after it, the decider was refused); a build batch goes entry by entry.
             if kind == 'ghosts' then
-              rec.note = rec.note..'; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts'
+              if (last_tile and e.index and last_tile > e.index) or from_arg then
+                rec.status = 'blocked'; rec.refused = true
+                reasons[#reasons+1] = (from_arg and 'the tiles argument lays tiles under it after every entry'
+                  or string.format('entry #%d lays a tile under it after this one', last_tile))
+                  ..': place_ghosts places entries in order, and the game refuses its ghost on the tiles there now (list the tile entries before it)'
+                rec.note = nil
+              else
+                rec.note = rec.note..': place_ghosts lays the tile entries before it first, and the game takes its ghost over their tile ghosts'
+              end
             elseif manual and last_tile and e.index and last_tile > e.index then
               rec.late = last_tile
               rec.note = rec.note..string.format('; entry #%d of this batch lays one of them, after this one', last_tile)
@@ -2573,6 +2633,16 @@ return function(api)
       end
       out.underground_side_feed = #lines > 0 and lines or nil
     end
+    -- (d22 batch95 BE1) entries that need tiles the real call does not lay, on tiles the game refuses them on now
+    local nref, first_ref = 0, nil
+    for _, r in ipairs(recs) do
+      if r.status == 'needs_tiles' and r.refused then
+        nref = nref + 1
+        first_ref = first_ref or string.format('#%s %s%s: %s', tostring(r.copy and (r.copy..'.'..r.index) or r.index), tostring(r.name),
+          r.pos and string.format(' (%g,%g)', r.pos.x, r.pos.y) or '', tostring(r.note))
+      end
+    end
+    out.refused_until_tiles, out.refused_until_tiles_first = nref > 0 and nref or nil, first_ref
     local n = #recs
     local parts = {}
     for _, k in ipairs({'ok', 'after_tiles', 'after_rails', 'needs_tiles', 'exists', 'blocked'}) do

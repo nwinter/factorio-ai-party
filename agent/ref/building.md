@@ -57,7 +57,11 @@
   collector) goes over foundation tile ghosts as over foundation; over empty space where a rule wants ground the
   foundation tile ghosts under it are placed first (`tiles_laid`), as the game's forced placement lays them. A rule's
   tiles in chunks the platform has not generated yet (a thruster keeps 90 tiles behind it empty) are refused until they
-  are; the reply asks for them: call again in a few seconds.
+  are; the reply asks for them: call again in a few seconds. place_ghosts places its entries in order (its `tiles`
+  argument after them all); under an entity it lays only the tile ghosts a forced placement lays (landfill, foundation,
+  ice platform). Concrete under a building on Aquilo's ice goes as tile entries before it (`{"name":"concrete",
+  "position":...}`), on brash ice or ammoniacal ocean ice platform first, then concrete; the game takes the entity's
+  ghost over those tile ghosts. The dry run's verdict fails on an entry the real call would refuse, naming the tiles.
   Example: `./fh call place_ghosts --args '{"entities":[{"name":"assembling-machine-2","position":{"x":20.5,"y":8.5},"recipe":"iron-gear-wheel"}],"dry_run":true}'`
 - `belt_upgrade {position, to?, tiles?, dry_run?}`: the belt line through position traced both ways (up to `tiles`,
   default 256; undergrounds to their pair), each tile replaced by hand with the faster one at its own position and
