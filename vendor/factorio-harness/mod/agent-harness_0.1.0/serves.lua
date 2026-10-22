@@ -16,7 +16,8 @@ return function()
     assert(type(v) == 'table', 'serves is {name, position, surface?, radius?}: the machine (or machines in a radius) it serves')
     local name = v.name
     assert(type(name) == 'string' and #name > 0 and #name <= 64, 'serves.name: an entity name (boiler, gun-turret, ...)')
-    if type(prototypes) == 'table' and prototypes.entity then
+    -- (d22 batch100 BJ2) prototypes is userdata in 2.0: a check for a table skipped this on the real engine
+    if prototypes ~= nil and prototypes.entity then
       local ok, proto = pcall(function() return prototypes.entity[name] end)
       assert(ok and proto, 'serves.name: no entity named ' .. name)
     end
