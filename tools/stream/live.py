@@ -905,13 +905,25 @@ class LiveSource:
                         active["items"] += part.get("items") or []
                 except Exception:
                     active = None
+                # (d22 batch99 BI3, viewer Aurora site:4316: "Hidden jobs ... make it hard to check what's actually
+                # finished") the finished tasks and requests too, for the site's full list (on world n at 16:20 the board
+                # kept 18 done tasks and 8 done requests; each read about 0.1 s through fh)
+                try:
+                    finished = {"items": []}
+                    for kind in ("task", "request"):
+                        part, _ = self.read("board", {"kind": kind, "status": ["done", "dropped"], "limit": 60}, **self.reader())
+                        finished["items"] += part.get("items") or []
+                except Exception:
+                    finished = None
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
-                         + (projects.get("items") or []) + ((active or {}).get("items") or [])}
+                         + (projects.get("items") or []) + ((active or {}).get("items") or [])
+                         + ((finished or {}).get("items") or [])}
                 focus = self.read_focus(errors)
                 progress = self.read_progress(errors)  # (d22 batch75 AK11) the progress checks' facts per owned item
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus, "progress": progress,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
-                                "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None}
+                                "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None,
+                                "finished_ids": [it.get("id") for it in finished.get("items") or []] if isinstance(finished, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)
                     try:
                         planlog.save(self.journals, planlog.record(res.get("plan"), obs["board"]["items"],

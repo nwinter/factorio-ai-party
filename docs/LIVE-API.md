@@ -431,6 +431,32 @@ Field meanings are `serve.py`'s (see `docs/STREAM-NOTES.md`); dropped on purpose
 `errors`, per-agent `seen`, `interest` and `voice`, and camera zoom/player indices. To show something new on the
 page, add it to the keep-lists in `push_live.py` and document it here.
 
+## The full board document (d22 batch99 BI3)
+
+Viewer Aurora (site:4316): "Could the board show all tasks and reminders, with paging if needed? Hidden jobs and the
+nine omitted reminders make it hard to check what's actually finished."
+
+- **Why a second document:** the state keeps the board's first view within its share (`board`: 20 open and 20 in
+  progress, 6 claims; `reminders`: what fits 24 KB). On world n at 16:20 that was 20 of 36 jobs in progress and 19 of
+  31 reminders, and no finished tasks at all.
+- **The document:** every task and request (open, claimed, doing, blocked, done, dropped), every claim, every project
+  read and every reminder job, in a document of its own.
+- **`POST /v1/board`** (Authorization: Bearer PUBLISH_TOKEN, at most 256 KB):
+  `{tick, items: [{id, title, kind, owner, agent, status, requested_by, updated_tick, evidence?}], items_total, claims,
+  projects, reminders, reminders_total}`.
+  - site/push_live.py builds it from the stream service's `/board.json` (model.py `board_all_snapshot`).
+  - It sends it when it changed (the tick aside), at most every 30 s, and at least every 5 minutes.
+  - It is kept within 240 KB: each row's newest evidence line, then the finished projects' steps, then the
+    reminders' recipient results, then the oldest tasks (`items_total` keeps the count).
+  - A worker without the route (404) is asked again in 10 minutes.
+- **`GET /v1/board`** (public, cached 10 s): `{schema, received, age_s, board}`.
+  - The live page reads it when a full list opens (the tasks' "Show every task and request", or the reminders' "Show
+    all"), then again 30 s later while one is open.
+  - It pages them 20 at a time: tasks by Open / In progress / Finished / Dropped / All; reminders by All / Active /
+    Overdue / Waiting or open / Finished.
+- **Measured:** on world n's board at 16:20 the document was 72.6 KB (73 tasks and requests, 25 of them finished;
+  5 claims, 11 projects, 31 reminders). The state push stayed 232 KB.
+
 ## Moderation (operator)
 
 `POST /v1/mod` with the publish token and one of:
