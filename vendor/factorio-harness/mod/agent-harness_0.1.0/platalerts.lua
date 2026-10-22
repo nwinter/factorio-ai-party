@@ -73,6 +73,25 @@ return function(api)
   -- on_entity_damaged: a hit on one of our entities on a platform, by
   -- anything but our own force. Returns true when the hit was a platform's
   -- (threat.lua's planet incidents leave it alone).
+  M.DAMAGED_MAX = 512
+  -- (BF1) the platform's entities hit since its damaged list was seeded: {set unit_number -> entity, seeded, full}; and
+  -- seed(pl, list) starts it from a read of every entity aboard (once, or again after the list filled).
+  function M.damaged(pl)
+    local r = rec(pl)
+    return {set=r.damaged, seeded=r.damaged ~= nil and not r.damaged_full}
+  end
+  function M.seed_damaged(pl, list)
+    local r = rec(pl)
+    r.damaged, r.damaged_n, r.damaged_full = {}, 0, nil
+    for _, e in ipairs(list) do
+      if e.valid and e.unit_number and r.damaged_n < M.DAMAGED_MAX then r.damaged[e.unit_number] = e; r.damaged_n = r.damaged_n + 1 end
+    end
+  end
+  -- (BF1) drop the ones healed or gone (a read found them so)
+  function M.forget_damaged(pl, units)
+    local r = rec(pl)
+    for _, u in ipairs(units) do if r.damaged and r.damaged[u] ~= nil then r.damaged[u] = nil; r.damaged_n = math.max(0, (r.damaged_n or 1) - 1) end end
+  end
   function M.on_damaged(event)
     local e = event.entity
     if not (e and e.valid) then return false end
@@ -80,8 +99,14 @@ return function(api)
     if not own or own.name == 'enemy' or own.name == 'neutral' then return false end
     local pl = e.surface.platform
     if not pl then return false end
-    if event.force == own then return true end
+    -- (d22 batch96 BF1) each of our entities hit, for the platforms read's damaged list (space.lua repair_view): a
+    -- read checks these instead of every entity aboard (a find of Asterion's 7,957 took 33 ms on a copy of world n)
     local r = rec(pl)
+    local u = e.unit_number
+    if u and r.damaged and not r.damaged[u] then
+      if (r.damaged_n or 0) < M.DAMAGED_MAX then r.damaged[u] = e; r.damaged_n = (r.damaged_n or 0) + 1 else r.damaged_full = true end
+    end
+    if event.force == own then return true end
     local m = math.floor(event.tick / 3600)
     local b = r.minutes[m]
     if not b then

@@ -11504,3 +11504,40 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
   - power and flamer oil keep their own reads (`power`, `flamers`); their "..." is now `+N more`.
   - Checked on a copy of world n's 12:04 autosave: the same 11 and 8; `status {list: "belts_stuck"}` gave all 11
     positions.
+
+### d22 batch96 BF1: single reads that stall a tick on world n
+
+The 14:06 profile on world n (60 UPS on average, harness tick work 3.71 ms a tick) had single calls that each held one
+tick. Measured on a private copy of world n's 13:05 autosave (`_autosave2`), each call timed with the game's profiler
+around the runtime's dispatch. The copy runs the background work at world n's pace: survey.slice 0.41 ms a step
+against 0.39, survey.band 0.52 against 0.55, census.step 0.10 against 0.08. So the ratio is 1:1, though the Mac was
+loaded (load average 14-31) and single calls vary by up to 2x from one run to the next; the figures are each call's
+best of three.
+
+- Part 1, `platform NAME` (world n: 5 calls, 40.6 ms average, worst 83.5). Main's runtime on the copy: Asterion 73-93
+  ms, of it `freight.stock_places` 36-49 (its 6,651 belts found in 24 ms and read in 44), the damaged list 4-5 (a find
+  of every entity aboard: 7,957 in 33 ms, and its limit of 5,000 left 2,957 unread), the ammo model's quarter-minute
+  stepping up to 5.9 ms a row, and the hub inserters (every inserter aboard, at most 500).
+  - `stock_places` (the platform read, platform_endurance, preflight's ammo) takes belts and inserter hands from the
+    census pass (its background walk; the ammo rows say `belts and inserter hands as the census pass read them N ago`),
+    and its turrets and machines from the census's lists; the hub and every turret and machine output are read now.
+    A surface the census has not walked is read as before.
+  - The census counts an underground exit's buried lines once (its entrance's), as stock_places did (`where_is`
+    counted them twice).
+  - The damaged list: the game's damage events on our platform entities (platalerts.lua, up to 512 a platform) after
+    one read of every entity aboard seeds it; a read checks those (healed or gone ones drop out). No 5,000 limit.
+  - The hub inserters: those within 4 tiles of the hub's box (a long-handed one picks up 2 tiles out), not every one.
+  - The thrusters are found once a tick (the thrust lines and after_pumps shared it); thrust's upstream machines come
+    from the census's list.
+  - The ammo model's `lasts`: the first quarter minute the stock is gone by halving the steps, then halved to a second
+    as before (the same answer: tests/d22_batch96.lua).
+  - On the copy, main's runtime and this one deployed in turn, each platform's best of three, twice:
+
+    | | median | worst |
+    |---|---|---|
+    | main | 15.8 ms | 73.1 ms (Asterion) |
+    | this branch | 11.3 ms | 17.5 ms (Asterion) |
+
+    Replies are the same size (13.8 KB median, 26.8 KB at most), plus the census age note.
+  - Asterion's 17.5 ms is still over 10. It is the thrust lines' upstream walk of its pipes (2.1 ms), the ammo rows
+    (3.7), defense (1.4), blockers (1.3), the jobs lines (1.1) and the reply's encoding.

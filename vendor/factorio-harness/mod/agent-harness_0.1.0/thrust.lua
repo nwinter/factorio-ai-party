@@ -137,7 +137,9 @@ return function(api)
   -- The machines on the platform whose recipe makes item (crushers, ...).
   local function makers_of(ctx, item)
     if not ctx.machines then
-      ctx.machines = try(function() return ctx.pl.surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=ctx.pl.force} end) or {}
+      -- (d22 batch96 BF1) the census pass's list of them (no find over the platform), else a find
+      ctx.machines = api.census_typed and try(function() return api.census_typed(ctx.pl.force, ctx.pl.surface, {'assembling-machine', 'furnace'}) end)
+        or try(function() return ctx.pl.surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=ctx.pl.force} end) or {}
     end
     local out = {}
     for _, e in ipairs(ctx.machines) do
@@ -188,12 +190,27 @@ return function(api)
     end
   end
 
+  -- (d22 batch96 BF1) the platform's thrusters, found once a tick (the platforms read asked read and after_pumps for
+  -- them in the same tick, each a find over the whole platform)
+  local thr_found = {}
+  local function found(s, force)
+    local tick = game and game.tick
+    local c = tick and thr_found[s.index]
+    if c and c.tick == tick and c.force == force.name then
+      local ok = true
+      for _, t in ipairs(c.list) do if not t.valid then ok = false; break end end
+      if ok then return c.list end
+    end
+    local list = try(function() return s.find_entities_filtered{type='thruster', force=force} end) or {}
+    if tick then thr_found[s.index] = {tick=tick, force=force.name, list=list} end
+    return list
+  end
   -- The platform's thrusters: {count, inputs = {fluid -> {low thrusters, lowest share}}, lines}
   -- lines: one per input under LOW in any thruster, the chain behind it.
   function M.read(pl)
     local s = try(function() return pl.surface end)
     if not s then return nil end
-    local thrusters = try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end) or {}
+    local thrusters = found(s, pl.force)
     local out = {count=#thrusters, lowest={}, lines={}}
     if #thrusters == 0 then return out end
     local ctx = {pl=pl, done={}}
@@ -270,7 +287,7 @@ return function(api)
   local function walk(pl)
     local s = try(function() return pl.surface end)
     if not s then return nil end
-    local thrusters = try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end) or {}
+    local thrusters = found(s, pl.force)
     if #thrusters == 0 then return nil end
     local by, order = {}, {}
     for _, t in ipairs(thrusters) do

@@ -165,6 +165,27 @@ return function(api)
     end
     local hub = try(function() return pl.hub end)
     if hub and hub.valid and defines.inventory.hub_main then contents('hub', try(function() return hub.get_inventory(defines.inventory.hub_main) end)) end
+    -- (d22 batch96 BF1: on a copy of world n, Asterion's 6,651 belts took 24 ms to find and 44 ms to read, in each
+    -- platform, platform_endurance and preflight read) the census pass's belts and inserter hands (census.lua
+    -- where_index: read in its background walk, the pass started as_of), and its turrets and machines (no find): the
+    -- hub and every turret and machine output are read now. A surface the census has not walked: all read now.
+    local idx = api.census_where and try(function() return api.census_where(f, s) end)
+    local turrets = idx and api.census_typed and try(function() return api.census_typed(f, s, 'ammo-turret') end)
+    if idx and turrets then
+      for _, e in ipairs(turrets) do contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end)) end
+      for name, n in pairs(idx.belts or {}) do put('belts', name, n) end
+      for name, n in pairs(idx.hands or {}) do put('hands', name, n) end
+      for _, e in ipairs(try(function() return api.census_typed(f, s, {'assembling-machine', 'furnace'}) end) or {}) do
+        contents('machines', try(function() return e.get_output_inventory() end))
+      end
+      out.as_of, out.from_census = idx.as_of, true
+      out.belt_entities = nil
+      out.total = {}
+      for _, place in ipairs({'hub', 'turrets', 'belts', 'hands', 'machines'}) do
+        for name, n in pairs(out[place]) do out.total[name] = (out.total[name] or 0) + n end
+      end
+      return out
+    end
     for _, e in ipairs(try(function() return s.find_entities_filtered{type='ammo-turret', force=f} end) or {}) do
       contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end))
     end
@@ -1291,8 +1312,9 @@ return function(api)
     for _, name in ipairs(names) do
       local made, used = counts[name][1], counts[name][2]
       local stock = sp.total[name] or 0
-      local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s', name, per_min(made, minutes),
-        per_min(used, minutes), window, stock, M.places_text(sp, name))
+      local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s%s', name, per_min(made, minutes),
+        per_min(used, minutes), window, stock, M.places_text(sp, name),
+        sp.from_census and sp.as_of and string.format(' (belts and inserter hands as the census pass read them %s ago)', secs(math.max(0, game.tick - sp.as_of))) or '')
       local stranded = model and model.stranded[name] or 0
       if stranded > 0 then
         stock = model.held[name] or 0
