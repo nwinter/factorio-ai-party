@@ -916,12 +916,27 @@ return function(api)
     end
     out.repair_packs=#packs>0 and table.concat(packs,' ') or 'none'
     local list={}
-    try(function()
-      for _,e in ipairs(pl.surface.find_entities_filtered{force=pl.force,limit=5000}) do
-        local h,m=e.health,e.max_health
-        if h and m and m>0 and h<m then list[#list+1]={e=e,h=h,m=m} end
+    -- (d22 batch96 BF1: a find of every entity aboard took 33 ms on a copy of world n's Asterion, and its limit of 5000
+    -- left 2,957 of its 7,957 unread) the entities hit since the platform's list was seeded (platalerts.lua, from the
+    -- game's damage events), each read now; the list is seeded by one read of every entity aboard
+    local dm=api.plat_damaged and try(function() return api.plat_damaged(pl) end)
+    if dm and dm.seeded then
+      local gone={}
+      for u,e in pairs(dm.set) do
+        local h,m=e.valid and e.health,e.valid and e.max_health
+        if h and m and m>0 and h<m then list[#list+1]={e=e,h=h,m=m} else gone[#gone+1]=u end
       end
-    end)
+      if #gone>0 and api.plat_damaged_forget then try(function() api.plat_damaged_forget(pl,gone) end) end
+    else
+      local hurt={}
+      try(function()
+        for _,e in ipairs(pl.surface.find_entities_filtered{force=pl.force}) do
+          local h,m=e.health,e.max_health
+          if h and m and m>0 and h<m then list[#list+1]={e=e,h=h,m=m}; hurt[#hurt+1]=e end
+        end
+      end)
+      if api.plat_damaged_seed then try(function() api.plat_damaged_seed(pl,hurt) end) end
+    end
     table.sort(list,function(x,y) return x.h/x.m<y.h/y.m end)
     local rows={}
     for i=1,math.min(#list,10) do
@@ -971,7 +986,13 @@ return function(api)
       -- overboard).
       local hub=pl.hub
       local drains={}
-      for _,i in ipairs(try(function() return s.find_entities_filtered{type='inserter',limit=500} end) or {}) do
+      -- (d22 batch96 BF1) the inserters whose pickup can reach the hub: within 4 tiles of its box (a long-handed
+      -- inserter picks up 2 tiles out); every inserter aboard was read before, at most 500
+      local hb=hub and hub.valid and try(function() return hub.bounding_box end)
+      local hp=not hb and hub and hub.valid and try(function() return hub.position end)
+      local near=hb and {{hb.left_top.x-4,hb.left_top.y-4},{hb.right_bottom.x+4,hb.right_bottom.y+4}}
+        or hp and {{hp.x-6,hp.y-6},{hp.x+6,hp.y+6}}
+      for _,i in ipairs(near and try(function() return s.find_entities_filtered{type='inserter',area=near} end) or {}) do
         if hub and try(function() return i.pickup_target==hub and not i.drop_target end) then
           local d=i.drop_position
           local tile=try(function() return s.get_tile(math.floor(d.x),math.floor(d.y)).name end) or '?'

@@ -271,21 +271,32 @@ return function(api)
     end
     -- When what is left reaches 0 at made and used a minute (minutes, at most a day ahead), or nil: with a cap, the first
     -- quarter minute it is gone, then halved to a second.
-    function m.lasts(name, made, used, stock)
-      if (used or 0) <= 0 then return nil end
-      local cap = (made or 0) > 0 and m.cap(name)
-      if not cap then
-        local net = (made or 0) - used
-        return net < 0 and ((stock or m.held[name] or 0) + (m.received[name] or 0)) / -net or nil
-      end
-      local function at(t) return m.left(name, made, used, t, stock) end
-      if at(1440) > 0 then return nil end
-      local lo, hi = 0, 0.25
-      while at(hi) > 0 do lo, hi = hi, hi + 0.25 end
-      for _ = 1, 8 do local mid = (lo + hi) / 2; if at(mid) > 0 then lo = mid else hi = mid end end
-      return hi
-    end
+    function m.lasts(name, made, used, stock) return M.lasts_of(m, name, made, used, stock) end
     return m
+  end
+  -- m.lasts for a model m (its cap, left, held, received).
+  function M.lasts_of(m, name, made, used, stock)
+    if (used or 0) <= 0 then return nil end
+    local cap = (made or 0) > 0 and m.cap(name)
+    if not cap then
+      local net = (made or 0) - used
+      return net < 0 and ((stock or m.held[name] or 0) + (m.received[name] or 0)) / -net or nil
+    end
+    local function at(t) return m.left(name, made, used, t, stock) end
+    if at(1440) > 0 then return nil end
+    -- (d22 batch96 BF1: stepping a quarter minute at a time took 5.9 ms for one row on a copy of world n's Asterion)
+    -- the first quarter minute it is gone, by halving the quarter-minute steps (what is left falls once the cap binds:
+    -- what is made is capped, what is used is not), then halved to a second as before
+    local lo_q, hi_q = 0, 5760
+    if at(0) <= 0 then hi_q = 0 end
+    while hi_q - lo_q > 1 do
+      local mid = math.floor((lo_q + hi_q) / 2)
+      if at(mid * 0.25) > 0 then lo_q = mid else hi_q = mid end
+    end
+    local lo, hi = math.max(0, (hi_q - 1) * 0.25), hi_q * 0.25
+    if hi_q == 0 then lo, hi = 0, 0.25 end
+    for _ = 1, 8 do local mid = (lo + hi) / 2; if at(mid) > 0 then lo = mid else hi = mid end end
+    return hi
   end
   return M
 end

@@ -285,9 +285,14 @@ return function(api)
       local tot = job.belt_items[si]
       if not tot then tot = {}; job.belt_items[si] = tot end
       local ok, lines = pcall(e.get_max_transport_line_index)
+      -- (d22 batch96 BF1) an underground exit's buried lines (3 and 4) are its entrance's: counted there once, as
+      -- freight.lua stock_places counts them
+      local partner = t == 'underground-belt' and e.belt_to_ground_type == 'output' and e.neighbours
+      if partner and not partner.valid then partner = nil end
       for i = 1, ok and lines or 0 do
         local ok2, line = pcall(e.get_transport_line, i)
-        if ok2 and line then
+        local same = ok2 and line and partner and i > 2 and select(2, pcall(function() return line.line_equals(partner.get_transport_line(i)) end)) == true
+        if ok2 and line and not same then
           for _, c in ipairs(line.get_contents()) do tot[c.name] = (tot[c.name] or 0) + c.count end
         end
       end
@@ -513,6 +518,7 @@ return function(api)
   local STAGE = {walk='census.walk', cells='census.cells', fill='census.fill', rows='census.rows', fine='census.fine',
     crows='census.crows', nests='census.nests', ore='census.ore', done='census.done'}
   local stage
+  M.read_entity = read_entity  -- (tests: one entity into a pass's job)
   function M.step(st, tick)
     local job = st.job
     if not job then
