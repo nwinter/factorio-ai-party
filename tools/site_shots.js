@@ -56,7 +56,7 @@ async function mapChecks(browser, size, w, h) {
     await page.waitForSelector('.mapview canvas', { timeout: 10000 });
     await page.waitForTimeout(800);
     await shot('default');
-    for (const b of await page.locator('.mapview-layer[aria-pressed="false"]').all()) await b.click();
+    for (const b of await page.locator('.mapview-layer[aria-pressed="false"]:not([disabled])').all()) await b.click();
     await page.waitForTimeout(200);
     await shot('layers');
     const box = await page.locator('.mapview canvas').boundingBox();
