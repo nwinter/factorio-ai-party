@@ -294,7 +294,13 @@ disabled where no networks map is read and has a fixed width, so a planet switch
 layer's on/off is kept in the browser (`pog-live-map-layers`) across planet switches and reloads. (d22 batch75 AK5,
 viewer Aurora: "Please compact the toolbar") Two groups a row, Terrain beside Networks and Combat beside Team, each label
 over its buttons; when the toolbar is under 34rem wide (a phone) one group a row with its label at the left. The picker
-is 8rem wide; the network toggles read "Power" and "Logistics" (their full names in the tooltip).
+is 8rem wide; the network toggles read "Power" and "Logistics" (their full names in the tooltip). (d22 batch75 AK7,
+viewer Aurora site:4183: "Could you put category labels beside the buttons and tighten the gaps between groups, rows and
+the planet selector?") Each label sits in a 3.5rem column at the left of its buttons at every width; Terrain + Networks
+and Combat + Team are each a row of their own, side by side where both fit, else the second below the first (never paired
+otherwise); the gaps are 4-5 px, the toolbar's buttons 7 px a side, the picker 6rem ("Item: not read" where no networks
+map is, the reason in its tooltip), and the Pollution/Spores toggle one width so nothing after it moves across planets.
+Desktop toolbar 150 -> 98 px, a 400 px phone 215 -> 203 px.
 
 push_live packs every grid's rows (`basemap`, `basemap.core`, `basemap.ore`, `planet_map`, `planet_map.core`) with
 `rle: 1`: three or more of a letter as the count and the letter (`....AAAA` is `4.4A`); a grid without `rle` is

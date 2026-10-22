@@ -139,7 +139,7 @@ def main():
     check("Gleba: the layer state kept across the switch", ("Networks", ["item", "power on", "robots"]) in gg, gg)
     check("Gleba: Nauvis-only layers disabled", ("Combat", ["coverage (disabled)", "nests (disabled)"]) in gg, gg)
     check("Aquilo: no networks map: the item picker disabled, in its place", ("Networks", ["item (disabled)", "power (disabled) on", "robots (disabled)"]) in ga, ga)
-    check("Aquilo: why disabled", 'title="Power networks: none on Aquilo now"' in o["aquilo"] and "Item: no networks map of Aquilo yet" in o["aquilo"], o["aquilo"])
+    check("Aquilo: why disabled", 'title="Power networks: none on Aquilo now"' in o["aquilo"] and re.search(r'title="no networks map of Aquilo yet"[^>]*>(<option[^>]*>)?Item: not read', o["aquilo"]), o["aquilo"])
     check("Gleba's items", "Bioflux" in o["gleba"] and "Iron plate" not in o["gleba"], o["gleba"])
     # (d22 batch75 AK5) each group a box, its label over its buttons; the network toggles Power and Logistics, the full
     # names in their tooltips

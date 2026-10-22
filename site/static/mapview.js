@@ -1014,6 +1014,10 @@
   // a row, each label over its buttons (style.css .mapview-groups: one a row when the toolbar is narrow); the network
   // toggles say Power and Logistics, their full names (LONG) in the tooltip and the disabled reason.
   var LONG = { power: 'Power networks', robots: 'Logistic networks' };
+  // (d22 batch75 AK7, viewer Aurora site:4183: "Could you put category labels beside the buttons and tighten the gaps
+  // between groups, rows and the planet selector?") each label at the left of its buttons at every width, the pairs
+  // below a row each (style.css .mapview-pair)
+  var PAIRS = [['terrain', 'networks'], ['combat', 'team']];
   var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
     ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
   Viewer.prototype.renderLayers = function () {
@@ -1041,7 +1045,9 @@
     var planets = surfaces.length ? '<div class="mapview-planets" role="group" aria-label="Planet">' + surfaces.map(function (x) {
       return '<button type="button" class="fx-btn small mapview-surface" data-surface="' + esc(x.surface) + '" aria-pressed="' + (self.surface === x.surface ? 'true' : 'false') + '">' + esc(x.text) + '</button>';
     }).join('') + '</div>' : '';
-    var groups = GROUPS.map(function (g) {
+    var boxes = {};
+    GROUPS.forEach(function (g) { boxes[g[0]] = ''; });
+    GROUPS.forEach(function (g) { boxes[g[0]] = (function () {
       var keys = g[2].filter(function (k) { return had[k]; }), item = g[0] === 'networks' && had.item;
       if (!keys.length && !item) return '';
       var buttons = keys.map(function (k) {
@@ -1051,12 +1057,18 @@
         return '<button type="button" class="fx-btn small mapview-layer"' + (here ? '' : ' disabled') + (title ? ' title="' + esc(title) + '"' : '') +
           ' data-layer="' + k + '" aria-pressed="' + (self.on[k] ? 'true' : 'false') + '">' + esc(text) + '</button>';
       }).join('');
-      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled') +
+      // (AK7) the narrow picker says "not read" where no networks map is; why, in its tooltip
+      var pick = !item ? '' : '<select class="fx-select small mapview-item" data-item' + (names.length ? '' : ' disabled title="' + esc('no networks map of ' + where + ' yet') + '"') +
         ' aria-label="An item: its sources and consumers on this planet">' + (names.length ? '<option value="">Item: none</option>' + names.map(function (n) {
           return '<option value="' + esc(n) + '"' + (n === self.item ? ' selected' : '') + '>' + esc(cap(n) + (hasGap(self.d.net, n) ? ' · gap' : '')) + '</option>';
-        }).join('') : '<option value="">Item: no networks map of ' + esc(where) + ' yet</option>') + '</select>';
+        }).join('') : '<option value="">Item: not read</option>') + '</select>';
       return '<div class="mapview-gbox"><span class="mapview-group-label" aria-hidden="true">' + esc(g[1]) + '</span><div class="mapview-group" data-group="' + g[0] +
         '" role="group" aria-label="' + esc(g[1]) + ' layers">' + pick + buttons + '</div></div>';
+    })(); });
+    // (AK7) Terrain + Networks and Combat + Team each a row of their own (side by side where they fit), never paired otherwise
+    var groups = PAIRS.map(function (p) {
+      var inner = p.map(function (k) { return boxes[k]; }).join('');
+      return inner ? '<div class="mapview-pair">' + inner + '</div>' : '';
     }).join('');
     box.innerHTML = planets + (groups ? '<div class="mapview-groups">' + groups + '</div>' : '');
   };
