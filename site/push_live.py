@@ -9,7 +9,7 @@ redacts e-mail addresses, local paths, key-like tokens and IP addresses from eve
 API/v1/state with the publish token. The token comes from $POG_LIVE_TOKEN or site/worker/.secrets.json
 (gitignored; never commit it).
 """
-import argparse, json, os, re, sys, time, urllib.error, urllib.request
+import argparse, fcntl, json, os, re, sys, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -667,6 +667,29 @@ def token():
         sys.exit("no token: set POG_LIVE_TOKEN or create site/worker/.secrets.json (see site/README.md)")
 
 
+# (d22 batch89 AY2) one pusher at a time: on d22 a copy started at 10:11 by hand kept pushing beside shift58's own,
+# every state twice, from code loaded an hour before. A second copy finds the lock held and exits, saying which pid
+# holds it; the lock goes with the process (flock), so a crash leaves nothing to clear. --once and --print take none.
+LOCK = os.environ.get("POG_PUSH_LIVE_LOCK") or os.path.join(tempfile.gettempdir(), "pog-push-live.lock")
+
+
+def take_lock(path=None):
+    """(the open lock file, held while it stays open, None) or (None, what the holder wrote: "PID since HH:MM:SS")."""
+    f = open(path or LOCK, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.seek(0)
+        held = f.read().strip()
+        f.close()
+        return None, held or "a pid it did not write"
+    f.seek(0)
+    f.truncate()
+    f.write(f"{os.getpid()} since {time.strftime('%H:%M:%S')}\n")
+    f.flush()
+    return f, None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default="http://127.0.0.1:8787/state.json", help="serve.py state URL")
@@ -675,7 +698,15 @@ def main():
     ap.add_argument("--report", type=float, default=60.0, help="seconds between ok lines in the log")
     ap.add_argument("--once", action="store_true", help="push one snapshot and exit")
     ap.add_argument("--print", action="store_true", help="print the filtered JSON instead of pushing")
+    ap.add_argument("--lock", default=None, help=f"the one-pusher lock file (default {LOCK})")
     a = ap.parse_args()
+    lock = None
+    if not (a.print or a.once):
+        lock, held = take_lock(a.lock)
+        if not lock:
+            print(f"[push] {time.strftime('%H:%M:%S')} another push_live.py holds {a.lock or LOCK} (pid {held}): "
+                  "this one exits", flush=True)
+            return 3
     tok = None if a.print else token()
     fails = 0
     # once a minute an ok line (shake3's push-live.log was empty: this printed only on failure, so a quiet log could
