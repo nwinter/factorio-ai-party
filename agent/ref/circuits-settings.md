@@ -125,7 +125,7 @@
     trash slots. A silo's ghost takes both too (a place_ghosts entry's `configure` among them), and the silo built from it keeps them.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
 - `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
-  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < 0`) and the
+  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < -2147483648`, false at any count) and the
   input inserter held; the requester feeding it cleared, then asked for exactly what the batch still needs of each
   ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
   input on; waits for the products in the machine; the input off again; the output released. The requester and both

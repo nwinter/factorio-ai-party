@@ -7,8 +7,9 @@
   With `platform`: one platform with its full hub inventory, `thrust_inputs` (a line per thruster input under half
   full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
   naming them), `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
-  and 3000 tile ghosts and says `at least` and how many were counted past that). `compact: true`: a line a platform,
-  blockers only when new to you. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
+  and 3000 tile ghosts and says `at least` and how many were counted past that). With no platform named the read is
+  compact: a line a platform, blockers only when new to you; `compact: false` gives every platform's full row,
+  `request_edits: true` each hub section's last edit. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
   there is none.
 - `./fh platform NAME`: one platform, the same read as `./fh call platform --args '{"name":"Kestrel"}'` (`platforms`
   of that one): hub free slots, cargo, speed, next stop, ETA; `hub_chunks` (hub slots asteroid chunks take);

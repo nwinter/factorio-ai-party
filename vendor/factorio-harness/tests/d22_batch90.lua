@@ -74,3 +74,16 @@ do
   game=nil
   print('AZ2 reminder acks are talk; acknowledged, not done: ok')
 end
+
+-- AZ5 (Sol board #1878): assembler_batch's holds are false whatever the network count. A logistic condition reads the
+-- network's count less what deliveries reserved (Sol's thruster read -3), so "thruster < 0" held true and the output
+-- inserter ran; every generated hold is "ITEM < -2147483648", as circuit_set switch_off's condition.
+do
+  local B=dofile('mod/agent-harness_0.1.0/batch.lua'){}
+  eq(B.HOLD,' < -2147483648')
+  local src=io.open('mod/agent-harness_0.1.0/batch.lua'):read('a')
+  assert(not src:find("' < 0'",1,true),'no fixed < 0 hold left')
+  -- the 32-bit least value is what a count can never be under: the condition never holds at any count, -3 included
+  for _,n in ipairs({-3,-2147483647,0,5}) do assert(not (n < -2147483648)) end
+  print('AZ5 assembler_batch holds never hold: ok')
+end

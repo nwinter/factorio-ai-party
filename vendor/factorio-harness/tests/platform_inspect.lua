@@ -156,14 +156,17 @@ eq(cf.filters[1],'oxide-asteroid-chunk'); eq(filters[1].name,'oxide-asteroid-chu
 eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}}).filters[1],'oxide-asteroid-chunk')
 
 -- platforms: hub slots on every row; one platform by name says what holds up building.
-local all=bot('platforms',{})
+local all=bot('platforms',{compact=false})
 eq(all.platforms[1].hub_slots,'0 of 2 free'); eq(all.platforms[1].construction_blocked,nil)
 local one=bot('platforms',{platform='Starling'}).platforms[1]
 eq(#one.construction_blocked,2)
 -- Room in the hub and the item there: nothing blocks.
 hub_inv[2]=stack(nil,0); hub_inv[1]=stack('inserter',1)
 eq(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked,nil)
-eq(bot('platforms',{}).platforms[1].hub_slots,'1 of 2 free')
+eq(bot('platforms',{compact=false}).platforms[1].hub_slots,'1 of 2 free')
+-- (d22 batch90 AZ4) fields picks from the full rows; eta_to's rows too
+eq(bot('platforms',{fields='hub_slots'}).platforms[1].hub_slots,'1 of 2 free')
+assert(bot('platforms',{}).compact==true)
 -- Tile ghosts the foundation rules hold back (request #3): foundation fills
 -- x -8..3, y 0..12 but for an empty channel along y=8 (x -8..-2) open to the
 -- west and a pocket at (-8,3),(-7,3). A ghost at the channel's mouth would
