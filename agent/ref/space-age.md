@@ -271,6 +271,9 @@
   platform stops at before the destination (pad, request, count, which stop) is a blocker while it is stopped there and
   in `risks` before (a pad request's import planet does not stop it; the hub's own request for the item keeps up to its
   max aboard, all with no max); a pod of it landing on another planet is in `diversions` (`diverted`: their sum).
+  `arrivals`: each pod with it (from the carrier's hub, or a rocket launched to the platform) on the tick it was gone:
+  its count and spoilage by stack (0-25/25-50/50-75/75-100% spoiled), read up to the tick before, the pad, hub or
+  container it went to and what that held of it on that tick, before robots take any; the setter hears each.
 - `flight_watch {platform, from?: "now" | "departure", minutes?}`: one platform watched once a second from now (or its
   next departure) to its next arrival or `minutes` (1..480, default 120). Per ammo turret (unit_number, position):
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from

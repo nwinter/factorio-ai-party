@@ -444,8 +444,14 @@ return function(api)
     end
     out.requests = table.concat(parts, ', ') .. (circuit and '; a section set by circuit' or '')
   end
+  local robots = require('robotread'){}
   function M.inspect(e, out)
     pcall(M.holds, e, out)
+    -- (d20 batch70 AF4, Astra #1718) a robot: what it carries and its orders (robotread.lua)
+    if robots.ROBOT[e.type] then
+      local ok, r = pcall(robots.row, e)
+      if ok then out.robot = r; out.holds = robots.holds(e) end
+    end
     -- A storage chest's one filter slot is its storage filter (robots store only that item in it).
     if storage_chest(e) then out.storage_filter = M.storage_filter(e) or 'none'
     else

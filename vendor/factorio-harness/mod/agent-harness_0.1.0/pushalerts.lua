@@ -103,6 +103,7 @@ return function(api)
 
   -- detail: a line for this entity (lost sources: the inserter, what it read, what it puts into), up to MAX_DETAIL a group.
   local MAX_DETAIL = 4
+  local robots = require('robotread'){}
   -- Turret kinds read again when shown (Haiku, shift12 15:20: two empty-ammo alerts sent it to guns already full).
   local RECHECK, MAX_UNITS = {no_ammo=true, rebuilt_empty=true, flamer_dry=true, ammo_low=true, artillery_empty=true}, 512
   -- (d17 batch22 C1, Haiku: hand-fed turrets found low only by polling, about every 20 minutes) a hand-fed ammo turret
@@ -131,6 +132,14 @@ return function(api)
     if by then g.by[by] = (g.by[by] or 0) + 1 end
     if #g.at < 8 then g.at[#g.at+1] = {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
     if detail then g.lost = g.lost or {}; if #g.lost < MAX_DETAIL then g.lost[#g.lost+1] = detail end end
+    -- (d20 batch70 AF4, Astra #1718) a robot with nowhere to put what it carries: which one, its cargo and orders
+    if kind == 'no_storage' and e and robots.ROBOT[e.type] then
+      g.nrobots = (g.nrobots or 0) + 1
+      if #(g.robots or {}) < MAX_DETAIL then
+        local ok, r = pcall(robots.row, e)
+        if ok then g.robots = g.robots or {}; g.robots[#g.robots+1] = r end
+      end
+    end
     -- A turret group is read again before it is shown (M.recheck): its turrets by unit number, in its cells.
     if RECHECK[kind] and e then
       local unit = try(function() return e.unit_number end)
@@ -1236,6 +1245,8 @@ return function(api)
           for n, v in pairs(part.by) do area.by[n] = (area.by[n] or 0) + v end
           for _, pos in ipairs(part.at) do if #area.at < 8 then area.at[#area.at+1] = pos end end
           for _, d in ipairs(part.lost or {}) do area.lost = area.lost or {}; if #area.lost < MAX_DETAIL then area.lost[#area.lost+1] = d end end
+          for _, r in ipairs(part.robots or {}) do area.robots = area.robots or {}; if #area.robots < MAX_DETAIL then area.robots[#area.robots+1] = r end end
+          if part.nrobots then area.nrobots = (area.nrobots or 0) + part.nrobots end
           for dx = -1, 1 do for dy = -1, 1 do
             local nk = kind .. '|' .. surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
             if groups[nk] and not done[nk] then done[nk] = true; queue[#queue+1] = {c[1] + dx, c[2] + dy} end
@@ -1810,6 +1821,15 @@ return function(api)
     end
     return f
   end
+  -- (AF4) a no_storage group's robots: "; robots: logistic-robot #2788748 at (-72.5,-2): carries
+  -- cryogenic-science-pack 3; no order; ... +N more"
+  local function robots_text(g)
+    if not g.robots then return '' end
+    local parts = {}
+    for _, r in ipairs(g.robots) do parts[#parts+1] = r.line end
+    local more = (g.nrobots or #g.robots) - #g.robots
+    return '; robots: ' .. table.concat(parts, ' | ') .. (more > 0 and string.format(' | +%d more', more) or '')
+  end
   function M.text(g, here, was, plain)
     centred(g)
     if not g.line and not g.center then
@@ -1940,7 +1960,8 @@ return function(api)
     return string.format('%s %s near %s%s%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), near_text(g),
       g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
       ALERT_TAKES[g.kind] and g.n > 1 and where_text(g) or '', hint and '; ' .. hint or '',
-      (#rot > 0 and '; ' .. table.concat(rot, '; ') or '')..(g.stale and '; last observed tick '..(g.observed_tick or 0)..'; current state partly unknown' or ''))
+      (#rot > 0 and '; ' .. table.concat(rot, '; ') or '')..(g.stale and '; last observed tick '..(g.observed_tick or 0)..'; current state partly unknown' or '')
+      ..robots_text(g))
   end
 
   -- Team block lines for p: at most one digest every DIGEST_TICKS, groups
@@ -2337,7 +2358,7 @@ return function(api)
           local to = {}
           for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
           table.sort(to)
-          return {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost,
+          return {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost, robots=g.robots,
             ore=g.ore, still_mining=g.still, untapped=g.untapped, drill_site=g.drill_site, observed_tick=g.observed_tick, checked_tick=g.checked_tick, stale=g.stale, line=M.text(g, here), to=#to > 0 and to or nil}
         end)
         rows[#rows+1] = ok and row or {kind=g.kind, surface=g.surface, count=g.n, line=string.format('%s on %s: this group could not be read (%s)', tostring(g.kind), tostring(g.surface), tostring(row))}
@@ -2397,7 +2418,7 @@ return function(api)
       claim='optional board claim id: only the groups whose centre (or feed chest) lies in that open claim\'s area on its surface (compact)', mine='optional true: the same over your own open claims',
       since='optional: the cursor your last game_alerts reply gave (with claim, mine or cursor: true): only the groups not in that reply (by kind, surface and 32-tile cell), new (how many), gone_since (how many of that reply\'s are gone), compact; every reply with claim, mine, since or cursor gives a new cursor (kept per agent, the last one)',
       cursor='optional true: give a cursor without filtering',
-      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
+      returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest), robots (no_storage: up to 4 robots at the scan, each {unit_number, name, position, cargo {name, quality, count}, orders [{type, item, quality, count, target, target_position, target_unit_number, line}], network, line}; the line adds them)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
 end
