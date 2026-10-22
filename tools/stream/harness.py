@@ -347,9 +347,18 @@ rcon.print(type(r) == "string" and r or helpers.table_to_json({ok = true, result
 PLATFORM_LUA = r"""
 local f = game.forces.player
 local out = {}
+local states = {}
+for k, v in pairs(defines.space_platform_state) do states[v] = k end
 for _, pl in pairs(f.platforms) do
   local ok, s = pcall(function() return pl.valid and pl.surface end)
   if ok and s and s.valid then
+    local w = {}
+    pcall(function()
+      w.state, w.paused, w.speed = states[pl.state], pl.paused, pl.speed
+      local c = pl.space_connection
+      if c then w.at = c.from.name .. "->" .. c.to.name .. " " .. math.floor((pl.distance or 0) * 100 + 0.5) .. "%"
+      elseif pl.space_location then w.at = pl.space_location.name else w.at = "in transit" end
+    end)
     local hub = (pl.hub and pl.hub.valid) and pl.hub.position or {x = 0, y = 0}
     local x0, y0, x1, y1 = hub.x - 6, hub.y - 6, hub.x + 6, hub.y + 6
     for _, e in pairs(s.find_entities_filtered{force = f, limit = 4000}) do
@@ -363,7 +372,7 @@ for _, pl in pairs(f.platforms) do
       guns[#guns + 1] = {n = e.name, q = e.quality and e.quality.name or "normal", x = e.position.x, y = e.position.y}
     end
     out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
-      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns}
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp, turrets = guns, where = w}
   end
 end
 rcon.print(helpers.table_to_json{platforms = out})
@@ -552,8 +561,10 @@ class Harness:
         return self.lua(PROBE_LUA)
 
     def platform_views(self):
-        """{platform name: {surface, hub, bounds, guns}} for the platforms that have a surface (PLATFORM_LUA). guns
-        (d20 batch50 A1): each turret's position and range, the range from turret_ranges."""
+        """{platform name: {surface, hub, bounds, guns, where}} for the platforms that have a surface (PLATFORM_LUA). guns
+        (d20 batch50 A1): each turret's position and range, the range from turret_ranges. where (d22 batch75 AK2, viewer
+        Foobator: only the first 2 in transit had a progress bar): {state, paused, speed, at} for every platform, `at` as
+        the platforms read gives it ("from->to N%" on a space connection, N from `from`; a location; "in transit")."""
         rows = self.lua(PLATFORM_LUA).get("platforms")
         rows = rows if isinstance(rows, list) else []
         turrets = [t for r in rows for t in (r.get("turrets") if isinstance(r.get("turrets"), list) else [])]

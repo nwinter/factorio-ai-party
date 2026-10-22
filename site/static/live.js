@@ -630,15 +630,27 @@
     }).join('');
   }
   // Space Age inset (state.space, push_live.py): planets reached, rockets, each platform where it is or its route.
+  // (d22 batch75 AK2, viewer Foobator: "can in transit be listed first and the rest have their planetary waiting time
+  // displayed?") the platforms in transit first, each with its progress bar; the rest in the stream's order with how
+  // long (game time) each has been at its planet, "12+ min" when it was there before the stream service first read it.
+  function waitedText(p) {
+    if (!isFinite(p.waited_s) || p.waited_s < 0) return '';
+    var m = Math.floor(p.waited_s / 60), more = p.waited_more ? '+' : '';
+    if (m < 1) return more ? '' : 'waiting under 1 min';
+    return 'waiting ' + (m < 60 ? m + more + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + more + ' min');
+  }
+  function inTransit(p) { return !!(p.route || p.state === 'on_the_path' || p.where === 'in transit'); }
   function spaceInset(sp) {
     if (!sp || !(sp.platforms || []).length && !(sp.planets || []).length) return '';
-    var rows = (sp.platforms || []).map(function (p) {
+    var plats = (sp.platforms || []).filter(inTransit).concat((sp.platforms || []).filter(function (p) { return !inTransit(p); }));
+    var rows = plats.map(function (p) {
       var bar = p.route && isFinite(p.route.pct) ? '<div class="fx-progress fx-progress--thin" style="--fx-value:' + Math.max(0, Math.min(100, p.route.pct)) + '%" role="progressbar" aria-valuenow="' +
         Math.round(p.route.pct) + '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.name) + ' on its way"></div>' : '';
       // where it is, plus its state when that says more than "flying" or "waiting at a stop" (no schedule, paused...)
       var st = p.state && !/^(on_the_path|waiting_at_station|paused)$/.test(p.state) ? label(p.state).toLowerCase() : '';
       return '<li><b>' + esc(p.name) + '</b> <span>' + esc([p.where || label(p.state), st].filter(Boolean).join(' · ')) + '</span>' +
-        (p.speed_kms ? ' <span class="fx-muted">' + esc(p.speed_kms) + ' km/s</span>' : '') + (p.paused ? ' <span class="fx-chip fx-chip--grey">paused</span>' : '') + bar + '</li>';
+        (p.speed_kms ? ' <span class="fx-muted">' + esc(p.speed_kms) + ' km/s</span>' : '') + (inTransit(p) || !waitedText(p) ? '' : ' <span class="fx-muted">' + esc(waitedText(p)) + '</span>') +
+        (p.paused ? ' <span class="fx-chip fx-chip--grey">paused</span>' : '') + bar + '</li>';
     }).join('');
     return '<div class="space-inset"><h4>Space</h4><p class="small fx-muted">' + esc([(sp.planets || []).join(', '), sp.rockets ? sp.rockets + ' rocket' + (sp.rockets > 1 ? 's' : '') + ' launched' : ''].filter(Boolean).join(' · ')) + '</p>' +
       (rows ? '<ul class="platforms">' + rows + '</ul>' : '') + '</div>';

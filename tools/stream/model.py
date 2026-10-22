@@ -1919,19 +1919,32 @@ class Model:
             else:
                 self.alert("arrival", title, key=key, ttl=120, facts=facts)
 
-    def set_space_memory(self, path):
+    def set_space_memory(self, path, earlier=()):
         """Keep where each platform has been, and the planets reached, in the run folder (serve.py), so a restart
         does not take a ferry's next arrival for a first: an arrival headline, or the one-time "X reaches Vulcanus"
-        moment with its segment."""
+        moment with its segment. (d22 batch75 AK2) Also where each platform stopped and the game tick it got there
+        (`stops`); a run without its own file takes those from the newest of earlier (the runs it resumed from)."""
         self.space_memory = path
         try:
             with open(path) as f:
                 mem = json.load(f)
         except (OSError, ValueError):
-            return
+            mem = None
+            for p in earlier:
+                try:
+                    with open(p) as f:
+                        mem = {"stops": json.load(f).get("stops") or {}}
+                    break
+                except (OSError, ValueError, AttributeError):
+                    continue
+            if not mem:
+                return
         for name, planets in (mem.get("visited") or {}).items():
             self.platform_course.setdefault(name, {"visited": set()})["visited"].update(planets)
             self.orbit_known.update((name, pl) for pl in planets)
+        for name, stop in (mem.get("stops") or {}).items():  # (AK2) where each stopped and since when, across restarts
+            if isinstance(stop, dict) and isinstance(stop.get("at"), str) and isinstance(stop.get("tick"), int):
+                self.platform_course.setdefault(name, {"visited": set()})["stop"] = {"at": stop["at"], "tick": stop["tick"], "seen": bool(stop.get("seen"))}
         self.planets_reached.update(mem.get("reached") or [])
 
     MAP_MEMORY_EVERY = 60.0
@@ -1977,7 +1990,8 @@ class Model:
         if not self.space_memory:
             return
         mem = {"visited": {n: sorted(c.get("visited") or ()) for n, c in sorted(self.platform_course.items())},
-               "reached": sorted(self.planets_reached)}
+               "reached": sorted(self.planets_reached),
+               "stops": {n: c["stop"] for n, c in sorted(self.platform_course.items()) if c.get("stop")}}
         if mem == getattr(self, "_space_memory_saved", None):
             return
         try:
@@ -2005,6 +2019,11 @@ class Model:
             m = AT_RE.match(at)
             if not m:
                 if at and at != "in transit":
+                    # (d22 batch75 AK2, viewer Foobator: "the rest have their planetary waiting time displayed") the
+                    # game tick of the first read at this planet; seen: the read before had it elsewhere (else it was
+                    # there when the service started: at least that long)
+                    if (c.get("stop") or {}).get("at") != at and self.tick:
+                        c["stop"] = {"at": at, "tick": self.tick, "seen": bool(c.get("moving") or c.get("orbit"))}
                     if c.get("moving"):
                         came = c.get("orbit") if c.get("orbit") != at else None
                         if not came and c.get("conn"):
@@ -2015,6 +2034,7 @@ class Model:
                     self.planets_reached.add(at)
                 elif at == "in transit":
                     c["moving"] = True
+                    c.pop("stop", None)
                 out.append(p)
                 continue
             a, b, pct = m[1], m[2], int(m[3])
@@ -2030,6 +2050,7 @@ class Model:
             else:
                 toward = b
             c.update(conn=(a, b), pct=pct, toward=toward, moving=True)
+            c.pop("stop", None)
             if new and p.get("to") in (a, b):  # first seen mid-trip (a restart): it has been where it left
                 c["visited"].add(a if toward == b else b)
                 if toward in self.planets_reached:
@@ -2175,6 +2196,11 @@ class Model:
                               if w.get("platform") == p.get("name") and now - w["t"] < 120 and w["agent"] in self.agents}
                              - set(aboard))
             card = platform_card(p, self.platform_hits.get(p.get("name")), aboard, working)
+            stop = (self.platform_course.get(p.get("name")) or {}).get("stop")
+            if stop and not card["route"] and self.tick >= stop["tick"]:  # (AK2) game seconds at the planet it is at
+                card["waited_s"] = round((self.tick - stop["tick"]) / 60)
+                if not stop["seen"]:
+                    card["waited_more"] = True  # there when first read: at least that long
             danger = platform_danger(p.get("name"), self.platform_hits.get(p.get("name")), self.platform_losses.get(p.get("name")),
                                      p.get("ammo_rates"), self.tick, now, (card.get("hub") or {}).get("pct"))
             if danger:

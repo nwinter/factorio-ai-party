@@ -535,12 +535,20 @@ class LiveSource:
                 except Exception as e:
                     errors["platform_views"] = str(e)
         views = getattr(self, "platform_views", {})
-        # later keys win: the detail read (up to 15 s old) over the score row, the fresh location over both
-        # (dict(row, **a, **b) raised "multiple values for keyword argument 'at'" from the 15:10 deploy)
-        space["platforms"] = [{**row, **self.platform_detail.get(row["name"], {}),
-                               **({"view": views[row["name"]]} if row["name"] in views else {}),
-                               **self.fresh_at(row, self.platform_detail.get(row["name"], {}))}
-                              for row in space["platforms"]]
+
+        def placed(name):
+            """(d22 batch75 AK2, viewer Foobator: "the ship overview only has a progress bar for the first 2 that are
+            in transit?") the views read's state, location or route and speed, every platform's (the detail above is
+            read for the first 4 only, and the score's `at` says "in transit" without the route)."""
+            w = (views.get(name) or {}).get("where")
+            return {k: w[k] for k in ("state", "at", "speed", "paused") if w.get(k) is not None} if isinstance(w, dict) else {}
+        # later keys win: the views read and the detail read (up to 15 s old) over the score row, the fresh location over
+        # them (dict(row, **a, **b) raised "multiple values for keyword argument 'at'" from the 15:10 deploy)
+        rows = []
+        for row in space["platforms"]:
+            read = {**placed(row["name"]), **self.platform_detail.get(row["name"], {})}
+            rows.append({**row, **read, **({"view": views[row["name"]]} if row["name"] in views else {}), **self.fresh_at(row, read)})
+        space["platforms"] = rows
 
     @staticmethod
     def fresh_at(row, detail):

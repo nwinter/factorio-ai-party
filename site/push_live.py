@@ -63,7 +63,8 @@ def scrub(v):
 
 
 CAMERA_LABELS = ("attack", "work", "segment")  # what a camera shows when it is not just following an agent
-PLATFORM_KEYS = ("name", "where", "route", "state", "paused", "speed_kms")
+PLATFORM_KEYS = ("name", "where", "route", "state", "paused", "speed_kms",
+                 "waited_s", "waited_more")  # (d22 batch75 AK2) game seconds at the planet it is at; more: at least that
 FIGHT_RECENT_S = 120  # fights the map marks: reported in the last two minutes
 WATCHING_STALE = 180  # a "watching now" reading older than this is unknown (caster.py WATCH_STALE)
 

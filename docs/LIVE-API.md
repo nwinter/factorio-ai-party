@@ -144,7 +144,9 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                          "work": "Sol building on Solstice (from the ground)"}},     // optional: work / segment shot
     "space": {"rockets": 3, "planets": ["Nauvis"], "summary": "1 platform · 3 rockets",   // only once Space Age shows
               "platforms": [{"name": "Solstice", "where": "Nauvis → Vulcanus", "state": "on_the_path", "speed_kms": 72,
-                             "route": {"from": "Nauvis", "to": "Vulcanus", "pct": 42}, "paused": false}]},  // at most 6
+                             "route": {"from": "Nauvis", "to": "Vulcanus", "pct": 42}, "paused": false},
+                            {"name": "Dock", "where": "Gleba", "state": "waiting_at_station", "paused": false,
+                             "waited_s": 725, "waited_more": true}]},  // every platform
     "fights": [{"kind": "attack|loss", "text": "...", "position": {"x": -48.0, "y": 16.0}, "extent": 32.0,
                 "age_s": 6, "losses": 1}],  // reported in the last 2 minutes, on Nauvis; at most 12
     "shift": {"start": 1791733620, "end": 1791748020, "next": 1791748020, "next_exact": false}  // Unix seconds;
@@ -178,6 +180,14 @@ It draws `fights` as rings the size of their `extent` (solid while `age_s` is un
 faded after, a cross where `losses` happened), tags each agent a camera follows with its slot, lists what each camera
 shows (`cameras`: its agents, or the `attack`, `work` or `segment` shot), shows the research in progress over the
 map, and `space` as an inset under it. `space`, `fights` and the camera labels add a few hundred bytes to a push.
+(d22 batch75 AK2, viewer Foobator, site:4034: "the ship overview only has a progress bar for the first 2 that are in
+transit? can in transit be listed first and the rest have their planetary waiting time displayed?") Every platform's
+`state`, `route` and `speed_kms` come from the stream's views read (`PLATFORM_LUA`, every platform in one call every
+15 s); before, only the first 4 platforms' detail reads had them and the rest said "in transit" without a route.
+`waited_s` is the game seconds a platform has been at the planet it is at (the stream service's first read there; kept
+in `space-memory.json` across restarts and from the run resumed); `waited_more` means it was there before the service
+first read it, so at least that long. The inset lists the platforms in transit first, each with its progress bar, then
+the rest in the stream's order with "waiting 12 min" ("12+ min" with `waited_more`).
 
 `basemap` is the base as a coarse grid, read once a minute by the stream service (`BASEMAP_LUA` in
 `tools/stream/harness.py`, an operator read like the score): every building of ours on nauvis except electric poles,
