@@ -55,7 +55,9 @@ def payload_tests():
     a_, b_ = push_live.public_state(sp), push_live.public_state(sp)
     assert a_["planets"] == [{"surface": "gleba", "tick": 7, "buildings": 7}, {"surface": "vulcanus", "tick": 5, "buildings": 5}], a_["planets"]
     assert {a_["planet_map"]["surface"], b_["planet_map"]["surface"]} == {"gleba", "vulcanus"} and a_["planet_map"]["rows"] == ["AS"]
-    assert "capped" not in a_["planet_map"] and "planet_maps" not in a_
+    assert "capped" not in a_["planet_map"]
+    # (d22 batch75 AK1) and the others beside it while they fit: a page just loaded has every planet
+    assert set(a_["planet_maps"]) | {a_["planet_map"]["surface"]} == {"gleba", "vulcanus"} and "capped" not in a_["planet_maps"][b_["planet_map"]["surface"]]
     assert "planets" not in push_live.public_state(s)
     s["shift"] = {"start": 1, "end": 2, "next": 3, "next_exact": False}
     assert push_live.public_state(s)["shift"] == s["shift"]  # the offline state's "next shift" line

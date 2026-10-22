@@ -536,40 +536,87 @@
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
   var mapView = null;
   // The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05): state.planet_map brings one planet a
-  // push (push_live.py), kept here by surface; a local state's planet_maps has them all. (d20 batch50 D1, viewer Aurora:
-  // tabs disappeared and reset the selected planet) A planet a push leaves out keeps its last map; the map viewer
-  // labels it with its age (mapview.js remember).
-  var planetMaps = {};
+  // push (push_live.py), and planet_maps the others that fit; kept here by surface; a local state's planet_maps has them
+  // all. (d20 batch50 D1, viewer Aurora: tabs disappeared and reset the selected planet) A planet a push leaves out keeps
+  // its last map; the map viewer labels it with its age (mapview.js remember).
+  // (d22 batch75 AK1, viewer Aurora: "Planet buttons and network layers disappear between refreshes") both kinds of map
+  // are kept across page loads too (this browser's storage, KEPT_KEY): a page loaded while the stream service restarts
+  // or the push stops has every planet's last map and networks map, and Nauvis's last basemap and the last clouds while
+  // a state has none (keepLast). A map whose tick is past the state's (a world rolled back) goes; a planet the states this
+  // page reads have left out for GONE_S goes; storage older than KEEP_S is not read.
+  var KEPT_KEY = 'pog-live-kept', KEEP_S = 12 * 3600, GONE_S = 3600, LAST_SAVE_S = 60;
+  var planetMaps = {}, netMaps = {}, unlisted = {}, last = {}, keptDirty = false, lastDirty = false, keptSaved = 0;
+  (function () {
+    var k;
+    try { k = JSON.parse(store(KEPT_KEY) || 'null'); } catch (e) { k = null; }
+    if (!k || typeof k !== 'object' || !(Date.now() / 1000 - k.saved < KEEP_S)) return;
+    ['planets', 'nets'].forEach(function (kind) {
+      var into = kind === 'planets' ? planetMaps : netMaps, from = k[kind] && typeof k[kind] === 'object' ? k[kind] : {};
+      Object.keys(from).forEach(function (s) { if (from[s] && from[s].surface === s) into[s] = from[s]; });
+    });
+    if (k.unlisted && typeof k.unlisted === 'object') Object.keys(k.unlisted).forEach(function (s) { if (isFinite(k.unlisted[s])) unlisted[s] = k.unlisted[s]; });
+    ['home', 'clouds'].forEach(function (x) { if (k.last && k.last[x] && isFinite(k.last[x].at) && k.last[x].v) last[x] = k.last[x]; });
+  })();
+  // (AK1) Nauvis's basemap and the clouds as the state has them, else the last this page had: {bm, home_held, clouds,
+  // clouds_held} (held: seconds since it came; a basemap from past the state's tick goes)
+  function keepLast(s) {
+    var now = Date.now() / 1000, out = { bm: s.basemap || {}, clouds: Array.isArray(s.clouds) ? s.clouds : [] };
+    if (last.home && isFinite(s.tick) && last.home.v.tick > s.tick) { delete last.home; keptDirty = true; }
+    if (s.basemap && Array.isArray(s.basemap.rows)) { last.home = { at: now, v: s.basemap }; lastDirty = true; }
+    else if (last.home) { out.bm = last.home.v; out.home_held = now - last.home.at; }
+    if (out.clouds.length) { last.clouds = { at: now, v: out.clouds }; lastDirty = true; }
+    else if (last.clouds) { out.clouds = last.clouds.v; out.clouds_held = now - last.clouds.at; }
+    return out;
+  }
+  function keepIn(maps, m, grid) {
+    if (!m || typeof m.surface !== 'string' || grid && !Array.isArray(m.rows)) return;
+    var old = maps[m.surface];
+    if (!old || !(old.tick > m.tick)) { maps[m.surface] = m; keptDirty = true; }
+  }
   function keepPlanets(s) {
-    function take(m) {
-      if (!m || typeof m.surface !== 'string' || !Array.isArray(m.rows)) return;
-      var old = planetMaps[m.surface];
-      if (!old || !(old.tick > m.tick)) planetMaps[m.surface] = m;
-    }
-    take(s.planet_map);
-    if (s.planet_maps && typeof s.planet_maps === 'object') Object.keys(s.planet_maps).forEach(function (k) { take(Object.assign({ surface: k }, s.planet_maps[k])); });
+    keepIn(planetMaps, s.planet_map, true);
+    if (s.planet_maps && typeof s.planet_maps === 'object') Object.keys(s.planet_maps).forEach(function (k) { keepIn(planetMaps, Object.assign({ surface: k }, s.planet_maps[k]), true); });
     return planetMaps;
   }
   // (d21 batch68 AD3) each planet's networks map: state.net_map brings one a push (push_live.py), kept here by surface
-  var netMaps = {};
   function keepNets(s) {
-    function take(m) {
-      if (!m || typeof m.surface !== 'string') return;
-      var old = netMaps[m.surface];
-      if (!old || !(old.tick > m.tick)) netMaps[m.surface] = m;
-    }
-    take(s.net_map);
-    if (s.net_maps && !Array.isArray(s.net_maps) && typeof s.net_maps === 'object') Object.keys(s.net_maps).forEach(function (k) { take(Object.assign({ surface: k }, s.net_maps[k])); });
+    keepIn(netMaps, s.net_map, false);
+    if (s.net_maps && !Array.isArray(s.net_maps) && typeof s.net_maps === 'object') Object.keys(s.net_maps).forEach(function (k) { keepIn(netMaps, Object.assign({ surface: k }, s.net_maps[k]), false); });
     return netMaps;
   }
+  // (AK1) after keepPlanets and keepNets: a kept map from past the state's tick goes, and a planet the state's listings
+  // (its planets, net_maps) have left out for GONE_S; the kept maps saved when they changed (the basemap and clouds at most
+  // every LAST_SAVE_S). The surfaces gone.
+  function keepUp(s) {
+    var now = Date.now() / 1000, gone = [], listed = {}, lists = [s.planets, s.net_maps].filter(Array.isArray);
+    lists.forEach(function (list) { list.forEach(function (x) { if (x && typeof x.surface === 'string') listed[x.surface] = true; }); });
+    [planetMaps, netMaps].forEach(function (maps) {
+      Object.keys(maps).forEach(function (k) {
+        if (listed[k] || !lists.length) delete unlisted[k];
+        else if (!unlisted[k]) { unlisted[k] = now; keptDirty = true; }
+        if (isFinite(s.tick) && maps[k].tick > s.tick || now - (unlisted[k] || now) >= GONE_S) {
+          delete maps[k]; keptDirty = true;
+          if (gone.indexOf(k) < 0) gone.push(k);
+        }
+      });
+    });
+    Object.keys(unlisted).forEach(function (k) { if (!planetMaps[k] && !netMaps[k]) delete unlisted[k]; });
+    if (keptDirty || lastDirty && now - keptSaved >= LAST_SAVE_S) {
+      keptDirty = lastDirty = false; keptSaved = now;
+      store(KEPT_KEY, JSON.stringify({ saved: now, planets: planetMaps, nets: netMaps, unlisted: unlisted, last: last }));
+    }
+    return gone;
+  }
   function mapData(s) {
-    var bm = s.basemap || {};
+    var kl = keepLast(s), bm = kl.bm;
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, turrets_read: bm.turrets_read, terrain: bm.terrain,
       planets: keepPlanets(s), now_tick: s.tick,
       library_areas: s.library_areas && Array.isArray(s.library_areas.areas) ? s.library_areas.areas : [],  // (AD2) placed library areas
       net_maps: keepNets(s),  // (AD3) electric and logistic networks, items' sources and consumers
+      // (AK1) the newest tick of each planet's maps the state lists, and the surfaces dropped (keepUp)
+      planet_list: Array.isArray(s.planets) ? s.planets : null, net_list: Array.isArray(s.net_maps) ? s.net_maps : null, gone: keepUp(s),
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
-      clouds: s.clouds || [] };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
+      clouds: kl.clouds, home_held: kl.home_held, clouds_held: kl.clouds_held };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
 
   // What each camera shows (state.cameras: who it follows, or the fight / work / segment shot it holds), so a viewer
