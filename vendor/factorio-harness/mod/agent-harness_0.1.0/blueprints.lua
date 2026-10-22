@@ -381,6 +381,31 @@ return function(api)
     end
     return list
   end
+  -- (d20 batch65 AA8) {entity_number=needs}: blueprint entities whose circuit settings act on a signal (circuits.lua
+  -- signal_needs) with no red or green wire to them in the blueprint.
+  local function unwired_needs(entities)
+    local C=api.circuits and api.circuits()
+    if not C then return {} end
+    local W=defines.wire_connector_id
+    local circuit={[W.circuit_red]=true,[W.circuit_green]=true,[W.combinator_output_red]=true,[W.combinator_output_green]=true}
+    local out,wired
+    for _,e in ipairs(entities) do
+      if type(e.control_behavior)=='table' then
+        local needs=C.signal_needs(e.name,e.control_behavior,true)
+        if #needs>0 then
+          if not wired then
+            wired={}
+            for _,w in ipairs(wire_list(entities)) do
+              if circuit[w[2]] then wired[w[1]]=true end
+              if circuit[w[4]] then wired[w[3]]=true end
+            end
+          end
+          if not wired[e.entity_number] then out=out or {}; out[e.entity_number]=needs end
+        end
+      end
+    end
+    return out or {}
+  end
   local function restore_wires(entities,where,out)
     local list=wire_list(entities)
     if #list==0 then return end
@@ -712,6 +737,19 @@ return function(api)
             out.anchor=anchored
           end
         end
+        -- (AA8) blueprint entities whose settings act on a signal with no red or green wire in the blueprint, and none on
+        -- what stands there after the paste
+        local needs=unwired_needs(entities)
+        if next(needs) then
+          local at_of=locate(p,a,entities,pos,direction,box,c)
+          local check=api.unwired_check(p.surface,p.force)
+          local plan={}
+          for _,be in ipairs(entities) do
+            if needs[be.entity_number] then plan[#plan+1]={name=be.name,position=at_of(be),needs=needs[be.entity_number]} end
+          end
+          local oku,u=pcall(api.circuits().unwired_plan,plan,check,true)
+          if oku then out.unwired=u end
+        end
         -- What a forced paste marked for deconstruction (trees, rocks; superforced: our own entities in the way).
         if marked_before then
           local n,by=0,{}
@@ -807,6 +845,7 @@ return function(api)
       local function round(v) if even then return 2*math.floor(v/2+0.5) end return math.floor(v+0.5) end
       local shift={x=round(pos.x-cx),y=round(pos.y-cy)}
       local list={}
+      local needs=unwired_needs(entities)
       for i,e in ipairs(entities) do
         local x,y=turn(e.position.x,e.position.y)
         local d=e.direction or 0
@@ -815,7 +854,7 @@ return function(api)
         list[i]={index=i,name=e.name,position={x=shift.x+x,y=shift.y+y},direction=(d+direction)%16,
           quality=type(e.quality)=='string' and e.quality or nil,requests=api.keep and api.keep.bp_sections(e) or nil,
           construction=e.request_missing_construction_materials==true or nil,
-          ug_type=type(e.type)=='string' and e.type or nil}
+          ug_type=type(e.type)=='string' and e.type or nil,needs=needs[e.entity_number]}
       end
       local tlist={}
       for i,t in ipairs(tiles or {}) do

@@ -12968,7 +12968,7 @@ M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then
 -- Underground entrances fed from the side by an inserter or a belt (sidefeed.lua; Sol, shift10).
 M.routefeeds=require('routefeeds')()
 M.sidefeed=require('sidefeed'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
-do local blueprint_handlers=blueprint_module{railrun=function() return M.railrun end,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
+do local blueprint_handlers=blueprint_module{railrun=function() return M.railrun end,circuits=function() return M.circuits end,unwired_check=function(s,f) return M.unwired_check(s,f) end,contested=function(s,f,item,at) return M.ghostlist.contested(s,f,item,at) end,fluid_removal=function(f,list) return M.fluidjoin.removal(f,list) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,deconstruct_job=function(e) return M.robottrips.deconstruct_job(e) end,position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
   build_notes=function(p,ents) return M.build_notes(p,ents) end,
   heat_loss=function(surface,force,list) return M.heating.loss(surface,force,list) end,
   placed=function(p,e) pcall(M.ghostlog.placed,M.board.who(p),e); return M.efficiency.built(M.board.who(p),e) end,
@@ -15717,6 +15717,12 @@ function handlers.dry_run(p,a)
     out.ammo_requests=#rows>0 and rows or nil
   end
   if kind=='build' then out.materials=M.materials.build(p,inner) end
+  -- (d20 batch65 AA8, Astra 19:02) entries setting what acts on a signal (an enable condition, set filters, ...) with no
+  -- red or green wire in the call (or a blueprint's) and none on what stands there
+  if kind~='ghosts' or action=='place_ghosts' then
+    local oku,u=pcall(M.circuits.unwired_plan,plan.entities,M.unwired_check(q.surface,q.force),kind~='build')
+    if oku then out.unwired=u end
+  end
   out.paste=paste
   out.retired=paste and paste.retired or nil
   out.rail_route=rail_plan and rail_plan.out or nil
@@ -15832,6 +15838,25 @@ function M.dry_verdict(out,a)
   out.verdict=#parts==0 and 'ok: every entry places and every setting is taken' or 'fails: '..table.concat(parts,', ')..(out.settings_line and '; '..out.settings_line or '')
   return out
 end
+-- (d20 batch65 AA8) what stands at a spot (built or a ghost of that name, ours) with a red or green wire on it
+function M.unwired_check(surface,force)
+  return function(name,pos)
+    for _,o in ipairs(surface.find_entities_filtered{position=pos,radius=0.5,force=force}) do
+      local n=o.type=='entity-ghost' and o.ghost_name or o.name
+      if n==name and M.circuits.has_circuit_wire(o) then return true end
+    end
+    return false
+  end
+end
+-- The surface a place_ghosts call places on (its platform or surface, else the character's), or nil.
+function M.call_surface(p,a)
+  local ok,q=pcall(function()
+    if a.platform~=nil then return space.platform(p,a.platform).surface end
+    if a.surface~=nil then return M.on_surface(p,a.surface).surface end
+    return p.surface
+  end)
+  return ok and q or nil
+end
 do
   local place=handlers.place_ghosts
   handlers.place_ghosts=function(p,a)
@@ -15852,6 +15877,12 @@ do
     for _,f in ipairs(out.failed or {}) do if f.index then skip[f.index]=true end end
     out.settings,out.settings_line=M.entryset.apply(p,a.entities,ctx,skip)
     if aliased>0 then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
+    -- (AA8) an entry setting what acts on a signal with no red or green wire planned or standing
+    local placed={}
+    for i,e in ipairs(a.entities) do if not skip[i] then placed[#placed+1]=e end end
+    local surface=M.call_surface(p,a)
+    local oku,u=pcall(M.circuits.unwired_plan,placed,surface and M.unwired_check(surface,p.force),true)
+    if oku then out.unwired=u end
     return out
   end
   local build=handlers.build
@@ -15861,6 +15892,11 @@ do
     if M.entryset.any(entries) then M.entryset.check(entries,{}) end
     local out=build(p,a)
     if aliased>0 and type(out)=='table' then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
+    -- (AA8) as place_ghosts: settings that act on a signal with no red or green wire planned or standing
+    if type(out)=='table' and M.entryset.any(entries) then
+      local oku,u=pcall(M.circuits.unwired_plan,entries,M.unwired_check(p.surface,p.force),false)
+      if oku then out.unwired=u end
+    end
     return out
   end
   -- check_inserters (Luna, d15 09:20 round: misaligned or blocked inserters on the Gleba seed feeders, many round trips):

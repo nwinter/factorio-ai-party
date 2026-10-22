@@ -247,6 +247,6 @@ return function(api)
   end
   M.schema_text = 'configure {recipe, filters, filter_mode, modules, ...} as configure takes them; requests {set, clear, ...} '
     .. 'as requests takes them; circuit {enable, read, settings, decider, arithmetic, signals, ...} as circuit_set takes them; '
-    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line)'
+    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line); unwired (a warning, dry runs too): an entry whose circuit sets what acts on a signal (an enable condition, set filters, stack size, recipe, requests ...) with no red or green wire in the call (its own wires or another entry\'s to it) and none on what stands there, and what the game does then (2.0.77: an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'
   return M
 end

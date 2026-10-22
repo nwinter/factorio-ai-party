@@ -80,7 +80,7 @@ return function(api)
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
       decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}: conditions rows "carbon < 150" (a row after the first begins with and / or: "and sulfur < 100"), {signal, comparator, value|signal2, compare: and|or (compare_type too), first_networks, second_networks: red|green|both}, or the game\'s own rows {first_signal, comparator, constant|second_signal, compare_type}; a row after the first must say and or or; outputs {signal, copy_input: true (the input count) | constant N, networks}; the read shows each row\'s networks and each output as copy or constant',
       selector='{operation (select|count|random|stack-size|...), its fields}',
-      returns='entity, by (reach|remote view), circuit: the readback inspect shows'},
+      returns='entity, by (reach|remote view), circuit: the readback inspect shows; unwired (a warning): a setting of this call that acts on a signal (an enable condition, set filters, set stack size, set recipe, set requests, set trains limit ...) on an entity or ghost no red or green wire connects, and what the game does then (in 2.0.77 an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'},
     wire = {from='{x,y} (or {position, name, unit_number}): in reach, or by remote view ours in a visible chunk',
       to='the other end, as from',
       color='red | green: a circuit wire; leave it out for copper (poles, power switches)',
@@ -1406,6 +1406,15 @@ return function(api)
     out.notes = chest_notes
     M.held_off(e, cb, out, a)
     out.now = M.now_text(out, a)
+    -- (AA8) what this call set that needs a signal, with no red or green wire on it now (a built entity's enable
+    -- condition is said by condition_ignored already)
+    if not M.has_circuit_wire(e) then
+      local needs = {}
+      for _, row in ipairs(M.signal_needs(out.entity, a)) do
+        if out.ghost or not (out.condition_ignored and row:sub(1, 20) == 'its enable condition') then needs[#needs+1] = row end
+      end
+      if #needs > 0 then out.unwired = M.unwired_line(out.entity, e.position, needs, 'none on it now', out.ghost) end
+    end
     return out
   end
   -- What the entity does now after switch_off or remove_condition (A1): plainly.
@@ -1449,6 +1458,129 @@ return function(api)
     if #held > 0 then
       out.stays_disabled = string.format('%s (%g,%g): %s', out.entity, e.position.x, e.position.y, table.concat(held, '; '))
     end
+  end
+
+  -- Settings that need a signal, with no red or green wire --------------------------
+  -- (d20 batch65 AA8, Astra 19:02: place_ghosts took an inserter's enable condition signal-check > 0 with no wire planned;
+  -- inspect later said the game ignored it.) Read on a private copy (2.0.77), each set with no red or green wire, then
+  -- wired to a constant combinator sending nothing: an inserter's enable condition was ignored and it ran (wired: it
+  -- stopped); set filters kept its own filters (wired: none, it took nothing); set stack size kept its own hand size
+  -- (wired: 1); an assembler's set recipe kept its recipe (wired: none); a requester's set requests kept its requests.
+  local ACTS = {circuit_set_filters={'set filters', 'the game keeps its own filters'},
+    circuit_set_stack_size={'set stack size', 'the game keeps its own hand size'},
+    circuit_set_recipe={'set recipe', 'the game keeps its own recipe'}, set_recipe={'set recipe', 'the game keeps its own recipe'}}
+  local REQUESTS = {'set requests', 'the game keeps its own requests'}
+  -- Other settings that act on a signal: with no wire none reaches them.
+  local READS = {set_trains_limit='set trains limit', set_priority='set priority', send_to_train='send to train', set_filter='set filter',
+    set_input_side='set input side', set_output_side='set output side', set_priority_list='set priority list',
+    set_ignore_unlisted_targets='ignore unlisted targets', send_to_platform='send to platform', open_gate='open gate',
+    close_signal='close signal', circuit_close_signal='close signal'}
+  local function on_off_type(t)
+    local kind = TYPE_KIND[t]
+    if kind == nil then kind = t and t:gsub('-', '_') end
+    return kind and PROPS[kind] and PROPS[kind].on_off or false
+  end
+  -- What of spec needs a signal on entity name: spec is circuit_set's arguments, or (bp) a blueprint entity's
+  -- control_behavior. Rows "its enable condition iron-plate > 0: the game ignores this condition and the inserter runs".
+  function M.signal_needs(name, spec, bp)
+    if type(spec) ~= 'table' then return {} end
+    local proto = try(function() return prototypes.entity[name] end)
+    local t = proto and proto.type
+    local rows, seen = {}, {}
+    local function add(label, effect)
+      if not seen[label] then seen[label] = true; rows[#rows+1] = label .. ': ' .. effect end
+    end
+    local runs = on_off_type(t) and 'the game ignores this condition and the ' .. name .. ' runs' or 'the game ignores this condition'
+    local settings = not bp and type(spec.settings) == 'table' and spec.settings or {}
+    local function cond(c)
+      if c == nil then return '' end
+      local okc, text = pcall(function() return condition_text(bp and c or condition(c, 'enable')) end)
+      return okc and text and ' ' .. text or ''
+    end
+    if bp then
+      if spec.circuit_enabled == true or spec.circuit_condition_enabled == true then add('its enable condition' .. cond(spec.circuit_condition), runs) end
+      if spec.circuit_mode_of_operation == 1 and t == 'logistic-container' then add(REQUESTS[1], REQUESTS[2]) end
+    else
+      if spec.enable ~= nil and spec.enable ~= false then add('its enable condition' .. cond(spec.enable), runs) end
+      if spec.switch_off == true then add('its enable condition signal-dot < -2147483648 (switch_off)', runs) end
+      if settings.circuit_enable_disable == true or settings.circuit_condition_enabled == true then
+        add('its enable condition' .. cond(settings.circuit_condition), runs)
+      end
+      if spec.set_requests == true or settings.circuit_exclusive_mode_of_operation == 'set_requests' then add(REQUESTS[1], REQUESTS[2]) end
+    end
+    local source = bp and spec or settings
+    for k, v in pairs(source) do
+      if v == true and ACTS[k] then add(ACTS[k][1], ACTS[k][2])
+      elseif v == true and READS[k] then add(READS[k], 'no signal reaches it') end
+    end
+    table.sort(rows, function(x, y)
+      local ex, ey = x:sub(1, 3) == 'its', y:sub(1, 3) == 'its'
+      if ex ~= ey then return ex end
+      return x < y
+    end)
+    return rows
+  end
+  -- A red or green wire on e (a building or a ghost) now.
+  function M.has_circuit_wire(e)
+    local wires = try(function() return (wires_of(e)) end)
+    for key in pairs(wires or {}) do if key:sub(1, 6) ~= 'copper' then return true end end
+    return false
+  end
+  -- "fast-inserter (3.5,4.5): no red or green wire connects it (none in this call): its enable condition ...: the game
+  -- ignores this condition and the fast-inserter runs"; ghost: what it does once built.
+  function M.unwired_line(name, pos, needs, how, ghost)
+    return string.format('%s (%g,%g): no red or green wire connects it (%s): %s%s', name, pos.x, pos.y, how,
+      ghost and 'once built, ' or '', table.concat(needs, '; '))
+  end
+  -- The lines of a list, at most 4, and how many more.
+  function M.unwired_text(lines)
+    if #lines == 0 then return nil end
+    local shown = {}
+    for i = 1, math.min(4, #lines) do shown[i] = lines[i] end
+    return table.concat(shown, '; ') .. (#lines > 4 and string.format('; +%d more entities', #lines - 4) or '')
+  end
+  -- A planned call's entries ({index?, name|item, position, direction?, circuit (circuit_set arguments) | needs (rows
+  -- from a blueprint with no wire to it), wires? [{to, color, disconnect?}]}): those that set something needing a signal
+  -- with no red or green wire to them in the call (from the entry, or another entry's wire whose to lies on it) and none
+  -- on what stands there now (wired(name, position) -> true). Returns the warning text or nil.
+  function M.unwired_plan(entries, wired, ghosts)
+    local function ename(e)
+      if type(e.name) == 'string' and try(function() return prototypes.entity[e.name] end) then return e.name end
+      local ip = type(e.item) == 'string' and try(function() return prototypes.item[e.item] end)
+      return ip and ip.place_result and ip.place_result.name or e.name or e.item
+    end
+    local list, targets = {}, {}
+    for _, e in ipairs(type(entries) == 'table' and entries or {}) do
+      if type(e) == 'table' then
+        for _, w in ipairs(type(e.wires) == 'table' and e.wires or {}) do
+          if type(w) == 'table' and (w.color == 'red' or w.color == 'green') and not w.disconnect then
+            local to = try(function() return api.position(w.to) end)
+            if to then targets[#targets+1] = to end
+            e.__wired = true
+          end
+        end
+      end
+    end
+    for _, e in ipairs(type(entries) == 'table' and entries or {}) do
+      if type(e) == 'table' then
+        local name = ename(e)
+        local needs = e.needs or (e.circuit and type(name) == 'string' and M.signal_needs(name, e.circuit)) or {}
+        local pos = #needs > 0 and try(function() return api.position(e.position) end)
+        if pos and not e.__wired then
+          local proto = try(function() return prototypes.entity[name] end)
+          local half = proto and math.max(proto.tile_width or 1, proto.tile_height or 1) / 2 or 0.5
+          local hit = false
+          for _, to in ipairs(targets) do
+            if math.abs(to.x - pos.x) <= half + 1e-6 and math.abs(to.y - pos.y) <= half + 1e-6 then hit = true; break end
+          end
+          if not hit and not (wired and wired(name, pos)) then
+            list[#list+1] = M.unwired_line(name, pos, needs, 'none in this call, none on what stands there', ghosts)
+          end
+        end
+        e.__wired = nil
+      end
+    end
+    return M.unwired_text(list)
   end
 
   -- wire -----------------------------------------------------------------------

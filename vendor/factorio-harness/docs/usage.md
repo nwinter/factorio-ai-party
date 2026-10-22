@@ -406,6 +406,16 @@ fh call status
     this condition`, `disabled` and `stays_disabled` leave it out, and the warning line says `condition ignored:
     fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
     counts a circuit condition only with a circuit connection`.
+  - Planned too (d20 batch65 AA8, Astra 19:02: place_ghosts took an enable condition with no wire planned): place_ghosts,
+    build, paste and blueprint_place (real calls and dry runs) and circuit_set (a building or a ghost) add `unwired`,
+    on the warning line, for each entity whose settings act on a signal (an enable condition, set filters, set stack
+    size, set recipe, set requests, set trains limit, ...) with no red or green wire in the call (its own wires,
+    another entry's wire to it, the blueprint's) and none on what stands there: `unwired: fast-inserter (3.5,4.5): no
+    red or green wire connects it (none in this call, none on what stands there): once built, its enable condition
+    signal-check > 0: the game ignores this condition and the fast-inserter runs`. Read on a private copy (2.0.77)
+    with no wire: the enable condition was ignored and the inserter ran; set filters, set stack size, set recipe and
+    set requests kept the entity's own filters, hand size, recipe and requests. Wired to a constant combinator sending
+    nothing: it stopped, took no item, moved 1 at a time, and the machine had no recipe.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
 - `requests` checks every argument before it changes anything (Sol, d15 04:16: `max: "inf"` on Starling's magazines
   set the slot, then failed with `attempt to compare string with number`): the switches, `section`, every `clear` name
