@@ -1399,6 +1399,30 @@ minute and a half of flight, and the hosts get a card and a headline.
   card's facts and camera, the overlay rows, and the hosts' call. vendor/factorio-harness/tests/chronicle.lua covers the
   rename event.
 
+
+## A spidertron's fight on camera (2026-10-22, d22 batch93 BC2)
+
+Viewer Foobator (13:33): "could the camera on spidertrons zoom out a bit more when rockets are fired? half the action
+is not on cam". Shift58 13:28-13:30: Opus drove spidertron 2 to the nest at (-369,-943) with `vehicle {go_to}`, and its
+rocket launchers fired on their own at spawners and worms about 32 tiles out. No `shoot` ran, so the agent row had no
+combat. The director followed Opus at the follow zoom for driving, 0.75 x 1.5 = 1.12 sent: about 35 tiles across the
+on-air hole (view_frac 0.658), so the rockets' targets were off frame.
+
+- Status brief's `vehicle_fire` (runtime `M.vehicle_fire`): while the character drives a spidertron, the spidertron's
+  guns' range (2.0.77: four rocket launchers, 36 tiles), the rockets loaded, and the enemies within that range (units,
+  spawners, worms, segmented and spider units; up to 64): `targets`, `farthest`, `nearest`, `box`. live.py and the
+  model pass it into the snapshot's agent row.
+- onecam `fire_zoom`: an agent whose spidertron has rockets and enemies in range is framed to the farthest of them, at
+  the fight shots' fit and limits (`fight_zoom` of twice that distance: at least 0.4), when that is wider than its
+  follow zoom. `keep` widens the shot on air, refits as targets change by `zoom_delta` or more, and goes back to the
+  activity's zoom once nothing is in range or no rockets are left. A cut to such an agent starts wide (`apply`).
+- Opus at (-370,-926.4) on a copy of world n's 12:04 autosave: 17 enemies, the farthest 33.9 out. Before: zoom 1.12
+  (about 35 tiles across on air); after: 0.43 (about 92 tiles), the log line `zoom 0.43 (its spidertron fires: 17
+  enemies within 36 tiles, the farthest 33.9 out)`.
+- Cost on the copy (x86 under Rosetta): a brief status seated in the spidertron 8.2-9.1 ms against 7.6-8.0 for an
+  agent on foot; the find itself 0.025 ms.
+- Tests: `tools/stream/test_spidercam.py`, `vendor/factorio-harness/tests/d22_batch93b.lua`.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

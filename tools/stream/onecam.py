@@ -635,6 +635,39 @@ class OneCam(Director):
     def fight_zoom(self, extent):
         return round(max(0.4, super().fight_zoom(extent) * self.cfg["view_frac"]), 2)
 
+    def fire_zoom(self, a):
+        """(d22 batch93 BC2, viewer Foobator 13:33: "could the camera on spidertrons zoom out a bit more when rockets are
+        fired? half the action is not on cam") An agent driving a spidertron with rockets loaded and enemies within its
+        guns' reach (status vehicle_fire; it fires at them on its own): the exact zoom that frames it and the farthest of
+        them (a fight shot's fit and limits, fight_zoom, of twice that distance), when that is wider than its follow zoom
+        on the main camera; else None."""
+        vf = (a or {}).get("vehicle_fire")
+        if not isinstance(vf, dict) or not vf.get("targets") or not vf.get("ammo"):
+            return None
+        far = vf.get("farthest") or vf.get("range")
+        if not isinstance(far, (int, float)) or far <= 0:
+            return None
+        fit = self.fight_zoom(2.0 * far)
+        base = self.zoom_for(a, self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+        return fit if fit < base * self.cfg["main_scale"] - 1e-9 else None
+
+    @staticmethod
+    def fire_text(a):
+        vf = a.get("vehicle_fire") or {}
+        return (f"its {str(vf.get('vehicle') or 'spidertron').replace('-', ' ')} fires: {vf.get('targets')}"
+                f"{'+' if vf.get('more') else ''} enemies within {vf.get('range'):g} tiles, the farthest {vf.get('farthest')} out")
+
+    def apply(self, slot, target, reason, scores, now, quiet=False):
+        """(BC2) A follow shot of an agent whose spidertron fires (fire_zoom): sent at the wider fit."""
+        if target is not None and target.get("follow") and not target.get("exact_zoom") and not target.get("map"):
+            a = (getattr(self, "agents_now", None) or {}).get(target["follow"])
+            fit = self.fire_zoom(a) if a else None
+            scale = self.cfg["main_scale"] if slot is self.slots[0] else self.cfg["side_scale"]
+            if fit and fit < target["zoom"] * scale - 1e-9:
+                target = dict(target, zoom=fit, exact_zoom=True, fire_fit=fit, solo_zoom=target.get("solo_zoom", target["zoom"]))
+                reason = f"{reason} (zoom {fit}: {self.fire_text(a)})"
+        return super().apply(slot, target, reason, scores, now, quiet=quiet)
+
     def near_onair(self, subject, position, by_name):
         """Do viewers see this now: the agent on air is in it, or its position is inside the on-air frame."""
         cur = self.state.get(self.onair)
@@ -986,6 +1019,7 @@ class OneCam(Director):
         self.step_t = now
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
+        self.agents_now = by_name  # (BC2) apply's spidertron fit reads the agent it frames
         self.track(agents, now)
         if isinstance(snapshot.get("tick"), (int, float)) and snapshot["tick"] > 0:
             self.game_tick = snapshot["tick"]
@@ -2861,6 +2895,21 @@ class OneCam(Director):
         """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big
         action with bounds runs, the zoom fits them."""
         subj = cur["subject"]
+        # (BC2) its spidertron fires: framed to its farthest target while it does, then back to the activity's zoom
+        fire = self.fire_zoom(by_name[subj])
+        if fire or cur.get("fire_fit"):
+            if fire and cur.get("fire_fit") and abs(fire - cur["fire_fit"]) < self.cfg["zoom_delta"]:
+                return  # fitted already
+            target = {k: v for k, v in cur.items() if k not in ("jump", "exact_zoom", "fire_fit")}
+            if fire:
+                target.update(zoom=fire, exact_zoom=True, fire_fit=fire)
+                reason = f"zoom {fire} ({self.fire_text(by_name[subj])})"
+            else:
+                z = self.zoom_for(by_name[subj], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+                target.update(zoom=z, solo_zoom=z)
+                reason = "zoom (its spidertron stopped firing)"
+            self.apply(self.slot(self.onair), target, reason, {}, now)
+            return
         fit = self.plan_zoom(by_name[subj])
         if fit or cur.get("plan_fit"):
             if fit and cur.get("plan_fit") and abs(fit - cur["plan_fit"]) < self.cfg["zoom_delta"]:

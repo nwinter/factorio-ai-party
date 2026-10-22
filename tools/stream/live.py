@@ -402,6 +402,8 @@ class LiveSource:
                 c = st.get("combat")
                 a["combat"] = {k: c[k] for k in COMBAT_KEYS if k in c} if isinstance(c, dict) else bool(c)
                 a["hurt"] = st.get("hurt")
+                # (d22 batch93 BC2) driving a spidertron: its range, rockets and the enemies in range (status brief)
+                a["vehicle_fire"] = st.get("vehicle_fire") if isinstance(st.get("vehicle_fire"), dict) else None
                 # a standing order running in the agent's queue (orders.lua): {name, reason, step, steps}, or None
                 a["auto"] = st.get("order") or None
                 # (d20 batch70 AF3) the card's work: its bounded watches (status work) and each queue lane's active step
