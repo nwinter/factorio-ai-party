@@ -600,7 +600,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mapview--full .mapview-stage { flex: 1 1 auto; min-height: 0; }
 .mapview--full .mapview-canvas { height: 100%; touch-action: none; }
 .mapview:fullscreen { background: var(--bg, #121411); padding: 10px; }
-.b-D { fill: #c8553d; background: #c8553d; } .b-R { fill: #a983f0; background: #a983f0; }
+.b-D { fill: #c8553d; background: #c8553d; } .b-W { fill: #e9dcc0; background: #e9dcc0; } .b-R { fill: #a983f0; background: #a983f0; }
 .b-O { fill: #3fa8a3; background: #3fa8a3; } .b-A { fill: #5c8fd6; background: #5c8fd6; }
 .b-S { fill: #e08a3c; background: #e08a3c; } .b-M { fill: #a6875a; background: #a6875a; }
 .b-E { fill: #f2d34b; background: #f2d34b; } .b-K { fill: #8f8f8f; background: #8f8f8f; }
