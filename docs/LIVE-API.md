@@ -351,6 +351,19 @@ answered shows its reply count, a button to the first reply. A reply threads und
 at most 20 minutes older, else it stays in time order at the bottom with its quote; a reply from the last 10 minutes
 is marked new. A reply with `reply_to` whose line nothing kept (a runtime from before) is still a reply, linked to none.
 
+(d22 batch75 AK8, viewer Aurora site:4249 and site:4250: "For replies directly under their actual parent question,
+remove the repeated quote and use a compact header. Keep delivery status visible, with context links for standalone
+replies." and "Put a small Details button in each header for routing and matching info. Keep full replies visible, put
+reply counts inline and tighten spacing. Preserve open details and scroll on refresh.") A reply threaded right under
+the line it answers has no quote of that line (the quotes of the other lines it answers stay) and a one-line header:
+who, when, `↩` to whom, part, history, new, and a Details button; its full text below it. A reply standing alone keeps
+the REPLY tag and its quotes, each a link to its line. Details (closed by default) opens in place: to whom, each line it
+answers with its id and that line's delivery, how it was linked, its part, history. A viewer line keeps its delivery
+status, with its reply count inline after it ("· 2 replies", a link to the first reply). Rows are tighter. Open
+Details and the list's scroll (the line at its top and that line's offset, or the end) are kept when the list is
+rebuilt and across a reload, in this tab's sessionStorage (`chatDetails`, `chatScroll`; a kept place waits up to 15 s
+for its line to arrive and gives way when the reader scrolls).
+
 The Operator names the line it answers with `tools/opreply.py` (d20 batch65 AA2, viewer Aurora 04:28: "Could replies
 keep the original question ID through delivery, split parts and history?"; shift50's 04:20 two-line artillery answer
 linked by name to her 04:06 line): `python3 tools/opreply.py --to site:3817 "text"` (or `--to Aurora@03:51`, the inbox

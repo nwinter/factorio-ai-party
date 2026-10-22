@@ -179,6 +179,11 @@
   // line in the 15 minutes before, their only one to this agent, or the time the Operator's reply names; "none": shown in
   // time order, linked to no line. A line this list does not show is quoted.
   function linkHtml(m) {
+    var how = linkInner(m);
+    return how ? ' <span class="c-link c-link-' + esc(m.link) + ' fx-muted">' + how + '</span>' : '';
+  }
+  // (AK8) the same words (HTML: the name escaped) for a reply's Details
+  function linkInner(m) {
     if (m.kind !== 'reply' || !m.link) return '';
     var a = m.answers || {}, who = esc(a.name || '');
     var how = m.link === 'none' ? 'not linked to a question'
@@ -186,8 +191,9 @@
       : m.link === 'only_to' ? 'matched by name: ' + who + "'s only recent line to " + esc(m.by === 'operator' ? 'the Operator' : agentName(m.by))
       : m.link === 'time' ? 'matched by the time it names'
       : m.link === 'name' ? 'linked by name: ' + who + "'s open line to " + esc(m.by === 'operator' ? 'the Operator' : agentName(m.by))
+      : m.link === 'reply_to' ? 'linked by the reply itself: it named this line (reply_to)'
       : '';
-    return how ? ' <span class="c-link c-link-' + esc(m.link) + ' fx-muted">' + how + '</span>' : '';
+    return how;
   }
   // (d22 batch75 AK6, viewer Aurora site:4176: "Could replies show a short clickable quote of the source message, with a
   // reply count on the original?") over a reply, a short quote of each line it answers: a button to that line when the
@@ -205,25 +211,61 @@
   // the reply count on a line answered: a button to its first reply
   function repliesHtml(m) {
     if (!m.replies || !m.replies.n) return '';
-    return ' <button type="button" class="c-replies" data-jump="' + esc(m.replies.first) + '">' + esc(m.replies.n + (m.replies.n === 1 ? ' reply' : ' replies')) + '</button>';
+    return ' <button type="button" class="c-replies" data-jump="' + esc(m.replies.first) + '" title="to the first reply">' + esc('· ' + m.replies.n + (m.replies.n === 1 ? ' reply' : ' replies')) + '</button>';
+  }
+  // (d22 batch75 AK8, viewer Aurora site:4249/4250: "For replies directly under their actual parent question, remove the
+  // repeated quote and use a compact header. Keep delivery status visible, with context links for standalone replies."
+  // and "Put a small Details button in each header for routing and matching info. Keep full replies visible, put reply
+  // counts inline and tighten spacing. Preserve open details and scroll on refresh.") A reply threaded under its line:
+  // no quote of that line (its other lines' quotes stay), a one-line header (who, when, to whom, new), its full text
+  // below; a reply standing alone keeps its quotes, links to the lines it answers. Each header has a Details button:
+  // the routing and matching (to whom, the lines it answers with their ids and deliveries, how it was linked, its part,
+  // history). Open details and the list's scroll are kept across re-renders and page reloads (this tab's sessionStorage).
+  function sess(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (e) { return null; } }
+  var openDetails = {};
+  (function () { try { (JSON.parse(sess('chatDetails') || '[]') || []).forEach(function (k) { openDetails[k] = 1; }); } catch (e) { /* none kept */ } })();
+  function keepDetails() { sess('chatDetails', JSON.stringify(Object.keys(openDetails).slice(-50))); }
+  function detailsHtml(m) {
+    var rows = [], row = function (r) { rows.push('<span class="c-det-row">' + esc(r) + '</span>'); };
+    if (m.to && m.to.length) row((m.kind === 'to_viewers' ? 'to the viewers, naming ' : 'to ') + m.to.join(', '));
+    (m.quotes || []).forEach(function (x) {
+      var a = x.a || {}, id = a.id ? ' (' + a.id + ')' : '';
+      var seq = /^site:(\d+)$/.exec(String(a.id || '')), d = seq ? delivery[seq[1]] : null;
+      var went = d && d.s ? '; that line: ' + (d.s === 'relayed' ? 'delivered to ' + ((Array.isArray(d.to_all) && d.to_all.length ? d.to_all : d.to ? [d.to] : []).map(agentName).join(', ') || 'the agents')
+        : d.s === 'operator' ? 'delivered to the Operator' : d.s + (d.why ? ': ' + d.why : '')) : '';
+      row('answers ' + a.name + id + (x.k ? '' : ', not in this list') + went);
+    });
+    // how it was linked (linkInner: HTML, the name escaped)
+    var link = linkInner(m);
+    if (link) rows.push('<span class="c-det-row c-link c-link-' + esc(m.link) + '">' + link + '</span>');
+    else if (m.kind === 'reply' && m.link) row('linked: ' + m.link);
+    if (Array.isArray(m.part) && m.part.length === 2 && m.part[1] > 1) row('part ' + m.part[0] + ' of ' + m.part[1]);
+    if (m.history) row('read again after a stream service restart (history)');
+    return rows.join('');
   }
   function replyHtml(m, t) {
     var a = m.by === 'operator' ? { name: 'operator', display_name: 'Operator' } : (team[m.by] || { name: m.by });
     var col = m.by === 'operator' ? null : acColor(safeColor(a.color));
     var who = esc(a.display_name || a.name || m.by);
-    var tag = m.kind === 'to_viewers' ? 'TO VIEWERS' : 'REPLY';
+    var key = m.k.slice(1);
+    // threaded: the line above is the first one it answers, so that quote is not repeated
+    var shown = m.thread ? { k: m.k, kind: m.kind, quotes: (m.quotes || []).slice(1) } : m;
+    var tag = m.kind === 'to_viewers' ? ' <span class="c-src c-src-agent">TO VIEWERS</span>' : m.thread ? '' : ' <span class="c-src c-src-agent">REPLY</span>';
     var to = m.to && m.to.length ? ' <span class="c-to fx-muted">↩ ' + esc(m.to.join(', ')) + '</span>' : '';
     // (d19 batch42 A5, viewer Aurora) a reply read again at a stream restart keeps its own time and says it is history
     if (m.history) to += ' <span class="c-history fx-muted" title="said before the stream service restarted">history</span>';
     // (AA2) one of a split reply's parts
-    if (Array.isArray(m.part) && m.part.length === 2 && m.part[1] > 1) to += ' <span class="c-part fx-muted">part ' + esc(m.part[0]) + ' of ' + esc(m.part[1]) + '</span>';
-    to += linkHtml(m);
+    if (Array.isArray(m.part) && m.part.length === 2 && m.part[1] > 1) to += ' <span class="c-part fx-muted">' + esc(m.part[0]) + '/' + esc(m.part[1]) + '</span>';
     // (AK6) a reply from the last NEW_S: marked new
     var fresh = !m.history && m.t && Date.now() / 1000 - m.t < NEW_S;
     if (fresh) to += ' <span class="c-new-tag">new</span>';
-    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + (m.history ? ' c-hist' : '') + (fresh ? ' c-new' : '') + '" id="c-a' + esc(m.k.slice(1)) + '"' + (col ? ' style="--ac:' + col + '"' : '') +
-      '>' + quotesHtml(m) + '<span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
-      who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';
+    var open = openDetails[key] === 1;
+    var det = detailsHtml(m);
+    var btn = det ? ' <button type="button" class="c-details-btn" data-det="' + esc(key) + '" aria-expanded="' + open + '" aria-controls="cd-' + esc(key) + '" title="routing and matching">Details</button>' : '';
+    return '<li class="c-agent' + (m.thread ? ' c-thread' : ' c-alone') + (m.history ? ' c-hist' : '') + (fresh ? ' c-new' : '') + '" id="c-a' + esc(key) + '"' + (col ? ' style="--ac:' + col + '"' : '') +
+      '>' + quotesHtml(shown) + '<span class="c-head"><b class="c-agent-name">' + who + '</b> <span class="c-time">' + esc(t) + '</span>' + tag + to + btn + '</span>' +
+      (det ? '<span class="c-details fx-muted" id="cd-' + esc(key) + '"' + (open ? '' : ' hidden') + '>' + det + '</span>' : '') +
+      '<span class="c-text">' + esc(m.text) + '</span></li>';
   }
   // A site line's delivery: "to Sol", "to Sol, Luna", "held", "to the Operator", "not relayed: why" (the viewers-only
   // lines never go). (d19 batch42 A3, A4, viewer Aurora) a line in the operator's inbox shows that receipt on its own,
@@ -276,6 +318,9 @@
     if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
     chatList.dataset.sig = sig;
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+    // (AK8) the line at the top of the view and how far down it sits, to put back after the list is rebuilt; on the
+    // first render after a reload, the one this tab kept (unless it was at the end)
+    var anchor = !atEnd && chatList.dataset.seen ? topLine() : null;
     chatList.innerHTML = all.length ? all.map(function (m) {
       var t = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (m.src === 'agent') return replyHtml(m, t);
@@ -284,9 +329,37 @@
         (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span>' +
         deliveryHtml(m) + repliesHtml(m) + '</li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
-    if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
+    // the place this tab kept: once its line is in the list (the replies come with the state, after the first chat
+    // poll), within 15 s of loading and until the reader scrolls
+    if (keptScroll && Date.now() < keptUntil) { if (document.getElementById(keptScroll.id)) { anchor = keptScroll; keptScroll = null; } }
+    else keptScroll = null;
+    var back = anchor && document.getElementById(anchor.id);
+    if (back) chatList.scrollTop += back.getBoundingClientRect().top - chatList.getBoundingClientRect().top - anchor.off;
+    else if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
     chatList.dataset.seen = '1';
   }
+  // (AK8) the first line whose bottom is in view: its id and its top's distance from the list's top
+  function topLine() {
+    var top = chatList.getBoundingClientRect().top, li = chatList.children;
+    for (var i = 0; i < li.length; i++) {
+      var r = li[i].getBoundingClientRect();
+      if (r.bottom > top + 1 && li[i].id) return { id: li[i].id, off: r.top - top };
+    }
+    return null;
+  }
+  var keptScroll = (function () {
+    try { var k = JSON.parse(sess('chatScroll') || 'null'); return k && !k.end && k.id ? k : null; } catch (e) { return null; }
+  })(), keptUntil = Date.now() + 15000;
+  var scrollKeep = null;
+  if (chatList) ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (e) { chatList.addEventListener(e, function () { keptScroll = null; }, { passive: true }); });
+  if (chatList) chatList.addEventListener('scroll', function () {
+    if (keptScroll) return;  // not yet put back: the kept place stays
+    clearTimeout(scrollKeep);
+    scrollKeep = setTimeout(function () {
+      var end = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40, at = end ? null : topLine();
+      sess('chatScroll', JSON.stringify(end ? { end: true } : at ? { id: at.id, off: at.off } : { end: true }));
+    }, 150);
+  });
   // One poll at a time (joonazan, d15 08:05: "the site sends messages twice quite often"): a send and a tab switch
   // each called pollChat while a poll was in flight, both appended the same new messages, and each started its own
   // timer, so polls ran in parallel from then on. A call during a poll now asks for one more after it, and messages
@@ -334,6 +407,17 @@
   }
   // "Operator replied" (AA1): to that reply in the list, showing the replies first when they are hidden
   if (chatList) chatList.addEventListener('click', function (ev) {
+    // (AK8) a reply's Details: open or close in place, kept for later renders and a reload
+    var dt = ev.target && ev.target.closest ? ev.target.closest('[data-det]') : null;
+    if (dt) {
+      var k = dt.getAttribute('data-det'), box = document.getElementById('cd-' + k);
+      var open = !(openDetails[k] === 1);
+      if (open) openDetails[k] = 1; else delete openDetails[k];
+      keepDetails();
+      dt.setAttribute('aria-expanded', String(open));
+      if (box) box.hidden = !open;
+      return;
+    }
     // (AK6) a quote over a reply: to the line it answers; a reply count: to the first reply
     var j = ev.target && ev.target.closest ? ev.target.closest('[data-jump]') : null;
     if (j) {
