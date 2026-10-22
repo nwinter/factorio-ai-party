@@ -11368,6 +11368,72 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
     mediums 46.1, 9 shots).
 
 ### d22 batch91: quality in silo and shipment, a pipe's fluid flush
+## d22 batch92 BB1-BB3 (eng/d20-batch92): platform_hit (platform_damage), platform_energy_below, platform_progress (Sol #1884, Astra #1886, #1887)
+
+- Why: platform_loss fires only once something of ours is destroyed. Medium asteroid impacts can follow one another
+  before the next flight_watch read. `damaged` reads no platform, and a repaired hit leaves no damaged entity to find.
+  No condition read a platform's accumulators.
+- `wait_until {until: "platform_hit", platform, at_least?, damage?, entity_names?, since_tick?}` (`platform_damage` is
+  another name for it). It counts hits on our entities on that platform by anything not of our force (asteroids,
+  enemies), as the platform's hit alerts count them (platalerts.lua's on_entity_damaged), since the wait or guard began.
+  That is `since_tick`, by default its first check. The baseline is kept on the wait's record, or on the guard's
+  condition in the queue, so a save or a runtime deploy keeps it. A guard added or replaced by queue_edit starts its
+  own baseline; one kept keeps it.
+  - It is met at `at_least` hits or at `damage` (the hits' damage summed, a hit repaired since still counted), whichever
+    is given and reached first. With neither, it is met on the first hit. `entity_names` (1..16) counts only hits on
+    those.
+  - Its saw: `platform Edge5: 1 hit, 123.3 damage, on ours since tick 1200, first: thruster (-4.5,10.5) 123.3 damage
+    by medium-carbonic-asteroid 1s ago`. A hit with no cause reads `(impact, no cause)`, naming the damage type. Up to 4
+    first hits are named, then `+N more`.
+  - When a guard on it fires, the queue history entry (and the stopped step's record) keeps the first hits as
+    `evidence` [{t, n, x, y, d, c|k}] beside the saw line.
+- How hits are kept: platalerts.lua already counts each hit on a platform (per minute and in running totals). It now
+  also writes one row a hit into a ring of that platform's last 64 hits: hit number, tick, entity, position, damage,
+  the platform's damage total after it, cause or damage type. That one row is the added per-event cost.
+  - A check reads only the rows since the one before. The hit count and the damage come from the running totals, so
+    they are exact even when more than 64 hits come between two checks (every 10 ticks).
+  - With `entity_names`, hits the ring no longer holds cannot be named, and the saw says how many.
+  - A `since_tick` before the ring's oldest row counts from that row, and the saw says so.
+- `wait_until {until: "platform_energy_below", platform, fraction}`: the platform's accumulators together hold under
+  `fraction` (over 0, up to 1) of what they can hold (each one's energy over its electric buffer size, as its GUI shows
+  them). Saw: `platform Edge5: 2 accumulators hold 2.5 of 10.0 MJ (25%; met under 30%)`. With no accumulator it is not
+  met, and says so. It is found and read at each check.
+- `wait_until {until: "platform_progress", platform, at_least, from?, to?}` (Astra #1887: a probe flight turned back at
+  20% of its outer leg, whatever its speed). It reads the share of its leg the platform has flown, in the direction it
+  flies, as the platforms read gives it (freight.lua `leg`; `at: "fulgora->nauvis 48%"`). It is met at `at_least`
+  (over 0, up to 1), on the leg asked only (`from`, `to`, each optional):
+  - A return leg, another leg or a stop never meets it, and the saw says why: `platform Asterion: flying
+    aquilo->gleba, 92.3% flown: not the leg asked, not counted (asked: gleba->any)`, or `platform Petrel II: not flying
+    (at nauvis): not counted`.
+  - When met, it keeps `evidence {tick, from, to, flown, length_km}` on the condition.
+- A fired guard's queue history entry (and the stopped step's record) carries `evidence`: platform_hit's first hits,
+  or platform_progress's progress and leg.
+- Guards are checked every 10 ticks, so a guard fires at the first check past its threshold. On the copy, a guard
+  `platform_damage` 40 fired at 20 hits and 100 damage under 2 hits a tick.
+- All three conditions are taken by the remote and platform lanes, as waits and as guards' `when`. None changes
+  anything.
+- Cost, on the copy of world n (_autosave8, Rosetta):
+  - The load: a level script hit 2 of Meridian-V's 1,095 entities a tick (120 hits a second), with an asteroid as
+    cause, healing each back.
+  - The ring write alone, timed in the game over 20,000 rows: 0.8 us a hit, written over in place (0.3 us of it the
+    entity's position). A new table a hit was 2.7 us, plus garbage.
+  - A platform_energy_below check on Asterion (160 accumulators): 0.41 ms. A guard checks every 10 ticks, so 0.04 ms a
+    tick on average.
+  - profile_ticks {seconds=60}, before (main) and after (this branch, with a platform_hit guard on Meridian-V, an energy
+    guard on Asterion and a progress guard on Spindle, all checked and never met):
+    - event on_entity_damaged: 0.139 ms a hit before, 0.161 after;
+    - part scheduler.tick: 0.668 ms before, 0.829 after;
+    - the whole tick: 3.07 ms before, 3.65 after.
+    In 6 to 9 of the 61 seconds of each run a garbage collection finished inside the measured events and ticks, so
+    these runs differ by more than the parts added. The first after run, with a new row a hit, read 0.191 ms a hit.
+- Existing equivalents: none for the hits or the leg's progress (the platforms read shows it; nothing waited on it). For the energy, `circuit_signal` could read an accumulator's charge signal
+  only when that accumulator is wired to the hub.
+- Tests: tests/d22_batch92.lua. It covers:
+  - a hit before the baseline, our own force's damage, and another platform's hit;
+  - the first hit with its line, a hit with no cause, at_least, damage, and since_tick read back through the ring;
+  - entity_names, and 70 hits between two checks;
+  - the ring rows, the energy condition, the refusals and the lane checks.
+### d22 batch91: quality in silo and shipment
 
 - BA1 (Sol #1881: Meridian-V asked thruster@legendary 4 from Vulcanus and silo/shipment read "holds 0" and "the
   network can give 0" while 4 legendary sat in storage). On 2.0.77 `get_item_count(name)` counts normal quality alone
