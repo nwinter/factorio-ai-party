@@ -322,6 +322,9 @@ return function(api)
         if votes[k]>best or (votes[k]==best and d<near) then best,near,shift=votes[k],d,{x=ox,y=oy} end
       end
     end
+    -- (d20 batch76 AL1, Sol #1828) no entity to go by (a paste of tiles only: every entity already stood there): the
+    -- blueprint's origin lands where its center is put
+    if not shift and not entities[1] then shift=expect end
     if not shift then
       local e=entities[1]
       local proto=prototypes.entity[e.name]
@@ -589,6 +592,9 @@ return function(api)
         -- wire from a new ghost to a left-out entity is joined to the one standing there. The paste position moves by the
         -- change of the blueprint's center, so everything lands where the whole blueprint would.
         local preserved,rewire
+        -- (AL1) the paste position and entities of the whole blueprint, for what is read after the paste: the subset's
+        -- paste position moves with its center, the blueprint's origin does not
+        local whole_pos,whole=pos,entities
         if a.preserve_existing_settings_and_wires~=nil then
           assert(type(a.preserve_existing_settings_and_wires)=='boolean','preserve_existing_settings_and_wires must be true or false')
         end
@@ -715,9 +721,12 @@ return function(api)
         -- already hold a matching ghost or entity, that collide, or whose
         -- tiles break the entity's rules. Per blueprint entity: there now (new
         -- ghost, or one from before), or not placed and why.
+        -- (AL1) the ghosts are placed by now: a failure while reading them back is said in the reply (report_error), with
+        -- the counts above, and does not fail the paste
+        local okr,errr=pcall(function()
         local wired=#wire_list(entities)>0
         if out.count<#entities or wired or anchored then
-          local where,shift,turn=locate(p,a,entities,pos,direction,box,c)
+          local where,shift,turn=locate(p,a,entities,whole_pos,direction,box,c)
           if out.count<#entities then explain(p,a,entities,direction,before,ghost_key,where,out) end
           if wired then restore_wires(entities,where,out) end
           -- Where the blueprint landed: its origin (blueprint 0,0) and center, and its hub against the target.
@@ -741,7 +750,7 @@ return function(api)
         -- what stands there after the paste
         local needs=unwired_needs(entities)
         if next(needs) then
-          local at_of=locate(p,a,entities,pos,direction,box,c)
+          local at_of=locate(p,a,entities,whole_pos,direction,box,c)
           local check=api.unwired_check(p.surface,p.force)
           local plan={}
           for _,be in ipairs(entities) do
@@ -750,6 +759,8 @@ return function(api)
           local oku,u=pcall(api.circuits().unwired_plan,plan,check,true)
           if oku then out.unwired=u end
         end
+        end)
+        if not okr then out.report_error='the paste was made (count and by_name above); reading it back failed: '..tostring(errr) end
         -- What a forced paste marked for deconstruction (trees, rocks; superforced: our own entities in the way).
         if marked_before then
           local n,by=0,{}
@@ -767,11 +778,11 @@ return function(api)
           -- (d20 batch55 P2) where the paste put each entity, for a blueprint check (checks.lua): position and facing
           -- (none compared on a flipped paste), the first 400
           if api.checks_placed then pcall(function()
-            local at_of=locate(p,a,entities,pos,direction,box,c)
+            local at_of=locate(p,a,whole,whole_pos,direction,box,c)
             local flipped=a.flip_horizontal or a.flip_vertical
-            local rec={surface=p.surface.index,entities={},count=#entities,saved_tick=e.saved_tick}  -- (d21 batch68 AD2) the save placed
+            local rec={surface=p.surface.index,entities={},count=#whole,saved_tick=e.saved_tick}  -- (d21 batch68 AD2) the save placed
             local l,t,r,b
-            for i,be in ipairs(entities) do
+            for i,be in ipairs(whole) do
               if i>400 then rec.capped=true; break end
               local q=at_of(be)
               local d=((be.direction or 0)+direction)%16
