@@ -5,7 +5,7 @@ defenses, so missing circles can be mistaken for real gaps").
 The basemap (the harness census, census.lua; BASEMAP_LUA without it) lists at most CAP turrets, the first in its walk:
 shift40's last snapshot had 600, all north of y=-82, while the score counted 1162 gun, 553 laser and 22 flamethrower
 turrets on all surfaces. When a basemap reaches the cap, this sweep reads the rest where they can be: the coarse grid's
-defence cells ("D": turrets, walls and gates), a row's run of D cells as one area, AREAS areas a command (one find each,
+defence cells ("D": turrets; walls and gates are "W" since d22 batch75 AK4, a cell with both is D), a row's run of D cells as one area, AREAS areas a command (one find each,
 turret types only), one command per stream observe (live.py), so a pass over shift40's 594 D cells (about 200 runs)
 takes a few commands. A finished pass replaces the basemap's turret list until the next one finishes; a pass starts
 from the newest basemap.

@@ -39,8 +39,9 @@ return function(api)
   local GATE = set{'inserter', 'pump', 'offshore-pump', 'assembling-machine', 'furnace', 'mining-drill', 'lamp', 'power-switch',
     'transport-belt', 'train-stop', 'rail-signal', 'rail-chain-signal', 'agricultural-tower', 'asteroid-collector', 'loader', 'loader-1x1'}
   local GATES_MAX = 1024
-  -- The live map's categories (BASEMAP_LUA's CAT and EXTRA, OIL, RANK, LINE).
-  local CAT = {['ammo-turret']='D', ['electric-turret']='D', ['fluid-turret']='D', ['artillery-turret']='D', wall='D', gate='D',
+  -- The live map's categories (BASEMAP_LUA's CAT and EXTRA, OIL, RANK, LINE). (d22 batch75 AK4, viewer Foobator:
+  -- "can walls be a separate item?") walls and gates W, under turrets (D) where both share a cell.
+  local CAT = {['ammo-turret']='D', ['electric-turret']='D', ['fluid-turret']='D', ['artillery-turret']='D', wall='W', gate='W',
     lab='R', ['assembling-machine']='A', ['rocket-silo']='A', furnace='S', ['mining-drill']='M', ['offshore-pump']='M',
     boiler='E', generator='E', ['solar-panel']='E', accumulator='E', reactor='E', ['burner-generator']='E',
     container='L', ['logistic-container']='L', roboport='L', ['train-stop']='L', ['transport-belt']='B',
@@ -51,7 +52,7 @@ return function(api)
     ['fusion-generator']='E', ['lightning-attractor']='E', ['rail-ramp']='T', ['rail-support']='T',
     ['elevated-straight-rail']='T', ['elevated-curved-rail-a']='T', ['elevated-curved-rail-b']='T', ['elevated-half-diagonal-rail']='T'}
   local OIL = {['oil-refinery']=true, ['chemical-plant']=true, pumpjack=true}
-  local RANK = {D=12, R=11, O=10, A=9, S=8, M=7, E=6, L=5, I=4, B=3, T=2, P=1}
+  local RANK = {D=13, W=12, R=11, O=10, A=9, S=8, M=7, E=6, L=5, I=4, B=3, T=2, P=1}
   local LINE = {P=true, B=true, I=true, T=true}
   local RANGED = {['ammo-turret']=true, ['electric-turret']=true, ['fluid-turret']=true}
   local ORE_LETTER = {['iron-ore']='i', ['copper-ore']='c', coal='k', stone='s', ['crude-oil']='o', ['uranium-ore']='u'}

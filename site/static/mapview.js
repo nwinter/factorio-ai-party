@@ -19,7 +19,9 @@
 (function (root) {
   'use strict';
   // the live map's colours (style.css .b-X and .o-X: the legends use those)
-  var BASE = [['D', '#c8553d', 'Defence'], ['R', '#a983f0', 'Labs'], ['O', '#3fa8a3', 'Oil and chemistry'], ['A', '#5c8fd6', 'Assembly'],
+  // (d22 batch75 AK4, viewer Foobator: "can walls be a separate item?") walls and gates W; D the turrets (frames read
+  // before it have walls in D too)
+  var BASE = [['D', '#c8553d', 'Defence'], ['W', '#e9dcc0', 'Walls and gates'], ['R', '#a983f0', 'Labs'], ['O', '#3fa8a3', 'Oil and chemistry'], ['A', '#5c8fd6', 'Assembly'],
     ['S', '#e08a3c', 'Smelting'], ['M', '#a6875a', 'Mining'], ['E', '#f2d34b', 'Power'], ['L', '#b9b9b9', 'Logistics'],
     ['K', '#8f8f8f', 'Storage'], ['I', '#9fcf6a', 'Inserters'], ['B', '#8a7d45', 'Belts'], ['T', '#6e6a8e', 'Rails'], ['P', '#4a6a8a', 'Pipes']];
   var ORE = [['i', '#7f9db4', 'Iron ore'], ['c', '#d0703a', 'Copper ore'], ['k', '#5a5a5a', 'Coal'], ['s', '#c2ab7a', 'Stone'],

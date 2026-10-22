@@ -92,6 +92,11 @@ t = run([("gun-turret", "ammo-turret", 0, 0), ("flamethrower-turret", "fluid-tur
 check("a flamer's range from its prototype; a turret the game gives no range to (here: no prototype) and walls left out",
       sorted(map(tuple, t["turrets"])) == [(0, 0, 18), (10, 4, 30)])
 
+# (d22 batch75 AK4, viewer Foobator: "can walls be a separate item?") walls and gates W; a turret's cell stays D
+w = run([("stone-wall", "wall", 0.5, 0.5), ("gate", "gate", 4.5, 0.5), ("gun-turret", "ammo-turret", 9, 1), ("stone-wall", "wall", 8.5, 0.5),
+         ("lab", "lab", 13.5, 1.5), ("stone-wall", "wall", 12.5, 0.5), ("transport-belt", "transport-belt", 17.5, 0.5), ("stone-wall", "wall", 16.5, 0.5)])
+check("walls and gates W, under a turret in its cell, over a lab and a belt", w["rows"][0] == "WWDWW")
+
 wide = run([("lab", "lab", 0, 0), ("lab", "lab", 2000, 10)], max_cells=128)
 check("a wide base doubles the cell until it fits", wide["cell"] >= 16 and wide["w"] <= 128)
 
