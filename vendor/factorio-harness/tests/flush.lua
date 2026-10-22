@@ -32,7 +32,8 @@ local function boxes(ids)
   b.flush=function(i,fluid)
     local s=segments[ids[i]]
     flushes[#flushes+1]={id=ids[i],fluid=fluid}
-    if s.amount==0 or (fluid and fluid~=s.fluid) then return {} end
+    -- (d22 batch91 BA2) as 2.0.77 does on a copy of world n: with no fluid named, nothing is flushed
+    if s.amount==0 or fluid==nil or fluid~=s.fluid then return {} end
     local out={[s.fluid]=s.amount}; s.amount=0
     return out
   end
@@ -98,11 +99,19 @@ local function advance(n) for _=1,n do tick=tick+1; game.tick=tick; runtime.tick
 runtime.operator.bot_create('sol')
 local function sol(action,args) return runtime.dispatch{action=action,args=args or {},bot='sol'} end
 
+-- (BA2) dry run: what it would remove, nothing flushed
+local r=sol('flush',{position={x=3,y=3},dry_run=true})
+eq(r.dry_run,true); eq(r.would_flush['sulfuric-acid'],1200); eq(r.amount,1200); eq(#flushes,0); eq(segments[7].amount,1200)
+eq(r.line,'would flush sulfuric-acid 1200 from the segment of pipe (3,3) (3 entities with fluidboxes, 40x2 tiles); a pump bounds it: the segment past a pump keeps its fluid; nothing flushed (dry run)')
+fails(function() sol('flush',{position={x=3,y=3},dry_run='yes'}) end,'dry_run must be true or false')
 -- The pipe in reach: its whole segment goes, and the reply says what and where.
-local r=sol('flush',{position={x=3,y=3}})
+r=sol('flush',{position={x=3,y=3}})
 eq(r.fluid,'sulfuric-acid'); eq(r.amount,1200); eq(r.flushed['sulfuric-acid'],1200); eq(r.index,1)
 eq(r.entity,'pipe (3,3)'); eq(r.segment.id,7); eq(r.segment.size,'40x2 tiles'); eq(r.segment.capacity,100); eq(r.segment.entities,3)
-eq(flushes[1].id,7); eq(flushes[1].fluid,nil); eq(segments[8].amount,300,'other segments keep their fluid')
+-- (BA2) the fluid named in the call to the game (2.0.77 flushes nothing without it); before and after
+eq(flushes[1].id,7); eq(flushes[1].fluid,'sulfuric-acid'); eq(segments[8].amount,300,'other segments keep their fluid')
+eq(r.held_before['sulfuric-acid'],1200); eq(next(r.held_after),nil)
+eq(r.line,'flushed sulfuric-acid 1200 from the segment of pipe (3,3) (3 entities with fluidboxes, 40x2 tiles) (the game\'s count; the segment read sulfuric-acid 1200 before, nothing after)')
 -- Empty now: nothing to flush.
 fails(function() sol('flush',{position={x=3,y=3}}) end,'nothing to flush: pipe at (3,3) holds no fluid')
 -- One fluid only: the segment holds another.
