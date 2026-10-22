@@ -79,8 +79,8 @@ LIVE_JS = r"""
 // static/live.js's keepPlanets: a push whose listing leaves Gleba out keeps Gleba's map
 const fs = require('fs');
 const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('  var planetMaps = {};'), end = src.indexOf('  function mapData(s)');
-const keepPlanets = new Function(src.slice(start, end) + '; return keepPlanets;')();
+const start = src.indexOf('  var KEPT_KEY'), end = src.indexOf('  function mapData(s)');
+const keepPlanets = new Function('store', src.slice(start, end) + '; return keepPlanets;')(() => null);
 const g = { surface: 'gleba', tick: 100, cell: 8, x0: 0, y0: 0, w: 2, h: 1, rows: ['AS'] };
 const v = { surface: 'vulcanus', tick: 200, cell: 8, x0: 0, y0: 0, w: 2, h: 1, rows: ['SS'] };
 keepPlanets({ planets: [{ surface: 'gleba' }, { surface: 'vulcanus' }], planet_map: g });

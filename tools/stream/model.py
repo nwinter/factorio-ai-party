@@ -778,6 +778,9 @@ class Model:
         self.library_areas = None  # (d21 batch68 AD2) the library's placed areas, the last read (live.py observe_library_areas)
         self.library_areas_t = None
         self.net_maps = {}  # (d21 batch68 AD3) surface -> (its networks map, when read) (live.py observe_net_map)
+        self.map_memory = None  # (d22 batch75 AK1) runs/RUN/map-memory.json (set_map_memory): both maps across restarts
+        self.map_memory_t = 0.0
+        self.planet_unlisted = {}  # (AK1) surface -> when the census's planet list first left it out
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -882,12 +885,22 @@ class Model:
         # still has its tab
         if isinstance(obs.get("planet_map"), dict) and obs["planet_map"].get("surface"):
             self.planet_maps[obs["planet_map"]["surface"]] = obs["planet_map"]
+        if isinstance(obs.get("planet_names"), list) and obs["planet_names"]:
+            # (AK1) a planet the census has not listed for PLANET_GONE_S goes (one pass may list fewer)
+            for k in list(self.planet_maps):
+                if k in obs["planet_names"]:
+                    self.planet_unlisted.pop(k, None)
+                elif now - self.planet_unlisted.setdefault(k, now) >= self.PLANET_GONE_S:
+                    del self.planet_maps[k]
+                    self.planet_unlisted.pop(k, None)
         if isinstance(obs.get("library_areas"), dict):
             self.library_areas, self.library_areas_t = obs["library_areas"], now
         if isinstance(obs.get("net_map"), dict) and isinstance(obs["net_map"].get("surface"), str):
             self.net_maps[obs["net_map"]["surface"]] = (obs["net_map"], now)
         if isinstance(obs.get("net_map_listed"), list):  # (a surface gone has no map in the runtime's listing)
             self.net_maps = {k: v for k, v in self.net_maps.items() if k in obs["net_map_listed"]}
+        if any(k in obs for k in ("planet_map", "planet_names", "net_map", "net_map_listed")):
+            self._save_map_memory(now)
         if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
             self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
@@ -1920,6 +1933,45 @@ class Model:
             self.platform_course.setdefault(name, {"visited": set()})["visited"].update(planets)
             self.orbit_known.update((name, pl) for pl in planets)
         self.planets_reached.update(mem.get("reached") or [])
+
+    MAP_MEMORY_EVERY = 60.0
+    PLANET_GONE_S = 1800.0
+
+    def set_map_memory(self, path, earlier=()):
+        """(d22 batch75 AK1, viewer Aurora: "Planet buttons and network layers disappear between refreshes") keep each
+        planet's last coarse map and networks map in the run folder (serve.py), so a restart or a shift change starts
+        with them instead of rereading one planet a minute: read from path, else the newest of earlier (the runs this
+        one resumed from). Their ticks say how old they are; a newer read replaces each."""
+        self.map_memory = path
+        for p in (path, *earlier):
+            try:
+                with open(p) as f:
+                    mem = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(mem, dict):
+                continue
+            for k, m in (mem.get("planet_maps") or {}).items():
+                if isinstance(m, dict) and isinstance(m.get("rows"), list):
+                    self.planet_maps.setdefault(k, m)
+            for k, row in (mem.get("net_maps") or {}).items():
+                if isinstance(row, dict) and isinstance(row.get("map"), dict) and isinstance(row.get("t"), (int, float)):
+                    self.net_maps.setdefault(k, (row["map"], row["t"]))
+            return p
+        return None
+
+    def _save_map_memory(self, now, force=False):
+        if not self.map_memory or (not force and now - self.map_memory_t < self.MAP_MEMORY_EVERY):
+            return
+        self.map_memory_t = now
+        mem = {"planet_maps": self.planet_maps, "net_maps": {k: {"map": m, "t": t} for k, (m, t) in self.net_maps.items()}}
+        try:
+            tmp = self.map_memory + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(mem, f, separators=(",", ":"))
+            os.replace(tmp, self.map_memory)
+        except (OSError, TypeError, ValueError):
+            pass
 
     def _save_space_memory(self):
         if not self.space_memory:
