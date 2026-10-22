@@ -12,6 +12,7 @@
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,71 @@ def workspace():
     print("workspace: ok")
 
 
+def clones(d):
+    """Whether the volume holding d clones files (APFS on macOS): one clone tried there."""
+    a, b = os.path.join(d, ".clone-probe-a"), os.path.join(d, ".clone-probe-b")
+    os.makedirs(d, exist_ok=True)
+    open(a, "w").write("x")
+    try:
+        full_tools.clone_file(a, b)
+        return True
+    except OSError:
+        return False
+    finally:
+        for p in (a, b):
+            if os.path.lexists(p):
+                os.remove(p)
+
+
+def clone():
+    """(d20 batch84 AT1) A carried file is a clone where the volume clones: same content, mode and mtime, and a
+    write to the copy leaves the source as it was; where a clone fails it is a copy (shutil.copy2), the same way."""
+    tmp = tempfile.mkdtemp()
+    try:
+        src = os.path.join(tmp, "src", "deploy.py")
+        os.makedirs(os.path.dirname(src))
+        open(src, "w").write("print('deploy')\n" * 1000)
+        os.chmod(src, 0o751)
+        os.utime(src, (1700000000, 1700000123.5))
+
+        def same(dst):
+            a, b = os.stat(src), os.stat(dst)
+            assert open(dst).read() == open(src).read()
+            assert stat.S_IMODE(b.st_mode) == stat.S_IMODE(a.st_mode) == 0o751, oct(b.st_mode)
+            assert b.st_mtime == a.st_mtime == 1700000123.5, (a.st_mtime, b.st_mtime)
+            with open(dst, "a") as f:
+                f.write("changed\n")
+            assert open(src).read() == "print('deploy')\n" * 1000, "a write to the copy reached the source"
+
+        if full_tools._clonefile() and clones(tmp):
+            how = {}
+            full_tools.place_file(src, os.path.join(tmp, "cloned.py"), how)
+            assert how == {"cloned": 1}, how
+            same(os.path.join(tmp, "cloned.py"))
+        else:
+            print("clone: skipped (this volume or system does not clone files); the fallback is checked below")
+        # the fallback: a clone that fails (another volume, not APFS) leaves a copy made by shutil.copy2
+        real = full_tools.clone_file
+
+        def fail(a, b):
+            open(b, "w").write("partial")   # a failure that left a file behind is cleared first
+            raise OSError(18, "Cross-device link")
+        full_tools.clone_file = fail
+        try:
+            how = {}
+            full_tools.place_file(src, os.path.join(tmp, "copied.py"), how)
+            assert how == {"copied": 1}, how
+            same(os.path.join(tmp, "copied.py"))
+            dst = os.path.join(tmp, "tree")
+            how = {}
+            copied, _, _ = full_tools.copy_tree(os.path.dirname(src), dst, how=how)
+            assert copied == ["deploy.py"] and how == {"copied": 1}, (copied, how)
+        finally:
+            full_tools.clone_file = real
+    finally:
+        shutil.rmtree(tmp)
+
+
 def carry():
     """A later shift's tools/ and team-tools/ from the previous runs: shift01 had them, shift02's agents never
     launched (no folders), shift03 resumes shift02, and the new shift04 resumes shift03."""
@@ -129,13 +195,14 @@ def carry():
         assert not os.path.exists(os.path.join(new, "team-tools")), "the dry run copied"
         lines, files = full_tools.carry(new, os.path.join(runs, "shift03"), names)
         text = "\n".join(lines)
-        assert lines[0].startswith("carry opus tools/: 2 files (0.0 MB) from shift01; "), lines
+        made = "(2 cloned, 0 copied)" if full_tools._clonefile() and clones(runs) else "(0 cloned, 2 copied)"
+        assert lines[0].startswith(f"carry opus tools/: 2 files (0.0 MB) from shift01 {made}; "), lines
         for want in ("skipped 1 already there: deploy.py", "skipped 1 over 5 MB: big.jsonl (5.0 MB)",
                      "skipped 4 cache: .cache/, __pycache__/, .env, plans/old.pyc", "skipped 2 symlink: luna/, hosts"):
             assert want in lines[0], (want, lines[0])
         assert lines[1] == "carry luna tools/: 0 files (0.0 MB) from shift01", lines
         assert lines[2] == "carry sol tools/: none in shift03, shift02, shift01", lines
-        assert lines[3] == "carry team-tools/: 2 files (0.0 MB) from shift01", text
+        assert lines[3] == f"carry team-tools/: 2 files (0.0 MB) from shift01 {made}", text
         o = os.path.join(new, "opus", "tools")
         assert sorted(os.path.relpath(os.path.join(b, f), o) for b, _, fs in os.walk(o) for f in fs) == \
             ["deploy.py", "plans/east.md", "small.jsonl"]
@@ -345,6 +412,7 @@ def flags():
 
 if __name__ == "__main__":
     workspace()
+    clone()
     carry()
     paragraphs()
     team_files()

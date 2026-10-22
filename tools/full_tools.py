@@ -13,12 +13,16 @@ tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph 
   sync:      tools/full_tools.py sync RUN_DIR [SECONDS]: mirror Muse's own team-tools folder with the shared one.
   carry:     tools/full_tools.py carry [--dry-run] RUN_DIR PREV_DIR NAME...: a later shift (tools/start-team.sh,
              POG_RESUME) starts with each agent's tools/ and the run's team-tools/ from the previous shift that had
-             them, up the resumed-from chain; files over 5 MB, caches, dotfiles and symlinks stay behind.
+             them, up the resumed-from chain; files over 5 MB, caches, dotfiles and symlinks stay behind. Each file is
+             a clone on APFS (macOS clonefile: no new blocks until one side is written), else a copy (shutil.copy2).
 
 Codex and Grok switches live where their clean profiles are written (tools/clean-profile.py, tools/grok-home.py,
 tools/profile-flags.sh); agy and Muse Code already have their subagent and web tools.
 No tool here reads or writes the game: only ./fh acts in it.
 """
+import ctypes
+import ctypes.util
+import errno
 import glob
 import json
 import os
@@ -112,8 +116,57 @@ def chain(prev):
     return out
 
 
-def copy_tree(src, dst, dry=False):
-    """Copy src into dst without replacing files dst has. Returns (copied paths, bytes, skipped {reason: [paths]})."""
+# (d20 batch84 AT1, Disk Space Scout: runs/ 15.1 GiB, Sol's tools/ 223 MB copied every shift) macOS clonefile(2):
+# the new file shares the source's blocks until either is written. None off macOS or where libSystem lacks it.
+_CLONEFILE = None
+
+
+def _clonefile():
+    global _CLONEFILE
+    if _CLONEFILE is None:
+        fn = False
+        if sys.platform == "darwin":
+            try:
+                lib = ctypes.CDLL(ctypes.util.find_library("System") or "/usr/lib/libSystem.B.dylib", use_errno=True)
+                fn = lib.clonefile
+                fn.argtypes, fn.restype = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32], ctypes.c_int
+            except (OSError, AttributeError):
+                fn = False
+        _CLONEFILE = fn
+    return _CLONEFILE or None
+
+
+CLONE_NOFOLLOW = 0x0001
+
+
+def clone_file(src, dst):
+    """Clone src to dst (a new path) with clonefile, then its mode and times as shutil.copy2 sets them. Raises OSError
+    when the clone fails (another volume, a file system without clones, not macOS)."""
+    fn = _clonefile()
+    if not fn:
+        raise OSError(errno.ENOTSUP, "clonefile is not available here")
+    if fn(os.fsencode(src), os.fsencode(dst), CLONE_NOFOLLOW) != 0:
+        e = ctypes.get_errno()
+        raise OSError(e, os.strerror(e), dst)
+    shutil.copystat(src, dst)
+
+
+def place_file(src, dst, how):
+    """A clone of src at dst, else a copy (shutil.copy2: mode and mtime kept); counts each in how."""
+    try:
+        clone_file(src, dst)
+        how["cloned"] = how.get("cloned", 0) + 1
+    except OSError:
+        if os.path.lexists(dst):   # a clone that failed after creating dst
+            os.remove(dst)
+        shutil.copy2(src, dst)
+        how["copied"] = how.get("copied", 0) + 1
+
+
+def copy_tree(src, dst, dry=False, how=None):
+    """Copy src into dst without replacing files dst has, each file a clone where the volume clones (how counts
+    cloned and copied). Returns (copied paths, bytes, skipped {reason: [paths]})."""
+    how = {} if how is None else how
     copied, size, skipped = [], 0, {}
     for base, dirs, files in os.walk(src):
         keep = []
@@ -142,7 +195,7 @@ def copy_tree(src, dst, dry=False):
             else:
                 if not dry:
                     os.makedirs(os.path.dirname(os.path.join(dst, rel)), exist_ok=True)
-                    shutil.copy2(p, os.path.join(dst, rel))   # keeps the mode (executable scripts) and mtime
+                    place_file(p, os.path.join(dst, rel), how)   # keeps the mode (executable scripts) and mtime
                 copied.append(rel)
                 size += os.path.getsize(p)
     return copied, size, skipped
@@ -161,10 +214,11 @@ def carry(run, prev, names, dry=False):
         else:
             lines.append(f"carry {label}: none in {', '.join(os.path.basename(r) for r in runs)}")
             return
-        copied, size, skipped = copy_tree(os.path.join(r, rel_src), dst, dry)
+        how = {}
+        copied, size, skipped = copy_tree(os.path.join(r, rel_src), dst, dry, how)
         listing.extend(f"{label}\t{os.path.basename(r)}\t{p}" for p in copied)
         for e in extra:   # Muse's own mirrored team-tools folder in that run: what the 5 s mirror had not yet shared
-            c, s, k = copy_tree(os.path.join(r, e), dst, dry)
+            c, s, k = copy_tree(os.path.join(r, e), dst, dry, how)
             copied += c
             size += s
             listing.extend(f"{label}\t{os.path.basename(r)}/{os.path.dirname(e)}\t{p}" for p in c)
@@ -174,8 +228,9 @@ def carry(run, prev, names, dry=False):
         skip = "; ".join(f"skipped {len(ps)} {why}: {', '.join(ps[:6])}{' ...' if len(ps) > 6 else ''}"
                          for why, ps in sorted(skipped.items()))
         n = len(copied)
+        made = (f" ({how.get('cloned', 0)} cloned, {how.get('copied', 0)} copied)" if n and not dry else "")
         lines.append(f"carry {label}: {n} file{'' if n == 1 else 's'} ({size / 1048576:.1f} MB) from {os.path.basename(r)}"
-                     + (f"; {skip}" if skip else ""))
+                     + made + (f"; {skip}" if skip else ""))
 
     for name in names:
         one(f"{name} tools/", os.path.join(name, "tools"), os.path.join(run, name, "tools"))
