@@ -31,6 +31,11 @@
   `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
   in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
   guard keeps the progress and leg; remote and platform lanes);
+  `platform_ammo_below` (`platform`, `item` (ammunition), `count`, `quality?` (default normal, or "any"), `max_age?`
+  30..900 s, default 120): that item aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests)
+  under count, from a background reading begun every 30 s while a check asks (a pass about 2 s on 6743 belts); saw
+  gives the total by place and its age; met too when the reading is older than max_age, or none by max_age after the
+  first check; remote and platform lanes);
   `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the

@@ -12230,3 +12230,44 @@ the watch's arrivals show the pad holding 1000, 1976, 2448, ... 5602 on each pod
 - Headless copy, after a deploy: watch #75 read `received` (10000, 10 pods, by the pad, from its arrivals) within a
   second, with the line above. Cost: nothing new per tick; at a landing, a chest/silo/machine consumer adds two
   logistic network lookups (1.3 µs each on the copy).
+## d22 batch117 BZ1 (eng/d20-batch117): platform_ammo_below, a platform's whole ammunition reserve (Astra #1970)
+
+A full-edge abort must keep the return leg's ammunition. `item_count` with `platform` reads the hub alone and
+`ammo_below` each turret alone, so no wait or guard could test the total aboard.
+
+- New condition kind for `wait_until` and queue guards, in the body, remote and platform lanes (conditions.lua,
+  ammoreserve.lua; runtime deploy needed): `platform_ammo_below {platform, item, count, quality?, max_age?}`.
+  - `item`: an ammunition item. `quality`: as `item_count` (default normal; a quality name; "any" sums every quality;
+    the item's name alone is normal quality only, checked on the copy).
+  - The count is the item aboard in all places a player can open: the hub's main inventory, each ammo turret's ammo
+    slots, each belt's transport lines (an underground exit's buried lines are its entrance's, counted once), each
+    inserter's hand, each assembling machine's and furnace's output, each chest. Met below `count`.
+  - `saw`: "platform Asterion: 5534 rocket aboard (hub 10, turrets 261, belts 5244, hands 6, machines 13) as read 12s
+    ago (ticks 49811640-49811773: hub, 97 ammo turrets, 6743 belts, 289 inserters, 56 machines, 0 chests); met below 1".
+- The reading is kept in the background (ammoreserve.lua), never read at a check: a check marks the platform as asked
+  about, and a platform asked about within 10 min gets a pass begun every 30 s (1800 ticks), one pass at a time across
+  platforms. A pass walks the platform's chunks one band a step (walk.lua, one chunk a band), reads at most 100 entities
+  a tick, and reads the hub on its last step. Each entity is read once a pass, so nothing is counted twice within one
+  reading. An item that moves between two places during the pass (about 2.2 s on Asterion) can be counted in both or
+  in neither.
+- Age and staleness (conservative, as Astra asked): age is ticks since the reading's pass began. With `max_age`
+  (30..900 s, default 120) the condition is also met when the newest reading is older than max_age ("...; older than
+  max_age 2m00s: met (stale reading)"), and when there is no reading max_age after the platform's first check. A guard
+  on it therefore fires on a stale reading. While the first pass has not finished within max_age it is not met, and saw
+  says so ("no reading of its ammunition yet (a pass began 0s ago; ...; met if none by max_age 2m00s)").
+- A guard's baseline line names the background reading and max_age. The wait estimate label is "platform_ammo_below
+  ITEM aboard PLATFORM" (it said "in PLATFORM hub").
+- Measured on a headless copy of world n's 22:10 autosave (Asterion at Aquilo: 6743 belts with 14510 transport lines
+  read, 289 inserters, 97 ammo turrets, 56 machines, no chest), with Astra's platform lane waiting on it:
+  - `profile_ticks {seconds=60}`: `ammoreserve.tick` 323 ms over 60 s (0.09 ms a tick on average). That includes one
+    second of 217 ms in which a garbage collection finished (the heap fell 71.6 MB). Without it, each pass took
+    29 + 30 + 1.3 ms over three game seconds (about 0.5 ms a tick while it runs, 133 steps), and each second between
+    passes about 0.14 ms (2 µs a tick). Over the 30 s cycle that is about 0.034 ms a tick.
+  - The same pass run synchronously with the game paused: 49 ms in all. A one-tick full count by the same rules: 39 ms
+    (find 4.8 ms, read 34.4 ms).
+  - Against a full count: with the game paused, the pass's reading equalled a one-tick full count in every item,
+    quality and place (rockets 5534; firearm-magazine 7173; railgun-ammo 2501). Running, three readings against a full
+    count taken a few ticks after the check: 5534/5534, 5534/5534, 5532/5536.
+- Tests: tests/d22_batch117.lua (arguments, first check, a pass by place and quality, the underground's buried lines
+  once, the refresh after 30 s, stale and no-reading cases, the record dropped after 10 min, the remote and platform
+  lanes' dry runs as a wait and a guard); tests/conditions.lua's quality refusal text updated.

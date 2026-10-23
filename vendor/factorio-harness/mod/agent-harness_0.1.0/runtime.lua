@@ -16192,7 +16192,9 @@ end local conditions=conditions_module{losses_since=function(f,s,since,names,max
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
-  left_since=function(name,force,location,since) return M.freight and M.freight.left_since(name,force,location,since) end}
+  left_since=function(name,force,location,since) return M.freight and M.freight.left_since(name,force,location,since) end,
+  -- (d22 batch117 BZ1) platform_ammo_below's background reading (ammoreserve.lua)
+  ammo_reserve=function(pl,force,c) return M.ammoreserve.check(pl,force,c) end}
 M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
@@ -18548,6 +18550,8 @@ function M.work_watches(p)
   for _,r in ipairs(ok and f or {}) do out[#out+1]=r end
   return #out>0 and out or nil
 end
+-- (d22 batch117 BZ1, Astra #1970) a platform's whole ammunition reserve, read in the background (ammoreserve.lua)
+M.ammoreserve=require('ammoreserve'){state=state}
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
   fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
@@ -19676,6 +19680,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
+  if state().ammo_reserve then pcall(M.timed,'ammoreserve.tick',M.ammoreserve.tick,event.tick) end  -- platform_ammo_below's readings (ammoreserve.lua): a band a step while a pass runs
   if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)
   if M.delivwatch then pcall(M.delivwatch.pod_tick,event.tick) end  -- (AB7) watched pods read each tick near landing; none followed: one lookup
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
