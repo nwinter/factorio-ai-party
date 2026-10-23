@@ -1972,7 +1972,8 @@ def main():
         data = op_updates.load(UPDATES)
         hidden = moderation.load(args.runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")
         asks, replies = op_updates.messages(args.runs_dir, op_updates.refs(data["updates"]), clean, keep_line, hidden)
-        body, head = op_updates.build_page(data, asks, replies, esc)
+        built = datetime.datetime.now(op_updates.PACIFIC).replace(tzinfo=None)
+        body, head = op_updates.build_page(data, asks, replies, esc, built=built)
         write("updates/index.html", page("Operator updates", body, "/updates/",
                                          "Changes viewers and agents asked for, and whether each is planned, in progress, live or verified.",
                                          extra_head=head, path="/updates/"))
