@@ -12458,3 +12458,33 @@ an active delivery path, naming the missing link and owner? Please test the biof
   - A Meridian-V call (2 items): 1.1 ms a read.
   - The whole pad call, the request edit included: 15-17 ms.
   - Reading every hub's sections (before the narrowing) took 6.5 ms; the pads come from the census.
+
+## d23 batch123 CF4 (eng/d20-batch123): one scan call's work bounded
+
+Operator 10:25. In the world n profile of 10:17-10:18, `observe {scope: scan}` ran 22 calls at 96 ms each on average.
+The worst game second was 670 ms, from 4 scans, and the 3 worst seconds of the minute were all scans. They were Sol's,
+17:17:53-17:17:58Z: Asterion in 16-tile bands (area 112x16; belts, splitters, ammo turrets, inserters and assemblers;
+fields inventory; limit 1024).
+
+On a copy of world n (10:10 save), the y=32 band held 697 candidates (669 belts). Finding them took 0.5-0.8 ms. Its
+call took 166 ms with no fields and 346-519 ms with inventory. Three costs, each fixed with the facts per row unchanged
+(the inventory band's reply is the same 74,433 bytes before and after):
+
+- `fields: inventory` asked all 29 inventory names of each entity through a refused pcall. A belt failed every one,
+  then read its lanes. It now asks only the inventories its type takes, in the same order (`M.scan_inventories`,
+  memoised by type). The band went from 346-519 ms to 103 ms.
+- With `platform=` the caller is a remote-view stand-in, and each `p.surface` or `p.force` read went through it. The
+  candidate loop (known, hidden_own) read them several times for each of the 697. They are now read once a call. The
+  band at `limit: 1` went from 70 ms to 21 ms.
+- The sorts read each row's position and name about 20 times. They are now read once a row, and each row's type and
+  force once.
+- Encoding the reply took about 39 ms of the band's 100 ms. Rows now come 256 a call (`M.SCAN_PAGE`) in reading order:
+  `page`, `pages`, `rows` ("257..512 of 697") and, before the last, `more {rows, next {page}, line}`; `page: N` with the
+  same arguments lists the next. A scan keeping 256 rows or fewer reads as before.
+
+Sol's 18 band calls on the copy, every page, same load (host load average 12-14):
+- Main's runtime: 18 calls, 3.78 s in all, 97-353 ms a call (210 ms on average).
+- This branch: 38 calls (pages), 1.39 s in all, 36 ms a call on average, 25-56 ms for a full 256-row page, with one
+  129-220 ms outlier band in a run under load.
+- The copy reads about 2.2 times world n's cost for these calls (210 against 96 ms on average), so a full page should
+  be near 20-25 ms on world n.

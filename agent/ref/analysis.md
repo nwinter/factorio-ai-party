@@ -397,6 +397,9 @@
   hits what stands within 10 tiles of it (walls and rails never). And our buildings lightning killed: in the last hour,
   and the last one. The team block carries both once an hour.
 - `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.
+- A scan lists 256 rows a call, in reading order. With more kept (`limit` up to 1024), the reply has `page`, `pages`
+  and `rows` ("1..256 of 697"), and `more {rows, next: {page}}` before the last. The same arguments with `page: 2`
+  list the next rows.
 - `scan {type: "transport-belt"}` (any belt type) adds `belt_items`: what all the belts found carry by item, before
   `limit` cuts the rows (up to 1024 belts). `item: "rocket"` adds `belt_item`: how many on how many belts, and each
   belt holding it (`positions`, 64; `line` names the first 12). Example:

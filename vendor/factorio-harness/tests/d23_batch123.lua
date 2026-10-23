@@ -279,4 +279,34 @@ do
   FP.after(me,'platform_delete',{},out,before)
   has(out.supply_left[1],'agricultural-science-pack to nauvis: no active delivery path left; it had Meridian-V from gleba; Meridian-V is gone (deleted) (no earlier editor recorded)')
 end
+
+-- (d23 batch123 CF4, operator 10:25: Sol's observe scans of Asterion, 96 ms a call on world n) a scan lists 256 rows a
+-- call in reading order, page continues; the inventory field reads only the inventories an entity's type takes, the
+-- same text as before.
+do
+  local chests={}
+  local function chest(x,y,n)
+    local inv={valid=true,get_contents=function() return n>0 and {{name='iron-plate',count=n,quality='normal'}} or {} end}
+    local e={valid=true,name='wooden-chest',type='container',position={x=x,y=y},unit_number=7000+#chests,force=force,surface=nauvis,
+      get_inventory=function(i) if i==defines.inventory.chest then return inv end end}
+    chests[#chests+1]=e
+    return e
+  end
+  defines.inventory.chest=defines.inventory.chest or 1
+  for i=1,300 do chest(100+(i-1)%20+0.5,100+math.floor((i-1)/20)+0.5,i%7) end
+  local saved=nauvis.find_entities_filtered
+  nauvis.find_entities_filtered=function(f) if f.area then return chests end return {} end
+  local area={left_top={x=99,y=99},right_bottom={x=121,y=116}}
+  local r1=astra('scan',{area=area,fields='inventory',limit=1024})
+  eq(#r1.entities,256); eq(r1.page,1); eq(r1.pages,2); eq(r1.rows,'1..256 of 300'); eq(r1.total,300)
+  eq(r1.more.rows,44); eq(r1.more.next.page,2); has(r1.more.line,'rows 1..256 of the 300 kept are listed (256 a call, reading order); page 2 lists the next')
+  eq(r1.entities[1].position.y,100.5); eq(r1.entities[1].inventory,'iron-plate*1'); eq(r1.entities[7].inventory,'empty')
+  local r2=astra('scan',{area=area,fields='inventory',limit=1024,page=2})
+  eq(#r2.entities,44); eq(r2.more,nil); eq(r2.rows,'257..300 of 300'); eq(r2.entities[44].position.x,119.5); eq(r2.entities[44].position.y,114.5)
+  local r3=astra('scan',{area=area,limit=100})
+  eq(#r3.entities,100); eq(r3.page,nil,'one page: as before'); eq(r3.truncated,true)
+  local ok,err=pcall(astra,'scan',{area=area,page=3,limit=1024})
+  assert(not ok and tostring(err):find('page 3: this scan keeps 300 rows, 2 pages of 256',1,true),tostring(err))
+  nauvis.find_entities_filtered=saved
+end
 print('d23_batch123: ok')
