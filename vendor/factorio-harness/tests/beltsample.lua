@@ -38,6 +38,8 @@ local r=S.handler(p,{position={x=2.5,y=0.5},seconds=2})
 eq(r.sampling,true); eq(r.tiles,6); eq(r.every_ticks,16); eq(#r.points,3)
 eq(r.points[1],'section end (3.5,0.5)'); eq(r.points[2],'merging belt (4.5,-0.5) into (4.5,0.5)'); eq(r.points[3],'section end (6.5,0.5)')
 local mid=S.handler(p,{}); eq(mid.sampling,true); eq(mid.seconds_left,2)
+-- (d22 batch106 BP1) both replies say the sample ends at until_tick, stop and actions not ending it
+assert(r.ends:find('the sample ends at until_tick: stop and your actions do not end it',1,true),r.ends); eq(mid.ends,r.ends)
 for t=1,140 do game.tick=t; S.tick(t) end
 r=S.handler(p,{})
 eq(r.done,true); eq(r.samples,9)
