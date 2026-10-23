@@ -168,10 +168,11 @@ eq(#r.entities,3); eq(r.ground_items,nil)
 -- status alerts: the spilling pad and the pile near our chest.
 local st=astra('status')
 local lines=st.alerts.ground_items
-local pad_line=has(lines,'cargo landing pad at (-66,28) on nauvis is full (80/80 slots) and pods spill: 120 item stacks on the ground within 40 tiles')
+-- (d23 batch121 CD3) entities, items and storage slots labelled apart
+local pad_line=has(lines,'cargo landing pad at (-66,28) on nauvis is full (80/80 slots) and pods spill within 40 tiles: entities 120 (each an item stack on the ground); items 18000: ')
 assert(pad_line,table.concat(lines,'\n'))
 assert(pad_line:find('16000 space-science-pack, 2000 carbon',1,true),pad_line)
-local pile=has(lines,'150 item stacks on the ground at (20,20)-(34,29) on nauvis, near our buildings: 15000 iron-plate')
+local pile=has(lines,'items on the ground at (20,20)-(34,29) on nauvis, near our buildings: entities 150 (each an item stack on the ground); items 15000: 15000 iron-plate')
 assert(pile,table.concat(lines,'\n'))
 -- The pad's spill is not reported again as a pile.
 eq(#lines,2)
@@ -181,17 +182,17 @@ for i=0,119 do stack_at('stone',50,300+(i%10),300+math.floor(i/10)) end
 eq(#astra('status').alerts.ground_items,2)
 -- Reply hints: once (the status replies above already showed them), then not again.
 r=astra('scan',{position={x=200,y=200},radius=2})
-assert(not has(r.team and r.team.alerts,'item stacks'),'seen lines repeat')
+assert(not has(r.team and r.team.alerts,'on the ground'),'seen lines repeat')
 -- A pile that grows by half is told again after the next pass.
 for i=0,99 do stack_at('iron-plate',100,20+(i%15),31+math.floor(i/15)) end
 -- (the watch is a background pass now, task-slowreads: one starts when the last is 30 s old and spreads its steps over
 -- up to 80% of the next 30 s)
 advance(3600)
 r=astra('scan',{position={x=200,y=200},radius=2})
-local again=has(r.team and r.team.alerts,'250 item stacks on the ground at (20,20)')
+local again=has(r.team and r.team.alerts,'items on the ground at (20,20)')
 assert(again,'grown pile not told again')
 eq(has(r.team.alerts,'cargo landing pad'),nil)
-r=astra('scan',{position={x=200,y=200},radius=2}); eq(has(r.team and r.team.alerts,'item stacks'),nil)
+r=astra('scan',{position={x=200,y=200},radius=2}); eq(has(r.team and r.team.alerts,'on the ground'),nil)
 eq(has(astra('status').alerts.ground_items,'(300,300)'),nil)
 -- A pad with free slots is not spilling.
 pad_inv.count_empty_stacks=function() return 3 end

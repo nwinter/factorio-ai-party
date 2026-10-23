@@ -174,3 +174,41 @@ do
   defines,prototypes,game=saved.defines,saved.prototypes,saved.game
 end
 print('d23 batch121 CD2: ok')
+
+-- CD3 (site:4362, shift61: Sonnet read the status line's 11793 "item stacks on the ground" around Gleba's pad as full
+-- stacks and asked for about 120 chests; each was one item, and Astra counted eight chests): entities on the ground,
+-- the items they hold and the storage slots those fill are labelled apart, and deconstruct {items_on_ground} adds the
+-- empty slots of the storage chests that may take them.
+do
+  local saved={prototypes=prototypes,defines=defines}
+  prototypes={item={['iron-plate']={stack_size=100},['iron-ore']={stack_size=50},calcite={stack_size=50}}}
+  defines={inventory={chest=1}}
+  local G=dofile('mod/agent-harness_0.1.0/ground.lua'){state=function() return {} end,real=function(p) return p end,distance=function() return 0 end}
+  local function item(name,x,y,n)
+    local e={valid=true,type='item-entity',position={x=x,y=y},marked=false}
+    e.stack={valid_for_read=true,name=name,count=n or 1,quality={name='normal'},prototype={get_spoil_ticks=function() return 0 end},spoil_percent=0}
+    e.to_be_deconstructed=function() return e.marked end
+    e.order_deconstruction=function() e.marked=true; return true end
+    return e
+  end
+  local list={}
+  for k=1,250 do list[#list+1]=item('iron-plate',k%20,math.floor(k/20)) end
+  for k=1,120 do list[#list+1]=item('iron-ore',k%20,20+math.floor(k/20)) end
+  list[#list+1]=item('calcite',5,40,30)
+  local sum=G.summary(list,12)
+  eq(sum.stacks,371); eq(sum.count,400); eq(sum.slots,7) -- 250 plates at 100: 3 slots; 120 ore at 50: 3; 30 calcite at 50: 1
+  eq(sum.items[1].name,'iron-plate'); eq(sum.items[1].slots,3); eq(sum.items[2].slots,3); eq(sum.items[3].slots,1)
+  eq(G.counts_text(11793,sum,5000),'entities 11793 (each an item stack on the ground); items 400 in the 5000 entities read: 250 iron-plate, 120 iron-ore, 30 calcite; storage slots they fill 7 (at each item\'s stack size)')
+  -- marking them: the storage chests of the network covering them, an unfiltered one and one filtered to iron-ore count;
+  -- one filtered to coal does not
+  local function chest(empty,filter) return {storage_filter=filter,get_inventory=function() return {count_empty_stacks=function() return empty end} end} end
+  local net={network_id=7,storages={chest(10),chest(4,{name='iron-ore'}),chest(40,{name='coal'})}}
+  local surface={find_entities_filtered=function() return list end,find_logistic_networks_by_construction_area=function() return {net} end}
+  local out=G.mark({surface=surface,force={name='player'}},{left_top={x=0,y=0},right_bottom={x=30,y=50}},false,{})
+  eq(out.item_stacks,371); eq(out.items_total,400); eq(out.storage_slots_needed,7); eq(out.storage_free_slots,14); eq(out.storage_chests,3)
+  eq(out.counts,'entities 371 marked (each an item stack on the ground); items 400; storage slots they fill 7; empty slots in the storage chests that may take them: 14 (3 of 3 chests read)')
+  eq(out.items[2].slots,3)
+  prototypes,defines=saved.prototypes,saved.defines
+end
+print('d23 batch121 CD3: ok')
+

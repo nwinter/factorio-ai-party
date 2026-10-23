@@ -4242,11 +4242,17 @@ Items on the ground:
   centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
   {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
   `from_machine` and `from_building` as `to_player`, for every entity kind.
-- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
-  more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
-  (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, count, slots, items: [{name, count,
+  stacks, slots, box}], more_items}`), by item, instead of one row per stack; rows for them come only when the call
+  filters for them (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+  (d23 batch121 CD3, viewer Aurora: 11,793 entities read as full stacks made a 120-chest estimate for 8) `stacks` counts
+  entities on the ground (each one item stack, often of 1 item), `count` the items they hold, `slots` the storage slots
+  those items fill at each item's stack size. The status lines below and `deconstruct {items_on_ground}` (`items_total`,
+  `storage_slots_needed`, `storage_free_slots`: empty slots in the covering networks' storage chests with no filter or
+  a filter on one of those items, up to 256 chests read; `counts`, one line) label the three apart.
 - `status` `alerts.ground_items`: a cargo landing pad that is full while item stacks lie within 40 tiles of it
-  (position, slots, stacks, the items), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
+  (position, slots, then `entities N (each an item stack on the ground); items N: the items; storage slots they fill
+  N`), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
   (box, stacks, items; the largest 3). Item counts come from up to 5000 stacks per place (the line says so when
   there are more). One pass per force every 30 s, run on demand; a place new to you, or grown by half since you
   were told, is also in the reply's `team.alerts` once.
