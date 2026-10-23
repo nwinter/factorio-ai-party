@@ -151,6 +151,19 @@ def main():
         check("the index lists the cells with chunks: (0,0), (1,0), (2,0)", set(cells) == {"0,0", "1,0", "2,0"}, cells)
         check("each with its version, its chunks' oldest and newest read tick and count, and the box round our buildings",
               cells["0,0"][1:] == [1000, 1000, 2, 12, 3, 383, 25], cells["0,0"])
+        # (cp7) push_live leaves out a surface's coarse grids only once its published chart is complete
+        check("the index: chunks stored and charted, and the first pass complete once every charted chunk is read and drawn",
+              idx["surfaces"]["nauvis"]["chunks"] == [5, 5] and idx["surfaces"]["nauvis"]["complete"] is True, idx["surfaces"]["nauvis"])
+        c.queue["nauvis"].append((40, 40))
+        check("a charted chunk waiting for its first read: not complete", c.first_pass("nauvis") == (5, 6, False), c.first_pass("nauvis"))
+        c.queue["nauvis"].remove((40, 40))
+        c.lists["nauvis"]["todo"].append((1, 1))
+        check("a list block still to read: not complete", c.first_pass("nauvis")[2] is False)
+        c.lists["nauvis"]["todo"].pop()
+        c.save(force=True)
+        again = chart.Chart(root, clock=lambda: clock[0])
+        check("complete kept from the index at a restart, before this run's lists", "nauvis" in again.complete
+              and again.write_index()["surfaces"]["nauvis"]["complete"] is True, again.complete)
         img = Image.open(os.path.join(out, "nauvis", "0_0.png")).convert("RGBA")
         check("a cell is 384 x 384 px", img.size == (384, 384), img.size)
         check("water in its map colour", px(img, 2, 2) == (0x33, 0x53, 0x5f, 255), px(img, 2, 2))
@@ -202,6 +215,9 @@ def main():
         c2.tiles, c2.ents = c.tiles, c.ents
         n = c2.build(limit=99)
         check("and drawn again into this run's out/ (its index from 1)", n == 3 and os.path.exists(os.path.join(tmp, "run3", "chart", "out", "nauvis", "0_0.png")), n)
+        idx3 = json.load(open(os.path.join(tmp, "run3", "chart", "out", "index.json")))
+        check("a new run's index: not complete until its own lists are read", idx3["surfaces"]["nauvis"]["complete"] is False
+              and idx3["surfaces"]["nauvis"]["chunks"] == [4, 4], idx3["surfaces"]["nauvis"])
         rec = chart.parse_chunk(c2.cells["nauvis"][(0, 0)].chunks[(0, 0)][1])
         check("a chunk's rows survive the round trip", rec["recipes"] == [(24, 6, "iron-plate")] and ("stone-furnace", 10, 40, 0, 1) in rec["ents"]
               and rec["tiles"][0][0] == ("water", 8), rec["tiles"][0])

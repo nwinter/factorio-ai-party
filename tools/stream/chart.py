@@ -219,6 +219,7 @@ class Chart:
         self.saved = 0.0
         self.version = 0
         self.index = {}          # surface -> {"cx,cy": [version, oldest tick, newest tick, chunks]}
+        self.complete = set()    # surfaces whose first pass is done: every charted chunk read and its cell drawn (kept)
         self.tick = None
         self.error = None
         self.reads = 0
@@ -254,6 +255,7 @@ class Chart:
                 idx = json.load(fh)
             self.version = int(idx.get("v") or 0)
             self.index = {s: dict(v.get("cells") or {}) for s, v in (idx.get("surfaces") or {}).items() if s in self.cells}
+            self.complete = {s for s, v in (idx.get("surfaces") or {}).items() if s in self.cells and v.get("complete") is True}
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -569,12 +571,30 @@ class Chart:
             self.write_index()
         return n
 
+    def first_pass(self, surface):
+        """(stored, charted, done): chunks in the store, charted chunks (stored and waiting for their first read), and
+        whether this run's lists of the surface are read, none of its chunks waits for a first read and none of its
+        cells waits to be drawn. Once done, a surface stays complete (index.json `complete`, read back at a restart):
+        chunks charted later are read within minutes, two reads in three going to the queue."""
+        known = self.known(surface)
+        waiting = sum(1 for c in self.queue.get(surface) or [] if c not in known)
+        L = self.lists.get(surface)
+        done = bool(L) and not L["todo"] and L["t"] is not None and not waiting \
+            and not any(c.draw for c in (self.cells.get(surface) or {}).values())
+        return len(known), len(known) + waiting, done
+
     def write_index(self):
+        """out/index.json: {v, cell, tick, surfaces: {name: {platform, cells, chunks: [stored, charted], complete}}};
+        push_live leaves out a surface's coarse grids only once its published chart is complete."""
         out = {"v": self.version, "cell": CELL, "tick": self.tick, "surfaces": {}}
         for s, cells in sorted(self.index.items()):
             if cells:
                 meta = self.surfaces.get(s) or {}
-                out["surfaces"][s] = {"platform": meta.get("platform"), "cells": cells}
+                stored, charted, done = self.first_pass(s)
+                if done:
+                    self.complete.add(s)
+                out["surfaces"][s] = {"platform": meta.get("platform"), "cells": cells, "chunks": [stored, charted],
+                                      "complete": s in self.complete}
         try:
             os.makedirs(os.path.join(self.root, "out"), exist_ok=True)
             p = os.path.join(self.root, "out", "index.json")

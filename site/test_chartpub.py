@@ -60,11 +60,14 @@ def main():
         def __enter__(self): return self
         def __exit__(self, *a): return False
         def read(self, *a): return self.body
-    body = json.dumps({"v": 42, "tick": 777, "surfaces": {"nauvis": {"cells": {"0,0": [1, 2, 3, 4]}}, "gleba": {"cells": {"1,1": [2, 2, 3, 4]}},
+    body = json.dumps({"v": 42, "tick": 777, "surfaces": {"nauvis": {"cells": {"0,0": [1, 2, 3, 4]}, "chunks": [9, 9], "complete": True},
+                                                         "gleba": {"cells": {"1,1": [2, 2, 3, 4]}, "chunks": [4, 4], "complete": True},
+                                                         "fulgora": {"cells": {"0,0": [3, 2, 3, 4]}, "chunks": [6, 600], "complete": False},
                                                          "vulcanus": {"cells": {}}}}).encode()
     push_live._chart.update(t=None, v=None)
     c = push_live.site_chart("https://example.test", now=1000, opener=lambda req, timeout: R(body))
-    check("push_live reads the deployed index: its version, tick, the surfaces with cells", c == {"v": 42, "tick": 777, "surfaces": ["gleba", "nauvis"]}, c)
+    check("push_live reads the deployed index: its version, tick, the surfaces with cells, those complete",
+          c == {"v": 42, "tick": 777, "surfaces": ["fulgora", "gleba", "nauvis"], "complete": ["gleba", "nauvis"]}, c)
     def boom(req, timeout):
         raise OSError("down")
     check("read at most every 5 minutes, the last one kept when a read fails",
@@ -79,9 +82,18 @@ def main():
     bm = out["basemap"]
     check("Nauvis charted: rows, core, ore, ground and frames left out; nests, turrets and the core's box kept",
           not ({"rows", "core", "ore", "terrain_grid", "terrain"} & set(bm)) and bm["nests"] and bm["turrets"] and bm["core_box"] == [-10, -20, 50, 60], bm)
-    check("a charted planet's coarse map left out, an uncharted one kept, the listing kept", "planet_map" not in out
+    check("a complete planet's coarse map left out, a partly charted one kept, the listing kept", "planet_map" not in out
           and out["planet_maps"] == {"fulgora": {"rows": ["A"]}} and out["planets"], out.get("planet_maps"))
     check("the state says the chart's version and the bytes saved", out["chart"]["v"] == 42 and out["chart"]["saved"] > 3000, out["chart"])
+    # (cp7) the 21:11 publication: six Nauvis cells, no `complete` in its index: every grid kept
+    push_live._chart.update(t=None, v=None)
+    partial = json.dumps({"v": 65, "tick": 9, "surfaces": {"nauvis": {"cells": {"0,0": [1, 2, 3, 4]}}, "gleba": {"cells": {"1,1": [2, 2, 3, 4]}},
+                                                          "fulgora": {"cells": {"0,0": [3, 2, 3, 4]}, "chunks": [6, 600], "complete": False}}}).encode()
+    c2 = push_live.site_chart("https://example.test", now=5000, opener=lambda req, timeout: R(partial))
+    out = push_live.with_chart(json.loads(json.dumps(state)), c2)
+    check("a chart not yet complete (or an index without `complete`): every grid kept, the chart's version sent",
+          c2["complete"] == [] and out["basemap"] == state["basemap"] and out["planet_map"] == state["planet_map"]
+          and out["planet_maps"] == state["planet_maps"] and out["chart"]["v"] == 65 and out["chart"]["saved"] == 0, out.get("chart"))
     check("no chart published: the state as it was", push_live.with_chart(json.loads(json.dumps(state)), None) == state)
     print("chartpub: ok (the newest chart published under /live/chart/, its version pushed, the grids it replaces left out)")
 
