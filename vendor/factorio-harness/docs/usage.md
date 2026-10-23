@@ -12112,6 +12112,60 @@ Each fails on the code before the fix.
   the same.
 
 
+### d22 batch109 BS1: flight watches, one per platform (#1952)
+
+Sol #1952: the force limit of 8 flight watches kept Cinder's watch out while 18 platforms flew. Measured on a private
+copy of world n's 19:23 autosave (`_autosave12`), which held 8 watches: 4 running, among them Asterion's (97 ammo turrets,
+160 accumulators, 6743 belts), and 4 armed. The copy runs background work at world n's pace (batch96 BF1). Its JSON
+encoding is about 30x slower than world n's, so a read's time below leaves the encoding out.
+
+- Main's runtime, the save's 8 watches. Each watch's sample, per game second (median, mean, worst):
+  - armed: 0.010-0.020 ms, mean 0.02-0.07;
+  - a running watch on a small platform (9-10 turrets): 0.05-0.07 ms, mean about 0.1;
+  - Asterion's: 0.47 ms, mean 0.72, worst 11.5 (it began an ammunition trace).
+  - `flightwatch.tick`: 72 ms in the 60 s profile (1.2 ms a game second), all in one tick a second; worst second 5.8 ms.
+- The cost of a running watch was its ammunition trace (ammofeed.lua), asked once a minute a watch:
+  - On Asterion a trace finds its 6743 belts in the asking tick (8-79 ms), reads them in 27 background steps (median
+    4.2 ms each), and ends in one tick (113 ms): about 510 ms a minute.
+  - Petrel's 259 belts: 0.4-0.6 ms, 4 steps (6.8 ms), 4.4-5.7 ms to end.
+  - The 18 platforms hold 12,327 belts. Traced once a minute each, that is about 15 ms a game second.
+  - Spreading the find over the platform's 371 chunks costs 85 ms in all, against 21 ms for one find, so the trace's
+    ticks are as they were.
+- The change (flightwatch.lua):
+  - Limit: one watch that counts per platform of the force (`limit`: 19 on the save, its 19 platforms, one without a surface yet). A watch counts while armed,
+    watching, or done with its result not read. A done one read stops counting; it is kept 1 h as before, at most 16
+    read ones a force (the oldest read dropped). A platform holds one counting watch as before (`replace: true`), and a
+    replace is not refused at the limit. A start at the limit is refused with the count, the limit, the counting
+    watches (`#id platform (state, setter)`) and how to end one: `flight_watch {id, clear: true}`, or read a done one.
+  - `flight_watch {}` adds `limit`, `counted`, `counting` (ids), `limit_line` and `counts` on each row.
+  - Ticks: each watch reads on its own tick of the second (`phase`: 51 first, then the least used in steps of 13); the
+    tick hook asks `flightwatch.due(tick)` each tick. Each watch still reads once a second.
+  - Feed traces:
+    - A platform with no ammo turret asks none.
+    - The periodic ask is once a minute, or once every 7 ticks a belt aboard if longer (Asterion: about 13 min).
+    - A trace done since the last one taken is taken at the next sample (before, at the next ask).
+    - The ask 10 s after a turret begins to read empty is as before.
+    - The note says so; the trace's reply carries `belts`, and ammofeed has `done_tick`.
+  - The armed check keeps the platform object, so it does not list the force's platforms each second.
+  - Rows read the fuel held and in tanks alone (endurance `fuel_held`, the same figures as the fuel outlook's rows).
+    The outlook's statistics, leg and speed were 12 ms of a 17.5 ms list of 18 watches.
+  - The hub's repair packs are counted by a set of names, with no prototype read per stack.
+  - runtime.lua times `ammofeed.step` as a profile part.
+- After, the save's 8 watches: armed 0.009 ms a game second (worst 0.03-0.5); Asterion's 0.42 ms (worst 2.5), with no
+  trace begun in the window.
+- After, a watch on all 18 platforms (16 running, 2 done since), 60 s profile:
+  - `flightwatch.tick`: 126 ms in all, 2.1 ms a game second over 17 ticks a second (0.13 ms a call); worst second 5.2
+    ms, a garbage collection second.
+  - `ammofeed.step`: 58 ms (1 ms a game second); worst second 38.9 ms, a trace ending on one tick.
+  - Against the 16.7 ms tick, that is about 0.05 ms a tick on average for every watch together.
+- Reads with 18 watches (copy, read time without encoding):
+  - `flight_watch {}`: 15-17 ms before the fuel change, 9.5-11.8 after; 25.4 KB.
+  - `{id}` on Asterion: 7.7-8.3 ms, then 6.0-6.3; 38.8 KB.
+  - `{id}` on Kestrel II: 4.2-11.7 ms; 16.9 KB.
+  - A start: 3.6-10 ms; 2.9-3.2 KB.
+- Left over: a trace's end pass and its belt find each take one tick (Asterion 79 and 113 ms). A watch now begins one
+  there every 13 minutes. Other readers (platform alerts under low ammo, the platform and endurance reads) ask on their
+  own terms.
 ## d22 batch107 BQ1 (eng/d20-batch107): a delivery watch complete by receipt (Sol #1950)
 
 Sol's watch #75 (10000 copper-plate from Spindle to the landing pad (74,208) on Fulgora, 20 minutes) read `late`

@@ -33,7 +33,7 @@ local p={name='astra',force=force,index=1}
 local st={}
 local F=dofile('mod/agent-harness_0.1.0/flightwatch.lua'){state=function() return st end,who=function(q) return q.name end,
   platform=function() return pl end,hits=function() return {hits=0,damage=0,entities={},by={}} end}
-local function run(to) while game.tick<to do game.tick=game.tick+1; if game.tick%60==51 then F.tick(game.tick) end end end
+local function run(to) while game.tick<to do game.tick=game.tick+1; if F.due(game.tick) then F.tick(game.tick) end end end
 local asteroid={valid=true,force='enemy',name='huge-metallic-asteroid'}
 local function hit(t,cause,damage) F.on_damaged({tick=t,cause=cause,entity=asteroid,final_damage_amount=damage}) end
 
