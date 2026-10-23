@@ -299,26 +299,46 @@ return function(api)
     -- (d19 batch46 todo, Grok 09:22: the last pentapod eggs were in an inserter hand, then in a robot's cargo, and every
     -- read said 0 until the breeder died) a robot's cargo near the machines, as an inserter's hand
     ['logistic-robot']={'robot_cargo'}, ['construction-robot']={'robot_cargo'}}
+  -- (d22 batch110 BT1: the egg watch read 120 holders a tick with a closure for each read) the reads as functions with
+  -- their arguments; the item counts by one get_item_count read a holder, stopping at the first item held; a hand or
+  -- a ground stack added only when its item hatches (only those are kept); no tables for a holder with nothing that hatches.
+  local NO_INV, NO_ROWS = {}, {}
+  local function count_method(h) return h.get_item_count end
+  local function holds_any(h, names)
+    local okm, count = pcall(count_method, h)
+    if not okm then return false end
+    for _, name in ipairs(names) do
+      local ok, n = pcall(count, name)
+      if ok and (n or 0) > 0 then return true end
+    end
+    return false
+  end
+  local function held_stack(e) return e.held_stack end
+  local function ground_stack(e) return e.stack end
+  local function inventory_named(e, inv_name) return e.get_inventory(defines.inventory[inv_name]) end
+  -- the items that hatch as a set (M.hatching: spoilable, and hatching when they spoil), made once
+  local hatch_set
+  local function hatching_stack(s)
+    if not hatch_set then hatch_set = {}; for _, n in ipairs(M.hatching()) do hatch_set[n] = true end end
+    return s and s.valid_for_read and hatch_set[s.name] and s or nil
+  end
   -- The hatching stacks one entity holds: {name=count}, earliest tick and its share, and how many within WARN_TICKS.
   function M.hatching_in(e, names)
-    local acc = {}
+    local acc
     local t = e.type
     if BELT[t] then
-      local any = false
-      for _, name in ipairs(names) do if (try(function() return e.get_item_count(name) end) or 0) > 0 then any = true end end
-      if any then M.belt(e, acc) end
-    elseif t == 'inserter' then M.add(acc, try(function() return e.held_stack end))
-    elseif t == 'item-entity' then M.add(acc, try(function() return e.stack end))
+      if holds_any(e, names) then acc = {}; M.belt(e, acc) end
+    elseif t == 'inserter' or t == 'item-entity' then
+      local ok, st = pcall(t == 'inserter' and held_stack or ground_stack, e)
+      st = ok and hatching_stack(st) or nil
+      if st then acc = {}; M.add(acc, st) end
     else
-      for _, inv_name in ipairs(INV[t] or {}) do
-        local inv = try(function() return e.get_inventory(defines.inventory[inv_name]) end)
-        if inv then
-          local any = false
-          for _, name in ipairs(names) do if (try(function() return inv.get_item_count(name) end) or 0) > 0 then any = true end end
-          if any then M.inventory(inv, acc) end
-        end
+      for _, inv_name in ipairs(INV[t] or NO_INV) do
+        local ok, inv = pcall(inventory_named, e, inv_name)
+        if ok and inv and holds_any(inv, names) then acc = acc or {}; M.inventory(inv, acc) end
       end
     end
+    if not acc then return NO_ROWS end
     local rows = {}
     for _, r in ipairs(acc) do if M.hatch(r.name) then rows[#rows+1] = r end end
     return rows
@@ -392,6 +412,8 @@ return function(api)
     local all = M.hatching()
     if #all == 0 then return end
     local w = watch()
+    -- (BT1) between sweeps nothing to do: the force not read (the same test as below, made before it)
+    if not w.anchor_job and not w.job and w.tick and tick - w.tick < M.SWEEP_TICKS then return end
     local names = w.watched or all
     local force = api.force and api.force()
     if not force then return end
