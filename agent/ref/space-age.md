@@ -493,7 +493,7 @@
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
-  and so do tell, chat, say, operator, the board, research, platform calls, waits on `platform_arrived` and
+  and so do tell, chat, `chat_ack`, say, operator, the board, `flight_watch {id}` or `{}`, research, platform calls, waits on `platform_arrived` and
   `platform_left`, queue plans of the steps the remote lane allows, and every remote-view call with `platform=` or
   `surface=` (place_ghosts, deconstruct, configure, circuit_set, requests with position, ...; the refusal lists them).
   Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,

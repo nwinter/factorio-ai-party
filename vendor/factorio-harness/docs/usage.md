@@ -2776,7 +2776,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
 - A bot aboard a platform has no body and acts by remote view (Astra, 18:16: tell, operator, scan with platform,
   science and wait_until platform_arrived were refused while the refusal said scan works). Aboard work: every read
   (status, scan, inspect, science, supply, networks, platforms, map and the rest: of the platform, or of a planet with
-  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `say`, `operator`, the board and votes; research;
+  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `chat_ack`, `say`, `operator`, the board and votes;
+  `flight_watch {id}` (read or clear) and `flight_watch {}` (the list; d23 batch120 CC2, Sol #1986: a fleet archiver
+  aboard Anvil had 10 reads refused; a new watch with `platform` stays refused aboard); research;
   `platform_schedule`, `platform_create`, `requests` (`platform=` or `position=`), `drop` and `land`; every call that
   acts by remote view, with `platform=NAME` (`place_ghosts`, `deconstruct`, `cancel_deconstruction`, `paste`,
   `blueprint_place`, `grid`, `scan`, `inspect`, `configure`, `flush`, `circuit_set`, `circuit`, `wire`, `ports`,
