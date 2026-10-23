@@ -234,4 +234,71 @@ fails(function() luna('transfer',{direction='to_player',item='wood'}) end,'trans
 -- move_to target by number keeps its own form in the refusal
 fails(function() luna('move_to',{target={unit_number=far.unit_number}}) end,'give its position too: target={position={x,y},unit_number='..far.unit_number..'}')
 
+-- CA2 (viewer Aurora site:4407): inspect and circuit_audit read a whole-belt reader's scope by one rule, the game's
+-- (beltseg.lua; measured on a private 2.0.77 server and a copy of world n's Asterion). Flow north: a splitter's right
+-- output, a side-load onto the main line, an underground pair, the reader, one more belt. Lane 1's segment is 10
+-- tiles, lane 2's 9; the splitter's left output lanes happen to be 10 and 9 too (another segment: not counted).
+do
+  defines=defines or {}
+  defines.wire_connector_id={circuit_red=1,circuit_green=2}
+  defines.control_behavior={transport_belt={content_read_mode={entire_belt_hold=2}}}
+  local all={}
+  local function line(len,items) return {total_segment_length=len,get_contents=function() return items or {} end} end
+  local function mk(name,typ,x,y,dir,lines,extra)
+    local e={valid=true,name=name,type=typ,position={x=x,y=y},direction=dir,unit_number=7000+#all,belt_neighbours={inputs={},outputs={}}}
+    e.get_transport_line=function(k) return lines[k] end
+    e.get_max_transport_line_index=function() return #lines end
+    for k,v in pairs(extra or {}) do e[k]=v end
+    all[#all+1]=e
+    return e
+  end
+  local function it(n,c) return {{name=n,count=c,quality='normal'}} end
+  local sp=mk('splitter','splitter',0,10.5,0,{line(5),line(5),line(7,it('iron-gear-wheel',4)),line(7),line(10,it('plastic-bar',3)),line(9),line(10,it('wood',2)),line(9)})
+  local A=mk('transport-belt','transport-belt',0.5,9.5,0,{line(10,it('iron-plate',1)),line(9)})
+  local B=mk('transport-belt','transport-belt',0.5,8.5,0,{line(10,it('iron-plate',1)),line(9)})
+  local S1=mk('transport-belt','transport-belt',1.5,8.5,12,{line(2,it('stone-brick',1)),line(2)})
+  local S2=mk('transport-belt','transport-belt',2.5,8.5,12,{line(2,it('stone-brick',1)),line(2)})
+  local C=mk('underground-belt','underground-belt',0.5,7.5,0,{line(10,it('iron-plate',1)),line(9),line(10,it('coal',2)),line(9)},{belt_to_ground_type='input'})
+  local D=mk('underground-belt','underground-belt',0.5,4.5,0,{line(10,it('iron-plate',1)),line(9),line(1,it('stone',5)),line(1)},{belt_to_ground_type='output'})
+  local E=mk('transport-belt','transport-belt',0.5,3.5,0,{line(10,it('iron-plate',1)),line(9,it('copper-plate',1))})
+  local F=mk('transport-belt','transport-belt',0.5,2.5,0,{line(10,it('iron-plate',1)),line(9)})
+  C.neighbours=D; D.neighbours=C
+  local function link(a,b) a.belt_neighbours.outputs[#a.belt_neighbours.outputs+1]=b; b.belt_neighbours.inputs[#b.belt_neighbours.inputs+1]=a end
+  link(sp,A); link(A,B); link(S2,S1); link(S1,B); link(B,C); link(D,E); link(E,F)
+  local seg=dofile('mod/agent-harness_0.1.0/beltseg.lua')()
+  local w=seg.walk(E,400)
+  eq(#w.list,6,'A..F: the straight input at the side-load, the underground pair'); eq(w.list[1],A); eq(w.at,5)
+  eq(w.ends.inputs,'at splitter (0,10.5) (a splitter)'); eq(w.ends.outputs,'at transport-belt (0.5,2.5) (the belt ends there)')
+  local h=seg.contents(w,E)
+  eq(h['iron-plate'],6); eq(h['copper-plate'],1); eq(h.coal,2,'under the pair: the entrance\'s lines 3 and 4'); eq(h.wood,2,'the splitter\'s right output')
+  eq(h.stone,nil,'the exit\'s lines 3 and 4 are its own'); eq(h['plastic-bar'],nil,'its left output: another segment'); eq(h['iron-gear-wheel'],nil); eq(h['stone-brick'],nil)
+  -- the side-loading belt: its own segment, ending where it joins
+  local w2=seg.walk(S2,400,true)
+  eq(#w2.list,2); eq(w2.ends.outputs,'at transport-belt (1.5,8.5); transport-belt (0.5,8.5) past it is another segment')
+  eq(#w2.phys.list,7,'the belt in line: S2, S1, B, C, D, E, F')
+  eq(seg.contents(w2,S2)['stone-brick'],2)
+  -- inspect says it
+  E.get_circuit_network=function(x) return x==1 and {signals={{signal={name='iron-plate'},count=6},{signal={name='copper-plate'},count=1},{signal={name='coal'},count=2},{signal={name='wood'},count=2}}} or nil end
+  local CI=dofile('mod/agent-harness_0.1.0/circuits.lua'){}
+  local text=CI.belt_segment(E)
+  assert(text:find(': 6 belts (total_segment_length 10 tiles), back at splitter (0,10.5) (a splitter), on at transport-belt (0.5,2.5) (the belt ends there); it holds 1 copper-plate, 2 coal, 2 wood, 6 iron-plate; the wires read 1 copper-plate, 2 coal, 2 wood, 6 iron-plate',1,true),text)
+  -- circuit_audit: the side-loader's short read, with where its segment ends
+  for _,e in ipairs({S2,E}) do
+    e.get_control_behavior=function() return {read_contents=true,read_contents_mode=2} end
+    e.get_circuit_network=function(x) if x==2 then return {network_id=e==S2 and 31 or 32,signals={}} end end
+  end
+  local surface={find_entities_filtered=function(f) if f.type=='asteroid-collector' then return {} end local out={} for _,e in ipairs(all) do if e.type~='splitter' then out[#out+1]=e end end return out end}
+  local CA=dofile('mod/agent-harness_0.1.0/circaudit.lua'){platform=function() return {name='Lab',surface=surface,force='player'} end}
+  local r=CA.read({},{platform='Lab'})
+  eq(r.belt_readers,2); eq(#r.short_reads,1); eq(r.short_reads[1].physical_belts,7)
+  eq(r.lines[1],'transport-belt (2.5,8.5) reads its belt segment onto green #31, as the game counts it (2 tiles, 2 of the 7 belts in line); not in this read: 5 belts downstream from (0.5,8.5) to (0.5,2.5) (its segment ends at transport-belt (1.5,8.5); transport-belt (0.5,8.5) past it is another segment)')
+  -- two readers of one segment on one network: counted twice
+  E.get_circuit_network=function(x) if x==2 then return {network_id=31,signals={}} end end
+  local B2=B
+  B2.get_control_behavior=function() return {read_contents=true,read_contents_mode=2} end
+  B2.get_circuit_network=function(x) if x==2 then return {network_id=31,signals={}} end end
+  r=CA.read({},{platform='Lab'})
+  eq(#r.double_counts,1); assert(r.double_counts[1]:find('transport-belt (0.5,8.5) and transport-belt (0.5,3.5) both read one belt segment (6 belts shared) onto green network #31',1,true) or r.double_counts[1]:find('transport-belt (0.5,3.5) and transport-belt (0.5,8.5) both read one belt segment (6 belts shared)',1,true),r.double_counts[1])
+end
+
 print('d22_batch118: ok')

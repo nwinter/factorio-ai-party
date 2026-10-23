@@ -1,4 +1,5 @@
 -- d17 batch14 contracts. Run from the harness root: lua tests/d17_batch14.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(s,x) assert(tostring(s):find(x,1,true),tostring(s)..' lacks '..x) end
 
@@ -58,7 +59,7 @@ do
   local r=C.read({}, {platform='Swift'})
   eq(r.belt_readers,3)
   eq(#r.double_counts,1,'one pair shares tiles')
-  has(r.double_counts[1],'(0.5,0.5) and transport-belt (4.5,0.5) both read the whole belt (6 tiles shared) onto green network #7')
+  has(r.double_counts[1],'(0.5,0.5) and transport-belt (4.5,0.5) both read one belt segment (6 belts shared) onto green network #7')
   eq(#r.collectors,1)
   has(r.lines[#r.lines],'holds no filter now; chunk signals on its networks: metallic-asteroid-chunk -5 (green #9) (none positive')
   defines=nil
