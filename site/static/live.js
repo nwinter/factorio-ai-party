@@ -895,7 +895,7 @@
       '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' + jobsHtml +
       (projects ? '<h4>Projects</h4>' + projects : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +
-      (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '') + remindersHtml(s.reminders, byName);
+      (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '') + allJobsHtml(s, byName) + remindersHtml(s.reminders, byName);
 
     // research
     var recent = (r.recent || []).map(function (t) { return '<li>' + esc(t.label || label(t.name)) + '</li>'; }).join('');
@@ -1118,13 +1118,21 @@
   // filters") The first REM_SHOWN; "Show all N" opens every job the state carries, with All / Active / Overdue filters
   // (active: on and not done; overdue: a recipient overdue). The reader's choice stays across refreshes.
   var REM_SHOWN = 12, remAll = store('remindersAll') === '1', remFilter = store('remindersFilter') || 'all';
-  var REM_FILTERS = [['all', 'All'], ['active', 'Active'], ['overdue', 'Overdue']];
+  var REM_FILTERS = [['all', 'All'], ['active', 'Active'], ['overdue', 'Overdue'], ['waiting', 'Waiting or open'], ['finished', 'Finished']];
   function remStates(j) {
     return splitStates(j.states).map(function (st) { var m = /^(\S+) (\S+)(.*)$/.exec(st) || []; return { who: m[1], state: m[2], rest: m[3] }; });
   }
+  // (d22 batch99 BI3) waiting or open: a recipient's line waits, or an ack left it open or deferred (batch94 BD1);
+  // finished: a one-time job done, or every recipient's state done or acknowledged
+  var REM_WAITING = { pending: 1, overdue: 1, open: 1, deferred: 1, 'acknowledged,': 1 };
   function remIs(j, f) {
     if (f === 'active') return !!j.enabled && !j.done;
     if (f === 'overdue') return remStates(j).some(function (x) { return x.state === 'overdue'; });
+    if (f === 'waiting') return !j.done && remStates(j).some(function (x) { return REM_WAITING[x.state]; });
+    if (f === 'finished') {
+      var st = remStates(j);
+      return !!j.done || (st.length > 0 && st.every(function (x) { return x.state === 'done' || x.state === 'acknowledged'; }));
+    }
     return true;
   }
   // (d20 batch70 AF2, viewer Aurora: "show each recipient's latest result") each recipient's latest: acknowledged when,
@@ -1152,7 +1160,15 @@
     // (d22 batch94 BD1) done: acknowledged with a result; open (no result, or a gap named) and deferred stay open
     var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green', done: 'fx-chip--green', open: 'fx-chip--orange', deferred: 'fx-chip--orange' };
     var jobs = rem.jobs, total = Math.max(rem.total || 0, jobs.length), opened = remAll && total > REM_SHOWN;
+    // (BI3) opened: every job, from the board document once it is read (the state keeps what fits its share)
+    if (opened) loadBoardDoc();
+    var full = opened && boardDoc && Array.isArray(boardDoc.reminders) && boardDoc.reminders.length >= jobs.length;
+    if (full) { jobs = boardDoc.reminders; total = Math.max(boardDoc.reminders_total || 0, jobs.length); }
     var list = opened ? jobs.filter(function (j) { return remIs(j, remFilter); }) : jobs.slice(0, REM_SHOWN);
+    var pages = Math.max(1, Math.ceil(list.length / PAGE));
+    remPage = Math.min(remPage, pages - 1);
+    var pagerRem = opened ? pager('rem', remPage, list.length) : '';
+    if (opened) list = list.slice(remPage * PAGE, remPage * PAGE + PAGE);
     var rows = list.map(function (j) {
       var o = byName[j.agent] || {};
       var due = j.done ? 'done' : !j.enabled ? 'off' : j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : '';
@@ -1171,15 +1187,98 @@
         esc(f[1]) + ' (' + n + ')</button>';
     }).join(' ') + '</div>';
     var none = opened && !list.length ? '<p class="fx-muted small">No ' + esc(remFilter) + ' reminders.</p>' : '';
-    var unsent = opened && total > jobs.length ? '<p class="fx-muted small">+' + esc(total - jobs.length) + ' more not sent (the page\'s size limit)</p>' : '';
+    var unsent = opened && total > jobs.length ? '<p class="fx-muted small">+' + esc(total - jobs.length) + (demo || !API ? ' more not sent (the page\'s size limit)' : boardDoc === null && boardDocAt && !boardDocBusy ? ' more: the full list is not available right now' : ' more, loading the full list…') + '</p>' : '';
     var toggle = total > REM_SHOWN ? '<button type="button" class="fx-btn fx-btn--small rem-all" data-action="reminders-all" aria-expanded="' + opened + '">' +
       (opened ? 'Show the first ' + REM_SHOWN : 'Show all ' + total + ' reminders (+' + (total - Math.min(REM_SHOWN, jobs.length)) + ' more)') + '</button>' : '';
-    return '<div class="board-rem"><h4>Reminders</h4>' + filters + (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + unsent + toggle + '</div>';
+    return '<div class="board-rem"><h4>Reminders</h4>' + filters + (rows ? '<ul class="board-claims board-reminders">' + rows + '</ul>' : '') + none + pagerRem + unsent + toggle + '</div>';
+  }
+  // (d22 batch99 BI3, viewer Aurora site:4316: "Could the board show all tasks and reminders, with paging if needed?
+  // Hidden jobs and the nine omitted reminders make it hard to check what's actually finished.") The state carries the
+  // board's first view; every task, request, claim, project and reminder is in /v1/board (site/push_live.py sends it
+  // when it changed), read when a full list is opened and again after BOARD_DOC_S, and shown PAGE at a time.
+  var PAGE = 20, BOARD_DOC_S = 30, boardDoc = null, boardDocAt = 0, boardDocBusy = false, boardDocAge = null;
+  var jobsAll = store('jobsAll') === '1', jobsFilter = store('jobsFilter') || 'open', jobsPage = 0, remPage = 0;
+  var JOB_FILTERS = [['open', 'Open'], ['doing', 'In progress'], ['done', 'Finished'], ['dropped', 'Dropped'], ['all', 'All']];
+  var JOB_CHIP = { done: 'fx-chip--green', dropped: 'fx-chip--grey', doing: 'fx-chip--orange', claimed: 'fx-chip--orange', blocked: 'fx-chip--red', open: 'fx-chip--grey' };
+  function jobIs(j, f) {
+    if (f === 'open') return j.status === 'open';
+    if (f === 'doing') return j.status === 'claimed' || j.status === 'doing' || j.status === 'blocked';
+    if (f === 'done' || f === 'dropped') return j.status === f;
+    return true;
+  }
+  function loadBoardDoc() {
+    if (demo || !API || boardDocBusy || Date.now() - boardDocAt < BOARD_DOC_S * 1000) return;
+    boardDocBusy = true;
+    getJSON(API + '/v1/board').then(function (d) {
+      boardDoc = (d && d.board) || null; boardDocAge = d ? d.age_s : null;
+    }).catch(function () { boardDoc = null; }).then(function () {
+      boardDocAt = Date.now(); boardDocBusy = false;
+      redrawBoardLists();
+    });
+  }
+  function redrawBoardLists() {
+    if (!lastState) return;
+    var a = app.querySelector('.board-all'), r = app.querySelector('.board-rem');
+    if (a) a.outerHTML = allJobsHtml(lastState, team);
+    if (r) r.outerHTML = remindersHtml(lastState.reminders, team);
+  }
+  function pager(kind, page, n) {
+    var pages = Math.ceil(n / PAGE);
+    if (pages <= 1) return '';
+    return '<div class="list-pager" role="group" aria-label="Pages">' +
+      '<button type="button" class="fx-btn fx-btn--small" data-page="' + kind + '" data-to="' + (page - 1) + '"' + (page > 0 ? '' : ' disabled') + '>Previous</button> ' +
+      '<span class="fx-muted small">' + esc((page * PAGE + 1) + '–' + Math.min(n, page * PAGE + PAGE) + ' of ' + n) + '</span> ' +
+      '<button type="button" class="fx-btn fx-btn--small" data-page="' + kind + '" data-to="' + (page + 1) + '"' + (page < pages - 1 ? '' : ' disabled') + '>Next</button></div>';
+  }
+  function allJobsHtml(s, byName) {
+    var board = s.board || {}, shown = (board.open_items || []).length + (board.doing_items || []).length;
+    var total = (board.open_items_total || 0) + (board.doing_items_total || 0);
+    var toggle = '<button type="button" class="fx-btn fx-btn--small jobs-all" data-action="jobs-all" aria-expanded="' + jobsAll + '">' +
+      (jobsAll ? 'Hide the full task list' : 'Show every task and request, finished ones too' + (total > shown ? ' (+' + (total - shown) + ' not listed above)' : '')) + '</button>';
+    if (!jobsAll) return '<div class="board-all">' + toggle + '</div>';
+    loadBoardDoc();
+    var items = boardDoc && Array.isArray(boardDoc.items) ? boardDoc.items : null;
+    if (!items) {
+      var why = boardDoc === null && boardDocAt && !boardDocBusy ? 'The full list is not available right now.' : 'Loading the full list…';
+      return '<div class="board-all">' + toggle + '<p class="fx-muted small">' + esc(why) + '</p></div>';
+    }
+    var filters = '<div class="jobs-filters" role="group" aria-label="Show tasks">' + JOB_FILTERS.map(function (f) {
+      var n = items.filter(function (j) { return jobIs(j, f[0]); }).length;
+      return '<button type="button" class="fx-btn fx-btn--small" data-jobs-filter="' + f[0] + '" aria-pressed="' + (jobsFilter === f[0]) + '">' + esc(f[1]) + ' (' + n + ')</button>';
+    }).join(' ') + '</div>';
+    var list = items.filter(function (j) { return jobIs(j, jobsFilter); });
+    jobsPage = Math.min(jobsPage, Math.max(0, Math.ceil(list.length / PAGE) - 1));
+    var rows = list.slice(jobsPage * PAGE, jobsPage * PAGE + PAGE).map(function (j) {
+      var o = byName[j.agent] || {}, when = gameAgo(s, j.updated_tick);
+      return '<li><span class="fx-chip ' + (JOB_CHIP[j.status] || 'fx-chip--grey') + '">' + esc(j.status === 'done' ? 'finished' : j.status || '?') + '</span> ' +
+        '<span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span> <b>' + esc(j.title) + '</b>' +
+        (j.owner ? ' <span class="fx-muted">' + esc(o.display_name || j.owner) + '</span>' : '') +
+        (j.requested_by && j.requested_by !== j.owner ? ' <span class="fx-muted">asked by ' + esc((byName[j.requested_by] || {}).display_name || j.requested_by) + '</span>' : '') +
+        (when ? ' <span class="fx-muted small">changed ' + esc(when) + '</span>' : '') + evidenceHtml('all' + j.id, j) + '</li>';
+    }).join('');
+    var cut = (boardDoc.items_total || 0) > items.length ? '<p class="fx-muted small">+' + esc(boardDoc.items_total - items.length) + ' older not sent</p>' : '';
+    var age = boardDocAge != null ? '<p class="fx-muted small">Full list as of ' + esc(ago(boardDocAge)) + '</p>' : '';
+    return '<div class="board-all">' + toggle + filters + (rows ? '<ul class="board-claims board-alljobs">' + rows + '</ul>' : '<p class="fx-muted small">None.</p>') +
+      pager('jobs', jobsPage, list.length) + cut + age + '</div>';
   }
   app.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-action="jobs-all"], [data-jobs-filter], [data-page]') : null;
+    if (!b || !(b.dataset.action === 'jobs-all' || b.dataset.jobsFilter || b.dataset.page)) return;
+    if (b.dataset.page === 'rem') remPage = Math.max(0, parseInt(b.dataset.to, 10) || 0);
+    else if (b.dataset.page === 'jobs') jobsPage = Math.max(0, parseInt(b.dataset.to, 10) || 0);
+    else if (b.dataset.jobsFilter) { jobsFilter = b.dataset.jobsFilter; jobsPage = 0; store('jobsFilter', jobsFilter); }
+    else { jobsAll = !jobsAll; store('jobsAll', jobsAll ? '1' : '0'); }
+    var rbox = b.closest('.board-rem'), abox = b.closest('.board-all');
+    if (rbox && lastState) rbox.outerHTML = remindersHtml(lastState.reminders, team);
+    else if (abox && lastState) abox.outerHTML = allJobsHtml(lastState, team);
+    else redrawBoardLists();
+    var again = app.querySelector(b.dataset.jobsFilter ? '[data-jobs-filter="' + jobsFilter + '"]' : b.dataset.page ? '[data-page="' + b.dataset.page + '"]:not([disabled])' : '[data-action="jobs-all"]');
+    if (again) again.focus();
+  });
+  app.addEventListener('click', function (ev) {
     var b = ev.target && ev.target.closest ? ev.target.closest('[data-action="reminders-all"], [data-rem-filter]') : null;
-    if (!b) return;
-    if (b.dataset.remFilter) { remFilter = b.dataset.remFilter; store('remindersFilter', remFilter); }
+    if (!b || !(b.dataset.action === 'reminders-all' || b.dataset.remFilter)) return;
+    if (b.dataset.remFilter) { remFilter = b.dataset.remFilter; remPage = 0; store('remindersFilter', remFilter); }
     else { remAll = !remAll; store('remindersAll', remAll ? '1' : '0'); }
     var box = b.closest('.board-rem');
     if (box && lastState) {

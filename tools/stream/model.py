@@ -1434,6 +1434,8 @@ class Model:
             board["progress"] = {r["id"]: r for r in b["progress"] if isinstance(r, dict) and r.get("id") is not None}
         if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
             board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
+        if isinstance(b, dict) and "finished_ids" in b:  # (BI3) the finished tasks and requests a read listed
+            board["finished_ids"] = set(b["finished_ids"]) if b["finished_ids"] is not None else None
         for it in items:
             if it.get("id") is not None:
                 board["items"][it["id"]] = it
@@ -1632,6 +1634,34 @@ class Model:
         }
 
     JOBS_MAX = 20
+    ALL_MAX = 400  # (BI3) board_all_snapshot's tasks and requests at most
+
+    def board_all_snapshot(self):
+        """(d22 batch99 BI3, viewer Aurora site:4316: "Could the board show all tasks and reminders, with paging if
+        needed?") Every task and request the last board reads listed (open, claimed, doing, blocked, done, dropped),
+        every claim, every project read (open and finished) and every reminder job, for the site's full lists (serve.py
+        /board.json; push_live sends it apart from the state). Rows as the board snapshot's, with status and when each
+        last changed (updated_tick); the latest changed first. None before an active read."""
+        ids = self.board.get("active_ids")
+        if ids is None:
+            return None
+        fin = self.board.get("finished_ids") or set()
+        items = [it for i, it in self.board["items"].items()
+                 if it.get("kind") in ("task", "request") and (i in ids or i in fin or it.get("status") in ("done", "dropped"))]
+        items.sort(key=lambda it: -(it.get("updated_tick") or 0))
+        claims = [it for it in self.board["items"].values() if it.get("kind") == "claim"
+                  and it.get("status") in ("open", "claimed", "doing")]
+        claims.sort(key=lambda it: -(it.get("updated_tick") or 0))
+
+        def row(it):
+            return {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "kind": it.get("kind"),
+                    "owner": it.get("owner"), "agent": self._who(it.get("owner")), "status": it.get("status"),
+                    "requested_by": it.get("requested_by"), "updated_tick": it.get("updated_tick"), **with_evidence(it)}
+        projects = [self.project_row(it) for it in self._projects(("open", "claimed", "doing", "blocked", "done", "dropped"))]
+        rem = self.reminders_snapshot() or {}
+        return {"tick": self.tick, "items": [row(it) for it in items[:self.ALL_MAX]], "items_total": len(items),
+                "claims": [row(it) for it in claims], "projects": projects,
+                "reminders": rem.get("jobs") or [], "reminders_total": rem.get("total") or 0}
 
     def jobs_snapshot(self):
         """(open, doing): tasks and requests from the last active board read (board.active_ids), open with no owner, and
