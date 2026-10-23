@@ -203,4 +203,80 @@ do
   eq(fin.done,true); has(fin.mixed.line,'mixed: 2 edits during the window'); has(fin.mixed.line,'the watch ended at the edit (gun-turret (14,10) it measured is gone): its final is the part before it')
 end
 
+-- (d23 batch123 CF3, viewer Aurora 09:47: "Could disabling a freight request or retiring a route flag any essential supply
+-- left without an active delivery path, naming the missing link and owner? Please test the bioflux case.")
+do
+  local function sec(filters,active) return {active=active~=false,filters=filters} end
+  defines.logistic_member_index={space_platform_hub_requester=3}
+  local function hub(unit,sections)
+    return {valid=true,unit_number=unit,get_logistic_sections=function() return {sections_count=#sections,get_section=function(i) return sections[i] end} end,
+      -- the game's compiled requests: the active sections' items, no import planet
+      get_logistic_point=function(i) assert(i==3)
+        local fl={}
+        for _,x in ipairs(sections) do if x.active then for _,f in ipairs(x.filters) do fl[#fl+1]={name=f.value.name,count=f.min} end end end
+        return {filters=fl} end}
+  end
+  local function plat(name,stops,h) local recs={}; for i,s in ipairs(stops) do recs[i]={station=s} end; return {valid=true,name=name,hub=h,schedule={records=recs}} end
+  local mv_bio=sec({{value={name='bioflux'},min=200,import_from={name='gleba'}},{value={name='agricultural-science-pack'},min=1000,import_from={name='gleba'}}})
+  local mv=plat('Meridian-V',{'gleba','nauvis'},hub(501,{mv_bio}))
+  local other=plat('Sunward',{'nauvis','vulcanus'},hub(502,{sec({{value={name='tungsten-plate'},min=100,import_from={name='vulcanus'}}})}))
+  local nauvis_pad=sec({{value={name='bioflux'},min=100},{value={name='agricultural-science-pack'},min=500},{value={name='tungsten-plate'},min=50}})
+  local asks={nauvis={sec=nauvis_pad},gleba={sec=sec({})},vulcanus={sec=sec({})}}
+  local frc={platforms={mv,other},get_item_production_statistics=function() return {get_flow_count=function(f) return f.name=='bioflux' and 1212 or 0 end} end}
+  game.planets={nauvis={surface={name='nauvis'}},gleba={surface={name='gleba'}},vulcanus={surface={name='vulcanus'}}}
+  local edits={['req:900']={{by='luna',tick=100}},['req:501']={{by='sol',tick=200}},['plat:Meridian-V']={{by='sol',tick=150,key='schedule stops'}}}
+  local told={}
+  local FP=dofile('mod/agent-harness_0.1.0/freightpath.lua'){
+    pads=function(planet) local a={}; local x=asks[planet].sec; if x.active then for _,f in ipairs(x.filters) do a[f.value.name]=f.min end end; return a,{bioflux=planet=='nauvis' and 40 or 0} end,
+    census_typed=function(_,s) return s.name=='nauvis' and {{valid=true,unit_number=900}} or {} end,
+    owner=function(scope,key,t) local l=edits[scope]; local e=l and l[#l]; return e and e.tick<t and e or nil end,
+    who=function(p) return p.name end,index_of=function(n) return n=='luna' and 7 or n=='sol' and 8 or nil end,
+    deliver=function(i,t) told[#told+1]={i,t} end}
+  local ALL={bioflux=true,['agricultural-science-pack']=true,['tungsten-plate']=true}
+  local function paths() return FP.paths(FP.snapshot(frc,ALL)) end
+  local P=paths()
+  eq(#P['bioflux|nauvis'],1); eq(P['bioflux|nauvis'][1].platform,'Meridian-V'); eq(#P['tungsten-plate|nauvis'],1)
+  eq(P['bioflux|gleba'],nil,'gleba asks none')
+  -- the bioflux case: Nauvis's pad section is turned off by Astra
+  local me={name='astra',force=frc}
+  local before=FP.snapshot(frc,ALL)
+  eq(FP.before(me,'platform_schedule',{platform='x'}),nil,'no such platform')
+  eq(FP.before(me,'platform_schedule',{platform='Meridian-V'}).focus['agricultural-science-pack'],true,'what its hub asks')
+  nauvis_pad.active=false
+  local out={}
+  FP.after(me,'requests',{},out,before)
+  eq(#out.supply_left,3,'bioflux, the science and tungsten lost their pull at nauvis')
+  eq(out.supply_left[2],"bioflux to nauvis: no active delivery path left; it had Meridian-V from gleba; nauvis's landing pad no longer requests bioflux (set last by luna at tick 100); nauvis used 1212 in the last 10 minutes; nauvis holds 40 in its landing pad")
+  eq(#told,1); eq(told[1][1],7); has(told[1][2].text,"astra's requests left supply without an active delivery path: agricultural-science-pack to nauvis")
+  eq(out.supply_left_told[1],'luna')
+  nauvis_pad.active=true
+  -- Meridian-V's hub stops asking bioflux from gleba (Sol set it last; Sol makes the change: no tell)
+  told={}
+  before=FP.before({name='sol',force=frc},'requests',{platform='Meridian-V',set={}})
+  eq(before.focus['tungsten-plate'],nil)
+  mv_bio.filters[1].min=0
+  out={}
+  FP.after({name='sol',force=frc},'requests',{},out,before)
+  eq(#out.supply_left,1)
+  eq(out.supply_left[1],"bioflux to nauvis: no active delivery path left; it had Meridian-V from gleba; Meridian-V's hub no longer requests bioflux from gleba (set last by sol at tick 200); nauvis used 1212 in the last 10 minutes; nauvis holds 40 in its landing pad")
+  eq(#told,0,'the one who set it made the change')
+  mv_bio.filters[1].min=200
+  -- a second platform carrying bioflux from gleba: dropping Meridian-V's nauvis stop leaves a path, so no line for it
+  local twin=plat('Twin',{'gleba','nauvis'},hub(503,{sec({{value={name='bioflux'},min=50,import_from={name='gleba'}}})}))
+  frc.platforms={mv,other,twin}
+  before=FP.snapshot(frc,ALL)
+  mv.schedule={records={{station='gleba'}}}
+  out={}
+  FP.after(me,'platform_schedule',{},out,before)
+  eq(#out.supply_left,1); has(out.supply_left[1],"agricultural-science-pack to nauvis: no active delivery path left; it had Meridian-V from gleba; Meridian-V's schedule no longer stops at nauvis (set last by sol at tick 150)")
+  -- a read or a chest's requests: nothing read
+  eq(FP.before(me,'requests',{platform='Meridian-V'}),nil); eq(FP.before(me,'requests',{set={},dry_run=true}),nil)
+  -- a platform deleted
+  mv.schedule={records={{station='gleba'},{station='nauvis'}}}
+  before=FP.snapshot(frc,ALL)
+  mv.scheduled_for_deletion=120
+  out={}
+  FP.after(me,'platform_delete',{},out,before)
+  has(out.supply_left[1],'agricultural-science-pack to nauvis: no active delivery path left; it had Meridian-V from gleba; Meridian-V is gone (deleted) (no earlier editor recorded)')
+end
 print('d23_batch123: ok')

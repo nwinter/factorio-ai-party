@@ -58,6 +58,22 @@ return function(api)
     end
     return owed
   end
+  -- (d23 batch123 CF3) who set it before tick: the newest edit before it of that key (any key without one), or nil
+  function M.owner(scope, key, tick)
+    local best
+    for k, list in pairs(store()[scope] or {}) do
+      if key == nil or k == tostring(key) then
+        for i = #list, 1, -1 do
+          local e = list[i]
+          if e.tick < tick then
+            if not best or e.tick > best.tick or (e.tick == best.tick and tostring(e.by) < tostring(best.by)) then best = e end
+            break
+          end
+        end
+      end
+    end
+    return best
+  end
   function M.last(scope, key)
     local list = (store()[scope] or {})[tostring(key)]
     return list and list[#list] or nil

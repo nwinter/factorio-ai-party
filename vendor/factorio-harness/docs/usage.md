@@ -12420,3 +12420,41 @@ on Gleba breeders invalidated Luna's samples three times, and she reset each win
   - An edit of ours that touches no watch: 0.29 ms; with no watch stored: 0.004 ms.
   - A death of another force's entity is dropped at the force check.
 
+## d23 batch123 CF3 (eng/d20-batch123): supply left without an active delivery path (freightpath.lua)
+
+Viewer Aurora (site:4495): "Could disabling a freight request or retiring a route flag any essential supply left without
+an active delivery path, naming the missing link and owner? Please test the bioflux case."
+
+- A delivery path of an item to a planet has two ends:
+  - A platform whose hub requests the item (an active section, minimum above 0) from an import planet its schedule
+    stops at.
+  - A planet the schedule also stops at, whose landing pad requests the item.
+- The calls checked: `requests` on a hub or landing pad that changes slots or sections, `platform_schedule`, and
+  `platform_delete` (a platform scheduled for deletion has no paths). Each reads the paths before and after.
+- Which items are read:
+  - A hub's or platform's call: the items its hub asks now.
+  - A pad's call: the items the pad asks now.
+  - Only the hubs that ask one of them have their schedule and sections read (the game's compiled hub requests carry no
+    import planet).
+- Each item and planet that had a path and has none is a `supply_left` line. It names the paths it had and the link
+  each lost (the pad's request, the hub's request, a stop, the platform deleted). It also gives who set that link last
+  before the call (`editlog.owner`: the newest edit of that section or the schedule before this tick, or "no earlier
+  editor recorded"), the planet's use in the last 10 minutes, and its pad's stock. That editor, when someone else, gets
+  one tell; `supply_left_told` names them.
+- The bioflux case on the copy (10:10 save). Cinder and Meridian-V request bioflux from Gleba (40 each) and stop at
+  Nauvis. Nauvis's pad section 6 asks bioflux 20; it was off in the save, so it was turned on first. Then:
+  - Astra turned off section 6: "bioflux to nauvis: no active delivery path left; it had Cinder from gleba, Meridian-V
+    from gleba; nauvis's landing pad no longer requests bioflux (set last by opus at tick 52085722); nauvis used 10 in
+    the last 10 minutes; nauvis holds 0 in its landing pad". Opus was told. Tick 52085722 is Opus's clear of the pad's
+    bioflux at 16:58.
+  - With the pad back on, turning off Meridian-V's section 23 left Cinder's path: no line. Then turning off Cinder's
+    section 1 gave "... it had Cinder from gleba; Cinder's hub no longer requests bioflux from gleba (set last by sol
+    at tick 49459484) ..." (Sol told).
+  - Cinder's schedule cut to Gleba alone gave "Cinder's schedule no longer stops at nauvis (no earlier editor
+    recorded)".
+- Costs on the copy:
+  - A pad call (the pad asks 40 items, 15 hubs read): 3.8 ms a read, two reads a call, plus 0.15 ms for the paths and
+    their difference.
+  - A Meridian-V call (2 items): 1.1 ms a read.
+  - The whole pad call, the request edit included: 15-17 ms.
+  - Reading every hub's sections (before the narrowing) took 6.5 ms; the pads come from the census.

@@ -20197,6 +20197,28 @@ end)()
     end
   end
 end)()
+-- (d23 batch123 CF3, viewer Aurora 09:47) a hub or landing pad request changed, a schedule changed or a platform
+-- deleted: the supply left without an active delivery path, in the call's reply and once to the link's last editor
+-- (freightpath.lua).
+;(function()
+  M.freightpath=require('freightpath'){pads=function(planet,force) return M.freight.pads(planet,force) end,
+    census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,owner=function(scope,key,tick) return M.editlog.owner(scope,key,tick) end,
+    who=function(p) return M.board.who(p) end,deliver=function(index,t) return M.board.deliver(index,t) end,
+    surface=function(p) local b=body(p); return b and b.valid and b.surface or nil end,
+    index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
+  for _,name in ipairs{'requests','platform_schedule','platform_delete'} do
+    local orig=handlers[name]
+    handlers[name]=function(p,a)
+      local okb,before=pcall(M.freightpath.before,p,name,a or {})
+      local out=orig(p,a)
+      if okb and before then
+        local ok,err=pcall(M.freightpath.after,p,name,a or {},out,before)
+        if not ok and type(out)=='table' then out.supply_left_error=tostring(err) end
+      end
+      return out
+    end
+  end
+end)()
 -- Operator profiler (profile.lua): dispatches, events, the tick and these parts.
 M.profile=require('profile')()
 -- One small constructor per statement: one table of all the parts was "function or expression too complex"
