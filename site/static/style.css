@@ -726,6 +726,9 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .job-meta .job-badge { font-size: .7rem; padding: 0 5px; line-height: 1.5; height: auto; }
 .job-who { display: inline-flex; align-items: center; gap: 4px; }
 .job-who .avatar.fx-slot { --fx-slot: 18px; padding: 0; }
+/* (CB3) Owner activity: each project owner's watches and wait, apart from the projects' progress */
+.owner-activity .project-fact { display: block; margin-top: 3px; color: var(--fx-text); }
+.owner-activity .job-badge { font-size: .7rem; padding: 0 5px; line-height: 1.5; height: auto; }
 .board-all-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .board-all-head .jobs-all { flex: none; }
 .board-projects li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }

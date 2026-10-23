@@ -903,7 +903,7 @@
     var boardHtml = board.available === false ? '<p class="fx-muted">The board is not running in this world.</p>' :
       '<p class="board-counts"><span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span> ' +
       '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' + jobsHtml +
-      (projects ? '<h4>Projects</h4>' + projects : '') +
+      (projects ? '<h4>Projects</h4>' + projects + ownerActivityHtml(board, byName) : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +
       (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '') + allJobsHtml(s, byName) + remindersHtml(s.reminders, byName);
 
@@ -1071,13 +1071,54 @@
       rows.push('Progress check' + (c.checked_s != null ? ' ' + ago(c.checked_s) : '') + ': ' + c.state + (c.error ? ' (' + c.error + ')' : '') +
         (c.last_change_s != null ? '; last board change ' + ago(c.last_change_s) : ''));
     }
-    // (d22 batch99 BI5, viewer Aurora site:4333) beside the check: the owner's running watches and wait, with their end,
-    // and the item a watch names when it names one (model.py owner_work); the check's own state stays as it is
-    (p.owner_work || []).forEach(function (w) {
-      var names = w.this ? 'names this project' : (w.names || []).map(function (n) { return 'names #' + n.id + (n.title ? ' ' + n.title : ''); }).join('; ');
-      rows.push(who(p.owner) + '\'s ' + (w.kind === 'wait' ? 'wait' : 'test') + ': ' + w.line + (w.end_tick != null ? ' (until tick ' + w.end_tick + ')' : '') + (names ? '; ' + names : ''));
+    // (d22 batch99 BI5, viewer Aurora site:4333) beside the check: the owner's running watches, with their end (model.py
+    // owner_work); the check's own state stays as it is. (d23 batch119 CB3, viewer Aurora site:4347: "Could the board
+    // separate owner activity from project progress? Asterion's rocket watch also appears on the blocked production-cell
+    // project") Only a watch that names this project (its #id, or its title naming the watch's place) is listed here;
+    // the owner's other watches and its wait are under Owner activity (ownerActivityHtml).
+    (p.owner_work || []).filter(function (w) { return forProject(w, p); }).forEach(function (w) {
+      rows.push(who(p.owner) + '\'s test for this project: ' + w.line + workEnd(w));
     });
     return rows.map(function (r) { return '<span class="small project-fact">' + esc(r) + '</span>'; }).join('');
+  }
+  // A watch's end when its line does not say it: "(ends in 40 min)" from the state's game tick; a wait's line says its own.
+  function workEnd(w) {
+    if (w.kind === 'wait' || w.end_tick == null || /ends in|ended/.test(w.line || '') || !lastState || lastState.tick == null) return '';
+    var left = (w.end_tick - lastState.tick) / 60;
+    return left > 0 ? ' (ends in ' + ago(left).replace(/ ago$/, '') + ')' : '';
+  }
+  function forProject(w, p) {
+    return w.kind !== 'wait' && (!!w.this || (w.names || []).some(function (n) { return n.id === p.id; }));
+  }
+  // (CB3) Each project owner's running watches and current wait, once per owner (the projects' owner_work), with the
+  // projects each is for and the other board items it names; "no project named" when it names none.
+  function ownerActivityHtml(board, byName) {
+    var projects = (board.projects || []).concat(board.projects_more || []), owners = [], by = {};
+    projects.forEach(function (p) {
+      (p.owner_work || []).forEach(function (w) {
+        if (!p.owner) return;
+        if (!by[p.owner]) { by[p.owner] = { rows: [], seen: {} }; owners.push(p.owner); }
+        var o = by[p.owner], key = w.kind + '|' + w.line, row = o.seen[key];
+        if (!row) { row = o.seen[key] = { w: w, for: [] }; o.rows.push(row); }
+        if (forProject(w, p) && row.for.indexOf(p) < 0) row.for.push(p);
+      });
+    });
+    if (!owners.length) return '';
+    var ids = {};
+    projects.forEach(function (p) { ids[p.id] = 1; });
+    var items = owners.map(function (name) {
+      var o = byName[name] || {};
+      var lines = by[name].rows.map(function (r) {
+        var w = r.w, what = r.for.map(function (p) { return 'for #' + p.id + ' ' + p.title; });
+        (w.names || []).forEach(function (n) { if (!ids[n.id]) what.push('names #' + n.id + (n.title ? ' ' + n.title : '')); });
+        if (w.kind !== 'wait' && !what.length) what.push('no project named');
+        return '<span class="small project-fact"><span class="fx-chip fx-chip--grey job-badge">' + esc(w.kind === 'wait' ? 'wait' : 'test') + '</span> ' +
+          esc(w.line + workEnd(w) + (what.length ? '; ' + what.join('; ') : '')) + '</span>';
+      }).join('');
+      return '<li class="job"><span class="job-who">' + avatar(o.name ? o : { name: name }, 18) + '<b class="job-title">' + esc(o.display_name || name) + '</b></span>' + lines + '</li>';
+    }).join('');
+    return '<h4>Owner activity</h4><p class="fx-muted small">What each project owner is running now. A project lists a test only when the test names it.</p>' +
+      '<ul class="job-list owner-activity">' + items + '</ul>';
   }
   function projectItem(p, byName, card, withNext) {
     var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0, key = card + ':' + p.id;
