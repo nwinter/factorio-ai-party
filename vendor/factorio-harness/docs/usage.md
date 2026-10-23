@@ -12401,3 +12401,34 @@ A focus on the item alone counts its unchanged checks by the same rule: "the foc
 checks". board_critical's agents line gives the same wait text. The idle nudge (tools/idle_nudge.py) and supervise.sh
 were checked with the same cases: repeated sleeps, wait_until and wait_ticks are nudged with the wait named ("sleeping 5
 min", "in wait_until"), a rest in resting.json is skipped ("out of quota until Sat 09:25"); unchanged.
+
+## d22 batch122 CE2: nutrient accounting, fuel, spoiling, time windows and stock scope (viewer Aurora 10:13)
+
+Measured on a private 2.0.77 copy of world n's 10:26 save:
+- spoiling counts on neither side of the production statistics: 100 nutrients spoiled in a chest read used 0, and
+  spoilage made 0;
+- fuel counts as used when a burner takes it from its fuel slot (a biochamber's 5 nutrients: used 5);
+- a productivity bonus's extra products count as made, ingredients only for the crafts run; a returned catalyst
+  (pentapod-egg: 1 in, 2 out) counts on neither side, so an egg craft at +50% reads 1.5 made;
+- the ten-minute flow read (count) matched the running totals' difference over the same 10 minutes within 0.2%
+  (40,509 against 40,585 made over 36,045 ticks);
+- Gleba, 10 game minutes: nutrients made 40,585 and used 34,943 (egg recipes 2,992 a minute, biochambers' fuel about
+  500 a minute); every place held 3,758 then 3,704, so 5,696 (569 a minute) spoiled. That is the positive balance.
+
+Before: supply, stock, freight_audit, fuel_budget and dependency gave made above used with no word of spoiling;
+supply's `where` left out fuel slots (195 of Gleba's 3,792) and the ground; stock counts networks, chests, pads, silos
+and labs (2,687); dependency read nutrients "sustained" and took the egg crafts as 74.6 a minute (made / 2), 99.7
+measured.
+
+Now (spoilflow.lua):
+- supply `flow` of an item that spoils says what the statistics leave out; a read of the whole surface keeps its count,
+  and the next one 1-60 min later gives `uncounted`: "over the last 5 min (whole-surface counts at tick T and now): made
+  20120, used 17445; held 3758 then, 3770 now; 2663 left uncounted (532.6 a minute): spoiled, or carried off the
+  surface". `where` adds fuel slots (machines, heating towers, boilers, burner drills, vehicles) and, read whole, the
+  stacks on the ground as the ground watch last binned them.
+- stock {item, surface}, freight_audit, fuel_budget: the made/used line of an item that spoils adds the note, and the
+  last measure (at most 30 min old) a minute.
+- dependency: an ingredient that spoils is short or not sustained by made - used - what left uncounted a minute, when
+  supply measured it; otherwise the last line names it as not counted. The crafts run: made over what the statistics
+  count a craft (products past a returned catalyst, with the makers' average productivity bonus from the census).
+Regression: tests/d22_batch122b.lua.

@@ -38,6 +38,19 @@ return function(api)
     end
     return 0
   end
+  -- (d20 batch122 CE2) what the production statistics count as made of it a craft: a returned catalyst is not counted
+  -- (ignored_by_stats), and a productivity bonus adds its share of the rest past ignored_by_productivity (pentapod-egg:
+  -- 2 a craft, 1 of them the egg put in; at +50% the statistics count 1.5 a craft)
+  local function stats_per_craft(recipe, name, bonus)
+    local n = 0
+    for _, p in ipairs(try(function() return recipe.products end) or {}) do
+      if p.name == name then
+        local mean = (p.amount or (((p.amount_min or 0) + (p.amount_max or 0)) / 2)) * (p.probability or 1) + (p.extra_count_fraction or 0)
+        n = n + math.max(0, mean - (p.ignored_by_stats or 0)) + bonus * math.max(0, mean - (p.ignored_by_productivity or 0))
+      end
+    end
+    return n
+  end
   local function coming(force, surface, item)
     local pods, aboard = 0, {}
     for _, r in ipairs(api.in_flight and try(function() return api.in_flight(force.name, surface.name) end) or {}) do
@@ -64,20 +77,43 @@ return function(api)
     end
     local made, used = flow('input'), flow('output')
     local stock = api.total and api.total(force, surface, item) or 0
+    -- (d20 batch122 CE2, viewer Aurora 10:13: Gleba's nutrients made above used while the stock fell) an item that
+    -- spoils: the statistics leave spoiling out; what left uncounted a minute when supply measured it (spoilflow.lua)
+    local sf = api.spoilflow
+    local spoils = sf and sf.spoils(item)
+    local m = spoils and sf.last(force, surface, item)
+    local gone = m and math.max(0, m.uncounted_per_min) or 0
     local pods, aboard = coming(force, surface, item)
     local w = try(function() return prototypes.item[item].weight end) or 0
     local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
     local per_rocket = w > 0 and math.floor(lift / w) or nil
-    local minutes = used > made and stock / math.max(0.1, used - made) or nil
+    local net = made - used - gone
+    local minutes = net < 0 and stock / math.max(0.1, -net) or nil
     return {item=item, made_per_min=r1(made), used_per_min=r1(used), stock=stock, minutes_left=minutes and r1(minutes) or nil,
+      spoils=spoils or nil, uncounted_per_min=m and r1(m.uncounted_per_min) or nil, net_per_min=r1(net), measured=m and m.line or nil,
       coming_in_pods=pods > 0 and pods or nil, aboard=#aboard > 0 and aboard or nil, per_rocket=per_rocket}
   end
   local function line_of(r)
-    return string.format('%s: made %g/min, used %g/min, stock %d%s%s%s%s', r.item, r.made_per_min, r.used_per_min, r.stock,
+    return string.format('%s: made %g/min, used %g/min%s, stock %d%s%s%s%s', r.item, r.made_per_min, r.used_per_min,
+      r.uncounted_per_min and string.format(', %g/min left uncounted (spoiled, or carried off the surface; supply measured it)', r.uncounted_per_min)
+        or r.spoils and ' (spoiling not in these: no supply measure of it in the last 30 min)' or '', r.stock,
       r.minutes_left and string.format(' (%g min at the net use)', r.minutes_left) or '',
       r.coming_in_pods and string.format('; %d coming down in cargo pods', r.coming_in_pods) or '',
       r.aboard and '; aboard for here: ' .. table.concat(r.aboard, ', ') or '',
       r.per_rocket and string.format('; %d to a rocket by weight', r.per_rocket) or '')
+  end
+  -- (d20 batch122 CE2) the makers' productivity bonus on the recipe there, averaged (the census's crafters, up to 4096
+  -- read): made counts the bonus's extra products, so the crafts run are made / (amount * (1 + bonus)) (a biochamber's
+  -- +50%: pentapod-egg made 149/min from 50 crafts a minute, not 75)
+  local function bonus_of(force, surface, recipe)
+    local list = api.census_crafters and try(function() return api.census_crafters(force, surface) end)
+    local sum, n = 0, 0
+    for i, e in ipairs(list or {}) do
+      if i > 4096 then break end
+      local r = e.valid and try(function() return e.get_recipe() end)
+      if r and r.name == recipe.name then sum, n = sum + (try(function() return e.productivity_bonus end) or 0), n + 1 end
+    end
+    return n > 0 and sum / n or 0, n
   end
   function M.read(p, a)
     assert(type(a.item) == 'string' and prototypes.item[a.item], 'item is an item name')
@@ -88,11 +124,16 @@ return function(api)
     local recipe = recipe_for(surface, f, a.item)
     local top = row_of(f, surface, a.item)
     local lines, rows = {line_of(top)}, {}
-    local feasible, sustained, first = true, true, nil
+    local feasible, sustained, first, unmeasured = true, true, nil, {}
     if recipe then
       local out = per_craft(recipe, a.item)
-      local crafts = out > 0 and top.made_per_min / out or 0
-      lines[1] = lines[1] .. string.format('; recipe %s: %g per craft', recipe.name, out)
+      local bonus, makers = bonus_of(f, surface, recipe)
+      local counted = stats_per_craft(recipe, a.item, bonus)
+      local crafts = counted > 0 and top.made_per_min / counted or 0
+      top.productivity_bonus = bonus > 0 and r1(bonus * 100) or nil
+      top.crafts_per_min = r1(crafts)
+      lines[1] = lines[1] .. string.format('; recipe %s: %g per craft%s; %g crafts a minute', recipe.name, out,
+        (bonus > 0 or counted ~= out) and string.format(' (%sthe statistics count %g a craft)', bonus > 0 and string.format('+%g%% productivity on its %d makers there; ', r1(bonus * 100), makers) or '', r1(counted)) or '', r1(crafts))
       for _, ing in ipairs(try(function() return recipe.ingredients end) or {}) do
         if ing.type ~= 'fluid' then
           local amount = (ing.amount or 0) - per_craft(recipe, ing.name)
@@ -100,9 +141,10 @@ return function(api)
           r.per_craft, r.for_this_per_min = r1(amount), r1(crafts * amount)
           local has = r.stock > 0 or r.made_per_min > 0 or r.coming_in_pods or r.aboard
           if not has then r.state = 'missing'; feasible = false
-          elseif r.used_per_min > r.made_per_min and (r.minutes_left or 0) < 10 then r.state = 'short'
+          elseif r.net_per_min < 0 and (r.minutes_left or 0) < 10 then r.state = 'short'
           else r.state = 'ok' end
-          if r.used_per_min > r.made_per_min then sustained = false end
+          if r.net_per_min < 0 then sustained = false end
+          if r.spoils and not r.uncounted_per_min then unmeasured[#unmeasured+1] = r.item end
           if r.state ~= 'ok' and not first then first = r end
           rows[#rows+1] = r
           lines[#lines+1] = string.format('%s (%g a craft; %g/min of it for the %g/min made now) [%s]', line_of(r), r.per_craft, r.for_this_per_min, top.made_per_min, r.state)
@@ -113,10 +155,11 @@ return function(api)
     else lines[#lines+1] = 'no recipe makes it here (a resource, a spoil result or a byproduct): supply and stock read it' end
     lines[#lines+1] = string.format('feasible: %s; sustained: %s%s', feasible and 'yes (every ingredient there, made or coming)' or 'no',
       sustained and 'yes (none used faster than made)' or 'no', first and string.format('; first unsatisfied: %s (%s)', first.item, first.state) or '')
+      .. (#unmeasured > 0 and string.format('; spoiling not counted for %s (the statistics leave it out; no supply measure in the last 30 min)', table.concat(unmeasured, ', ')) or '')
     return {item=a.item, surface=surface.name, recipe=recipe and recipe.name or nil, item_row=top, ingredients=rows, feasible=feasible, sustained=sustained,
       first_unsatisfied=first and first.item or nil, lines=lines}
   end
   M.schema = {dependency = {item='item name', surface='optional surface (default yours)',
-    returns='lines: the item and each solid ingredient of its recipe (the one most of its makers there run, else the recipe of its name): made and used a minute there (production statistics, 10 min), the planet stock and minutes it covers at the net use, cargo pods coming down with it, our platforms carrying it to a stop there whose pads ask it, how many a rocket lifts by weight; per ingredient what a craft takes (net of what it gives back) and what the making now takes a minute, and missing | short | ok; feasible (every ingredient there, made or coming), sustained (none used faster than made) and the first unsatisfied. Read only'}}
+    returns='lines: the item and each solid ingredient of its recipe (the one most of its makers there run, else the recipe of its name): made and used a minute there (production statistics, 10 min; an item that spoils adds what left uncounted a minute (spoiled) when a whole-surface supply measured it in the last 30 min, and the net and sustained count it), the planet stock and minutes it covers at the net use, cargo pods coming down with it, our platforms carrying it to a stop there whose pads ask it, how many a rocket lifts by weight; per ingredient what a craft takes (net of what it gives back) and what the making now takes a minute (the crafts run: made over what the statistics count a craft: its products past a returned catalyst, with its makers\' average productivity bonus), and missing | short | ok; feasible (every ingredient there, made or coming), sustained (none used faster than made) and the first unsatisfied. Read only'}}
   return M
 end

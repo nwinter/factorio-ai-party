@@ -14207,7 +14207,9 @@ M.modules=require('modules'){out_of_reach=function(p,e) return M.out_of_reach(p,
 M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w) end,remote_entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.deliver(p,a) return M.deliver.handler(p,a) end
 -- An item and its recipe's ingredients joined: rates, stock, freight on the way, rocket loads (dependency.lua; #818).
-M.dependency=require('dependency'){total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
+-- (d20 batch122 CE2, viewer Aurora 10:13) what the production statistics leave out for an item that spoils (spoilflow.lua)
+M.spoilflow=require('spoilflow'){state=state,secs=function(t) return M.spoil.secs(t) end}
+M.dependency=require('dependency'){spoilflow=M.spoilflow,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
   in_flight=function(force,to) return M.pods and M.pods.in_flight(force,to) end,pads=function(planet,force) return M.freight.pads(planet,force) end}
 function handlers.dependency(p,a) return M.dependency.read(p,a) end
 -- Gleba farming reads and burner fuel (farm.lua).
@@ -17930,7 +17932,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -18185,13 +18187,13 @@ M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.c
 M.feeders=require('feeders'){condition_parts=function(e) return M.circuits.condition_parts(e,M.circuits.read(e)) end,trace=function(e) return M.circuits.trace_from(e) end,
   hand_wait=function(e) return M.details.hand_wait(e) end}
 M.fuelreactor=require('fuelreactor'){status_name=function(e) return M.machine_status(e) end,feeders=M.feeders}
-M.fuelbudget=require('fuelbudget'){reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
+M.fuelbudget=require('fuelbudget'){spoilflow=M.spoilflow,reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
   belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
 M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
-M.packaudit=require('packaudit'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
+M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
   where=function(pl) return M.freight.where(pl) end,rocket_room=function(silo,item) return space.rocket_room(silo,item) end}
 function handlers.freight_audit(p,a) return M.packaudit.read(p,a) end
 -- The factory's shortages in one read (shortages.lua; Opus 13:51).
