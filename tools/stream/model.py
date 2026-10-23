@@ -1743,7 +1743,8 @@ class Model:
 
     def jobs_snapshot(self):
         """(open, doing): tasks and requests from the last active board read (board.active_ids), open with no owner, and
-        claimed or doing; each {id, title, kind, owner, agent, status, requested_by}, the latest changed first. (None,
+        claimed or doing; each {id, title, kind, owner, agent, status, requested_by, updated_tick (the site's "changed
+        N ago", d23 batch119 CB2)}, the latest changed first. (None,
         None) before an active read (an older service, or the read failed)."""
         ids = self.board.get("active_ids")
         if ids is None:
@@ -1753,7 +1754,7 @@ class Model:
         def row(it):
             return {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "kind": it.get("kind"),
                     "owner": it.get("owner"), "agent": self._who(it.get("owner")), "status": it.get("status"),
-                    "requested_by": it.get("requested_by"), **with_evidence(it)}
+                    "requested_by": it.get("requested_by"), "updated_tick": it.get("updated_tick"), **with_evidence(it)}
         open_ = [row(it) for it in rows if it.get("status") == "open" and not it.get("owner")]
         doing = [row(it) for it in rows if it.get("status") in ("claimed", "doing")]
         return open_, doing

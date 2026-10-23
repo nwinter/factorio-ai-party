@@ -716,8 +716,18 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .board-events li { overflow-wrap: anywhere; }
 .board-events .fx-chip { font-size: .8rem; padding: 0 5px; }
 .board-projects { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: .9rem; }
-.board-jobs { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .9rem; overflow-wrap: anywhere; }
-.board-jobs b { color: var(--fx-heading); }
+/* (d23 batch119 CB2, viewer Aurora site:4363) a task or request: its title across the card, small badges, owner and
+   time on the line under it; no columns, so nothing is squeezed to a word a line on a phone */
+.job-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; font-size: .9rem; }
+.job { min-width: 0; padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.job:first-child { border-top: 0; padding-top: 0; }
+.job-title { display: block; color: var(--fx-heading); line-height: 1.3; }
+.job-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 2px; font-size: .8rem; color: var(--muted); }
+.job-meta .job-badge { font-size: .7rem; padding: 0 5px; line-height: 1.5; height: auto; }
+.job-who { display: inline-flex; align-items: center; gap: 4px; }
+.job-who .avatar.fx-slot { --fx-slot: 18px; padding: 0; }
+.board-all-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.board-all-head .jobs-all { flex: none; }
 .board-projects li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }
 /* a project opens to its steps (d15): the summary keeps the portrait-and-text layout, the steps sit under it */
 .board-projects > li:has(> details.project) { display: block; }
@@ -901,7 +911,7 @@ html { scroll-padding-top: 76px; }
 .lt > summary > .fx-muted { flex: none; white-space: nowrap; }
 /* (d19 batch46 item 0, on the live state) a list row's text column may shrink below its one-line texts, so they end in
    an ellipsis instead of widening the card */
-.board-claims li > span, .board-jobs li { min-width: 0; }
+.board-claims li > span, .job { min-width: 0; }
 .lt > summary::-webkit-details-marker { display: none; }
 .lt > summary::after { content: "▸"; color: var(--fx-muted, #999); flex: none; }
 .lt[open] > summary::after { content: "▾"; }
