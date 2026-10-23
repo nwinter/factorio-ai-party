@@ -25,6 +25,21 @@ return function(api)
   local M = {}
   local CELL, SCAN_TICKS, DIGEST_TICKS, MAX_LINES, MAX_SCAN = 64, 1800, 9000, 5, 20000
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d22 batch110 BT1: the background read made about 1 MB of Lua garbage a second on the copy, most of it a closure for
+  -- each guarded read of each entity, and position tables read several times an entity) o[k] guarded with no closure;
+  -- a method called guarded the same way (o[m](a): the method read is the one allocation).
+  local function prop(o, k) return o[k] end
+  local function get(o, k) local ok, v = pcall(prop, o, k); if ok then return v end end
+  local function call0(o, m) return o[m]() end
+  local function call1(o, m, a) return o[m](a) end
+  local function invoke0(o, m) local ok, v = pcall(call0, o, m); if ok then return v end end
+  local function invoke(o, m, a) local ok, v = pcall(call1, o, m, a); if ok then return v end end
+  local function len(o) return #o end
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label, fn, ...)
+    if api.timed then return api.timed(label, fn, ...) end
+    return fn(...)
+  end
   local slots = require('slots')()
   local TYPES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport',
     'pump', 'electric-turret', 'ammo-turret', 'fluid-turret', 'boiler', 'rocket-silo', 'agricultural-tower',
@@ -82,14 +97,16 @@ return function(api)
     return mem
   end
   -- A drill seen mining: its ore remembered, and counted in its cell (mining[surface|cx,cy][ore]).
-  local function drill_mining(e, surface, mining, dmem)
-    local t = try(function() return e.mining_target end)
-    local name = t and try(function() return t.name end)
+  -- (pos: e.position, read once by the caller)
+  local function drill_mining(e, surface, mining, dmem, pos)
+    local t = get(e, 'mining_target')
+    local name = t and get(t, 'name')
     if not name then return nil end
-    local unit = try(function() return e.unit_number end)
+    local unit = get(e, 'unit_number')
     if unit and dmem then dmem[unit] = name end
     if mining then
-      local key = surface .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+      pos = pos or e.position
+      local key = surface .. '|' .. math.floor(pos.x / CELL) .. ',' .. math.floor(pos.y / CELL)
       mining[key] = mining[key] or {}
       mining[key][name] = (mining[key][name] or 0) + 1
     end
@@ -142,7 +159,7 @@ return function(api)
     end
     -- A turret group is read again before it is shown (M.recheck): its turrets by unit number, in its cells.
     if RECHECK[kind] and e then
-      local unit = try(function() return e.unit_number end)
+      local unit = get(e, 'unit_number')
       if unit then
         g.units = g.units or {}
         g.nunits = (g.nunits or 0) + 1
@@ -151,8 +168,10 @@ return function(api)
     end
     return g
   end
+  local function last_user_name(e) local u = e.last_user; return u and u.name end
   local function builder(e)
-    return try(function() local u = e.last_user; return u and u.name end)
+    local ok, v = pcall(last_user_name, e)
+    if ok then return v end
   end
   -- Lost sources (Haiku, 04:52: "a chest gone alert when a feed chest disappears, since an inserter with no source
   -- fails silently (once this hour, a boiler went no_fuel)"). Each read remembers every inserter's targets
@@ -180,21 +199,25 @@ return function(api)
     return mem
   end
   local function watch_inserter(groups, s, e, mem)
-    local unit = try(function() return e.unit_number end)
+    local unit = get(e, 'unit_number')
     local targets = api.targets
     if not (unit and targets) then return end
     local pick, drop = targets.read(e)
     -- The engine's target can stay empty a while after its chest is replaced (Astra, 07:26: a wooden chest upgraded to
     -- a requester; the inserter, holding cable, worked from it): what stands on the point counts as the target, and
     -- the remembered one is the current one, whichever entity that is now.
-    if not pick then pick = targets.standing(s, try(function() return e.pickup_position end)) end
-    if not drop then drop = targets.standing(s, try(function() return e.drop_position end)) end
+    if not pick then pick = targets.standing(s, get(e, 'pickup_position')) end
+    if not drop then drop = targets.standing(s, get(e, 'drop_position')) end
     local old = mem.units[unit]
-    local now = {g=mem.gen, p=pick and targets.name_at(pick) or nil, d=drop and targets.name_at(drop) or nil, dt=drop and drop.type or nil}
+    local p, d, dt = pick and targets.name_at(pick) or nil, drop and targets.name_at(drop) or nil, drop and drop.type or nil
+    local lost_p, lost_d, ldt
     if old then
-      if not pick then now.lost_p = old.lost_p or old.p end
-      if not drop then now.lost_d, now.ldt = old.lost_d or old.d, old.ldt or old.dt end
+      if not pick then lost_p = old.lost_p or old.p end
+      if not drop then lost_d, ldt = old.lost_d or old.d, old.ldt or old.dt end
     end
+    -- (BT1) the inserter's record rewritten in place: a new table for each inserter each read was about 300 bytes
+    local now = old or {}
+    now.g, now.p, now.d, now.dt, now.lost_p, now.lost_d, now.ldt = mem.gen, p, d, dt, lost_p, lost_d, ldt
     mem.units[unit] = now
     if not (now.lost_p or now.lost_d) then return end
     local fed = now.dt or now.ldt
@@ -237,7 +260,7 @@ return function(api)
   end
   -- The kind for an ammo turret (empty: no ammo in it): rebuilt_empty with its detail, or no_ammo, or nil.
   local function turret_kind(e, empty, mem)
-    local unit = mem and try(function() return e.unit_number end)
+    local unit = mem and get(e, 'unit_number')
     local t = unit and mem.units[unit]
     if unit and not t then t = {new=mem.ready or nil}; mem.units[unit] = t end
     if t then
@@ -297,8 +320,8 @@ return function(api)
     return table.concat(parts, '; ')
   end
   local function artillery_kind(e, mem)
-    local inv = try(function() return e.get_inventory(defines.inventory.artillery_turret_ammo) end)
-    local unit = inv and mem and try(function() return e.unit_number end)
+    local inv = invoke(e, 'get_inventory', defines.inventory.artillery_turret_ammo)
+    local unit = inv and mem and get(e, 'unit_number')
     if not unit then return nil end
     local t = mem.units[unit]
     if not t then t = {}; mem.units[unit] = t end
@@ -375,21 +398,21 @@ return function(api)
       c.t < HEAT_FREEZE and '' or string.format(', cooling %.1f C a minute: about %d min to %d C', rate, math.floor(mins + 0.5), HEAT_FREEZE), HEAT_FREEZE)
   end
   function M.heat_forget(e) local mem = api.state().push_heat; if mem then mem[e.unit_number or 0] = nil end end
-  local function spoiling(e, s, mining)
+  -- (burner, pos: e.burner and e.position, read once by the caller)
+  local function spoiling(e, s, mining, burner, pos)
     if not (mining and api.first_spoil) then return end
-    local burner = e.burner
     local inv = burner and burner.inventory
     if not inv then return end
     local tick, item = api.first_spoil(inv)
     if not tick then return end
-    local rk = 'rot|' .. s.name .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+    local rk = 'rot|' .. s.name .. '|' .. math.floor(pos.x / CELL) .. ',' .. math.floor(pos.y / CELL)
     local cell = mining[rk] or {}
     mining[rk] = cell
     local r = cell[e.name] or {n=0, soon=0}
     cell[e.name] = r
     r.n = r.n + 1
     if tick - game.tick < ROT_SOON then r.soon = r.soon + 1 end
-    if not r.tick or tick < r.tick then r.tick, r.item, r.at = tick, item, {x=e.position.x, y=e.position.y} end
+    if not r.tick or tick < r.tick then r.tick, r.item, r.at = tick, item, {x=pos.x, y=pos.y} end
   end
   local STARVED = {}
   for _, k in ipairs({'item_ingredient_shortage', 'no_ingredients'}) do
@@ -402,12 +425,19 @@ return function(api)
   -- its only pentapod egg): that item, what its output holds, and the hand size of the inserters taking from it.
   local FULL = {}
   for _, k in ipairs({'full_output'}) do local v = defines.entity_status and defines.entity_status[k]; if v then FULL[v] = true end end
-  local function takers(e)
+  -- (BT1) the find's filter one table, its fields set each call (the surface and force: the read's, else e's)
+  local TAKE_LT, TAKE_RB = {x=0, y=0}, {x=0, y=0}
+  local TAKE_F = {type='inserter', area={left_top=TAKE_LT, right_bottom=TAKE_RB}}
+  local function takers(e, s, force)
     local b = e.bounding_box
     local out = {}
-    for _, i in ipairs(try(function() return e.surface.find_entities_filtered{type='inserter', area={left_top={x=b.left_top.x - 3, y=b.left_top.y - 3},
-        right_bottom={x=b.right_bottom.x + 3, y=b.right_bottom.y + 3}}, force=e.force} end) or {}) do
-      if try(function() return i.pickup_target end) == e then out[#out+1] = i end
+    TAKE_LT.x, TAKE_LT.y = b.left_top.x - 3, b.left_top.y - 3
+    TAKE_RB.x, TAKE_RB.y = b.right_bottom.x + 3, b.right_bottom.y + 3
+    TAKE_F.force = force or get(e, 'force')
+    local found = invoke(s or get(e, 'surface') or {}, 'find_entities_filtered', TAKE_F)
+    TAKE_F.force = nil
+    for _, i in ipairs(found or {}) do
+      if get(i, 'pickup_target') == e then out[#out+1] = i end
     end
     return out
   end
@@ -418,12 +448,12 @@ return function(api)
     local f = i.force
     return 1 + ((bulk and try(function() return f.bulk_inserter_capacity_bonus end) or try(function() return f.inserter_stack_size_bonus end)) or 0)
   end
-  local function chest_full(e)
-    for _, i in ipairs(takers(e)) do
-      local d = try(function() return i.drop_target end)
-      local inv = d and d.valid and (d.type == 'container' or d.type == 'logistic-container') and try(function() return d.get_inventory(defines.inventory.chest) end)
-      if inv and try(function() return inv.count_empty_stacks() end) == 0 then
-        local list = try(function() return inv.get_contents() end) or {}
+  local function chest_full(e, s, force)
+    for _, i in ipairs(takers(e, s, force)) do
+      local d = get(i, 'drop_target')
+      local inv = d and d.valid and (d.type == 'container' or d.type == 'logistic-container') and invoke(d, 'get_inventory', defines.inventory.chest)
+      if inv and invoke0(inv, 'count_empty_stacks') == 0 then
+        local list = invoke0(inv, 'get_contents') or {}
         table.sort(list, function(a, b) return a.count > b.count end)
         local parts = {}
         for k2, st in ipairs(list) do if k2 > 3 then break end; parts[#parts+1] = st.name .. ' ' .. st.count end
@@ -434,8 +464,8 @@ return function(api)
   end
   -- Recipes that take an item they also make, read once a recipe (most take none: the scan then stops here).
   local CATALYST = {}
-  local function catalyst_gone(e)
-    local r = try(function() return e.get_recipe() end)
+  local function catalyst_gone(e, s, force)
+    local r = invoke0(e, 'get_recipe')
     if not r then return nil end
     local c = CATALYST[r.name]
     if c == nil then
@@ -453,7 +483,7 @@ return function(api)
     for _, ing in ipairs(r.ingredients or {}) do
       if ing.type == 'item' and made[ing.name] and input and (try(function() return input.get_item_count(ing.name) end) or 0) == 0 then
         local hands = {}
-        for _, i in ipairs(takers(e)) do hands[#hands+1] = string.format('%s %s hand %d', i.name, at_text(i.position), hand(i)) end
+        for _, i in ipairs(takers(e, s, force)) do hands[#hands+1] = string.format('%s %s hand %d', i.name, at_text(i.position), hand(i)) end
         return string.format('%s %s %s: its recipe takes %d %s and makes it, and none is in its input (its output holds %d); taken out by %s', e.name, at_text(e.position), r.name,
           ing.amount or 1, ing.name, output and (try(function() return output.get_item_count(ing.name) end) or 0) or 0, #hands > 0 and table.concat(hands, ', ') or 'no inserter')
       end
@@ -646,23 +676,35 @@ return function(api)
   -- SEED_SOON ticks: the first to spoil, when, and why it is not crafting (its status; a short ingredient named).
   local SEEDS, SEED_SOON = {['pentapod-egg']=true, ['copper-bacteria']=true, ['iron-bacteria']=true}, 10800
   local STATUS_NAMES
-  local function status_of(e)
+  local function status_name(st)
     if not STATUS_NAMES then
       STATUS_NAMES = {}
       for k, v in pairs(defines.entity_status or {}) do STATUS_NAMES[v] = k end
     end
-    local st = try(function() return e.status end)
-    return st, STATUS_NAMES[st] or tostring(st)
+    return STATUS_NAMES[st] or tostring(st)
   end
-  function M.seed_spoiling(e)
-    local recipe = try(function() return e.get_recipe() end)
-    if not recipe then return nil end
-    local seed
-    for _, ing in ipairs(recipe.ingredients or {}) do if SEEDS[ing.name] then seed = ing.name end end
-    if not seed then return nil end
-    local st, sname = status_of(e)
+  -- The seed a recipe keeps going, by recipe name (false: none; recipe.ingredients is a new table of tables each read).
+  local SEED_OF = {}
+  local function crafter_input(e) return e.get_inventory(defines.inventory.crafter_input or defines.inventory.assembling_machine_input) end
+  -- (status: e.status when the caller has read it. BT1: a working machine is let go before its recipe is read, the
+  -- cheap test first; each of the two ends the read with nil alone, so the answer is the same in either order)
+  function M.seed_spoiling(e, status)
+    local st = status
+    if st == nil then st = get(e, 'status') end
     if st == (defines.entity_status or {}).working then return nil end
-    local inv = try(function() return e.get_inventory(defines.inventory.crafter_input or defines.inventory.assembling_machine_input) end)
+    local recipe = invoke0(e, 'get_recipe')
+    if not recipe then return nil end
+    local rname = get(recipe, 'name')
+    local seed = rname and SEED_OF[rname]
+    if seed == nil then
+      seed = false
+      for _, ing in ipairs(recipe.ingredients or {}) do if SEEDS[ing.name] then seed = ing.name end end
+      if rname then SEED_OF[rname] = seed end
+    end
+    if not seed then return nil end
+    local sname = status_name(st)
+    local okv, inv = pcall(crafter_input, e)
+    if not okv then inv = nil end
     if not inv then return nil end
     local first, held = nil, 0
     for i = 1, #inv do
@@ -741,9 +783,12 @@ return function(api)
   -- its drop target a chest (a backed-up belt is often by design and not said). The drill, what it mines, the chest and
   -- its fill (slots used of all, the items in the most slots).
   local DROP_CHEST = {container=true, ['logistic-container']=true, ['linked-container']=true, ['infinity-container']=true}
-  local function drill_full(e)
+  -- (status: e.status when the caller has read it)
+  local function drill_full(e, status)
     local st = defines.entity_status or {}
-    if not st.waiting_for_space_in_destination or e.status ~= st.waiting_for_space_in_destination then return nil end
+    if not st.waiting_for_space_in_destination then return nil end
+    if status == nil then status = e.status end
+    if status ~= st.waiting_for_space_in_destination then return nil end
     local c = e.drop_target
     if not (c and c.valid and DROP_CHEST[c.type]) then return nil end
     local inv = c.get_inventory(defines.inventory.chest)
@@ -772,164 +817,205 @@ return function(api)
   -- buildings), per surface and 64-tile cell by name, ghosts apart; and requester and buffer chests outside every
   -- logistic area (their requests never fill). On the copy: 2 us an entity for the area query, 5 us a logistic chest.
   local COVER_ONLY, COVER_DONE, NOT_BUILDING = {['logistic-container']=true, ['entity-ghost']=true}, {valid=false}, {car=true, ['spider-vehicle']=true}
-  local function cover_note(sight, s, e)
-    if e.type == 'logistic-container' then
-      local mode = try(function() return e.prototype.logistic_mode end)
-      if (mode == 'requester' or mode == 'buffer') and not try(function() return e.logistic_network end) then
+  -- A logistic container's mode by name (a prototype fact: e.prototype is a new object each read).
+  local LOGI_MODE = {}
+  local function logistic_mode(e) return e.prototype.logistic_mode end
+  -- (etype, pos: e.type and e.position read once by the caller; nets_of: the surface's
+  -- find_logistic_networks_by_construction_area, read once a slice; force: the read's force, else e's)
+  local function cover_note(sight, s, e, etype, pos, nets_of, force)
+    etype, pos = etype or e.type, pos or e.position
+    if etype == 'logistic-container' then
+      local name = e.name
+      local mode = LOGI_MODE[name]
+      if mode == nil then
+        local ok, m = pcall(logistic_mode, e)
+        mode = ok and m or false
+        if ok then LOGI_MODE[name] = mode end
+      end
+      if (mode == 'requester' or mode == 'buffer') and not get(e, 'logistic_network') then
         local list = sight.chests[s.name] or {}; sight.chests[s.name] = list
         list.n = (list.n or 0) + 1
-        if #list < 16 then list[#list+1] = {name=e.name, x=e.position.x, y=e.position.y} end
+        if #list < 16 then list[#list+1] = {name=name, x=pos.x, y=pos.y} end
       end
       return
     end
-    if NOT_BUILDING[e.type] then return end
-    local nets = try(function() return s.find_logistic_networks_by_construction_area(e.position, e.force) end)
-    if not nets or #nets > 0 then return end
-    local key = s.name .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+    if NOT_BUILDING[etype] then return end
+    if nets_of == nil then nets_of = get(s, 'find_logistic_networks_by_construction_area') end
+    local ok, nets = false, nil
+    if nets_of then ok, nets = pcall(nets_of, pos, force or e.force) end
+    if not ok or not nets or #nets > 0 then return end
+    local key = s.name .. '|' .. math.floor(pos.x / CELL) .. ',' .. math.floor(pos.y / CELL)
     local c = sight.cover[key]
     if not c then c = {surface=s.name, n=0, ghosts=0, sx=0, sy=0, names={}}; sight.cover[key] = c end
-    local ghost = e.type == 'entity-ghost'
+    local ghost = etype == 'entity-ghost'
     local name = ghost and e.ghost_name or e.name
-    c.n = c.n + 1; c.sx = c.sx + e.position.x; c.sy = c.sy + e.position.y
+    c.n = c.n + 1; c.sx = c.sx + pos.x; c.sy = c.sy + pos.y
     if ghost then c.ghosts = c.ghosts + 1; name = 'ghost of ' .. name end
     c.names[name] = (c.names[name] or 0) + 1
   end
-  local function sight_note(mining, s, e)
+  local function chunk_visible(e, s, cx, cy) return e.force.is_chunk_visible(s, {x=cx, y=cy}) end
+  -- (etype, pos, nets_of, force: as cover_note's)
+  local function sight_note(mining, s, e, etype, pos, nets_of, force)
     if not mining then return end
+    etype, pos = etype or e.type, pos or e.position
     local sight = mining.__sight
     if not sight then sight = {vis={}, cells={}, radars={}, unread=0, budget=VIS_STEP}; mining.__sight = sight end
     sight.cover = sight.cover or {}; sight.chests = sight.chests or {}
-    pcall(cover_note, sight, s, e)
-    if COVER_ONLY[e.type] then return end
-    if e.type == 'radar' then
+    pcall(cover_note, sight, s, e, etype, pos, nets_of, force)
+    if COVER_ONLY[etype] then return end
+    if etype == 'radar' then
       local list = sight.radars[s.name] or {}
       sight.radars[s.name] = list
-      if #list < 256 then list[#list+1] = {x=e.position.x, y=e.position.y, status=e.status} end
+      if #list < 256 then list[#list+1] = {x=pos.x, y=pos.y, status=e.status} end
       return
     end
-    local kind = SIGHT_KIND[e.type]
+    local kind = SIGHT_KIND[etype]
     if not kind then return end
-    local cx, cy = math.floor(e.position.x / 32), math.floor(e.position.y / 32)
+    local cx, cy = math.floor(pos.x / 32), math.floor(pos.y / 32)
     local ck = s.name .. '|' .. cx .. ',' .. cy
     local seen = sight.vis[ck]
     if seen == nil then
       if (sight.budget or 0) > 0 then
         sight.budget = sight.budget - 1
-        seen = try(function() return e.force.is_chunk_visible(s, {x=cx, y=cy}) end) or false; sight.vis[ck] = seen
+        local ok, v = pcall(chunk_visible, e, s, cx, cy)
+        seen = ok and v or false; sight.vis[ck] = seen
       else
-        local prev = (api.state().push_vis or {})[e.force.name]
+        local prev = (api.state().push_vis or {})[(force or e.force).name]
         seen = prev and prev[ck]
         if seen == nil then sight.unread = (sight.unread or 0) + 1; return end
       end
     end
     if seen then return end
-    local key = s.name .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+    local key = s.name .. '|' .. math.floor(pos.x / CELL) .. ',' .. math.floor(pos.y / CELL)
     local c = sight.cells[key]
     if not c then c = {surface=s.name, drills=0, machines=0, turrets=0, n=0, sx=0, sy=0}; sight.cells[key] = c end
-    c[kind] = c[kind] + 1; c.n = c.n + 1; c.sx = c.sx + e.position.x; c.sy = c.sy + e.position.y
+    c[kind] = c[kind] + 1; c.n = c.n + 1; c.sx = c.sx + pos.x; c.sy = c.sy + pos.y
   end
-  local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
+  -- (BT1) guarded reads with no closure each
+  local function turret_ammo(e) return e.get_inventory(defines.inventory.turret_ammo) end
+  local function burnt_of(e) return api.burnt_stuck(e) end
+  -- force: the read's force (every entity of list is of it; nil: each entity's own).
+  -- (BT1: each entity's type, position, status and burner read once and passed down; a guarded read is pcall(f, args),
+  -- not a closure; the surface's coverage find read once a call)
+  local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem, force)
     if mining and mining.__sight then mining.__sight.budget = VIS_STEP end
     local st = statuses()
+    local nets_of = mining and (get(s, 'find_logistic_networks_by_construction_area') or false)
     for i = from or 1, to or #list do
       local e = list[i]
-      if e.valid then pcall(sight_note, mining, s, e) end
-      if e.valid and COVER_ONLY[e.type] then e = COVER_DONE end
-      if e.valid and mem and e.type == 'inserter' then watch_inserter(groups, s, e, mem) end
-      if e.valid then pcall(spoiling, e, s, mining) end
+      local etype, pos, burner
       if e.valid then
-        local kind = st[e.status]
+        etype, pos = e.type, e.position
+        pcall(sight_note, mining, s, e, etype, pos, nets_of, force)
+      end
+      if e.valid and COVER_ONLY[etype] then e = COVER_DONE end
+      if e.valid and mem and etype == 'inserter' then watch_inserter(groups, s, e, mem) end
+      if e.valid then
+        burner = get(e, 'burner')
+        pcall(spoiling, e, s, mining, burner, pos)
+      end
+      if e.valid then
+        local status = e.status
+        local kind = st[status]
         local detail, feeders
         if kind == 'no_power' then
-          if not try(function() return e.electric_network_id end) then kind = 'unconnected'
+          if not get(e, 'electric_network_id') then kind = 'unconnected'
           elseif api.network_cursor or api.network_groups then kind = nil end
         end
-        -- A burner its full burnt-result slot stopped, whatever its status reads (burnt.lua; Sol, shift14).
-        local stuck = api.burnt_stuck and try(function() return api.burnt_stuck(e) end)
+        -- A burner its full burnt-result slot stopped, whatever its status reads (burnt.lua; Sol, shift14). (BT1: asked of
+        -- burners only: burnt.lua reads nil for an entity with no burner)
+        local stuck
+        if burner and api.burnt_stuck then
+          local ok, v = pcall(burnt_of, e)
+          if ok then stuck = v end
+        end
         if stuck then
           kind = 'burnt_full'
-          detail = string.format('%s %s: burnt-result slot %s; fuel slot %s%s', e.name, at_text(e.position), stuck.burnt,
+          detail = string.format('%s %s: burnt-result slot %s; fuel slot %s%s', e.name, at_text(pos), stuck.burnt,
             stuck.fuel ~= '' and stuck.fuel or 'empty', stuck.foreign and ' (not a fuel it burns: it burns ' .. stuck.burns .. ')' or '')
         end
-        if e.type == 'mining-drill' then
+        if etype == 'mining-drill' then
           if kind == 'out_of_ore' then
-            local unit = try(function() return e.unit_number end)
+            local unit = get(e, 'unit_number')
             kind = 'out_of_ore.' .. (unit and dmem and dmem[unit] or '?')
-          else drill_mining(e, s.name, mining, dmem) end
+          else drill_mining(e, s.name, mining, dmem, pos) end
           if not kind then
-            local full = try(function() return drill_full(e) end)
-            if full then kind, detail = 'output_full', full end
+            local ok, full = pcall(drill_full, e, status)
+            if ok and full then kind, detail = 'output_full', full end
           end
         elseif kind == 'out_of_ore' then kind = nil end
-        if e.type == 'ammo-turret' then
-          local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
-          local tk, td = turret_kind(e, inv and inv.get_item_count() == 0, tmem)
+        if etype == 'ammo-turret' then
+          local okv, inv = pcall(turret_ammo, e)
+          if not okv then inv = nil end
+          local n = inv and inv.get_item_count()
+          local tk, td = turret_kind(e, inv and n == 0, tmem)
           if tk then kind, detail = tk, td
           else
             -- Under 20% of its ammo slots where no construction robot reaches (Opus, d15 15:20: the south copper
             -- outpost 550 tiles out, cut 5+ times a shift).
-            local low = M.outpost_low(e, inv)
+            local low = M.outpost_low(e, inv, n)
             if low then kind, detail = 'outpost_ammo_low', low
             else
-              local n = inv and inv.get_item_count() or 0
+              n = inv and n or 0
               if n > 0 and n < AMMO_LOW and not M.inserter_fed(e) then
                 local items = {}
-                for _, c in ipairs(try(function() return inv.get_contents() end) or {}) do items[#items+1] = c.name .. ' ' .. c.count end
-                kind, detail = 'ammo_low', string.format('%s %s: %s', e.name, at_text(e.position), table.concat(items, ', '))
+                for _, c in ipairs(invoke0(inv, 'get_contents') or {}) do items[#items+1] = c.name .. ' ' .. c.count end
+                kind, detail = 'ammo_low', string.format('%s %s: %s', e.name, at_text(pos), table.concat(items, ', '))
               end
             end
           end
-        elseif e.type == 'artillery-turret' then
+        elseif etype == 'artillery-turret' then
           local ak, ad = artillery_kind(e, tmem)
           if ak then kind, detail, feeders = ak, ad, feeder_builders(e) end
-        elseif e.type == 'reactor' and e.burner then
+        elseif etype == 'reactor' and burner then
           -- Heating towers (Gemini, d15 07:54: a dedicated warning when they run out of fuel): a burner reactor with an
           -- empty fuel slot and nothing burning, under HEAT_WARN C; one still hotter is not said (feeds gated by its
           -- temperature empty its slot by design).
-          local inv = try(function() return e.burner.inventory end)
-          local empty = inv and try(function() return inv.is_empty() end)
-          local burning = try(function() return e.burner.currently_burning end)
-          local left = try(function() return e.burner.remaining_burning_fuel end) or 0
-          local temp = try(function() return e.temperature end)
+          local inv = get(burner, 'inventory')
+          local empty = inv and invoke0(inv, 'is_empty')
+          local burning = get(burner, 'currently_burning')
+          local left = get(burner, 'remaining_burning_fuel') or 0
+          local temp = get(e, 'temperature')
           if empty and not burning and left <= 0 and temp then
             local hk, hd = M.heat_alert(e, temp)
             if hk then kind, detail = hk, hd
             elseif kind == 'no_fuel' then kind = nil end
           else pcall(M.heat_forget, e) end
-        elseif e.type == 'rocket-silo' then
+        elseif etype == 'rocket-silo' then
           local sk, sd = silo_state(e, s)
           if sk then kind, detail = sk, sd end
-        elseif e.type == 'fluid-turret' then
+        elseif etype == 'fluid-turret' then
           -- all it holds, its own buffer too (flameroil.lua; fluidbox[1] alone reads empty once the pipe drains)
-          local amount = try(function() return (flameroil.read(e)) end)
-          if amount and amount < 1 then kind = 'flamer_dry' end
-        elseif not kind and (e.type == 'assembling-machine' or e.type == 'furnace') and STARVED[e.status] then
+          local ok, amount = pcall(flameroil.read, e)
+          if ok and amount and amount < 1 then kind = 'flamer_dry' end
+        elseif not kind and (etype == 'assembling-machine' or etype == 'furnace') and STARVED[status] then
           -- Spoilage its recipe does not take, in the input of a machine short of ingredients (Sol, 22:08; Gleba).
-          local sp = try(function() return slots.input_spoilage(e) end)
-          if sp then kind, detail = 'input_spoilage', string.format('%s %s: %s', e.name, at_text(e.position), sp.text)
+          local ok, sp = pcall(slots.input_spoilage, e)
+          if ok and sp then kind, detail = 'input_spoilage', string.format('%s %s: %s', e.name, at_text(pos), sp.text)
           else
-            local cg = try(function() return api.timed and api.timed('pushalerts.catalyst_gone', catalyst_gone, e) or catalyst_gone(e) end)
-            if cg then kind, detail = 'catalyst_gone', cg end
+            -- (BT1: called once; `api.timed(...) or catalyst_gone(e)` ran it a second time whenever it found nothing)
+            local okc, cg = pcall(timed, 'pushalerts.catalyst_gone', catalyst_gone, e, s, force)
+            if okc and cg then kind, detail = 'catalyst_gone', cg end
           end
-        elseif not kind and (e.type == 'assembling-machine' or e.type == 'furnace') and FULL[e.status] then
-          local cf = try(function() return api.timed and api.timed('pushalerts.output_chest_full', chest_full, e) or chest_full(e) end)
-          if cf then kind, detail = 'output_chest_full', cf end
+        elseif not kind and (etype == 'assembling-machine' or etype == 'furnace') and FULL[status] then
+          local okf, cf = pcall(timed, 'pushalerts.output_chest_full', chest_full, e, s, force)
+          if okf and cf then kind, detail = 'output_chest_full', cf end
         end
         if e.name == CAPTIVE then
           local ck, cd = M.captive(e)
           if ck then kind, detail, feeders = ck, cd, feeder_builders(e) end
         end
-        if not kind and OFF_TYPES[e.type] and try(function() return e.status end) == (defines.entity_status or {}).disabled_by_control_behavior then
-          local off = try(function() return off_text(e) end)
-          if off then kind, detail = 'off_by_condition', off end
+        if not kind and OFF_TYPES[etype] and status == (defines.entity_status or {}).disabled_by_control_behavior then
+          local ok, off = pcall(off_text, e)
+          if ok and off then kind, detail = 'off_by_condition', off end
         end
         -- (B3) a seed about to spoil in a machine not crafting comes before the other machine kinds
-        if e.type == 'assembling-machine' and (kind == nil or kind == 'input_spoilage' or kind == 'catalyst_gone' or kind == 'off_by_condition' or kind == 'no_power' or kind == 'low_power') then
-          local sd = try(function() return M.seed_spoiling(e) end)
-          if sd then kind, detail, feeders = 'seed_spoiling', sd, feeder_builders(e) end
+        if etype == 'assembling-machine' and (kind == nil or kind == 'input_spoilage' or kind == 'catalyst_gone' or kind == 'off_by_condition' or kind == 'no_power' or kind == 'low_power') then
+          local ok, sd = pcall(M.seed_spoiling, e, status)
+          if ok and sd then kind, detail, feeders = 'seed_spoiling', sd, feeder_builders(e) end
         end
         if kind then
-          local g = add(groups, kind, s.name, e, e.position, e.name, builder(e), detail)
+          local g = add(groups, kind, s.name, e, pos, e.name, builder(e), detail)
           for _, b in ipairs(feeders or {}) do g.by[b] = (g.by[b] or 0) + 1 end
         end
       end
@@ -937,7 +1023,7 @@ return function(api)
   end
   local function entities(groups, s, force, t, budget, mem, tmem, mining, dmem)
     local list = entity_list(s, force, t, budget)
-    read_list(groups, s, list, nil, nil, mem, tmem, mining, dmem)
+    read_list(groups, s, list, nil, nil, mem, tmem, mining, dmem, force)
     return #list
   end
   -- The background job's step (operator 04:00: steps of a whole-surface find, then 1500 entities, burst to 138 ms in
@@ -959,13 +1045,22 @@ return function(api)
   local KIND_COST = {band=500, networks=1000, strike=2000, frozen=3000, alerts=5000, merge=10000}
   M.SECOND_COST = SECOND_COST
   local walk = api.walk or require('walk'){state=api.state}
+  local function by_index(a, b) return (a.index or 0) < (b.index or 0) end
   local function planets()
     local out = {}
     for _, s in pairs(game.surfaces) do
-      if not try(function() return s.platform end) then out[#out+1] = s end  -- platforms: platalerts.lua
+      if not get(s, 'platform') then out[#out+1] = s end  -- platforms: platalerts.lua
     end
-    table.sort(out, function(a, b) return (a.index or 0) < (b.index or 0) end)
+    table.sort(out, by_index)
     return out
+  end
+  -- The planet of this name (as planets() lists it), or nil: one surface read, not every surface and platform's.
+  local function planet_named(name)
+    local s
+    local okg, by_name = pcall(prop, game, 'get_surface')
+    if okg and by_name then s = by_name(name)
+    else for _, x in pairs(game.surfaces) do if x.name == name then s = x end end end
+    if s and not get(s, 'platform') then return s end
   end
   -- Frozen entities (d17 frozen, Nick 17:18: "Do they easily see when buildings/transport belts are frozen? I see some
   -- frozen belts that have been frozen a long time on Aquilo"; on world n 70 belts and 8 pipes): on a planet whose
@@ -1015,11 +1110,14 @@ return function(api)
     return try(function() return s.find_entities_filtered{force=force, type=FREEZE_TYPES, limit=MAX_SCAN} end) or {}
   end
   -- A frozen entity read: into its cell's record (job.frozen[surface][cell]).
+  -- (BT1: e.frozen read with no closure, e.position once: most of a planet's entities are not frozen)
   local function frozen_read(job, s, e, mem, seen, tick)
-    if not (e.valid and try(function() return e.frozen end)) then return end
+    if not (e.valid and get(e, 'frozen')) then return end
     local unit = e.unit_number
     if unit then seen[unit] = true; mem[unit] = mem[unit] or tick end
-    local cx, cy = math.floor(e.position.x / CELL), math.floor(e.position.y / CELL)
+    local pos = e.position
+    local px, py = pos.x, pos.y
+    local cx, cy = math.floor(px / CELL), math.floor(py / CELL)
     local cells = job.frozen
     local c = cells[cx .. ',' .. cy]
     if not c then c = {others={}, belts={n=0, items={}}, first=tick}; cells[cx .. ',' .. cy] = c end
@@ -1028,13 +1126,13 @@ return function(api)
     if BELT_TYPES[e.type] then
       local b = c.belts
       b.n = b.n + 1
-      b.x0, b.y0 = math.min(b.x0 or e.position.x, e.position.x), math.min(b.y0 or e.position.y, e.position.y)
-      b.x1, b.y1 = math.max(b.x1 or e.position.x, e.position.x), math.max(b.y1 or e.position.y, e.position.y)
+      b.x0, b.y0 = math.min(b.x0 or px, px), math.min(b.y0 or py, py)
+      b.x1, b.y1 = math.max(b.x1 or px, px), math.max(b.y1 or py, py)
       b.name = b.name or e.name
       local h = holds_of(e)
       if h then b.items[#b.items+1] = h end
     else
-      c.others[#c.others+1] = {name=e.name, position={x=e.position.x, y=e.position.y}, holds=holds_of(e)}
+      c.others[#c.others+1] = {name=e.name, position={x=px, y=py}, holds=holds_of(e)}
     end
     c.list = c.list or {}
     if #c.list < 256 then c.list[#c.list+1] = e end
@@ -1326,18 +1424,17 @@ return function(api)
   end
   -- The background read, one stage per tick, its state in storage so every
   -- peer runs the same: started when the last read is SCAN_TICKS old.
+  -- (BT1: once a tick; each force's players read once, a new table of players each read)
+  local function by_name(a, b) return a.name < b.name end
   local function forces()
     local out = {}
-    for _, f in pairs(game.forces or {}) do if f.players and #f.players > 0 then out[#out+1] = f end end
-    table.sort(out, function(a, b) return a.name < b.name end)
+    for _, f in pairs(game.forces or {}) do local ps = f.players; if ps and #ps > 0 then out[#out+1] = f end end
+    table.sort(out, by_name)
     return out
   end
-  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
-  local function timed(label, fn, ...)
-    if api.timed then return api.timed(label, fn, ...) end
-    return fn(...)
-  end
   local step_do
+  -- A band's filter (walk.band copies it), its force and limit set for each band.
+  local BAND_F = {type=TYPES}
   function M.tick(tick)
     local s = api.state()
     s.push_alerts = s.push_alerts or {}
@@ -1422,12 +1519,12 @@ return function(api)
     end
     if stage.surface then
       -- A planet: a band found in one step (walk.lua), then read SLICE a step.
-      local surface
-      for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
+      local surface = planet_named(stage.surface)
       if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
       elseif not job.list then
         job.walk = job.walk or walk.start(surface)
-        local list = walk.band(job.walk, surface, {force=force, type=TYPES, limit=job.budget})
+        BAND_F.force, BAND_F.limit = force, job.budget
+        local list = walk.band(job.walk, surface, BAND_F)
         if list then job.list, job.at = list, 1; job.budget = job.budget - #list
         else job.walk = nil; job.i = job.i + 1 end
       else
@@ -1439,7 +1536,7 @@ return function(api)
           cost = cost + (e.valid and COST[e.type] or COST_OTHER)
         end
         job.cost = cost
-        read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
+        read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force), force)
         job.at = last + 1
         if job.at > #job.list then job.list, job.at = nil, nil end
       end
@@ -1499,15 +1596,30 @@ return function(api)
   end
   -- An ammo turret with ammo under LOW_SHARE of what its slots hold, where no construction robot reaches: its line.
   local LOW_SHARE, LOST_KEEP = 0.2, 36000
-  function M.outpost_low(e, inv)
+  -- An item's stack size by name (a prototype fact; prototypes.item[name] is a new object each read).
+  local STACK = {}
+  local function item_stack(name) return prototypes.item[name].stack_size end
+  local function stack_size(name)
+    local v = STACK[name]
+    if v == nil then
+      local ok, x = pcall(item_stack, name)
+      if not ok then return 0 end
+      v = x or 0
+      STACK[name] = v
+    end
+    return v
+  end
+  -- (count: inv.get_item_count() when the caller has read it)
+  function M.outpost_low(e, inv, count)
     if not inv then return nil end
-    local n = try(function() return inv.get_item_count() end) or 0
+    local n = count or invoke0(inv, 'get_item_count') or 0
     if n <= 0 then return nil end
     local cap, name = 0, nil
-    for i = 1, try(function() return #inv end) or 0 do
+    local okl, size = pcall(len, inv)
+    for i = 1, okl and size or 0 do
       local st = inv[i]
-      if st.valid_for_read then name = name or st.name; cap = cap + (try(function() return prototypes.item[st.name].stack_size end) or 0)
-      else cap = cap + (name and (try(function() return prototypes.item[name].stack_size end) or 0) or 0) end
+      if st.valid_for_read then name = name or st.name; cap = cap + stack_size(st.name)
+      else cap = cap + (name and stack_size(name) or 0) end
     end
     if cap <= 0 or n >= LOW_SHARE * cap or not M.remote(e) then return nil end
     return string.format('%s %s: %d of %d %s (%d%%)', e.name, at_text(e.position), n, cap, name or 'ammo', math.floor(100 * n / cap))
