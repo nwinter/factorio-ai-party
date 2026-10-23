@@ -12137,3 +12137,37 @@ the watch's arrivals show the pad holding 1000, 1976, 2448, ... 5602 on each pod
 - Headless copy, after a deploy: watch #75 read `received` (10000, 10 pods, by the pad, from its arrivals) within a
   second, with the line above. Cost: nothing new per tick; at a landing, a chest/silo/machine consumer adds two
   logistic network lookups (1.3 µs each on the copy).
+- cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
+  tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
+  - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
+    taken out; an optional out_pos hands each entity's position (as the band read it) to the caller, so survey,
+    pushalerts and census read no position again.
+  - survey.lua: the status name read only for the machine counts (a machine with no burner reads its engine status
+    name, as machine_status gives it; a burner one burnt.stuck once, not twice); each read once an entity; no
+    closures.
+  - pushalerts.lua: guarded reads through shared getters (no closure a read; 5-10 an entity before); an entity's type,
+    position, status and burner read once; burnt.stuck asked of burners only; a working machine's seed check ends
+    before its recipe is read; output_chest_full and catalyst_gone ran a second time untimed when they found nothing:
+    once now; inserter records rewritten in place; prototype facts cached by name. lightning.lua: a building's
+    position read once.
+  - census.lua: positions from the band; a recipe read once; no closures; the step's lookups kept between steps.
+  - networks.lua: the view walk and samples read each entity once and make no closures (see its commit).
+  - conditions.lua: ammo_below and platform_energy_below on a platform keep their turret and accumulator lists as
+    fluid_count does (counts and energy read live); platform_hit and platform_loss make no closures.
+  - beltgaps.lua: a one-tile belt's tile from its prototype's collision box (cached by name) when the box stays inside
+    the tile, else read as before; a belt row refreshed in the same call updated in place (the same fields).
+  - threat.lua, spoil.lua, platalerts.lua, flightwatch.lua: scratch tables reused, force, surface and platform kept
+    while valid, no closures; spoil.tick returns before reading the force between sweeps.
+  - freight.lua: each hub's inventories and the kinds they held kept per platform; a read counts those kinds
+    (get_item_count, no table) and takes them while they add up to the inventory's total, else reads get_contents;
+    the item statistics and their counting methods kept; a space connection's ends by name; the belt read keeps its
+    platform and surface, skips empty lines (#line), reads a prototype's line count once. A tie in spoil matching is
+    now in name order (before: the order of the hub's listing). shipment.lua: a silo's cargo, deliveries and
+    request_rows read only when a row needs them.
+  - Caches are module state, found again after a load: a peer that joins starts with none and reads in full. The
+    counts and lines are the same; the hub counts' key order can differ on such a peer (it does not change a count).
+  - On the copy (fresh load of _autosave12 each run, the same replay, 180 s): the heap grew 15.45 MB a second on main
+    (88ba0901) and 9.46 after; the harness tick 4.34 ms a tick on average and 3.20 after; the worst game second
+    1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
+    Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
+
