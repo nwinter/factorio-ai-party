@@ -73,7 +73,14 @@ do
   -- and 2,992 nutrients a minute from the biochambers' finished crafts; before: 74.6 crafts and 2,236.5)
   eq(nut.for_this_per_min,2982)
   has(r.lines[1],'recipe pentapod-egg: 2 per craft (+50% productivity on its 2 makers there; the statistics count 1.5 a craft); 99.4 crafts a minute')
-  has(r.lines[2],'nutrients: made 4000/min, used 3500/min, 600/min left uncounted (spoiled, or carried off the surface; supply measured it), stock 800 (8 min at the net use)')
+  has(r.lines[2],'nutrients: made 4000/min, used 3500/min, 600/min left uncounted (spoiled, or carried off the surface; supply measured it: over 10 min, held 1800 then and 800 now, -100 a minute), stock 800 (8 min at the net use)')
+  -- a flat measure (Gleba live: held 3,730 then 3,738) is sustained though the 10-minute rates less it read -12/min
+  game.tick=game.tick+18000; totals.nutrients={made=60000,used=52000}
+  SF.sample(force,gleba,'nutrients',808)
+  flow10.nutrients={input=41219,output=34781}
+  r=D.read({surface=gleba,force=force},{item='pentapod-egg'})
+  eq(r.ingredients[1].net_per_min,1.6); eq(r.ingredients[1].state,'ok'); eq(r.sustained,true)
+  has(r.lines[#r.lines],'sustained: yes (none used faster than made; one that spoils by its measured stock change)')
   -- the egg itself spoils too, with no measure: said
   has(r.lines[#r.lines],'spoiling not counted for pentapod-egg (the statistics leave it out; no supply measure in the last 30 min)')
 end

@@ -87,15 +87,18 @@ return function(api)
     local w = try(function() return prototypes.item[item].weight end) or 0
     local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
     local per_rocket = w > 0 and math.floor(lift / w) or nil
-    local net = made - used - gone
+    -- measured: the net is the measure's own (its window's stock change a minute), not the 10-minute rates less a
+    -- 5-minute measure (Gleba: held 3,730 then 3,738 read -12/min that way)
+    local net = m and m.minutes > 0 and (m.stock_now - m.stock_then) / m.minutes or made - used - gone
     local minutes = net < 0 and stock / math.max(0.1, -net) or nil
     return {item=item, made_per_min=r1(made), used_per_min=r1(used), stock=stock, minutes_left=minutes and r1(minutes) or nil,
       spoils=spoils or nil, uncounted_per_min=m and r1(m.uncounted_per_min) or nil, net_per_min=r1(net), measured=m and m.line or nil,
+      measure_text=m and string.format('over %g min, held %d then and %d now, %+g a minute', m.minutes, m.stock_then, m.stock_now, r1(net)) or nil,
       coming_in_pods=pods > 0 and pods or nil, aboard=#aboard > 0 and aboard or nil, per_rocket=per_rocket}
   end
   local function line_of(r)
     return string.format('%s: made %g/min, used %g/min%s, stock %d%s%s%s%s', r.item, r.made_per_min, r.used_per_min,
-      r.uncounted_per_min and string.format(', %g/min left uncounted (spoiled, or carried off the surface; supply measured it)', r.uncounted_per_min)
+      r.uncounted_per_min and string.format(', %g/min left uncounted (spoiled, or carried off the surface; supply measured it: %s)', r.uncounted_per_min, r.measure_text)
         or r.spoils and ' (spoiling not in these: no supply measure of it in the last 30 min)' or '', r.stock,
       r.minutes_left and string.format(' (%g min at the net use)', r.minutes_left) or '',
       r.coming_in_pods and string.format('; %d coming down in cargo pods', r.coming_in_pods) or '',
@@ -124,7 +127,7 @@ return function(api)
     local recipe = recipe_for(surface, f, a.item)
     local top = row_of(f, surface, a.item)
     local lines, rows = {line_of(top)}, {}
-    local feasible, sustained, first, unmeasured = true, true, nil, {}
+    local feasible, sustained, first, unmeasured, measured = true, true, nil, {}, false
     if recipe then
       local out = per_craft(recipe, a.item)
       local bonus, makers = bonus_of(f, surface, recipe)
@@ -145,6 +148,7 @@ return function(api)
           else r.state = 'ok' end
           if r.net_per_min < 0 then sustained = false end
           if r.spoils and not r.uncounted_per_min then unmeasured[#unmeasured+1] = r.item end
+          if r.uncounted_per_min then measured = true end
           if r.state ~= 'ok' and not first then first = r end
           rows[#rows+1] = r
           lines[#lines+1] = string.format('%s (%g a craft; %g/min of it for the %g/min made now) [%s]', line_of(r), r.per_craft, r.for_this_per_min, top.made_per_min, r.state)
@@ -154,12 +158,12 @@ return function(api)
       end
     else lines[#lines+1] = 'no recipe makes it here (a resource, a spoil result or a byproduct): supply and stock read it' end
     lines[#lines+1] = string.format('feasible: %s; sustained: %s%s', feasible and 'yes (every ingredient there, made or coming)' or 'no',
-      sustained and 'yes (none used faster than made)' or 'no', first and string.format('; first unsatisfied: %s (%s)', first.item, first.state) or '')
+      sustained and (measured and 'yes (none used faster than made; one that spoils by its measured stock change)' or 'yes (none used faster than made)') or 'no', first and string.format('; first unsatisfied: %s (%s)', first.item, first.state) or '')
       .. (#unmeasured > 0 and string.format('; spoiling not counted for %s (the statistics leave it out; no supply measure in the last 30 min)', table.concat(unmeasured, ', ')) or '')
     return {item=a.item, surface=surface.name, recipe=recipe and recipe.name or nil, item_row=top, ingredients=rows, feasible=feasible, sustained=sustained,
       first_unsatisfied=first and first.item or nil, lines=lines}
   end
   M.schema = {dependency = {item='item name', surface='optional surface (default yours)',
-    returns='lines: the item and each solid ingredient of its recipe (the one most of its makers there run, else the recipe of its name): made and used a minute there (production statistics, 10 min; an item that spoils adds what left uncounted a minute (spoiled) when a whole-surface supply measured it in the last 30 min, and the net and sustained count it), the planet stock and minutes it covers at the net use, cargo pods coming down with it, our platforms carrying it to a stop there whose pads ask it, how many a rocket lifts by weight; per ingredient what a craft takes (net of what it gives back) and what the making now takes a minute (the crafts run: made over what the statistics count a craft: its products past a returned catalyst, with its makers\' average productivity bonus), and missing | short | ok; feasible (every ingredient there, made or coming), sustained (none used faster than made) and the first unsatisfied. Read only'}}
+    returns='lines: the item and each solid ingredient of its recipe (the one most of its makers there run, else the recipe of its name): made and used a minute there (production statistics, 10 min; an item that spoils adds what left uncounted a minute (spoiled) when a whole-surface supply measured it in the last 30 min, and its net is then that measure\'s stock change a minute), the planet stock and minutes it covers at the net use, cargo pods coming down with it, our platforms carrying it to a stop there whose pads ask it, how many a rocket lifts by weight; per ingredient what a craft takes (net of what it gives back) and what the making now takes a minute (the crafts run: made over what the statistics count a craft: its products past a returned catalyst, with its makers\' average productivity bonus), and missing | short | ok; feasible (every ingredient there, made or coming), sustained (none used faster than made) and the first unsatisfied. Read only'}}
   return M
 end
