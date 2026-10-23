@@ -354,7 +354,11 @@ return function(api)
         estimate and {value=total,scope='fluid:'..on..':'..c.fluid..(c.platform and '' or ':'..#list)} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
-    -- together, as a circuit wait condition reads it.
+    -- together, as a circuit wait condition reads it. A hub with no red or green wire reads every signal as 0, as the
+    -- game's own circuit wait conditions read it (d22 batch118 CA1, Astra: "no signal to read" held a below guard
+    -- unmet; measured on a copy of world n: a platform schedule's circuit condition rocket < 4850 on an unwired hub
+    -- was met at once and the platform left, rocket > -1 too; on a wired hub with no rocket signal, rocket < 4850 met,
+    -- rocket > 4850 not): below N (over 0) is met, at_least N (over 0) is never met while it has none.
     circuit_signal=function(p,c,estimate)
       local pl=M.platform_named(p,c.platform)
       local hub=pl.hub
@@ -369,9 +373,10 @@ return function(api)
           if okv and v then n=n+v end
         end
       end
-      local met=#wires>0 and (c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
+      local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
       return met,#wires>0 and string.format('%s %d on %s\'s hub (%s)',c.signal,n,c.platform,table.concat(wires,' and '))
-        or string.format('%s\'s hub has no red or green wire: no signal to read',c.platform),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
+        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',
+          c.platform,c.signal,met and 'met' or 'never met while it has none'),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
     end,
     -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
     -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
@@ -1042,6 +1047,29 @@ return function(api)
         kind=='platform_left' and 'platform_left since_tick is a game tick up to now' or 'platform_arrived takes no since_tick')
     end
     return c
+  end
+  -- A guard that can never be met as things stand (d22 batch118 CA1, Astra: a guard on an unwired hub held unmet with
+  -- nothing said): circuit_signal at_least N (over 0) on a hub with no red or green wire (every signal reads 0 there),
+  -- alone or in all. The refusal's text, or nil.
+  function M.guard_refusal(p,c)
+    if type(c)~='table' then return nil end
+    local kind=M.ALIASES[c['until']] or c['until']
+    if kind=='all' then
+      for _,m in ipairs(type(c.conditions)=='table' and c.conditions or {}) do
+        local why=M.guard_refusal(p,m)
+        if why then return why end
+      end
+      return nil
+    end
+    if kind~='circuit_signal' or c.at_least==nil or c.at_least<=0 then return nil end
+    local ok,hub=pcall(function() return M.platform_named(p,c.platform).hub end)
+    if not (ok and hub and hub.valid) then return nil end
+    for _,w in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+      local okn,net=pcall(function() return hub.get_circuit_network(w) end)
+      if okn and net then return nil end
+    end
+    return string.format('circuit_signal %s at_least %d on %s: its hub has no red or green wire, so %s reads 0 there (as the game\'s own circuit conditions read an unwired hub) and at_least %d is never met while it has none',
+      c.signal,c.at_least,c.platform,c.signal,c.at_least)
   end
   function M.check(p,c,estimate,record)
     if M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end

@@ -76,7 +76,8 @@ do
   assert(not pcall(C.validate,{['until']='circuit_signal',platform='Swift',signal='nonsense',at_least=1}),'a known signal')
   hub.get_circuit_network=function() return nil end
   met,saw=C.check(p,{['until']='circuit_signal',platform='Swift',signal='thruster-fuel',at_least=1})
-  eq(met,false); has(saw,'no red or green wire')
+  -- (d22 batch118 CA1: as the game reads an unwired hub, every signal 0)
+  eq(met,false); has(saw,"Swift's hub has no red or green wire: thruster-fuel reads 0 there, as the game's own circuit conditions read an unwired hub (never met while it has none)")
 end
 print('d17_batch17 A5 fluid_count and circuit_signal waits: ok')
 
