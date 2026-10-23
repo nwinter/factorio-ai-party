@@ -1454,7 +1454,7 @@ at 1 px a tile in the game's map colours, from the harness's `chart` operator re
 
 Nick: wrapped or cut status lines are useless on a stream nobody can scroll or hover. static/marquee.js (both pages):
 - Changing single-line text wider than its box rests at its start and now and then pans to its end (3.5 font sizes a
-  second: 49 px/s on a 14 px card line, 84 px/s on portrait's 24 px), holds 2.5 s and pans back (4x faster, 1-3 s).
+  second: 49 px/s on a 14 px card line, 84 px/s on portrait's 24 px), holds 2.5 s and cuts back to its start (d23 batch124 CG3, Nick: the pan back was "a little excessive": a 0.2 s fade out, a jump, a 0.2 s fade in; it was a pan 4x faster, 1-3 s).
   Lines take turns page-wide: at most two away from their start at once, starts 4 s apart, the longest rested first,
   each at its start at least 12 s between pans and at least as long as its pan takes. New words go back to the start;
   a change in numbers only (an age, a countdown) keeps the turn. A soft fade at the right edge replaces the ellipsis.
