@@ -897,7 +897,10 @@ return function(api)
   -- force: the read's force (every entity of list is of it; nil: each entity's own).
   -- (BT1: each entity's type, position, status and burner read once and passed down; a guarded read is pcall(f, args),
   -- not a closure; the surface's coverage find read once a call)
-  local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem, force)
+  -- positions: list[i]'s position as the band read it (walk.lua out_pos), else nil; a vehicle's is read again (it
+  -- moves between the band and the slice; nothing else of TYPES does).
+  local MOVES = {car=true, ['spider-vehicle']=true}
+  local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem, force, positions)
     if mining and mining.__sight then mining.__sight.budget = VIS_STEP end
     local st = statuses()
     local nets_of = mining and (get(s, 'find_logistic_networks_by_construction_area') or false)
@@ -905,7 +908,8 @@ return function(api)
       local e = list[i]
       local etype, pos, burner
       if e.valid then
-        etype, pos = e.type, e.position
+        etype = e.type
+        pos = positions and not MOVES[etype] and positions[i] or e.position
         pcall(sight_note, mining, s, e, etype, pos, nets_of, force)
       end
       if e.valid and COVER_ONLY[etype] then e = COVER_DONE end
@@ -1520,12 +1524,13 @@ return function(api)
     if stage.surface then
       -- A planet: a band found in one step (walk.lua), then read SLICE a step.
       local surface = planet_named(stage.surface)
-      if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
+      if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list, job.pos = nil, nil, nil
       elseif not job.list then
         job.walk = job.walk or walk.start(surface)
         BAND_F.force, BAND_F.limit = force, job.budget
-        local list = walk.band(job.walk, surface, BAND_F)
-        if list then job.list, job.at = list, 1; job.budget = job.budget - #list
+        -- (walk.lua fills the positions it read, a table each band kept with the list; a walk without out_pos: nil)
+        local list, pos = walk.band(job.walk, surface, BAND_F, {})
+        if list then job.list, job.at, job.pos = list, 1, pos; job.budget = job.budget - #list
         else job.walk = nil; job.i = job.i + 1 end
       else
         -- up to SLICE entities, and as many as SLICE_COST covers
@@ -1536,9 +1541,9 @@ return function(api)
           cost = cost + (e.valid and COST[e.type] or COST_OTHER)
         end
         job.cost = cost
-        read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force), force)
+        read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force), force, job.pos)
         job.at = last + 1
-        if job.at > #job.list then job.list, job.at = nil, nil end
+        if job.at > #job.list then job.list, job.at, job.pos = nil, nil, nil end
       end
     elseif stage.step == 'alerts' then
       job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
