@@ -60,6 +60,12 @@ s.losses={{id=1,surface='nauvis',box={-350,-350,-340,-340},first=30010,last=3001
 game.tick=30030
 eq(U.check(p,base),'buildings destroyed in your claim #5 "home boilers": loss #3 at (225,222): 7 destroyed (5 transport-belt, 2 boiler) by 4 big-spitter')
 eq(U.check(p,base),nil)
+-- (d22 batch113 BW1) a teammate's claim haiku covers (board_update cover) is watched as its own
+s.board.items[2].covers={{name='haiku',tick=30000}}
+s.losses={{id=7,surface='nauvis',box={-350,-350,-340,-340},first=30031,last=30031,names={['gun-turret']=1},causes={['big-biter']=1},total=1}}
+game.tick=30035
+eq(U.check(p,base),'buildings destroyed in claim #6 "iron" by opus, which you cover: loss #7 at (-345,-345): 1 destroyed (1 gun-turret) by 1 big-biter')
+s.board.items[2].covers=nil
 -- A stale claim is not watched; a loss within 40 tiles is.
 s.board.items[1].stale=true
 s.losses={{id=4,surface='nauvis',box={230,230,231,231},first=30040,last=30040,names={boiler=1},causes={['big-biter']=1},total=1},

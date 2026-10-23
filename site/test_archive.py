@@ -81,9 +81,9 @@ def main():
         assert pages == ["404.html", "about/index.html", "agents/index.html", "chat/index.html", "chronicle/index.html",
                          "how/agents/index.html", "how/compare/index.html", "how/harness/index.html", "how/index.html",
                          "how/lessons/index.html", "how/operations/index.html", "how/setup/index.html",
-                         "index.html", "live/index.html", "polls/index.html",
+                         "index.html", "live/index.html", "polls/index.html", "privacy/index.html",
                          "runs/long/index.html", "runs/long/shift-1/index.html", "runs/long/shift-2/index.html",
-                         "search/index.html", "timeline/index.html", "updates/index.html"], pages
+                         "search/index.html", "terms/index.html", "timeline/index.html", "updates/index.html"], pages
         before = set(content["runs"]) | set(content["studies"]) | {"shake3", "shake4", "smoke-x1"}
         ids = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(before))) + r"|shake\d+|smoke-[\w-]+|Fable)(?![\w-])")
         for p, t in text_files(out):

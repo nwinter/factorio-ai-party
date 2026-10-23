@@ -81,12 +81,16 @@ return function(api)
   local function overlaps(b, a)
     return b[1] <= a.right_bottom.x and b[3] >= a.left_top.x and b[2] <= a.right_bottom.y and b[4] >= a.left_top.y
   end
-  -- p's own claims that are open and fresh (not stale), on surface.
+  -- p's own claims that are open and fresh (not stale), on surface; (d22 batch113 BW1) and those p covers.
+  local function covers(i, me)
+    for _, c in ipairs(i.covers or {}) do if c.name == me then return true end end
+    return false
+  end
   local function my_claim(p, surface, b)
     local board = api.state().board
     local me = api.who and api.who(p) or p.name
     for _, i in pairs(board and board.items or {}) do
-      if i.kind == 'claim' and i.owner == me and i.area and (i.status == 'open' or i.status == 'claimed' or i.status == 'doing' or i.status == 'blocked')
+      if i.kind == 'claim' and (i.owner == me or covers(i, me)) and i.area and (i.status == 'open' or i.status == 'claimed' or i.status == 'doing' or i.status == 'blocked')
         and not (api.claim_stale and api.claim_stale(i)) and (api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis') == surface
         and overlaps(b, i.area) then return i end
     end
@@ -319,7 +323,8 @@ return function(api)
           elseif i.surface == surface then
             local claim = my_claim(p, surface, i.box)
             if claim and base.radius and not (pos and box_dist(i.box, pos) <= base.radius) then claim = nil end
-            if claim then why = string.format('buildings destroyed in your claim #%s "%s"', tostring(claim.id), tostring(claim.title or ''))
+            if claim then why = string.format('buildings destroyed in %s #%s "%s"', claim.owner == me and 'your claim' or 'claim', tostring(claim.id), tostring(claim.title or ''))
+              .. (claim.owner ~= me and ' by ' .. tostring(claim.owner) .. ', which you cover' or '')
             elseif pos and box_dist(i.box, pos) <= near then why = string.format('buildings destroyed %d tiles from you', round(box_dist(i.box, pos))) end
           end
           if why then

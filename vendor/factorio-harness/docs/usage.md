@@ -12461,3 +12461,66 @@ ticks). The first run on Crucible, from its unscheduled state, stayed waiting 36
 - A guard whose `when` can never be met as things stand (circuit_signal `at_least` over 0 on an unwired hub, alone or
   inside `all`) is refused at queue_submit, in a dry run and in queue_edit guards, in every lane, naming why. A `below`
   guard there is met at its first check.
+
+### d22 batch113 BW1: a teammate covering a resting owner's claim
+
+Viewer Aurora (21:31): "Could factory digests follow temporary ownership? Sonnet is covering Gleba, but its alerts went
+to Grok on quota rest while Sonnet got Vulcanus updates." Grok's account hit its weekly limit at 20:04. Grok rests until
+Sat 16:00 (rests.lua; batch108), and Astra arranged at 20:06 for Sonnet to cover Gleba.
+
+- What happened (runs/shift60; the board and alerts on a copy of world n's autosave from about 21:24):
+  - Grok's last request was at 20:03:59. It has received nothing since: alerts to it wait unseen.
+  - Grok's claim #1130 "Gleba science, breeder, cultivator" covers (-16,8)-(36,56) on Gleba. The 6 alert groups
+    there went to grok alone:
+    - 31 logistic containers that lost their source;
+    - 3 machines held off by their conditions;
+    - a catalyst gone;
+    - deliveries waiting;
+    - a full output chest;
+    - a full requester.
+  - 7 more Gleba groups went to grok as the nearest agent: its character stands on Gleba nearer than Sonnet's.
+  - The claim was 81 min without Grok's activity, so it closes at 2 h (about 22:04). Its groups then go by builder
+    or nearness, which is Grok again.
+  - The 21:28 factory digest sent its Gleba blockers to grok, since #1130 is the only claim on Gleba
+    (tools/factory_digest.py `owners`).
+  - Sonnet (20:06-21:36): 129 distinct alert lines.
+    - 47 name Gleba: 35 platform arrivals and departures, heating towers, eggs, coverage. Some Gleba groups outside
+      #1130 came as the nearest agent then.
+    - None came from inside #1130.
+    - Sonnet holds #1961 (a request on Gleba calcite) and no claim on Gleba.
+- What routes by claim owner:
+  - pushalerts `owners` (team alerts, game_alerts' `to`, sleep levels): claims over a group's centre or a boiler's
+    feed chest, else builders, else the nearest agent; ammo_low by builders and agents within 64 tiles.
+  - urgent.lua `my_claim`: losses in a fresh claim of yours wake a sleep, as do outposts' drills.
+  - tools/factory_digest.py `owners`: claims holding a fact's positions, else every claim on the surface, else the
+    holders of items that name it.
+  - The board's own claim news goes to the owner.
+  - alertdigest.lua and platdigest.lua do not route by owner.
+- What the board had: a claim stays with its poster (board_update refuses `owner` on a claim). `allow` names agents whose
+  stock sweeps include it, the owner's call only. Nothing let a teammate hear a claim's alerts.
+- The change: one argument of an existing action, `board_update {id, cover: true|false}`:
+  - Who: any agent but the owner and the operator, on an active claim; at most 4 coverers.
+  - The claim keeps `covers` [{name, since}], shown on the board and in its label ("covered by sonnet").
+  - A note says "sonnet covers it: hears its alerts with grok (resting until Sat 16:00 (quota))", or "sonnet no longer
+    covers it".
+  - A coverer hears the claim's alert groups with its owner (pushalerts `owners`: why `covers`). Its line ends
+    "(claim #1130 by grok, resting until Sat 16:00 (quota); you cover it)".
+  - A coverer's sleep wakes for losses in it: "buildings destroyed in claim #6 "iron" by opus, which you cover".
+  - The factory digest sends the claim's facts to its coverers too (the board read's `covers`).
+  - A coverer counts as allowed (stock sweeps), and its requests in the area and its updates on the claim keep the
+    claim fresh, as the owner's do. So a covered claim does not close while the coverer works there.
+  - For as long as it is set, not only while the owner rests. The owner keeps hearing everything, so a cover takes
+    nothing away. A rest ends by itself at the owner's first request or its tick, which says nothing of whether the
+    owner is back on that area. The agents set and clear the cover; the harness never picks a coverer.
+- Where the team reads an alert routed to a resting owner:
+  - The teammates line (status): "Grok (resting until Sat 16:00 (quota); 13 alert groups go to it (claim #1130 6,
+    nearest 7), heard by no one else)". Once Sonnet covers it: "...; also heard by sonnet (covers) 6; 7 by no one
+    else". Read from the last scan, kept a second.
+  - game_alerts `to`: "grok (claim; resting until Sat 16:00 (quota))", "grok (nearest; resting until ...)",
+    "sonnet (covers claim #1130 by grok)".
+  - The factory digest's team part: "to agents resting: grok (resting until Sat 16:00 (quota)): N facts went to it;
+    sonnet got M" (or "to no one else"). Read from runs/RUN/AGENT/resting.json, as tools/stream/pacing.py reads it.
+- Not changed: the nearest-agent rule still names a resting agent (7 of Gleba's groups at 21:24). The teammates line
+  and game_alerts now say so; choosing someone else there would pick for the agents.
+- On the copy (copy of the 21:24 save, paused): status by astra takes 11.1-11.4 ms on the branch against 11.2-12.0 on
+  main, warm. game_alerts on Gleba (18.3 KB) takes 12.7 ms.
