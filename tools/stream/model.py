@@ -768,6 +768,9 @@ class Model:
         self.links_path, self.links_mtime, self.links = None, None, {}  # set_reply_links
         self.chat_seen = set()
         self.chat_read = False  # the first chat read (the backlog) is done
+        # (d22 batch111 BU1) the operator-read feeds whose backlog is read (an empty read since the start): until then a
+        # line older than HISTORY_S by game tick is history (backlog_old)
+        self.feeds_live = set()
         self.chat_log_path, self.chat_log_times = None, None  # set_chat_log
         self.operator_requests = deque(maxlen=5)  # the last few agents' requests to the operator, for the snapshot
         self.alerts = deque(maxlen=30)
@@ -880,6 +883,7 @@ class Model:
             self._ingest_tell(t, now)
         for r in obs.get("operator_requests") or []:
             self._ingest_operator_request(r, now)
+        self._feeds_read(obs, ("confessions", "tells", "operator_requests"))
         if obs.get("research"):
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
@@ -932,6 +936,7 @@ class Model:
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
             self._ingest_board_event(e, now)
+        self._feeds_read(obs, ("board_events",))
         if obs.get("board") is not None:  # after the events: a `board` read is the authoritative item state
             self._ingest_board(obs["board"])
         for e in obs.get("events", []):
@@ -1257,7 +1262,37 @@ class Model:
         t = self.chat_log_times.get((m.get("seq"), m.get("tick")))
         if t is not None:
             return t
-        return (self.tick_t or time.time()) - max(0, self.tick - m["tick"]) / 60.0
+        return self.tick_time(m["tick"])
+
+    def tick_time(self, tick):
+        """A line's wall time from its game tick: the game ticks since it (at 60 a second) before the tick read now. A
+        lower bound on its age across a shift break (the server stood still between shifts)."""
+        return (self.tick_t or time.time()) - max(0, self.tick - tick) / 60.0
+
+    # (d22 batch111 BU1, Nick: a Sol line "keeps coming back onto the stream at weird random times throughout the past
+    # few days") live.py reads confessions, tells and board_events from 0 after a restart, and operator_requests from
+    # the inbox file's last seq: the first reads return the runtime's kept lines (Sol's confessional seq 67, tick
+    # 10291268, was voiced 11 times in shift52-60, each about 20 s after a caster start, with Astra's seq 65). As for
+    # restored chat (_ingest_chat): a line from a feed's backlog older than HISTORY_S by game tick keeps its own time
+    # and is marked history (the site, the overlay; never voiced, no interest for the director).
+    def backlog_old(self, m, feed):
+        """True for a line of `feed` read before its backlog is done whose tick is more than HISTORY_S behind now."""
+        return feed not in self.feeds_live and isinstance(m.get("tick"), (int, float)) and bool(self.tick) \
+            and (self.tick - m["tick"]) / 60.0 > HISTORY_S
+
+    def _feeds_read(self, obs, feeds):
+        """A feed's backlog is done at its first empty read (live.py puts each feed it read in obs, [] when nothing is
+        new; the confessions and tells reads return the newest kept at once, board_events 100 at a time)."""
+        for feed in feeds:
+            if isinstance(obs.get(feed), list) and not obs[feed]:
+                self.feeds_live.add(feed)
+
+    def _restore(self, entry, m, feed):
+        """Mark a backlog line history with its own time (backlog_old); True when it did."""
+        if not self.backlog_old(m, feed):
+            return False
+        entry["t"], entry["history"] = self.tick_time(m["tick"]), True
+        return True
 
     def _ingest_chat(self, m, now, restored=False):
         key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
@@ -1330,8 +1365,9 @@ class Model:
         sender = self._match_sender(c.get("from", ""))
         entry = {"seq": f"c{c.get('seq')}", "tick": c.get("tick"), "from": c.get("from"), "agent": sender,
                  "text": c.get("text", ""), "t": c.get("t", now), "confess": True, "lane": "talk"}
+        old = self._restore(entry, c, "confessions")
         self.chat.append(entry)
-        if sender:
+        if sender and not old:
             self.agents[sender].bump(2.5, now)
 
     def _ingest_tell(self, t, now):
@@ -1351,8 +1387,9 @@ class Model:
         entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
                  "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
                  "to_shown": shown, "to": names, "body": t.get("text", "")}
+        old = self._restore(entry, t, "tells")
         self.chat.append(entry)
-        if sender:
+        if sender and not old:
             self.agents[sender].bump(1, now)
 
     def _ingest_operator_request(self, r, now):
@@ -1367,10 +1404,13 @@ class Model:
         entry = {"seq": f"o{r.get('seq')}", "tick": r.get("tick"), "from": r.get("agent"), "agent": sender,
                  "text": f"→ operator: {text}", "t": r.get("t", now), "tell": True, "operator": True, "lane": "tell",
                  "to_shown": "operator", "to": ["operator"], "body": text}
+        # (live.py's t is when the inbox row was written, the read's time: a backlog row's own time is its tick's)
+        old = self._restore(entry, r, "operator_requests")
         self.chat.append(entry)
         self.operator_requests.append({"seq": r.get("seq"), "t": entry["t"], "agent": sender or r.get("agent"),
-                                       "display_name": self.agents[sender].display_name if sender else None, "text": text})
-        if sender:
+                                       "display_name": self.agents[sender].display_name if sender else None, "text": text,
+                                       **({"history": True} if old else {})})
+        if sender and not old:
             self.agents[sender].bump(1, now)
 
     def _match_sender(self, frm):
@@ -1495,14 +1535,17 @@ class Model:
         if kind == "plan":
             return  # plan edits show as the plan line itself (board_snapshot)
         agent = self._who(e.get("by"))
-        recent = e.get("t", now) > now - 30
+        restored = self.backlog_old(e, "board_events")  # (BU1) a restart's replay of the kept events
+        t = self.tick_time(e["tick"]) if restored else e.get("t", now)
+        recent = t > now - 30
         title = e.get("title") or it.get("title") or ""
         if kind == "research":  # a finished technology (research.lua): no item, by "research"
             self._tech_unlocks(title, e.get("text"), now)
             title = tech_label(title)
         entry = {"seq": e.get("seq"), "tick": e.get("tick"), "by": e.get("by"), "agent": agent, "id": e.get("id"),
                  "verb": verb, "title": clean_text(title), "kind": kind,
-                 "owner": it.get("owner"), "owner_agent": self._who(it.get("owner")), "t": e.get("t", now)}
+                 "owner": it.get("owner"), "owner_agent": self._who(it.get("owner")), "t": t,
+                 **({"history": True} if restored else {})}
         if kind == "project":  # its progress after this change ("3 of 7 steps"), and the step a step event did
             done, total = project_steps(e.get("progress"), e.get("steps_done"), e.get("steps_total"))
             entry.update(progress=e.get("progress"), steps_done=done, steps_total=total)

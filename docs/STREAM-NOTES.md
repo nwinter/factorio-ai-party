@@ -1523,3 +1523,22 @@ at 1 px a tile in the game's map colours, from the harness's `chart` operator re
 - `score` totals cover only `tools/pog.py`'s item list; other items get rates from flows (30 s
   refresh).
 - The 8787 port conflict on the Mac (see above).
+
+### Backlog lines after a restart are history (d22 batch111 BU1)
+
+Nick: a Sol line "keeps coming back onto the stream at weird random times throughout the past few days". It was Sol's
+confessional seq 67 (game tick 10291268), voiced 11 times in runs/shift52..60/caster.log, each about 20 s after a
+caster start and right after Astra's seq 65 (tick 8953890, "The biggest lesson today is that an idle machine is often
+a delivery problem..."). live.py reads `confessions`, `tells` and `board_events` from 0 after a restart (and
+`operator_requests` from the inbox file's last seq); the first reads return the runtime's kept lines (the newest 30
+confessionals, seqs 46-75 on world n, the newest at tick 16.3M), and model.py stamped each with now, so the caster took
+them as new ("chat_decision ... voiced: true, label reaction", caster-20261022-210720.jsonl).
+
+- model.py `backlog_old`: until a feed's first empty read, a line of it older than HISTORY_S (60 game seconds) by tick
+  keeps its own time (`tick_time`: the game ticks since it before the tick read now, a lower bound across a shift
+  break) and gets `history: true`, as restored chat already did (`_ingest_chat`, `chat_time`). It adds no interest
+  for the director. Confessionals, tells, operator requests (and the snapshot's `operator_requests` rows) and board
+  events (replayed 100 a read) follow it.
+- caster.py's Differ skips `history` chat lines and board events outright (their old `t` already kept them out of
+  its 30/60/120 s windows). The site and the overlay sort and mark them by their own time.
+- Test: tools/stream/test_backlog.py. Deploy: a stream service restart.
