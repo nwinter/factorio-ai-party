@@ -178,6 +178,9 @@
     lists our groups with their requests and members. There is no setting that stops a hub unloading: at each stop it
     keeps only what its requests from that planet ask, so a reserve kept at every port is one section per port, each
     requesting the item `from` that port.
+  - Sections the game writes are `controlled: true` in every row, with `controlled_by`: a hub's construction requests,
+    a silo's automatic requests, or the circuit network. The game refuses a write to one; the refusal names the same
+    call with `add_section: true`, a new manual section that keeps the requests.
   - Your own: `unfilled` lists the personal requests not filled, each with why (personal logistics off, no slot of
     yours takes the item, no network where you stand, no logistic robots, none free, none of the item in the network).
     A request counts what your main inventory, gun, ammo and armor slots hold.
