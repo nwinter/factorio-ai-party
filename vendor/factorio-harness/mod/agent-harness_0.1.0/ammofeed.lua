@@ -910,14 +910,14 @@ return function(api)
     local n = J and (try(function() return pl.surface.count_entities_filtered{type=BELTS, force=pl.force} end) or 0) or 0
     if not J or n <= M.SYNC_BELTS and not background then
       local tr = M.trace(pl)
-      tr.read_tick, tr.read_started = game.tick, game.tick
+      tr.read_tick, tr.read_started, tr.belts = game.tick, game.tick, n
       return tr
     end
     local d = J.done[pl.index]
     if not d or game.tick - d.tick >= (max_age or M.FRESH) then M.start(pl) end
     if d and d.tr then
       -- (d21 batch72 AH1) when the read began and ended (flightwatch.lua: a turret's feed in its empty run)
-      d.tr.read_tick, d.tr.read_started = d.tick, d.started
+      d.tr.read_tick, d.tr.read_started, d.tr.belts = d.tick, d.started, n
       d.tr.as_of = string.format('read over %d ticks in the background (%d belts, %d a tick), %ds ago', d.tick - d.started, n, M.READ_PER_TICK,
         math.floor((game.tick - d.tick) / 60))
       return d.tr
@@ -926,6 +926,9 @@ return function(api)
     return nil, string.format('the ammunition trace of %s (%d belts) is read in the background over about %d ticks (%d belts a tick, the 20 ms rule); read again in a second%s',
       pl.name, n, left, M.READ_PER_TICK, d and d.error and ' (the last read failed: ' .. d.error .. ')' or '')
   end
+  -- (d22 batch109 BS1) the tick the platform's last background read ended (no surface read: flightwatch.lua takes a
+  -- trace once it is done)
+  function M.done_tick(pl) local J = jobs(); local d = J and J.done[pl.index]; return d and d.tr and d.tick or nil end
   -- Drop the reads of platforms gone.
   function M.forget(index) local J = jobs(); if J then J.jobs[index] = nil; J.done[index] = nil end end
   return M
