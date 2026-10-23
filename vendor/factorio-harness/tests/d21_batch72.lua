@@ -126,11 +126,13 @@ assert(not ok and tostring(err):find('done and not read'),tostring(err))
 r=F.call(p,{platform='Kestrel IVc',replace=true}); eq(r.watch.replaced,2)
 -- the listing, clear
 r=F.call(p,{})
-eq(#r.watches,2); assert(r.lines[1]:find('^flight watch #1 on Kestrel IVc, aquilo%->gleba: watched'),r.lines[1])
+eq(#r.watches,3,'the replaced one kept (d22 batch116 BY1)'); eq(r.watches[2].replaced_by,3); assert(r.lines[1]:find('^flight watch #1 on Kestrel IVc, aquilo%->gleba: watched'),r.lines[1])
 r=F.call(p,{id=3,clear=true}); eq(r.cleared,3)
 -- a read one is dropped KEEP_READ after it was read
 F.tick(game.tick+F.KEEP_READ+1)
-eq(#st.flightwatch.list,0,'the read watch dropped')
+eq(#st.flightwatch.list,1,'the read watch dropped; the replaced one not read kept')
+F.tick(game.tick+F.WAIT+1)
+eq(#st.flightwatch.list,0,'the replaced one not read dropped WAIT after its replace')
 -- bad args
 ok,err=pcall(F.call,p,{platform='Kestrel IVc',minutes=0}); assert(not ok and tostring(err):find('minutes: 1..480'))
 ok,err=pcall(F.call,p,{platform='Kestrel IVc',from='later'}); assert(not ok and tostring(err):find('from:'))
