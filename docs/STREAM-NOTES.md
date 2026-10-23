@@ -1473,6 +1473,26 @@ Nick: wrapped or cut status lines are useless on a stream nobody can scroll or h
   and the rotating board and Space widgets' rows (18 s on screen, less than a rest and a pan).
 - Tests: tools/stream/test_marquee.py (timing, turns over 15 minutes, the DOM half with a fake document).
 
+## A narrated tour (2026-10-23, d20 batch125 CH1)
+
+Nick (d23 10:28): a narrated camera tour, scripted ahead. tools/stream/tour.py plays a script of stops ({id, target
+{surface, x, y, zoom} or {platform: NAME}, seconds, caption, narration, facts}) through the service:
+- `tour.py prepare SCRIPT` renders every narration first (voices.TTS, keys in ~/.config/pog/) into
+  SCRIPT_DIR/tour-clips/ with manifest.json; unchanged narrations keep their clips. One narrator voice for the whole
+  tour: the first of `--voice` (default el-brian, then oa-fable) that renders every clip and that no host or agent
+  speaks in.
+- `tour.py dry-run SCRIPT` prints the timeline (no camera, no audio); `run SCRIPT [--from ID]` airs it; `stop` (from
+  another terminal) ends it. A stop lasts max(seconds, clip + 2 s), timed from the clip's start on the page.
+- Camera: POST /look (renewed before its 60 s limit) or POST /platform with the caption as the label; a refused target
+  (uncharted, unknown platform) or a malformed stop is skipped with a log line. The director's cuts wait under a hold.
+- Audio: POST /audio, channel `narrator`, rank `urgent` (the page plays one clip at a time and an urgent one next, so
+  an agent's aloud line waits for the narrator). The hosts stay quiet: caster.py `--hush-file`
+  (tools/stream/logs/hosts-hush.json {until, by, reason}) stops its lines, reactions and segment requests while
+  `until` is ahead; the tour renews it each stop (remaining + 120 s) and removes it at the end, on `stop` or Ctrl-C.
+- Log: tools/stream/logs/tour-START.jsonl, one row per stop (aired: started, on_air, narration_start, ended; or
+  skipped with why).
+- Tests: tools/stream/test_tour.py.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
