@@ -6,7 +6,7 @@ local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= 
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 storage={agent_harness={active={}}}
-defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting={not_shooting=0,shooting_enemies=1},
+defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12},shooting={not_shooting=0,shooting_enemies=1},
   controllers={character=1,remote=27,spectator=2},direction={north=0,east=4,south=8,west=12},
   inventory={chest=1,hub_main=21,asteroid_collector_output=22,asteroid_collector_arm=23},build_mode={normal=1},
   build_check_type={manual=1,manual_ghost=2},flow_precision_index={five_seconds=0,one_minute=1},
@@ -227,6 +227,9 @@ ins.drop_target=hub
 -- entity says how it gets repaired, and repair refuses platform targets.
 hub.health,hub.max_health=637,1000
 collector.health,collector.max_health=50,200
+-- (d22 batch96 BF1) the platforms read's damaged list comes from the damage events
+hub.unit_number,collector.unit_number=hub.unit_number or 501,collector.unit_number or 502
+for _,e in ipairs({hub,collector}) do runtime.on_event{name=12,tick=game.tick,entity=e,force={name='enemy'},final_damage_amount=10} end
 local hh=bot('inspect',{platform='Starling',position={x=0,y=0}})
 eq(hh.repair_packs,'none'); eq(hh.damaged[1],'asteroid-collector (-2.5,-6.5) 50/200'); eq(hh.damaged[2],'space-platform-hub (0,0) 637/1000')
 assert(hh.repair:find('repair packs from the hub, one entity at a time',1,true),hh.repair)

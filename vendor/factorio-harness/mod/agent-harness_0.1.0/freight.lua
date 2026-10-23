@@ -153,6 +153,100 @@ return function(api)
     return WANT
   end
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}
+  -- (d22 batch96 BF1) Each platform's belts and inserter hands, read in the background for the platforms read lately
+  -- (stock_places): {wanted (tick), done {tick, belts, hands, belt_entities, capped}, job}. One job at a time: every
+  -- BELT_STEP ticks one band of the platform's chunks (walk.lua, one chunk a band), each belt's lines (an underground
+  -- exit's buried lines are its entrance's: once) and each inserter's hand.
+  M.BELT_EVERY, M.BELT_KEEP, M.BELT_STEP, M.BELT_BAND, M.BELT_BANDS = 3600, 36000, 3, 100, 8
+  local function belt_store()
+    local s = api.state()
+    s.platform_belts = s.platform_belts or {}
+    return s.platform_belts
+  end
+  local walker
+  local function walk() walker = walker or api.walk or require('walk'){state=api.state}; return walker end
+  local READ_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'lane-splitter', 'linked-belt', 'inserter'}
+  function M.belt_tick(tick)
+    if tick % M.BELT_STEP ~= 0 then return end
+    local bt = belt_store()
+    local active = bt.active
+    local rec = active and bt[active]
+    local pl
+    if rec and rec.job then
+      for _, f in pairs(game.forces) do
+        for _, p in pairs(try(function() return f.platforms end) or {}) do if p.index == active then pl = p end end
+      end
+    end
+    if not (pl and pl.valid and pl.surface) then
+      bt.active = nil
+      if rec then rec.job = nil end
+      -- the next: a platform read within BELT_KEEP whose read is oldest and older than BELT_EVERY
+      local best, best_age
+      for _, f in pairs(game.forces) do
+        for _, p in pairs(try(function() return f.platforms end) or {}) do
+          local r = bt[p.index]
+          if p.valid and p.surface and r and r.wanted and tick - r.wanted <= M.BELT_KEEP then
+            local age = r.done and tick - r.done.tick or math.huge
+            if age >= M.BELT_EVERY and (not best or age > best_age) then best, best_age = p, age end
+          end
+        end
+      end
+      if not best then return end
+      -- the walk's box: the platform's chunks (walk.lua's start grows it by 4 chunks round each, mostly empty space)
+      local box
+      for c in best.surface.get_chunks() do
+        if not box then box = {left=c.x, right=c.x, top=c.y, bottom=c.y}
+        else box.left, box.right = math.min(box.left, c.x), math.max(box.right, c.x); box.top, box.bottom = math.min(box.top, c.y), math.max(box.bottom, c.y) end
+      end
+      if not box then bt[best.index].done = {tick=tick, belts={}, hands={}, belt_entities=0}; return end
+      bt[best.index].job = {start=tick, walk={surface=best.surface.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=1, max=1},
+        belts={}, hands={}, n=0}
+      bt.active = best.index
+      return
+    end
+    local job, s, f = rec.job, pl.surface, pl.force
+    -- what the bands found waits in job.queue; a step reads at most BELT_BAND of it (a chunk may hold 600 belts), and
+    -- with it empty finds bands (one chunk each, at most BELT_BANDS: empty space goes quickly) until it holds some
+    job.queue, job.qi = job.queue or {}, job.qi or 1
+    if job.qi > #job.queue then
+      job.queue, job.qi = {}, 1
+      for _ = 1, M.BELT_BANDS do
+        local band = walk().band(job.walk, s, {force=f, type=READ_TYPES})
+        if not band then job.walked = true; break end
+        for _, e in ipairs(band) do job.queue[#job.queue+1] = e end
+        if #job.queue > 0 then break end
+      end
+      if job.walked and #job.queue == 0 then
+        rec.done = {tick=job.start, belts=job.belts, hands=job.hands, belt_entities=job.n, capped=job.capped}
+        rec.job, bt.active = nil, nil
+        return
+      end
+    end
+    local list = {}
+    local last = math.min(#job.queue, job.qi + M.BELT_BAND - 1)
+    for i = job.qi, last do list[#list+1] = job.queue[i] end
+    job.qi = last + 1
+    for _, e in ipairs(list) do
+      if e.valid then
+        if e.type == 'inserter' then
+          local h = try(function() return e.held_stack end)
+          if h and try(function() return h.valid_for_read end) then job.hands[h.name] = (job.hands[h.name] or 0) + h.count end
+        elseif job.n < M.MAX_BELTS then
+          job.n = job.n + 1
+          local lines = try(function() return e.get_max_transport_line_index() end) or 0
+          local partner = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output'
+            and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
+          for i = 1, lines do
+            local line = try(function() return e.get_transport_line(i) end)
+            local same = partner and i > 2 and try(function() return line.line_equals(partner.get_transport_line(i)) end)
+            if line and not same then
+              for _, r in ipairs(try(function() return line.get_contents() end) or {}) do job.belts[r.name] = (job.belts[r.name] or 0) + r.count end
+            end
+          end
+        else job.capped = M.MAX_BELTS end
+      end
+    end
+  end
   function M.stock_places(pl, want)
     want = want or want_default()
     local s, f = pl.surface, pl.force
@@ -165,6 +259,35 @@ return function(api)
     end
     local hub = try(function() return pl.hub end)
     if hub and hub.valid and defines.inventory.hub_main then contents('hub', try(function() return hub.get_inventory(defines.inventory.hub_main) end)) end
+    -- (d22 batch96 BF1: on a copy of world n, Asterion's 6,651 belts took 24 ms to find and 44 ms to read, in each
+    -- platform, platform_endurance and preflight read) belts and inserter hands from the platform's last background
+    -- read (M.belt_tick: a band of its chunks every few ticks, each platform read lately refreshed every BELT_EVERY),
+    -- as_of its tick; turrets and machines found and read now. With none yet: the census pass's (as_of its start),
+    -- else all read now.
+    local bt = belt_store()
+    local rec = pl.index and bt[pl.index] or {}
+    if pl.index then bt[pl.index] = rec end
+    rec.wanted = game and game.tick or 0
+    local idx = not rec.done and api.census_where and try(function() return api.census_where(f, s) end)
+    local from = rec.done or idx
+    if from then
+      for name, n in pairs(from.belts or {}) do put('belts', name, n) end
+      for name, n in pairs(from.hands or {}) do put('hands', name, n) end
+      if rec.done then out.as_of, out.from_belt_read, out.belt_entities = rec.done.tick, true, rec.done.belt_entities
+      else out.as_of, out.from_census, out.belt_entities = idx.as_of, true, nil end
+      out.capped = rec.done and rec.done.capped or nil
+      for _, e in ipairs(try(function() return s.find_entities_filtered{type='ammo-turret', force=f} end) or {}) do
+        contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end))
+      end
+      for _, e in ipairs(try(function() return s.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=f} end) or {}) do
+        contents('machines', try(function() return e.get_output_inventory() end))
+      end
+      out.total = {}
+      for _, place in ipairs({'hub', 'turrets', 'belts', 'hands', 'machines'}) do
+        for name, n in pairs(out[place]) do out.total[name] = (out.total[name] or 0) + n end
+      end
+      return out
+    end
     for _, e in ipairs(try(function() return s.find_entities_filtered{type='ammo-turret', force=f} end) or {}) do
       contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end))
     end
@@ -1310,8 +1433,10 @@ return function(api)
     for _, name in ipairs(names) do
       local made, used = counts[name][1], counts[name][2]
       local stock = sp.total[name] or 0
-      local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s', name, per_min(made, minutes),
-        per_min(used, minutes), window, stock, M.places_text(sp, name))
+      local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s%s', name, per_min(made, minutes),
+        per_min(used, minutes), window, stock, M.places_text(sp, name),
+        sp.from_belt_read and sp.as_of and string.format(' (belts and inserter hands as read in the background %s ago)', secs(math.max(0, game.tick - sp.as_of)))
+          or sp.from_census and sp.as_of and string.format(' (belts and inserter hands as the census pass read them %s ago)', secs(math.max(0, game.tick - sp.as_of))) or '')
       local stranded = model and model.stranded[name] or 0
       if stranded > 0 then
         stock = model.held[name] or 0
