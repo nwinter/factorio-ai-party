@@ -1496,9 +1496,28 @@ are holding"; they "move for a little bit and then stopped"; following them, the
   so is one gone from the read (disbanded or killed), one 40 tiles farther than its closest approach, or 240 s on.
 - Ahead of it: each pan aims at where the group will be 4 s on, from its velocity over the last 6 s (at most 48 tiles
   ahead; as is under 0.5 tiles a second). The reads come about every 3 s and cameras.lua eases each move, so aiming at
-  the last position kept the view a read behind (09:53: 25-35 tiles a pan).
+  the last position kept the view a read behind (09:53: 20-36 tiles a pan).
 - Tests: tools/stream/test_incoming.py (calibrated, the stop rule, the lead). Deploy: a stream service restart; the
   calibration starts from the run's threat-history.json and needs 8 ended groups (about 20 minutes today).
+
+## Panning across spaceships (2026-10-23, d23 batch124 CG2)
+
+Nick 10:00: "I think the panning across spaceships could be a little better." From the director logs of d23 07:55-10:10
+(2637 reframes of ships; 84 platform cuts):
+
+- Stop-and-go (fixed). The director steps every 1.1-1.5 s (1090 steps at 1.1 s, 698 at 1.2, 448 at 1.3-1.5) and each
+  step moved the view about 6.7 tiles at a glide of 1.15x the pan's speed (6.77 tiles/s at zoom 0.3), so each glide
+  ended in about 1.0 s and the view stood 0.1-0.5 s before the next: a stutter about once a second. Each step now aims
+  where the pan will be 1.5 measured step intervals on and glides there over that time (onecam PAN_LEAD, the interval
+  an average of the last steps), so the next step comes while it still moves.
+- Hard starts and stops (fixed). A leg went from rest to full speed at the bow and stopped dead at the stern. Each leg
+  is eased now (smoothstep): slow off the bow, fastest mid-ship (1.5x the average), slow onto the stern.
+- Not changed, proposed: repeated shots of one ship start its pan from the bow each time (Sol's remote work on
+  Asterion cut to it at 08:00, 08:03, 08:06 and 08:15, Astra's at 08:08 and 08:12: six bow-to-stern starts in 15
+  minutes); a shot of a ship shown in the last 10 minutes could continue from where the last one left off, or the
+  "platform work" cut could wait longer between visits to the same ship. The pans run along the ship's north-south
+  axis, its long one (forward is north on a platform; thrusters aft), which suits the 16:9 frame's height.
+- Tests: tools/stream/test_platformpan.py, test_shipcard.py. Deploy: a stream service restart.
 
 ## Verified
 

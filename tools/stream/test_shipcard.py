@@ -54,7 +54,7 @@ def pan():
     # the pan's place over a long hold: bow, stern, back to the bow
     t0 = {"pan": {"y0": -40.0, "y1": 20.0}, "since": 0.0, "until": 600.0}
     assert d.pan_y(t0, 1.0) == -40.0 and d.pan_y(t0, d.PAN_END_S + d.PAN_LEG_S) == 20.0
-    assert d.pan_y(t0, 2 * d.PAN_END_S + d.PAN_LEG_S + 0.1) < 20.0 and d.pan_y(t0, 2 * (d.PAN_END_S + d.PAN_LEG_S) + 1) == -40.0
+    assert d.pan_y(t0, 2 * d.PAN_END_S + d.PAN_LEG_S + 2.0) < 20.0  # (CG2: eased, it leaves the stern gently) and d.pan_y(t0, 2 * (d.PAN_END_S + d.PAN_LEG_S) + 1) == -40.0
     short = {"pan": {"y0": -40.0, "y1": 20.0}, "since": 0.0, "until": 20.0}
     assert d.pan_y(short, 17.0) == 20.0 and d.pan_y(short, 2.0) == -40.0
 

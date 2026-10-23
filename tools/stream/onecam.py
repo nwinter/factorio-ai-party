@@ -2396,21 +2396,35 @@ class OneCam(Director):
         x = (now - since) % cycle
         f = 0.0 if x < rest0 else min(1.0, (x - rest0) / leg) if x < rest0 + leg + rest1 \
             else max(0.0, 1.0 - (x - rest0 - rest1 - leg) / leg)
+        f = f * f * (3 - 2 * f)  # (d23 batch124 CG2) eased: each leg starts and stops gently, not at full speed
         return round(p["y0"] + (p["y1"] - p["y0"]) * f, 1)
+
+    # (d23 batch124 CG2, Nick 10:00: "the panning across spaceships could be a little better") the director steps
+    # every 1.1-1.5 s (director logs d23 07:55-10:10: 2637 ship reframes, 6.7 tiles a step at a glide of 6.77 tiles/s)
+    # and each step's glide (1.15x the pan's speed) ended in about 1.0 s: the view moved, stopped, moved. Each step now
+    # aims where the pan will be PAN_LEAD step intervals on (the interval measured, PAN_DT at first) and glides there
+    # over that time, so the next step comes while it still moves: one even motion, eased at the ends (pan_y).
+    PAN_LEAD = 1.5
+    PAN_DT = 1.2
 
     def pan_step(self, now):
         """(d19 batch42 C2) Each camera holding a tall ship (a `pan` in its target) moves along it, bow to stern."""
+        last = getattr(self, "_pan_at", None)
+        if last is not None and 0.3 <= now - last <= 5:
+            self._pan_dt = 0.7 * getattr(self, "_pan_dt", self.PAN_DT) + 0.3 * (now - last)
+        self._pan_at = now
+        ahead = self.PAN_LEAD * getattr(self, "_pan_dt", self.PAN_DT)
         for slot in self.slots:
             t = self.state.get(slot["slot"])
             if not t or not t.get("pan") or not t.get("position") or now >= t.get("until", now + 1):
                 continue
-            y = self.pan_y(t, now)
-            step = self.DETAIL_STEP if t["pan"].get("speed") else self.PAN_STEP
-            if abs(y - t["position"]["y"]) >= step or (y in (t["pan"]["y0"], t["pan"]["y1"]) and y != t["position"]["y"]):
+            y = self.pan_y(t, now + ahead)
+            ends = (t["pan"]["y0"], t["pan"]["y1"])
+            if abs(y - t["position"]["y"]) >= self.DETAIL_STEP or (y in ends and y != t["position"]["y"]):
                 target = {k: v for k, v in t.items() if k != "jump"}
                 target["position"] = dict(t["position"], y=y)
-                # cameras.lua moves at about this speed between the 1 s steps: no stutter (BI4: every pan)
-                target["glide"] = round(self.pan_speed(t) * 1.15, 2)
+                # cameras.lua moves at this speed: it reaches y as the step after next would come
+                target["glide"] = round(max(0.5, abs(y - t["position"]["y"]) / ahead), 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
     @staticmethod
