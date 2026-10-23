@@ -227,6 +227,9 @@ return function(api)
     if not M.planet(surface) then return nil end
     return {surface=surface.name, force=force.name}
   end
+  -- (d22 batch110 BT1: a step of the background read made 152 KB on the copy; each building's position was read twice,
+  -- a new table each read, and a building in no attractor's cell made an empty table)
+  local NO_ATTRACTORS = {}
   function M.exposure_step(cur, max)
     local s = game.get_surface(cur.surface)
     if not s then return true end
@@ -254,8 +257,9 @@ return function(api)
       local e = cur.list[i]
       if e.valid and not NEVER[e.type] then
         cur.checked = cur.checked + 1
-        local x, y = e.position.x, e.position.y
-        local c = cur.idx[cell(math.floor(x / STRIKE_CELL), math.floor(y / STRIKE_CELL))] or {}
+        local p = e.position
+        local x, y = p.x, p.y
+        local c = cur.idx[cell(math.floor(x / STRIKE_CELL), math.floor(y / STRIKE_CELL))] or NO_ATTRACTORS
         local safe = false
         for _, a in ipairs(c) do
           local dx, dy, d = x - a.x, y - a.y, a.r - SEARCH

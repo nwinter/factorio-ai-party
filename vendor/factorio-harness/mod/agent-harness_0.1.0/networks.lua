@@ -59,6 +59,17 @@ return function(api)
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret', 'artillery-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- Reads with no closure made (d22 batch110 BT1: on a copy of world n the background view and pole map made 1.5 MB of
+  -- garbage a second, much of it a `try(function() return x.k end)` closure per entity read): o[k], o[k](...), #x and
+  -- fn(...), each nil when the read or call fails, as try gives. EMPTY is never written.
+  local function get(o, k) return o[k] end
+  local function tget(o, k) local ok, v = pcall(get, o, k); if ok then return v end end
+  local function call(o, k, ...) return o[k](...) end
+  local function tcall(o, k, ...) local ok, v = pcall(call, o, k, ...); if ok then return v end end
+  local function len(x) return #x end
+  local function tlen(x) local ok, v = pcall(len, x); if ok then return v end end
+  local function tfn(fn, ...) if fn then local ok, v = pcall(fn, ...); if ok then return v end end end
+  local EMPTY = {}
   local slots = require('slots')()
   local ACC_NAMES
   local function acc_names()
@@ -95,23 +106,28 @@ return function(api)
   -- together share one) that no machine or panel joins, and its electric_network_statistics give the same figures as
   -- the surface's global_electric_network_statistics.
   local function global_stats(surface)
-    if not (surface and try(function() return surface.has_global_electric_network end)) then return nil end
-    return try(function() return surface.global_electric_network_statistics end)
+    if not (surface and tget(surface, 'has_global_electric_network')) then return nil end
+    return tget(surface, 'global_electric_network_statistics')
   end
   M.global_stats = global_stats
+  -- (BT1) each pole's position read once (a read makes a table)
   local function pole_into(map, e, surface, f)
-    local id = e.valid and try(function() return e.electric_network_id end)
+    local id = e.valid and tget(e, 'electric_network_id')
     if id then
       local m = map[id]
       if not m then m = {id=id, pole=e, poles=0, sx=0, sy=0, surface=surface.name, force=f.name}; map[id] = m end
-      m.poles, m.sx, m.sy = m.poles + 1, m.sx + e.position.x, m.sy + e.position.y
+      local p = e.position
+      m.poles, m.sx, m.sy = m.poles + 1, m.sx + p.x, m.sy + p.y
     end
   end
+  -- The finds' filters, made once and given the force at each find (walk.band copies its filter).
+  local POLE_FIND = {type='electric-pole', force=nil, limit=MAX_SCAN}
+  local function pole_find(f) POLE_FIND.force = f; return POLE_FIND end
   local function map_poles(n)
     local map = {}
     for _, f in ipairs(forces()) do
       for _, surface in ipairs(surfaces()) do
-        local poles = try(function() return surface.find_entities_filtered{type='electric-pole', force=f, limit=MAX_SCAN} end) or {}
+        local poles = tcall(surface, 'find_entities_filtered', pole_find(f)) or {}
         for _, e in ipairs(poles) do pole_into(map, e, surface, f) end
       end
     end
@@ -129,7 +145,7 @@ return function(api)
     local job = n.map_job
     -- (a generator built after the map and after the walk in hand began: a walk starts now, M.built)
     local last = 0
-    for _, g in pairs(n.gen_added or {}) do last = math.max(last, g.tick) end
+    for _, g in pairs(n.gen_added or EMPTY) do last = math.max(last, g.tick) end
     if n.map_tick and last >= n.map_tick and tick > last and not (job and job.start >= last) then job = nil; n.map_job = nil end
     if not job then
       if n.map_tick and last < n.map_tick and tick - snapfail.since(n.map_tick, n.map_failed) < VIEW_TICKS then return end
@@ -158,30 +174,37 @@ return function(api)
       if job.at > #job.list then job.list = nil end
     else
       job.walk = job.walk or walk.start(s)
-      local list = walk.band(job.walk, s, {type='electric-pole', force=f, limit=MAX_SCAN})
+      local list = walk.band(job.walk, s, pole_find(f))
       if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
     end
   end
   -- The statistics a network is read through: a pole of it, or a platform's own network its surface's (AG4).
   local function stats_of(n, id)
     local m = n.map and n.map[id]
-    local stats = m and m.pole and m.pole.valid and try(function() return m.pole.electric_network_statistics end)
+    local stats = m and m.pole and m.pole.valid and tget(m.pole, 'electric_network_statistics')
     if stats then return stats end
     local g = n.global and n.global[id]
     return g and global_stats(game.get_surface(g.surface)) or nil
   end
   M.stats_of = function(id) return stats_of(store(), id) end
+  -- (BT1) a sample reads each network's get_flow_count once (a method read makes a function) and asks it with one
+  -- filter table, its fields set for each name.
+  local FLOW_Q = {name='', category='output', precision_index=0}
   local function sample(n)
     local ids = {}
     for id in pairs(n.map) do ids[#ids+1] = id end
-    for id in pairs(n.global or {}) do if not n.map[id] then ids[#ids+1] = id end end
+    for id in pairs(n.global or EMPTY) do if not n.map[id] then ids[#ids+1] = id end end
     for _, id in ipairs(ids) do
       local stats = stats_of(n, id)
       if stats then
         local by, kw = {}, 0
         local accs, acc = acc_names(), 0
-        for name in pairs(try(function() return stats.output_counts end) or {}) do
-          local v = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
+        local fpi = tget(defines, 'flow_precision_index')
+        local flow = fpi and tget(stats, 'get_flow_count')   -- (no precision indexes: every read fails, as before)
+        FLOW_Q.precision_index = fpi and fpi.five_seconds
+        for name in pairs(tget(stats, 'output_counts') or EMPTY) do
+          FLOW_Q.name, FLOW_Q.category = name, 'output'
+          local v = tfn(flow, FLOW_Q)
           if v and v > 0 then
             by[name] = v * 60 / 1000; kw = kw + by[name]
             if accs[name] then acc = acc + by[name] end
@@ -189,7 +212,8 @@ return function(api)
         end
         -- (accumulators are counted as producers while they discharge and as consumers while they charge)
         for name in pairs(accs) do
-          local v = try(function() return stats.get_flow_count{name=name, category='input', precision_index=defines.flow_precision_index.five_seconds} end)
+          FLOW_Q.name, FLOW_Q.category = name, 'input'
+          local v = tfn(flow, FLOW_Q)
           if v and v > 0 then acc = acc - v * 60 / 1000 end
         end
         local list = n.samples[id] or {}
@@ -210,37 +234,55 @@ return function(api)
       end
     end
   end
+  local function nets_on(f, surface) return f.logistic_networks[surface.name] end
+  -- (BT1: EMPTY, not a new table, for a surface with none; every caller only reads the list)
   local function logistic_networks(f, surface)
-    return try(function() return f.logistic_networks[surface.name] end) or {}
+    return tfn(nets_on, f, surface) or EMPTY
+  end
+  local function filter_name(flt)
+    local v = flt.name
+    if type(v) == 'table' and v.name then return v.name end
+    return v
   end
   -- Requests a network has not filled: per requester point and item, how much
   -- is missing (wanted minus held minus on the way).
   -- The second list: keys of requests still under their count with a delivery on the way (logaudit.lua's waits).
-  local function shortfalls(ln)
+  -- asked (logistic_row): the requests summed by item into it, over the network's requester_points (none when that
+  -- read fails), in the same pass (BT1: the row read every point and its filters a second time). A point's
+  -- get_item_count is read once and asked with one filter table, its fields set for each request (BT1).
+  local ITEM_Q = {name='', quality=''}
+  local function shortfalls(ln, asked)
     local out, coming_keys = {}, {}
-    local points = try(function() return ln.requester_points end)
+    local points = tget(ln, 'requester_points')
     if not points then
+      asked = nil
       points = {}
-      for _, e in ipairs(try(function() return ln.requesters end) or {}) do
-        local pt = try(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+      local lmi = tget(defines, 'logistic_member_index')
+      for _, e in ipairs(tget(ln, 'requesters') or EMPTY) do
+        local pt = lmi and tcall(e, 'get_logistic_point', lmi.logistic_container)
         if pt then points[#points+1] = pt end
       end
     end
     for _, pt in ipairs(points) do
-      local owner = try(function() return pt.owner end)
-      local unit = owner and try(function() return owner.unit_number end)
-      local coming = try(function() return pt.targeted_items_deliver end) or {}
-      for _, f in ipairs(try(function() return pt.filters end) or {}) do
-        local name = type(f.name) == 'table' and f.name.name or f.name
+      local owner = tget(pt, 'owner')
+      local unit = owner and tget(owner, 'unit_number')
+      local coming, count_of   -- (read at its first request counted: a point with none makes no table)
+      for _, f in ipairs(tget(pt, 'filters') or EMPTY) do
+        local name = filter_name(f)
         local quality = type(f.quality) == 'table' and f.quality.name or f.quality or 'normal'
+        if asked and name and (f.count or 0) > 0 then asked[name] = (asked[name] or 0) + f.count end
         if name and (f.count or 0) > 0 and unit then
-          local have = try(function() return owner.get_item_count{name=name, quality=quality} end) or 0
+          coming = coming or tget(pt, 'targeted_items_deliver') or EMPTY
+          count_of = count_of or tget(owner, 'get_item_count')
+          ITEM_Q.name, ITEM_Q.quality = name, quality
+          local have = tfn(count_of, ITEM_Q) or 0
           local on_way = 0
           if type(coming[name]) == 'number' then on_way = coming[name]
           else for _, c in pairs(coming) do if type(c) == 'table' and c.name == name then on_way = on_way + (c.count or 0) end end end
           local missing = f.count - have - on_way
-          if missing > 0 then out[#out+1] = {key=unit .. '|' .. name .. '|' .. quality, name=name, missing=missing, e=owner} end
-          if on_way > 0 and have < f.count then coming_keys[#coming_keys+1] = unit .. '|' .. name .. '|' .. quality end
+          local key = (missing > 0 or (on_way > 0 and have < f.count)) and unit .. '|' .. name .. '|' .. quality
+          if missing > 0 then out[#out+1] = {key=key, name=name, missing=missing, e=owner} end
+          if on_way > 0 and have < f.count then coming_keys[#coming_keys+1] = key end
         end
       end
     end
@@ -252,9 +294,9 @@ return function(api)
     for _, f in ipairs(forces()) do
       for _, surface in ipairs(surfaces()) do
         for _, ln in ipairs(logistic_networks(f, surface)) do
-          local id = try(function() return ln.network_id end)
+          local id = tget(ln, 'network_id')
           if id then
-            local all, idle = try(function() return ln.all_logistic_robots end) or 0, try(function() return ln.available_logistic_robots end) or 0
+            local all, idle = tget(ln, 'all_logistic_robots') or 0, tget(ln, 'available_logistic_robots') or 0
             if all > 0 and idle == 0 then busy[id] = n.busy[id] or game.tick end
             local short, coming = shortfalls(ln)
             for _, x in ipairs(short) do unfilled[x.key] = n.unfilled[x.key] or game.tick end
@@ -274,12 +316,12 @@ return function(api)
     for _, f in ipairs(forces()) do
       for _, surface in ipairs(surfaces()) do
         for _, ln in ipairs(logistic_networks(f, surface)) do
-          local id = try(function() return ln.network_id end)
+          local id = tget(ln, 'network_id')
           if id then
             local key = f.name .. '|' .. id
             seen[key] = true
             local counts = {}
-            for _, x in ipairs(try(function() return ln.get_contents() end) or {}) do
+            for _, x in ipairs(tcall(ln, 'get_contents') or EMPTY) do
               local name = type(x.name) == 'table' and x.name.name or x.name
               if name then counts[name] = (counts[name] or 0) + (x.count or 0) end
             end
@@ -346,9 +388,11 @@ return function(api)
       local seen = n.gen_builds[f.name]
       local now = {}
       for _, s in ipairs(surfaces()) do
-        local st = try(function() return f.get_entity_build_count_statistics(s) end)
-        for _, name in ipairs(st and gen_names() or {}) do
-          local c = try(function() return st.get_input_count(name) end) or 0
+        local st = tcall(f, 'get_entity_build_count_statistics', s)
+        -- (BT1) its get_input_count read once for every name (a method read makes a function)
+        local input_count = st and tget(st, 'get_input_count')
+        for _, name in ipairs(st and gen_names() or EMPTY) do
+          local c = tfn(input_count, name) or 0
           if c > 0 then
             local k = s.index .. ':' .. name
             now[k] = c
@@ -461,10 +505,26 @@ return function(api)
   -- One entity's most output in J a tick. (d21 batch64 Z5, Astra #1635) In 2.0.77 get_max_power_output gives a steam
   -- engine's, a turbine's and a burner generator's and nil for a fusion generator, whose 833333 J a tick (50 MW) is
   -- its get_max_energy_production; a solar panel's and an accumulator's are there too (1000 and 5000).
+  -- (BT1) kept by entity name and quality name: a prototype's figures at a quality do not change in a game (a read of
+  -- e.prototype and its method makes a userdata and a function each); an entity whose quality reads nil is read anew.
+  local out_by = {}
+  local function by_name_quality(cache, name, qname)
+    local row = cache[name]
+    if not row then row = {}; cache[name] = row end
+    return row, row[qname]
+  end
   local function max_output(e)
-    local q = try(function() return e.quality end)
+    local q = tget(e, 'quality')
+    local qname = q and tget(q, 'name')
+    local row, v
+    if qname then
+      row, v = by_name_quality(out_by, e.name, qname)
+      if v then return v end
+    end
     local proto = e.prototype
-    return try(function() return proto.get_max_power_output(q) end) or try(function() return proto.get_max_energy_production(q) end) or 0
+    v = tcall(proto, 'get_max_power_output', q) or tcall(proto, 'get_max_energy_production', q) or 0
+    if row then row[qname] = v end
+    return v
   end
   function M.max_output_kw(e) return max_output(e) * 60 / 1000 end
   -- A harness build: one of GEN_TYPE is noted (added), and its network goes on the pole map now when a pole of it
@@ -520,26 +580,47 @@ return function(api)
   end
   M.label = label
   local solar_cache = {}
-  local function solar_peak(e)
-    local v = try(function() return e.prototype.get_max_energy_production(e.quality) end) or 0
-    local index = try(function() return e.surface.index end) or 0
+  -- A panel's peak (by name and quality, BT1, as max_output) at its surface's solar power; surface: the one it is on
+  -- (the walk's: BT1, e.surface made a userdata a panel).
+  local peak_by = {}
+  local function peak_fresh(e) return e.prototype.get_max_energy_production(e.quality) end
+  local function solar_peak(e, surface)
+    local okq, q = pcall(get, e, 'quality')
+    local qname = okq and q and tget(q, 'name')
+    local row, v
+    if qname then row, v = by_name_quality(peak_by, e.name, qname) end
+    if not v then
+      v = tfn(peak_fresh, e) or 0
+      if row then row[qname] = v end
+    end
+    surface = surface or tget(e, 'surface')
+    local index = surface and tget(surface, 'index') or 0
     local s = solar_cache[index]
-    if not s or s.tick ~= game.tick then s = {tick=game.tick, scale=M.solar(e.surface).percent / 100}; solar_cache[index] = s end
+    if not s or s.tick ~= game.tick then s = {tick=game.tick, scale=M.solar(surface).percent / 100}; solar_cache[index] = s end
     return v * s.scale
   end
+  -- (BT1) a fuel's value by item name and a burner's effectivity by entity name, kept: prototype figures.
+  local fuel_value_of, effectivity_of = {}, {}
   local function fuel_energy(e)
-    local burner = try(function() return e.burner end)
+    local burner = tget(e, 'burner')
     if not burner then return nil end
-    local j = try(function() return burner.remaining_burning_fuel end) or 0
-    local inv = try(function() return burner.inventory end)
+    local j = tget(burner, 'remaining_burning_fuel') or 0
+    local inv = tget(burner, 'inventory')
     for i = 1, inv and #inv or 0 do
       local st = inv[i]
-      if st and st.valid_for_read then j = j + st.count * (try(function() return st.prototype.fuel_value end) or 0) end
+      if st and st.valid_for_read then
+        local name = st.name
+        local fv = fuel_value_of[name]
+        if fv == nil then fv = tget(tget(st, 'prototype'), 'fuel_value') or 0; fuel_value_of[name] = fv end
+        j = j + st.count * fv
+      end
     end
-    local eff = try(function() return e.prototype.burner_prototype.effectivity end) or 1
+    local eff = effectivity_of[e.name]
+    if eff == nil then eff = tget(tget(tget(e, 'prototype'), 'burner_prototype'), 'effectivity') or 1; effectivity_of[e.name] = eff end
     return j * eff
   end
-  local function segment(e, i) return try(function() return e.fluidbox.get_fluid_segment_id(i) end) end
+  local function segment_of(fb, i) return fb.get_fluid_segment_id(i) end
+  local function segment(e, i) return tfn(segment_of, tget(e, 'fluidbox'), i) end
 
   -- One surface's electric networks: rows with the numbers and the line.
   -- A surface's electric networks in four steps (one a tick in the background
@@ -554,10 +635,10 @@ return function(api)
     -- A platform (Astra, 14:05: Starling's network 475, 5 solar panels and assemblers on low power, was not found): its
     -- poles are found at once each view (a platform is small), so the pole map has them and their statistics are
     -- sampled; and a network seen on a generator or machine with no pole mapped gets a row of its own (on_entity).
-    local plat = try(function() return surface.platform end)
+    local plat = tget(surface, 'platform')
     if plat then
       local pm = {}
-      for _, e in ipairs(try(function() return surface.find_entities_filtered{type='electric-pole', force=f, limit=MAX_SCAN} end) or {}) do pole_into(pm, e, surface, f) end
+      for _, e in ipairs(tcall(surface, 'find_entities_filtered', pole_find(f)) or EMPTY) do pole_into(pm, e, surface, f) end
       for id, m in pairs(n.map) do if m.surface == surface.name and m.force == f.name and not pm[id] then n.map[id] = nil end end
       for id, m in pairs(pm) do n.map[id] = m end
     end
@@ -574,11 +655,12 @@ return function(api)
     return {nets=nets, seg_net={}, steam={}, platform=plat and true or nil, global=global, surface_index=surface.index, force=f.name}
   end
   -- The network of an entity; on a platform one with no pole mapped is made from the entity.
+  -- (BT1: its network id read with no closure, 17 KB a slice of 150 entities on the copy, most of it that closure)
   local function on_entity(ctx, e)
-    local id = e.valid and try(function() return e.electric_network_id end)
+    local id = e.valid and tget(e, 'electric_network_id')
     if not id then return nil end
     local net = ctx.nets[id]
-    if not net and ctx.platform then net = new_net(id, 0, e.position.x, e.position.y); ctx.nets[id] = net end
+    if not net and ctx.platform then local p = e.position; net = new_net(id, 0, p.x, p.y); ctx.nets[id] = net end
     -- (AG4) a network no pole of ours is in, on a surface with a network of its own: that one, read through the surface
     if net and ctx.global and net.poles == 0 then
       net.global = true
@@ -589,81 +671,95 @@ return function(api)
     return net
   end
   -- One generator, solar panel or accumulator into its network.
-  local function e_gen(ctx, e)
+  local function burner_empty(b) return b.inventory.is_empty() end
+  -- One generator, solar panel or accumulator into its network (surface: the one it is on). (BT1: its reads with no
+  -- closure, its type and fluidbox read once.)
+  local function e_gen(ctx, e, surface)
     local net = on_entity(ctx, e)
     if net then
       net.gens = net.gens + 1
-      if e.type == 'solar-panel' then net.solar = net.solar + 1; net.solar_peak_kw = net.solar_peak_kw + solar_peak(e) * 60 / 1000
-      elseif e.type == 'accumulator' then
+      local t = e.type
+      if t == 'solar-panel' then net.solar = net.solar + 1; net.solar_peak_kw = net.solar_peak_kw + solar_peak(e, surface) * 60 / 1000
+      elseif t == 'accumulator' then
         net.acc = net.acc + 1
-        net.acc_j = net.acc_j + (try(function() return e.energy end) or 0)
-        net.acc_buf = net.acc_buf + (try(function() return e.electric_buffer_size end) or 0)
+        net.acc_j = net.acc_j + (tget(e, 'energy') or 0)
+        net.acc_buf = net.acc_buf + (tget(e, 'electric_buffer_size') or 0)
         net.accs = net.accs or {}
         if #net.accs < ACC_READ then net.accs[#net.accs+1] = e end
-      elseif e.type ~= 'electric-energy-interface' then
+      elseif t ~= 'electric-energy-interface' then
         local kw = max_output(e) * 60 / 1000
         net.cap_kw = net.cap_kw + kw
         -- (backlog #527, Sol: 94 MW capacity with 177 machines on low power; the rating counted 29 dry boilers' engines)
         -- what it can make now: a steam engine or turbine with steam in, a burner generator with fuel, a fusion
         -- generator with plasma; the rest of the rating is dry
         local ready = true
-        if e.type == 'generator' or e.type == 'fusion-generator' then
+        if t == 'generator' or t == 'fusion-generator' then
           -- (an empty fluidbox slot reads nil; one not read at all counts as ready)
-          local slots = try(function() return #e.fluidbox end)
+          local box = tget(e, 'fluidbox')
+          local slots = box and tlen(box)
           if slots and slots > 0 then
-            local fb = try(function() return e.fluidbox[1] end)
+            local fb = tget(box, 1)
             ready = fb ~= nil and (fb.amount or 0) > 0
           end
-        elseif e.type == 'burner-generator' then
-          local b = try(function() return e.burner end)
-          ready = b ~= nil and ((try(function() return b.remaining_burning_fuel end) or 0) > 0 or not (try(function() return b.inventory.is_empty() end)))
+        elseif t == 'burner-generator' then
+          local b = tget(e, 'burner')
+          ready = b ~= nil and ((tget(b, 'remaining_burning_fuel') or 0) > 0 or not (tfn(burner_empty, b)))
         end
         if ready then net.ready_kw = net.ready_kw + kw
         else net.dry = net.dry + 1; net.dry_kw = net.dry_kw + kw; net.dry_names[e.name] = (net.dry_names[e.name] or 0) + 1 end
-        if e.type == 'generator' then
+        if t == 'generator' then
           local sid = segment(e, 1)
           if sid then ctx.seg_net[sid] = {id=net.id, gen=e.name} end
-          ctx.steam[#ctx.steam+1] = {id=net.id, gen=e.name, x=e.position.x, y=e.position.y}
+          local p = e.position
+          ctx.steam[#ctx.steam+1] = {id=net.id, gen=e.name, x=p.x, y=p.y}
         end
       end
     end
   end
+  local GEN_FIND, MACHINE_FIND, BOILER_FIND = {type=GENERATORS, force=nil, limit=MAX_SCAN}, {type=MACHINES, force=nil, limit=MAX_SCAN},
+    {type='boiler', force=nil, limit=MAX_SCAN}
+  local function find(surface, filter, f) filter.force = f; return tcall(surface, 'find_entities_filtered', filter) end
   local function e_begin(n, f, surface)
     local ctx = e_ctx(n, f, surface)
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=GENERATORS, force=f, limit=MAX_SCAN} end) or {}) do e_gen(ctx, e) end
+    for _, e in ipairs(find(surface, GEN_FIND, f) or EMPTY) do e_gen(ctx, e, surface) end
     return ctx
   end
-  -- One machine into its network.
+  -- One machine into its network. (BT1: its status read once, its position once.)
   local function e_machine(ctx, e)
     local net = on_entity(ctx, e)
     if net then
-      local st = defines.entity_status or {}
+      local st = defines.entity_status or EMPTY
       net.machines = net.machines + 1
-      if e.status == st.low_power then net.low = net.low + 1 elseif e.status == st.no_power then
+      local status = e.status
+      if status == st.low_power then net.low = net.low + 1 elseif status == st.no_power then
         net.none = net.none + 1
         local g = net.powerless
         g.names[e.name] = (g.names[e.name] or 0) + 1
-        local who = try(function() return e.last_user.name end)
+        local who = tget(tget(e, 'last_user'), 'name')
         if who then g.by[who] = (g.by[who] or 0) + 1 end
-        if #g.at < 8 then g.at[#g.at+1] = {x=e.position.x, y=e.position.y} end
+        if #g.at < 8 then local p = e.position; g.at[#g.at+1] = {x=p.x, y=p.y} end
       end
     end
   end
   local function e_machines(ctx, f, surface)
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=MACHINES, force=f, limit=MAX_SCAN} end) or {}) do e_machine(ctx, e) end
+    for _, e in ipairs(find(surface, MACHINE_FIND, f) or EMPTY) do e_machine(ctx, e) end
   end
   -- One boiler to its network: the generators whose steam it shares (its
   -- output's fluid segment), else the nearest generator within NEAR_BOILER
-  -- tiles. The generators must all be read first.
+  -- tiles. The generators must all be read first. (BT1: its fluidbox read once, its position once, not twice for
+  -- each generator looked at.)
   local function e_boiler(ctx, e)
     local j = e.valid and fuel_energy(e)
     if j then
-      local sid = segment(e, try(function() return #e.fluidbox end) or 2)
+      local box = tget(e, 'fluidbox')
+      local sid = tfn(segment_of, box, box and tlen(box) or 2)
       local to = sid and ctx.seg_net[sid]
       if not to then
         local best = NEAR_BOILER * NEAR_BOILER
+        local p = e.position
+        local x, y = p.x, p.y
         for _, g in ipairs(ctx.steam) do
-          local d = (g.x - e.position.x) ^ 2 + (g.y - e.position.y) ^ 2
+          local d = (g.x - x) ^ 2 + (g.y - y) ^ 2
           if d <= best then best, to = d, g end
         end
       end
@@ -672,16 +768,16 @@ return function(api)
     end
   end
   local function e_boilers(ctx, f, surface)
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type='boiler', force=f, limit=MAX_SCAN} end) or {}) do e_boiler(ctx, e) end
+    for _, e in ipairs(find(surface, BOILER_FIND, f) or EMPTY) do e_boiler(ctx, e) end
   end
   -- A burner's fuel by name: what it burns now, else its first fuel stack; nil when none.
   local function burner_fuel(e)
-    local burner = try(function() return e.burner end)
+    local burner = tget(e, 'burner')
     if not burner then return nil end
-    local cur = try(function() return burner.currently_burning end)
+    local cur = tget(burner, 'currently_burning')
     local name = cur and (try(function() return type(cur.name) == 'string' and cur.name or cur.name.name end))
     if name then return name end
-    local inv = try(function() return burner.inventory end)
+    local inv = tget(burner, 'inventory')
     for i = 1, inv and #inv or 0 do
       local st = inv[i]
       if st and st.valid_for_read then return st.name end
@@ -711,7 +807,7 @@ return function(api)
         net.supply_kw = net.ready_kw + solar_now
         -- A platform (Astra, 13:10): no night in space, so its panels make their output at the solar power where it
         -- is; that counts in its capacity (their output now is what the network draws of them).
-        local plat = try(function() return surface.platform end)
+        local plat = tget(surface, 'platform')
         local sun = (plat or net.solar > 0) and M.solar(surface) or nil
         if plat then net.platform, net.capacity_kw, net.supply_kw = plat.name, net.cap_kw + net.solar_peak_kw, net.ready_kw + net.solar_peak_kw end
         net.solar_power, net.solar_power_text = sun and sun.percent, sun and sun.text
@@ -737,7 +833,7 @@ return function(api)
               own = own + b.j
               -- Its looks of the last OWN_TICKS, oldest first; each DRAINS row compares with the newest look that old or
               -- older, so consecutive looks say the same (one sample kept and replaced would not).
-              local unit = try(function() return b.e.unit_number end)
+              local unit = tget(b.e, 'unit_number')
               local hist = unit and st.boiler_own[unit] or {}
               while hist[1] and game.tick - hist[1].tick > OWN_TICKS do table.remove(hist, 1) end
               for _, rule in ipairs(DRAINS) do
@@ -891,17 +987,35 @@ return function(api)
   local function box_text(b) return b and string.format('(%d,%d)-(%d,%d)', math.floor(b.x0), math.floor(b.y0), math.ceil(b.x1), math.ceil(b.y1)) or 'none' end
   local KINDS = {['logistic-robot']='logistic', ['construction-robot']='construction'}
   -- Charging and waiting robots of one cell by kind; nil when the cell does not list them.
-  local function cell_robots(c)
-    local out = {charging={logistic=0, construction=0}, waiting={logistic=0, construction=0}}
-    for key, field in pairs({charging='charging_robots', waiting='to_charge_robots'}) do
-      local list = try(function() return c[field] end)
-      if type(list) ~= 'table' then return nil end
-      for _, r in ipairs(list) do
-        local k = KINDS[try(function() return r.type end) or '']
-        if k then out[key][k] = out[key][k] + 1 end
-      end
+  -- (BT1) counted into numbers, not three tables a cell; each robot's type read with no closure.
+  local function robot_kinds(list)
+    if type(list) ~= 'table' then return nil end
+    local l, c = 0, 0
+    for _, r in ipairs(list) do
+      local k = KINDS[tget(r, 'type') or '']
+      if k == 'logistic' then l = l + 1 elseif k == 'construction' then c = c + 1 end
     end
-    return out
+    return l, c
+  end
+  -- charging logistic, charging construction, waiting logistic, waiting construction; nil when a list is not read.
+  local function cell_counts(c)
+    local cl, cc = robot_kinds(tget(c, 'charging_robots'))
+    if not cl then return nil end
+    local wl, wc = robot_kinds(tget(c, 'to_charge_robots'))
+    if not wl then return nil end
+    return cl, cc, wl, wc
+  end
+  local function cell_robots(c)
+    local cl, cc, wl, wc = cell_counts(c)
+    if not cl then return nil end
+    return {charging={logistic=cl, construction=cc}, waiting={logistic=wl, construction=wc}}
+  end
+  -- An item's prototype type by name, kept (prototype figures; BT1: a roboport's repair packs read it per item).
+  local item_type_of = {}
+  local function item_type(name)
+    local t = item_type_of[name]
+    if t == nil then t = tget(tget(tget(prototypes, 'item'), name), 'type') or false; item_type_of[name] = t end
+    return t
   end
   local function robots_text(kind, k)
     local t = string.format('%s robots %d: %d idle, %d working', kind, k.total, k.idle, k.working)
@@ -916,51 +1030,56 @@ return function(api)
     local out = {}
     for _, r in ipairs(rows) do
       if #out >= k then break end
-      local o = not try(function() return r.c.mobile end) and try(function() return r.c.owner end)
-      if o and o.valid then out[#out+1] = {x=o.position.x, y=o.position.y, waiting=r.waiting, charging=r.charging} end
+      local o = not tget(r.c, 'mobile') and tget(r.c, 'owner')
+      if o and o.valid then local p = o.position; out[#out+1] = {x=p.x, y=p.y, waiting=r.waiting, charging=r.charging} end
     end
     return out
   end
   function M.hot_text(h) return string.format('(%g,%g) %d waiting, %d charging', h.x, h.y, h.waiting, h.charging) end
+  -- (BT1: 952 KB a network on the copy; each cell's reads with no closure, its robots counted into numbers, its
+  -- roboport's position read once, an item's type kept by name.)
   function M.logistic_view(ln)
-    local v = {id=try(function() return ln.network_id end), roboports=0, personal=0,
-      logistic={total=try(function() return ln.all_logistic_robots end) or 0, idle=try(function() return ln.available_logistic_robots end) or 0, charging=0, waiting=0},
-      construction={total=try(function() return ln.all_construction_robots end) or 0, idle=try(function() return ln.available_construction_robots end) or 0, charging=0, waiting=0}}
+    local v = {id=tget(ln, 'network_id'), roboports=0, personal=0,
+      logistic={total=tget(ln, 'all_logistic_robots') or 0, idle=tget(ln, 'available_logistic_robots') or 0, charging=0, waiting=0},
+      construction={total=tget(ln, 'all_construction_robots') or 0, idle=tget(ln, 'available_construction_robots') or 0, charging=0, waiting=0}}
+    local L, C = v.logistic, v.construction
     local typed, any_charging, any_waiting = true, 0, 0
     -- (d20 batch59 U3, Astra #1502) each roboport's own queue, as its GUI shows it: the HOT with the most waiting
     -- (then charging) are kept with their positions; the network's totals sum every roboport.
     local hot = {}
-    for _, c in ipairs(try(function() return ln.cells end) or {}) do
-      local cc = try(function() return c.charging_robot_count end) or 0
-      local cw = try(function() return c.to_charge_robot_count end) or 0
+    for _, c in ipairs(tget(ln, 'cells') or EMPTY) do
+      local cc = tget(c, 'charging_robot_count') or 0
+      local cw = tget(c, 'to_charge_robot_count') or 0
       any_charging = any_charging + cc
       any_waiting = any_waiting + cw
       if cc + cw > 0 then hot[#hot+1] = {c=c, charging=cc, waiting=cw} end
-      local by = cell_robots(c)
-      if by then
-        for _, k in ipairs({'logistic', 'construction'}) do
-          v[k].charging, v[k].waiting = v[k].charging + by.charging[k], v[k].waiting + by.waiting[k]
-        end
+      local chl, chc, wl, wc = cell_counts(c)
+      if chl then
+        L.charging, L.waiting = L.charging + chl, L.waiting + wl
+        C.charging, C.waiting = C.charging + chc, C.waiting + wc
       else typed = false end
-      local o = try(function() return c.owner end)
-      if try(function() return c.mobile end) then v.personal = v.personal + 1
+      local o = tget(c, 'owner')
+      if tget(c, 'mobile') then v.personal = v.personal + 1
       elseif o and o.valid then
         v.roboports = v.roboports + 1
-        v.center = v.center or {x=o.position.x, y=o.position.y}
+        local p = o.position
+        local x, y = p.x, p.y
+        v.center = v.center or {x=x, y=y}
         -- Repair packs in its material slot (Haiku, d15: a remote agent could not see them run out).
-        local mat = defines.inventory and defines.inventory.roboport_material and try(function() return o.get_inventory(defines.inventory.roboport_material) end)
+        local inv_ids = defines.inventory
+        local mat = inv_ids and inv_ids.roboport_material and tcall(o, 'get_inventory', inv_ids.roboport_material)
         local packs = 0
-        for _, it in ipairs(mat and try(function() return mat.get_contents() end) or {}) do
-          local n = type(it.name) == 'string' and it.name or try(function() return it.name.name end)
-          if n and try(function() return prototypes.item[n].type end) == 'repair-tool' then packs = packs + (it.count or 0) end
+        for _, it in ipairs(mat and tcall(mat, 'get_contents') or EMPTY) do
+          local n = type(it.name) == 'string' and it.name or tget(it.name, 'name')
+          if n and item_type(n) == 'repair-tool' then packs = packs + (it.count or 0) end
         end
         if mat then
           v.ports_read = (v.ports_read or 0) + 1
           v.repair_packs = (v.repair_packs or 0) + packs
           if packs == 0 then v.ports_without_packs = (v.ports_without_packs or 0) + 1 end
         end
-        v.logistic_area = box_add(v.logistic_area, o.position.x, o.position.y, try(function() return c.logistic_radius end) or 0)
-        v.construction_area = box_add(v.construction_area, o.position.x, o.position.y, try(function() return c.construction_radius end) or 0)
+        v.logistic_area = box_add(v.logistic_area, x, y, tget(c, 'logistic_radius') or 0)
+        v.construction_area = box_add(v.construction_area, x, y, tget(c, 'construction_radius') or 0)
       end
     end
     v.hot = M.hottest(hot, HOT)
@@ -972,7 +1091,7 @@ return function(api)
     if not typed then v.charging, v.waiting = any_charging, any_waiting end
     -- The network's repair packs in its chests too (robots take them from storage as from roboports).
     local stored = 0
-    for _, name in ipairs({'repair-pack'}) do stored = stored + (try(function() return ln.get_item_count(name) end) or 0) end
+    for _, name in ipairs({'repair-pack'}) do stored = stored + (tcall(ln, 'get_item_count', name) or 0) end
     v.repair_packs_stored = stored
     local packs_text = (v.ports_read or 0) > 0 and string.format('; repair packs: %d in roboport material slots%s, %d in its chests', v.repair_packs or 0,
       (v.ports_without_packs or 0) > 0 and string.format(' (%d of %d roboports hold none)', v.ports_without_packs, v.ports_read) or '', math.max(0, stored)) or ''
@@ -1085,9 +1204,12 @@ return function(api)
   -- 5+ min while providers or storage hold the item free (the engine's supply counts, net of pickups robots have
   -- reserved), with what the robots are doing.
   local ORDER_WAIT, CAUSE_LOOK = 18000, 16
+  local other_at   -- (below, with other_networks)
   local function order_key(e)
-    local u = try(function() return e.unit_number end)
-    return u and tostring(u) or (e.name .. '@' .. e.position.x .. ',' .. e.position.y)
+    local u = tget(e, 'unit_number')   -- (BT1: no closure an order)
+    if u then return tostring(u) end
+    local p = e.position
+    return e.name .. '@' .. p.x .. ',' .. p.y
   end
   local function order_item(e, kind)
     local proto = kind == 'ghost' and try(function() return e.ghost_prototype end)
@@ -1108,7 +1230,7 @@ return function(api)
   local function backlog(n, ln, f, surface, b, v, others, found)
     if not found then
       found = {}
-      for _, x in ipairs(order_finds(f, b)) do found[x.kind] = try(function() return surface.find_entities_filtered(x.q) end) or {} end
+      for _, x in ipairs(order_finds(f, b)) do found[x.kind] = tcall(surface, 'find_entities_filtered', x.q) or {} end
     end
     local seen, next_seen = n.orders[f.name] or {}, n.orders_next[f.name]
     local list, counts = {}, {ghost=0, deconstruct=0, upgrade=0}
@@ -1136,18 +1258,22 @@ return function(api)
     if waited == 0 then return out end
     local look = {}
     for i = 1, math.min(CAUSE_LOOK, waited) do look[i] = list[i] end
-    local cells = try(function() return ln.cells end) or {}
+    local cells = tget(ln, 'cells') or EMPTY
     local inside = 0
     for _, o in ipairs(look) do
-      for _, c in ipairs(cells) do
-        if try(function() return c.is_in_construction_range(o.e.position) end) then inside = inside + 1; break end
+      -- (BT1: its position read once, not once a cell; nil, as when it was read in each call: no cell's range)
+      local pos = tget(o.e, 'position')
+      if pos then
+        for _, c in ipairs(cells) do
+          if tcall(c, 'is_in_construction_range', pos) then inside = inside + 1; break end
+        end
       end
     end
     local missing, missing_set, present = {}, {}, 0
     for _, o in ipairs(look) do
       local item = o.kind ~= 'deconstruct' and o.e.valid and order_item(o.e, o.kind)
       if item then
-        if (try(function() return ln.get_item_count(item) end) or 0) > 0 then present = present + 1
+        if (tcall(ln, 'get_item_count', item) or 0) > 0 then present = present + 1
         elseif not missing_set[item] then missing_set[item] = true; missing[#missing+1] = item end
       end
     end
@@ -1160,8 +1286,9 @@ return function(api)
       for i = 1, math.min(4, #missing) do
         local item, where = missing[i], 'in no other network'
         for _, o in ipairs(others) do
-          if o.id ~= v.id and (try(function() return o.ln.get_item_count(item) end) or 0) > 0 then
-            where = string.format('held in network #%d near (%d,%d)%s', o.id, o.x, o.y, o.surface ~= surface.name and ' on ' .. o.surface or '')
+          if o.id ~= v.id and (tcall(o.ln, 'get_item_count', item) or 0) > 0 then
+            local x, y = other_at(o)
+            where = string.format('held in network #%d near (%d,%d)%s', o.id, x, y, o.surface ~= surface.name and ' on ' .. o.surface or '')
             break
           end
         end
@@ -1190,8 +1317,9 @@ return function(api)
     for _, x in ipairs(short) do
       local since = n.unfilled[x.key]
       local e = x.e
-      if since and game.tick - since >= UNFILLED_TICKS and e and looked < FULL_LOOK and not seen[x.key:match('^[^|]+')] then
-        seen[x.key:match('^[^|]+')] = true
+      local unit = since and game.tick - since >= UNFILLED_TICKS and e and looked < FULL_LOOK and x.key:match('^[^|]+')
+      if unit and not seen[unit] then
+        seen[unit] = true
         looked = looked + 1
         local ok, f = pcall(slots.full_of, e, x.name)
         if ok and f and e.valid then
@@ -1208,7 +1336,7 @@ return function(api)
     for _, x in ipairs(short) do
       local since = n.unfilled[x.key]
       if since and game.tick - since >= DELIVERY_WAIT then
-        local s = try(function() return ln.get_supply_counts(x.name) end) or {}
+        local s = tcall(ln, 'get_supply_counts', x.name) or EMPTY
         local free = math.max(0, (s['active-provider'] or 0) + (s['passive-provider'] or 0)) + math.max(0, s.storage or 0)
         if free > 0 then stuck = stuck + 1; items[x.name] = free end
       end
@@ -1216,9 +1344,9 @@ return function(api)
     if stuck == 0 then return nil end
     local L, causes = v.logistic, {}
     local waiting, ports, charging = 0, 0, 0
-    for _, c in ipairs(try(function() return ln.cells end) or {}) do
-      local w = try(function() return c.to_charge_robot_count end) or 0
-      charging = charging + (try(function() return c.charging_robot_count end) or 0)
+    for _, c in ipairs(tget(ln, 'cells') or EMPTY) do
+      local w = tget(c, 'to_charge_robot_count') or 0
+      charging = charging + (tget(c, 'charging_robot_count') or 0)
       if w > 0 then waiting, ports = waiting + w, ports + 1 end
     end
     -- (charging and waiting robots by kind where the cells list them, else every robot at the roboports)
@@ -1235,16 +1363,25 @@ return function(api)
         table.concat(causes, '; '))}
   end
   -- Every network of the force, for where a missing item is held.
+  -- Its x and y: where its first cell's roboport is, read when a line first names it (BT1: ln.cells makes every cell of
+  -- the network; read for each network at each backlog, used only where a missing item is held). The same tick's read.
+  local function first_cell_at(ln) local cell = ln.cells[1]; return cell and cell.owner and cell.owner.position end
   local function other_networks(f)
     local others = {}
     for _, s in ipairs(surfaces()) do
       for _, ln in ipairs(logistic_networks(f, s)) do
-        local id = try(function() return ln.network_id end)
-        local c = try(function() local cell = ln.cells[1]; return cell and cell.owner and cell.owner.position end)
-        if id then others[#others+1] = {id=id, ln=ln, surface=s.name, x=c and math.floor(c.x + 0.5) or 0, y=c and math.floor(c.y + 0.5) or 0} end
+        local id = tget(ln, 'network_id')
+        if id then others[#others+1] = {id=id, ln=ln, surface=s.name} end
       end
     end
     return others
+  end
+  other_at = function(o)
+    if o.x == nil then
+      local c = tfn(first_cell_at, o.ln)
+      o.x, o.y = c and math.floor(c.x + 0.5) or 0, c and math.floor(c.y + 0.5) or 0
+    end
+    return o.x, o.y
   end
   local function logistic_line(surface, r)
     local items, kinds = top_items(r.items, 3)
@@ -1291,13 +1428,15 @@ return function(api)
   M.order_finds = order_finds
   -- One logistic network's row (nil: no id); its line is made by logistic_done, with every row of the surface.
   local function logistic_row(n, f, surface, ln, defer, others)
-      local id = try(function() return ln.network_id end)
+      local id = tget(ln, 'network_id')
       if not id then return nil end
         local v = M.logistic_view(ln)
         local r = {id=id, roboports=v.roboports, personal=v.personal, center=v.center, view=v,
           logistic=v.logistic.total, logistic_idle=v.logistic.idle, construction=v.construction.total, construction_idle=v.construction.idle,
           ghosts=0, unfilled=0, items={}}
-        local short, short_now = shortfalls(ln), {}
+        -- (asked: what its requesters ask, summed in the same pass over its requester points; used below)
+        local asked = {}
+        local short, short_now = shortfalls(ln, asked), {}
         for _, x in ipairs(short) do
           local since = n.unfilled[x.key]
           if since and game.tick - since >= UNFILLED_TICKS then r.unfilled = r.unfilled + 1; r.items[x.name] = (r.items[x.name] or 0) + x.missing end
@@ -1306,17 +1445,10 @@ return function(api)
         -- The items it holds and what its requesters ask (Gemini, 12:20): the network's contents (provider, storage and
         -- buffer chests, as its GUI lists them) and the requests summed over its requester points, with what is short now.
         local stock = {}
-        for k, v in pairs(try(function() return ln.get_contents() end) or {}) do
+        for k, v in pairs(tcall(ln, 'get_contents') or EMPTY) do
           local name, c = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
           if type(name) == 'table' then name = name.name end
           if type(name) == 'string' and type(c) == 'number' and c > 0 then stock[name] = (stock[name] or 0) + c end
-        end
-        local asked = {}
-        for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
-          for _, flt in ipairs(try(function() return pt.filters end) or {}) do
-            local name = type(flt.name) == 'table' and flt.name.name or flt.name
-            if name and (flt.count or 0) > 0 then asked[name] = (asked[name] or 0) + flt.count end
-          end
         end
         r.stock, r.asked, r.short_now = stock, asked, short_now
         r.busy_since = n.busy[id]
@@ -1363,11 +1495,14 @@ return function(api)
       end
     end
     local used = {}
-    local stats = try(function() return f.get_item_production_statistics(surface) end)
-    for name in pairs(stats and try(function() return stats.output_counts end) or {}) do
-      local item = prototypes.item[name]
-      if item and item.type == 'ammo' then
-        local v = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.one_hour, count=true} end)
+    local stats = tcall(f, 'get_item_production_statistics', surface)
+    -- (BT1: an item's type kept by name, not a prototype read for every item the surface used; get_flow_count read once)
+    local flow
+    for name in pairs(stats and tget(stats, 'output_counts') or EMPTY) do
+      if item_type(name) == 'ammo' then
+        flow = flow or tget(stats, 'get_flow_count')
+        local fpi = tget(defines, 'flow_precision_index')
+        local v = fpi and tfn(flow, {name=name, category='output', precision_index=fpi.one_hour, count=true})
         if v and v >= 1 then used[name] = v end
       end
     end
@@ -1415,10 +1550,11 @@ return function(api)
       if not seen then VIEW_TYPES[#VIEW_TYPES+1] = t end
     end
   end
-  local function view_entity(ctx, e)
+  local VIEW_FIND = {type=VIEW_TYPES, force=nil, limit=MAX_SCAN}
+  local function view_entity(ctx, e, surface)
     if not e.valid then return end
     local t = e.type
-    if IS_GEN[t] then e_gen(ctx, e) end
+    if IS_GEN[t] then e_gen(ctx, e, surface) end
     if IS_MACHINE[t] then e_machine(ctx, e) end
     if t == 'boiler' then ctx.boiler_list[#ctx.boiler_list+1] = e end
     if IS_TURRET[t] then ctx.turrets[e.name] = (ctx.turrets[e.name] or 0) + 1 end
@@ -1448,7 +1584,7 @@ return function(api)
     local job = n.view_jobs[f.name]
     local v = n.views[f.name]
     -- (a generator built after the view and after the job in hand began: a job starts now, M.built)
-    local g = (n.gen_added or {})[f.name]
+    local g = (n.gen_added or EMPTY)[f.name]
     if g and v and g.tick >= v.tick and tick > g.tick and not (job and job.start >= g.tick) then job = nil; n.view_jobs[f.name] = nil
     elseif not job and v and tick - snapfail.since(v.tick, v.refresh_failed) < VIEW_TICKS then return end
     if not job then
@@ -1489,8 +1625,9 @@ return function(api)
       n.view_jobs[f.name] = nil
       return
     end
+    -- (BT1: the surface by name without the sorted list of every surface a step; names are unique)
     local surface
-    for _, s in ipairs(surfaces()) do if s.name == step.surface then surface = s end end
+    for _, s in pairs(game.surfaces or EMPTY) do if s.name == step.surface then surface = s; break end end
     if not surface then job.i, job.walk, job.list = job.i + 1, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
     local row = job.out[step.surface] or {name=surface.name, platform=try(function() return surface.platform.name end), logistic={}}
     job.out[step.surface] = row
@@ -1499,12 +1636,13 @@ return function(api)
       if not ctx then ctx = e_ctx(n, f, surface); ctx.boiler_list, ctx.turrets = {}, {}; job.ctx[step.surface] = ctx end
       if job.list then
         local last = math.min(#job.list, job.at + SLICE - 1)
-        for k = job.at, last do view_entity(ctx, job.list[k]) end
+        for k = job.at, last do view_entity(ctx, job.list[k], surface) end
         job.at = last + 1
         if job.at > #job.list then job.list = nil end
       else
         job.walk = job.walk or walk.start(surface)
-        local list = walk.band(job.walk, surface, {type=VIEW_TYPES, force=f, limit=MAX_SCAN})
+        VIEW_FIND.force = f
+        local list = walk.band(job.walk, surface, VIEW_FIND)
         if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
       end
       return
@@ -1524,7 +1662,7 @@ return function(api)
       local x = q.list[q.i]
       if x then
         q.found[x.id] = q.found[x.id] or {}
-        q.found[x.id][x.kind] = try(function() return surface.find_entities_filtered(x.q) end) or {}
+        q.found[x.id][x.kind] = tcall(surface, 'find_entities_filtered', x.q) or {}
         q.i = q.i + 1
       end
       if q.i <= #q.list then job.i = job.i - 1   -- (the step repeats until every find is made)
@@ -1537,7 +1675,7 @@ return function(api)
       if not q then
         q = {ids={}, i=1, rows={}}
         for _, ln in ipairs(logistic_networks(f, surface)) do
-          local id = try(function() return ln.network_id end)
+          local id = tget(ln, 'network_id')
           if id then q.ids[#q.ids+1] = id end
         end
         orders_store(n, f)
@@ -1546,7 +1684,7 @@ return function(api)
       local id = q.ids[q.i]
       if id then
         for _, ln in ipairs(logistic_networks(f, surface)) do
-          if try(function() return ln.network_id end) == id then
+          if tget(ln, 'network_id') == id then
             local r = logistic_row(n, f, surface, ln, true)
             if r then q.rows[#q.rows+1] = r end
           end
@@ -1564,8 +1702,10 @@ return function(api)
       ctx.boiler_list = nil
       -- Feeders are read for the boilers of networks with a draw sample (the rows use them only there).
       ctx.supply, ctx.supply_at, ctx.walked = {}, 1, {}
+      -- (BT1: a sample is what draw needs to give one; draw itself summed every sample of every network on the surface)
       for id, net in pairs(ctx.nets) do
-        if draw(n, id) then for _, b in ipairs(net.boilers) do ctx.supply[#ctx.supply+1] = b end end
+        local list = n.samples[id]
+        if list and #list > 0 then for _, b in ipairs(net.boilers) do ctx.supply[#ctx.supply+1] = b end end
       end
     elseif step.step == 'supply' then
       local last = math.min(#ctx.supply, ctx.supply_at + BOILER_SLICE - 1)
@@ -1836,19 +1976,19 @@ return function(api)
   local function name_of(v)
     if type(v) == 'string' then return v end
     if type(v) == 'table' or type(v) == 'userdata' then
-      local n = try(function() return v.name end)
+      local n = tget(v, 'name')
       if type(n) == 'string' then return n end
-      return n and try(function() return n.name end)
+      return n and tget(n, 'name')
     end
   end
   local function fuels_of(boilers)
     local seen, out = {}, {}
     local function add(n) if n and not seen[n] then seen[n] = true; out[#out+1] = n end end
     for _, b in ipairs(boilers) do
-      local burner = b.e.valid and try(function() return b.e.burner end)
+      local burner = b.e.valid and tget(b.e, 'burner')
       if burner then
-        add(name_of(try(function() return burner.currently_burning end)))
-        local inv = try(function() return burner.inventory end)
+        add(name_of(tget(burner, 'currently_burning')))
+        local inv = tget(burner, 'inventory')
         for i = 1, inv and #inv or 0 do
           local st = inv[i]
           if st and st.valid_for_read then add(st.name) end
@@ -1859,18 +1999,24 @@ return function(api)
   end
   local function same(a, b)
     if not (a and b) then return false end
-    local ua, ub = try(function() return a.unit_number end), try(function() return b.unit_number end)
+    local ua, ub = tget(a, 'unit_number'), tget(b, 'unit_number')
     if ua and ub then return ua == ub end
     return a == b
   end
   local BELTS = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
+  -- An inserter's fuel in hand (pcall'd: tfn) and an entity's position as text, its position read once (BT1).
+  local function hand_of(ins) local h = ins.held_stack; return h.valid_for_read and h.name end
+  local function at_of(e) local p = e.position; return at(p.x, p.y) end
   -- What an entity holds of the fuels, as 'N coal, M solid-fuel' (nil: none).
   -- A boiler in a chain: its fuel slot; a chest or machine: all it holds.
   local function held_of(src, names)
-    local inv = src.type == 'boiler' and try(function() return src.burner.inventory end)
+    local inv = src.type == 'boiler' and tget(tget(src, 'burner'), 'inventory')
     local parts, total = {}, 0
+    -- (BT1) the holder's get_item_count read once for every fuel (a method read makes a function)
+    local count_of
+    if inv then count_of = tget(inv, 'get_item_count') else count_of = tget(src, 'get_item_count') end
     for _, name in ipairs(names) do
-      local n = inv and (try(function() return inv.get_item_count(name) end) or 0) or (try(function() return src.get_item_count(name) end) or 0)
+      local n = tfn(count_of, name) or 0
       if n > 0 then parts[#parts+1] = n .. ' ' .. name; total = total + n end
     end
     return #parts > 0 and table.concat(parts, ', ') or nil, total
@@ -1881,7 +2027,8 @@ return function(api)
   -- when those hold none, the inserters within 3 tiles of the run that drop
   -- onto it and what they take from (one bounded find, 00:26 rule).
   local function source_fuel(src, names, surface, f)
-    local pos = at(src.position.x, src.position.y)
+    local sp = src.position
+    local pos = at(sp.x, sp.y)
     if not BELTS[src.type] then
       local held, total = held_of(src, names)
       return {has=held ~= nil, text=string.format('%s %s holding %s', src.name, pos, held or 'no fuel'), count=total, held=held,
@@ -1889,17 +2036,21 @@ return function(api)
     end
     local by, tiles, queue, seen, run, want = {}, 0, {src}, {}, {}, {}
     for _, name in ipairs(names) do want[name] = true end
-    local x0, y0, x1, y1 = src.position.x, src.position.y, src.position.x, src.position.y
+    local x0, y0, x1, y1 = sp.x, sp.y, sp.x, sp.y
+    -- (BT1: a tile's reads with no closure, its position once, its get_transport_line once)
     while #queue > 0 and tiles < BELT_WALK do
       local e = table.remove(queue, 1)
-      local id = try(function() return e.unit_number end) or tostring(e)
+      local id = tget(e, 'unit_number') or tostring(e)
       if e.valid and not seen[id] then
         seen[id] = true; tiles = tiles + 1; run[id] = true
-        x0, y0, x1, y1 = math.min(x0, e.position.x), math.min(y0, e.position.y), math.max(x1, e.position.x), math.max(y1, e.position.y)
-        for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do
-          local line = try(function() return e.get_transport_line(i) end)
+        local p = e.position
+        x0, y0, x1, y1 = math.min(x0, p.x), math.min(y0, p.y), math.max(x1, p.x), math.max(y1, p.y)
+        local line_of
+        for i = 1, tcall(e, 'get_max_transport_line_index') or 0 do
+          line_of = line_of or tget(e, 'get_transport_line')
+          local line = tfn(line_of, i)
           -- One read of the lane (operator 04:00: a count per fuel per lane per tile was 640 reads a belt walk).
-          local contents = line and try(function() return line.get_contents() end)
+          local contents = line and tcall(line, 'get_contents')
           if contents then
             for k, v in pairs(contents) do
               local name, n = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
@@ -1907,15 +2058,15 @@ return function(api)
             end
           else
             for _, name in ipairs(names) do
-              local n = line and try(function() return line.get_item_count(name) end) or 0
+              local n = line and tcall(line, 'get_item_count', name) or 0
               if n > 0 then by[name] = (by[name] or 0) + n end
             end
           end
         end
-        for _, nb in ipairs(try(function() return e.belt_neighbours.inputs end) or {}) do queue[#queue+1] = nb end
-        if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' then
-          local pair = try(function() return e.neighbours end)
-          if pair and try(function() return pair.valid end) then queue[#queue+1] = pair end
+        for _, nb in ipairs(tget(tget(e, 'belt_neighbours'), 'inputs') or EMPTY) do queue[#queue+1] = nb end
+        if e.type == 'underground-belt' and tget(e, 'belt_to_ground_type') == 'output' then
+          local pair = tget(e, 'neighbours')
+          if pair and tget(pair, 'valid') then queue[#queue+1] = pair end
         end
       end
     end
@@ -1924,13 +2075,13 @@ return function(api)
     local text = string.format('%s %s (with %d belt tiles up to it holding %s)', src.name, pos, tiles, #parts > 0 and table.concat(parts, ', ') or 'no fuel')
     if #parts > 0 then return {has=true, text=text} end
     local loads = {}
-    for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=f, area={{x0 - 3, y0 - 3}, {x1 + 3, y1 + 3}}, limit=200} end) or {}) do
-      local to = ins.valid and try(function() return ins.drop_target end)
-      local id = to and (try(function() return to.unit_number end) or tostring(to))
-      local from = id and run[id] and try(function() return ins.pickup_target end)
+    for _, ins in ipairs(tcall(surface, 'find_entities_filtered', {type='inserter', force=f, area={{x0 - 3, y0 - 3}, {x1 + 3, y1 + 3}}, limit=200}) or EMPTY) do
+      local to = ins.valid and tget(ins, 'drop_target')
+      local id = to and (tget(to, 'unit_number') or tostring(to))
+      local from = id and run[id] and tget(ins, 'pickup_target')
       if from and from.valid and not BELTS[from.type] then
         local held = held_of(from, names)
-        loads[#loads+1] = string.format('%s %s from %s %s holding %s', ins.name, at(ins.position.x, ins.position.y), from.name, at(from.position.x, from.position.y), held or 'no fuel')
+        loads[#loads+1] = string.format('%s %s from %s %s holding %s', ins.name, at_of(ins), from.name, at_of(from), held or 'no fuel')
         if held then return {has=true, text=text .. '; loaded by ' .. loads[#loads]} end
       end
     end
@@ -1958,14 +2109,15 @@ return function(api)
       local names = fuel_names(b)
       local key = table.concat(names, ',')
       if e.valid then
-        for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=f, position=e.position, radius=4} end) or {}) do
-          if not b.fed and ins.valid and same(try(function() return ins.drop_target end), e) then
-            local where = at(ins.position.x, ins.position.y)
-            local hand = try(function() local h = ins.held_stack; return h.valid_for_read and h.name end)
+        for _, ins in ipairs(tcall(surface, 'find_entities_filtered', {type='inserter', force=f, position=e.position, radius=4}) or EMPTY) do
+          if not b.fed and ins.valid and same(tget(ins, 'drop_target'), e) then
+            local ip = ins.position
+            local where = at(ip.x, ip.y)
+            local hand = tfn(hand_of, ins)
             local in_hand
-            for _, n in ipairs(hand and names or {}) do if n == hand then in_hand = true end end
-            local src = try(function() return ins.pickup_target end)
-            local memo = src and src.valid and tostring(try(function() return src.unit_number end) or at(src.position.x, src.position.y)) .. '|' .. key
+            for _, n in ipairs(hand and names or EMPTY) do if n == hand then in_hand = true end end
+            local src = tget(ins, 'pickup_target')
+            local memo = src and src.valid and tostring(tget(src, 'unit_number') or at_of(src)) .. '|' .. key
             local s = memo and (walked[memo] or source_fuel(src, names, surface, f))
             if memo then walked[memo] = s end
             local text = s and string.format('%s %s from %s', ins.name, where, s.text) or string.format('%s %s with no pickup target', ins.name, where)
@@ -2045,8 +2197,8 @@ return function(api)
           end
           if quiet then
             for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=f, position=chest.position, radius=3, limit=32} end) or {}) do
-              if ins.valid and same(try(function() return ins.drop_target end), chest) then
-                local hand = try(function() local h = ins.held_stack; return h.valid_for_read and h.name end)
+              if ins.valid and same(tget(ins, 'drop_target'), chest) then
+                local hand = tfn(hand_of, ins)
                 for _, fuel in ipairs(c.names) do if hand == fuel then quiet = false end end
               end
             end
