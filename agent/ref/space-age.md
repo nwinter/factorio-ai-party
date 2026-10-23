@@ -146,6 +146,7 @@
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
   take seconds) and gives its number; `floor_check: N` reads it: running, or done with `would_build` (the planned tiles
   the hub's rules build in turn once their items come), `never_built`, `by_reason`, the first 12 `unbuilt` with why,
+  every unbuilt tile as column runs (`unbuilt_tiles`, `(x,y0..y1)`), `groups` (touching unbuilt tiles: count, box, why)
   and `floor_now` (the foundation built now). `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
@@ -493,9 +494,10 @@
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
-  and so do tell, chat, `chat_ack`, say, operator, the board, `flight_watch {id}` or `{}`, research, platform calls, waits on `platform_arrived` and
-  `platform_left`, queue plans of the steps the remote lane allows, and every remote-view call with `platform=` or
-  `surface=` (place_ghosts, deconstruct, configure, circuit_set, requests with position, ...; the refusal lists them).
+  and so do tell, chat, `chat_ack`, say, operator, the board, `flight_watch {id}` or `{}`, research, platform calls,
+  waits on `platform_arrived` and `platform_left`, queue plans of the steps the remote lane allows, and every
+  remote-view call with `platform=` or `surface=` (place_ghosts, deconstruct, configure, circuit_set, requests with
+  position, ...; the refusal lists them).
   Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running; so does a `configure` its checks refuse. Aboard, `observe` gives `player.body: "none"`.
@@ -513,8 +515,10 @@
   one tick do not finish counts none unbuilt: `tiles.check` names the check across ticks it started, read with
   `platform_plan {platform, floor_check: N}`); for one with no foundation near,
   `tiles.connect` lists the fewest tiles that join it to the built floor (a chain touching by sides or corners,
-  `connect_line`); `holes` lists the enclosed tiles that need foundation (beside a new tile with only enclosed regions
-  round it, the largest may stay empty: `holes_other`).
+  `connect_line`); `holes` lists the enclosed tiles that need foundation and `hole_regions` their regions (size, box): of
+  the regions new tiles part from each other (one empty space before), all are filled when open space is among them,
+  else all but the largest (`holes_other`). The dry run's `summary` says when the floor is not checked yet or tiles
+  stay unbuilt.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
   to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
   a planet with no pad lands the same way, near its `near` spot.

@@ -7709,6 +7709,21 @@ fh watch    # deploy on every change
   - Holes: beside each new tile, an enclosed region needs filling when open space is beside that tile too; with only
     enclosed regions round it, all but the largest. A region no new tile needs filled is left out (`holes_other`).
     A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
+  - (d23 batch120 CC3, Astra #2019: Asterion's belt_route dry run planned 412 tiles; the floor check said 25 never
+    build, 12 named, near (-34.5,105.5)) The route's floor crossed an empty corridor about 5 tiles wide several
+    times (the crossing at y 105..120 is 16 rows thick): no single new tile had two regions beside it, so the per-tile rule left 1223 tiles of three corridor
+    parts out, and the last column of each crossing would part the corridor (reproduced on a copy of world n's save).
+    The hub never parts empty space: a tile whose empty side neighbours form one run leaves every path through it
+    open, so a region can only stay empty if it was apart before. The regions are now grouped through the new tiles
+    (two regions beside new tiles that touch by a side were one empty space): of each group all enclosed regions are
+    filled when open space is among them, else all but the largest. The same call now plans 1635 tiles (1470 holes;
+    `tiles.hole_regions`: `664 tiles in (-38.5,137.5)-(-27.5,208.5)`, `498 tiles in (-38.5,15.5)-(-31.5,104.5)`, ...)
+    and its floor check reads 1635 of 1635 built. The dry run's `summary` adds `the floor is not checked yet: floor
+    check #N decides whether the hub builds all N tiles (tiles.check)` while the check runs, and `N foundation tiles
+    never built by the hub's rules (tiles.unbuilt)` when the inline play finds some. `platform_plan {floor_check: N}`
+    adds `unbuilt_tiles` (every unbuilt tile, up to 500, as column runs `(-34.5,105.5..120.5)`, 64 runs and
+    `unbuilt_tiles_more`) and `groups` (touching unbuilt tiles, largest first, 12: count, box, why; for a split, that
+    every region they would part from the rest but one needs foundation, which a dry run of the same placement plans).
   - A refused entity ghost over empty space on a platform says the dry run gives those fields.
   tests/dryrun.lua.
 - A2 (Astra): a partial load went up with two underground belts and a rocket was spent. `load_silo {launch,
