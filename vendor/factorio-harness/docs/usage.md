@@ -11734,6 +11734,28 @@ best of three.
     item prototypes once a load. The 18 platforms' replies compared equal on the copy.
   - Over 10 ms still, on Asterion (8,000 entities) and Meridian-V: endurance's plan and forecast lines (3-4 ms each),
     supply's thrust lines (up to 4.5 ms) and the trace's first walk of each belt (3.6 ms).
+- Part 5 (operator 17:26, world n after cp1 and cp2: `flight_watch` 10 calls, 36.4 ms average, a game second of 138
+  ms with 2; board.team up to 63 ms, with platalerts.lines 51). On a copy of world n's 17:39 autosave: Astra's
+  Asterion watch 595 (97 turrets, 23 railguns, 160 accumulators) and 3 of Sol's watching, read as the agents read them
+  (`{id}` and `{}`) every 2 s during a 60 s profile, cp4's runtime against this one:
+
+  | | cp4 | now |
+  |---|---|---|
+  | dispatch flight_watch | 20.7 ms average, worst 189.4 (a GC second) | 11.5, worst 32.8 |
+  | board.team | 6.3 ms average, worst 26.3 | 3.1, worst 11.5 |
+  | platalerts.lines | 4.3 ms average, worst 16.6 | 1.0, worst 6.7 |
+  | platalerts.scan (new, background) | - | 0.72 ms a step, worst second 10.5 |
+
+  - The read itself was not the cost. Every reply's team block read each platform's alert scan when they expired (600
+    ticks, read for all platforms in one reply). Now `platalerts.tick` reads the oldest expired scan of a platform
+    whose lines were read in the last 5 minutes, one every 20 ticks. A reply takes a scan up to 1,200 ticks old while
+    the background runs, and reads one itself only past that.
+  - The fuel outlook (in each running watch's totals, the alerts' scans in flight, platform_endurance) takes the
+    thrusters and tanks from the platform's background read when a count finds no other aboard, and its speed check
+    has part 4's hull width by counts (every foundation tile was read before).
+  - A full read of watch 595 does about 8 ms of work on the copy, against 15.3 on world n's runtime. Its 41 KB reply
+    took 20.7 ms to write as JSON there; on world n, 0.4 ms (`encode flight_watch` in your profile). The list of 8
+    watches does 11.6 against 17.9; its 4 running watches' fuel outlooks are 6.4 ms of that.
 
 ### d22 batch93 BC2: status brief's vehicle_fire
 

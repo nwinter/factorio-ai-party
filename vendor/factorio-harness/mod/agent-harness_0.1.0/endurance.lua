@@ -90,7 +90,11 @@ return function(api)
   -- What the thrusters and storage tanks hold of each fluid in names; and of it, the storage tanks' (d20 batch60 V5).
   local function fluid_stock(pl, names)
     local out, tanks = {}, {}
-    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
+    -- (d22 batch96 BF1) the thrusters and tanks of the platform's background read when a count finds no other aboard
+    -- (freight.platform_lists), else found: the fuel outlook is read by the platform alerts' scans, flight watches and
+    -- this read
+    local lists = api.platform_lists and try(function() return api.platform_lists(pl) end)
+    for _, e in ipairs(lists and lists.tanks or try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
       for i = 1, try(function() return #e.fluidbox end) or 0 do
         local f = try(function() return e.fluidbox[i] end)
         if f and names[f.name] then

@@ -482,3 +482,56 @@ do
   defines,prototypes=nil,nil
 end
 print('d22_batch96 BF1 chunk trace reads once: ok')
+
+-- BF1 part 5 (operator 17:26: flight_watch reads 36 ms on world n, board.team up to 63 ms with platalerts.lines 51)
+
+-- 16. the platform alerts' expired scans read in the background, the oldest of those read lately, one a step; a reply
+-- takes a scan up to twice as old while the background runs
+do
+  game={tick=100000}
+  defines={space_platform_state={on_the_path=4,waiting_at_station=6},inventory={turret_ammo=3,hub_main=1}}
+  prototypes={item={}}
+  local st={}
+  local finds={}
+  local function plat(i)
+    return {valid=true,index=i,name='P'..i,state=6,surface={name='platform-'..i,find_entities_filtered=function() finds[#finds+1]=i; return {} end},force={name='player'}}
+  end
+  local p1,p2,p3=plat(1),plat(2),plat(3)
+  game.forces={player={platforms={p1,p2,p3}}}
+  local A=dofile('mod/agent-harness_0.1.0/platalerts.lua'){state=function() return st end,who=function() return 'sol' end}
+  st.platform_alerts={by={[1]={scan={tick=game.tick-700},scan_wanted=game.tick-100,seq=0,minutes={},workers={}},
+    [2]={scan={tick=game.tick-650},scan_wanted=game.tick-100,seq=0,minutes={},workers={}},
+    [3]={scan={tick=game.tick-900},scan_wanted=game.tick-20000,seq=0,minutes={},workers={}}}}
+  A.tick(game.tick+1)
+  eq(#finds,0,'only every SCAN_STEP ticks')
+  game.tick=game.tick+20-(game.tick%20)
+  A.tick(game.tick)
+  eq(#finds,1); eq(finds[1],1,'the oldest of those read lately (3 was not read in 5 minutes)')
+  eq(st.platform_alerts.by[1].scan.tick,game.tick)
+  A.tick(game.tick+20)
+  eq(finds[2],2)
+  A.tick(game.tick+40)
+  eq(#finds,2,'none expired')
+  eq(st.platform_alerts.scan_bg,game.tick+40)
+  defines,prototypes=nil,nil
+end
+print('d22_batch96 BF1 platform scans in the background: ok')
+
+-- 17. the fuel outlook's thrusters and tanks from the platform's background read when it has them
+do
+  game={tick=600}
+  defines={flow_precision_index={one_minute=1}}
+  local tank={valid=true,type='storage-tank',fluidbox=setmetatable({},{__len=function() return 1 end,__index=function() return {name='thruster-fuel',amount=700} end})}
+  local thr={valid=true,type='thruster',fluidbox=setmetatable({},{__len=function() return 2 end,__index=function(_,i) return {name=i==1 and 'thruster-fuel' or 'thruster-oxidizer',amount=100} end})}
+  local found=0
+  local pl={name='K',index=2,force={get_fluid_production_statistics=function() return nil end},
+    surface={find_entities_filtered=function() found=found+1; return {tank,thr} end},space_location={name='nauvis'}}
+  local lists
+  local E=dofile('mod/agent-harness_0.1.0/endurance.lua'){platform_lists=function() return lists end,leg=function() return nil end}
+  local o=E.fuel_outlook(pl)
+  eq(found,1,'no lists: found'); eq(o.rows[1].held,800); eq(o.rows[1].in_tanks,700); eq(o.rows[2].held,100)
+  lists={turrets={},tanks={tank,thr}}
+  local o2=E.fuel_outlook(pl)
+  eq(found,1,'the lists, no find'); eq(o2.line,o.line)
+end
+print('d22_batch96 BF1 fuel outlook from the background lists: ok')
