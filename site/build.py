@@ -55,6 +55,7 @@ import terrain  # noqa: E402  (site/terrain.py: /live/terrain/, map frames under
 import chartpub  # noqa: E402  (site/chartpub.py: /live/chart/, the chart the stream service draws; d22 batch97 BG3)
 import blueprints as bp_pages  # noqa: E402  (site/blueprints.py: /blueprints/, the team's blueprint library)
 import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, from site/content/how/)
+import updates as op_updates  # noqa: E402  (site/updates.py: /updates/, the operator's changes and their status)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -521,12 +522,16 @@ def nav_items():
     """The homepage is the live show; /live/ stays as an alias for links shared before. Without the archive: Live,
     the run's page (when there is one) and About."""
     if archive():
-        return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
-                ("/about/", "About")]
+        return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies")] + updates_nav() + \
+            [("/about/", "About")]
     return [("/", "Live"), ("/polls/", "Polls")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
-                              if LONG else []) + [("/how/", "How it was made"), ("/about/", "About"),
+                              if LONG else []) + updates_nav() + [("/how/", "How it was made"), ("/about/", "About"),
                                                   (GITHUB_URL, "GitHub")]
+
+
+def updates_nav():
+    return [("/updates/", "Updates")] if UPDATES and Path(UPDATES).is_file() else []
 
 
 def social_meta(full, site_title, description, path, og=None):
@@ -775,6 +780,7 @@ def _chat_line(c, hl):
 
 LONG = None  # the long run (longrun.load), set in main() when the runs folder has a chain of shifts
 BLUEPRINTS = None  # the team's blueprint library (site/blueprints.py latest), set in main()
+UPDATES = SITE / "content" / "operator-updates.json"  # /updates/ (site/updates.py; d23 batch119 CB4); none: no page
 # Shift videos uploaded to YouTube (tools/yt_upload.py writes site/content/videos.json): {run id: {id, shift, title,
 # description, chapters, playlist}}. A shift with a video gets an embed on /runs/long/ and its own page.
 VIDEOS = {}
@@ -1962,6 +1968,14 @@ def main():
             write(f"studies/{sid}/index.html", build_study(sid, st))
     write("live/index.html", build_live())
     write("polls/index.html", build_polls())
+    if updates_nav():  # the operator's changes, what each asking message said and the operator's replies (CB4)
+        data = op_updates.load(UPDATES)
+        hidden = moderation.load(args.runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")
+        asks, replies = op_updates.messages(args.runs_dir, op_updates.refs(data["updates"]), clean, keep_line, hidden)
+        body, head = op_updates.build_page(data, asks, replies, esc)
+        write("updates/index.html", page("Operator updates", body, "/updates/",
+                                         "Changes viewers and agents asked for, and whether each is planned, in progress, live or verified.",
+                                         extra_head=head, path="/updates/"))
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
     how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve

@@ -176,6 +176,8 @@ def scores(path):
                      if isinstance(s.get("consumed"), dict) else None,
                      "rockets": s.get("rockets") or 0,
                      "current": s.get("current_research") if isinstance(s.get("current_research"), str) else None,
+                     # infinite technologies: levels done past the prototype's own (tools/pog.py score), for in_progress
+                     "infinite": s.get("infinite") if isinstance(s.get("infinite"), dict) else {},
                      "platforms": [p["name"] for p in plats],
                      "at": {p["name"]: p.get("at") for p in plats},
                      "planets": list(s.get("planets") or [])})
@@ -283,10 +285,16 @@ def host_calls(path, start, limit=10):
     return [c[2:] for c in sorted(sorted(out)[:limit], key=lambda c: c[1])]
 
 
-def in_progress(name):
-    """Research under way, by its plain name: 'planet-discovery-fulgora' -> 'Planet discovery: Fulgora'."""
+def in_progress(name, infinite=None):
+    """Research under way, by its plain name: 'planet-discovery-fulgora' -> 'Planet discovery: Fulgora'. An infinite
+    technology by the level under way (d23 batch119 CB1: the prototype's "-3" is its first level): the score's
+    `infinite` counts the levels done past it, so 'mining-productivity-3' with 14 is 'Mining productivity 17'."""
     if not name:
         return None
+    done = (infinite or {}).get(name)
+    if isinstance(done, int) and done > 0:
+        m = re.match(r"(.*?)(?:-(\d+))?$", name)
+        return f"{m.group(1).replace('-', ' ').capitalize()} {int(m.group(2) or 1) + done}"
     if name.startswith("planet-discovery-"):
         return "Planet discovery: " + name[len("planet-discovery-"):].capitalize()
     return name.replace("-", " ").capitalize()
@@ -528,7 +536,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], raw0=a["raw"], raw1=b["raw"],
                    game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
-                   researching=in_progress(b.get("current")),
+                   researching=in_progress(b.get("current"), b.get("infinite")),
                    # SPM: research units a minute over the shift (the labs' use); packs made a minute, all colours
                    spm=round(research_units(used_between(a, b)) / mins, 1) if mins > 0 and used_between(a, b) is not None else None,
                    made_per_min=round(sum(own.values()) / mins, 1) if mins > 0 else None,

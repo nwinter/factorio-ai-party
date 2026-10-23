@@ -7,6 +7,11 @@ gives owner_work, the owner's running or armed watches (status work rows, flight
 each with its line and end tick, and the items a watch names (an #id in its scope or reason; this project when its title
 names the watch's scope as a word); finished or stalled watches are left out; the check's own state stays as it is; the
 live page writes them under the check ("Astra's test: ... (until tick N); names this project").
+d23 batch119 CB3 (viewer Aurora site:4347: "Could the board separate owner activity from project progress? Asterion's
+rocket watch also appears on the blocked production-cell project"): a project lists only the watches that name it
+("Astra's test for this project: ..."); the board card's Owner activity lists each owner's watches and wait once, with
+the projects each is for, the other items it names, or "no project named", and a watch's end as time left when its line
+does not say it.
 """
 import json, os, shutil, subprocess, sys
 
@@ -68,20 +73,44 @@ def page(row):
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function ago(s) { return Math.round(s) + ' s ago'; }
 function gameAgo() { return ''; }
-var lastState = null;
-""" + fn + "process.stdout.write(projectFacts(" + json.dumps(row) + ", { astra: { name: 'astra', display_name: 'Astra' } }));"
+function avatar(a) { return '<i>' + a.name + '</i>'; }
+var lastState = { tick: 48000000 };
+""" + fn
+    team = "{ astra: { name: 'astra', display_name: 'Astra' } }"
+    other = dict(row, id=1999, title="Standard production cells", status="blocked")
+    other["owner_work"] = [dict(w, this=None) if w.get("this") else w for w in row["owner_work"]]
+    board = {"projects": [row], "projects_more": [other]}
+    js += ("var out = { facts: projectFacts(" + json.dumps(row) + ", " + team + "), other: projectFacts(" + json.dumps(other) + ", " + team +
+           "), activity: ownerActivityHtml(" + json.dumps(board) + ", " + team + "), ends: [" +
+           "workEnd({ kind: 'uptime', line: 'uptime watch', end_tick: 48003600 }), workEnd({ kind: 'uptime', line: 'x: ends in 1 min', end_tick: 48003600 }), " +
+           "workEnd({ kind: 'wait', line: 'waiting', end_tick: 48003600 }), workEnd({ kind: 'uptime', line: 'over', end_tick: 47000000 })] }; process.stdout.write(JSON.stringify(out));")
     r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
     assert r.returncode == 0, r.stderr
-    out = r.stdout
+    o = json.loads(r.stdout)
+    out = o["facts"]
     assert "Progress check 40 s ago: stalled: unchanged across 3 checks" in out, out
-    assert "Astra&#39;s test: flight watch flight#7, Asterion: ends in 1 h 30 min" in out or "Astra's test: flight watch flight#7, Asterion: ends in 1 h 30 min" in out, out
-    assert "(until tick 48324000); names this project" in out, out
-    assert "names #1923 Railgun recharge proof" in out and "s wait: " in out, out
+    # on the project: the two watches that name it (the flight watch on Asterion, the asteroid watch on Asterion)
+    assert out.count("test for this project: ") == 2, out
+    assert "Astra's test for this project: flight watch flight#7, Asterion: ends in 1 h 30 min</span>" in out, out
+    assert "railgun" not in out.lower() and "wait" not in out and "until tick" not in out, out
+    # another project of the same owner: none of them (the blocked production cells of site:4347)
+    assert "test for this project" not in o["other"] and "Progress check" in o["other"], o["other"]
+    act = o["activity"]
+    assert act.startswith("<h4>Owner activity</h4>") and act.count('<li class="job">') == 1, act
+    lines = [l.split("</span> ", 1)[1].split("</span>")[0] for l in act.split('<span class="small project-fact">')[1:]]
+    assert len(lines) == 5, lines
+    assert lines[0] == "flight watch flight#7, Asterion: ends in 1 h 30 min; for #1910 Asterion edge qualification", lines[0]
+    assert lines[1].startswith("uptime watch ") and lines[1].endswith("; names #1923 Railgun recharge proof"), lines[1]
+    assert lines[2].endswith("; no project named"), lines[2]  # flight#8 (armed, on Kestrel II)
+    assert lines[4].startswith("waiting: ") and "project" not in lines[4], lines[4]
+    assert "until tick" not in act, act
+    # a line without its end gets the time left from the state's tick; one that says it, and a wait, nothing
+    assert o["ends"] == [" (ends in 60 s)", "", "", ""], o["ends"]
 
 
 def main():
     page(rows())
-    print("project tests: ok (the owner's running watches and wait with their ends beside the check; what each names)")
+    print("project tests: ok (the owner's running watches and wait with their ends beside the check; what each names; on a project only those naming it, the rest under Owner activity)")
 
 
 if __name__ == "__main__":

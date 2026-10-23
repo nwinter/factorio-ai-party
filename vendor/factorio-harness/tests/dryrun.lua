@@ -324,6 +324,21 @@ for y = 2, 4 do col[#col+1] = {name='space-platform-foundation', position={x=6.5
 local split = dryrun.check({surface=ps2, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=col})
 eq(split.tiles.holes, 12); eq(split.tiles.holes_other, 12)
 has(split.tiles.holes_note, '12 more enclosed empty tiles are left out')
+-- (d23 batch120 CC3, Astra #2019) a corridor x 2..4 open to the south, crossed twice by blocks two rows thick (y 6..7,
+-- y 12..13): no single new tile has two regions beside it, but the blocks part the corridor in three, and the hub never
+-- parts empty space, so both enclosed parts (y 2..5 and y 8..11) are filled; the open one stays.
+local function deck3(x, y)
+  if x >= 0 and x <= 6 and y >= 0 and y <= 20 and not (x >= 2 and x <= 4 and y >= 2) then return 'space-platform-foundation' end
+  return 'empty-space'
+end
+local ps3 = world(deck3, {}, {platform={hub=hub}})
+ps3.platform.hub.get_inventory = ps.platform.hub.get_inventory
+local cross = {}
+for _, y in ipairs({6, 7, 12, 13}) do for x = 2, 4 do cross[#cross+1] = {name='space-platform-foundation', position={x=x+0.5, y=y+0.5}} end end
+local two = dryrun.check({surface=ps3, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=cross})
+eq(two.tiles.holes, 24); eq(two.tiles.holes_other, nil)
+eq(two.tiles.hole_regions[1], '12 tiles in (2.5,2.5)-(4.5,5.5)'); eq(two.tiles.hole_regions[2], '12 tiles in (2.5,8.5)-(4.5,11.5)')
+eq(two.tiles.unbuilt, nil, 'with both filled the hub builds every tile')
 -- (d20 batch76 AL2, Sol #1752: Spindle's floor dry run said ok with 12 tiles refused in front of a collector; live, 19
 -- ghosts round that empty space were never built) a planned block east of the deck, x 6..10, y -2..2, whose middle
 -- x 7..9, y -1..1 a collector keeps empty: those 9 are refused and left out of the hub's rules, so the ring of 16 round

@@ -90,6 +90,8 @@ planet_maps 13 KB).
                             "crafting": {"queue": [{"recipe": "inserter", "count": 5}], "items": 5, "progress": 0.46},
                             "building": {"kind": "construct", "done": 7, "total": 20}, "age_s": 3.2}}],
     "chat": [{"seq": 1, "tick": 144720, "from": "Muse", "agent": "muse", "text": "...", "t": 1791695551.8}],  // last 40
+    // label: an infinite technology by the level under way ("Mining productivity 15" for mining-productivity-3 with
+    // next 15; d23 batch119 CB1); a board research event for one of its levels by the level done
     "research": {"current": "engine", "label": "Engine", "progress": 0.54, "done_count": 8,
                  "recent": [{"name": "steel-processing", "label": "Steel processing", "t": null}],
                  // (d20 batch57 S4, viewer Foobator) each infinite technology researched at least once (or being
@@ -126,7 +128,7 @@ planet_maps 13 KB).
               "projects_total": 1,    // a project event row also has progress, steps_done, steps_total (verb step: step)
               // the jobs behind the counts (d15, viewer joonazan 08:19), from an active read of tasks and requests,
               // newest change first, 20 each; absent before such a read: open tasks/requests nobody owns, and those
-              // claimed or being done; each {id, title, kind, owner, agent, status, requested_by}
+              // claimed or being done; each {id, title, kind, owner, agent, status, requested_by, updated_tick}
               "open_items": [...], "open_items_total": 3, "doing_items": [...], "doing_items_total": 2,
               // the team plan (the harness's board_plan; the live page's Team plan; viewer Alex 22:12), null when it has
               // neither goals nor lines. Ticks are game ticks (60 a second): the page says "set N min ago" from the

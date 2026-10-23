@@ -887,20 +887,11 @@
     var projects = projectsHtml(board, byName, 'board', false);
     // the jobs behind the counts (viewer joonazan, d15 08:19: "I can't see the open jobs"): open tasks and requests
     // nobody owns, and those an agent claimed or is doing (state.board.open_items / doing_items, newest change first)
-    function who(name) { var o = byName[name] || {}; return o.display_name || name || ''; }
-    var openJobs = (board.open_items || []).map(function (j) {
-      return '<li><span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span> <b>' + esc(j.title) + '</b>' +
-        (j.requested_by ? ' <span class="fx-muted">asked by ' + esc(who(j.requested_by)) + '</span>' : '') + evidenceHtml('item' + j.id, j) + '</li>';
-    }).join('');
-    var doingJobs = (board.doing_items || []).map(function (j) {
-      var o = byName[j.agent] || {};
-      return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
-        esc(j.title) + ' <span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span>' +
-        (j.status === 'claimed' ? ' <span class="fx-muted">claimed</span>' : '') + evidenceHtml('item' + j.id, j) + '</span></li>';
-    }).join('');
+    var openJobs = (board.open_items || []).map(function (j) { return jobRow(s, byName, j, 'item', false); }).join('');
+    var doingJobs = (board.doing_items || []).map(function (j) { return jobRow(s, byName, j, 'item', true); }).join('');
     function more(total, shown) { return total > shown ? '<p class="fx-muted small">+' + esc(total - shown) + ' more</p>' : ''; }
-    var jobsHtml = (openJobs ? '<h4>Open jobs</h4><ul class="board-jobs">' + openJobs + '</ul>' + more(board.open_items_total || 0, (board.open_items || []).length) : '') +
-      (doingJobs ? '<h4>In progress</h4><ul class="board-claims board-doing">' + doingJobs + '</ul>' + more(board.doing_items_total || 0, (board.doing_items || []).length) : '');
+    var jobsHtml = (openJobs ? '<h4>Open jobs</h4><ul class="job-list board-jobs">' + openJobs + '</ul>' + more(board.open_items_total || 0, (board.open_items || []).length) : '') +
+      (doingJobs ? '<h4>In progress</h4><ul class="job-list board-doing">' + doingJobs + '</ul>' + more(board.doing_items_total || 0, (board.doing_items || []).length) : '');
     var events = (board.events || []).slice(-8).reverse().map(function (e) {
       var o = byName[e.agent] || {};
       var verb = e.verb === 'step' ? 'finished a step of' : e.verb;
@@ -912,7 +903,7 @@
     var boardHtml = board.available === false ? '<p class="fx-muted">The board is not running in this world.</p>' :
       '<p class="board-counts"><span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span> ' +
       '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' + jobsHtml +
-      (projects ? '<h4>Projects</h4>' + projects : '') +
+      (projects ? '<h4>Projects</h4>' + projects + ownerActivityHtml(board, byName) : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +
       (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '') + allJobsHtml(s, byName) + remindersHtml(s.reminders, byName);
 
@@ -1080,13 +1071,54 @@
       rows.push('Progress check' + (c.checked_s != null ? ' ' + ago(c.checked_s) : '') + ': ' + c.state + (c.error ? ' (' + c.error + ')' : '') +
         (c.last_change_s != null ? '; last board change ' + ago(c.last_change_s) : ''));
     }
-    // (d22 batch99 BI5, viewer Aurora site:4333) beside the check: the owner's running watches and wait, with their end,
-    // and the item a watch names when it names one (model.py owner_work); the check's own state stays as it is
-    (p.owner_work || []).forEach(function (w) {
-      var names = w.this ? 'names this project' : (w.names || []).map(function (n) { return 'names #' + n.id + (n.title ? ' ' + n.title : ''); }).join('; ');
-      rows.push(who(p.owner) + '\'s ' + (w.kind === 'wait' ? 'wait' : 'test') + ': ' + w.line + (w.end_tick != null ? ' (until tick ' + w.end_tick + ')' : '') + (names ? '; ' + names : ''));
+    // (d22 batch99 BI5, viewer Aurora site:4333) beside the check: the owner's running watches, with their end (model.py
+    // owner_work); the check's own state stays as it is. (d23 batch119 CB3, viewer Aurora site:4347: "Could the board
+    // separate owner activity from project progress? Asterion's rocket watch also appears on the blocked production-cell
+    // project") Only a watch that names this project (its #id, or its title naming the watch's place) is listed here;
+    // the owner's other watches and its wait are under Owner activity (ownerActivityHtml).
+    (p.owner_work || []).filter(function (w) { return forProject(w, p); }).forEach(function (w) {
+      rows.push(who(p.owner) + '\'s test for this project: ' + w.line + workEnd(w));
     });
     return rows.map(function (r) { return '<span class="small project-fact">' + esc(r) + '</span>'; }).join('');
+  }
+  // A watch's end when its line does not say it: "(ends in 40 min)" from the state's game tick; a wait's line says its own.
+  function workEnd(w) {
+    if (w.kind === 'wait' || w.end_tick == null || /ends in|ended/.test(w.line || '') || !lastState || lastState.tick == null) return '';
+    var left = (w.end_tick - lastState.tick) / 60;
+    return left > 0 ? ' (ends in ' + ago(left).replace(/ ago$/, '') + ')' : '';
+  }
+  function forProject(w, p) {
+    return w.kind !== 'wait' && (!!w.this || (w.names || []).some(function (n) { return n.id === p.id; }));
+  }
+  // (CB3) Each project owner's running watches and current wait, once per owner (the projects' owner_work), with the
+  // projects each is for and the other board items it names; "no project named" when it names none.
+  function ownerActivityHtml(board, byName) {
+    var projects = (board.projects || []).concat(board.projects_more || []), owners = [], by = {};
+    projects.forEach(function (p) {
+      (p.owner_work || []).forEach(function (w) {
+        if (!p.owner) return;
+        if (!by[p.owner]) { by[p.owner] = { rows: [], seen: {} }; owners.push(p.owner); }
+        var o = by[p.owner], key = w.kind + '|' + w.line, row = o.seen[key];
+        if (!row) { row = o.seen[key] = { w: w, for: [] }; o.rows.push(row); }
+        if (forProject(w, p) && row.for.indexOf(p) < 0) row.for.push(p);
+      });
+    });
+    if (!owners.length) return '';
+    var ids = {};
+    projects.forEach(function (p) { ids[p.id] = 1; });
+    var items = owners.map(function (name) {
+      var o = byName[name] || {};
+      var lines = by[name].rows.map(function (r) {
+        var w = r.w, what = r.for.map(function (p) { return 'for #' + p.id + ' ' + p.title; });
+        (w.names || []).forEach(function (n) { if (!ids[n.id]) what.push('names #' + n.id + (n.title ? ' ' + n.title : '')); });
+        if (w.kind !== 'wait' && !what.length) what.push('no project named');
+        return '<span class="small project-fact"><span class="fx-chip fx-chip--grey job-badge">' + esc(w.kind === 'wait' ? 'wait' : 'test') + '</span> ' +
+          esc(w.line + workEnd(w) + (what.length ? '; ' + what.join('; ') : '')) + '</span>';
+      }).join('');
+      return '<li class="job"><span class="job-who">' + avatar(o.name ? o : { name: name }, 18) + '<b class="job-title">' + esc(o.display_name || name) + '</b></span>' + lines + '</li>';
+    }).join('');
+    return '<h4>Owner activity</h4><p class="fx-muted small">What each project owner is running now. A project lists a test only when the test names it.</p>' +
+      '<ul class="job-list owner-activity">' + items + '</ul>';
   }
   function projectItem(p, byName, card, withNext) {
     var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0, key = card + ':' + p.id;
@@ -1224,7 +1256,6 @@
   var PAGE = 20, BOARD_DOC_S = 30, boardDoc = null, boardDocAt = 0, boardDocBusy = false, boardDocAge = null;
   var jobsAll = store('jobsAll') === '1', jobsFilter = store('jobsFilter') || 'open', jobsPage = 0, remPage = 0;
   var JOB_FILTERS = [['open', 'Open'], ['doing', 'In progress'], ['done', 'Finished'], ['dropped', 'Dropped'], ['all', 'All']];
-  var JOB_CHIP = { done: 'fx-chip--green', dropped: 'fx-chip--grey', doing: 'fx-chip--orange', claimed: 'fx-chip--orange', blocked: 'fx-chip--red', open: 'fx-chip--grey' };
   function jobIs(j, f) {
     if (f === 'open') return j.status === 'open';
     if (f === 'doing') return j.status === 'claimed' || j.status === 'doing' || j.status === 'blocked';
@@ -1255,14 +1286,32 @@
       '<span class="fx-muted small">' + esc((page * PAGE + 1) + '–' + Math.min(n, page * PAGE + PAGE) + ' of ' + n) + '</span> ' +
       '<button type="button" class="fx-btn fx-btn--small" data-page="' + kind + '" data-to="' + (page + 1) + '"' + (page < pages - 1 ? '' : ' disabled') + '>Next</button></div>';
   }
+  // (d23 batch119 CB2, viewer Aurora site:4363: "uneven on desktop and breaks on mobile. Could tasks use full-width
+  // titles, small status/type badges and owner/time below, without narrow text columns?") One task or request: its
+  // title across the card, then a line of small badges (status where the list mixes them, kind), the owner with a small
+  // portrait, who asked, and when it last changed; its evidence under it. The open jobs, in progress and the full list.
+  var JOB_CHIP = { done: 'fx-chip--green', dropped: 'fx-chip--grey', doing: 'fx-chip--orange', claimed: 'fx-chip--orange', blocked: 'fx-chip--red', open: 'fx-chip--grey' };
+  function jobRow(s, byName, j, key, withStatus) {
+    var o = byName[j.agent] || byName[j.owner] || {}, when = gameAgo(s, j.updated_tick);
+    var asker = j.requested_by && j.requested_by !== j.owner ? (byName[j.requested_by] || {}).display_name || j.requested_by : '';
+    var meta = (withStatus ? '<span class="fx-chip job-badge ' + (JOB_CHIP[j.status] || 'fx-chip--grey') + '">' + esc(j.status === 'done' ? 'finished' : j.status || '?') + '</span>' : '') +
+      '<span class="fx-chip fx-chip--grey job-badge">' + esc(j.kind || 'task') + '</span>' +
+      (j.owner ? '<span class="job-who">' + avatar(o.name ? o : { name: j.agent || j.owner }, 18) + esc(o.display_name || j.owner) + '</span>' : '') +
+      (asker ? '<span>asked by ' + esc(asker) + '</span>' : '') + (when ? '<span>changed ' + esc(when) + '</span>' : '');
+    return '<li class="job"><b class="job-title">' + esc(j.title) + '</b><div class="job-meta">' + meta + '</div>' + evidenceHtml(key + j.id, j) + '</li>';
+  }
   function allJobsHtml(s, byName) {
     var board = s.board || {}, shown = (board.open_items || []).length + (board.doing_items || []).length;
     var total = (board.open_items_total || 0) + (board.doing_items_total || 0);
-    var toggle = '<button type="button" class="fx-btn fx-btn--small jobs-all" data-action="jobs-all" aria-expanded="' + jobsAll + '">' +
-      (jobsAll ? 'Hide the full task list' : 'Show every task and request, finished ones too' + (total > shown ? ' (+' + (total - shown) + ' not listed above)' : '')) + '</button>';
+    // (CB2, site:4364: "Could the toggle say 'Show all tasks' and 'Hide full list'? Put the count and 'includes finished
+    // tasks' outside the button so it fits on mobile.")
+    if (jobsAll) loadBoardDoc();
+    var items = jobsAll && boardDoc && Array.isArray(boardDoc.items) ? boardDoc.items : null;
+    var count = items ? Math.max(boardDoc.items_total || 0, items.length) + ' tasks and requests, finished ones included' :
+      'Includes finished tasks' + (total > shown ? '; ' + (total - shown) + ' open or in progress not listed above' : '');
+    var toggle = '<div class="board-all-head"><button type="button" class="fx-btn fx-btn--small jobs-all" data-action="jobs-all" aria-expanded="' + jobsAll + '">' +
+      (jobsAll ? 'Hide full list' : 'Show all tasks') + '</button> <span class="fx-muted small">' + esc(count) + '</span></div>';
     if (!jobsAll) return '<div class="board-all">' + toggle + '</div>';
-    loadBoardDoc();
-    var items = boardDoc && Array.isArray(boardDoc.items) ? boardDoc.items : null;
     if (!items) {
       var why = boardDoc === null && boardDocAt && !boardDocBusy ? 'The full list is not available right now.' : 'Loading the full list…';
       return '<div class="board-all">' + toggle + '<p class="fx-muted small">' + esc(why) + '</p></div>';
@@ -1273,17 +1322,10 @@
     }).join(' ') + '</div>';
     var list = items.filter(function (j) { return jobIs(j, jobsFilter); });
     jobsPage = Math.min(jobsPage, Math.max(0, Math.ceil(list.length / PAGE) - 1));
-    var rows = list.slice(jobsPage * PAGE, jobsPage * PAGE + PAGE).map(function (j) {
-      var o = byName[j.agent] || {}, when = gameAgo(s, j.updated_tick);
-      return '<li><span class="fx-chip ' + (JOB_CHIP[j.status] || 'fx-chip--grey') + '">' + esc(j.status === 'done' ? 'finished' : j.status || '?') + '</span> ' +
-        '<span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span> <b>' + esc(j.title) + '</b>' +
-        (j.owner ? ' <span class="fx-muted">' + esc(o.display_name || j.owner) + '</span>' : '') +
-        (j.requested_by && j.requested_by !== j.owner ? ' <span class="fx-muted">asked by ' + esc((byName[j.requested_by] || {}).display_name || j.requested_by) + '</span>' : '') +
-        (when ? ' <span class="fx-muted small">changed ' + esc(when) + '</span>' : '') + evidenceHtml('all' + j.id, j) + '</li>';
-    }).join('');
+    var rows = list.slice(jobsPage * PAGE, jobsPage * PAGE + PAGE).map(function (j) { return jobRow(s, byName, j, 'all', true); }).join('');
     var cut = (boardDoc.items_total || 0) > items.length ? '<p class="fx-muted small">+' + esc(boardDoc.items_total - items.length) + ' older not sent</p>' : '';
     var age = boardDocAge != null ? '<p class="fx-muted small">Full list as of ' + esc(ago(boardDocAge)) + '</p>' : '';
-    return '<div class="board-all">' + toggle + filters + (rows ? '<ul class="board-claims board-alljobs">' + rows + '</ul>' : '<p class="fx-muted small">None.</p>') +
+    return '<div class="board-all">' + toggle + filters + (rows ? '<ul class="job-list board-alljobs">' + rows + '</ul>' : '<p class="fx-muted small">None.</p>') +
       pager('jobs', jobsPage, list.length) + cut + age + '</div>';
   }
   app.addEventListener('click', function (ev) {

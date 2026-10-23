@@ -230,7 +230,7 @@ return function(api)
     -- (d20 batch62 X5, Astra #1557) a blueprint's ghosts on a planet, as place_ghosts there
     'paste', 'blueprint_place', 'nearest'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
-    .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), platform_rearm (platform=), drop (hub items down to the planet) and land; '
+    .. 'tell, chat, chat_ack, say, operator, board and votes; flight_watch {id} or {} (a list); research; platform_schedule, platform_create, requests (platform= or position=), platform_rearm (platform=), drop (hub items down to the planet) and land; '
     .. 'by remote view with platform=NAME: ' .. table.concat(M.PLATFORM_ACTIONS, ', ') .. '; with surface=NAME (a planet): ' .. table.concat(M.SURFACE_ACTIONS, ', ')
     .. ' (requests there with position); sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready, rocket_parts, produced, item_count at positions, or any condition with surface or platform. '
     .. 'Nothing that needs a body: walking, mining, building or crafting by hand, your inventory'
@@ -431,6 +431,10 @@ return function(api)
     -- hub fills, by remote view as the other platform writes.
     if action == 'platform_rearm' and args.platform ~= nil then return end
     if action == 'observe' and VIEWS[args.scope] then return end
+    -- (d23 batch120 CC2, Sol #1986: aboard Anvil, a fleet archiver's flight_watch {id} reads and chat_ack were refused)
+    -- marking tells read, and reading, listing or clearing a flight watch, need no body; a new watch (platform) does not run aboard.
+    if action == 'chat_ack' then return end
+    if action == 'flight_watch' and args.platform == nil then return end
     if api.read_only and api.read_only(action) and not BODY_READS[action] and not (action == 'observe' and BODY_READS[args.scope]) then return end
     -- wait_until on a platform, the research, a silo, or counts at positions / a named hub (no body needed).
     -- (d20 batch62 X3) and any condition with surface or platform: conditions.validate takes those only where the
