@@ -36,6 +36,7 @@ CHUNKS_READ, DIRTY, CHECK = 6, 6, 48   # chart.lua stops a read at 6 chunks or 1
 MIN_AGE = 36000                  # ticks: a chunk read at most every 10 game minutes
 REFRESH_TICKS = 6 * 216000       # ticks: a chunk read again after 6 game hours
 SAVE_EVERY = 120.0
+LOG_EVERY = 600.0                # seconds between the service log's chart lines (and at the first read, and a new error)
 BUILD_MAX = 3                    # cells drawn a step at most (about 70 ms a cell)
 LAYER = {"resource": 0, "tree": 1, "simple-entity": 1, "cliff": 1, "fish": 1, "plant": 1}  # drawn first; buildings after
 _SAFE = re.compile(r"[^\w.-]")
@@ -218,9 +219,11 @@ class Chart:
         self.saved = 0.0
         self.version = 0
         self.index = {}          # surface -> {"cx,cy": [version, oldest tick, newest tick, chunks]}
+        self.complete = set()    # surfaces whose first pass is done: every charted chunk read and its cell drawn (kept)
         self.tick = None
         self.error = None
         self.reads = 0
+        self.logged, self.logged_error = None, None
         self._load(root, earlier)
 
     # ------------------------------------------------------------------ keeping
@@ -252,6 +255,7 @@ class Chart:
                 idx = json.load(fh)
             self.version = int(idx.get("v") or 0)
             self.index = {s: dict(v.get("cells") or {}) for s, v in (idx.get("surfaces") or {}).items() if s in self.cells}
+            self.complete = {s for s, v in (idx.get("surfaces") or {}).items() if s in self.cells and v.get("complete") is True}
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -567,12 +571,30 @@ class Chart:
             self.write_index()
         return n
 
+    def first_pass(self, surface):
+        """(stored, charted, done): chunks in the store, charted chunks (stored and waiting for their first read), and
+        whether this run's lists of the surface are read, none of its chunks waits for a first read and none of its
+        cells waits to be drawn. Once done, a surface stays complete (index.json `complete`, read back at a restart):
+        chunks charted later are read within minutes, two reads in three going to the queue."""
+        known = self.known(surface)
+        waiting = sum(1 for c in self.queue.get(surface) or [] if c not in known)
+        L = self.lists.get(surface)
+        done = bool(L) and not L["todo"] and L["t"] is not None and not waiting \
+            and not any(c.draw for c in (self.cells.get(surface) or {}).values())
+        return len(known), len(known) + waiting, done
+
     def write_index(self):
+        """out/index.json: {v, cell, tick, surfaces: {name: {platform, cells, chunks: [stored, charted], complete}}};
+        push_live leaves out a surface's coarse grids only once its published chart is complete."""
         out = {"v": self.version, "cell": CELL, "tick": self.tick, "surfaces": {}}
         for s, cells in sorted(self.index.items()):
             if cells:
                 meta = self.surfaces.get(s) or {}
-                out["surfaces"][s] = {"platform": meta.get("platform"), "cells": cells}
+                stored, charted, done = self.first_pass(s)
+                if done:
+                    self.complete.add(s)
+                out["surfaces"][s] = {"platform": meta.get("platform"), "cells": cells, "chunks": [stored, charted],
+                                      "complete": s in self.complete}
         try:
             os.makedirs(os.path.join(self.root, "out"), exist_ok=True)
             p = os.path.join(self.root, "out", "index.json")
@@ -582,6 +604,25 @@ class Chart:
         except OSError as e:
             self.error = f"index: {e}"[:160]
         return out
+
+    def log_line(self):
+        """The service log's line, or None: at the first read, every LOG_EVERY seconds and when a read fails anew."""
+        now = self.clock()
+        new_error = self.error and self.error != self.logged_error
+        self.logged_error = self.error
+        if self.reads == 0 or not (new_error or self.logged is None or now - self.logged >= LOG_EVERY):
+            return None
+        self.logged = now
+        names = sorted(set(self.surfaces) | set(self.cells))
+        stored = {s: len(self.known(s)) for s in names}
+        waiting = {s: len(self.queue.get(s) or []) for s in names}
+        lists = sum(len(L["todo"]) for L in self.lists.values())
+        big = sorted(names, key=lambda s: -(stored[s] + waiting[s]))[:3]
+        return (f"[chart] {time.strftime('%H:%M:%S')} v{self.version}, {self.reads} reads, {len(names)} surfaces "
+                f"({sum(1 for s in names if self.cells.get(s))} with cells), {lists} list blocks to read; chunks stored "
+                f"{sum(stored.values())}, queued {sum(waiting.values())}"
+                + (" (" + ", ".join(f"{s} {stored[s]} stored, {waiting[s]} queued" for s in big) + ")" if big else "")
+                + (f"; read failed: {self.error}" if self.error else ""))
 
     def status(self):
         """For the state: {v, reads, chunks per surface, queued, error}."""

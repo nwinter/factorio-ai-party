@@ -3,7 +3,7 @@
 
 static/mapview.js under node, with a published chart index:
 - the cells of the surface shown, each at its place and 384 tiles a side; drawn first, nearest-neighbour from 1 px a
-  tile up; the coarse grid, ore and terrain frames not drawn where the chart is;
+  tile up; the coarse grid, ore and terrain frames drawn under it (cp7: they show where no chunk is read);
 - train stop names from 0.5 px a tile, recipes from 6, as text (rich text tags as words), decluttered: a label that
   would overlap one kept before it is left out;
 - hover on a cell says when its chunks were read; the legend and scale line say the oldest and newest cell;
@@ -60,7 +60,8 @@ out.why = M.absentWhy(data(), d, 'chart');
 out.whyNone = M.absentWhy({}, M.prepare({}), 'chart');
 // paint: the chart's cells drawn first, smoothing off up close
 const calls = [];
-const ctx = new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : k === 'drawImage' ? (img, x, y, w, h) => calls.push(['img', t.imageSmoothingEnabled, img.src, w]) : k in t ? t[k] : () => {},
+const ctx = new Proxy({}, { get: (t, k) => k === 'measureText' ? () => ({ width: 10 }) : k === 'drawImage' ? (img, x, y, w, h) => calls.push(['img', t.imageSmoothingEnabled, img.src, w])
+  : k === 'fill' ? () => calls.push(['fill', t.fillStyle]) : k in t ? t[k] : () => {},
   set: (t, k, val) => { t[k] = val; return true; } });
 d = M.prepare(data());
 sc = M.scene(d, { cx: 20, cy: 20, span: 40 }, 400, 400, on);
@@ -126,7 +127,7 @@ def main():
     k = 400 / 100
     check("a cell in view at its place, 384 tiles a side", ["/live/chart/nauvis/0_0.png?v=5", 200 - 20 * k, 200 - 20 * k, 384 * k] in o["view"], o["view"])
     check("nearest-neighbour from 1 px a tile up; smoothed when zoomed out", o["smooth"] is False and o["far"]["smooth"] is True, (o["smooth"], o["far"]))
-    check("the coarse grid not drawn under the chart", o["base"] is False)
+    check("(cp7) the coarse grid kept under the chart, showing where no cell is read", o["base"] is True)
     check("at 4 px a tile: stop names, no recipes; the second stop overlaps the first and is left out",
           o["labelsMid"] == ["Ore iron ore north"], o["labelsMid"])
     close = o["labelsClose"]
@@ -142,6 +143,9 @@ def main():
     check("a surface without cells: not read and why", o["why"].startswith("not read: the published chart has no cell of Vulcanus")
           and o["whyNone"] == "not read: no chart published yet", (o["why"], o["whyNone"]))
     check("paint: the chart's image drawn, smoothing off up close", any(c[0] == "img" and c[1] is False and c[2].endswith("0_0.png?v=5") for c in o["painted"]), o["painted"])
+    first_img = next(i for i, c in enumerate(o["painted"]) if c[0] == "img")
+    check("(cp7) paint: the coarse buildings before the chart's cells (under them)", ["fill", "#5c8fd6"] in o["painted"][:first_img]
+          and ["fill", "#5c8fd6"] not in o["painted"][first_img:], o["painted"][:first_img + 3])
     check("the switch: Gleba a planet button, Asterion in the platform picker", 'data-surface="gleba"' in w["layers"]
           and '<option value="platform-3">Asterion</option>' in w["layers"] and 'data-surface="platform-3"' not in w["layers"], w["layers"])
     check("the Chart toggle in the Terrain group", 'data-layer="chart"' in w["layers"], w["layers"])
