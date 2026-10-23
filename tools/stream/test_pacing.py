@@ -7,6 +7,10 @@ python3 tools/stream/test_pacing.py
    (activity resting, not idle or offline), the hosts get it once as a fact (an alert of kind rest, a new one per rest),
    and the director does not pick the agent; once the rest ends it is an agent as before.
 3. tools/idle_nudge.py sends no tell while the agent rests.
+4. (d22 batch108 BR1, Grok's weekly limit at 20:04 Thursday, reset Sat 15:59) a rest of a non-agy agent written by
+   tools/quota_rest.py: the card says "waiting until Sat 15:59 for its quota to reset" (the day named when it ends on
+   another day), the nudger skips it, and the agent's own request in its journal after the rest began ends it
+   (describe and peeks do not).
 """
 import json, os, sys, tempfile, time
 
@@ -32,7 +36,7 @@ def reads():
         write_rest(g, now - 60, now + 4440)
         r = pacing.resting(g, now)
         assert r and r["reason"] == "pace", r
-        assert pacing.label(r) == "resting until " + time.strftime("%H:%M", time.localtime(now + 4440)) + " · pacing its weekly quota"
+        assert pacing.label(r, now) == "resting until " + pacing.clock(now + 4440, now) + " · pacing its weekly quota"
         assert pacing.resting(g, now + 5000) is None  # over
         write_rest(g, now - 60, now + 600, "quota")
         assert pacing.label(pacing.resting(g, now)).startswith("waiting until ") and "for its quota to reset" in pacing.label(pacing.resting(g, now))
@@ -90,8 +94,71 @@ def nudge():
     print("idle nudge: ok")
 
 
+def req(at, action, args=None):
+    iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(at))
+    return json.dumps({"at": iso, "event": "request", "request": {"id": "x", "action": action, "bot": "grok",
+                                                                   "args": args or {}}}, separators=(",", ":")) + "\n"
+
+
+def grok():
+    tz = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Los_Angeles"
+    time.tzset()
+    try:
+        hit = time.mktime((2026, 10, 22, 20, 4, 0, 0, 0, -1))      # Thursday 20:04 PDT
+        reset = time.mktime((2026, 10, 24, 15, 59, 0, 0, 0, -1))   # Sat 15:59
+        assert pacing.clock(reset, hit) == "Sat 15:59" and pacing.clock(hit + 600, hit) == "20:14"
+        row = {"since": hit, "until": reset, "reason": "quota"}
+        assert pacing.label(row, hit) == "waiting until Sat 15:59 for its quota to reset"
+        assert pacing.label(row, reset - 3600) == "waiting until 15:59 for its quota to reset"  # Saturday itself
+    finally:
+        if tz is None:
+            os.environ.pop("TZ")
+        else:
+            os.environ["TZ"] = tz
+        time.tzset()
+    import quota_rest
+    os.environ["POG_REST_PUSH"] = "off"
+    try:
+        with tempfile.TemporaryDirectory() as run:
+            g = os.path.join(run, "grok")
+            os.makedirs(g)
+            now = time.time()
+            # its journal: its last requests before the rest
+            with open(os.path.join(g, "journal.jsonl"), "w") as j:
+                j.write(req(now - 400, "status") + req(now - 300, "sleep"))
+            old = now - 200
+            os.utime(os.path.join(g, "journal.jsonl"), (old, old))
+            line, ok = quota_rest.mark(g, now + 2 * 86400, "quota")
+            assert ok and "resting until " in line and "not pushed: off" in line, line
+            r = pacing.resting(g, now)
+            assert r and r["reason"] == "quota" and r["resets"] == quota_rest.when(now + 2 * 86400), r
+            lab = pacing.label(r, now)
+            assert lab.startswith("waiting until ") and lab.split()[2] in pacing.DAYS, lab
+            m = Model({"agents": {"grok": {"display_name": "Grok"}}})
+            m.ingest({"agents": [{"name": "grok", "display_name": "Grok", "alive": True, "position": {"x": 0, "y": 0},
+                                  "resting": r}]}, now=now)
+            card = m.snapshot(now)["agents"][0]
+            assert card["activity"] == "resting" and card["action"] == pacing.label(r), card
+            import idle_nudge
+            n = idle_nudge.Nudger(members=["grok"], start=now - 3600, run_dir=run)
+            assert n.due({"name": "grok", "alive": True, "standing_s": 3000, "counted": {"text": "x"}}, now) == lab
+            # a relaunch's describe and a peek: still resting; its own status: over
+            with open(os.path.join(g, "journal.jsonl"), "a") as j:
+                j.write(req(r["since"] + 5, "describe") + req(r["since"] + 6, "chat", {"peek": True}))
+            assert pacing.resting(g, now) is not None
+            with open(os.path.join(g, "journal.jsonl"), "a") as j:
+                j.write(req(r["since"] + 30, "status", {"brief": True}))
+                j.write('{"at":"x","event":"response","response":{"ok":true}}\n')
+            assert pacing.resting(g, now) is None
+    finally:
+        os.environ.pop("POG_REST_PUSH", None)
+    print("grok (a quota rest of days): ok")
+
+
 if __name__ == "__main__":
     reads()
     stream()
     nudge()
+    grok()
     print("test_pacing: ok")
