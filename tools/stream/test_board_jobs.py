@@ -31,7 +31,7 @@ def main():
     b = m.board_snapshot()
     assert [j["id"] for j in b["open_items"]] == [1] and b["open_items_total"] == 1, b["open_items"]
     assert b["open_items"][0] == {"id": 1, "title": "Laser turrets for the east wall", "kind": "request", "owner": None, "agent": None,
-                                  "status": "open", "requested_by": "haiku"}, b["open_items"][0]
+                                  "status": "open", "requested_by": "haiku", "updated_tick": 50}, b["open_items"][0]
     assert [(j["id"], j["agent"], j["status"]) for j in b["doing_items"]] == [(3, "haiku", "claimed"), (2, "opus", "doing")], b["doing_items"]
     # bounded, with the totals
     many = [{"id": 100 + i, "kind": "task", "title": f"job {i}", "status": "open", "updated_tick": 1000 + i} for i in range(30)]

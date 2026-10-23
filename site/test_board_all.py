@@ -8,6 +8,9 @@ tasks), sends it to /v1/board when it changed and at most every BOARD_EVERY s, a
 off 10 minutes from a worker without the route; the page's full task list reads it, filters Open / In progress /
 Finished / Dropped / All with counts, marks finished ones, and pages 20 at a time; the reminders' "Show all" pages the
 document's whole list.
+d23 batch119 CB2 (viewer Aurora site:4363, 4364): a task is its title across the card with a line under it of small
+status and kind badges, the owner and the time (no columns); the toggle says "Show all tasks" / "Hide full list" with
+the count and "includes finished tasks" beside it, outside the button.
 """
 import io, json, os, shutil, subprocess, sys
 import urllib.error
@@ -127,8 +130,15 @@ process.stdout.write(JSON.stringify(out));
     r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
     assert r.returncode == 0, r.stderr
     o = json.loads(r.stdout)
-    li = lambda h: h.count("<li>")  # noqa: E731
-    assert 'data-action="jobs-all" aria-expanded="false">Show every task and request, finished ones too (+30 not listed above)' in o["closed"], o["closed"]
+    li = lambda h: h.count("<li")  # noqa: E731
+    assert 'data-action="jobs-all" aria-expanded="false">Show all tasks</button> <span class="fx-muted small">Includes finished tasks; ' \
+        '30 open or in progress not listed above</span>' in o["closed"], o["closed"]
+    assert 'aria-expanded="true">Hide full list</button> <span class="fx-muted small">45 tasks and requests, finished ones included' in o["done"], o["done"]
+    # a row: the title, then its badges, owner and time on the line under it
+    row = o["done"].split('<li class="job">', 2)[1]
+    assert row.startswith('<b class="job-title">task 0</b><div class="job-meta"><span class="fx-chip job-badge fx-chip--green">finished</span>'
+                          '<span class="fx-chip fx-chip--grey job-badge">task</span><span class="job-who">'), row
+    assert '>Sol</span><span>changed ' in row, row
     assert "jobs-filters" not in o["closed"] and o["fetched"][0] == "https://api.example/v1/board", o["fetched"]
     # opened: Open first, with every filter's count
     assert 'data-jobs-filter="open" aria-pressed="true">Open (15)' in o["open"] and ">In progress (15)<" in o["open"], o["open"]
@@ -142,12 +152,46 @@ process.stdout.write(JSON.stringify(out));
     assert li(o["rem2"]) == 11 and "21–31 of 31" in o["rem2"], o["rem2"]
 
 
+def card_tests():
+    """(CB2) The board card's open jobs and in progress use the same rows: title first, then badges, owner, time."""
+    if not shutil.which("node"):
+        return
+    import tempfile
+    import test_sitechat
+    st = json.load(open(os.path.join(HERE, "live", "state.example.json")))
+    st["now"], st["tick"] = 1792070000.0, 7200
+    st["board"] = {"in_progress": 1, "open_unowned": 1, "open_items_total": 1, "doing_items_total": 1,
+                   "open_items": [{"id": 1, "title": "Laser turrets for the east wall", "kind": "request", "status": "open",
+                                   "requested_by": "haiku", "updated_tick": 3600}],
+                   "doing_items": [{"id": 2, "title": "Belt the north field", "kind": "task", "status": "claimed",
+                                    "owner": "sol", "agent": "sol", "requested_by": "astra", "updated_tick": 7200 - 600}]}
+    with tempfile.TemporaryDirectory() as d:
+        jp, sp = os.path.join(d, "t.js"), os.path.join(d, "s.json")
+        open(jp, "w").write(test_sitechat.LIVE_CHAT_JS)
+        json.dump(st, open(sp, "w"))
+        r = subprocess.run(["node", jp, os.path.join(HERE, "static", "live.js"), sp], capture_output=True, text=True, timeout=30)
+        assert r.returncode == 0, r.stderr
+        html = json.loads(r.stdout)["board"]
+    assert '<ul class="job-list board-jobs"><li class="job"><b class="job-title">Laser turrets for the east wall</b>' \
+        '<div class="job-meta"><span class="fx-chip fx-chip--grey job-badge">request</span><span>asked by Haiku</span>' \
+        '<span>changed 60 s ago</span></div></li></ul>' in html, html
+    doing = html.split('<ul class="job-list board-doing">', 1)[1].split("</ul>", 1)[0]
+    assert doing.startswith('<li class="job"><b class="job-title">Belt the north field</b><div class="job-meta">'
+                            '<span class="fx-chip job-badge fx-chip--orange">claimed</span><span class="fx-chip fx-chip--grey job-badge">task</span>'
+                            '<span class="job-who">'), doing
+    assert ">Sol</span><span>asked by Astra</span><span>changed 10 s ago</span></div></li>" in doing, doing
+    css = open(os.path.join(HERE, "static", "style.css")).read()
+    assert ".job-meta { display: flex; flex-wrap: wrap;" in css and ".board-all-head { display: flex; flex-wrap: wrap;" in css
+    assert ".board-claims board-alljobs" not in open(os.path.join(HERE, "static", "live.js")).read()
+
+
 def main():
     payload_tests()
     push_tests()
     page_tests()
+    card_tests()
     print("board all: ok (the full board document within its share, sent when it changed; every task with filters "
-          "and pages, finished ones marked; every reminder paged)")
+          "and pages, finished ones marked; every reminder paged; task rows title first, badges, owner and time under it)")
 
 
 if __name__ == "__main__":
