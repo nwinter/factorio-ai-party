@@ -12271,3 +12271,30 @@ A full-edge abort must keep the return leg's ammunition. `item_count` with `plat
 - Tests: tests/d22_batch117.lua (arguments, first check, a pass by place and quality, the underground's buried lines
   once, the refresh after 30 s, stale and no-reading cases, the record dropped after 10 min, the remote and platform
   lanes' dry runs as a wait and a guard); tests/conditions.lua's quality refusal text updated.
+## d22 batch116 BY1 (eng/d20-batch116): flight_watch in the remote and platform lanes (Astra #1968)
+
+Astra's dry run of a full-edge plan (runs/shift60 full-edge-dry-run.json, lane `platform:Asterion`) refused its first
+step: "steps[1] (flight_watch): action flight_watch is not supported in the remote lane (no body steps)". The watch
+ends at the edge arrival, and the return-leg watch had to be started by hand.
+
+- `flight_watch` runs as a step in the remote lane and in each platform lane (queue_lanes.lua; runtime deploy needed),
+  as it ran in the body lane: it sets the harness's own watch, drives no character and changes no schedule. Dry runs
+  accept it the same way.
+- In lane `platform:NAME` a `flight_watch` step without `platform` and without `id` starts a watch on NAME (the step's
+  args in the history then carry `platform`). `{}` in the remote lane lists the watches, as the direct call does.
+- `replace: true` (flightwatch.lua) keeps the watch it replaces readable by `{id}`:
+  - a done one (the outbound leg, ended "arrived at solar-system-edge") stays as it ended;
+  - a watching one ends there, `ended_by` "replaced by #N", with its end totals taken;
+  - an armed one (it never began) is dropped, as before.
+  A kept one no longer counts against the limit, carries `replaced_by` (the new id) and `replaced_tick`, and is kept
+  24 h unless read; once read it is kept 1 h after the read (at most 16 read or replaced a force, the oldest dropped).
+  It no longer shows on the setter's card (status work rows).
+- The start's reply adds `replaced_watch` (the replaced one's row without turret rows: id, state, ended_by, end_tick,
+  replaced_by, line with leg, time watched, worst turret, damage, losses, repair packs and fuel) and `replaced_line`,
+  e.g. "flight watch #1 on Asterion (ended: arrived at solar-system-edge) is kept: flight_watch {id: 1} reads it in
+  full; it no longer counts against the limit; kept 24h00m00s unless read, then 1h00m00s after the read". For an armed
+  one: "flight watch #N on X was waiting for its next departure: dropped, nothing read yet". `watch.replaced` is the id
+  as before. A lane step's result keeps all of this in the queue history.
+- Tests: tests/d22_batch116.lua (the dry run in both lanes, the default platform, a replace at the turnaround from a lane
+  step and the full read after, a running and an armed one replaced, the card, a refused start at the limit);
+  tests/d21_batch72.lua updated for the kept replaced watch.

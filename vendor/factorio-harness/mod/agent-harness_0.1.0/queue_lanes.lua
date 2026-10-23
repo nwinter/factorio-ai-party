@@ -43,6 +43,9 @@ return function(api)
     end
     -- min_payload names its platforms (platforms, default all): no body (d17 batch20 A4, Sol).
     if action=='min_payload' then return end
+    -- (d22 batch116 BY1, Astra #1968: a return-leg watch at the edge turnaround was refused in the platform lane)
+    -- flight_watch sets the harness's own watch on a platform: no body, no schedule change.
+    if action=='flight_watch' then return end
     -- (d18 batch36 C4, Astra: steps[7] rotate refused in the remote lane) rotate by remote view, as its direct call takes
     -- it: on a platform (platform) or on a planet in a chunk our force sees (surface)
     if action=='rotate' then
@@ -86,6 +89,11 @@ return function(api)
     local papi={}
     for k,v in pairs(remote_api) do papi[k]=v end
     papi.queue_key=M_key(name)
+    -- (BY1) a flight_watch start without platform or id watches the lane's platform
+    papi.check_step=function(action,a)
+      if action=='flight_watch' and type(a)=='table' and a.platform==nil and a.id==nil then a.platform=name end
+      return check(action,a)
+    end
     e=api.factory(papi)
     engines[name]=e
     local s=api.base.state(); s.platform_lanes=s.platform_lanes or {}; s.platform_lanes[name]=true
@@ -157,7 +165,7 @@ return function(api)
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below, platform_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below, platform_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; flight_watch (in a platform lane a start without platform or id watches the lane\'s platform); body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end
