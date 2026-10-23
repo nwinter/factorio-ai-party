@@ -374,4 +374,46 @@ do
   eq(r.machines['assembling-machine-2'],'0/1 working, 1 item_ingredient_shortage')
   eq(stucks,4,'burnt.stuck once a burner')
 end
+-- (BT1) a walk that hands back the positions its band read (walk.band's out_pos): the slice reads no position of its
+-- own and gives the same survey as a walk without them.
+do
+  local reads=0
+  local function moved(e) local p=e.position; e.position=nil; return setmetatable(e,{__index=function(_,k) if k=='position' then reads=reads+1; return {x=p.x,y=p.y} end end}) end
+  local list={moved(machine('assembling-machine-2','assembling-machine','item_ingredient_shortage',1,{electric_buffer_size=100})),
+    moved(machine('assembling-machine-2','assembling-machine','low_power',2,{electric_buffer_size=100})),
+    moved(machine('gun-turret','ammo-turret','working',3,{get_inventory=function() return {get_item_count=function() return 0 end} end})),
+    moved(machine('transport-belt','transport-belt','working',4,{direction=4,belt_neighbours={outputs={}}}))}
+  local function run(with_pos)
+    local st7={}
+    local w7={every=function() return 1 end,due=function() return true end,start=function() return {n=0} end,
+      band=function(w,s,f,out_pos)
+        w.n=w.n+1
+        if w.n>1 then return nil end
+        local found={}
+        for i,e in ipairs(list) do found[i]=e; if with_pos and out_pos then out_pos[i]={x=i,y=0} end end  -- (each one's x is its index)
+        if with_pos then return found,out_pos end
+        return found
+      end}
+    local S7=dofile('mod/agent-harness_0.1.0/survey.lua'){state=function() return st7 end,walk=w7,status_name=function(e) return status_names[e.status] end}
+    local f7={name='player',valid=true,research_queue={},research_progress=0,get_item_production_statistics=function() return stats end}
+    local s7={index=7,valid=true,name='nauvis',find_entities_filtered=function() return {} end}
+    game.forces={player=f7}; game.get_surface=function() return s7 end
+    st7.survey_cache={['player/7']={tick=0,warnings={},machines={}}}; st7.survey_read={['player/7']=game.tick}
+    for _=1,6 do game.tick=game.tick+1; S7.tick(game.tick) end
+    game.forces=nil; game.get_surface=nil
+    local entry=st7.survey_cache['player/7']
+    assert(entry.tick>0,'the job made a survey')
+    return entry
+  end
+  reads=0
+  local plain=run(false)
+  assert(reads>=4,'without the band\'s positions the slice reads them: '..reads)
+  reads=0
+  local fast=run(true)
+  eq(reads,0)
+  eq(table.concat(fast.warnings,' | '),table.concat(plain.warnings,' | '))
+  for name,line in pairs(plain.machines) do eq(fast.machines[name],line) end
+  eq(fast.positions['assembling-machine-2'].low_power[1].x,2)
+  eq(fast.factory.belt_ends,plain.factory.belt_ends)
+end
 print('survey: ok')

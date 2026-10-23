@@ -213,13 +213,14 @@ return function(api)
   local AHEAD_POS={x=0,y=0}
   local AHEAD={position=AHEAD_POS,radius=0.3,type=BELT_TYPES,limit=1}
   -- One underground or transport belt into the belt tally b.
-  local function belt_one(b,surface,force,e,kind)
+  -- p: its position when the caller has it (the band's read; a belt does not move).
+  local function belt_one(b,surface,force,e,kind,p)
     if e.valid==false then return end  -- gone since the job's find (a slice a tick)
     if kind=='underground-belt' then
-      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at(e) end
+      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
     elseif #e.belt_neighbours.outputs==0 then
       local s=STEP[e.direction]
-      local p=e.position
+      p=p or e.position
       local ahead
       if s then
         AHEAD_POS.x,AHEAD_POS.y=p.x+s[1],p.y+s[2]; AHEAD.force=force
@@ -269,13 +270,14 @@ return function(api)
   -- The status name is what api.status_name (runtime.lua machine_status) gives, without its reads: a machine with no
   -- burner reads its engine status name (burnt.stuck finds nothing without a burner; it made two closures to find
   -- that), a burner one burnt.stuck's state when it is stopped, else its engine status name.
-  local function acc_entity(a,e,tech,t)
+  -- p: its position when the caller has it (the band's read: none of the survey's types moves).
+  local function acc_entity(a,e,tech,t,p)
     local machines,order,fuel,fuel_order,missing=a.machines,a.order,a.fuel,a.fuel_order,a.missing
     local turrets,turret_order,flamers,flamer_order=a.turrets,a.turret_order,a.flamers,a.flamer_order
     local status_ids=defines.entity_status
       if t or e.valid then
         t=t or e.type
-        local name,estatus,burner,pos=e.name,e.status,e.burner,nil
+        local name,estatus,burner,pos=e.name,e.status,e.burner,p
         local binv=burner and burner.inventory
         -- Stopped by a full burnt-result slot (burnt.lua), whatever the status reads: read once for the fuel part and
         -- the status name.
@@ -551,6 +553,7 @@ return function(api)
   local LABEL_DONE,LABEL_SLICE,LABEL_BAND='survey.done','survey.slice','survey.band'
   local BAND_FILTER={type=WALK_TYPES}
   local FORCES,SURFACES={},{}
+  local POS,POS_LIST={},{}
   local function force_named(name)
     local f=FORCES[name]
     if f and f.valid then return f end
@@ -624,19 +627,27 @@ return function(api)
       job.walk=job.walk or walk.start(surface)
       job.tech=job.tech or force.current_research
       BAND_FILTER.force,BAND_FILTER.area,BAND_FILTER.position=force,nil,nil  -- (only force and type, whatever a walk set)
-      local list=walk.band(job.walk,surface,BAND_FILTER)
+      -- The positions the band read, list[i]'s in pos[i] (walk.band's out_pos; a walk without it returns none): one
+      -- table a key kept between bands, used only for the list it was filled with (after a load the list is another
+      -- table, and the slice reads e.position as before).
+      local pos=POS[key] or {}
+      POS[key]=pos
+      local list,filled=walk.band(job.walk,surface,BAND_FILTER,pos)
+      POS_LIST[key]=filled==pos and list or nil
       if list then job.list,job.i=list,1 else job.done=true end
     else
       local list,a,b,tech=job.list,job.a,job.b,job.tech
+      local pos=POS_LIST[key]==list and POS[key] or nil
       local n=#list
       local last=math.min(n,job.i+SLICE-1)
       for i=job.i,last do
         local e=list[i]
         local t=e.valid and e.type
-        if t=='underground-belt' or t=='transport-belt' then belt_one(b,surface,force,e,t) elseif t then acc_entity(a,e,tech,t) end
+        local p=pos and pos[i]
+        if t=='underground-belt' or t=='transport-belt' then belt_one(b,surface,force,e,t,p) elseif t then acc_entity(a,e,tech,t,p) end
       end
       job.i=last+1
-      if job.i>n then job.list,job.i=nil,nil end
+      if job.i>n then job.list,job.i=nil,nil; POS_LIST[key]=nil end
     end
   end
 
