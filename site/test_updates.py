@@ -40,7 +40,9 @@ def repo_data():
     d = updates.load(HERE / "content" / "operator-updates.json")
     assert len(d["updates"]) >= 20 and d["notices"], d
     statuses = {u["status"] for u in d["updates"]}
-    assert statuses == set(updates.STATUSES), statuses  # the seed has each status
+    # (d23 14:25) the live data, not a fixture: the operator moves rows on, so a status may have none (the empty
+    # section is a plain chip, batch119b); every row's status must still be a known one
+    assert statuses <= set(updates.STATUSES), statuses
     assert "site:4349" in updates.refs(d["updates"]) and "site:4407" in updates.refs(d["updates"])
 
 
