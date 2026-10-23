@@ -8,7 +8,7 @@ easily see the current level of ever increasing recurring research?"): python3 t
 - live.py passes it on as research.repeating ({} from Lua when empty becomes []);
 - model.repeating_levels: label without the prototype's starting number, the highest level first, the running one
   with research progress; the snapshot's research carries it; push_live keeps it (research is published whole);
-- the overlay's research card shows the first four as "Levels: Mining productivity 14 · ...".
+- the overlay's research card shows the first four as "Levels: Mining productivity 14 · ..." on its line under the bar.
 World n, d20 18:50 (saved first): this read took 1.79 ms and listed 18 (mining-productivity-3 at level 14,
 rocket-fuel-productivity 10 with 11 being researched); on the private copy the read took 1.8-2.6 ms against 1.3-2.0 ms
 before.
@@ -71,7 +71,8 @@ def live_parse():
 
 def overlay():
     code = open(os.path.join(HERE, "static", "overlay.js")).read()
-    assert 'researchCard.levels = el("div", "levels")' in code and '"Levels: " + reps.map((x) => x.label + " " + x.level)' in code
+    # (batch115) on the card's one line under the bar, after "N done · latest ...": it pans when longer than the card
+    assert 'if (levels) rb.append(' in code and '"Levels: " + reps.map((x) => x.label + " " + x.level)' in code
 
 
 def main():

@@ -742,8 +742,8 @@ pace your weekly quota (it resets Sun 12:51); the game went on meanwhile: check 
 board) before acting.").
 
 - tools/stream/pacing.py reads it. live.py puts it on the agent row; model.py's card says "resting until 18:17 · pacing
-  its weekly quota" (activity `resting`: a blue dot, not idle or offline; "waiting until ... for its quota to reset"
-  for a quota sleep), the hosts get it once per rest (an alert of kind `rest`, an info line for them), and the
+  quota" (activity `resting`: a blue dot, not idle or offline; "out of quota until ..." for a quota sleep; both short
+  enough for a card's line at 1080p, batch115), the hosts get it once per rest (an alert of kind `rest`, an info line for them), and the
   director leaves the agent out of its picks. The site's card shows the same state and text.
 - tools/supervise.sh types no nudge into the sleeping loop (logs "skip nudges: resting until 18:17" once a rest), and
   tools/idle_nudge.py sends no tell ("resting until ..." as its reason).
@@ -754,7 +754,7 @@ board) before acting.").
   start-team writes one for each agent whose account is at its limit. Those agents have no loop to call --woke, so
   pacing.py also ends a rest once the agent's journal has a request of its own after `since` (describe, profiles,
   cameras and peeks do not count, as in rests.lua). The card, the hosts' fact and the logs name the day when the rest
-  ends on another day: "waiting until Sat 15:59 for its quota to reset". supervise.sh reads the rest through
+  ends on another day: "out of quota until Sat 15:59". supervise.sh reads the rest through
   `python3 tools/stream/pacing.py until DIR`. Test: test_pacing.py grok().
 
 ### Each battle fact on its planet (2026-10-14, eng/planetmix)

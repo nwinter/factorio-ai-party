@@ -104,3 +104,5 @@ html body.portrait.onecam #cam-main .cam-label { font-size: 30px; }
 html body.portrait.onecam .alert { font-size: 24px; max-width: 900px; }
 html body.portrait.onecam .alert .ico { width: 36px; height: 36px; font-size: 19px; }
 html body.portrait #cam-inset .cam-label { font-size: 18px; }
+/* a name that does not fit beside its planet (overlay.js squeezed: "Muse S…"): the token count gives way */
+html body.portrait .card.squeezed .tok { display: none; }
