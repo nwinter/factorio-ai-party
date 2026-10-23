@@ -135,9 +135,16 @@ local a=T.alerts(45050).attacked[1]
 eq(a.group.size,3); eq(a.group.kinds,'2 small-biter, 1 medium-biter'); eq(a.source.position.x,80); eq(a.source.bearing,'E'); eq(a.source.distance,61)
 eq(a.line:gsub('^attack #%d+',''),' at (20,21): a group of 3 (2 small-biter, 1 medium-biter) that gathered at (60,20); likely from nest (80,10) 61 tiles E; '
   ..'stone-furnace x1 hit 1 times, 10 damage, 0s ago')
--- A unit's own spawner, when the engine gives it and it is charted, is named as the source.
+-- A unit's own spawner, when the engine gives it and it is charted, is named as the source. (d22 batch100 BJ2) As
+-- 2.0.77 gives it: the spawner on the unit's commandable (unit.spawner is no key), every game object userdata.
+local function ud(fields)
+  local u=io.tmpfile()
+  debug.setmetatable(u,{__index=function(_,k) local v=fields[k]; if v==nil and k~='commandable' then error('LuaEntity doesn\'t contain key '..k) end; return v end})
+  return u
+end
+local own=ud{valid=true,position={x=200,y=10}}
 T.on_damaged{tick=45100,entity={valid=true,name='pipe',force=mine,surface=surface,position={x=100,y=100}},force=enemy,
-  cause={valid=true,name='small-biter',unit_number=2,spawner={valid=true,position={x=200,y=10}}},final_damage_amount=3}
+  cause=ud{valid=true,name='small-biter',type='unit',force=enemy,unit_number=2,position={x=190,y=30},surface=surface,commandable=ud{valid=true,spawner=own}},final_damage_amount=3}
 a=T.alerts(45050).attacked
 local pipe_hit=a[1].at.x==100 and a[1] or a[2]
 eq(pipe_hit.line:match('; (from nest [^;]+);'),'from nest (200,10) 135 tiles NE'); eq(pipe_hit.attackers,1); eq(pipe_hit.kinds,'1 small-biter')
