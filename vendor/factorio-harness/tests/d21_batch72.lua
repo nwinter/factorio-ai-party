@@ -40,7 +40,7 @@ local F=dofile('mod/agent-harness_0.1.0/flightwatch.lua'){state=function() retur
   trace=function(q,age) trace_calls[#trace_calls+1]={game.tick,age}; return trace end,
   supply_kind=function(row) return row.kind,row.all_gated end,
   leg=function(q) local c=q.space_connection; if not c then return nil end; if q.back then return {from=c.to.name,to=c.from.name} end return {from=c.from.name,to=c.to.name} end}
-local function run(to) while game.tick<to do game.tick=game.tick+1; if game.tick%60==51 then F.tick(game.tick) end end end
+local function run(to) while game.tick<to do game.tick=game.tick+1; if F.due(game.tick) then F.tick(game.tick) end end end
 local function trace_at(started,done,kind2,reach2)
   return {read_started=started,read_tick=done,rows={
     {entity=t1,kind='maker',reaches=60,stops={},gated={}},
@@ -145,8 +145,9 @@ eq(w5.leg,'nauvis->vulcanus'); eq(F.call(p,{id=w5.id}).watch.at_start,'nauvis')
 F.call(p,{id=w5.id,clear=true})
 -- the platform gone while watching
 F.call(p,{platform='Kestrel IVc'})
-force.platforms={}
-F.tick(game.tick+60)
+force.platforms={}; pl.valid=false   -- (BS1) a deleted platform's object reads invalid; the watch keeps it
+run(game.tick+60)
+pl.valid=true
 local wg=st.flightwatch.list[#st.flightwatch.list]; eq(wg.why,'the platform is gone'); assert(F.call(p,{id=wg.id}).line:find('ended: the platform is gone'))
 -- the alert lines: to the setter, once
 local h={}

@@ -307,7 +307,9 @@
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from
   the ammunition trace (maker, hub, chest, preload, none; how much can reach it; what stops it) at the start, after it
   first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
-  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them. The
+  oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them with
+  `limit` (one watch a platform of the force), `counted` and `counting`: armed, watching, or done and not read; a done
+  one stops counting once read, kept 1 h after. A start at the limit is refused, naming the watches that count. The
   setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
   two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
   Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
