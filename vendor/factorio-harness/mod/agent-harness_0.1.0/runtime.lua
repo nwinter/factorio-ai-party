@@ -16604,7 +16604,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
-M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
+M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end}
 M.platalerts=require('platalerts'){state=state,fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,ammofeed={trace=function(pl,age) return M.ammofeed.get(pl,age,true) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end,pump_states=function(pl) return M.thrust.pump_states(pl) end}
@@ -18483,7 +18483,7 @@ M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){delivered=function(info) if M.reminders then M.reminders.trigger('delivered',info) end end,
-  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
+  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,census_where=function(f,sf) return M.census and M.census.where_index(f,sf) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
@@ -18645,7 +18645,8 @@ M.platwait=require('platwait'){state=state}
 -- Who edited a request section or a departure gate (editlog.lua; d19 batch41 B1, Sol seq 861).
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
-space=space_module{editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
+  plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -19613,6 +19614,8 @@ function M.tick_body(event)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
   if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
+  -- (d22 batch96 BF1) the platforms read lately: their belts and inserter hands, a band every few ticks (freight.lua)
+  if M.freight and M.freight.belt_tick and event.tick%M.freight.BELT_STEP==0 then pcall(M.timed,'freight.belts',M.freight.belt_tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)

@@ -44,7 +44,7 @@ nauvis.create_entity=function(args) if args.name=='character' then return charac
 -- The platform Starling: a hub (1000 health, repair packs) and two gun turrets.
 local psurf=new_surface('platform-1',2)
 local packs=5
-local hub={valid=true,name='space-platform-hub',type='space-platform-hub',position={x=0,y=0},force=force,surface=psurf,health=1000,max_health=1000}
+local hub={valid=true,unit_number=1,name='space-platform-hub',type='space-platform-hub',position={x=0,y=0},force=force,surface=psurf,health=1000,max_health=1000}
 hub.get_logistic_sections=function() return nil end
 hub_ammo=0
 hub.get_inventory=function(i) if i==21 then return {get_contents=function()
@@ -148,7 +148,7 @@ packs=5
 
 -- The hub's health falling.
 opus('status',{brief=true}); jump(601); alerts(astra)  -- a sample at 1000
-hub.health=900; jump(601)
+hub.health=900; hit(hub,100); jump(601)  -- (d22 batch96 BF1: the damaged list comes from the damage events)
 eq(has(alerts(astra),'hub health'),S..' hub health 900/1000, down 100 in 40s')
 -- The platforms read shows it, and the hub among the damaged.
 prow=sol('platforms',{compact=false}).platforms[1]
