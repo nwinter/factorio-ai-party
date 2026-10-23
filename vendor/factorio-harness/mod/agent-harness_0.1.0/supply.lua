@@ -460,7 +460,8 @@ return function(api)
         local pick
         for _, o in ipairs(orders_type.pickup and try(function() return r.robot_order_queue end) or {}) do
           local item = o.target_item
-          if type(item) == 'table' then item = type(item.name) == 'table' and item.name.name or item.name end
+          -- (d22 batch100 BJ2) 2.0.77: target_item.name is the item prototype (userdata), read on a copy of world n
+          if type(item) == 'table' then local n = item.name; item = type(n) == 'string' and n or try(function() return n.name end) end
           if o.type == orders_type.pickup and item and T[item] then pick = {item=item, n=o.target_count or 0}
           elseif o.type == orders_type.deliver and pick and o.target and o.target.valid then
             local by = net.reserved_for[pick.item] or {}

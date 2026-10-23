@@ -208,7 +208,8 @@ return function(api)
     local out, seen = {}, {}
     for _, w in ipairs(list) do
       assert(type(w) == 'string' and #w > 0 and #w <= 64, 'applies_to: names are text')
-      if type(prototypes) == 'table' then
+      -- (d22 batch100 BJ2) prototypes is userdata in 2.0: a check for a table skipped this on the real engine
+      if prototypes ~= nil then
         local known = try(function() return prototypes.entity[w] or prototypes.item[w] or prototypes.recipe[w] end)
         assert(known, 'applies_to: no entity, item or recipe named ' .. w)
       end

@@ -50,14 +50,16 @@ do
   prototypes={space_location={nauvis={},vulcanus={}}}
   local st={}
   local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
-  local pl={valid=true,name='Meridian-V',index=18,force={name='player'}}
+  local function ud(fields) local u=io.tmpfile(); debug.setmetatable(u,{__index=fields}); return u end
+  local our=ud{name='player'}
+  local pl=ud{valid=true,name='Meridian-V',index=18,force=our}
   local where={text='flying nauvis->vulcanus 11%',leg={from='nauvis',to='vulcanus',flown=0.11}}
   local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){platform_where=function() return where end,position=function(v) return v end,
     left_since=function(n,f,loc,since) return F.left_since(n,f,loc,since) end}
-  local who={force={name='player',platforms={pl}}}
+  local who={force=ud{name='player',platforms={pl}}}
   -- the platform left nauvis; freight logged it on the game second after (4980 -> 5040: logged at 5040)
   F.event(pl,'left','nauvis',5040,'vulcanus')
-  F.event({name='Petrel',force={name='player'}},'left','nauvis',5100,'gleba')
+  F.event(ud{name='Petrel',force=our},'left','nauvis',5100,'gleba')
   game.tick=5100
   -- a lone wait begun now: as before, the departure before it does not count
   local met,saw=C.check(who,{['until']='platform_left',platform='Meridian-V',location='nauvis'},nil,{})
