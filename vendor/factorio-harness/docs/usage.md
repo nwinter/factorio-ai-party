@@ -233,6 +233,15 @@ fh call status
     its cell). A piece that does not fit names the free cells.
   - `inspect` on a vehicle with a grid shows the same `equipment` block. The operator's `loadout` gives
     `vehicle_equipment` for the vehicle an agent sits in.
+  - Mining and building an equipped vehicle (d23 batch120 CC1, Sol #2027: Haiku mined spidertron 22731300 with a
+    fusion reactor, two shield mk2, two battery mk2 and two lasers and built it again with an empty grid). The game's
+    mine (`mine_entity`) gives an item that carries the grid and moves the vehicle's inventories into the miner's
+    (checked on a copy of world n's save, 2.0.77); the build created the vehicle without the item. `build` now passes the
+    item to `create_entity` (grid, label and colour come with it; revived over a ghost, the item's equipment is put in
+    the same cells). Replies: a finished mine of a vehicle has `last.holds` (`the spidertron item carries its grid
+    (10x6): fusion-reactor-equipment*1 ...; its inventories held rocket*400, now in your inventory`), and `moved`
+    counts those items; `inventory` has `item_grids` (`spidertron (slot 50): grid ...`, also a spare armor's); `build`
+    has `equipment` (`spidertron 27296250 (-148,-532.5): grid 10x6 ...`).
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
@@ -2767,7 +2776,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
 - A bot aboard a platform has no body and acts by remote view (Astra, 18:16: tell, operator, scan with platform,
   science and wait_until platform_arrived were refused while the refusal said scan works). Aboard work: every read
   (status, scan, inspect, science, supply, networks, platforms, map and the rest: of the platform, or of a planet with
-  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `say`, `operator`, the board and votes; research;
+  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `chat_ack`, `say`, `operator`, the board and votes;
+  `flight_watch {id}` (read or clear) and `flight_watch {}` (the list; d23 batch120 CC2, Sol #1986: a fleet archiver
+  aboard Anvil had 10 reads refused; a new watch with `platform` stays refused aboard); research;
   `platform_schedule`, `platform_create`, `requests` (`platform=` or `position=`), `drop` and `land`; every call that
   acts by remote view, with `platform=NAME` (`place_ghosts`, `deconstruct`, `cancel_deconstruction`, `paste`,
   `blueprint_place`, `grid`, `scan`, `inspect`, `configure`, `flush`, `circuit_set`, `circuit`, `wire`, `ports`,
@@ -7698,6 +7709,21 @@ fh watch    # deploy on every change
   - Holes: beside each new tile, an enclosed region needs filling when open space is beside that tile too; with only
     enclosed regions round it, all but the largest. A region no new tile needs filled is left out (`holes_other`).
     A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
+  - (d23 batch120 CC3, Astra #2019: Asterion's belt_route dry run planned 412 tiles; the floor check said 25 never
+    build, 12 named, near (-34.5,105.5)) The route's floor crossed an empty corridor about 5 tiles wide several
+    times (the crossing at y 105..120 is 16 rows thick): no single new tile had two regions beside it, so the per-tile rule left 1223 tiles of three corridor
+    parts out, and the last column of each crossing would part the corridor (reproduced on a copy of world n's save).
+    The hub never parts empty space: a tile whose empty side neighbours form one run leaves every path through it
+    open, so a region can only stay empty if it was apart before. The regions are now grouped through the new tiles
+    (two regions beside new tiles that touch by a side were one empty space): of each group all enclosed regions are
+    filled when open space is among them, else all but the largest. The same call now plans 1635 tiles (1470 holes;
+    `tiles.hole_regions`: `664 tiles in (-38.5,137.5)-(-27.5,208.5)`, `498 tiles in (-38.5,15.5)-(-31.5,104.5)`, ...)
+    and its floor check reads 1635 of 1635 built. The dry run's `summary` adds `the floor is not checked yet: floor
+    check #N decides whether the hub builds all N tiles (tiles.check)` while the check runs, and `N foundation tiles
+    never built by the hub's rules (tiles.unbuilt)` when the inline play finds some. `platform_plan {floor_check: N}`
+    adds `unbuilt_tiles` (every unbuilt tile, up to 500, as column runs `(-34.5,105.5..120.5)`, 64 runs and
+    `unbuilt_tiles_more`) and `groups` (touching unbuilt tiles, largest first, 12: count, box, why; for a split, that
+    every region they would part from the rest but one needs foundation, which a dry run of the same placement plans).
   - A refused entity ghost over empty space on a platform says the dry run gives those fields.
   tests/dryrun.lua.
 - A2 (Astra): a partial load went up with two underground belts and a rocket was spent. `load_silo {launch,

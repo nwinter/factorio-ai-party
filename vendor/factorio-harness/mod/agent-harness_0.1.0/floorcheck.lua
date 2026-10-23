@@ -7,6 +7,8 @@
 return function(api)
   local M = {}
   M.CHECKS, M.MAX_JOBS, M.ROWS = 150, 4, 12
+  -- (d23 batch120 CC3, Astra #2019: 25 never built, 12 named) every unbuilt tile up to ALL, as column runs and groups
+  M.ALL, M.RUNS, M.GROUPS = 500, 64, 12
   local TC = api.tilecheck or require('tilecheck')()
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
@@ -60,16 +62,75 @@ return function(api)
         job.unbuilt_n = job.unbuilt_n + 1
         job.by[why] = (job.by[why] or 0) + 1
         if #job.unbuilt < M.ROWS then job.unbuilt[#job.unbuilt+1] = tile_text(g[1], g[2]) .. ': ' .. why end
+        job.all = job.all or {}
+        if #job.all < M.ALL then job.all[#job.all+1] = {g[1], g[2], why} end
       end
     end
     if job.i > #job.ghosts then
       job.done = game.tick
+      job.unbuilt_tiles, job.unbuilt_tiles_more, job.groups = M.runs_text(job.all or {}), nil, M.groups(job.all or {})
+      if #job.unbuilt_tiles > M.RUNS then
+        job.unbuilt_tiles_more = #job.unbuilt_tiles - M.RUNS
+        for k = #job.unbuilt_tiles, M.RUNS + 1, -1 do job.unbuilt_tiles[k] = nil end
+      end
+      job.all = nil
       local built = 0
       for _ in pairs(job.play.built) do built = built + 1 end
       job.built = built
       -- the large tables go; the counts stay
       job.ghosts, job.cache, job.play = nil, nil, {steps=job.play.steps}
     end
+  end
+  -- Unbuilt tiles {x, y, why} as runs down a column: '(x,y0..y1)'.
+  function M.runs_text(all)
+    local list = {}
+    for i, c in ipairs(all) do list[i] = c end
+    table.sort(list, function(a, b) if a[1] ~= b[1] then return a[1] < b[1] end return a[2] < b[2] end)
+    local out, i = {}, 1
+    while list[i] do
+      local j = i
+      while list[j+1] and list[j+1][1] == list[i][1] and list[j+1][2] == list[j][2] + 1 do j = j + 1 end
+      out[#out+1] = j == i and tile_text(list[i][1], list[i][2]) or string.format('(%g,%g..%g)', list[i][1] + 0.5, list[i][2] + 0.5, list[j][2] + 0.5)
+      i = j + 1
+    end
+    return out
+  end
+  -- Unbuilt tiles that touch (by a side or a corner) as groups, largest first: count, box, reasons.
+  function M.groups(all)
+    local at, seen, groups = {}, {}, {}
+    for i, c in ipairs(all) do at[TC.key(c[1], c[2])] = i end
+    for i, c in ipairs(all) do
+      if not seen[i] then
+        seen[i] = true
+        local q, k = {i}, 1
+        while q[k] do
+          local a = all[q[k]]; k = k + 1
+          for dx = -1, 1 do for dy = -1, 1 do
+            local j = at[TC.key(a[1] + dx, a[2] + dy)]
+            if j and not seen[j] then seen[j] = true; q[#q+1] = j end
+          end end
+        end
+        local x0, y0, x1, y1, by = c[1], c[2], c[1], c[2], {}
+        for _, j in ipairs(q) do
+          local b = all[j]
+          x0, y0, x1, y1 = math.min(x0, b[1]), math.min(y0, b[2]), math.max(x1, b[1]), math.max(y1, b[2])
+          by[b[3]] = (by[b[3]] or 0) + 1
+        end
+        groups[#groups+1] = {n=#q, x0=x0, y0=y0, x1=x1, y1=y1, by=by}
+      end
+    end
+    table.sort(groups, function(a, b) return a.n > b.n end)
+    local lines = {}
+    for i = 1, math.min(M.GROUPS, #groups) do
+      local g = groups[i]
+      local parts, split = {}, false
+      for why, n in pairs(g.by) do parts[#parts+1] = n .. ' ' .. why; if why == reason({}) then split = true end end
+      table.sort(parts)
+      lines[i] = string.format('%d tile%s in %s-%s: %s%s', g.n, g.n == 1 and '' or 's', tile_text(g.x0, g.y0), tile_text(g.x1, g.y1), table.concat(parts, '; '),
+        split and '; the empty space on their sides is one region now and the hub never parts it in two: they are built once every region they would part from it but one is foundation (a dry run of the same placement plans that fill: tiles.holes, tiles.hole_regions)' or '')
+    end
+    if #groups > M.GROUPS then lines[#lines+1] = string.format('%d more groups', #groups - M.GROUPS) end
+    return lines
   end
   function M.read(id)
     local st = store()
@@ -95,6 +156,9 @@ return function(api)
     local floor_now = s and try(function() return s.count_tiles_filtered{name='space-platform-foundation'} end) or nil
     out.state = 'done'; out.done_tick = job.done; out.would_build = job.built; out.never_built = job.unbuilt_n; out.floor_now = floor_now
     out.unbuilt = #job.unbuilt > 0 and job.unbuilt or nil
+    out.unbuilt_tiles = job.unbuilt_tiles and #job.unbuilt_tiles > 0 and job.unbuilt_tiles or nil
+    out.unbuilt_tiles_more = job.unbuilt_tiles_more
+    out.groups = job.groups and #job.groups > 0 and job.groups or nil
     local parts = {}
     for why, k in pairs(job.by) do parts[#parts+1] = k .. ' ' .. why end
     table.sort(parts)

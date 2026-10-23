@@ -53,4 +53,25 @@ fails(function() G.target(p,{vehicle=78}) end,'car (20,5) has no equipment grid 
 fails(function() G.target(p,{vehicle=79}) end,'tank (30,5) is not ours')
 fails(function() G.target(p,{vehicle=5}) end,'no vehicle has unit_number 5')
 fails(function() G.target(p,{vehicle={x=-50,y=-50}}) end,'no vehicle at (-50,-50)')
+-- (d23 batch120 CC1, Sol #2027) A vehicle being mined: what its item carries and what its inventories move to the miner.
+local rockets={get_contents=function() return {{name='rocket',count=400}} end}
+local empty={get_contents=function() return {} end}
+local spider={valid=true,name='spidertron',type='spider-vehicle',grid={width=10,height=6,equipment={piece('fusion-reactor-equipment',0,0,4,4)}},
+  get_max_inventory_index=function() return 2 end,get_inventory=function(i) return i==1 and rockets or empty end}
+local line,names=G.mining_line(spider)
+eq(line,'the spidertron item carries its grid (10x6): fusion-reactor-equipment*1; its inventories held rocket*400, now in your inventory'); eq(names[1],'rocket')
+eq(G.mining_line({valid=true,name='wooden-chest',type='container'}),nil,'not a vehicle')
+-- Items in an inventory that carry a grid, by slot.
+local plain={valid_for_read=true,name='iron-plate'}
+local item={valid_for_read=true,name='spidertron',is_item_with_entity_data=true,grid=spider.grid}
+local lines=G.item_grids({plain,{valid_for_read=false},item})
+eq(#lines,1); eq(lines[1],'spidertron (slot 3): grid fusion-reactor-equipment*1')
+eq(G.item_grids({plain}),nil)
+-- A ghost revived with that item: its equipment where it sat, taken from the item; its label.
+local put,taken={},{}
+local built={grid={put=function(s) put[#put+1]=s; return {} end}}
+item.entity_label='South'
+item.grid.take=function(s) taken[#taken+1]=s.equipment end
+G.from_item(item,built)
+eq(#put,1); eq(put[1].name,'fusion-reactor-equipment'); eq(put[1].position.x,0); eq(put[1].quality,'normal'); eq(#taken,1); eq(built.entity_label,'South')
 print('grids: ok')
