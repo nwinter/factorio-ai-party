@@ -7,7 +7,8 @@
 # (pog-camN) is connected (RCON game.get_player(...).connected) before starting the next. A client not in after
 # POG_CAM_WAIT seconds (default 180) is stopped (tools/win/stop-client.ps1) and started once more; a second miss is
 # logged and the next camera starts anyway. Once all are done, the OBS game captures "stream cam1..3" are turned off
-# and on so they hook the new clients (tools/obs.py rehook-cams; POG_OBS=0 skips it).
+# and on so they hook the new clients, then cropped to their hole once each has a size (tools/obs.py rehook-cams;
+# POG_OBS=0 skips it).
 # Prints one line per step; exit 0 when all three joined, 1 when one did not.
 # Stubs for tests: POG_CAM_WINPS, POG_CAM_RCON (a command given the Lua; prints its rcon output), POG_CAM_OBS
 # (commands, split on spaces), POG_CAM_POLL (seconds between checks, default 3).
