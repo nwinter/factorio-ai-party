@@ -231,7 +231,8 @@
   line and onto which lane (both its lanes go onto that one), or a splitter or end-on join lane to lane, with what
   each lane carries after it; `limit`: a side-load stopped full while the line after it runs at its cap (the line's
   own items go first), the end backed up (one or both lanes stopped full), or a lane at its cap. The call returns when the sampling ends;
-  `belt_flow {}` reads the last result. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
+  `belt_flow {}` reads the last result. The sample ends at `until_tick`: `stop` and your actions do not end it (a new
+  `belt_flow {position}` replaces it); `./fh wait` waits for it when nothing else runs. Example: `./fh call belt_flow --args '{"position":{"x":8.5,"y":20.5},"platform":"Kestrel II"}'`
 - `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
   ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
   (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a
