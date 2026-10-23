@@ -12249,8 +12249,8 @@ Sat 16:00 (rests.lua; batch108), and Astra arranged at 20:06 for Sonnet to cover
     else". Read from the last scan, kept a second.
   - game_alerts `to`: "grok (claim; resting until Sat 16:00 (quota))", "grok (nearest; resting until ...)",
     "sonnet (covers claim #1130 by grok)".
-  - The factory digest's team part: "to agents resting: grok (resting until Sat 16:00 (quota)): 5 facts went to it;
-    sonnet got 5" (or "to no one else"). Read from runs/RUN/AGENT/resting.json, as tools/stream/pacing.py reads it.
+  - The factory digest's team part: "to agents resting: grok (resting until Sat 16:00 (quota)): N facts went to it;
+    sonnet got M" (or "to no one else"). Read from runs/RUN/AGENT/resting.json, as tools/stream/pacing.py reads it.
 - Not changed: the nearest-agent rule still names a resting agent (7 of Gleba's groups at 21:24). The teammates line
   and game_alerts now say so; choosing someone else there would pick for the agents.
 - On the copy (copy of the 21:24 save, paused): status by astra takes 11.1-11.4 ms on the branch against 11.2-12.0 on
