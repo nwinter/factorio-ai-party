@@ -6817,6 +6817,11 @@ fh watch    # deploy on every change
   (turrets, belts on their ways, sources, the hub when an inserter takes from it toward one) against stranded (on
   belts no turret's way reaches, by group and area; hub stock no inserter takes toward a turret).
   - `platform_defense` adds `feed` and its lines (low or stopped turrets; `feed: true` all).
+  - (d23 batch124b, Sol #2042: Asterion's 120 turrets read as 64 rows) the `turrets` and `feed.turrets` rows come 64
+    a page: `page` 2, 3, ... (`turrets_page {page, pages, per_page, total, turrets, from, to, next, filter}`;
+    `feed.turrets_total`); `names` (1..16 prototype names) and `positions` (1..64 {x, y}, a turret within 1 tile) pick
+    the rows (either); a page past the last is refused with how many there are. The lines and summaries read every
+    turret; the feed rows on a page are its turrets' (by position).
   - `platform_endurance` projects only reachable ammunition: a row says `N more aboard can reach no turret
     (stranded: ...), not counted`, and `ammo_feed` gives both totals. preflight with a platform adds `ammo_feed`.
   - A team alert: `platform Kestrel: 11 turrets in (-14,-14)-(6.5,24.5) can reach under 20 rounds and nothing more

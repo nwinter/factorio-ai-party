@@ -18225,7 +18225,7 @@ M.ammofeed=require('ammofeed'){state=state,feeders=M.feeders}
 -- configure of its priority targets, and build and place_ghosts (dry runs too) of one.
 M.fireline=require('fireline'){}
 M.ammorate=require('ammorate'){}
-M.platdefense=require('platdefense'){state=state,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
+M.platdefense=require('platdefense'){state=state,position=position,platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,fireline=M.fireline,own_losses=function(name) return LOSS.own_on(name) end}
 do
   local function target_surface(p,a)
     if type(a.platform)=='string' then
