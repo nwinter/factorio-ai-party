@@ -129,6 +129,24 @@ def human_enemy(e):
     return str(e.get("name") or "enemy").replace("-", " ").capitalize()
 
 
+def lead_point(trail, cfg):
+    """(d23 batch124 CG1) Where a moving group will be cfg incoming_lead seconds on: trail [(t, {x, y})] oldest first,
+    its velocity over the last incoming_lead_window seconds; at most incoming_lead_max tiles ahead; its last position
+    when it moves under incoming_lead_min tiles a second (or with one read)."""
+    t1, p1 = trail[-1]
+    old = [q for q in trail if t1 - q[0] <= cfg["incoming_lead_window"]]
+    t0, p0 = old[0]
+    here = {"x": p1["x"], "y": p1["y"]}
+    if t1 - t0 <= 0:
+        return here
+    vx, vy = (p1["x"] - p0["x"]) / (t1 - t0), (p1["y"] - p0["y"]) / (t1 - t0)
+    speed = (vx * vx + vy * vy) ** 0.5
+    if speed < cfg["incoming_lead_min"]:
+        return here
+    ahead = min(cfg["incoming_lead_max"], speed * cfg["incoming_lead"])
+    return {"x": round(p1["x"] + vx / speed * ahead, 1), "y": round(p1["y"] + vy / speed * ahead, 1)}
+
+
 def loss_pieces(text):
     """"19 lost near (-226, 68): 19 gun turret (by small demolishers)" -> 19 (0 for any other text)."""
     m = LOSS_RE.match(text or "")
@@ -256,8 +274,19 @@ ONECAM = {
     # a followed group that turns back or stops short ends the follow (Nick d20 07:14: a group came toward Nauvis,
     # went back to the wilderness and sat there, and the camera stayed on it until incoming_max)
     "incoming_away": 40.0,  # tiles farther from our nearest building than its closest approach: turned back
-    "incoming_still": 45.0,  # seconds the group has moved under incoming_still_tiles: stopped
+    # (d23 batch124 CG1, Nick 10:00: "the biters just move for a little bit and then stopped": the 09:53 group stood
+    # 44 s on air before the cut; all 12 groups followed in shift62-63 stopped or turned back short) stopped: moved
+    # under incoming_still_tiles over the last incoming_still seconds (at least 80% of it read), not while gathering
+    "incoming_still": 12.0,
     "incoming_still_tiles": 8.0,
+    # (CG1: "as the camera followed them, it tended to lag their position rather than lead it") each pan aims where the
+    # group will be incoming_lead seconds on (its velocity over the last incoming_lead_window s): the reads come about
+    # every 3 s and the camera eases each move, so aiming at the last position kept it a read behind; at most
+    # incoming_lead_max tiles ahead, none under incoming_lead_min tiles a second
+    "incoming_lead": 4.0,
+    "incoming_lead_window": 6.0,
+    "incoming_lead_max": 48.0,
+    "incoming_lead_min": 0.5,
     "battle_near": 60.0,    # tiles (plus half the extents): fights this close are one battle
     # held until the battle has been quiet this long (no attack, no agent in combat) and no loss for battle_loss_after;
     # 14:19:30 Sol's demolisher died in ~5 s and the hold ran 52 s (45 s after the last loss). Shorter, with a battle
@@ -1468,6 +1497,19 @@ class OneCam(Director):
         cfg = self.cfg
         rows = {g["id"]: g for g in snapshot.get("incoming") or [] if g.get("id") is not None and g.get("position")}
         core, centre = self.base_core()
+        # (d23 batch124 CG1) how attacks go now: each group to its end, with contact and our real losses near it
+        # (threats.py observe), so routine waves the defenses hold score low
+        losses = []
+        for f in self.fight_list:
+            n = loss_pieces(f.get("text"))
+            if n and not minor_loss(f.get("text")) and f.get("losses") and f.get("position"):
+                losses.append({"key": f"{f.get('key')}:{len(f['losses'])}", "surface": f["position"].get("surface") or "nauvis",
+                               "x": f["position"]["x"], "y": f["position"]["y"], "pieces": n, "t": f["losses"][-1]})
+        self.threats.observe([dict(g, contact=self.group_contact(g)) for g in rows.values()], losses, now)
+        bm = snapshot.get("basemap") or {}
+        turrets = bm.get("turrets") if isinstance(bm.get("turrets"), list) and not (bm.get("turrets_read") or {}).get("capped") else None
+        box = {"x0": bm["x0"], "y0": bm["y0"], "x1": bm["x0"] + bm["w"] * bm["cell"], "y1": bm["y0"] + bm["h"] * bm["cell"]} \
+            if all(isinstance(bm.get(k), (int, float)) for k in ("x0", "y0", "w", "h", "cell")) else None
         for gid, g in rows.items():
             if gid in self.groups_seen:
                 continue
@@ -1479,7 +1521,8 @@ class OneCam(Director):
             # agents on the group's surface only: Sol by the egg breeders on Gleba at (46, 51) counted for any Nauvis
             # group heading near that spot, inside the base (13:00-13:40)
             near = [a for a in by_name.values() if surface_of(a) == (g.get("surface") or "nauvis")]
-            score, parts = self.threats.score_group(g, centre=centre_g, agents=near, core=core_g)
+            score, parts = self.threats.score_group(g, centre=centre_g, agents=near, core=core_g,
+                                                    turrets=turrets if (g.get("surface") or "nauvis") == "nauvis" else None, box=box)
             self.threats.learn_group(g, centre=centre_g)
             cur = self.state.get(self.onair) or {}
             blocked = None
@@ -1559,9 +1602,9 @@ class OneCam(Director):
             return over(f"stopped: under {self.cfg['incoming_still_tiles']:g} tiles in {now - trail[0][0]:.0f} s")
         if cur.get("subject") == "@incoming":
             p = cur["position"]
-            if dist(p, g["position"]) > 3:  # pan with it (cameras.lua eases a non-jump move)
-                self.apply(self.slot(self.onair), dict(cur, position={"x": g["position"]["x"], "y": g["position"]["y"]},
-                                                       incoming=f"Incoming · {g.get('label')}", jump=False),
+            aim = lead_point(trail, self.cfg)
+            if dist(p, aim) > 3:  # pan with it, ahead of it (cameras.lua eases a non-jump move)
+                self.apply(self.slot(self.onair), dict(cur, position=aim, incoming=f"Incoming · {g.get('label')}", jump=False),
                            "incoming: pan", scores, now, quiet=True)
 
     def battle_target(self, b, by_name):
@@ -2310,7 +2353,7 @@ class OneCam(Director):
 
     PAN_END_S = 3.0    # a tall ship's pan rests this long at the bow and at the stern
     PAN_LEG_S = 40.0   # at most this long from bow to stern; a longer shot goes back and forth
-    PAN_STEP = 2.0     # tiles: the camera is moved when the pan's place is this far from where it is
+    PAN_STEP = 2.0     # tiles: a whole-frame pan step (CG2: steps now go every DETAIL_STEP, gliding on; kept for the tests)
 
     DETAIL_STEP = 0.5  # tiles: a detail pan's step (d20 batch50 A2; cameras.lua glides between steps at its speed)
     # (d22 batch99 BI4, viewer Foobator site:4332) a long ship's whole-frame pan (model.LONG_VIEWS): a visit or an edge
@@ -2353,21 +2396,35 @@ class OneCam(Director):
         x = (now - since) % cycle
         f = 0.0 if x < rest0 else min(1.0, (x - rest0) / leg) if x < rest0 + leg + rest1 \
             else max(0.0, 1.0 - (x - rest0 - rest1 - leg) / leg)
+        f = f * f * (3 - 2 * f)  # (d23 batch124 CG2) eased: each leg starts and stops gently, not at full speed
         return round(p["y0"] + (p["y1"] - p["y0"]) * f, 1)
+
+    # (d23 batch124 CG2, Nick 10:00: "the panning across spaceships could be a little better") the director steps
+    # every 1.1-1.5 s (director logs d23 07:55-10:10: 2637 ship reframes, 6.7 tiles a step at a glide of 6.77 tiles/s)
+    # and each step's glide (1.15x the pan's speed) ended in about 1.0 s: the view moved, stopped, moved. Each step now
+    # aims where the pan will be PAN_LEAD step intervals on (the interval measured, PAN_DT at first) and glides there
+    # over that time, so the next step comes while it still moves: one even motion, eased at the ends (pan_y).
+    PAN_LEAD = 1.5
+    PAN_DT = 1.2
 
     def pan_step(self, now):
         """(d19 batch42 C2) Each camera holding a tall ship (a `pan` in its target) moves along it, bow to stern."""
+        last = getattr(self, "_pan_at", None)
+        if last is not None and 0.3 <= now - last <= 5:
+            self._pan_dt = 0.7 * getattr(self, "_pan_dt", self.PAN_DT) + 0.3 * (now - last)
+        self._pan_at = now
+        ahead = self.PAN_LEAD * getattr(self, "_pan_dt", self.PAN_DT)
         for slot in self.slots:
             t = self.state.get(slot["slot"])
             if not t or not t.get("pan") or not t.get("position") or now >= t.get("until", now + 1):
                 continue
-            y = self.pan_y(t, now)
-            step = self.DETAIL_STEP if t["pan"].get("speed") else self.PAN_STEP
-            if abs(y - t["position"]["y"]) >= step or (y in (t["pan"]["y0"], t["pan"]["y1"]) and y != t["position"]["y"]):
+            y = self.pan_y(t, now + ahead)
+            ends = (t["pan"]["y0"], t["pan"]["y1"])
+            if abs(y - t["position"]["y"]) >= self.DETAIL_STEP or (y in ends and y != t["position"]["y"]):
                 target = {k: v for k, v in t.items() if k != "jump"}
                 target["position"] = dict(t["position"], y=y)
-                # cameras.lua moves at about this speed between the 1 s steps: no stutter (BI4: every pan)
-                target["glide"] = round(self.pan_speed(t) * 1.15, 2)
+                # cameras.lua moves at this speed: it reaches y as the step after next would come
+                target["glide"] = round(max(0.5, abs(y - t["position"]["y"]) / ahead), 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
     @staticmethod

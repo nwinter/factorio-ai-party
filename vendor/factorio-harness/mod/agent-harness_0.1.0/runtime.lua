@@ -16261,6 +16261,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
+  guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,
   recheck_read=function(rc) return space.recheck_read(rc) end,
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,

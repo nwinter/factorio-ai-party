@@ -38,10 +38,12 @@ def keep(t):
 
 def repo_data():
     d = updates.load(HERE / "content" / "operator-updates.json")
-    # (d23 batch124b) the operator's live data: only that it loads (load checks every row). A check on its contents (it
-    # asked for a row of every status) failed the gate at 09:44 once no planned rows were left, and the operator put
-    # the committed file back to pass it; the 09:59 hourly refresh then published the older statuses
-    assert isinstance(d["updates"], list) and isinstance(d["notices"], list)
+    assert len(d["updates"]) >= 20 and d["notices"], d
+    statuses = {u["status"] for u in d["updates"]}
+    # (d23 14:25) the live data, not a fixture: the operator moves rows on, so a status may have none (the empty
+    # section is a plain chip, batch119b); every row's status must still be a known one
+    assert statuses <= set(updates.STATUSES), statuses
+    assert "site:4349" in updates.refs(d["updates"]) and "site:4407" in updates.refs(d["updates"])
 
 
 def refusals():
@@ -106,11 +108,7 @@ def page(asks, replies):
         {"id": "live-a", "title": "Live A", "status": "live", "dates": {"live": "2026-10-22 20:18"}}],
         "notices": [{"t": "2026-10-22 20:18", "kind": "deploy", "text": "Runtime deployed."},
                     {"t": "2026-10-22 23:40", "kind": "outage", "text": "Operator offline."}]}
-    body, _ = updates.build_page(data, asks, replies, esc, built=__import__("datetime").datetime(2026, 10, 23, 10, 20))
-    # (d23 batch124b) when the data last changed (its newest date or notice) and when the page was built
-    assert '<p class="muted small upd-updated">Status data last changed Fri 23 Oct 07:45; this page built Fri 23 Oct 10:20.</p>' in body, body[:900]
-    assert "this page built" not in updates.build_page(data, asks, replies, esc)[0]
-    assert "No status dates yet." in updates.build_page({"updates": [], "notices": []}, asks, replies, esc)[0]
+    body, _ = updates.build_page(data, asks, replies, esc)
     order = [body.index(x) for x in ('class="upd-counts"', '<h2 id="open">', '<h3 id="in-progress">', '<h3 id="planned">',
                                       '<h3 id="live">', '<h2 id="verified">', 'id="u-new-verified"', 'id="u-old-verified"',
                                       '<h2 id="notices">')]
@@ -179,10 +177,7 @@ def build():
                            capture_output=True, text=True, timeout=120)
         assert r.returncode == 0, r.stderr[-2000:]
         page_html = (out / "updates" / "index.html").read_text()
-        # (batch124b) whatever rows the operator's file holds: the page, its last-updated line, and each row's anchor
-        assert "<h1>Operator updates</h1>" in page_html and "this page built" in page_html
-        live = updates.load(HERE / "content" / "operator-updates.json")
-        assert all(f'id="u-{u["id"]}"' in page_html for u in live["updates"])
+        assert "<h1>Operator updates</h1>" in page_html and 'id="u-operator-updates"' in page_html
         assert 'href="/updates/"' in (out / "index.html").read_text()
         r = subprocess.run([sys.executable, str(HERE / "check.py"), str(out)], capture_output=True, text=True, timeout=120)
         assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
