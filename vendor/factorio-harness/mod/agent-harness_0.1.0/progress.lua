@@ -12,6 +12,7 @@
 --   those the team plan names (#id) first, with what each waits on; and the agents standing or waiting now;
 -- - every check, one line in the owner's next reply (team.alerts): progress seen, and the item's next action or blocker
 --   as last written (its last note, a project's next step), or that none is written.
+local staletext = require('staletext')
 return function(api)
   local M = {}
   M.CHECK, M.STALL, M.MAX_LINES = 36000, 2, 30
@@ -203,6 +204,13 @@ return function(api)
     local me = api.who(p)
     local st = api.state().progress
     local l = st and st.lines[me]
+    -- (d23 batch123 CF1) and the stale marks on this agent's focus and plan line, once
+    local sl = st and st.stale_lines and st.stale_lines[me]
+    if sl then
+      st.stale_lines[me] = nil
+      l = l or {}
+      for _, x in ipairs(sl) do l[#l+1] = x end
+    end
     if not l or #l == 0 then return nil end
     st.lines[me] = nil
     return l
@@ -328,9 +336,10 @@ return function(api)
     local i = api.items()[f.id]
     local s = i and step_of(i, f.step)
     local step = s and string.format('step %d %s%s', s.n, tostring(s.text), s.done_by and ' (done)' or '') or (f.step and 'step ' .. tostring(f.step) or nil)
-    return string.format('%s focus (set %s ago): #%d %s%s%s%s%s', name, ago(game.tick - f.tick), f.id, i and i.title or '(item gone)',
+    return string.format('%s focus (set %s ago): #%d %s%s%s%s%s%s', name, ago(game.tick - f.tick), f.id, i and i.title or '(item gone)',
       step and '; ' .. step or '', f.blocker and '; blocker: ' .. f.blocker or '', f.verify and '; next verification: ' .. f.verify or '',
-      (f.unchanged or 0) >= M.STALL and string.format('; the focused step shows no completion across %d checks', f.unchanged) or '')
+      (f.unchanged or 0) >= M.STALL and string.format('; the focused step shows no completion across %d checks', f.unchanged) or '',
+      f.stale and '; ' .. staletext.text(f.stale, ago(game.tick - f.stale.tick)) or '')
   end
   -- (d20 batch54 N3, viewer Aurora: job cards from each agent's focus, with its age) the focus as fields, for the
   -- stream's cards: {agent, id, title, step, blocker, verify, tick, stalled}.
@@ -341,7 +350,8 @@ return function(api)
     local s = i and step_of(i, f.step)
     return {agent=name, id=f.id, title=i and i.title or nil, gone=i == nil or nil, tick=f.tick,
       step=s and string.format('step %d %s%s', s.n, tostring(s.text), s.done_by and ' (done)' or '') or (f.step and 'step ' .. tostring(f.step) or nil),
-      blocker=f.blocker, verify=f.verify, stalled=(f.unchanged or 0) >= M.STALL or nil}
+      blocker=f.blocker, verify=f.verify, stalled=(f.unchanged or 0) >= M.STALL or nil,
+      stale=f.stale and staletext.text(f.stale, ago(game.tick - f.stale.tick)) or nil, stale_tick=f.stale and f.stale.tick or nil}
   end
   function M.focus(p, a)
     local me = api.who(p)
@@ -415,9 +425,76 @@ return function(api)
     end
     return #out > 0 and out or {'none: no open unowned task or request, and no free step of an unblocked project open to you'}
   end
+  -- (d23 batch123 CF1, viewer Aurora 09:44) Focus and team-plan lines naming what a board change took away (board.lua:
+  -- an edited or removed step's words, a link taken out, a title's words; staletext.lua): marked stale where they show
+  -- (the focus line and rows, the plan's lines and rows), with the change and its tick, until a new focus or line is set;
+  -- the change's reply lists them and each one's agent hears it once (M.lines), unless they made the change.
+  -- Read: a focus on the item, and focus or plan text naming #id; a plan line also when its agent owns or focuses the item.
+  local function stale_store() local st = store(); st.stale_lines = st.stale_lines or {}; return st.stale_lines end
+  local function tell(name, line)
+    local s = stale_store()
+    s[name] = s[name] or {}
+    local l = s[name]
+    l[#l+1] = line
+    while #l > 3 do table.remove(l, 1) end
+  end
+  local function stale_marks(by, i, removed)
+    local out = {}
+    if not removed or #removed == 0 then return out end
+    local tag = '#' .. i.id .. '%f[%D]'
+    local function about(t) return type(t) == 'string' and t:find(tag) ~= nil end
+    -- texts: up to n strings (some nil)
+    local function hits_in(texts, n, c, extra)
+      local seen, h = {}, {}
+      for _, x in ipairs(extra or {}) do seen[x] = true; h[#h+1] = x end
+      for k = 1, n do
+        for _, x in ipairs(texts[k] and staletext.names(texts[k], c) or {}) do if not seen[x] then seen[x] = true; h[#h+1] = x end end
+      end
+      return #h > 0 and h or nil
+    end
+    local fs = focus_store()
+    local names = {}
+    for name in pairs(fs) do names[#names+1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      local f = fs[name]
+      local on = f.id == i.id
+      local step = type(f.step) == 'string' and f.step or nil
+      if on or about(f.blocker) or about(f.verify) or about(step) then
+        for _, c in ipairs(removed) do
+          local h = hits_in({step, f.blocker, f.verify}, 3, c, on and c.gone and f.step == c.step and {'step ' .. c.step} or nil)
+          if h then
+            f.stale = staletext.mark(c, h, game.tick)
+            local t = staletext.text(f.stale, ago(0))
+            out[#out+1] = string.format('%s focus on #%d %s', name == by and 'your' or name .. '\'s', f.id, t)
+            if name ~= by then tell(name, string.format('your focus on #%d is %s; the mark stays until board_focus {id} sets a focus', f.id, t)) end
+            break
+          end
+        end
+      end
+    end
+    local plan = api.plan_item and api.plan_item()
+    for _, l in ipairs(plan and plan.lines or {}) do
+      local f = fs[l.agent]
+      if about(l.text) or l.agent == i.owner or (f and f.id == i.id) then
+        for _, c in ipairs(removed) do
+          local h = hits_in({l.text}, 1, c)
+          if h then
+            l.stale = staletext.mark(c, h, game.tick)
+            local t = staletext.text(l.stale, ago(0))
+            out[#out+1] = string.format('%s team-plan line %s', l.agent == by and 'your' or l.agent .. '\'s', t)
+            if l.agent ~= by then tell(l.agent, 'your team-plan line is ' .. t .. '; the mark stays until board_plan {doing} sets the line') end
+            break
+          end
+        end
+      end
+    end
+    return out
+  end
   -- After a board update of item i by `by`: the focuses it ends. -> {focus_cleared = 'lines', ready = M.ready(by)} for
   -- the reply, or nil.
-  function M.on_update(by, i)
+  function M.on_update(by, i, removed)
+    local stale = stale_marks(by, i, removed)
     local fs, lines, mine = focus_store(), {}, false
     for name, f in pairs(fs) do
       if f.id == i.id then
@@ -433,9 +510,10 @@ return function(api)
         end
       end
     end
-    if #lines == 0 then return nil end
+    if #lines == 0 then return #stale > 0 and {stale=stale} or nil end
     table.sort(lines)
-    return {focus_cleared=table.concat(lines, '; ') .. (mine and '; no focus is set until board_focus {id} sets one' or ''), ready=mine and M.ready(by) or nil}
+    return {focus_cleared=table.concat(lines, '; ') .. (mine and '; no focus is set until board_focus {id} sets one' or ''), ready=mine and M.ready(by) or nil,
+      stale=#stale > 0 and stale or nil}
   end
   -- Status without a focus after one was cleared: the line, and the ready work.
   function M.cleared_line(name)
@@ -446,7 +524,7 @@ return function(api)
   M.schema = {
     board_focus = {id='a board item number (task, request or project): your current one; without id: a read of the focus lines (agent: only theirs)',
       step='a project step number, or text', blocker='optional text: what blocks it', verify='optional text: your next verification',
-      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress. The item marked done or dropped (or the focused step done) clears it: that board_update\'s reply has focus_cleared and ready (open unowned tasks and requests, free steps of unblocked projects open to you; those the team plan names first; at most 5), and status says no focus is set until one is'},
+      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a read adds rows [{agent, id, title, step, blocker, verify, tick (when set), stalled}]; a focused project step not done across 2 checks reads so here and in board_progress. The item marked done or dropped (or the focused step done) clears it: that board_update\'s reply has focus_cleared and ready (open unowned tasks and requests, free steps of unblocked projects open to you; those the team plan names first; at most 5), and status says no focus is set until one is; a board_update that edits or removes a step, takes a link out or edits a title marks a focus naming what it took away stale (the line and rows: stale, stale_tick) until board_focus {id} sets one; you hear it once'},
     board_progress = {owner='optional agent name: only their items (and what changed since each one\'s last check, read now)',id='optional item number: only that item, read now as with owner',
       returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written; a check whose game read threw: check failed, with the error (rows: check_error, checked_s), checked again in 10 min. rows'},
     board_critical = {returns='blocked: each blocked item (status blocked, or an open item in its blocked_by), those the team plan names (#id) first, then by how many open items wait on it through blocked_by and parent chains, with what it waits on (status, owner, last change); agents_idle_or_waiting: agents standing a minute or more or in a wait, with what they own'},

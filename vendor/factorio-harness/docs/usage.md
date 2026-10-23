@@ -7141,6 +7141,18 @@ fh watch    # deploy on every change
   team's or one teammate's lines. At each 10-minute check of that item, a focused project step not done (or a text
   step with no progress seen) counts; across 2 checks the focus line and board_progress say "the focused step shows no
   completion across 2 checks"; done clears it. Nothing is assigned.
+  - Stale marks (d23 batch123 CF1, viewer Aurora 09:44: Luna's focus on #1052 still named the approved mash site
+    after Astra rewrote step 8 at 16:10). A board_update that edits or removes a project step, takes an item out of
+    blocked_by, changes the parent or edits the title takes words away (staletext.lua: runs of 4 or more letters, the
+    common ones left out; an edited text's words the new text lacks; a link's title words and its #N). A focus that
+    names at least 2 of them (all of them when fewer), or #N of a link taken out, or a removed focused step by number,
+    is marked stale. A team-plan line is marked on the same rule. The focus is read when it is on the item or its text
+    names #id. A plan line is read when it names #id, or its agent owns or focuses the item. The mark shows on the
+    focus line ("marked stale 2s ago: step 3 of #1052 edited by astra (was: "..."); this text names mash, site"), the
+    focus rows (`stale`, `stale_tick`) and the plan's lines and rows. The update's reply lists the marks (`stale`).
+    Each marked agent who did not make the change hears it once in their alerts. A new board_focus or board_plan
+    {doing} ends the mark. The stream's cards show it beside the job; the project panel shows it beside a focus
+    blocker. Words the new text keeps leave no mark.
 
 ## d17 backlog (the board's open harness requests, operator 06:10 and 10:05)
 - #820 (Opus 105h09): his recover ended "collected" at (255.4,-175.3), standing on the rails at its stop. A locomotive
