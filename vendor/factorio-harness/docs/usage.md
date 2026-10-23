@@ -12312,3 +12312,31 @@ ends at the edge arrival, and the return-leg watch had to be started by hand.
   footprint) has no inventory a transfer reaches: nothing walked; solar-panel takes inventory none". A walk's `legs`
   rows carry `inventory` (the one it uses there) and the reply `surface` (the character's: transfer acts there).
 - In reach, the refusal names the entity: "solar-panel at (213.5,77.5) on nauvis has no transferable inventory".
+
+## d22 batch118 CA2 (eng/d20-batch118): one whole-belt rule for inspect and circuit_audit, the game's
+
+Viewer Aurora (site:4407): inspect said an `entire_belt_hold` reader reads "the whole belt followed through its
+inputs and outputs" (a side-load ended the walk upstream, and a belt side-loading onto another went on into it);
+circuit_audit said the game counts only the reader's belt segment. Both now walk the segment in `beltseg.lua`.
+
+Measured on a private 2.0.77 server (a lab surface, items placed one per belt, readers wired to constant combinators,
+game paused, two ticks run): a reader's signal was exactly the items of its segment. The segment ran through
+straight belts, a corner, an underground pair and a belt tier change (transport to fast), and along the main line past
+a side-load both ways; the belts side-loading onto it were a 2-tile segment of their own (a reader on one read only
+those 2); a splitter ended it downstream, and a reader just past a splitter read its own segment only. A 300-belt
+straight belt was one segment (300 read). Every belt of a segment reports one `total_segment_length` per lane; two
+readers of one segment on one network double the signal.
+
+On a copy of world n (Asterion, 47 wired readers), the item counts first differed for 36 readers. What the read sums
+is each lane's transport lines of the segment: belt lanes, the lines under an underground pair (an entrance's lines 3
+and 4; an exit's are one-tile lines of their own), and a splitter's lanes at the segment's ends on its side (lines
+1-2 left input, 3-4 right input, 5-6 left output, 7-8 right output, as it faces; one splitter's other side was
+another segment of the same length). Counted so, 42 readers match their wires exactly; the other 5 have other
+sources on their networks (an arithmetic combinator's +10000, two readers on one network).
+
+- inspect's `circuit.belt_segment`: the segment (belts, `total_segment_length`, where each end is and why), what its
+  lines hold, the wires' read, and the rule in words.
+- circuit_audit `{platform}`: `short_reads` and its lines name the belts in line past the segment's ends and where the
+  segment ends; `double_counts` compares segments.
+- Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
+  `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.

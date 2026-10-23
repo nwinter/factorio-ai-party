@@ -73,7 +73,7 @@ return function(api)
       set_requests='requester or buffer chest: true sets its requests from the wires (circuit_exclusive_mode_of_operation set_requests); false: none. Chests in 2.0.77: read: {contents: true} is send_contents on a requester or buffer; provider and storage chests send their contents whenever wired, with no switch; no chest has a logistic network condition. A roboport: read: {logistic_network_contents: true} is read_items_mode logistics (missing_requests: true the missing requests)',
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
-      settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line). A belt\'s read_contents_mode (with read_contents: true): pulse (each item as it enters this tile), hold (what this tile holds now), entire_belt_hold (what the whole belt holds: inspect\'s circuit.belt_segment names the physical segment and the whole belt apart, with the wires\' read)',
+      settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line). A belt\'s read_contents_mode (with read_contents: true): pulse (each item as it enters this tile), hold (what this tile holds now), entire_belt_hold (what its belt segment holds, as the game counts it: through corners, undergrounds and tier changes, and along the main line past a side-load; a belt side-loading onto another ends its own segment, and a splitter ends one; inspect\'s circuit.belt_segment lists it with the wires\' read)',
       signals='constant combinator: [{signal, count, quality?}] (first section; [] clears). A signal anywhere in circuit_set (these, conditions, decider and arithmetic, selector, signal settings) is "name", "name@quality" ("iron-plate@uncommon"), "type:name@quality" or {type?, name, quality?}; a quality is one our force has unlocked; left out it is normal. A decider output takes quality too',
       description='an arithmetic, decider, selector or constant combinator (or its ghost): the description its GUI shows (LuaEntity.combinator_description), up to 500 bytes, newlines kept; "" or false clears it; reads show it as description; blueprints keep it',
       on='constant combinator: on/off',
@@ -516,54 +516,18 @@ return function(api)
     return string.format('%s (%g,%g): %s', e.name, e.position.x, e.position.y, table.concat(parts, '; '))
   end
   local SEG = 400
+  local beltseg = require('beltseg')()
   -- set while belt_segment runs: M.read inside it starts no second one (d18 freeze)
   local in_segment = false
   function M.belt_segment(e)
-    local lines = {}
-    for k = 1, 2 do lines[k] = try(function() return e.get_transport_line(k) end) end
-    local held, tiles = {}, 0
-    local function count(b)
-      for k = 1, 2 do
-        for _, c in ipairs(try(function() return b.get_transport_line(k).get_contents() end) or {}) do
-          local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
-          local q = qname(c.quality)
-          if n and q ~= 'normal' then n = n .. '@' .. q end
-          if n then held[n] = (held[n] or 0) + c.count end
-        end
-      end
-    end
-    local function same(b)
-      local l = lines[1] and try(function() return b.get_transport_line(1) end)
-      return l and try(function() return l.line_equals(lines[1]) end) == true
-    end
-    local function where(b) return string.format('%s (%g,%g)', b.name, b.position.x, b.position.y) end
-    local ends = {}
-    count(e); tiles = 1
-    for _, way in ipairs({'inputs', 'outputs'}) do
-      local cur, steps, stop = e, 0, nil
-      while steps < SEG do
-        local bn = try(function() return cur.belt_neighbours end)
-        local nxt
-        for _, o in ipairs(bn and bn[way] or {}) do if same(o) then nxt = o end end
-        if not nxt and cur.type == 'underground-belt' then
-          local pair = try(function() return cur.neighbours end)
-          if pair and pair.valid and same(pair) then nxt = pair end
-        end
-        if not nxt then
-          local others = bn and bn[way] or {}
-          if #others > 0 then stop = string.format('at %s, where %s %s on another line', where(cur), where(others[1]), way == 'inputs' and 'feeds it' or 'takes from it')
-          elseif cur.type == 'underground-belt' then stop = string.format('at %s (an underground; past it is not this line)', where(cur))
-          else stop = string.format('at %s (the belt %s there)', where(cur), way == 'inputs' and 'starts' or 'ends') end
-          break
-        end
-        cur = nxt; steps = steps + 1; tiles = tiles + 1; count(cur)
-      end
-      ends[#ends+1] = (way == 'inputs' and 'back ' or 'on ') .. (stop or string.format('past %d tiles (not read further)', SEG))
-    end
+    -- The segment the game counts, and what its lines hold (beltseg.lua; d22 batch118 CA2: measured on a private
+    -- 2.0.77 server and on a copy of world n).
+    local w = beltseg.walk(e, SEG)
+    local held = beltseg.contents(w, e)
     -- What the wires read now.
     local wired = {}
-    for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
-      local net = try(function() return e.get_circuit_network(w) end)
+    for _, wc in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
+      local net = try(function() return e.get_circuit_network(wc) end)
       for _, sg in ipairs(net and try(function() return net.signals end) or {}) do
         local n = sg.signal and sg.signal.name
         local q = sg.signal and qname(sg.signal.quality)
@@ -571,56 +535,9 @@ return function(api)
         if n then wired[n] = (wired[n] or 0) + (sg.count or 0) end
       end
     end
-    local parts, diff = {}, {}
-    for n, c in pairs(held) do
-      parts[#parts+1] = c .. ' ' .. n
-      if next(wired) and (wired[n] or 0) ~= c then diff[#diff+1] = string.format('%s %d on the wires', n, wired[n] or 0) end
-    end
+    local parts = {}
+    for n, c in pairs(held) do parts[#parts+1] = c .. ' ' .. n end
     table.sort(parts)
-    -- The whole belt (d17 batch13 B2, Astra: the segment read 1 tile while the wire counted 179 items along the route):
-    -- the belts this one joins through its inputs and outputs, one each way (an underground to its pair), up to SEG
-    -- tiles each way; a splitter or a side-load ends it. What entire_belt_hold reads is the belt, not the line above.
-    local seen, whole, wtiles = {}, {}, 0
-    local function add(b)
-      local k = b.unit_number or (b.position.x .. ',' .. b.position.y)
-      if seen[k] then return false end
-      seen[k] = true; wtiles = wtiles + 1
-      for k2 = 1, 2 do
-        for _, c in ipairs(try(function() return b.get_transport_line(k2).get_contents() end) or {}) do
-          local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
-          local q = qname(c.quality)
-          if n and q ~= 'normal' then n = n .. '@' .. q end
-          if n then whole[n] = (whole[n] or 0) + c.count end
-        end
-      end
-      return true
-    end
-    add(e)
-    local wends = {}
-    for _, way in ipairs({'inputs', 'outputs'}) do
-      local cur, steps, stop = e, 0, nil
-      while steps < SEG do
-        local bn = try(function() return cur.belt_neighbours end)
-        local list = bn and bn[way] or {}
-        local nxt = #list == 1 and list[1] or nil
-        if not nxt and cur.type == 'underground-belt' then
-          local pair = try(function() return cur.neighbours end)
-          local t = try(function() return cur.belt_to_ground_type end)
-          if pair and pair.valid and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
-        end
-        if not nxt or nxt.type == 'splitter' then
-          stop = #list > 1 and string.format('at %s (%d belts %s it)', where(cur), #list, way == 'inputs' and 'feed' or 'take from')
-            or (nxt and string.format('at %s (a splitter)', where(nxt))) or string.format('at %s (the belt %s there)', where(cur), way == 'inputs' and 'starts' or 'ends')
-          break
-        end
-        if not add(nxt) then stop = 'round a loop'; break end
-        cur = nxt; steps = steps + 1
-      end
-      wends[#wends+1] = (way == 'inputs' and 'back ' or 'on ') .. (stop or string.format('past %d tiles (not read further)', SEG))
-    end
-    local wparts = {}
-    for n2, c in pairs(whole) do wparts[#wparts+1] = c .. ' ' .. n2 end
-    table.sort(wparts)
     local wire_parts = {}
     for n2, c in pairs(wired) do wire_parts[#wire_parts+1] = c .. ' ' .. n2 end
     table.sort(wire_parts)
@@ -666,10 +583,12 @@ return function(api)
     table.sort(oparts)
     local read_line = string.format('belts reading their contents on those networks: %s%s',
       #readers > 0 and table.concat(readers, ', ') or 'none', #oparts > 0 and '; other entities on them: ' .. table.concat(oparts, ', ') or '')
-    return string.format('the physical segment only (the engine\'s transport line through this tile, not what the wire reads): %s, %s; it holds %s. '
-      .. 'What read_contents_mode entire_belt_hold reads is the whole belt: %d tiles followed through its inputs and outputs (%s), holding %s; the wires read %s (the game\'s own signal, anything else on those networks included; a read switched on this tick shows from the next); %s',
-      tiles == 1 and '1 tile' or tiles .. ' tiles', table.concat(ends, ', '), #parts > 0 and table.concat(parts, ', ') or 'nothing',
-      wtiles, table.concat(wends, ', '), #wparts > 0 and table.concat(wparts, ', ') or 'nothing',
+    return string.format('What read_contents_mode entire_belt_hold reads is this belt\'s segment, as the game counts it (a segment runs through corners, '
+      .. 'underground pairs and belt tier changes, and along the main line past a side-load; a belt side-loading onto another ends its own segment there, '
+      .. 'and a splitter ends one): %d belt%s%s, back %s, on %s; it holds %s; the wires read %s (the game\'s own signal, anything else on those networks '
+      .. 'included; a read switched on this tick shows from the next); %s',
+      #w.list, #w.list == 1 and '' or 's', w.length and string.format(' (total_segment_length %g tiles)', math.floor(w.length * 100 + 0.5) / 100) or '',
+      w.ends.inputs, w.ends.outputs, #parts > 0 and table.concat(parts, ', ') or 'nothing',
       #wire_parts > 0 and table.concat(wire_parts, ', ') or 'nothing', read_line), readers, oparts
   end
   -- The circuit networks an entity's red and green wires join, followed back to what drives them (D5, Astra 00:20:
@@ -948,9 +867,9 @@ return function(api)
     out.settings = next(settings) and settings or nil
     out.off = #off > 0 and off or nil
     if kind == 'programmable_speaker' then local sa = M.speaker_alert(e); out.speaker_alert = sa and sa.line end
-    -- A belt reading its entire belt (Astra, d15: the read missed a segment past an underground): the run of belts the
-    -- engine joins into this tile's lines (each way, up to SEG tiles), what ends it each way, and what that run holds
-    -- against what the wires read now.
+    -- A belt reading its entire belt (Astra, d15: the read missed a segment past an underground): the belt segment the
+    -- game counts (beltseg.lua, each way up to SEG belts), what ends it each way, and what it holds against what the
+    -- wires read now.
     if kind == 'transport_belt' and settings.read_contents and settings.read_contents_mode == 'entire_belt_hold' and not in_segment then
       local readers
       in_segment = true
