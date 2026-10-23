@@ -393,6 +393,8 @@ class Differ:
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
+            if m.get("history"):  # read again at a stream restart (model.py backlog_old, chat_time): never voiced
+                continue
             if not first and is_operator_line(m) and now - float(m.get("t") or now) < 30:
                 # the operator writes in game chat as `server` (shift01 16:25): voiced always, in its own voice
                 ev.append({"kind": "operator", "text": m.get("text", ""), "seq": m.get("seq")})
@@ -415,6 +417,8 @@ class Differ:
             if seq in self.board_seqs:
                 continue
             self.board_seqs.add(seq)
+            if b.get("history"):  # a restart's replay of the kept board events (model.py backlog_old)
+                continue
             verb = b.get("verb") or b.get("change")
             if not first and verb in ("posted", "taken", "started", "done", "blocked") \
                     and now - float(b.get("t") or now) < 60:
