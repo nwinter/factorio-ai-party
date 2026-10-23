@@ -6,8 +6,8 @@ Besides `./fh` and `./shot` you have:
 - A later shift starts with `tools/` and `team-tools/` as this one leaves them (not files over 5 MB, caches such as
   `__pycache__`, dotfiles or symlinks).
 - `gamedata/` (read-only) holds the game's prototype data for this version ({{KB}}): recipes, items, entities, fluids,
-  technologies and locations (`NAME.json`, as the wiki has them), and in Space Age `asteroids.json` (spawns per route
-  and orbit; health and resistances).
+  technologies, locations, qualities (`NAME.json`, as the wiki has them), and in Space Age `asteroids.json` (spawns,
+  health, resistances).
 - Python 3 with its standard library, and the usual shell programs.
 - {{HARNESS}}
 

@@ -6,6 +6,16 @@ Fluid energy (Sol, d15 19:05): fluid-burning and fluid-making entities (fusion r
 steam engines and turbines, boilers and heat exchangers, reactors) get a "fluid" object in entities.json: fluid usage a
 second, fluid boxes (production type, filter, temperatures, volume, connections), neighbour bonus, effectivity,
 maximum and target temperature (`--only fluid_energy` merges it into an existing entities.json).
+Quality and modules (d22 batch102 BL1, Sol #1919: "Local quality calculator cannot use export alone"): a recipe's products
+carry extra_count_fraction (the EM plant recycler's 37 + 0.5 holmium) and ignored_by_productivity, and the recipe
+effects_not_allowed (and maximum_productivity when it is not 3); a module item carries module_effects, module_category,
+tier and effects_by_quality (each visible quality: a bonus times its default_multiplier, cut to 0.01, a penalty
+unchanged; checked on a copy against entity.effects, 60 of 60; a machine's totals stop at consumption -0.8 and quality
+0); qualities.json each quality's level, next, next_probability, default_multiplier and the beacon power, drill drain
+and science drain multipliers; the `effects` page merges into entities.json each machine's base_effect (the EM plant's
+productivity 0.5), what it uses, allowed effects and module categories, crafting or researching speed by quality, and a
+beacon's distribution effectivity, its bonus a quality level and profile. `--password-file` reads a private copy's
+password.
 
   python3 tools/analyst/dump_prototypes.py                      # world live -> tools/analyst/kb/base-2.0.77/
   python3 tools/analyst/dump_prototypes.py --world sa --port 27031 --out tools/analyst/kb/space-age-2.0.77
@@ -16,7 +26,7 @@ is wrapped in pcall, so a field missing in this game version is left out instead
 as one line: the Lua holds no "--" comments (one commented out the rest of the entities page, 15:25), and no command is
 longer than the longest that ran live (MAX_COMMAND; tools/analyst/test_dump_prototypes.py checks both).
 """
-import argparse, json, os, sys
+import argparse, json, math, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
@@ -50,10 +60,20 @@ LUA = {
 local src = prototypes.recipe
 local out = {}
 local list = names(src)
+local function made(list)
+  local r = products(list)
+  for i, p in ipairs(list or {}) do
+    r[i].extra_count_fraction = p.extra_count_fraction
+    r[i].ignored_by_productivity = (p.ignored_by_productivity or 0) > 0 and p.ignored_by_productivity or nil
+  end
+  return r
+end
 for i = START, math.min(#list, START + COUNT - 1) do
   local r = src[list[i]]
   out[#out+1] = {name=r.name, category=r.category, energy=r.energy, enabled=r.enabled, hidden=r.hidden,
-    ingredients=products(r.ingredients), products=products(r.products), subgroup=g(function() return r.subgroup.name end),
+    ingredients=products(r.ingredients), products=made(r.products), subgroup=g(function() return r.subgroup.name end),
+    maximum_productivity=g(function() return r.maximum_productivity ~= 3 and r.maximum_productivity or nil end),
+    effects_not_allowed=g(function() local no = {} for k, v in pairs(r.allowed_effects or {}) do if not v then no[#no+1] = k end end table.sort(no) return #no > 0 and no or nil end),
     main_product=g(function() return r.main_product and r.main_product.name end),
     allow_productivity=g(function() return r.allowed_effects and r.allowed_effects.productivity end),
     surface_conditions=g(function() return r.surface_conditions end)}
@@ -96,7 +116,9 @@ for i = START, math.min(#list, START + COUNT - 1) do
     rocket_launch_products=g(function() return products(it.rocket_launch_products) end),
     spoil_ticks=g(function() return (it.get_spoil_ticks and it.get_spoil_ticks()) or nil end),
     spoil_result=g(function() return it.spoil_result and it.spoil_result.name end),
-    weight=g(function() return it.weight end), hidden=it.hidden, order=it.order}
+    weight=g(function() return it.weight end), hidden=it.hidden, order=it.order,
+    module_effects=it.type == "module" and g(function() return it.module_effects end) or nil,
+    module_category=it.type == "module" and g(function() return it.category end) or nil, tier=it.type == "module" and g(function() return it.tier end) or nil}
 end
 rcon.print(helpers.table_to_json({total=#list, items=out}))
 """,
@@ -290,6 +312,53 @@ rcon.print(helpers.table_to_json({items={{
     # the reactor's neighbour bonus, the generator's effectivity and maximum temperature, a fluid energy source (2.0.77:
     # the fusion pair's rate is LuaEntityPrototype.get_fluid_usage_per_tick(), 4/s and 2/s; max_fluid_usage is not read). Merged
     # into entities.json by name (the entities page is near MAX_COMMAND); fields the game lacks are left out.
+    "qualities": r"""
+local src = prototypes.quality
+local out = {}
+local list = names(src)
+for i = START, math.min(#list, START + COUNT - 1) do
+  local q = src[list[i]]
+  out[#out+1] = {name=q.name, level=q.level, hidden=q.hidden, default_multiplier=g(function() return q.default_multiplier end),
+    next=g(function() return q.next and q.next.name end), next_probability=g(function() return q.next_probability end),
+    beacon_power_usage_multiplier=g(function() return q.beacon_power_usage_multiplier end),
+    mining_drill_resource_drain_multiplier=g(function() return q.mining_drill_resource_drain_multiplier end),
+    science_pack_drain_multiplier=g(function() return q.science_pack_drain_multiplier end)}
+end
+rcon.print(helpers.table_to_json({total=#list, items=out}))
+""",
+    "effects": r"""
+local all = prototypes.get_entity_filtered({{filter="type", type={"assembling-machine","furnace","rocket-silo","mining-drill","lab","beacon"}}})
+local qs = {}
+for n, q in pairs(prototypes.quality) do if not q.hidden then qs[#qs+1] = n end end
+table.sort(qs)
+local out = {}
+local list = names(all)
+for i = START, math.min(#list, START + COUNT - 1) do
+  local e = all[list[i]]
+  local r = {name=e.name, type=e.type}
+  local er = g(function() return e.effect_receiver end)
+  if er then
+    r.base_effect = next(er.base_effect or {}) and er.base_effect or nil
+    r.uses_module_effects, r.uses_beacon_effects, r.uses_surface_effects = er.uses_module_effects, er.uses_beacon_effects, er.uses_surface_effects
+  end
+  r.allowed_effects = g(function() return e.allowed_effects end)
+  r.allowed_module_categories = g(function() return e.allowed_module_categories end)
+  local cs, rs = {}, {}
+  for _, q in ipairs(qs) do
+    cs[q] = g(function() return e.get_crafting_speed(q) end)
+    rs[q] = g(function() return e.get_researching_speed(q) end)
+  end
+  r.crafting_speed_by_quality = next(cs) and cs or nil
+  r.researching_speed_by_quality = next(rs) and rs or nil
+  if e.type == "beacon" then
+    r.distribution_effectivity = g(function() return e.distribution_effectivity end)
+    r.distribution_effectivity_bonus_per_quality_level = g(function() return e.distribution_effectivity_bonus_per_quality_level end)
+    r.profile = g(function() local p = {} for k = 1, math.min(#e.profile, 16) do p[k] = e.profile[k] end return p end)
+  end
+  out[#out+1] = r
+end
+rcon.print(helpers.table_to_json({total=#list, items=out}))
+""",
     "fluid_energy": r"""
 local want = {["fusion-reactor"]=true, ["fusion-generator"]=true, generator=true, boiler=true, reactor=true, ["burner-generator"]=true}
 local all, list = prototypes.entity, {}
@@ -329,7 +398,7 @@ rcon.print(helpers.table_to_json({total=#list, items=out}))
 }
 
 PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "locations": 1, "settings": 1,
-        "asteroids": 3, "fluid_energy": 10}
+        "asteroids": 3, "fluid_energy": 10, "qualities": 20, "effects": 20}
 SINGLE = ("settings", "locations")
 # The longest command that ran live (the entities page, 2026-10-13): nothing longer is sent.
 MAX_COMMAND = 6800
@@ -358,6 +427,82 @@ def dump(rc, cat):
         out += data["items"]
         start += PAGE[cat]
     return out
+
+
+def tidy(v):
+    """Floats to 4 decimals (2.0.77 gives a module's 0.8 as 0.80000001192092896); tables as they are."""
+    if isinstance(v, float) and abs(v) < 1e12:
+        return round(v, 4)
+    if isinstance(v, dict):
+        return {k: tidy(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [tidy(x) for x in v]
+    return v
+
+
+def merge_effects(out_dir, rows):
+    """(d22 batch102 BL1, Sol #1919: "module item records omit effects and machine built-in productivity") effects rows
+    go into entities.json by name, as each machine's "effects" object: base_effect (the machine's own, the EM plant's
+    productivity 0.5), what it uses (modules, beacons, the surface), allowed_effects, allowed_module_categories, its
+    crafting or researching speed by quality, and a beacon's distribution effectivity, its bonus a quality level and its
+    profile. Returns the line printed."""
+    path = os.path.join(out_dir, "entities.json")
+    with open(path) as f:
+        entities = json.load(f)
+    by = {r["name"]: {k: tidy(v) for k, v in r.items() if k not in ("name", "type") and v not in (None, [], {})} for r in rows}
+    merged = 0
+    for e in entities:
+        fx = by.get(e["name"])
+        if fx:
+            e["effects"] = fx
+            merged += 1
+        else:
+            e.pop("effects", None)
+    with open(path, "w") as f:
+        json.dump(entities, f, indent=0, sort_keys=True, ensure_ascii=False)
+        f.write("\n")
+    return f"effects: {len(rows)} read, {merged} merged into {os.path.relpath(path)}"
+
+
+# A module's effect at a quality, as the game applies it (checked on a copy of world n's save, d22 15:08, with
+# entity.effects of an assembling-machine-3 holding one module): a bonus (speed, productivity or quality above 0,
+# consumption or pollution below 0) times the quality's default_multiplier, cut to 0.01 (a legendary quality module 3:
+# 0.25 x 2.5 = 0.625, read 0.62); a penalty unchanged.
+BONUS = {"speed": 1, "productivity": 1, "quality": 1, "consumption": -1, "pollution": -1}
+
+
+def module_effect(key, value, multiplier):
+    if BONUS.get(key, 0) * value <= 0:
+        return round(value, 4)
+    v = value * multiplier
+    cut = math.floor(abs(v) * 100 + 1e-6) / 100
+    return round(cut if v > 0 else -cut, 4)
+
+
+def add_module_qualities(out_dir):
+    """Each module in items.json gets effects_by_quality {quality: {effect: value}} from its module_effects and
+    qualities.json's default_multiplier (the visible qualities). Returns the line printed, or None without both files."""
+    ip, qp = os.path.join(out_dir, "items.json"), os.path.join(out_dir, "qualities.json")
+    if not (os.path.exists(ip) and os.path.exists(qp)):
+        return None
+    with open(ip) as f:
+        items = json.load(f)
+    with open(qp) as f:
+        quals = [q for q in json.load(f) if not q.get("hidden") and isinstance(q.get("default_multiplier"), (int, float))]
+    quals.sort(key=lambda q: q.get("level") or 0)
+    n = 0
+    for it in items:
+        fx = it.get("module_effects")
+        if not isinstance(fx, dict) or not fx:
+            it.pop("effects_by_quality", None)
+            continue
+        it["module_effects"] = tidy(fx)
+        it["effects_by_quality"] = {q["name"]: {k: module_effect(k, v, q["default_multiplier"]) for k, v in fx.items()} for q in quals}
+        n += 1
+    with open(ip, "w") as f:
+        json.dump(items, f, indent=0, sort_keys=True, ensure_ascii=False)
+        f.write("\n")
+    return f"modules: {n} with effects_by_quality ({', '.join(q['name'] for q in quals)}) in {os.path.relpath(ip)}"
 
 
 def merge_fluid_energy(out_dir, rows):
@@ -397,8 +542,9 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--out", default=os.path.join(HERE, "kb", "base-2.0.77"))
     ap.add_argument("--only", help="comma-separated categories")
+    ap.add_argument("--password-file", help="the RCON password file (default ~/.config/pog/rcon-WORLD.pw): a private copy's")
     a = ap.parse_args()
-    pw = open(os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
+    pw = open(a.password_file or os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
     rc = Rcon(a.host, a.port or PORTS[a.world], pw)
     os.makedirs(a.out, exist_ok=True)
     for cat in (a.only.split(",") if a.only else LUA):
@@ -406,6 +552,11 @@ def main():
         if cat == "fluid_energy":
             print(merge_fluid_energy(a.out, rows))
             continue
+        if cat == "effects":
+            print(merge_effects(a.out, rows))
+            continue
+        if cat == "qualities":
+            rows = tidy(rows)
         if cat in SINGLE:
             rows = rows[0]
         path = os.path.join(a.out, f"{cat}.json")
@@ -416,6 +567,9 @@ def main():
         size = len(rows) if isinstance(rows, list) else ", ".join(f"{k} {len(v)}" for k, v in sorted(rows.items())
                                                                    if isinstance(v, list)) or "1 record"
         print(f"{cat}: {size} -> {os.path.relpath(path)}")
+    line = add_module_qualities(a.out)
+    if line:
+        print(line)
 
 
 if __name__ == "__main__":
