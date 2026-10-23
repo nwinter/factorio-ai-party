@@ -104,18 +104,25 @@ return function(api)
   M.on_the_way=on_the_way
   -- counts (a hub's request read): {hub=entity, way=on_the_way(hub)}: an import request says what the hub holds, what is
   -- on the way to it and what it lacks, as the hub GUI's request slot does.
+  -- (d22 batch96 BF1) a number as the text .. gives, fast for integers (numtext.lua's num, inlined: some suites load
+  -- this file with no package.path): in the game's Lua .. or tostring of a number costs about 8 us, string.format('%d')
+  -- 0.3; a hub's requests made two or three a request (1.4 ms of a platform's full row on a copy of world n)
+  local function num(x)
+    if type(x)=='number' and x~=0 and x>-1e15 and x<1e15 and x==math.floor(x) then return string.format('%d',x) end
+    return tostring(x)
+  end
   local function filter_text(f,hub,counts)
     local v=f.value
     if not v then return nil end
     local name=type(v)=='table' and v.name or v
     local quality=type(v)=='table' and v.quality or nil
     local text=name..(quality and quality~='normal' and '@'..quality or '')
-    if f.max and f.max==f.min then text=text..'='..f.min
-    else text=text..' '..(f.min or 0)..'..'..(f.max and tostring(f.max) or 'inf') end
+    if f.max and f.max==f.min then text=text..'='..num(f.min)
+    else text=text..' '..num(f.min or 0)..'..'..(f.max and num(f.max) or 'inf') end
     local from=hub and f.import_from and (type(f.import_from)=='string' and f.import_from or f.import_from.name)
     text=from and text..' from '..from or text
     -- The GUI's custom minimum payload per request (LogisticFilter minimum_delivery_count; Astra 03:59).
-    if hub and f.minimum_delivery_count then text=text..' min payload '..f.minimum_delivery_count end
+    if hub and f.minimum_delivery_count then text=text..' min payload '..num(f.minimum_delivery_count) end
     if counts and from and (f.min or 0)>0 then
       local held=try(function() return counts.hub.get_item_count({name=name,quality=quality or 'normal'}) end) or try(function() return counts.hub.get_item_count(name) end) or 0
       local way=counts.way[name..'@'..(quality or 'normal')] or 0
@@ -795,7 +802,7 @@ return function(api)
     table.sort(list,function(x,y) return x.count>y.count end)
     if #list==0 then return nil end
     local out={}
-    for i=1,math.min(#list,limit) do local s=list[i]; out[i]=s.name..(s.quality and s.quality~='normal' and '@'..s.quality or '')..'*'..s.count end
+    for i=1,math.min(#list,limit) do local s=list[i]; out[i]=s.name..(s.quality and s.quality~='normal' and '@'..s.quality or '')..'*'..num(s.count) end
     return #list>limit and table.concat(out,' ')..string.format(' +%d more',#list-limit) or table.concat(out,' ')
   end
   local function schedule_text(pl)
@@ -900,12 +907,15 @@ return function(api)
     out.damaged_count=#list>10 and #list or nil
     return out
   end
-  local function detail(pl,row)
+  -- W(key, ...): whether the reply wants any of those keys (fields: only those are made; d22 batch96 BF1)
+  local function every() return true end
+  local function detail(pl,row,W)
+    W=W or every
     -- The game's own value, km per tick (the stream tools read it; speed_kms is on every row).
-    row.speed=try(function() return pl.speed and math.floor(pl.speed*1000+0.5)/1000 end)
-    local damaged=try(function() return #pl.damaged_tiles end)
+    row.speed=W('speed') and try(function() return pl.speed and math.floor(pl.speed*1000+0.5)/1000 end) or nil
+    local damaged=W('damaged_tiles') and try(function() return #pl.damaged_tiles end)
     row.damaged_tiles=damaged and damaged>0 and damaged or nil
-    local chunks=try(function() return pl.find_asteroid_chunks_filtered{} end)
+    local chunks=W('asteroid_chunks') and try(function() return pl.find_asteroid_chunks_filtered{} end)
     if chunks and #chunks>0 then
       local by={}
       for _,c in ipairs(chunks) do local n=type(c.name)=='string' and c.name or (c.name and c.name.name) or '?'; by[n]=(by[n] or 0)+1 end
@@ -916,7 +926,7 @@ return function(api)
     end
     local s=try(function() return pl.surface end)
     if s then
-      local thrusters=try(function() return s.find_entities_filtered{type='thruster'} end) or {}
+      local thrusters=W('thrusters','thrust_inputs') and try(function() return s.find_entities_filtered{type='thruster'} end) or {}
       if #thrusters>0 then
         local low=1
         for _,t in ipairs(thrusters) do
@@ -929,10 +939,11 @@ return function(api)
         end
         row.thrusters=string.format('%d, lowest tank %d%%',#thrusters,math.floor(low*100))
         -- What they lack and the chain behind it (thrust.lua): a line per input under half full.
-        local t=api.thrust and try(function() return api.thrust(pl) end)
+        local t=W('thrust_inputs') and api.thrust and try(function() return api.thrust(pl) end)
         row.thrust_inputs=t and #t.lines>0 and t.lines or nil
       end
-      local ghosts=try(function() return s.count_entities_filtered{type={'entity-ghost','tile-ghost'}} end)
+      -- (by name: half the time of a count by type, the ghosts' prototypes being named as their types)
+      local ghosts=W('unbuilt_ghosts') and try(function() return s.count_entities_filtered{name={'entity-ghost','tile-ghost'}} end)
       row.unbuilt_ghosts=ghosts and ghosts>0 and ghosts or nil
       -- Inserters taking from the hub with nothing to drop into: they put
       -- the hub's items on the tile at their drop point (empty space: thrown
@@ -945,7 +956,7 @@ return function(api)
       local hp=not hb and hub and hub.valid and try(function() return hub.position end)
       local near=hb and {{hb.left_top.x-4,hb.left_top.y-4},{hb.right_bottom.x+4,hb.right_bottom.y+4}}
         or hp and {{hp.x-6,hp.y-6},{hp.x+6,hp.y+6}}
-      for _,i in ipairs(near and try(function() return s.find_entities_filtered{type='inserter',area=near} end) or {}) do
+      for _,i in ipairs(near and W('hub_inserters_without_target') and try(function() return s.find_entities_filtered{type='inserter',area=near} end) or {}) do
         if hub and try(function() return i.pickup_target==hub and not i.drop_target end) then
           local d=i.drop_position
           local tile=try(function() return s.get_tile(math.floor(d.x),math.floor(d.y)).name end) or '?'
@@ -954,7 +965,7 @@ return function(api)
       end
       row.hub_inserters_without_target=#drains>0 and drains or nil
       -- The game's item statistics for this platform's surface, last 10 minutes.
-      local stats=try(function() return pl.force.get_item_production_statistics(s) end)
+      local stats=W('consumed_10min','produced_10min') and try(function() return pl.force.get_item_production_statistics(s) end)
       if stats then
         for _,c in ipairs({{'output','consumed_10min'},{'input','produced_10min'}}) do
           local list={}
@@ -970,7 +981,7 @@ return function(api)
       end
     end
     -- Items thrown overboard, while the game still tracks them.
-    local ejected=try(function() return pl.ejected_items end)
+    local ejected=W('thrown_overboard') and try(function() return pl.ejected_items end)
     if ejected and #ejected>0 then
       local by,names={},{}
       for _,e in ipairs(ejected) do
@@ -1096,9 +1107,14 @@ return function(api)
     -- cap the counts come from a tally across ticks (ghosttally.lua): exact once it is done (kept 30 s), and until then
     -- the first ones counted, said as such, with the tally running
     local tallied
+    -- (d22 batch96 BF1) ghosts of either kind counted first, in one count: most platforms have none, and a count makes
+    -- no entity objects (the compact platforms read made two finds of each platform here). By name: the ghosts'
+    -- prototypes are named as their types, and a count by name took half the time of one by type (19 platforms on a copy
+    -- of world n: 1.3 ms against 2.7-3.4 ms).
+    local any=try(function() return s.count_entities_filtered{name={'entity-ghost','tile-ghost'},limit=1} end)
     for _,kind in ipairs({'entity-ghost','tile-ghost'}) do
       local cap=M.GHOST_CAP[kind]
-      local list=try(function() return s.find_entities_filtered{type=kind,limit=cap} end) or {}
+      local list=any==0 and {} or try(function() return s.find_entities_filtered{type=kind,limit=cap} end) or {}
       lists[kind]=list
       if #list>=cap then
         local total=try(function() return s.count_entities_filtered{type=kind} end) or #list
@@ -1154,7 +1170,8 @@ return function(api)
     local line=try(function() return M.defense_waits(pl,lists['entity-ghost'] or {},lists['tile-ghost'] or {},inv) end)
     if line then out[#out+1]=line end
     -- Tile ghosts the foundation rules hold back.
-    for _,line2 in ipairs(try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line2 end
+    -- (BF1) with no ghost there is no tile ghost to hold back: no second find
+    for _,line2 in ipairs(any~=0 and try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line2 end
     return #out>0 and out or nil
   end
   -- Marked foundation tiles: which the hub removes, in turn, and which wait, and why (tilecheck.lua, platformtiles2).
@@ -1422,10 +1439,14 @@ return function(api)
   -- and turrets), thruster fuel and its 10-minute trend, the ghosts' missing items in all, and only the blockers this
   -- agent was not shown in its last compact read.
   -- 'thruster fuel 1200 units (+3/min over 10 min)': in its thrusters and tanks, and the platform's net over 10 minutes.
-  function M.fuel_text(pl)
+  -- lists: the platform's background read's (freight.platform_lists), when the caller has them
+  function M.fuel_text(pl,lists)
     local P=defines.flow_precision_index or {}
     local fuel=0
-    for _,e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}) do
+    -- (d22 batch96 BF1) the thrusters and tanks the background read listed when they are all there are, else a find
+    local list=lists and lists.tanks
+      or try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}
+    for _,e in ipairs(list) do
       for i=1,try(function() return #e.fluidbox end) or 0 do
         local f=try(function() return e.fluidbox[i] end)
         if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
@@ -1436,12 +1457,21 @@ return function(api)
     local net=per('input')-per('output')
     return string.format('thruster fuel %d units (%s%d/min over 10 min)',math.floor(fuel+0.5),net>=0 and '+' or '',math.floor(net+0.5))
   end
+  -- (BF1) an item's type read once per name: the compact read looked up every hub item of every platform
+  local ammo_of={}
+  local function is_ammo(name)
+    local v=ammo_of[name]
+    if v==nil then v=try(function() return prototypes.item[name].type end)=='ammo'; ammo_of[name]=v end
+    return v
+  end
   function M.platforms_compact(p,a)
     local st=api.state and api.state()
     local seen_all=st and st.platforms_compact_seen or {}
     if st then st.platforms_compact_seen=seen_all end
     local mine=seen_all[p.index] or {}
     seen_all[p.index]=mine
+    -- (d22 batch96 BF1) every platform's departure lines in one walk of the queues and orders
+    local deps=api.departure_all and try(function() return api.departure_all() end)
     local lines={}
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) and pl.surface then
@@ -1450,9 +1480,15 @@ return function(api)
         local hub=pl.hub
         local inv=hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
         for _,s2 in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-          if try(function() return prototypes.item[s2.name].type end)=='ammo' then ammo[s2.name]=(ammo[s2.name] or 0)+s2.count end
+          if is_ammo(s2.name) then ammo[s2.name]=(ammo[s2.name] or 0)+s2.count end
         end
-        for _,t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret',force=pl.force} end) or {}) do
+        -- (BF1) the turrets the platform's background read listed (freight.platform_lists: only when a count finds no
+        -- other turret, thruster or tank aboard), else a find over the platform; the finds were 5.7 ms of the read for
+        -- 19 platforms on a copy of world n, the count 1.5
+        local lists=api.platform_lists and try(function() return api.platform_lists(pl) end)
+        local turrets=lists and lists.turrets
+          or try(function() return pl.surface.find_entities_filtered{type='ammo-turret',force=pl.force} end) or {}
+        for _,t in ipairs(turrets) do
           local ti=try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
           for _,s2 in ipairs(ti and try(function() return ti.get_contents() end) or {}) do ammo[s2.name]=(ammo[s2.name] or 0)+s2.count end
         end
@@ -1460,7 +1496,7 @@ return function(api)
         for n,c in pairs(ammo) do al[#al+1]=n..' '..c end
         table.sort(al)
         parts[#parts+1]='ammo '..(#al>0 and table.concat(al,', ') or 'none')
-        parts[#parts+1]=M.fuel_text(pl)
+        parts[#parts+1]=M.fuel_text(pl,lists)
         local blk=try(function() return M.blockers(pl) end) or {}
         local missing=0
         for _,b in ipairs(blk) do
@@ -1469,7 +1505,7 @@ return function(api)
         parts[#parts+1]=missing>0 and string.format('ghosts lack %d items in all',missing) or 'ghosts lack nothing'
         local off=api.requests_off and try(function() return api.requests_off(pl) end)
         if off then parts[#parts+1]=off end
-        local dep=api.departure and try(function() return api.departure(pl.name) end)
+        local dep=api.departure and try(function() return api.departure(pl.name,deps) end)
         if dep then parts[#parts+1]='also sent on by '..table.concat(dep,' | ') end
         local was=mine[pl.name] or {}
         local now,new={},{}
@@ -1483,6 +1519,7 @@ return function(api)
     end
     return {compact=true,lines=lines}
   end
+  M.PAGE=2
   function M.platforms(p,a)
     -- (d20 batch62 X2, Sol #1529) a platform name that is none of ours is refused, never read as no platform
     if a.platform~=nil then
@@ -1497,33 +1534,54 @@ return function(api)
     -- 19 platforms of it through the host's pages) compact by default when no platform is named; compact: false gives
     -- the full rows
     if a.compact==true or (a.compact==nil and a.platform==nil) then
+      assert(a.page==nil,'page goes with every platform\'s full row (compact: false): the compact lines come whole')
       local out=M.platforms_compact(p,a)
-      if a.compact==nil then out.note='compact by default with no platform named: platforms {platform: NAME} reads one in full, compact: false every one in full' end
+      if a.compact==nil then out.note='compact by default with no platform named: platforms {platform: NAME} reads one in full, compact: false every one in full, 2 a page' end
       return out
     end
     local out={platforms={}}
+    local deps=api.departure_all and try(function() return api.departure_all() end)
+    -- (d22 batch96 BF1: every platform's full row, 19 of them, was 62-102 ms and 118 KB in one call on a copy of world
+    -- n) with no platform named, PAGE rows a page: page, pages, next
+    assert(a.page==nil or (type(a.page)=='number' and a.page>=1 and a.page==math.floor(a.page)),'page is 1 or more')
+    local want
+    if a.platform==nil then
+      local all={}
+      for _,pl in pairs(p.force.platforms) do if pl.valid then all[#all+1]=pl end end
+      local page=a.page or 1
+      out.page,out.pages,out.count=page,math.max(1,math.ceil(#all/M.PAGE)),#all
+      want={}
+      for i=(page-1)*M.PAGE+1,math.min(#all,page*M.PAGE) do want[all[i].index]=true end
+      if page<out.pages then out.next=string.format('platforms {compact: false, page: %d}',page+1) end
+    else
+      assert(a.page==nil,'page goes with every platform (compact: false and no platform named)')
+    end
+    -- (d22 batch96 BF1) with fields, the parts of a row only those fields need (__want, from the fields wrapper: the
+    -- stream's platforms {platform} read 13 of a row's keys and was 11-15 ms a call on a copy of world n)
+    local fw=a.__want
+    local function W(...) if not fw then return true end for _,k in ipairs({...}) do if fw[k] then return true end end return false end
     for _,pl in pairs(p.force.platforms) do
-      if pl.valid and (a.platform==nil or pl.name==a.platform) then
+      if pl.valid and (a.platform==nil or pl.name==a.platform) and (not want or want[pl.index]) then
         local row={name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,
-          schedule=schedule_text(pl),waiting=try(function() return M.waiting_line(pl) end),stops=try(function() return M.stops(pl) end),departure=api.departure and try(function() return api.departure(pl.name) end) or nil,deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
+          schedule=W('schedule') and schedule_text(pl) or nil,waiting=W('waiting') and try(function() return M.waiting_line(pl) end) or nil,stops=W('stops') and try(function() return M.stops(pl) end) or nil,departure=W('departure') and api.departure and try(function() return api.departure(pl.name,deps) end) or nil,deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
           weight=pl.weight and math.floor(pl.weight/1000) or nil}
         -- (d19 batch46 3) the latest edit of each setting: stops, paused, a request's minimum payload (min_payload)
-        row.setting_edits=api.editlog and try(function() return api.editlog.lines('plat:'..pl.name) end) or nil
+        row.setting_edits=W('setting_edits') and api.editlog and try(function() return api.editlog.lines('plat:'..pl.name) end) or nil
         for k,v in pairs(M.flight(pl) or {}) do row[k]=v end
         local hub=pl.hub
         if hub and hub.valid then
           row.hub=hub.position
-          row.hub_items=top_items(hub.get_inventory(defines.inventory.hub_main),a.platform and 64 or 12)
-          row.hub_slots=M.hub_slots(hub)
+          row.hub_items=W('hub_items') and top_items(hub.get_inventory(defines.inventory.hub_main),a.platform and 64 or 12) or nil
+          row.hub_slots=W('hub_slots') and M.hub_slots(hub) or nil
           -- Each spoilable item's spread in the hub and, for a pack the running research takes, how many a unit it
           -- takes and its units left (Sol, 22:52: 1960 agricultural packs aboard Sunward, judged before departure).
           local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
-          local leg=freight.leg(pl)
-          row.freshness=api.fresh_inv and try(function() return api.fresh_inv(pl.force,hub.get_inventory(defines.inventory.hub_main),nil,leg and leg.eta_ticks,trash) end) or nil
-          row.hub_chunks=try(function() return M.hub_chunks(hub) end)
-          row.hub_trash=trash and top_items(trash,12) or nil
+          local leg=W('freshness') and freight.leg(pl)
+          row.freshness=W('freshness') and api.fresh_inv and try(function() return api.fresh_inv(pl.force,hub.get_inventory(defines.inventory.hub_main),nil,leg and leg.eta_ticks,trash) end) or nil
+          row.hub_chunks=W('hub_chunks') and try(function() return M.hub_chunks(hub) end) or nil
+          row.hub_trash=W('hub_trash','hub_trash_note') and trash and top_items(trash,12) or nil
           row.hub_trash_note=row.hub_trash and M.trash_note(pl) or nil
-          local secs=hub.get_logistic_sections()
+          local secs=W('requests','imports','requests_off','requests_off_line','request_edits') and hub.get_logistic_sections()
           if secs then
             local req,off,imports={},{},{}
             local edits={}
@@ -1542,13 +1600,13 @@ return function(api)
             row.requests_off=#off>0 and off or nil
             row.requests_off_line=api.requests_off and try(function() return api.requests_off(pl) end) or nil
           end
-          row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
+          row.leave_ok=W('leave_ok') and pl.can_leave_current_location and pl.can_leave_current_location() or nil
           -- Hub health, turrets, turret ammo against the hub's, repair packs.
-          row.defense=api.defense and try(function() return api.defense(pl) end) or nil
+          row.defense=W('defense') and api.defense and try(function() return api.defense(pl) end) or nil
         end
         -- Damaged entities, most damaged first (10 with platform=, else 3)
         -- with damaged_count, and the hub's repair packs.
-        if pl.surface then
+        if pl.surface and W('repair_packs','damaged','damaged_count') then
           local repair=M.repair_view(pl)
           local list=repair.damaged or {}
           local count=repair.damaged_count or #list
@@ -1557,31 +1615,31 @@ return function(api)
           row.damaged_count=count>#list and count or nil
         end
         if a.platform then
-          detail(pl,row); row.construction_blocked=try(function() return M.blockers(pl) end)
-          row.tile_removals=try(function() return M.tile_removals(pl) end)
+          detail(pl,row,W); row.construction_blocked=W('construction_blocked') and try(function() return M.blockers(pl) end) or nil
+          row.tile_removals=W('tile_removals') and try(function() return M.tile_removals(pl) end) or nil
           -- (d17 batch31 B9) the stop waits the harness keeps for it
-          row.harness_waits=api.platwait and try(function() return api.platwait().line(pl.name) end) or nil
+          row.harness_waits=W('harness_waits') and api.platwait and try(function() return api.platwait().line(pl.name) end) or nil
           -- (d18 batch36 A2) a silo at its stop that lacks a rocket-part ingredient its own hub holds
-          row.launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil
+          row.launch_needs=W('launch_needs') and api.launch_need and try(function() return api.launch_need(pl) end) or nil
           -- (d18 batch37 B2) each stop's item wait: the planet's stock and its production rate against it
-          row.wait_facts=api.wait_need and try(function() return api.wait_need(pl) end) or nil
+          row.wait_facts=W('wait_facts') and api.wait_need and try(function() return api.wait_need(pl) end) or nil
           -- Its last stops and legs (expected, left, came aboard, spoiled, rockets) and its spoilable items now
           -- against the arrival (Luna, shift12 12:47).
-          local fr=try(function() return freight.read(pl) end)
+          local fr=W('freight') and try(function() return freight.read(pl) end)
           if fr then row.freight={}; for i,s in ipairs(fr) do row.freight[i]=s.line end end
           -- (d17 batch23 A3) each cargo pod's landed receipt, kept apart from the stops
-          row.landed=freight.receipts and try(function() return freight.receipts(pl) end) or nil
-          row.spoiling=try(function() return freight.freshness(pl) end)
+          row.landed=W('landed') and freight.receipts and try(function() return freight.receipts(pl) end) or nil
+          row.spoiling=W('spoiling') and try(function() return freight.freshness(pl) end) or nil
           -- Per ammo type over the last leg, and rockets on their way up to it (freight.lua; Astra, 22:50).
-          row.ammo_rates=try(function() return freight.ammo(pl) end)
-          local inc=try(function() return freight.incoming(pl) end)
+          row.ammo_rates=W('ammo_rates') and try(function() return freight.ammo(pl) end) or nil
+          local inc=W('incoming','incoming_cargo') and try(function() return freight.incoming(pl) end)
           if inc then row.incoming=inc.lines; row.incoming_cargo=string.format('%d rocket%s on the way: %s',inc.rockets,inc.rockets==1 and '' or 's',inc.cargo) end
           -- Its flight over the last 60 and 180 s (engine.lua; Astra, 21:20).
-          local en=api.engine and try(function() return api.engine(pl) end)
+          local en=W('engine') and api.engine and try(function() return api.engine(pl) end)
           row.engine=en and en.lines or nil
           -- What its thrusters keep burning when their pumps stop, and the thruster's burn as the game runs it
           -- (thrust.lua; Grok, shift17 20:40: a pump cut at V >= 15 and the leg peaked at 51 km/s).
-          local ap=api.thrust_after and try(function() return api.thrust_after(pl) end)
+          local ap=W('after_pumps','thruster_burn') and api.thrust_after and try(function() return api.thrust_after(pl) end)
           if ap then row.after_pumps=ap.lines; row.thruster_burn=ap.rule end
         end
         out.platforms[#out.platforms+1]=row
@@ -1589,6 +1647,7 @@ return function(api)
     end
     -- Silos on the character's surface: what the launch button would send.
     local silos={}
+    if not W('silos') then out.planet=p.surface.planet and p.surface.planet.name or nil; return out end
     -- (d19 batch44 A2: this find was about 10.5 ms on the private copy's Nauvis in every platform read, 228 an hour in
     -- shifts 39-41) the census pass's silos when it has them
     local known=api.census_typed and try(function() return api.census_typed(p.force,p.surface,'rocket-silo') end)
@@ -2813,7 +2872,7 @@ return function(api)
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"], imports (a platform hub, a section switched on: each import request "item from planet: asks N, holds H, W on the way, lacks L", on the way being what rockets launched to the hub carry, the hub GUI\'s in-transit count)}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub that alters what its requests keep of an item it holds: what they would keep and kept, by import planet, and what goes down to the landing pads of its stops, where it waits first then its schedule\'s: at each stop their ask less what they hold, beyond what its requests from that planet keep; or that it stays aboard), sends_down_rule (the rule, with the two cases it comes from); call with no set/clear/active to just read'},
     platform={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name this reply lacks that the read can have is listed in absent; a name the read never has is refused, with the names there are',platform='optional platform name (or name): the platforms read of that one (as platforms {platform}); none: every platform',name='the same as platform',compact='as platforms',returns='as platforms'},
-    platforms={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name this reply lacks that the read can have is listed in absent; a name the read never has is refused, with the names there are',eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='the default with no platform named (false: every platform\'s full row): a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',request_edits='true: request_edits on each full row (each hub section\'s last edit: who, when, old -> new)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received, those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working, from a read of each pump once a second at a phase 7 ticks later each second, so a minute meets every tick of a second once), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), every place aboard now; in flight the reserve at the arrival at that rate, or when it runs out first, counted as platform_endurance counts it: ammunition that can reach a turret, rockets on their way up, made at most what the ingredients aboard allow, and binds: the limit that sets what is made; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, waiting (stopped at the station of its current stop, not paused, the game reading waiting_at_station or no_schedule: \'waiting at stop N (station): conditions false now: each condition with its value [holds|false|not read]\', or hold now; the game reads no_schedule while a platform waits at a stop it was sent to while there), stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, imports (each import request: asks, holds, on the way in rockets launched to the hub (the hub GUI\'s in-transit count), lacks), requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={page='with compact: false and no platform named (or eta_to): 1.. the page of full rows, 2 a page (the reply: page, pages, count, next)',fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name this reply lacks that the read can have is listed in absent; a name the read never has is refused, with the names there are',eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='the default with no platform named (false: every platform\'s full row, 2 a page: page (1..), pages, count, next): a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',request_edits='true: request_edits on each full row (each hub section\'s last edit: who, when, old -> new)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received, those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working, from a read of each pump once a second at a phase 7 ticks later each second, so a minute meets every tick of a second once), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), every place aboard now; in flight the reserve at the arrival at that rate, or when it runs out first, counted as platform_endurance counts it: ammunition that can reach a turret, rockets on their way up, made at most what the ingredients aboard allow, and binds: the limit that sets what is made; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, waiting (stopped at the station of its current stop, not paused, the game reading waiting_at_station or no_schedule: \'waiting at stop N (station): conditions false now: each condition with its value [holds|false|not read]\', or hold now; the game reads no_schedule while a platform waits at a stop it was sent to while there), stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, imports (each import request: asks, holds, on the way in rockets launched to the hub (the hub GUI\'s in-transit count), lacks), requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={one_stop='"as given": one stop written alone (default: one stop that is not where the platform is goes as [where it is, that stop], current 2, as every one-stop schedule in the journals read no_schedule; the reply\'s one_stop says so). Any call that changes the schedule or paused fails when the platform then reads paused without paused: true; no_schedule or no_path read in the call\'s tick are read again every 10 ticks for up to 300 (the game updates a platform in a later tick: Cinder flew 39 ticks after such a read): a queue step waits for that read and fails only when it still reads so; a direct call\'s reply has recheck and the second read comes as a tell from platform_schedule (the schedule stays as set; the error gives the rule seen)',stop='1-based record, with wait (B8): that stop\'s wait conditions replaced in place (the schedule\'s own wait condition calls), the records, the current stop and the state kept; current with it changes the current stop too. Refused, nothing changed, when the edit makes the platform leave now (current set to another stop while it waits; the stop it waits at left with no wait; its new waits holding now: time from its arrival, item_count against the hub, circuit against the hub\'s wires, all_requests_satisfied) unless go: true. Returns edited, leaves, may_leave (waits not read that may hold), read_as, waits_run, harness_waits',wait='with stop: that stop\'s waits, as a stops entry\'s wait ([] for none)',go='true, with stop: make an edit that sends the platform on now',next='true, alone: the game\'s go to station on the stop after the current one now (the records and their waits kept); sent_to says from which stop to which',platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_not_satisfied|any_request_zero|time|inactivity|item_count|fluid_count|circuit, ticks? (time, inactivity), condition? (item_count, fluid_count, circuit: "thruster-fuel >= 10000" or {signal, comparator, value | signal2}; item_count an item, fluid_count a fluid; circuit any signal on the hub\'s red and green wires; {item|fluid, count|at_least} reads as "NAME >= N", seconds as ticks, said in read_as; any other field is refused), compare=and|or, harness? (fluid_count: true: the harness reads the storage tanks and sends the platform on, the game\'s record holding a circuit wait that never holds; with time and item_count waits joined by and only)}]}; e.g. {"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}; [] clears; circuit_note when the hub has no wire',current='1-based stop to head for (default 1); alone (no stops): go to that stop now, the records and their waits kept (the GUI\'s go to station), refused when it is already the current stop',keep_leg='optional true, while flying: the current stop is the stop for the leg\'s destination (refused when the stops hold none; current goes without it)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)',returns='name, state (read after the change), waiting (at the station of its current stop, not paused, the game reading waiting_at_station or no_schedule: \'waiting at stop N (station): conditions false now: each with its value\', or they hold now), state_note (no_schedule waiting on conditions false now: that line, and no recheck or failure; no_schedule otherwise, no_path or paused: it goes nowhere), recheck (any other no_schedule or no_path read: read again, its line), at, paused, schedule; with stops: sent_to (the GUI\'s go to station called for current), rebuilt (when the state read no_schedule after the records were set: written again record by record as the GUI does and sent again, with the state after), go_error; current_note (the current stop is the station it is at: it waits there on that stop\'s conditions, the waiting line); leg (in flight: the leg before the edit and the current stop now: the same destination, back the way it came, or new); note, circuit_note'},
     drop={partial='optional true: a queue step that sends part of what was asked (without full, pod 1 of several) is done; without it such a step fails. Every reply that sent part says partial {sent, stayed (still in the hub), why}',up_to='optional true: drop what the hub holds now of each item, up to its count (up_to says what it held); holding none of any, the drop is done with nothing sent (nothing_to_drop), a queue step too',platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',

@@ -68,7 +68,7 @@ end
 psurf.find_entities_filtered=function(f)
   local out={}
   for _,e in ipairs(on_platform) do
-    local ok=types(f,e) and (f.name==nil or e.name==f.name) and (f.force==nil or e.force==f.force)
+    local ok=types(f,e) and types({type=f.name},{type=e.name}) and (f.force==nil or e.force==f.force)
     if ok and f.to_be_deconstructed then ok=e.to_be_deconstructed and e.to_be_deconstructed() end
     if ok and f.position then
       local d=((e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2)^0.5
@@ -160,6 +160,9 @@ local all=bot('platforms',{compact=false})
 eq(all.platforms[1].hub_slots,'0 of 2 free'); eq(all.platforms[1].construction_blocked,nil)
 local one=bot('platforms',{platform='Starling'}).platforms[1]
 eq(#one.construction_blocked,2)
+-- (d22 batch96 BF1) fields with a platform named: the same values, only the parts named made
+local some=bot('platforms',{platform='Starling',fields={'construction_blocked','hub_slots'}}).platforms[1]
+eq(#some.construction_blocked,2); eq(some.construction_blocked[1],one.construction_blocked[1]); eq(some.hub_slots,one.hub_slots); eq(some.hub_items,nil)
 -- Room in the hub and the item there: nothing blocks.
 hub_inv[2]=stack(nil,0); hub_inv[1]=stack('inserter',1)
 eq(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked,nil)

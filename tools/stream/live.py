@@ -541,6 +541,12 @@ class LiveSource:
         return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
+    # route and speed; and for the Space widget (model.platform_card) the defence, repair packs, damaged entities and
+    # hub cargo (eng/platformalerts); ammo made/used and when it runs out in flight (onecam's danger shot; viewer
+    # joonazan, d15 10:45)
+    PLATFORM_FIELDS = ("state", "at", "speed", "schedule", "paused", "thrusters", "weight", "defense", "repair_packs",
+                       "damaged", "damaged_count", "hub_items", "ammo_rates")
+
     def observe_platforms(self, space, errors):
         """Platform detail (state, location or route, speed, schedule) with a peek `platforms` read per platform,
         every platform_every seconds, at most 4 platforms; between reads the score's name and location stand."""
@@ -550,17 +556,13 @@ class LiveSource:
             detail = {}
             for row in space["platforms"][:4]:
                 try:
-                    res, _ = self.read("platforms", {"platform": row["name"]}, **self.reader())
+                    # (d22 batch96 BF1) only these fields: the read then makes only their parts of the row (each of
+                    # these 4 reads was 11-15 ms in one tick on a copy of world n, the whole row with its freight,
+                    # engine and request lines)
+                    res, _ = self.read("platforms", {"platform": row["name"], "fields": list(self.PLATFORM_FIELDS)},
+                                       **self.reader())
                     for p in res.get("platforms") or []:
-                        # route and speed; and for the Space widget (model.platform_card) the defence, repair
-                        # packs, damaged entities and hub cargo (eng/platformalerts)
-                        detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
-                                                                       "thrusters", "weight", "defense", "repair_packs",
-                                                                       "damaged", "damaged_count", "hub_items",
-                                                                       # ammo made/used and when it runs out in flight
-                                                                       # (onecam's danger shot; viewer joonazan, d15 10:45)
-                                                                       "ammo_rates")
-                                                 if p.get(k) is not None}
+                        detail[p.get("name")] = {k: p.get(k) for k in self.PLATFORM_FIELDS if p.get(k) is not None}
                 except Exception as e:
                     errors["platforms"] = str(e)
             self.platform_detail = detail

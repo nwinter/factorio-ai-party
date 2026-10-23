@@ -47,8 +47,9 @@ return function(api)
     return step.action .. (step.label and ' (' .. step.label .. ')' or '')
   end
   local function ago(t) return string.format('%ds ago', math.floor((game.tick - t) / 60)) end
-  -- The rows by platform name, every agent's lanes, in one pass over the queues.
-  function M.all()
+  -- The rows by platform name, every agent's lanes, in one pass over the queues. want (optional): a set of platform
+  -- names, the only rows made (d22 batch96 BF1: a page of the platforms read needs 2 of 19).
+  function M.all(want)
     local s = api.state()
     local by = {}
     local keys = {{key='queues', lane='body'}}
@@ -74,27 +75,27 @@ return function(api)
         end
         if q.current then
           local c = q.current
-          for name in pairs(touched(c.args)) do
+          for name in pairs(touched(c.args)) do if not want or want[name] then
             local text = step_text(c) .. (q.paused and ' (the queue is paused' .. (q.paused_why and q.paused_why.line and ': ' .. q.paused_why.line or '') .. ')' or ', running')
             if c.action == 'wait_until' then
               local saw = c.saw and (type(c.saw) == 'table' and (c.saw.line or c.saw.text) or tostring(c.saw)) or nil
               text = text .. (c.started_tick and ', waiting since ' .. ago(c.started_tick) or '') .. (saw and '; saw ' .. saw or '')
             end
             table.insert(row(name).steps, 'now: ' .. text)
-          end
+          end end
         end
         for i, step in ipairs(q.pending or {}) do
-          for name in pairs(touched(step.args)) do table.insert(row(name).steps, string.format('pending #%d: %s', i, step_text(step))) end
+          for name in pairs(touched(step.args)) do if not want or want[name] then table.insert(row(name).steps, string.format('pending #%d: %s', i, step_text(step))) end end
         end
         for _, e in ipairs(q.history or {}) do
           if e.action == 'drop' then
-            for name in pairs(touched(e.args)) do
+            for name in pairs(touched(e.args)) do if not want or want[name] then
               local r = row(name)
               if e.ok then r.ok = r.ok + 1 else r.failed = r.failed + 1 end
               local res = type(e.result) == 'table' and e.result or {}
               local what = type(res.dropped) == 'table' and #res.dropped > 0 and table.concat(res.dropped, ', ') or (e.ok and 'nothing dropped' or tostring(res.error or res.why or 'failed'))
               r.drops[#r.drops+1] = string.format('%s%s%s', what, res.not_sent and '; not sent ' .. res.not_sent or '', e.finished_tick and ' (' .. ago(e.finished_tick) .. ')' or '')
-            end
+            end end
           end
         end
         -- a queue's past drops alone (nothing queued or running for it) are no job

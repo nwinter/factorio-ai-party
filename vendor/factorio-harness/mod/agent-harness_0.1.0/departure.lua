@@ -19,9 +19,12 @@ return function(api)
     return #t > 0 and table.concat(t, ' -> ') or 'its schedule'
   end
   -- Lines naming what will send platform `name` on, from every agent's queue and orders.
-  function M.lines(name)
+  -- (d22 batch96 BF1: the platforms read asked this for each of 19 platforms, each a walk of every queue and order)
+  -- every platform's lines in one walk: M.all() for a read of several platforms
+  local function collect()
     local s = api.state()
-    local out = {}
+    local by = {}
+    local function add(name, line) local t = by[name]; if not t then t = {}; by[name] = t end; t[#t+1] = line end
     local function who(i) return api.name_of and api.name_of(i) or ('agent ' .. tostring(i)) end
     -- both lanes (d17 batch12 C8, Grok: Swift read 59 minutes left at Vulcanus while a remote-lane queue was about to
     -- send it on: platform steps run in the remote lane, which was not read)
@@ -40,11 +43,12 @@ return function(api)
       if q.loop then for _, st in ipairs(q.loop) do seq[#seq+1] = st end; looped = true end
       for i, st in ipairs(seq) do
         local a = st.args
-        if st.action == 'platform_schedule' and type(a) == 'table' and a.platform == name and a.stops ~= nil then
+        if st.action == 'platform_schedule' and type(a) == 'table' and type(a.platform) == 'string' and a.stops ~= nil then
+          local name = a.platform
           local prev = seq[i - 1]
           local wait = prev and prev.action == 'wait_until' and type(prev.args) == 'table' and cond_text(prev.args) or nil
-          out[#out+1] = string.format('%s\'s %squeue%s: %s then platform_schedule %s (%s)%s', who(index), lane.remote and 'remote ' or '', q.paused and ' (paused)' or '',
-            wait and ('wait_until ' .. wait) or 'right after its step before', name, stops_text(a), looped and '; it repeats' or '')
+          add(name, string.format('%s\'s %squeue%s: %s then platform_schedule %s (%s)%s', who(index), lane.remote and 'remote ' or '', q.paused and ' (paused)' or '',
+            wait and ('wait_until ' .. wait) or 'right after its step before', name, stops_text(a), looped and '; it repeats' or ''))
         end
       end
     end
@@ -52,19 +56,27 @@ return function(api)
       for _, order in ipairs(o.list or {}) do
         for _, st in ipairs(order.steps or {}) do
           local a = st.args
-          if st.action == 'platform_schedule' and type(a) == 'table' and a.platform == name and a.stops ~= nil then
-            out[#out+1] = string.format('%s\'s standing order %s: when %s, platform_schedule %s (%s)', who(index), tostring(order.name),
-              order.when and cond_text(order.when) or 'its round comes', name, stops_text(a))
+          if st.action == 'platform_schedule' and type(a) == 'table' and type(a.platform) == 'string' and a.stops ~= nil then
+            local name = a.platform
+            add(name, string.format('%s\'s standing order %s: when %s, platform_schedule %s (%s)', who(index), tostring(order.name),
+              order.when and cond_text(order.when) or 'its round comes', name, stops_text(a)))
           end
         end
       end
     end
-    table.sort(out)
-    -- (a repeating queue holds its steps in its pending list and its loop: each line once)
-    local once, seen = {}, {}
-    for _, l in ipairs(out) do if not seen[l] then seen[l] = true; once[#once+1] = l end end
-    out = once
-    return #out > 0 and out or nil
+    for name, out in pairs(by) do
+      table.sort(out)
+      -- (a repeating queue holds its steps in its pending list and its loop: each line once)
+      local once, seen = {}, {}
+      for _, l in ipairs(out) do if not seen[l] then seen[l] = true; once[#once+1] = l end end
+      by[name] = once
+    end
+    return by
+  end
+  function M.all() return collect() end
+  function M.lines(name, by)
+    local out = (by or collect())[name]
+    return out and #out > 0 and out or nil
   end
   return M
 end
