@@ -12429,3 +12429,20 @@ sources on their networks (an arithmetic combinator's +10000, two readers on one
     1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
     Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
 
+
+## d22 batch118 CA1 (eng/d20-batch118): circuit_signal on an unwired hub reads 0, as the game does
+
+Astra (shift62 seq 916): "Asterion hub unwired; wait_until circuit_signal rocket below4850 not met, saw no red or green
+wire: no signal to read", so a reserve guard on it could never fire. The game's rule, measured on a copy of world n:
+a platform schedule's circuit wait condition reads an unwired hub's signals as 0. Asterion (hub unwired, 10 rockets
+aboard, paused at Aquilo), given the stop condition `rocket < 4850` and unpaused, left at once (on_the_path to its next
+stop). Crucible (hub unwired, no rockets), each run from a paused stop: `rocket < 4850` met (twice), `rocket > -1` met;
+its hub wired to an empty constant combinator: `rocket < 4850` met, `rocket > 4850` not met (still waiting after 300
+ticks). The first run on Crucible, from its unscheduled state, stayed waiting 368 ticks and is not explained.
+
+- `circuit_signal` with no red or green wire on the hub now reads the signal as 0: `below N` (over 0) is met, `at_least
+  N` (over 0) is not; saw: "Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit
+  conditions read an unwired hub (met)" or "(never met while it has none)".
+- A guard whose `when` can never be met as things stand (circuit_signal `at_least` over 0 on an unwired hub, alone or
+  inside `all`) is refused at queue_submit, in a dry run and in queue_edit guards, in every lane, naming why. A `below`
+  guard there is met at its first check.
