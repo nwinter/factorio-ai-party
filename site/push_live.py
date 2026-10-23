@@ -753,12 +753,13 @@ def site_terrain(site_url, now=None, opener=urllib.request.urlopen):
 
 CHART_EVERY = 300.0  # seconds between reads of the deployed chart's index
 CHART_URL = "/live/chart/index.json"
-_chart = {"t": None, "v": None, "tick": None, "surfaces": [], "error": None}
+_chart = {"t": None, "v": None, "tick": None, "surfaces": [], "complete": [], "error": None}
 
 
 def site_chart(site_url, now=None, opener=urllib.request.urlopen):
     """(d22 batch97 BG3) the chart the deployed site has (site/build.py publishes runs/RUN/chart/out/ under /live/chart/):
-    {v, tick, surfaces} from its index.json, read at most every 5 minutes; the last one stays when a read fails (a 404:
+    {v, tick, surfaces, complete} from its index.json (surfaces: those with cells; complete: those whose first pass is
+    done, every charted chunk read; cp7), read at most every 5 minutes; the last one stays when a read fails (a 404:
     none published yet). The page fetches the index again when v changes."""
     now = time.time() if now is None else now
     if site_url and (_chart["t"] is None or now - _chart["t"] >= CHART_EVERY):
@@ -770,25 +771,30 @@ def site_chart(site_url, now=None, opener=urllib.request.urlopen):
             sf = idx.get("surfaces") if isinstance(idx, dict) else None
             if isinstance(idx.get("v"), int) and isinstance(sf, dict):
                 _chart.update(v=idx["v"], tick=idx.get("tick") if isinstance(idx.get("tick"), int) else None,
-                              surfaces=sorted(k for k, x in sf.items() if isinstance(x, dict) and x.get("cells")), error=None)
+                              surfaces=sorted(k for k, x in sf.items() if isinstance(x, dict) and x.get("cells")),
+                              complete=sorted(k for k, x in sf.items() if isinstance(x, dict) and x.get("cells") and x.get("complete") is True),
+                              error=None)
         except (urllib.error.URLError, OSError, ValueError, AttributeError) as e:
             _chart["error"] = f"{type(e).__name__}: {e}"[:120]
-    return dict(v=_chart["v"], tick=_chart["tick"], surfaces=_chart["surfaces"]) if _chart["v"] is not None else None
+    return dict(v=_chart["v"], tick=_chart["tick"], surfaces=_chart["surfaces"], complete=_chart["complete"]) if _chart["v"] is not None else None
 
 
 BASEMAP_CHARTED = ("rows", "core", "ore", "terrain_grid", "terrain")  # what the chart replaces on a charted Nauvis
 
 
 def with_chart(state, chart):
-    """The state with chart {v, tick, surfaces}, and the coarse grids the published chart replaces taken out: on Nauvis
-    the basemap's rows, dense core, ore, charted ground and terrain frames (its box, nests, turrets and turret states
-    stay); every other charted planet's coarse map (the planets listing stays). `chart_saved` says how many bytes."""
+    """The state with chart {v, tick, surfaces, complete}, and the coarse grids the published chart replaces taken out,
+    only for the surfaces whose published chart is complete (cp7, viewer Aurora 21:36: a chart of six cells hid
+    Nauvis's terrain and buildings elsewhere; the page draws these grids under the chart, showing where no cell is
+    read): on Nauvis the basemap's rows, dense core, ore, charted ground and terrain frames (its box, nests, turrets
+    and turret states stay); every other complete planet's coarse map (the planets listing stays). `saved` says how
+    many bytes."""
     if not chart:
         return state
     size = lambda x: len(json.dumps(x, separators=(",", ":")))  # noqa: E731
+    state["chart"] = dict(chart, saved=0)
     before = size(state)
-    state["chart"] = dict(chart)
-    charted = set(chart.get("surfaces") or [])
+    charted = set(chart.get("complete") or [])
     bm = state.get("basemap")
     if "nauvis" in charted and isinstance(bm, dict):
         core = bm.get("core") if isinstance(bm.get("core"), dict) else None
