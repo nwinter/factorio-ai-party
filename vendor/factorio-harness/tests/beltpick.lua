@@ -149,4 +149,47 @@ do
   eq(run(),'transferred'); eq(chest.got['iron-plate'],4); eq(action.delivered['iron-plate'],4); eq(held['iron-plate'],0)
   fails(function() B.pickup(p,{belt=true,item='coal',position={x=90.5,y=-11.5},radius=3,to={x=1,y=1}}) end,'to: no chest of ours at (1,1)')
 end
+-- (d22 batch104 BN1, Sol #1925: "reported 200 picked, but before/after scan still 120 scrap on same 15 belts") the end
+-- says each belt before and after, what came in from upstream meanwhile, and where what was taken is now; a pass over
+-- belts in reach that removes nothing three times running ends it.
+do
+  prototypes.item.scrap={}
+  defines=defines or {inventory={character_trash=8}}
+  belts={}
+  local b1=belt(10.5,0.5,{{name='scrap',count=4}},{{name='scrap',count=4}})
+  local b2=belt(10.5,1.5,{{name='scrap',count=4}},{{name='scrap',count=4}})
+  -- the character: its main inventory is `held`; the game moves scrap over the request max (0) to the trash, and robots
+  -- take part of it from there (simulated after the pickup)
+  local trash={}
+  p.character={valid=true,prototype={item_pickup_distance=1},
+    get_main_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end,
+    get_inventory=function() return {get_item_count=function(n) return trash[n] or 0 end} end}
+  p.position={x=10.5,y=1}; space=1000; held.scrap=0
+  B.pickup(p,{belt=true,item='scrap',count=40,area={left_top={x=10,y=0},right_bottom={x=11,y=2}},ticks=600})
+  eq(action.area_before,16)
+  -- upstream refills b1's lane 1 every pick (a belt that moves on as it is emptied)
+  local upstream=0
+  local out
+  for _=1,600 do
+    game.tick=game.tick+1
+    if game.tick%6==0 and upstream<24 then b1.lines[1].items[#b1.lines[1].items+1]={name='scrap',count=2}; upstream=upstream+2 end
+    out=B.tick(p,action,game.tick)
+    if out then break end
+  end
+  eq(out,'picked_up'); eq(action.taken,40)
+  -- the game moved 30 to the trash, robots took 20 of them
+  held.scrap=held.scrap-30; trash.scrap=10
+  local f=B.facts(p,action)
+  eq(f.area_before,16); eq(f.came_in,f.area_after+40-16,'what came in: taken less the drop'); eq(f.kept,10); eq(f.in_trash,10); eq(f.gone_from_you,20)
+  assert(f.line:find('40 taken off the belts; the area held 16 before and',1,true) and f.line:find('10 in your main inventory, 10 in your trash slots, 20 gone from you (moved to the trash over a request max and taken by robots, or used)',1,true),f.line)
+  eq(#f.belts,2); assert(f.belts[1]:find('(10.5,0.5) 8 -> ',1,true) or f.belts[1]:find('(10.5,1.5) 8 -> ',1,true),f.belts[1])
+  -- a belt that shows the items but gives none up: three passes, then nothing_removed
+  local stuck=belt(20.5,0.5,{{name='scrap',count=4}},{})
+  stuck.lines[1].remove_item=function() return 0 end
+  p.position={x=20.5,y=1}; held.scrap=0
+  B.pickup(p,{belt=true,item='scrap',count=10,area={left_top={x=20,y=0},right_bottom={x=21,y=1}}})
+  eq(run(200),'nothing_removed'); eq(action.taken,0); eq(held.scrap,0,'what went in was taken back out')
+  assert(action.why:find('3 passes over 1 belt in reach removed nothing',1,true),action.why)
+  print('beltpick BN1 ok: before and after, what came in, where it went; nothing removed ends it')
+end
 print('beltpick ok')

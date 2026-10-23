@@ -11701,3 +11701,22 @@ and collector lookups take 3.6 ms of it. Tests: tests/d22_batch78.lua.
 - Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
   the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
 
+## d22 batch104 BN1: a belt pickup's count and where it went (Sol #1925)
+
+- Sol's report: `pickup {belt: true}` on Fulgora (area (-346,-23)-(-345,-8), 15 belts) reported 1000 and 200 picked
+  while scans before and after showed 120 scrap on the same 15 belts (full: 8 a tile).
+- The count is what the belt lines gave up: each take inserts into the character, then `remove_item` on the lane, and
+  only what that returns is counted (what the belt did not give back is taken out of the character again). Reproduced
+  on a copy of world n's _autosave12 (d22, the save before Sol's calls), Sol's character placed where it stood, the 15
+  belts given 58 scrap: the pickup took 60 (the 58 and 2 that the belt brought in from upstream), the belts held 0 after.
+  Sol's request max for scrap is 0, so the game moves what is picked to the trash slots within a few ticks, and the
+  logistic robots of network 848 took it from there within about 60 ticks to the storage chest at (-316.5,-11.5)
+  (541 -> 601). Between the saves before and after Sol's calls that chest went 541 -> 1100. So an item counted had left
+  the belt; a belt fed from upstream as fast as it is taken (a fast belt brings up to 30 items a second; Sol's first
+  pickup took 1000 in 2089 ticks, 0.48 a tick) shows the same count before and after.
+- Now the end says it: `last.belt` gives each belt before -> after (those that changed first, 32 at most),
+  `area_before`, `area_after`, `came_in` (taken less the area's drop), and where what was taken is: `kept` (main
+  inventory), `in_trash` (trash slots), `gone_from_you` (to the trash over a request max and taken by robots, or used),
+  and a `line` saying all of it. Three passes over belts in reach that show the items but remove none end it
+  `nothing_removed` (before, it tried until its ticks ran out).
+
