@@ -18646,12 +18646,25 @@ M.progress=require('progress'){state=state,items=function() return M.board.items
   shipment_seq=function() return state().shipment and state().shipment.seq or 0 end,
   repeated=function(index,since) return M.selfview.repeated(index,since) end,
   counted=function(index,minutes) return M.idle.counted(index,minutes) end,
-  waiting=function(index)
+  -- (d22 batch122 CE2, viewer Aurora site:4485: "Keep genuine waits and quota rests distinct") the owner's wait as text
+  -- and its kind: rest (a quota or pace rest, rests.lua), wait (on something: wait_until, a sleep with a game condition,
+  -- a running queue or its wait step) or sleep (an fh sleep with no game condition, a direct wait_ticks: on nothing)
+  waiting=function(index,name)
     local s=state()
+    local rest=name and M.rests and M.rests.get(name)
+    if rest then return M.rests.label(rest),'rest' end
+    local act=s.active and s.active[index]
+    if act and act.kind=='wait_ticks' then return 'wait_ticks, a timed wait on no condition','sleep' end
     local w=M.idle.waiting(s,index)
-    if w then return w end
+    if w=='sleep' then
+      local sl=s.sleeps and s.sleeps[index]
+      local c=sl and sl.conditions and sl.conditions[1]
+      if c then return 'sleep until '..tostring(c['until'] or 'its condition')..(#sl.conditions>1 and ' (and more)' or ''),'wait' end
+      return 'sleep on no game condition','sleep'
+    end
+    if w then return w,'wait' end
     local q=s.queues and s.queues[index]
-    if q and not q.paused and q.current then return 'queue running: '..tostring(q.current.action) end
+    if q and not q.paused and q.current then return 'queue running: '..tostring(q.current.action),'wait' end
   end,
   standing=function(index) local t=state().stand and state().stand[index]; return t and game.tick-t or nil end}
 function handlers.board_progress(p,a) return M.progress.read(p,a) end

@@ -7076,7 +7076,7 @@ fh watch    # deploy on every change
   checked (one a call, every 2 s): our entities in its area, else in its owner's active claims (robots, characters,
   vehicles left out); what it needs (names with counts) reaching the count on its owner's planet; shipment lines of
   platforms its title names; its board edits and notes. Any of them: progress. None: unchanged; across 2 checks:
-  stalled, unless its owner is in a sleep, wait step or wait_until or has a queue running (waiting). Each check puts
+  stalled, unless its owner waits on something (wait_until, a sleep with a game condition, a queue running: waiting) or rests (a quota or pace rest: resting; d22 batch122 CE2); a sleep or wait_ticks on no condition counts toward stalled. Each check puts
   one line in the owner's reply (team.alerts): progress seen, its next action or blocker as last written (the owner's
   last note, a project's next step), or that none is written. Nothing reassigns. `board_progress {owner?, id?}`: the
   checks per item, stalled first, the age of the last board change, the owner's repeated failures (selfview) and
@@ -12385,3 +12385,19 @@ Now (owed.lua, board.lua, tells.lua), the same rule for viewers and teammates:
   (#11, #12): a say or tell naming them closes none; reply_to closes the one it names".
 - The unanswered line for a teammate reads "reply_to: 11 answers it (a say or tell naming sol, or a tell to them,
   does while it is their only open request)".
+
+## d22 batch122 CE2: board progress tells repeated sleeps from waits and rests (viewer Aurora site:4485)
+
+Before, a board item's 10-minute check (progress.lua) read "waiting (sleep)" whenever its owner was in an fh sleep,
+and the unchanged count stood still: an agent sleeping in repeated 300 s sleeps with no progress kept its items
+"waiting" for ever, never stalled. A quota rest (rests.lua) read "stalled". A board_focus on a task (no step) never
+flagged. Now the runtime gives the owner's wait a kind:
+- a wait on something (wait_until, a sleep with a game condition, a running queue or its wait step): "waiting
+  (wait_until)", "waiting (sleep until item_count)"; the count holds;
+- a rest: "resting until 15:59 (quota)"; the count holds;
+- a sleep with no game condition, or a direct wait_ticks: the count goes on, said beside it: "stalled: unchanged across
+  2 checks (its owner in a sleep on no game condition at this check; at 1 of these 2)".
+A focus on the item alone counts its unchanged checks by the same rule: "the focused item shows no progress across 2
+checks". board_critical's agents line gives the same wait text. The idle nudge (tools/idle_nudge.py) and supervise.sh
+were checked with the same cases: repeated sleeps, wait_until and wait_ticks are nudged with the wait named ("sleeping 5
+min", "in wait_until"), a rest in resting.json is skipped ("out of quota until Sat 09:25"); unchanged.

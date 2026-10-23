@@ -114,3 +114,35 @@ eq(open(),2,'a team tell naming astra with two open closes none')
 muse('chat_ack',{seq={a1.seq,a2.seq}})
 eq(open(),0)
 print('d22_batch122 CE1 a reply closes only what it answers: ok')
+
+-- CE2 (viewer Aurora site:4485: "test repeated sleeps with no task progress, both with and without board_focus? Keep
+-- genuine waits and quota rests distinct"): a board item's 10-minute check. Repeated sleeps on no condition read
+-- "waiting (sleep)" before and the item never stalled; a quota rest read stalled; a focus on a task (no step) never
+-- flagged. Now: a sleep on no condition counts (said beside the count), a wait on something and a rest hold the count.
+prototypes=prototypes or {item={['iron-plate']={name='iron-plate',type='item',stack_size=100}},fluid={},entity={},technology={},quality={normal={name='normal'}},recipe={}}
+do
+  local item=runtime.board.items()[muse('board_post',{kind='task',title='CE2: build the north wall',owner='muse'}).item.id]
+  local function check() runtime.progress.check(item); return storage.agent_harness.progress.items[item.id] end
+  check(); jump(36000)
+  eq(check().state,'unchanged since the last check')
+  jump(36000); muse('sleep',{seconds=300}); jump(600)
+  eq(check().state,'stalled: unchanged across 2 checks (its owner in a sleep on no game condition at this check; at 1 of these 2)')
+  jump(36000); muse('sleep',{seconds=300}); jump(60)
+  eq(check().unchanged,3,'repeated sleeps keep counting')
+  jump(36000); muse('sleep',{seconds=300,condition={['until']='item_count',item='iron-plate',at_least=1000}}); jump(60)
+  local r=check(); eq(r.state,'waiting (sleep until item_count)'); eq(r.unchanged,3,'a sleep on a game condition holds the count')
+  jump(36000); muse('wait_until',{['until']='item_count',item='iron-plate',at_least=1000,timeout=54000}); jump(60)
+  r=check(); eq(r.state,'waiting (wait_until)'); eq(r.unchanged,3)
+  muse('stop',{})
+  jump(36000); op('rest',{agent='muse',until_clock='15:59',until_s=86400,reason='quota'}); jump(60)
+  r=check(); eq(r.state,'resting until 15:59 (quota)'); eq(r.unchanged,3,'a rest holds the count')
+  -- with board_focus on the task (no step): its unchanged checks count, and it is flagged
+  muse('board_focus',{id=item.id})
+  jump(36000); muse('sleep',{seconds=300}); jump(60); check()
+  jump(36000); muse('sleep',{seconds=300}); jump(60)
+  eq(check().focus_flag,'the focused item shows no progress across 2 checks')
+  -- progress resets both
+  muse('board_update',{id=item.id,note='wall started'}); jump(36000)
+  r=check(); eq(r.state,'progress'); eq(r.unchanged,0); eq(r.focus_flag,nil)
+end
+print('d22_batch122 CE2 progress: sleeps, waits and rests apart: ok')

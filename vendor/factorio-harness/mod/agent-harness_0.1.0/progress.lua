@@ -4,8 +4,9 @@
 -- one due item a call: what the game shows changed since the last check (our entities in the item's area, or else in
 -- its owner's active claims; the planet totals of the items it needs; shipment lines of platforms it names; its own
 -- board edits and notes), the age of its last board change, and the owner's repeated failed and no-effect actions
--- since then. An item with none of that is unchanged; unchanged across 2 checks: stalled, unless its owner is in a
--- wait (a sleep, wait step, wait_until) or has a queue running: waiting.
+-- since then. An item with none of that is unchanged; unchanged across 2 checks: stalled, unless its owner waits on
+-- something (wait_until, a sleep with a game condition, a queue running): waiting, or rests (rests.lua): resting; a
+-- sleep or wait_ticks on no condition counts toward stalled (d22 batch122 CE2).
 -- - board_progress: those facts per item, with the 20-minute rule for a stalled one (anyone may take it once its owner
 --   has made no request for 20 min) and how long since the owner's last request;
 -- - board_critical: blocked items ranked by how many open items wait on them (blocked_by and parent, through chains),
@@ -145,18 +146,38 @@ return function(api)
     end
     local parts = changes(i, r.ev, now)
     local of, index = owner_facts(i, r.tick)
-    local waiting = index and api.waiting and api.waiting(index)
+    -- (d22 batch122 CE2, viewer Aurora site:4485) the owner's wait and its kind (runtime.lua): a wait on something
+    -- (wait_until, a sleep with a game condition, a running queue) holds the count, as a quota or pace rest does (said as
+    -- the rest); a sleep or wait_ticks on no condition counts as standing does (repeated sleeps read waiting for ever,
+    -- and their items never stalled), said beside the count
+    local waiting, kind
+    if index and api.waiting then waiting, kind = api.waiting(index, i.owner) end
+    local frozen = #parts == 0 and waiting and kind ~= 'sleep'
     local state
-    if #parts > 0 then r.unchanged = 0; state = 'progress'
-    elseif waiting then state = 'waiting (' .. waiting .. ')'
-    else r.unchanged = r.unchanged + 1; state = r.unchanged >= M.STALL and string.format('stalled: unchanged across %d checks', r.unchanged) or 'unchanged since the last check' end
+    if #parts > 0 then r.unchanged, r.asleep = 0, 0; state = 'progress'
+    elseif frozen then state = kind == 'rest' and waiting or 'waiting (' .. waiting .. ')'
+    else
+      r.unchanged = r.unchanged + 1
+      if waiting then r.asleep = (r.asleep or 0) + 1 end
+      local asleep = waiting and string.format(' (its owner in a %s at this check%s)', waiting,
+        r.unchanged > 1 and string.format('; at %d of these %d', r.asleep, r.unchanged) or '') or ''
+      state = (r.unchanged >= M.STALL and string.format('stalled: unchanged across %d checks', r.unchanged) or 'unchanged since the last check') .. asleep
+    end
     r.state, r.parts, r.owner_facts, r.prev_tick, r.tick, r.ev = state, parts, of, r.tick, game.tick, now
     -- the owner's focus on this item: a focused step not done counts across checks (board_focus)
     local f = focus_store()[i.owner]
     if f and f.id == i.id then
       local s = step_of(i, f.step)
-      if s and s.done_by then f.unchanged = 0 elseif s or (f.step and #parts == 0) then f.unchanged = (f.unchanged or 0) + 1 else f.unchanged = 0 end
-      if f.unchanged >= M.STALL then r.focus_flag = string.format('the focused %s shows no completion across %d checks', s and 'step ' .. s.n or 'step', f.unchanged) else r.focus_flag = nil end
+      -- (d22 batch122 CE2) a focus on the item alone (no step) counts its unchanged checks too, and both hold through a
+      -- wait on something or a rest, as the item's count does
+      if s and s.done_by then f.unchanged = 0
+      elseif frozen then f.unchanged = f.unchanged or 0
+      elseif s or #parts == 0 then f.unchanged = (f.unchanged or 0) + 1
+      else f.unchanged = 0 end
+      if f.unchanged >= M.STALL then
+        r.focus_flag = (s or f.step) and string.format('the focused %s shows no completion across %d checks', s and 'step ' .. s.n or 'step', f.unchanged)
+          or string.format('the focused item shows no progress across %d checks', f.unchanged)
+      else r.focus_flag = nil end
     end
     -- the owner's line
     local nt = next_text(i)
@@ -251,7 +272,7 @@ return function(api)
         check_error=r and r.error or nil, checked_s=r and math.floor((game.tick - r.tick) / 60) or nil}
     end
     return {lines=#lines > 0 and lines or {'no owned open item'}, rows=rows,
-      note='a check every 10 game minutes: our entities in the item\'s area (else its owner\'s claims), the totals of what it needs, shipment lines of platforms it names, its board edits; unchanged across 2 checks: stalled, unless its owner waits (sleep, wait step, queue running)'}
+      note='a check every 10 game minutes: our entities in the item\'s area (else its owner\'s claims), the totals of what it needs, shipment lines of platforms it names, its board edits; unchanged across 2 checks: stalled, unless its owner waits on something (wait_until, a sleep with a game condition, a queue running) or rests (a quota or pace rest); a sleep or wait_ticks on no condition counts toward stalled'}
   end
   -- Blocked items ranked: those the plan names first, then by how many open items wait on them through chains.
   function M.critical(p, a)
@@ -307,7 +328,7 @@ return function(api)
     -- agents standing or waiting now
     local agents = {}
     for _, ag in ipairs(api.agents()) do
-      local w = api.waiting and api.waiting(ag.index)
+      local w = api.waiting and api.waiting(ag.index, ag.name)
       local stand = api.standing and api.standing(ag.index)
       if w or (stand and stand >= 3600) then
         local own = {}
