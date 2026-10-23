@@ -105,6 +105,19 @@
     return e;
   }
   function setText(e, text) { text = text == null ? "" : String(text); if (e.textContent !== text) e.textContent = text; }
+  // marquee.js: a single line of changing text that overflows its box shows its start and now and then pans to its
+  // end and back. Without marquee.js these are plain boxes, cut as before.
+  const MQ = typeof window !== "undefined" && window.pogMarquee || null;
+  function mqEl(tag, cls) { return MQ ? MQ.make(tag, cls) : el(tag, cls); }
+  function mqText(e, text) { if (MQ && e._mq) MQ.set(e, text); else setText(e, text); }
+  function mqBox(e) { return e._mq || e; } // where a marquee's content goes when the caller builds it
+  // Text we control (a heading, a fixed phrase) is shortened to fit, never moved: the first wording that fits e's box.
+  function fitText(e, wordings, room) {
+    const sig = wordings.join("|") + "|" + room + "|" + (document.fonts ? document.fonts.status : "");
+    if (e.dataset.fit === sig) return;
+    e.dataset.fit = sig;
+    for (const t of wordings) { setText(e, t); if (e.scrollWidth <= e.clientWidth + 1) return; }
+  }
   // 12345678 -> "12.3M", 45600 -> "45.6K" (tokens.py short)
   function shortNum(v) {
     v = Number(v || 0);
@@ -215,12 +228,16 @@
 
   function renderHead(s) {
     setText($("title"), s.title || "Player of Games");
-    setText($("subtitle"), s.subtitle || "");
     setText($("clock"), s.game_time || "");
-    const sub = $("clock-sub");
+    // "Factorio: Space Age co-op · real time · no cheats" is 58 px wider than its place beside the title at 1080p:
+    // the game's name goes first (the cameras show it), then the edition
+    const sub = String(s.subtitle || "");
+    fitText($("subtitle"), [sub, sub.replace(/^Factorio:?\s+/, ""), sub.replace(/^Factorio(:\s*Space Age)?\s+/, "")],
+      $("head").clientWidth + "|" + $("title").textContent + "|" + $("clock").textContent);
+    const csub = $("clock-sub");
     const stale = s.poll_ok && s.now - s.poll_ok > 20;
-    setText(sub, s.paused ? "game paused" : stale ? "reconnecting…" : "game time");
-    sub.classList.toggle("warn", !!(s.paused || stale));
+    setText(csub, s.paused ? "game paused" : stale ? "reconnecting…" : "game time");
+    csub.classList.toggle("warn", !!(s.paused || stale));
   }
 
   function renderCards(s) {
@@ -246,13 +263,13 @@
         c.tok = el("div", "tok");  // tokens this shift (model.py, tokens.py)
         c.tok.title = "tokens this shift";
         r1.append(c.name, c.badge, c.world, c.harness, c.tok);
-        c.model = el("div", "model");
+        c.model = mqEl("div", "model");
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
-        c.txt = el("span", "txt");
-        c.waitLabel = el("span", "wait-label");
+        c.txt = mqEl("span", "txt");
+        c.waitLabel = mqEl("span", "wait-label");
         c.waitTime = el("span", "wait-time");
-        c.where = el("span", "where");
+        c.where = mqEl("span", "where");
         doing.append(c.dot, c.txt, c.where);
         body.append(r1, c.model, doing);
         c.root.append(c.av, body);
@@ -276,11 +293,13 @@
       const msig = [a.model, a.role, job, jobFrom, motto].join("|");
       if (c.model.dataset.sig !== msig) {
         c.model.dataset.sig = msig;
-        c.model.textContent = "";
-        c.model.append(el("b", "", a.model || "model ?"));
-        if (job) c.model.append(document.createTextNode(" · "), el("span", "job-from", jobFrom ? jobFrom + ": " : ""), el("span", "job", job));
-        else if (motto) c.model.append(document.createTextNode(" · "), el(unset ? "span" : "i", unset ? "unset" : "", motto));
-        else if (a.role) c.model.append(document.createTextNode(" · " + a.role));
+        const mb = mqBox(c.model);
+        mb.textContent = "";
+        mb.append(el("b", "", a.model || "model ?"));
+        if (job) mb.append(document.createTextNode(" · "), el("span", "job-from", jobFrom ? jobFrom + ": " : ""), el("span", "job", job));
+        else if (motto) mb.append(document.createTextNode(" · "), el(unset ? "span" : "i", unset ? "unset" : "", motto));
+        else if (a.role) mb.append(document.createTextNode(" · " + a.role));
+        if (MQ) MQ.refresh(c.model);
         c.model.title = job && a.motto ? "“" + clean(a.motto) + "”" : "";
       }
       c.dot.className = "dot " + a.activity;
@@ -288,20 +307,22 @@
       if (a.activity === "thinking" && !a.active) doing = "thinking…";
       if (a.activity === "idle" && !doing) doing = "idle";
       if (a.wait_line) {
-        // Only the condition may ellipsize: ETA and measured idle remain visible in a narrow card.
+        // Only the condition may run past the card (it pans): ETA and measured idle remain visible in a narrow card.
         const split = a.wait_line.lastIndexOf(", ");
-        setText(c.waitLabel, split < 0 ? a.wait_line : a.wait_line.slice(0, split));
+        mqText(c.waitLabel, split < 0 ? a.wait_line : a.wait_line.slice(0, split));
         setText(c.waitTime, split < 0 ? "" : a.wait_line.slice(split));
-        c.txt.textContent = "";
-        c.txt.append(c.waitLabel, c.waitTime);
-      } else setText(c.txt, humanItem(doing));
+        if (c.txt.firstChild !== c.waitLabel || c.txt.lastChild !== c.waitTime) c.txt.replaceChildren(c.waitLabel, c.waitTime);
+      } else {
+        if (c.txt._mq && c.txt.firstChild !== c.txt._mq) c.txt.replaceChildren(c.txt._mq);
+        mqText(c.txt, humanItem(doing));
+      }
       c.txt.title = a.wait_line || "";
       c.root.classList.toggle("waiting", !!a.wait_line);
       // Space Age: which planet or platform the body is on, once more than Nauvis is in play
       const world = space.active && a.where ? a.where : "";
       setText(c.world, world);
       c.world.className = "world" + (world ? " on " + (a.on_platform ? "platform" : "p-" + (a.surface || "")) : "");
-      setText(c.where, a.location && a.location !== world ? "· " + a.location : "");
+      mqText(c.where, a.location && a.location !== world ? "· " + a.location : "");
       // the harness label gives way when the name does not fit beside the planet and tokens (Nick, 12:20: "Sonnet and
       // Gemini and Muse Spark names are cut off next to the planet location and harness")
       c.root.classList.remove("squeezed");
@@ -318,30 +339,37 @@
     if (!researchCard) {
       researchCard = { root: el("div", "card panel research") };
       const top = el("div", "top");
-      researchCard.tech = el("div", "tech");
+      researchCard.tech = mqEl("div", "tech");
       researchCard.pct = el("div", "pct");
       top.append(el("span", "rlabel", "Research"), researchCard.tech, researchCard.pct);
       const bar = el("div", "bar");
       researchCard.fill = el("i");
       bar.append(researchCard.fill);
-      researchCard.recent = el("div", "recent");
-      researchCard.levels = el("div", "levels");  // (d20 batch57 S4) infinite technologies' levels reached
-      researchCard.root.append(el("div", "panel-title", "Research"), top, bar, researchCard.recent, researchCard.levels);
+      // one line under the bar: done, the latest, and (d20 batch57 S4) infinite technologies' levels reached; a
+      // second line of levels did not fit a card cell at any density (batch115: cut to 6 px of 19)
+      researchCard.recent = mqEl("div", "recent");
+      researchCard.root.append(el("div", "panel-title", "Research"), top, bar, researchCard.recent);
       box.appendChild(researchCard.root);
     }
     researchCard.root.style.order = 999;
     researchCard.root.style.gridColumn = agents.length % 2 === 0 ? "1 / span 2" : "";
     const r = s.research || {};
-    setText(researchCard.tech, r.label || "No research queued");
+    mqText(researchCard.tech, r.label || "No research queued");
     setText(researchCard.pct, r.progress != null ? Math.floor(r.progress * 100) + "%" : r.done_count ? r.done_count + " done" : "");
     researchCard.fill.style.width = (r.progress != null ? Math.max(0, Math.min(1, r.progress)) * 100 : 0) + "%";
     const rec = (r.recent || []).slice(0, 3).map((x) => x.label);
-    researchCard.recent.textContent = "";
-    researchCard.recent.append(el("b", "", (r.done_count || 0) + " done"));
-    if (rec.length) researchCard.recent.append(document.createTextNode(" · latest " + rec.join(", ")));
     const reps = (Array.isArray(r.repeating) ? r.repeating : []).slice(0, 4);
-    setText(researchCard.levels, reps.length ? "Levels: " + reps.map((x) => x.label + " " + x.level).join(" · ") : "");
-    researchCard.levels.hidden = !reps.length;
+    const levels = reps.length ? "Levels: " + reps.map((x) => x.label + " " + x.level).join(" · ") : "";
+    const rsig = [r.done_count || 0, rec, levels].join("|");
+    if (researchCard.recent.dataset.sig !== rsig) {
+      researchCard.recent.dataset.sig = rsig;
+      const rb = mqBox(researchCard.recent);
+      rb.textContent = "";
+      rb.append(el("b", "", (r.done_count || 0) + " done"));
+      if (rec.length) rb.append(document.createTextNode(" · latest " + rec.join(", ")));
+      if (levels) rb.append(document.createTextNode(" · " + levels));
+      if (MQ) MQ.refresh(researchCard.recent);
+    }
   }
 
   function sparkPath(series, w, h) {
@@ -414,6 +442,9 @@
     try { box.innerHTML = P.svg(name, size); } catch (err) { console.error(err); return null; }
     return box;
   }
+  // spark cells are about 80 px of label beside the rate at 1080p: the item names that do not fit, shortened
+  const SPARK_LABEL = { "low-density-structure": "Low density", "promethium-science-pack": "Prom. sci.",
+    "electromagnetic-science-pack": "EM sci.", "agricultural-science-pack": "Agri. sci." };
   function renderSparks(items) {
     const box = $("sparks");
     const sig = items.map((x) => x.item).join(",");
@@ -422,7 +453,7 @@
       box.textContent = "";
       if (!items.length) box.appendChild(el("div", "empty", "Waiting for the first plates…"));
       for (const it of items) {
-        const [label, color] = itemInfo(it.item);
+        const [name, color] = itemInfo(it.item), label = SPARK_LABEL[it.item] || name;
         const cell = el("div", "spark");
         cell.dataset.item = it.item;
         const icon = itemIcon(it.item, 32);
@@ -1014,7 +1045,7 @@
           who.append(avatar(a, slot === "main" ? "sm" : "xs"), el("span", "", a.display_name));
           return i ? [el("span", "amp", "&"), who] : [who];
         }));
-        label._doing = el("span", "doing");
+        label._doing = mqEl("span", "doing");
         label.append(label._doing);
       }
       const lead = agents[0];
@@ -1028,7 +1059,7 @@
         : cam.doing ? clean(cam.doing) // a trio's small tile: its plan line, claim or action (serve.py)
         : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
-      setText(label._doing, doing ? "· " + doing : "");
+      mqText(label._doing, doing ? "· " + doing : "");
       frame.style.borderColor = cam.attack ? "rgba(224,78,58,0.75)" : palette(lead).ink + "66";
       frame.style.setProperty("--bracket", cam.attack ? "rgba(224,78,58,0.9)" : palette(lead).ink + "b0");
       applyPalette(label, lead);
@@ -1116,6 +1147,20 @@
     if (l2.children.length) card.append(l2);
     return card;
   }
+  // Five planet chips are wider than the Space head's room at either layout (305 px of 199 at 1080p): then each
+  // shows its first three letters in its planet's colour. Measured again when the widget comes round (hidden, the
+  // row has no width).
+  let planetsWatched = false;
+  function fitPlanets() {
+    const row = $("space-planets");
+    if (!row) return;
+    if (!planetsWatched && window.ResizeObserver) { planetsWatched = true; new ResizeObserver(fitPlanets).observe(row); }
+    if (!row.clientWidth) return;
+    const chips = [...row.children];
+    for (const c of chips) { setText(c, c.dataset.name); c.title = ""; }
+    if (row.scrollWidth <= row.clientWidth + 1) return;
+    for (const c of chips) { setText(c, c.dataset.name.slice(0, 3)); c.title = c.dataset.name; }
+  }
   function renderSpace(s) {
     const sp = s.space || {};
     const box = $("space");
@@ -1129,7 +1174,12 @@
     box.dataset.sig = sig;
     const planets = $("space-planets");
     planets.textContent = "";
-    for (const name of sp.planets || []) planets.append(el("span", "planet p-" + name.toLowerCase().replace(/ /g, "-"), name));
+    for (const name of sp.planets || []) {
+      const chip = el("span", "planet p-" + name.toLowerCase().replace(/ /g, "-"), name);
+      chip.dataset.name = name;
+      planets.append(chip);
+    }
+    fitPlanets();
     const sci = $("space-sci");
     sci.textContent = "";
     for (const p of sp.science || []) {
