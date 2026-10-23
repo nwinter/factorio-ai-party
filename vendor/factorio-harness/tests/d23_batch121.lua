@@ -128,4 +128,49 @@ eq(counts().sol.unacked_tells,2)
 eq(sol('chat_ack',{seq='all'}).read,2)
 c=counts().sol; eq(c.unacked_tells,nil); eq(c.unacked_oldest_tick,nil)
 eq(idle().sol.unacked_tells,0)
-print('d23 batch121: ok')
+print('d23 batch121 CD1: ok')
+
+-- CD2 (site:4404, shift62: Anvil docked 2 h at Vulcanus on item_count copper-plate >= 5000 while its hub asked for copper
+-- from Nauvis only): each unmet item wait says where the item can come from at that stop, and "no known source" when
+-- nothing can: no request from that planet, nothing made aboard and no machine aboard set to make it.
+do
+  local saved={defines=defines,prototypes=prototypes,game=game}
+  defines={flow_precision_index={ten_minutes=3}}
+  prototypes={item={['copper-plate']={},['firearm-magazine']={},['calcite']={}}}
+  local planet_made={vulcanus={['copper-plate']=9000},nauvis={['copper-plate']=6000},aquilo={}}
+  local aboard_made={['firearm-magazine']=300}
+  local vulcanus,nauvis,aquilo={index=3,name='vulcanus'},{index=1,name='nauvis'},{index=5,name='aquilo'}
+  local platform_surface={index=9,name='platform-9'}
+  game={planets={vulcanus={surface=vulcanus},nauvis={surface=nauvis},aquilo={surface=aquilo}}}
+  local stock={vulcanus={['copper-plate']=18000},nauvis={['copper-plate']=12000},aquilo={}}
+  local force={logistic_networks={}}
+  for k,v in pairs(stock) do force.logistic_networks[k]={{get_item_count=function(n) return v[n] or 0 end}} end
+  force.get_item_production_statistics=function(sf)
+    local t=sf==platform_surface and aboard_made or planet_made[sf.name]
+    return {get_flow_count=function(q) assert(q.category=='input' and q.count); return t[q.name] or 0 end}
+  end
+  local function filter(name,from,min) return {value={name=name,quality='normal'},import_from={name=from},min=min} end
+  local sections={sections_count=2,get_section=function(i)
+    return ({{active=true,filters={filter('copper-plate','nauvis',5000),filter('calcite','aquilo',200)}},{active=false,filters={filter('copper-plate','vulcanus',5000)}}})[i] end}
+  local wait=function(item,n) return {type='item_count',condition={first_signal={name=item},comparator='≥',constant=n}} end
+  local recipe={products={{type='item',name='firearm-magazine',amount=1}}}
+  platform_surface.find_entities_filtered=function(f) assert(f.limit==200)
+    return {{get_recipe=function() return recipe end},{get_recipe=function() return recipe end},{get_recipe=function() return nil end}} end
+  local anvil={name='Anvil',force=force,surface=platform_surface,
+    hub={valid=true,get_item_count=function() return 0 end,get_logistic_sections=function() return sections end},
+    schedule={records={{station='vulcanus',wait_conditions={wait('copper-plate',5000),wait('firearm-magazine',100)}},
+      {station='nauvis',wait_conditions={wait('copper-plate',5000)}},{station='aquilo',wait_conditions={wait('calcite',200)}}}}}
+  local spindle={name='Spindle',valid=true,hub={valid=true,get_item_count=function(n) return n=='copper-plate' and 7000 or 0 end},
+    schedule={records={{station='vulcanus'},{station='nauvis'}}}}
+  force.platforms={anvil,spindle}
+  anvil.valid=true
+  local N=dofile('mod/agent-harness_0.1.0/launchneed.lua'){elsewhere=function() return 'x',0 end}
+  local lines=N.wait_lines(anvil)
+  eq(lines[1],'stop 1 (vulcanus) waits for copper-plate >= 5000: the hub holds 0, 5000 short; no known source at vulcanus: the hub asks for it from nauvis only, not from vulcanus, nothing aboard made it over the last 10 min and no machine aboard is set to make it (vulcanus holds 18000 (18000 in its logistic networks, 0 outside them) and made 900 a minute over the last 10 min; it reaches the hub only by a request from vulcanus)')
+  eq(lines[2],'stop 1 (vulcanus) waits for firearm-magazine >= 100: the hub holds 0, 100 short; vulcanus holds 0 (0 in its logistic networks, 0 outside them) and made 0 a minute over the last 10 min; sources: the hub has no request for it; made aboard 30 a minute over the last 10 min, 2 machines aboard set to make it')
+  eq(lines[3],'stop 2 (nauvis) waits for copper-plate >= 5000: the hub holds 0, 5000 short; nauvis holds 12000 (12000 in its logistic networks, 0 outside them) and made 600 a minute over the last 10 min; sources: the hub asks for it from nauvis; nothing aboard made it over the last 10 min; other platforms stopping at nauvis hold it: Spindle 7000; about 9 min at nauvis\'s rate')
+  eq(lines[4],'stop 3 (aquilo) waits for calcite >= 200: the hub holds 0, 200 short; no known source at aquilo: the hub asks for it from aquilo, which holds none and made none over the last 10 min; no other platform stopping there holds it; nothing aboard made it or is set to make it')
+  eq(#lines,4)
+  defines,prototypes,game=saved.defines,saved.prototypes,saved.game
+end
+print('d23 batch121 CD2: ok')
