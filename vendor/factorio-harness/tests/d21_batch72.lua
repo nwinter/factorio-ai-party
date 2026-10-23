@@ -145,9 +145,11 @@ eq(w5.leg,'nauvis->vulcanus'); eq(F.call(p,{id=w5.id}).watch.at_start,'nauvis')
 F.call(p,{id=w5.id,clear=true})
 -- the platform gone while watching
 F.call(p,{platform='Kestrel IVc'})
-force.platforms={}
+-- (d22 batch110 BT1: a watch keeps its platform while it is valid) gone as in the game: off the force's list and invalid
+force.platforms={}; pl.valid=false
 F.tick(game.tick+60)
 local wg=st.flightwatch.list[#st.flightwatch.list]; eq(wg.why,'the platform is gone'); assert(F.call(p,{id=wg.id}).line:find('ended: the platform is gone'))
+pl.valid=true
 -- the alert lines: to the setter, once
 local h={}
 local lines=F.lines(p,h)
