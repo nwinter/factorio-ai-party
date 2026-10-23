@@ -12378,3 +12378,45 @@ sources on their networks (an arithmetic combinator's +10000, two readers on one
   segment ends; `double_counts` compares segments.
 - Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
   `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.
+
+## d23 batch123 CF2 (eng/d20-batch123): a watch split by an edit inside what it measures (mixed.lua)
+
+Viewer Aurora (site:4494): "Could measurement watches flag module or feed edits during a test and mark the sample as
+mixed? Preserve the before/after data and notify its owner to start a clean window." In shift63, Sonnet's module swaps
+on Gleba breeders invalidated Luna's samples three times, and she reset each window by hand.
+
+- What counts as an edit, for the bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch,
+  and flight_watch while it watches):
+  - Something done to a measured entity: built, mined, destroyed, configured, rotated or wired, or items moved in or
+    out by a call or a ctrl-click.
+  - A feeder of one built, removed or configured: an inserter or drill whose drop or pickup point is on it, a loader
+    touching it, or a beacon whose supply area reaches it.
+  - For belt_flow: a belt, splitter, loader or inserter within a tile of the sampled line's box.
+  - On a watched platform: any turret, collector, thruster, beacon, inserter, loader or belt.
+- Where edits are seen:
+  - The harness's builds and mines, and the configure, rotate, transfer, feed, refuel, rearm and wire calls of any
+    agent.
+  - The events control.lua forwards: on_built_entity, the mined events, on_entity_died, on_player_fast_transferred,
+    and on_gui_opened/closed when the recipe or modules differ between them.
+  - Not seen: construction robots' and platforms' own builds (no event of them is forwarded).
+  - A second edit of the same entity in the same tick counts once.
+- What happens at the first edit and each one after:
+  - The watch's read up to the edit is kept: `mixed.parts` holds from_tick, to_tick, line, and up to 64 lines.
+  - The watch starts again from the edit tick with its first arguments, to the same end tick. A flight watch's counts
+    begin again, to its arrival or limit.
+  - The watch ends at the edit instead, its final being that part, in three cases: an entity it measures was mined or
+    destroyed, the new start is refused, or fewer seconds are left than a new watch takes.
+- Where it shows:
+  - `mixed.edits` gives each edit's tick, what was done, by whom, on which entity, and how it touches the watch.
+  - The watch's read (`uptime {}`, `turret_tally {}`, belt_flow, platform_supply's tally, platform_defense) has
+    `mixed`. The watch row (status work, idle, sleep) adds the line.
+  - The owner hears it once in team alerts.
+- The copy of world n (10:10 save): Grok's uptime on biochambers (54.5,58.5) and (52.5,48.5) ran 12 s. Then Grok's
+  configure of 4 speed-module-2 into (54.5,58.5) split it. The read kept the 12 s part, with 9 completions over the two
+  machines, and the new window ran from the configure's tick.
+- Costs on the copy (emulated amd64, no tick work):
+  - An index rebuild after a watch starts or splits: 0.76 ms.
+  - The running-watch check with stored watches: 0.13 ms.
+  - An edit of ours that touches no watch: 0.29 ms; with no watch stored: 0.004 ms.
+  - A death of another force's entity is dropped at the force check.
+

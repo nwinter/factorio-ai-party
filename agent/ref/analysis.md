@@ -255,6 +255,11 @@
   runs in the background, and your actions meanwhile do not end it); one late, stalled, invalid or done with its final
   unread is listed in a sleep's `watches`. `reason` (up to 200 characters) on the watch or on `fh sleep --reason TEXT`
   records your own reason to wait; it is shown back as given, and the operator's idle check shows it.
+  An edit inside what a running watch measures (a measured entity configured, rotated, wired, fed by hand, built or
+  removed; a feeding inserter, drill, loader or beacon built, removed or configured; a turret, collector or feed aboard
+  a watched platform) splits it at the edit. The read up to the edit stays in `mixed.parts`, `mixed.edits` names each
+  edit, and the watch starts again from the edit to its end tick (it ends at the edit when that start is refused or a
+  measured entity went). Its read, its watch row and one alert to you say so. Robot and platform builds are not seen.
 - `pipe_gaps {from, to, via?}` or `{line}` (`surface`: those pipes on another planet by remote view): a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts
   where neighbours do not join or the line stops, each side's fluid named. `scan` rows of our pipes, pipe-to-grounds,
   tanks and pumps give `fluid` (the segment's). `line: {x,y}` (a pipe, pipe-to-ground, tank or pump of ours): the

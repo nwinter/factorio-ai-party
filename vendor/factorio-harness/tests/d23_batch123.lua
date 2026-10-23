@@ -6,7 +6,8 @@
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 storage={agent_harness={active={}}}
-defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
+defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14,
+  on_built_entity=15,on_player_mined_entity=16,on_robot_mined_entity=17,on_player_fast_transferred=18,on_gui_opened=19,on_gui_closed=20},
   shooting={not_shooting=0,shooting_enemies=1},controllers={character=1,remote=27,spectator=2},direction={north=0},inventory={chest=1},
   build_mode={normal=1},build_check_type={manual=1},flow_precision_index={five_seconds=0,one_minute=1}}
 rendering={draw_text=function() return {valid=true,destroy=function() end} end,get_object_by_id=function() return nil end}
@@ -122,4 +123,84 @@ has(r.stale[1],"luna's focus on #"..pj.id..' marked stale 0s ago: step 3 of #'..
 luna('board_focus',{id=pj.id,step=1,blocker='source proof pending'})
 r=luna('board_update',{id=pj.id,edit_step={n=1,text='source proof, pending the clean window'}})
 eq(r.stale,nil)
+
+-- (d23 batch123 CF2, viewer Aurora 09:45: "Could measurement watches flag module or feed edits during a test and mark the
+-- sample as mixed?") An edit inside what a running watch measures splits its window: the read before kept, the watch
+-- started again from the edit to its end tick, its owner told once; an edit elsewhere leaves it.
+do
+  local world={}
+  local function ent(name,typ,x,y,extra)
+    local e={valid=true,name=name,type=typ,position={x=x,y=y},unit_number=9000+#world,force=force,surface=nauvis,quality={name='normal'},
+      bounding_box={left_top={x=x-1,y=y-1},right_bottom={x=x+1,y=y+1}}}
+    for k,v in pairs(extra or {}) do e[k]=v end
+    world[#world+1]=e
+    return e
+  end
+  nauvis.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(world) do
+      if e.valid then
+        local q=f.position and {x=f.position.x or f.position[1],y=f.position.y or f.position[2]}
+        local ok=true
+        if q and f.radius then ok=((e.position.x-q.x)^2+(e.position.y-q.y)^2)^0.5<=f.radius
+        elseif q then ok=q.x>=e.bounding_box.left_top.x and q.x<=e.bounding_box.right_bottom.x and q.y>=e.bounding_box.left_top.y and q.y<=e.bounding_box.right_bottom.y end
+        if f.name and f.name~=e.name then ok=false end
+        if ok then out[#out+1]=e end
+      end
+    end
+    return out
+  end
+  local t1=ent('gun-turret','ammo-turret',10,10,{kills=0,damage_dealt=0})
+  local t2=ent('gun-turret','ammo-turret',14,10,{kills=0,damage_dealt=0})
+  local function advance(n) for _=1,n do jump(1); runtime.tick{tick=tick} end end
+  local ai=runtime.bots.index_of('astra')
+  local S=storage.agent_harness
+  eq(runtime.mixed.edit(t1,'configure by sol'),0,'no watch running: nothing')
+  local r=astra('turret_tally',{positions={{x=10,y=10},{x=14,y=10}},seconds=60})
+  eq(r.watching,true)
+  local job=S.turret_tally[ai]; eq(job.call.action,'turret_tally'); eq(job.call.args.seconds,60)
+  local start=job.start
+  advance(600); t1.kills=3; t1.damage_dealt=40; advance(300)
+  -- an inserter feeding t1, far from the other: built by Sol's call (the harness build) splits it
+  local feeder=ent('inserter','inserter',10,12.2,{drop_position={x=10,y=10.6},pickup_position={x=10,y=13.2}})
+  local edit_tick=tick
+  eq(runtime.mixed.edit(feeder,'built by sol'),1)
+  local new=S.turret_tally[ai]
+  assert(new~=job,'started again'); eq(new.start,edit_tick); eq(new.until_tick,job.until_tick); eq(new.call.args.seconds,60,'the first arguments')
+  eq(new.mixed.parts[1].from_tick,start); eq(new.mixed.parts[1].to_tick,edit_tick)
+  has(new.mixed.parts[1].line,'watching 2 turrets for 15s of 60s: 1 with a change in kills or damage dealt, 1 without; kills +3')
+  has(new.mixed.edits[1].text,'built by sol on inserter (10,12.2)'); eq(new.mixed.edits[1].how,'feeds what it measures')
+  has(new.mixed.line,'mixed: 1 edit during the window, the first at tick '..edit_tick..' (built by sol on inserter (10,12.2), feeds what it measures); the read up to tick '..edit_tick..' is kept apart (mixed.parts); this window runs from tick '..edit_tick)
+  -- the read carries it; the status work row too; astra hears it once
+  local rd=astra('turret_tally',{})
+  eq(rd.mixed.line,new.mixed.line); eq(rd.mixed.parts[1].to_tick,edit_tick); has(rd.line,'watching 2 turrets for 0s of 45s')
+  local function alerts(who)
+    local got={}
+    for _,l in ipairs(runtime.mixed.lines({index=0,name=who},{}) or {}) do got[#got+1]=l end
+    return got
+  end
+  local al={}
+  for _,l in ipairs((rd.team or {}).alerts or {}) do if l:find('mixed',1,true) then al[#al+1]=l end end
+  eq(#al,1); has(al[1],'your turret_tally watch (started tick '..start..'): mixed: 1 edit'); eq(#alerts('astra'),0,'once')
+  local w=runtime.measures.list(ai)[1]; has(w.line,'; mixed: 1 edit'); has(w.mixed,'mixed: 1 edit')
+  -- elsewhere: an inserter dropping into nothing it measures, an enemy's death, the same change seen twice
+  local far=ent('inserter','inserter',30,30,{drop_position={x=30,y=31},pickup_position={x=30,y=29}})
+  eq(runtime.mixed.edit(far,'built by sol'),0)
+  eq(runtime.mixed.edit(feeder,'built by sol'),0,'the call and its event split once')
+  local bug=ent('small-biter','unit',10,10,{force={name='enemy'}})
+  runtime.on_event{name=defines.events.on_entity_died,entity=bug,tick=tick}
+  eq(S.turret_tally[ai],new)
+  -- a measured turret destroyed (the event): the new start is refused (it is gone), so the watch ends at the edit
+  advance(120)
+  t2.valid_before=true
+  runtime.on_event{name=defines.events.on_entity_died,entity=t2,tick=tick}
+  local after=S.turret_tally[ai]
+  eq(after,new,'not started again'); eq(after.until_tick,tick); eq(after.mixed.ended,'gun-turret (14,10) it measured is gone')
+  has(after.mixed.edits[2].text,'destroyed on gun-turret (14,10)'); eq(after.mixed.edits[2].how,'what it measures')
+  t2.valid=false
+  advance(2)
+  local fin=astra('turret_tally',{})
+  eq(fin.done,true); has(fin.mixed.line,'mixed: 2 edits during the window'); has(fin.mixed.line,'the watch ended at the edit (gun-turret (14,10) it measured is gone): its final is the part before it')
+end
+
 print('d23_batch123: ok')

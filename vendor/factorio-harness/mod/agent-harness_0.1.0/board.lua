@@ -2397,6 +2397,11 @@ return function(api)
       local ok, list = pcall(api.progress_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- (d23 batch123 CF2) a watch of this agent's split by an edit inside what it measures (mixed.lua)
+    if api.mixed_lines then
+      local ok, list = pcall(api.mixed_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).
     if api.shipment_lines then
       local ok, list = pcall(api.shipment_lines, p, h)

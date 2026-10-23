@@ -2313,7 +2313,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read or replaced, end_tick its time limit); none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line, mixed (d23 batch123 CF2: an edit inside what it measures split its window: the line); and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read or replaced, end_tick its time limit); none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -6492,6 +6492,8 @@ local function build_direct(p,stack,pos,direction,quality,kind,place,rail_layer)
   -- a generator, solar panel or accumulator: the networks view is made again from now (Z5, networks.built)
   pcall(M.networks.built,e)
   pcall(M.fusion.watch,e)
+  -- (d23 batch123 CF2) a running watch it touches splits there (mixed.lua)
+  if M.mixed then pcall(M.mixed.edit,e,'built by '..M.board.who(p)) end
   return e,picked,replaced,need
 end
 local function build_reach(p,pos,what)
@@ -16468,7 +16470,7 @@ M.board=require('board'){state=state,on_update=function(by,item,removed) return 
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,speaker_lines=function(p,h) return M.pushalerts.speaker_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   death_lines=function(p,h) return M.death_lines(p,h) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,spider_lines=function(p,h) return M.spiderroute and M.spiderroute.lines(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,delivery_lines=function(p,h) return M.delivwatch and M.delivwatch.lines(p,h) end,spider_lines=function(p,h) return M.spiderroute and M.spiderroute.lines(p,h) end,flight_lines=function(p,h) return M.flightwatch and M.flightwatch.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,mixed_lines=function(p,h) return M.mixed and M.mixed.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -18617,7 +18619,7 @@ M.ammoreserve=require('ammoreserve'){state=state}
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
   fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
-  trace_done=function(pl) return M.ammofeed.done_tick(pl) end,supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end}
+  trace_done=function(pl) return M.ammofeed.done_tick(pl) end,supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end,mixed_view=function(w) return M.mixed and M.mixed.view(w) end}
 function handlers.flight_watch(p,a) return M.flightwatch.call(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -19640,7 +19642,12 @@ function M.tick_action(index,action,event)
     elseif action.done_tick then
       if event.tick>=action.done_tick then
         local okh,holds=pcall(M.grids.mining_line,e)
-        if M.bots.mine(p,e) then action.holds=okh and holds or nil; finish(index,'target_mined')
+        -- (d23 batch123 CF2) as it stood, for a running watch it was in (mixed.lua)
+        local okd,was=pcall(function() return M.mixed.watches() and M.mixed.describe(e) end)
+        if M.bots.mine(p,e) then
+          action.holds=okh and holds or nil
+          if okd and was then pcall(M.mixed.edit,was,'mined by '..M.board.who(p),true) end
+          finish(index,'target_mined')
         else
           -- The engine refuses for two reasons: no room for the products,
           -- or an entity that cannot be mined by hand (a stump or remnant).
@@ -19906,6 +19913,8 @@ end do local MAX_ALERTS=64
 function M.on_event(event)
   -- (d22 batch97 BG3) a chunk something was built in by hand, mined in or died in is marked for the chart (chart.lua)
   if M.chart and M.chart.events[event.name] then pcall(M.chart.mark,event) end
+  -- (d23 batch123 CF2) a build, mine, death, ctrl-click or GUI change inside what a running watch measures (mixed.lua)
+  if M.mixed and M.mixed.events[event.name] then pcall(M.mixed.on_event,event) end
   -- The player log must never quarantine the runtime: its faults are counted.
   if M.players.events[event.name] then
     local ok,err=pcall(M.players.on_event,event)
@@ -20127,6 +20136,64 @@ M.territory=require('territory'){state=function(surface,force,t) return M.demoli
         end
         return out
       end
+    end
+  end
+end)()
+-- (d23 batch123 CF2, viewer Aurora 09:45) an edit inside what a running bounded watch measures splits its window there
+-- (mixed.lua): the watch calls keep their arguments (a split starts the watch again with them) and their reads carry
+-- the split; the edit calls (any agent's) are seen after they act, the builds and mines where they happen.
+;(function()
+  M.mixed=require('mixed'){state=state,player=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
+    who_index=function(index) local pl=M.lookup(index); return pl and pl.valid and M.board.who(pl) or nil end,
+    call=function(p,action,args) return handlers[action](p,args) end,flight_rebase=function(w,tick) return M.flightwatch.rebase(w,tick) end,
+    read={uptime=function(job) return M.uptime.result(job,false) end,turret_tally=function(job) return M.turrettally.result(job,false) end,
+      belt_flow=function(job) return M.beltsample.finish(job) end,collector_tally=function(job) return M.collectreach.result(job,false) end,
+      asteroid_watch=function(job) return M.asteroidwatch.result(job,false) end}}
+  local WATCH={uptime='uptime',turret_tally='turret_tally',belt_flow='belt_flow',
+    platform_defense=function(a) return a.asteroids==true and 'asteroid_watch' or nil end,
+    platform_supply=function(a) return a.collection==true and 'collector_tally' or nil end}
+  for name,kind in pairs(WATCH) do
+    local orig=handlers[name]
+    handlers[name]=function(p,a)
+      local out=orig(p,a)
+      local k=type(kind)=='function' and kind(a or {}) or kind
+      local job=k and p and p.valid and (state()[k] or {})[p.index]
+      if type(job)=='table' then
+        if job.start==game.tick and not job.result and not job.call then
+          local args={}
+          for key,v in pairs(a or {}) do args[key]=v end
+          job.call={action=name,args=args}
+        elseif job.mixed and type(out)=='table' then
+          local into=k=='collector_tally' and type(out.tally)=='table' and out.tally or out
+          into.mixed=M.mixed.view(job)
+        end
+      end
+      return out
+    end
+  end
+  local SKIP={position=true,positions=true,surface=true,platform=true,walk=true,walked=true,by=true,via=true,avoid_enemies=true,unsafe_goal=true}
+  local function surface_of(p,a)
+    if a.platform~=nil then local pl=space.platform(p,a.platform); return pl and pl.surface end
+    if type(a.surface)=='string' then return game.get_surface(a.surface) end
+    local b=body(p); return b and b.valid and b.surface or nil
+  end
+  for _,name in ipairs{'configure','rotate','transfer','feed','refuel','rearm','wire'} do
+    local orig=handlers[name]
+    handlers[name]=function(p,a)
+      local out=orig(p,a)
+      if type(out)=='table' and not out.walking and p and p.valid and M.mixed.watches() then
+        pcall(function()
+          local keys={}
+          for key in pairs(a or {}) do if not SKIP[key] then keys[#keys+1]=key end end
+          table.sort(keys)
+          local list={}
+          if type(a.positions)=='table' then for _,q in ipairs(a.positions) do list[#list+1]=type(q)=='table' and (q.position or q) or q end end
+          if type(a.position)=='table' then list[#list+1]=a.position end
+          if type(out.position)=='table' then list[#list+1]=out.position end
+          M.mixed.at(surface_of(p,a),list,name..(#keys>0 and ' '..table.concat(keys,', ') or '')..' by '..M.board.who(p))
+        end)
+      end
+      return out
     end
   end
 end)()

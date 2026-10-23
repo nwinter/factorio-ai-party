@@ -567,7 +567,21 @@ return function(api)
       w.state == 'done' and ', ended: ' .. tostring(w.why) or string.format(', until its arrival or %s more', secs(w.until_tick - now)), M.worst(w), M.power_text(w),
       t.damage.damage, t.damage.hits, t.damage.hits == 1 and '' or 's', #t.damage.entities > 0 and ' (' .. table.concat(t.damage.entities, ', ') .. ')' or '', t.lost_n,
       t.repair_used and tostring(t.repair_used) or '?', tostring(t.packs_start), tostring(t.packs_end), fuel_text(t.fuel_start, t.fuel_end))
+    -- (d23 batch123 CF2) an edit aboard while it watched: the part before it, kept apart (mixed.lua)
+    if w.mixed then r.mixed = api.mixed_view and api.mixed_view(w) or nil; r.line = r.line .. '; ' .. w.mixed.line end
     return r
+  end
+  -- (d23 batch123 CF2) an edit aboard while it watches (mixed.lua): the read so far, then its counts begun again from
+  -- tick to the same end (its arrival, or the limit it had).
+  function M.rebase(w, tick)
+    local pl = platform_of(w)
+    assert(pl and pl.valid, 'its platform is gone')
+    local before = M.row(w, true)
+    local until_tick = w.until_tick
+    begin(w, pl, tick)
+    w.until_tick = until_tick
+    M.reindex()
+    return before
   end
   M.NOTE = 'read once a second (sample_ticks): an empty run is the samples in a row that read 0 in the turret\'s ammo slots, each counting the ticks since the sample before, so a turret empty for under a second between two samples can be missed; '
     .. 'feed: the platform\'s ammunition trace (maker, hub, chest, preload: only what is on its way now, none: no inserter feeds it), asked at most once a minute (on a platform of over 514 belts once every 7 ticks a belt: 6743 belts, about 13 min), taken once read, and asked again 10 s after the last ask when a turret begins to read empty (feed_empty: the first trace begun after it first read empty, empty or refilled by then); none on a platform with no ammo turret; each watch reads on its own tick of the second; '
