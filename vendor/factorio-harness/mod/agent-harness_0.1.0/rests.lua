@@ -1,12 +1,26 @@
 -- Rests between turns (d20 batch50 B1, viewer Aurora: "Could quota rests appear in team status and tell replies, with
 -- a return time"): Gemini's loop sleeps between turns to pace its quota (tools/agy-quota.py, runs/RUN/AGENT/resting.json)
--- and pushes the rest here as the operator: rest {agent, until_clock, until_s, reason, ticks_per_s?}. The teammates line
--- shows "resting until 07:34 (pace)" in place of offline, and a tell to the agent says so in its reply with the
--- agent's board items whose review (evidence next_check) falls inside the rest. The rest ends with rest {agent, done:
--- true} (the loop's next turn), the agent's own next request, or the tick it was due to end.
+-- and pushes the rest here as the operator: rest {agent, until_clock, until_s, reason, until_day?, ticks_per_s?}. The
+-- teammates line shows "resting until 07:34 (pace)" in place of offline, and a tell to the agent says so in its reply
+-- with the agent's board items whose review (evidence next_check) falls inside the rest. The rest ends with rest {agent,
+-- done: true} (the loop's next turn, or tools/quota_rest.py --done), the agent's own next request, or the tick it was
+-- due to end.
+-- (d22 batch108 BR1, Grok's weekly limit at 20:04, reset Sat 15:59) A rest lasts up to 7 days (until_s <= 604800).
+-- The runtime has no calendar: the pusher (agy-quota.py rest, tools/quota_rest.py) sends until_day (Mon..Sun) when the
+-- rest ends on another date of the shift clock (the operator's local clock, which deadline.txt and the clock: line
+-- use) than the day it is pushed, and the label says "resting until Sat 15:59 (quota)"; a same-day rest keeps HH:MM.
+-- "The agent's own next request" is a request whose reply carries the agent's clock: line (runtime dispatch:
+-- state().clocks[index].call_tick, not set by describe, profiles, cameras or a peek). A relaunched agent's startup
+-- does not end the rest by itself: tools/launch-agent.sh's `fh call describe` is describe, tools/team_bots.py's
+-- bots/bot_create and start-team's shift_start are operator calls, and supervise.sh / idle_nudge.py type or tell as the
+-- operator. The agent's own first calls (AGENTS.md: ./fh call status, chat, board) do end it: an account that is not
+-- at its limit after all plays, and its first status ends the rest. One at its limit makes no request (the model call
+-- fails before any tool runs), so the rest stands until its tick or done.
 return function(api)
   local M = {operator={}}
   local REASONS = {pace=true, quota=true}
+  local DAYS = {Mon=true, Tue=true, Wed=true, Thu=true, Fri=true, Sat=true, Sun=true}
+  local MAX_S = 7 * 86400
   local function store()
     local s = api.state()
     s.rests = s.rests or {}
@@ -22,14 +36,16 @@ return function(api)
       return {agent=name, ended=had}
     end
     assert(type(a.until_clock) == 'string' and a.until_clock:match('^%d%d:%d%d$'), 'until_clock must be HH:MM')
-    assert(type(a.until_s) == 'number' and a.until_s > 0 and a.until_s <= 86400, 'until_s must be 1..86400 seconds')
+    assert(type(a.until_s) == 'number' and a.until_s > 0 and a.until_s <= MAX_S, 'until_s must be 1..604800 seconds (7 days)')
     assert(REASONS[a.reason], 'reason must be pace or quota')
+    assert(a.until_day == nil or DAYS[a.until_day], 'until_day must be Mon, Tue, Wed, Thu, Fri, Sat or Sun')
     local tps = type(a.ticks_per_s) == 'number' and a.ticks_per_s >= 1 and a.ticks_per_s <= 600 and a.ticks_per_s or 60
-    local row = {reason=a.reason, until_clock=a.until_clock, since_tick=game.tick, until_tick=game.tick + math.ceil(a.until_s * tps)}
+    local row = {reason=a.reason, until_clock=a.until_clock, until_day=a.until_day, since_tick=game.tick,
+      until_tick=game.tick + math.ceil(a.until_s * tps)}
     store()[name] = row
-    return {agent=name, until_clock=row.until_clock, until_tick=row.until_tick, reason=row.reason}
+    return {agent=name, until_clock=row.until_clock, until_day=row.until_day, until_tick=row.until_tick, reason=row.reason}
   end
-  -- The rest `name` is in now ({reason, until_clock, since_tick, until_tick}), or nil: none pushed, past its tick, or
+  -- The rest `name` is in now ({reason, until_clock, until_day?, since_tick, until_tick}), or nil: none pushed, past its tick, or
   -- the agent has made a request since it began.
   function M.get(name)
     local row = name and store()[name]
@@ -41,7 +57,9 @@ return function(api)
     end
     return row
   end
-  function M.label(row) return string.format('resting until %s (%s)', row.until_clock, row.reason) end
+  function M.label(row)
+    return string.format('resting until %s%s (%s)', row.until_day and row.until_day .. ' ' or '', row.until_clock, row.reason)
+  end
   -- For a tell's reply: "gemini is resting until 07:34 (pace); board items with a review in the rest: #12 Boiler
   -- check (review in 3 min)", or nil when `name` is not resting.
   function M.tell_line(name)

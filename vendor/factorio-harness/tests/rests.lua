@@ -105,6 +105,28 @@ op('rest',{agent='opus',until_clock='09:41',until_s=10,reason='pace'})
 jump(601)
 runtime.dispatch{action='status',args={brief=true},bot='astra'}
 assert(not astra('status').teammates:find('resting',1,true))
+-- (d22 batch108 BR1) a weekly quota limit: Grok at 20:04 Thursday, its reset Sat 15:59 (158039 s, past a day). The
+-- pusher names the day when the rest ends on another date; the label says it, and HH:MM alone stays for a same-day rest.
+r=op('rest',{agent='grok',until_clock='15:59',until_day='Sat',until_s=158039,reason='quota',ticks_per_s=60})
+eq(r.until_tick,tick+158039*60); eq(r.until_day,'Sat')
+assert(astra('status').teammates:find('grok 4 tiles SW (resting until Sat 15:59 (quota))',1,true),astra('status').teammates)
+eq(astra('tell',{to='grok',text='belts?'}).resting,'grok is resting until Sat 15:59 (quota)')
+-- a day later: still resting (no request of grok's, its tick ahead), the day still named
+jump(86400*60)
+runtime.dispatch{action='status',args={brief=true},bot='astra'}
+assert(astra('status').teammates:find('grok 4 tiles SW (resting until Sat 15:59 (quota))',1,true))
+-- a relaunched agent's startup: describe (tools/launch-agent.sh) and a peek do not end it; its own status does
+runtime.dispatch{action='describe',args={},bot='grok'}
+runtime.dispatch{action='chat',args={peek=true},bot='grok'}
+assert(astra('status').teammates:find('(resting until Sat 15:59 (quota))',1,true))
+jump(1)
+runtime.dispatch{action='status',args={brief=true},bot='grok'}
+eq(astra('tell',{to='grok',text='x'}).resting,nil)
+-- 7 days at most; until_day one of the week's days
+op('rest',{agent='grok',until_clock='20:00',until_day='Thu',until_s=604800,reason='quota'})
+assert(not pcall(op,'rest',{agent='grok',until_clock='20:00',until_s=604801,reason='quota'}))
+assert(not pcall(op,'rest',{agent='grok',until_clock='20:00',until_day='Saturday',until_s=600,reason='quota'}))
+eq(op('rest',{agent='grok',done=true}).ended,true)
 -- refusals stop nobody (operator requests)
 assert(not pcall(op,'rest',{agent='opus',until_clock='7:34',until_s=60,reason='pace'}))
 assert(not pcall(op,'rest',{agent='opus',until_clock='07:34',until_s=60,reason='nap'}))

@@ -241,8 +241,14 @@ fh call status
   left out. An agent whose loop rests between turns (d20 batch50 B1, viewer Aurora: Gemini paces its quota) shows
   `resting until 07:34 (pace)` (or `(quota)`) in place of offline, as does its `players` teammates row (`resting`).
   The loop (tools/agy-quota.py, beside resting.json) sends the operator request `rest {agent, until_clock: "HH:MM",
-  until_s, reason: pace|quota, ticks_per_s?}` (rests.lua); the rest ends with `rest {agent, done: true}` at its next
-  turn, the agent's own next request, or `until_s` of game time (at ticks_per_s, default 60).
+  until_s, reason: pace|quota, until_day?, ticks_per_s?}` (rests.lua); the rest ends with `rest {agent, done: true}` at
+  its next turn, the agent's own next request, or `until_s` of game time (at ticks_per_s, default 60). (d22 batch108
+  BR1, Grok's weekly limit) `until_s` is at most 604800 (7 days); `until_day` (Mon..Sun) is sent when the rest ends on
+  another date of the shift clock than the day it was pushed, and the label then names it: `resting until Sat 15:59
+  (quota)`. Any agent's quota rest: `tools/quota_rest.py RUN AGENT --until "YYYY-MM-DD HH:MM" [--reason quota|pace]`
+  (resting.json and this push; `--done` ends it); start-team writes one for an agent whose account is at its limit.
+  An agent's own next request is one whose reply carries its clock line: describe (launch-agent.sh), profiles,
+  cameras and peeks do not end a rest; its first status does.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
