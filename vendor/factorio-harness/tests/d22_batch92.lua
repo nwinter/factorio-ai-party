@@ -146,7 +146,7 @@ do
   checked('wait_until',{['until']='platform_damage',platform='Edge5',damage=50})
   checked('wait_until',{['until']='platform_energy_below',platform='Edge5',fraction=0.3})
   checked('wait_until',{['until']='platform_progress',platform='Edge5',at_least=0.2})
-  fails(function() checked('wait_until',{['until']='platform_hit'}) end,'platform_hit (platform_damage), platform_energy_below, platform_progress or ghosts_waiting with platform')
+  fails(function() checked('wait_until',{['until']='platform_hit'}) end,'platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below or ghosts_waiting with platform')
   prototypes=nil
 end
 print('d22_batch92 BB1, BB2, BB3 platform_hit (platform_damage), platform_energy_below, platform_progress: ok')

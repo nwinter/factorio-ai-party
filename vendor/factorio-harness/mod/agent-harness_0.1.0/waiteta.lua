@@ -4,7 +4,8 @@ return function(api)
   local function try(fn) local ok,v=pcall(fn); if ok then return v end end
   local function label(c)
     local text=c['until']..(c.technology and ' '..c.technology or c.item and ' '..c.item or c.platform and ' '..c.platform or '')
-    if c.item and c.platform then text=text..' in '..c.platform..' hub'
+    if c['until']=='platform_ammo_below' then text=text..' aboard '..tostring(c.platform)  -- (d22 batch117 BZ1) every place aboard
+    elseif c.item and c.platform then text=text..' in '..c.platform..' hub'
     elseif c.positions or c.position then
       local positions=c.positions or {c.position}; local parts={}
       for i=1,math.min(#positions,4) do

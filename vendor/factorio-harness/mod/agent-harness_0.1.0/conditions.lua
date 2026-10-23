@@ -834,12 +834,20 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|platform_ammo_below|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
   -- conditions=[...]} met when each is; saw joins theirs. Members are plain conditions.
   checks.platform_ready=checks.platform_built
+  -- (d22 batch117 BZ1, Astra #1970: a full-edge abort that keeps the return leg's ammunition) a platform's whole stock
+  -- of one ammunition item: hub, turret slots, belts, inserter hands, machine outputs and chests, from the background
+  -- reading (ammoreserve.lua) with its age; a reading older than max_age (or none by then) meets it.
+  checks.platform_ammo_below=function(p,c)
+    local pl=M.platform_named(p,c.platform)
+    if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
+    return api.ammo_reserve(pl,p.force,c)
+  end
   checks['all']=function(p,c,estimate,record)
     local all,saws=true,{}
     for i,m in ipairs(c.conditions) do
@@ -851,7 +859,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_energy_below, platform_progress, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_energy_below, platform_progress, platform_ammo_below, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -913,11 +921,11 @@ return function(api)
       for _,pos in ipairs(c.positions) do api.position(pos) end
     end
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
-    -- (batch33 A2) quality: item_count reads it; no other condition does, and one given there is refused
+    -- (batch33 A2) quality: item_count and (d22 batch117 BZ1) platform_ammo_below read it; one given elsewhere is refused
     if c.quality~=nil then
-      assert(kind=='item_count','quality applies to item_count only (no other condition counts by quality)')
+      assert(kind=='item_count' or kind=='platform_ammo_below','quality applies to item_count and platform_ammo_below only (no other condition counts by quality)')
       assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
-        'item_count quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
+        kind..' quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
     end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')
@@ -1022,6 +1030,13 @@ return function(api)
     if kind=='platform_energy_below' then
       assert(type(c.platform)=='string' and #c.platform>0,'platform_energy_below requires platform (a platform of ours by name)')
       assert(type(c.fraction)=='number' and c.fraction>0 and c.fraction<=1,'platform_energy_below fraction: the share of the accumulators\' capacity, over 0 and up to 1 (0.3: under 30%)')
+    end
+    if kind=='platform_ammo_below' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_ammo_below requires platform (a platform of ours by name)')
+      assert(type(c.item)=='string' and prototypes.item[c.item] and prototypes.item[c.item].type=='ammo','platform_ammo_below item: an ammunition item (firearm-magazine, rocket, railgun-ammo, ...)')
+      assert(type(c.count)=='number' and c.count>=1 and c.count<=1e6 and c.count==math.floor(c.count),'platform_ammo_below count: 1..1000000, met below it')
+      assert(c.quality==nil or c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),'platform_ammo_below quality: a quality name or "any" (default normal)')
+      assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120): a reading older than this meets it')
     end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
