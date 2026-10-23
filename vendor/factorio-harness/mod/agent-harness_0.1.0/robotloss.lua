@@ -26,13 +26,23 @@ return function(api)
       or t.type == 'item-request-proxy' and 'item request at ' .. (try(function() return t.proxy_target.name end) or '?') or t.name
     return {name=name, type=t.type, position={x=t.position.x, y=t.position.y}, unit=t.unit_number, ref=t}
   end
+  -- (d22 batch100 BJ3) an order's item by name: 2.0.77 gives target_item {name, quality} with the item prototype
+  -- (userdata) as name (read on a copy of world n). The prototype itself was stored, and a line joining it raised, so
+  -- robot_losses and its alert groups failed for a robot whose order had no target.
+  local function item_name(ti)
+    if ti == nil then return nil end
+    if type(ti) == 'string' then return ti end
+    local n = try(function() return ti.name end)
+    if type(n) == 'string' then return n end
+    return n ~= nil and try(function() return n.name end) or nil
+  end
   function M.note(event)
     local e, cause = event.entity, event.cause
     if not (e and e.valid and (e.type == 'construction-robot' or e.type == 'logistic-robot')) then return end
     if not (cause and cause.valid and cause.force and cause.force.name == 'enemy') then return end
     local q = try(function() return e.robot_order_queue end) or {}
     local o = q[1]
-    local job = o and {order=order_name(o.type), item=o.target_item and (type(o.target_item) == 'table' and o.target_item.name or o.target_item) or nil,
+    local job = o and {order=order_name(o.type), item=item_name(o.target_item),
       target=target_view(o.target), secondary=target_view(o.secondary_target)} or nil
     local list = store()
     list[#list+1] = {tick=event.tick, surface=e.surface.name, force=e.force.name, robot=e.name, position={x=e.position.x, y=e.position.y},
@@ -51,7 +61,8 @@ return function(api)
         g.robots[r.robot] = (g.robots[r.robot] or 0) + 1
         if #g.at < 4 then g.at[#g.at+1] = r.position end
         local j = r.job
-        local jk = j and (j.order .. ' ' .. (j.target and j.target.name or j.item or '?')) or 'no order read'
+        -- a record noted before the fix may hold the prototype: read by its name
+        local jk = j and (j.order .. ' ' .. (j.target and j.target.name or item_name(j.item) or '?')) or 'no order read'
         if not g.jobs[jk] then g.jobs[jk] = {n=0, text=jk, where=j and j.target and j.target.position or nil}; g.jorder[#g.jorder+1] = jk end
         g.jobs[jk].n = g.jobs[jk].n + 1
         -- (d17 batch23 A4, Opus: "LuaEntity API call when LuaEntity was invalid" at (-224,-30)) a job's target that is

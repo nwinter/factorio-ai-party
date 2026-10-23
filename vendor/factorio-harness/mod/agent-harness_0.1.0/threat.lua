@@ -594,8 +594,10 @@ return function(api)
   -- of `at`. A unit's own spawner (when the engine exposes it) wins if charted.
   -- Lookups close in time and place share one search.
   function M.source(force,surface,at,unit)
-    local ok,own=pcall(function() return unit and unit.valid and unit.spawner end)
-    if ok and type(own)=='table' and own.valid and charted(force,surface,own.position) then
+    -- (d22 batch100 BJ2) 2.0.77 keeps a unit's spawner on its commandable (unit.spawner is no key: the read failed),
+    -- and the spawner is userdata (a check for a table refused it): this branch never ran on the real engine
+    local ok,own=pcall(function() return unit and unit.valid and unit.commandable and unit.commandable.spawner end)
+    if ok and own and own.valid and charted(force,surface,own.position) then
       return {position={x=round(own.position.x),y=round(own.position.y)},distance=round(api.distance(at,own.position)),bearing=compass(at,own.position),spawned=true}
     end
     local s=api.state()
