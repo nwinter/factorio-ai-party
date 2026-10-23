@@ -11936,6 +11936,44 @@ tables of numbers: table_to_json takes about 28 us a number on that copy. Tests:
   - a route leg covered 25%, its scale x4.96 worked out by hand, and one not flown;
   - the coverage rows;
   - a leg flown whole before km was kept, and one with no part recorded.
+
+## d22 batch105 BO2 (eng/d20-batch105): the forecast by the turrets' targets (Astra 20:24)
+
+Astra after BO1: "forecast rocket line counts 432 shots per huge and scales x8.85, but Asterion rocket turrets target
+ONLY big asteroids; rails handle huge." The forecast counted every asteroid of the route, and its fragments, against
+every ammunition aboard.
+
+- The game's rule (2.0.77; platdefense.lua reads the same): a turret fires at the entities on its own priority list
+  (the turret GUI's) only when Ignore unprioritised targets is on; off, at any (the list only orders them). Turret,
+  asteroid and ammunition prototypes share one target mask (common) and no ammunition has a target filter. A turret
+  prototype has no default list to read at runtime; a rocket turret built new on the copy read an empty list and
+  ignore off.
+- platform_endurance `forecast: true` (routeammo.lua, endurance.lua; runtime deploy needed) reads the turrets aboard
+  once (each one's ammunition category, ammo, list and ignore flag; before, a surface search per ammunition). For each
+  ammunition, an asteroid counts its own shots only when one of the turrets that fire it targets it. Its fragments
+  count when a turret aboard targets the asteroid, each fragment the same way. An asteroid no turret aboard targets
+  counts for no ammunition, nor do its fragments. An asteroid targeted by turrets of two ammunitions counts in full for
+  each. With no turret read aboard, every asteroid counts for each ammunition, as before, and the line says so.
+- Shots text: `huge-metallic-asteroid not its turrets' target + 15 for its fragments`, `X: no turret aboard targets
+  it`; `no turret aboard fires it: no use estimate`.
+- A `turret targets as built` block:
+  - per ammunition, the turrets that fire it with their settings grouped (`rocket: 26 turrets fire it, mixed settings:
+    24 rocket-turret big only; 2 rocket-turret big, medium only`; `any asteroid (ignore unprioritised targets off)`;
+    `its targets not read (counted as any)`);
+  - per asteroid of the route and its fragments, the turrets that target it (`medium-carbonic/metallic/oxide-asteroid:
+    gun-turret 48 (firearm-magazine), rocket-turret 2 (rocket)`; `no turret aboard targets it: no ammunition counted
+    for it or its fragments`).
+  Row `forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, unknown)}], mixed}],
+  asteroids [{asteroid, turrets [{turret, count, ammo}]}]}`.
+- Headless copy of world n's 19:23 autosave, Asterion flying aquilo->solar-system-edge, route [aquilo,
+  solar-system-edge, aquilo]: 23 railgun turrets huge only, 48 gun turrets small and medium only, 24 rocket turrets
+  big only and 2 big and medium only, ignore unprioritised targets on for all 97.
+  - rocket: x8.87 (huge 432 + 42 for its fragments) before; now x2.09 (big 2 + 3, huge not its target + 15), about
+    13553 used on the first leg where it read 57500.
+  - railgun-ammo: x2.12 before; now x17.59 (huge 1 each; its measured 0.9/min is from legs whose part flown spawns
+    huge at under 0.00005), about 1702 on the first leg where it read 205.
+  - firearm-magazine: x2.09 both (big and huge are other turrets' targets; their fragments counted before too).
+  - The read: 26-48 ms before, 29-46 ms after (four calls each).
 ## d22 batch100 BJ2 (eng/d20-batch100): game objects checked as tables (audit)
 
 BJ1 found `type(platform) == 'table'` dropping a LuaSpacePlatform. In 2.0 every game object is userdata. Read on a
