@@ -1473,6 +1473,33 @@ Nick: wrapped or cut status lines are useless on a stream nobody can scroll or h
   and the rotating board and Space widgets' rows (18 s on screen, less than a rest and a pan).
 - Tests: tools/stream/test_marquee.py (timing, turns over 15 minutes, the DOM half with a fake document).
 
+## Attack shots calibrated to how attacks go now (2026-10-23, d23 batch124 CG1)
+
+Nick 10:00: the camera locked on biters approaching Nauvis, "slightly less interesting these days now that the defenses
+are holding"; they "move for a little bit and then stopped"; following them, the camera "tended to lag their position".
+
+- The shot: 09:53:51, group 24507 ("18 biters heading for the base, 630 m SW of spawn"), score 2.089 = size 1.389 (18
+  against the last 30 groups) + outpost 0.7, bar 2.089 (38 candidates and 2 taken in the hour, budget 4). It panned
+  with the group from (-691, 395) to (-540, 329) in 21 s, then the group stood; the follow ended at 09:54:56 "stopped:
+  under 8 tiles in 44 s" (the rule was 8 tiles in 45 s, 80% of it read). Its stop was about 190 tiles west of the base
+  map's edge, with no turret of the map within 290 tiles.
+- This morning (director logs 03:46-10:06): 176 groups, 12 followed; every followed group ended "stopped" (11) or
+  "turned back" (1) before contact; 3 real losses on Nauvis (a pole and construction robots to behemoth spitters at
+  (-211, 170), a wall at (-213, -32)). Routine waves.
+- threats.py tracks every group to its end (gone from the read for 60 s): contact or not, and the real losses (not a few
+  walls, belts or chests) within 60 tiles of it or its target while it lived and 60 s after. routine = -1.2 x (1 - the
+  share of the last 20 ended groups that destroyed something), from 8 ended on: about -1.2 today, so the 09:53 group
+  scores 0.889, under the floor (1.5). no_cover (+1.0): its target (else our nearest building to it) inside the base
+  map with no turret of the map reaching it. A fight that destroys something is a battle (score_fight, unchanged), so
+  an attack doing damage still cuts in.
+- The cut away: a followed group that moves under 8 tiles in 12 s (at least 80% read; not while gathering) is over;
+  so is one gone from the read (disbanded or killed), one 40 tiles farther than its closest approach, or 240 s on.
+- Ahead of it: each pan aims at where the group will be 4 s on, from its velocity over the last 6 s (at most 48 tiles
+  ahead; as is under 0.5 tiles a second). The reads come about every 3 s and cameras.lua eases each move, so aiming at
+  the last position kept the view a read behind (09:53: 25-35 tiles a pan).
+- Tests: tools/stream/test_incoming.py (calibrated, the stop rule, the lead). Deploy: a stream service restart; the
+  calibration starts from the run's threat-history.json and needs 8 ended groups (about 20 minutes today).
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

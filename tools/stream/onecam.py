@@ -129,6 +129,24 @@ def human_enemy(e):
     return str(e.get("name") or "enemy").replace("-", " ").capitalize()
 
 
+def lead_point(trail, cfg):
+    """(d23 batch124 CG1) Where a moving group will be cfg incoming_lead seconds on: trail [(t, {x, y})] oldest first,
+    its velocity over the last incoming_lead_window seconds; at most incoming_lead_max tiles ahead; its last position
+    when it moves under incoming_lead_min tiles a second (or with one read)."""
+    t1, p1 = trail[-1]
+    old = [q for q in trail if t1 - q[0] <= cfg["incoming_lead_window"]]
+    t0, p0 = old[0]
+    here = {"x": p1["x"], "y": p1["y"]}
+    if t1 - t0 <= 0:
+        return here
+    vx, vy = (p1["x"] - p0["x"]) / (t1 - t0), (p1["y"] - p0["y"]) / (t1 - t0)
+    speed = (vx * vx + vy * vy) ** 0.5
+    if speed < cfg["incoming_lead_min"]:
+        return here
+    ahead = min(cfg["incoming_lead_max"], speed * cfg["incoming_lead"])
+    return {"x": round(p1["x"] + vx / speed * ahead, 1), "y": round(p1["y"] + vy / speed * ahead, 1)}
+
+
 def loss_pieces(text):
     """"19 lost near (-226, 68): 19 gun turret (by small demolishers)" -> 19 (0 for any other text)."""
     m = LOSS_RE.match(text or "")
@@ -256,8 +274,19 @@ ONECAM = {
     # a followed group that turns back or stops short ends the follow (Nick d20 07:14: a group came toward Nauvis,
     # went back to the wilderness and sat there, and the camera stayed on it until incoming_max)
     "incoming_away": 40.0,  # tiles farther from our nearest building than its closest approach: turned back
-    "incoming_still": 45.0,  # seconds the group has moved under incoming_still_tiles: stopped
+    # (d23 batch124 CG1, Nick 10:00: "the biters just move for a little bit and then stopped": the 09:53 group stood
+    # 44 s on air before the cut; all 12 groups followed in shift62-63 stopped or turned back short) stopped: moved
+    # under incoming_still_tiles over the last incoming_still seconds (at least 80% of it read), not while gathering
+    "incoming_still": 12.0,
     "incoming_still_tiles": 8.0,
+    # (CG1: "as the camera followed them, it tended to lag their position rather than lead it") each pan aims where the
+    # group will be incoming_lead seconds on (its velocity over the last incoming_lead_window s): the reads come about
+    # every 3 s and the camera eases each move, so aiming at the last position kept it a read behind; at most
+    # incoming_lead_max tiles ahead, none under incoming_lead_min tiles a second
+    "incoming_lead": 4.0,
+    "incoming_lead_window": 6.0,
+    "incoming_lead_max": 48.0,
+    "incoming_lead_min": 0.5,
     "battle_near": 60.0,    # tiles (plus half the extents): fights this close are one battle
     # held until the battle has been quiet this long (no attack, no agent in combat) and no loss for battle_loss_after;
     # 14:19:30 Sol's demolisher died in ~5 s and the hold ran 52 s (45 s after the last loss). Shorter, with a battle
@@ -1468,6 +1497,19 @@ class OneCam(Director):
         cfg = self.cfg
         rows = {g["id"]: g for g in snapshot.get("incoming") or [] if g.get("id") is not None and g.get("position")}
         core, centre = self.base_core()
+        # (d23 batch124 CG1) how attacks go now: each group to its end, with contact and our real losses near it
+        # (threats.py observe), so routine waves the defenses hold score low
+        losses = []
+        for f in self.fight_list:
+            n = loss_pieces(f.get("text"))
+            if n and not minor_loss(f.get("text")) and f.get("losses") and f.get("position"):
+                losses.append({"key": f"{f.get('key')}:{len(f['losses'])}", "surface": f["position"].get("surface") or "nauvis",
+                               "x": f["position"]["x"], "y": f["position"]["y"], "pieces": n, "t": f["losses"][-1]})
+        self.threats.observe([dict(g, contact=self.group_contact(g)) for g in rows.values()], losses, now)
+        bm = snapshot.get("basemap") or {}
+        turrets = bm.get("turrets") if isinstance(bm.get("turrets"), list) and not (bm.get("turrets_read") or {}).get("capped") else None
+        box = {"x0": bm["x0"], "y0": bm["y0"], "x1": bm["x0"] + bm["w"] * bm["cell"], "y1": bm["y0"] + bm["h"] * bm["cell"]} \
+            if all(isinstance(bm.get(k), (int, float)) for k in ("x0", "y0", "w", "h", "cell")) else None
         for gid, g in rows.items():
             if gid in self.groups_seen:
                 continue
@@ -1479,7 +1521,8 @@ class OneCam(Director):
             # agents on the group's surface only: Sol by the egg breeders on Gleba at (46, 51) counted for any Nauvis
             # group heading near that spot, inside the base (13:00-13:40)
             near = [a for a in by_name.values() if surface_of(a) == (g.get("surface") or "nauvis")]
-            score, parts = self.threats.score_group(g, centre=centre_g, agents=near, core=core_g)
+            score, parts = self.threats.score_group(g, centre=centre_g, agents=near, core=core_g,
+                                                    turrets=turrets if (g.get("surface") or "nauvis") == "nauvis" else None, box=box)
             self.threats.learn_group(g, centre=centre_g)
             cur = self.state.get(self.onair) or {}
             blocked = None
@@ -1559,9 +1602,9 @@ class OneCam(Director):
             return over(f"stopped: under {self.cfg['incoming_still_tiles']:g} tiles in {now - trail[0][0]:.0f} s")
         if cur.get("subject") == "@incoming":
             p = cur["position"]
-            if dist(p, g["position"]) > 3:  # pan with it (cameras.lua eases a non-jump move)
-                self.apply(self.slot(self.onair), dict(cur, position={"x": g["position"]["x"], "y": g["position"]["y"]},
-                                                       incoming=f"Incoming · {g.get('label')}", jump=False),
+            aim = lead_point(trail, self.cfg)
+            if dist(p, aim) > 3:  # pan with it, ahead of it (cameras.lua eases a non-jump move)
+                self.apply(self.slot(self.onair), dict(cur, position=aim, incoming=f"Incoming · {g.get('label')}", jump=False),
                            "incoming: pan", scores, now, quiet=True)
 
     def battle_target(self, b, by_name):
