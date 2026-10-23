@@ -102,5 +102,55 @@ return function(api)
     if rows then out.rows = list end
     return out
   end
+  -- (d23 batch120 CC1, Sol #2027: an equipped spidertron mined and rebuilt came back with an empty grid) The game
+  -- mines an equipped vehicle into an item that carries its grid, and moves its inventories into the miner's.
+  -- What a vehicle about to be mined carries: its grid's equipment and its inventories' items, or nil.
+  function M.mining_line(e)
+    local okt, ty = pcall(function() return e.type end)
+    local vehicle = false
+    for _, t in ipairs(TYPES) do if okt and ty == t then vehicle = true end end
+    if not vehicle then return nil end
+    local grid = try(function() return e.grid end)
+    local parts = {}
+    if grid then
+      local v = M.view(grid)
+      parts[#parts + 1] = string.format('the %s item carries its grid (%s): %s', e.name, v.grid, v.equipment)
+    end
+    local items, names = {}, {}
+    for i = 1, try(function() return e.get_max_inventory_index() end) or 0 do
+      local inv = try(function() return e.get_inventory(i) end)
+      for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+        items[#items + 1] = c.name .. '*' .. c.count; names[#names + 1] = c.name
+      end
+    end
+    if #items > 0 then parts[#parts + 1] = 'its inventories held ' .. table.concat(items, ' ') .. ', now in your inventory' end
+    if #parts == 0 then return nil end
+    return table.concat(parts, '; '), names
+  end
+  -- The inventory's items that carry a grid (an equipped vehicle's or an armor's item), as lines with their slot.
+  function M.item_grids(inv)
+    local lines = {}
+    for i = 1, inv and #inv or 0 do
+      local st = inv[i]
+      if st.valid_for_read and (st.is_item_with_entity_data or st.is_armor) then
+        local grid = try(function() return st.grid end)
+        if grid then lines[#lines + 1] = string.format('%s (slot %d): grid %s', st.name, i, M.view(grid).equipment) end
+      end
+    end
+    return #lines > 0 and lines or nil
+  end
+  -- A vehicle revived from its ghost with an item that carries a grid: the item's equipment goes into the new
+  -- vehicle's grid where it sat, as the game builds it (create_entity with the item does this itself).
+  function M.from_item(stack, e)
+    local from, to = try(function() return stack.grid end), try(function() return e.grid end)
+    local label, color = try(function() return stack.entity_label end), try(function() return stack.entity_color end)
+    if label then pcall(function() e.entity_label = label end) end
+    if color then pcall(function() e.color = color end) end
+    if not (from and to) then return end
+    for _, eq in ipairs(from.equipment) do
+      local q = try(function() return eq.quality.name end)
+      if to.put{name=eq.name, position=eq.position, quality=q} then from.take{equipment=eq} end
+    end
+  end
   return M
 end

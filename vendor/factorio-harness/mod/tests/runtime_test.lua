@@ -870,6 +870,14 @@ local paused_build=call('build',{item='wooden-chest',position={x=8,y=0}})
 eq(paused_build.consumed,1); eq(paused_build.entity.position.x,8); eq(wood.count,1); eq(p.cursor_stack.valid_for_read,false)
 fails(function() call('build',{item='wooden-chest',position={x=9,y=0}}) end,'placement blocked')
 eq(wood.count,1)
+-- (d23 batch120 CC1) An item with entity data (an equipped spidertron's) builds with the item, which carries its grid.
+do
+wood.is_item_with_entity_data=true
+local with_item
+p.surface.create_entity=function(a) with_item=a.item; paused_created={valid=true,name=a.name,type='container',position=a.position,force=p.force}; return paused_created end
+eq(call('build',{item='wooden-chest',position={x=7,y=0}}).consumed,1); eq(with_item,wood)
+wood.is_item_with_entity_data=nil; wood.count=1; wood.valid_for_read=true
+end
 -- A rail planner's curve takes 3 rails, as the game charges it (2.0's items_to_place_this); with fewer held it is refused.
 do
 local saved_prototypes=prototypes

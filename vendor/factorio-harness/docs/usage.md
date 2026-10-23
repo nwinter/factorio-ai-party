@@ -233,6 +233,15 @@ fh call status
     its cell). A piece that does not fit names the free cells.
   - `inspect` on a vehicle with a grid shows the same `equipment` block. The operator's `loadout` gives
     `vehicle_equipment` for the vehicle an agent sits in.
+  - Mining and building an equipped vehicle (d23 batch120 CC1, Sol #2027: Haiku mined spidertron 22731300 with a
+    fusion reactor, two shield mk2, two battery mk2 and two lasers and built it again with an empty grid). The game's
+    mine (`mine_entity`) gives an item that carries the grid and moves the vehicle's inventories into the miner's
+    (checked on a copy of world n's save, 2.0.77); the build created the vehicle without the item. `build` now passes the
+    item to `create_entity` (grid, label and colour come with it; revived over a ghost, the item's equipment is put in
+    the same cells). Replies: a finished mine of a vehicle has `last.holds` (`the spidertron item carries its grid
+    (10x6): fusion-reactor-equipment*1 ...; its inventories held rocket*400, now in your inventory`), and `moved`
+    counts those items; `inventory` has `item_grids` (`spidertron (slot 50): grid ...`, also a spare armor's); `build`
+    has `equipment` (`spidertron 27296250 (-148,-532.5): grid 10x6 ...`).
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
