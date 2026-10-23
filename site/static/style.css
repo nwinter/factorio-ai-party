@@ -926,3 +926,23 @@ html { scroll-padding-top: 76px; }
 .rem-latest { display: grid; gap: 2px; font-size: .85em; margin-top: 4px; }
 /* (d19 batch46 item 0) a reminder's state chip with batch41's missed-runs text is longer than the card: it wraps */
 .board-reminders .fx-chip { white-space: normal; overflow-wrap: anywhere; max-width: 100%; height: auto; }
+
+/* (d23 batch119 CB4, viewer Aurora site:4349, site:4350) /updates/: the operator's changes by status, then notices */
+.upd-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.upd-counts .fx-chip { text-decoration: none; }
+.upd-legend { list-style: none; padding: 0; margin: .5rem 0 1rem; display: grid; gap: 4px; color: var(--muted); }
+.upd-list, .upd-notices { list-style: none; padding: 0; margin: 0 0 1.5rem; display: grid; gap: 0; }
+.upd { padding: 10px 0; border-top: 1px solid var(--line); min-width: 0; overflow-wrap: anywhere; }
+.upd:first-child { border-top: 0; }
+.upd-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+.upd-title { font-weight: 700; color: var(--heading); text-decoration: none; }
+.upd-title:hover { text-decoration: underline; }
+.upd .fx-chip, .upd-legend .fx-chip, .upd-notices .fx-chip { font-size: .72rem; padding: 0 6px; line-height: 1.5; height: auto; }
+.upd p { margin: 3px 0 0; }
+.upd-msgs { margin-top: 4px; font-size: .9rem; }
+.upd-msgs > summary { cursor: pointer; color: var(--muted); }
+.upd-msgs blockquote { margin: 6px 0 0; padding: 4px 10px; border-left: 3px solid var(--line-strong); }
+.upd-msgs blockquote.upd-reply { border-left-color: var(--accent); }
+.upd-msgs blockquote p { margin: 2px 0; }
+.upd-notices li { padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.upd-notices li:first-child { border-top: 0; }

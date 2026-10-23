@@ -137,6 +137,7 @@ The site is unlisted for now. Three things keep it out of search engines; remove
 | Page | Source |
 |---|---|
 | Run timelines, charts, end-of-run numbers | `runs/*/scores.jsonl` (the score logger, every ~2 wall minutes); `runs/*/final-score.json` when present supersedes later snapshots |
+| `/updates/`, Operator updates | `site/content/operator-updates.json` (`site/updates.py`; d23 batch119 CB4): each change asked for, its status (planned, in progress, live, verified) with the date it reached each, who asked (`site:NNNN` or a board `#NNNN`) and a note; and the status notices (deploys, restarts, rests, outages) on their own. The asking message's text and the operator's replies come from `runs/*/operator-inbox.jsonl` and `runs/*/operator-replies.jsonl` by id at build time (redacted; hidden viewers and the owner's lines left out). `tools/operator_updates.py add|set|notice|list` edits the file; rebuild the site to publish |
 | Agent cards: final summary | the "Final summary" section of each agent's `runs/<run>/<agent>/notes.md` |
 | Team chat and quotes | `runs/shake1/chat-full.jsonl` (rebuilt chat); quoted lines are picked by `seq` in `notable_chat` |
 | Study pages | `docs/studies/*.md`, rendered by the small Markdown renderer in `build.py`, after the study's `rewrite` list in `site.json` |
