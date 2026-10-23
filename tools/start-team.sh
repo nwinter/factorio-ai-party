@@ -75,10 +75,12 @@ has_agy=$(awk -F'\t' '!/^#/ && NF && $2 == "agy" {f = 1} END {print f + 0}' "$te
 # Quota headroom per route from ai-usage, read-only (docs/studies/shake5.md, P1 item 6: Gemini began shake5 at 72% of
 # its 5-hour window and ran dry 47 minutes in). Warnings only; the run starts anyway. POG_QUOTA_BRIEF: a saved
 # `ai-usage agent --json` to use instead (tests).
-quota() { python3 tools/quota_check.py "$team" "$minutes" ${POG_QUOTA_BRIEF:+--brief "$POG_QUOTA_BRIEF"} || true; }
+# --save FILE keeps the brief for the quota rests after the agents launch (step 5).
+quota() { python3 tools/quota_check.py "$team" "$minutes" ${POG_QUOTA_BRIEF:+--brief "$POG_QUOTA_BRIEF"} "$@" || true; }
 if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "plan for $run ($minutes min) on world $world (game $game, rcon $rcon), team $team: $(echo $members)"
-  quota
+  qbrief=$(mktemp); trap 'rm -f "$qbrief"' EXIT
+  quota --save "$qbrief"
   python3 tools/code_check.py || true
   if [ -n "$resume" ]; then
     echo "1. resume: tools/winps.sh tools/win/resume-save.ps1 -Name $world -From $resume -Check (refuse unless space_age=$POG_SPACE_AGE);"
@@ -119,12 +121,13 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     echo "4d. agy memory guard (an agy agent in the team): $(python3 tools/agy_memguard.py --check || true); started if not, log runs/$run/agy-memguard.log"
   fi
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
+  { python3 tools/quota_rest.py --at-limit "runs/$run" "$team" --brief "${POG_QUOTA_BRIEF:-$qbrief}" --dry-run || true; } | sed 's/^/5a. /'
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
 fi
 rundir="runs/$run"; mkdir -p "$rundir"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$rundir/start.log"; }
-quota | while read -r line; do log "$line"; done
+quota --save "$rundir/quota-brief.json" | while read -r line; do log "$line"; done
 # Launch from the code the fixes are in (docs/studies/shake5.md, P1 item 7): harness and stream commits on main or a
 # recent branch that this checkout lacks, and a built host older than its sources. Warnings only.
 { python3 tools/code_check.py || true; } | while read -r line; do log "$line"; done
@@ -446,6 +449,13 @@ while IFS=$'\t' read -r name kind route model effort label harness; do
   echo "$name $pane $kind" >> "$rundir/panes.txt"
   n=$((n + 1))
 done < "$team"
+# (d22 batch108 BR1, Grok's weekly limit at 20:04, reset Sat 15:59) A new run has no resting.json of the last one: an
+# agent whose account the quota check above read at its limit (a window at 99% or more, its reset ahead) gets a quota
+# rest until that reset (resting.json and the runtime push; the runtime is deployed and the workspaces exist now), so
+# the card, the supervisor and the idle nudger see it from the first poll. The agent is launched anyway: at its limit
+# it makes no request, and one that can play after all ends the rest with its first status. Not at its limit: nothing.
+{ python3 tools/quota_rest.py --at-limit "$rundir" "$team" --brief "${POG_QUOTA_BRIEF:-$rundir/quota-brief.json}" 2>&1 || true; } \
+  | while read -r line; do log "$line"; done
 prompt_args=()
 while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
 tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
