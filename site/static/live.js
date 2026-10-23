@@ -737,6 +737,23 @@
     }
     return gone;
   }
+  // (d22 batch97 BG3) the chart's published index (/live/chart/index.json, site/build.py): fetched again when the state's
+  // chart.v (the version push_live read from the deployed site) changes; the map draws its cells under the overlays.
+  var CHART_BASE = '/live/chart/';
+  var chartIndex = { v: null, index: null, loading: null };
+  function chartData(s) {
+    var v = s.chart && typeof s.chart.v === 'number' ? s.chart.v : null;
+    if (v != null && v !== chartIndex.v && v !== chartIndex.loading && typeof fetch === 'function') {
+      chartIndex.loading = v;
+      fetch(CHART_BASE + 'index.json?v=' + v).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        chartIndex.loading = null;
+        if (!j || typeof j !== 'object') return;
+        chartIndex.v = v; chartIndex.index = j;
+        if (mapView && lastState) mapView.set(mapData(lastState));
+      }).catch(function () { chartIndex.loading = null; });
+    }
+    return chartIndex.index ? { base: CHART_BASE, index: chartIndex.index } : null;
+  }
   function mapData(s) {
     var kl = keepLast(s), bm = kl.bm;
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, turrets_read: bm.turrets_read, terrain: bm.terrain,
@@ -749,6 +766,7 @@
       planet_list: Array.isArray(s.planets) ? s.planets : null, net_list: Array.isArray(s.net_maps) ? s.net_maps : null, gone: keepUp(s),
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
       threats: s.threats || null,  // (d22 batch97 BG3) enemy groups on their way, demolishers near ours
+      chart: chartData(s),  // (BG3) the chart's cells and labels, published with the site
       clouds: kl.clouds, home_held: kl.home_held, clouds_held: kl.clouds_held };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
 

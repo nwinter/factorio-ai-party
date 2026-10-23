@@ -715,6 +715,64 @@ def site_terrain(site_url, now=None, opener=urllib.request.urlopen):
     return _terrain["rows"]
 
 
+CHART_EVERY = 300.0  # seconds between reads of the deployed chart's index
+CHART_URL = "/live/chart/index.json"
+_chart = {"t": None, "v": None, "tick": None, "surfaces": [], "error": None}
+
+
+def site_chart(site_url, now=None, opener=urllib.request.urlopen):
+    """(d22 batch97 BG3) the chart the deployed site has (site/build.py publishes runs/RUN/chart/out/ under /live/chart/):
+    {v, tick, surfaces} from its index.json, read at most every 5 minutes; the last one stays when a read fails (a 404:
+    none published yet). The page fetches the index again when v changes."""
+    now = time.time() if now is None else now
+    if site_url and (_chart["t"] is None or now - _chart["t"] >= CHART_EVERY):
+        _chart["t"] = now
+        req = urllib.request.Request(site_url.rstrip("/") + CHART_URL, headers={"User-Agent": "pog-push-live/1"})
+        try:
+            with opener(req, timeout=5) as r:
+                idx = json.load(r)
+            sf = idx.get("surfaces") if isinstance(idx, dict) else None
+            if isinstance(idx.get("v"), int) and isinstance(sf, dict):
+                _chart.update(v=idx["v"], tick=idx.get("tick") if isinstance(idx.get("tick"), int) else None,
+                              surfaces=sorted(k for k, x in sf.items() if isinstance(x, dict) and x.get("cells")), error=None)
+        except (urllib.error.URLError, OSError, ValueError, AttributeError) as e:
+            _chart["error"] = f"{type(e).__name__}: {e}"[:120]
+    return dict(v=_chart["v"], tick=_chart["tick"], surfaces=_chart["surfaces"]) if _chart["v"] is not None else None
+
+
+BASEMAP_CHARTED = ("rows", "core", "ore", "terrain_grid", "terrain")  # what the chart replaces on a charted Nauvis
+
+
+def with_chart(state, chart):
+    """The state with chart {v, tick, surfaces}, and the coarse grids the published chart replaces taken out: on Nauvis
+    the basemap's rows, dense core, ore, charted ground and terrain frames (its box, nests, turrets and turret states
+    stay); every other charted planet's coarse map (the planets listing stays). `chart_saved` says how many bytes."""
+    if not chart:
+        return state
+    size = lambda x: len(json.dumps(x, separators=(",", ":")))  # noqa: E731
+    before = size(state)
+    state["chart"] = dict(chart)
+    charted = set(chart.get("surfaces") or [])
+    bm = state.get("basemap")
+    if "nauvis" in charted and isinstance(bm, dict):
+        core = bm.get("core") if isinstance(bm.get("core"), dict) else None
+        out = {k: v for k, v in bm.items() if k not in BASEMAP_CHARTED}
+        if core and all(isinstance(core.get(k), int) for k in ("cell", "x0", "y0", "w")):
+            h = core.get("h") if isinstance(core.get("h"), int) else len(core.get("rows") or [])
+            out["core_box"] = [core["x0"], core["y0"], core["x0"] + core["w"] * core["cell"], core["y0"] + h * core["cell"]]
+        state["basemap"] = out
+    if isinstance(state.get("planet_map"), dict) and state["planet_map"].get("surface") in charted:
+        del state["planet_map"]
+    if isinstance(state.get("planet_maps"), dict):
+        left = {k: v for k, v in state["planet_maps"].items() if k not in charted}
+        if left:
+            state["planet_maps"] = left
+        else:
+            del state["planet_maps"]
+    state["chart"]["saved"] = before - size(state)
+    return state
+
+
 def with_terrain(state, rows):
     """The state with basemap.terrain (only beside a basemap: the viewer draws frames under the buildings)."""
     if rows and isinstance(state.get("basemap"), dict):
@@ -786,6 +844,7 @@ def main():
         try:
             with urllib.request.urlopen(a.source, timeout=5) as r:
                 state = with_terrain(public_state(json.load(r)), site_terrain(CONFIG.get("site_url")))
+                state = with_chart(state, site_chart(CONFIG.get("site_url")))
             body = json.dumps(state, separators=(",", ":")).encode()
             if a.print:
                 print(json.dumps(state, indent=1))
@@ -813,7 +872,8 @@ def main():
             print(f"[push] {time.strftime('%H:%M:%S')} {'ok' if window['ok'] else 'NO PUSHES'}: {window['ok']} pushed, "
                   f"{window['failed']} failed in the last {a.report:g} s, {window['bytes'] // max(1, window['ok'])} bytes each, "
                   f"tick {window['tick']}, {window['agents']} agents, terrain frames {len(_terrain['rows'])}"
-                  + (f" (index read failed: {_terrain['error']})" if _terrain["error"] else ""), flush=True)
+                  + (f" (index read failed: {_terrain['error']})" if _terrain["error"] else "")
+                  + f", chart v{_chart['v']}" + (f" (index read failed: {_chart['error']})" if _chart["error"] else ""), flush=True)
             window = dict(window, ok=0, failed=0, bytes=0)
         time.sleep(max(1.0, a.interval - (time.time() - t0)))
 

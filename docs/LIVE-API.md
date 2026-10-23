@@ -251,6 +251,32 @@ that order (census.lua RANK). (BG3) The legend's `K` storage was never emitted (
 under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
 map's edge (dashed, its distance in the tooltip).
 
+(d22 batch97 BG3) **The chart.** The stream service draws every planet and platform from the game
+(tools/stream/chart.py, the harness's `chart` operator read): 384-tile cells at 1 px a tile in the game's own map
+colours (tiles; resources, trees, rocks and cliffs; then every building at its footprint, turned by its direction;
+rails as curves), with recipes and train stop names as text (no game icons or sprites), kept in runs/RUN/chart/out/.
+site/build.py publishes them with the site (tools/site-refresh.sh, hourly from tools/start-team.sh and at each shift
+change, so a cell is at most about an hour older than the stream's copy) under `/live/chart/`:
+`index.json` `{v, cell: 384, tick, surfaces: {name: {platform, cells: {"cx,cy": [version, oldest read tick, newest read
+tick, chunks, x0, y0, x1, y1]}}}}` (the last four: the box round our buildings in the cell, absent without any),
+`SURFACE/CX_CY.png` (pixel (0,0) is tile (cx*384, cy*384)) and `SURFACE/CX_CY.labels.json` `{recipes: [[x, y, recipe]],
+stops: [[x, y, name]]}` (tiles). push_live reads the deployed index every 5 minutes and sends `chart {v, tick,
+surfaces, saved}`; the page fetches `index.json?v=` when `v` changes and each cell as `CX_CY.png?v=version`. With a
+published chart push_live leaves out what it replaces (`saved`: the bytes): on a charted Nauvis the basemap's `rows`,
+`core`, `ore`, `terrain_grid` and `terrain` (it sends `core_box [x0, y0, x1, y1]`, the dense core's box, for the
+framing; nests, turrets and turret states stay), and a charted planet's `planet_map` and `planet_maps` entry (`planets`
+stays). On world n's state at 17:00 that is 18 KB with Nauvis, Vulcanus and a platform charted, 27 KB with every
+planet; the terrain grid (up to 96 KB) goes too once it is live.
+The map draws the chart as its base layer ("Chart", on by default, first in the Terrain group): each cell in view,
+nearest-neighbour from 1 px a tile up (smoothed when zoomed further out); where it is drawn the coarse grid, ore and
+terrain frames are not. Train stop names show from 0.5 px a tile and recipes from 6 px (a 3-tile machine is 18 px),
+as text, rich text tags as words, each left out where it would overlap one shown before it (stops first). Hover on a
+cell says when its chunks were read ("Chart cell (0, -1), 144 chunks, read 3 to 41 min ago", from the state's tick);
+the legend and the scale line say the oldest and newest cell. Every surface in the index gets a switch: planets as
+buttons, platforms by their own names in a "Platform…" picker, each framed on its buildings' boxes. The overlays
+(pollution, power, logistics, turret range and state, nests, attacks, fights, agents, attention, blueprints) draw on
+top with their own toggles and ages as before.
+
 `planets` and `planet_map` are the other planets we have built on (viewers craigNZ830 and Foobator, d15 07:05: the map
 showed Nauvis only). `planets` lists them all, `[{surface, tick, buildings}]`. `planet_map` is one of them in turn
 each push (`{surface, tick, cell, x0, y0, w, h, rows, buildings}`, the same letters as `basemap`, cell 4 doubled until
