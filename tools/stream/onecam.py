@@ -2353,7 +2353,7 @@ class OneCam(Director):
 
     PAN_END_S = 3.0    # a tall ship's pan rests this long at the bow and at the stern
     PAN_LEG_S = 40.0   # at most this long from bow to stern; a longer shot goes back and forth
-    PAN_STEP = 2.0     # tiles: the camera is moved when the pan's place is this far from where it is
+    PAN_STEP = 2.0     # tiles: a whole-frame pan step (CG2: steps now go every DETAIL_STEP, gliding on; kept for the tests)
 
     DETAIL_STEP = 0.5  # tiles: a detail pan's step (d20 batch50 A2; cameras.lua glides between steps at its speed)
     # (d22 batch99 BI4, viewer Foobator site:4332) a long ship's whole-frame pan (model.LONG_VIEWS): a visit or an edge
