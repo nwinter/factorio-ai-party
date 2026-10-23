@@ -52,6 +52,7 @@ import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken
 import search as site_search  # noqa: E402  (site/search.py: /search/ and its index)
 import timelapse  # noqa: E402  (site/timelapse.py: the base over time on the run page)
 import terrain  # noqa: E402  (site/terrain.py: /live/terrain/, map frames under the maps)
+import chartpub  # noqa: E402  (site/chartpub.py: /live/chart/, the chart the stream service draws; d22 batch97 BG3)
 import blueprints as bp_pages  # noqa: E402  (site/blueprints.py: /blueprints/, the team's blueprint library)
 import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, from site/content/how/)
 
@@ -1909,6 +1910,7 @@ def main():
                 write(src.lstrip("/"), text)
         write("runs/long/index.html", timelapse.inject(build_long_run(LONG), timelapse.section(lapse, esc)))
         terrain.publish(out, args.runs_dir, LONG)
+        chartpub.publish(out, args.runs_dir, LONG)
         for s in LONG["shifts"]:
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))

@@ -533,6 +533,9 @@ def main():
         if a.run:  # (d22 batch75 AK9) the charted ground's tiles, kept in the run (and read back from the runs it resumed from)
             import terrain_grid
             source.terrain = terrain_grid.TerrainGrid(*map_memory_paths(os.path.dirname(os.path.abspath(a.run)), name="terrain-grid.json"))
+            # (d22 batch97 BG3) the site's chart: runs/RUN/chart/ (its store read back from the runs it resumed from)
+            import chart
+            source.chart = chart.Chart(*map_memory_paths(os.path.dirname(os.path.abspath(a.run)), name="chart"))
     if a.no_camera:
         camera = lambda body: {"ok": False, "stub": True, "disabled": True}  # noqa: E731
     # what agents act on, drawn for the camera clients only (highlights.py, the harness's operator `highlights`)

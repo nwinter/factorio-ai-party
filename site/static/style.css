@@ -620,6 +620,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 /* (d21 batch68 AD3) the item picker: its sources and consumers on the planet shown */
 /* (AK5) narrow and fixed: its longest item name moves nothing; (AK7) "Item: -" (none picked, or none to pick: why in its
    tooltip) whole beside its arrow in any font, an item's name with room */
+.mapview-platform { max-width: 11rem; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--well); color: var(--ink); font: inherit; }
 .mapview-item { width: 6.5rem; max-width: 100%; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--well); color: var(--ink); font: inherit; }
 .mm-legend li.mv-item-line { flex-basis: 100%; }
 .mapview-stage { position: relative; border-radius: var(--fx-r-1); overflow: hidden; box-shadow: var(--fx-inset-shadow); background: #1b1f1a; }
@@ -660,6 +661,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mm-legend i.nest { background: #ff3b30; }
 .mm-legend li.ore i { opacity: .55; }
 .mm-legend i.mv-terrain { background: linear-gradient(135deg, #20384a 0 45%, #5b4a36 45% 60%, #3b4a32 60%); }
+/* (d22 batch97 BG3) the chart: ground, a belt and a machine in the game's map colours */
+.mm-legend i.mv-chart { background: linear-gradient(90deg, #37350b 0 40%, #cca047 40% 55%, #006091 55%); }
 .mm-legend i.mv-range { background: rgba(120, 200, 255, .35); border-radius: 50%; box-shadow: 0 0 0 1px rgba(120, 200, 255, .8); }
 .mm-legend i.mv-cloud { width: 22px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
 .mm-legend i.mv-reached { background: transparent; border-radius: 50%; box-shadow: 0 0 0 2px #ff5a44; }
@@ -807,7 +810,7 @@ html { scroll-padding-top: 76px; }
   .jump a, .shift-nav a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 6px; }
   .kind-filter .fx-btn, .mapview-tools .fx-btn, .fx-btn.small { min-height: 36px; }
   .vlink { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; margin: -8px 0; }
-  .fx-textfield, .hl-controls label, .hl-controls select, .mapview-item, .tlapse-controls input[type=range],
+  .fx-textfield, .hl-controls label, .hl-controls select, .mapview-item, .mapview-platform, .tlapse-controls input[type=range],
   .tlapse-controls .fx-btn { min-height: 36px; }
   /* links and controls the 390 px check found under 36 px */
   main table.compare th button { display: inline-flex; align-items: center; min-height: 36px; }
