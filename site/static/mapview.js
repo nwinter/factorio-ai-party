@@ -871,7 +871,9 @@
     ctx.globalAlpha = sc.terrain.length ? 0.45 : 1; ctx.stroke(); ctx.globalAlpha = 1;
     if (sc.ore) fillRuns(ctx, sc.ore, ORE, 0.38);
     if (sc.cloud) {
-      sc.cloud.cells.forEach(function (c) { ctx.fillStyle = 'rgba(' + sc.cloud.rgb + ', ' + c.a + ')'; ctx.fillRect(c.x, c.y, c.s + 0.5, c.s + 0.5); });
+      // (BG3) over the chart the cloud is lighter, so the buildings under it still read
+      var thin = sc.chart && sc.chart.length ? 0.4 : 1;
+      sc.cloud.cells.forEach(function (c) { ctx.fillStyle = 'rgba(' + sc.cloud.rgb + ', ' + (c.a * thin).toFixed(3) + ')'; ctx.fillRect(c.x, c.y, c.s + 0.5, c.s + 0.5); });
       sc.cloud.reached.forEach(function (n) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 3; circle(ctx, n.x, n.y, 6); ctx.stroke();
         ctx.strokeStyle = '#ff5a44'; ctx.lineWidth = 1.8; circle(ctx, n.x, n.y, 6); ctx.stroke();
