@@ -187,8 +187,10 @@
   already holding enough or holding none.
 - Couriers: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short). `"walk": true` (feed
-  and collect with `positions`) walks into reach of targets out of reach first (one call; `legs` lists the route; a
-  position that resolves to nothing is named in `skipped`, the rest go on). `area {left_top, right_bottom}` takes
+  and collect with `positions`) walks into reach of targets out of reach first (one call; `legs` lists the route and
+  each stop's `inventory`, `surface` the character's surface, where every position resolves; a position that resolves
+  to nothing, or to an entity without the inventory, is named in `skipped`, the rest go on; none left: refused before
+  the walk). `transfer {unit_number}` without a position finds vehicles (spidertrons, cars) by number. `area {left_top, right_bottom}` takes
   every machine (or chest) inside it.
 - Walking into reach: out of reach within 32 tiles (64 for `transfer`, `collect`, `feed`, `rearm` and `refuel`), those
   calls and `mine`, `build`, `rotate` and `configure` (modules by hand, a recipe change on a stocked machine) walk
