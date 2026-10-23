@@ -11830,6 +11830,25 @@ best of three.
 - Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
   the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
 
+## d22 batch104 BN1: a belt pickup's count and where it went (Sol #1925)
+
+- Sol's report: `pickup {belt: true}` on Fulgora (area (-346,-23)-(-345,-8), 15 belts) reported 1000 and 200 picked
+  while scans before and after showed 120 scrap on the same 15 belts (full: 8 a tile).
+- The count is what the belt lines gave up: each take inserts into the character, then `remove_item` on the lane, and
+  only what that returns is counted (what the belt did not give back is taken out of the character again). Reproduced
+  on a copy of world n's _autosave12 (d22, the save before Sol's calls), Sol's character placed where it stood, the 15
+  belts given 58 scrap: the pickup took 60 (the 58 and 2 that the belt brought in from upstream), the belts held 0 after.
+  Sol's request max for scrap is 0, so the game moves what is picked to the trash slots within a few ticks, and the
+  logistic robots of network 848 took it from there within about 60 ticks to the storage chest at (-316.5,-11.5)
+  (541 -> 601). Between the saves before and after Sol's calls that chest went 541 -> 1100. So an item counted had left
+  the belt; a belt fed from upstream as fast as it is taken (a fast belt brings up to 30 items a second; Sol's first
+  pickup took 1000 in 2089 ticks, 0.48 a tick) shows the same count before and after.
+- Now the end says it: `last.belt` gives each belt before -> after (those that changed first, 32 at most),
+  `area_before`, `area_after`, `came_in` (taken less the area's drop), and where what was taken is: `kept` (main
+  inventory), `in_trash` (trash slots), `gone_from_you` (to the trash over a request max and taken by robots, or used),
+  and a `line` saying all of it. Three passes over belts in reach that show the items but remove none end it
+  `nothing_removed` (before, it tried until its ticks ran out).
+
 
 ## d22 batch99 BI5: a project's owner's running test beside its progress check (viewer Aurora site:4333)
 
@@ -11945,3 +11964,38 @@ Each fails on the code before the fix.
   - clear and remove_section;
   - the rows;
   - the three kinds.
+
+## d22 batch104 BN2: an inserter's wait for a full hand (luna #1931)
+
+- luna's request: `wait_for_full_hand` (boolean) in `configure` for inserters and their ghosts, read back by `inspect`;
+  a lab feed that gets science packs now and then needs it false.
+- 2.0.77 has no such setting on an inserter. Checked on a copy of world n's newest save (_autosave1, tick 48621075):
+  - LuaEntity (built and ghost), the inserter's control behavior and LuaEntityPrototype each refuse
+    `wait_for_full_hand` and `inserter_wait_for_full_hand` ("LuaEntity doesn't contain key ...").
+  - The game's English locale has no such control, and a stack inserter's blueprint entry holds only its name and
+    position.
+  - It is InserterPrototype's `wait_for_full_hand`, set at data stage only: Space Age's stack-inserter has true; the
+    default, false, holds for burner-inserter, inserter, fast-inserter, long-handed-inserter and bulk-inserter (the six
+    inserter prototypes in the world).
+- What it does, on the copy (a chest of 3 iron plates, the inserter, a chest; powered):
+  - bulk-inserter and fast-inserter moved the 3 plates;
+  - stack-inserter held them 5 s with status waiting_for_more_items (hand 16);
+  - after 5 more plates went into its source, it held 5 and still waited;
+  - with hand_size 3 (its stack size override), it dropped the 3;
+  - with a circuit's set stack size of 3, it dropped the 5 it held;
+  - feeding a lab from a chest with 1 automation pack: the bulk inserter put it in the lab; the stack inserter held it
+    4 s with the lab empty.
+- `configure {wait_for_full_hand}` (an inserter, built or ghost):
+  - The same as the inserter's own is read back: `wait_for_full_hand`, `wait_for_full_hand_before`, `unchanged: true`
+    and a `line`.
+  - The other is refused, with the facts above, and nothing in the call changes.
+  - With `filters`, `spoil_priority` or `hand_size` in the same call, those are set as without it, and the reply adds
+    `wait_for_full_hand` and `wait_for_full_hand_line`.
+  - Absent, configure is unchanged.
+- The reads:
+  - `inspect` has `wait_for_full_hand` on an inserter or its ghost.
+  - On a built inserter holding part of a hand with status waiting_for_more_items, `inspect` also has `hand_wait`
+    ("holds 3 iron-plate of a hand of 16 and waits for more items (stack-inserter waits for a full hand: ...)").
+  - The same appears as `hand_wait` in a feeder row (feeders), in the `labs` group line ("N idle: hold part of a hand
+    and wait for a full one (stack-inserter: ...)"), and in inspect's `inserter_line` ("holding 3 iron-plate of
+    a hand of 16, waiting for more items (stack-inserter waits for a full hand)").

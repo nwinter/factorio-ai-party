@@ -70,7 +70,7 @@
   inserter's pickup (it cannot take what they hold), and belts side-loading inside the count (upstream of the pickup
   said).
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
-  use_filters?, spoil_priority?, hand_size?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
+  use_filters?, spoil_priority?, hand_size?, wait_for_full_hand?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?, speaker_alert?, description?, bar?}`: a machine's or building's
   settings, as its GUI sets them; `inspect` reads each back.
   - `item_requests: false` (or `ammo: false` on a built turret): a built entity's item requests removed, every one on
@@ -97,7 +97,11 @@
   - Inserters and loaders: `filters`, `filter_mode` (or `mode`), `use_filters` (shown in `scan` rows: `filters:
     whitelist: iron-plate`, `off`, `set by circuit`); `hand_size: N` sets an inserter's stack size override, as
     its GUI does (1 up to its hand size now; 0 or false for none); `spoil_priority: fresh_first | spoiled_first | none` sets an
-    inserter's Spoil priority (built or ghost).
+    inserter's Spoil priority (built or ghost). `wait_for_full_hand` has no setting in 2.0.77: it is fixed by the
+    prototype (stack-inserter waits until its hand is full; burner, inserter, fast, long-handed and bulk do not). The
+    same as its own is read back; the other is refused. A stack inserter waits for its hand size, which `hand_size`
+    (or a circuit's set stack size) sets. `inspect` reads `wait_for_full_hand`, and `hand_wait` on one holding part of
+    a hand.
   - `bar: N` sets a chest's, logistic chest's, cargo wagon's or landing pad's red-X bar (N usable slots; `false`: none);
     items past it stay, new ones go only under it. A crafting machine's output has no bar in 2.0.77 and its GUI no
     output limit: with nothing taking from it, it holds one stack. `bar` on one is refused, naming its output inserters,

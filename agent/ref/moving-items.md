@@ -125,7 +125,10 @@
   stacks unmarked, the robot orders cancelled and the robots freed). `belt: true` takes items off belt lanes (belts within 1 tile, walking to them; areas on the
   map too); `"to":{x,y}` puts them in that chest at the end of the same walk; `spoiled_first: true` takes the most
   spoiled stacks first, `min_spoiled: N` only stacks at least N% spoiled (`last.picked_spoil`: each stack and its
-  spoilage).
+  spoilage). `last.belt` counts what the belt lines gave up and gives each belt before -> after, `came_in` (what
+  upstream moved in meanwhile: a belt fed as fast as you take looks unchanged), and where it went: `kept`, `in_trash`,
+  `gone_from_you` (a personal request max sends it to the trash, and robots take it to storage). Three passes that
+  remove nothing end it `nothing_removed`.
   Example: `./fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5}}' --wait`
 - `mine {position, count?, radius?, name?, tiles?, dry_run?}`: mines one entity or resource tile by hand (timed). Ore
   yields one per cycle (2 s for iron; `last.mined` counts); rocks give stone and coal fast. `count: 200` on ore, coal
