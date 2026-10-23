@@ -1423,6 +1423,26 @@ on-air hole (view_frac 0.658), so the rockets' targets were off frame.
   agent on foot; the find itself 0.025 ms.
 - Tests: `tools/stream/test_spidercam.py`, `vendor/factorio-harness/tests/d22_batch93b.lua`.
 
+## The site's chart (2026-10-22, d22 batch97 BG3)
+
+Nick asked for a map like the Galaxy of Fame's. tools/stream/chart.py draws every planet and platform as 384-tile cells
+at 1 px a tile in the game's map colours, from the harness's `chart` operator read (chart.lua), one read every 5 s
+(3 s while chunks wait for their first read), each under 20 ms on world n (6 chunks or 1200 entities at most):
+- protos once (colours and footprints), the surfaces every 5 minutes, then per surface a `list` of the charted chunks
+  in 64-chunk blocks from the one round the origin outwards, every charted chunk read once (two reads in three), then
+  `dirty` with `check: 48`, the surfaces in proportion to their chunks so every surface's count check comes round in
+  about the same time (chunks marked by the harness's events or a changed entity count, each read at most once per 10
+  game minutes), and chunks read 6 game hours ago again;
+- the store, runs/RUN/chart/store/SURFACE/CX_CY.json (Nauvis 5.8 MB with Vulcanus and a platform on the d22 copy), is
+  read back from the runs this one resumed from, as the map memory is, so the first pass runs once;
+- a changed chunk's cell is drawn again (and a neighbour's when the chunk is on its edge): tiles, resources and nature,
+  then buildings at their footprint turned by direction; rails as curves between their two ends (the ends of each
+  rail type by direction, read on the private copy with LuaEntity.get_rail_end); runs/RUN/chart/out/SURFACE/CX_CY.png
+  and .labels.json (recipes, stop names), out/index.json (each cell's version, its chunks' oldest and newest read
+  tick, and the box round our buildings). site/build.py publishes out/ under /live/chart/ (docs/LIVE-API.md).
+- On the d22 copy of world n the first pass of Nauvis (3,251 chunks), Vulcanus (916) and Asterion (91) took 1,178
+  reads; its cells: Nauvis 30 (568 KB), Vulcanus 12 (388 KB), Asterion 4 (24 KB). A cell draws in about 70 ms.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

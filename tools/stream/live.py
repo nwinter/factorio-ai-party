@@ -157,6 +157,9 @@ class LiveSource:
         self.net_map_listed = []  # the last read's [{surface, tick}]
         # (d22 batch75 AK9) the charted ground's tiles (terrain_grid.py; serve.py gives it its file); None: no reads
         self.terrain = None
+        # (d22 batch97 BG3) the site's chart (chart.py; serve.py gives it runs/RUN/chart/); None: no reads
+        self.chart = None
+        self.has_chart = False
         self.terrain_sent = False
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
@@ -620,6 +623,7 @@ class LiveSource:
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
             self.has_library_areas = "library_areas" in (res.get("operator_reads") or [])
             self.has_net_map = "net_map" in (res.get("operator_reads") or [])
+            self.has_chart = "chart" in (res.get("operator_reads") or [])
             self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
             # artillery shells in flight: serve.py reads them on their own pace (artillery_poller)
             self.has_artillery = "artillery_live" in (res.get("operator_reads") or [])
@@ -765,6 +769,18 @@ class LiveSource:
         if t.error:
             errors["terrain_grid"] = t.error
 
+    def observe_chart(self, obs, errors):
+        """(d22 batch97 BG3) the site's chart (chart.py): one `chart` operator read every chart.EVERY seconds (under 10 ms
+        on the x86 private copy), the cells it changed drawn into runs/RUN/chart/out/; obs["chart"] its status."""
+        c = getattr(self, "chart", None)
+        if c is None or not getattr(self, "has_chart", False):
+            return
+        if c.due():
+            c.step(lambda args: self.h.operator_read("chart", args)[0])
+            obs["chart"] = c.status()
+        if c.error:
+            errors["chart"] = c.error
+
     def observe_net_map(self, obs, errors):
         """A planet's networks map (operator read `net_map`), every net_map_every seconds: the first listed planet whose map
         is newer than the one read (none: the listing only). obs["net_map"] is that map, obs["net_map_listed"] the planets
@@ -805,6 +821,7 @@ class LiveSource:
         self.observe_library_areas(obs, errors)
         self.observe_net_map(obs, errors)
         self.observe_terrain(obs, errors)
+        self.observe_chart(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})
