@@ -51,6 +51,13 @@ has(r.groups[1],'1 idle: source transport-belt (0,-3) has nothing the lab needs'
 has(r.groups[1],'no logistic on their 1 belts/chests')
 has(r.groups[1],'sources hold automation 12')
 has(r.groups[2],'labs (60,60)-(60,60): 0/1 working, 1 no_power, lack automation (1), logistic (1); feeders: no visible inserters feed these labs')
+-- d22 batch104 BN2 (luna #1931): a stack-inserter holding part of its hand waits for a full one, said as such.
+names[5]='waiting_for_more_items'
+i2.name,i2.status,i2.held_stack='stack-inserter',5,{valid_for_read=true,count=1,name=red}
+local L2=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
+  status_name=function(e) return names[e.status] end,wait_for_full_hand=function(e) return e.name=='stack-inserter' end}
+has(L2.view(p,{}).groups[1],"1 idle: hold part of a hand and wait for a full one (stack-inserter: its prototype's wait_for_full_hand, fixed in 2.0.77; hand_size sets the hand)")
+i2.name,i2.status,i2.held_stack='inserter',3,{valid_for_read=false}
 -- Nothing researching, nothing working.
 force.current_research=nil
 eq(L.view(p,{}).research,'none: nothing queued')

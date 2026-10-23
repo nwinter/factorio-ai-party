@@ -168,7 +168,14 @@ return function(api)
               sources[src.unit_number or at(src.position)] = src; sources[#sources+1] = src
             end
             local status = api.status_name(ins) or 'unknown'
-            if status ~= 'working' and status ~= 'waiting_for_target_to_be_built' and not (ins.held_stack and ins.held_stack.valid_for_read) then
+            -- one holding part of its hand and waiting for more: a stack-inserter waits for a full hand (fixed in 2.0.77;
+            -- d22 batch104 BN2, luna #1931)
+            if status == 'waiting_for_more_items' then
+              local full = api.wait_for_full_hand and api.wait_for_full_hand(ins)
+              local why = full and 'hold part of a hand and wait for a full one (stack-inserter: its prototype\'s wait_for_full_hand, fixed in 2.0.77; hand_size sets the hand)'
+                or 'hold part of a hand and wait for more items'
+              idle[why] = (idle[why] or 0) + 1
+            elseif status ~= 'working' and status ~= 'waiting_for_target_to_be_built' and not (ins.held_stack and ins.held_stack.valid_for_read) then
               local why = status == 'waiting_for_source_items' and (hidden and 'pickup target outside visible chunks'
                 or src and 'source ' .. src.name .. ' ' .. at(src.position) .. ' has nothing the lab needs' or 'nothing to pick up from') or status
               idle[why] = (idle[why] or 0) + 1

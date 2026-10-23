@@ -2,6 +2,8 @@
 //
 //   GET  /v1/state            latest stream state pushed from the Mac (public)
 //   POST /v1/state            replace it (Authorization: Bearer PUBLISH_TOKEN)
+//   GET  /v1/board            every task, request, claim, project and reminder (public; the live page's full lists)
+//   POST /v1/board            replace it (Authorization: Bearer PUBLISH_TOKEN; site/push_live.py, when it changed)
 //   GET  /v1/chat?after=SEQ   viewer chat messages after SEQ (public); the ones that go to the game only, unless
 //                             &channels=all (the live page): then the viewers-only ones too, each with its channel
 //   POST /v1/chat             post a message {name, text, cid?, channel?} (no accounts; rate limited per client; the
@@ -158,7 +160,7 @@ function withCors(resp, req, env) {
 // Per-isolate micro-cache for the two public GETs, so many viewers polling don't each wake the Durable Object.
 // (The Cache API is not available on workers.dev.)
 const micro = new Map();
-const MICRO_TTL = { "/v1/state": 3000, "/v1/chat": 2000, "/v1/polls": 3000 };
+const MICRO_TTL = { "/v1/state": 3000, "/v1/chat": 2000, "/v1/polls": 3000, "/v1/board": 10000 };
 const PUBLIC_POST = /^\/v1\/(chat|here|blueprints|polls\/\d+\/vote|polls\/suggest)$/;
 
 export default {
@@ -350,6 +352,8 @@ export class Live {
       this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
       this.state = this.get("state");
       this.received = Number(this.get("received") || 0);
+      this.board = this.get("board");
+      this.boardReceived = Number(this.get("board_received") || 0);
       this.salt = this.get("salt");
       if (!this.salt) {
         const b = crypto.getRandomValues(new Uint8Array(16));
@@ -380,6 +384,8 @@ export class Live {
       switch (route) {
         case "GET /v1/state": return this.getState();
         case "POST /v1/state": return this.postState(req, text);
+        case "GET /v1/board": return this.getBoard();
+        case "POST /v1/board": return this.postBoard(req, text);
         case "GET /v1/chat": return this.getChat(url);
         case "POST /v1/chat": return await this.postChat(req, text);
         case "POST /v1/mod": return this.mod(req, text);
@@ -447,6 +453,30 @@ export class Live {
     this.put("state", this.state);
     this.put("received", this.received);
     return json({ ok: true, received: this.received });
+  }
+
+  // (d22 batch99 BI3, viewer Aurora site:4316) the full board document: every task, request, claim, project and
+  // reminder, pushed apart from the state (which keeps its first view) and read by the page when a full list opens.
+  getBoard() {
+    const now = Date.now() / 1000;
+    return json({
+      schema: SCHEMA,
+      received: this.boardReceived || null,
+      age_s: this.boardReceived ? Math.round(now - this.boardReceived) : null,
+      board: this.board ? JSON.parse(this.board) : null,
+    });
+  }
+
+  postBoard(req, text) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    if (text.length > MAX_STATE_BYTES) return json({ error: "board too large", max_bytes: MAX_STATE_BYTES }, 413);
+    const body = JSON.parse(text);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "board must be an object" }, 400);
+    this.board = JSON.stringify(body);
+    this.boardReceived = Date.now() / 1000;
+    this.put("board", this.board);
+    this.put("board_received", this.boardReceived);
+    return json({ ok: true, received: this.boardReceived });
   }
 
   getChat(url) {

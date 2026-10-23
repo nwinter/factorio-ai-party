@@ -677,7 +677,11 @@ return function(api)
     local cover, amount = {}, {}
     for _, dr in ipairs(drills) do
       for _, o in pairs(surface.find_entities_filtered{area={{dr.x-dr.r, dr.y-dr.r}, {dr.x+dr.r, dr.y+dr.r}}, type='resource', name=q.name}) do
-        local key = o.position.x .. ',' .. o.position.y
+        -- (d22 batch96 BF1) a number for the key: a text key took two number-to-text conversions a tile (a 34x32 stone
+        -- patch's forecast was 28 ms on a copy of world n, a step of the alerts' background read); tile centres are
+        -- half-integers well inside 2^21, so x * 2^22 + y is one number per tile
+        local p = o.position
+        local key = p.x * 4194304 + p.y
         cover[key] = (cover[key] or 0) + 1; amount[key] = o.amount
         dr.tiles[#dr.tiles+1] = key
       end

@@ -492,6 +492,13 @@ DETAIL_ZOOM = (0.55, 1.0)  # (d20 batch50 A2) a detail pan's zoom: at least 0.55
 #                            ~18 px at 1080p), at most 1.0
 DETAIL_CROSS_S = 15.0       # a detail pan moves one view height in this long (~70 px/s at 1080p)
 DETAIL_BOW_S = 8.0          # a detail pan rests this long on the bow first, where asteroids come from in flight
+# (d22 batch99 BI4, viewer Foobator site:4332: "the camera up and down on ships does not show enough north and south
+# for large ships like asterion") a detail pan longer than this many view heights is not used: Asterion in flight
+# (60 x 275 tiles of hull, guns reaching 37 ahead) was a 0.55 view 62 tiles high panning 254 tiles at 4.1 tiles/s,
+# 70 s from bow to stern, so a 20 s visit showed its bow and a quarter of the hull. Such a ship gets the whole-frame
+# shot instead: the zoom that fits it (at least 0.3, cameras.lua's least: 113 tiles high) and the pan over the shot
+# (OneCam pan_y, and a visit held long enough for one view height in PAN_VIEW_S).
+LONG_VIEWS = 2.5
 
 
 def gun_reach(view):
@@ -545,9 +552,9 @@ def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
         out["fit_zoom"] = out["zoom"]
     if travelling and reach:
         detail = max(DETAIL_ZOOM[0], min(DETAIL_ZOOM[1], 60.0 * frac / w))
-        if detail > zoom + 0.05:
-            dh = 34.0 / round(detail, 2)
-            y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
+        dh = 34.0 / round(detail, 2)
+        y0, y1 = top - margin / 2 + dh / 2, max(top - margin / 2 + dh / 2, hull[3] + margin / 2 - dh / 2)
+        if detail > zoom + 0.05 and (y1 - y0) <= LONG_VIEWS * dh:
             out.update(zoom=round(detail, 2), position={"x": out["position"]["x"], "y": round(y0, 1)},
                        pan={"y0": round(y0, 1), "y1": round(y1, 1), "speed": round(dh / DETAIL_CROSS_S, 2),
                             "bow_s": DETAIL_BOW_S, "detail": True})
@@ -1434,6 +1441,8 @@ class Model:
             board["progress"] = {r["id"]: r for r in b["progress"] if isinstance(r, dict) and r.get("id") is not None}
         if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
             board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
+        if isinstance(b, dict) and "finished_ids" in b:  # (BI3) the finished tasks and requests a read listed
+            board["finished_ids"] = set(b["finished_ids"]) if b["finished_ids"] is not None else None
         for it in items:
             if it.get("id") is not None:
                 board["items"][it["id"]] = it
@@ -1632,6 +1641,34 @@ class Model:
         }
 
     JOBS_MAX = 20
+    ALL_MAX = 400  # (BI3) board_all_snapshot's tasks and requests at most
+
+    def board_all_snapshot(self):
+        """(d22 batch99 BI3, viewer Aurora site:4316: "Could the board show all tasks and reminders, with paging if
+        needed?") Every task and request the last board reads listed (open, claimed, doing, blocked, done, dropped),
+        every claim, every project read (open and finished) and every reminder job, for the site's full lists (serve.py
+        /board.json; push_live sends it apart from the state). Rows as the board snapshot's, with status and when each
+        last changed (updated_tick); the latest changed first. None before an active read."""
+        ids = self.board.get("active_ids")
+        if ids is None:
+            return None
+        fin = self.board.get("finished_ids") or set()
+        items = [it for i, it in self.board["items"].items()
+                 if it.get("kind") in ("task", "request") and (i in ids or i in fin or it.get("status") in ("done", "dropped"))]
+        items.sort(key=lambda it: -(it.get("updated_tick") or 0))
+        claims = [it for it in self.board["items"].values() if it.get("kind") == "claim"
+                  and it.get("status") in ("open", "claimed", "doing")]
+        claims.sort(key=lambda it: -(it.get("updated_tick") or 0))
+
+        def row(it):
+            return {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "kind": it.get("kind"),
+                    "owner": it.get("owner"), "agent": self._who(it.get("owner")), "status": it.get("status"),
+                    "requested_by": it.get("requested_by"), "updated_tick": it.get("updated_tick"), **with_evidence(it)}
+        projects = [self.project_row(it) for it in self._projects(("open", "claimed", "doing", "blocked", "done", "dropped"))]
+        rem = self.reminders_snapshot() or {}
+        return {"tick": self.tick, "items": [row(it) for it in items[:self.ALL_MAX]], "items_total": len(items),
+                "claims": [row(it) for it in claims], "projects": projects,
+                "reminders": rem.get("jobs") or [], "reminders_total": rem.get("total") or 0}
 
     def jobs_snapshot(self):
         """(open, doing): tasks and requests from the last active board read (board.active_ids), open with no owner, and
@@ -1735,7 +1772,52 @@ class Model:
             chk = {"state": pr.get("state"), "stalled": pr.get("stalled") or None, "unchanged_checks": pr.get("unchanged_checks"),
                    "checked_s": pr.get("checked_s"), "last_change_s": pr.get("last_change_s"), "error": pr.get("check_error")}
             out["check"] = {k: v for k, v in chk.items() if v is not None}
+        work = self.owner_work(it)
+        if work:
+            out["owner_work"] = work
         return out
+
+    def owner_work(self, it, now=None):
+        """(d22 batch99 BI5, viewer Aurora site:4333: "Asterion still shows stalled while Astra's timed flight watch is
+        running. Could the board show the active test and its deadline alongside the last progress check?") The
+        project owner's running bounded watches (status work: uptime, turret_tally, belt_flow, collector_tally,
+        asteroid_watch, and the flight watches it set) and its current wait, as its card reads them: [{kind, line,
+        end_tick, names}], names the board items a watch names (an item's #id in its scope or reason); this: true when it
+        names this item: its #id, or this item's title naming, as a word, the watch's scope or a platform its scope
+        names (Astra's asteroid_watch "asteroids and 97 turrets on Asterion" and project #1807 "Asterion: finish
+        coldstart ...", world n 17:05). Facts only:
+        the progress check's state stays as it is."""
+        ag = self.agents.get(it.get("owner")) if it.get("owner") else None
+        if not ag:
+            return None
+        now = (getattr(self, "snap_now", None) or time.time()) if now is None else now
+        title = (it.get("title") or "").lower()
+        items = self.board.get("items") or {}
+        plats = [p["name"] for p in (self.space.get("platforms") or []) if isinstance(p, dict) and p.get("name")]
+        rows = []
+        for w in ag.watches or []:
+            if not isinstance(w, dict) or w.get("state") not in ("running", "armed"):
+                continue
+            line = workcard.rows([w], None, None, None, self.tick)[0]["line"]
+            text = " ".join(str(w.get(k) or "") for k in ("scope", "reason", "line"))
+            named = []
+            for m in re.finditer(r"#(\d+)", text):
+                i = int(m.group(1))
+                if i in items and i not in [n["id"] for n in named]:
+                    named.append({"id": i, "title": clean_text(items[i].get("title") or "")})
+            # the places it watches: its scope as a whole (a flight watch's platform), and each platform it names
+            # ("asteroids and 97 turrets on Asterion"); this item when its title names one of them as a word
+            scope = str(w.get("scope") or "").strip()
+            places = [scope] + [p for p in plats if re.search(r"\b" + re.escape(p.lower()) + r"\b", scope.lower())]
+            this = any(n["id"] == it.get("id") for n in named) or any(
+                len(x) >= 4 and re.search(r"\b" + re.escape(x.lower()) + r"\b", title) for x in places)
+            row = {"kind": w.get("kind") or "watch", "line": line, "end_tick": w.get("end_tick"),
+                   "names": named or None, "this": this or None}
+            rows.append({k: v for k, v in row.items() if v is not None})
+        wl = waitcard.line(ag.wait, self.tick, now) if ag.wait else None
+        if wl:
+            rows.append({"kind": "wait", "line": wl, "end_tick": (ag.wait or {}).get("until_tick")})
+        return rows or None
 
     def plan_snapshot(self):
         """The team plan for the board widget and the site's Team plan: goals, each agent's line (agent name matched to
@@ -2521,6 +2603,7 @@ class Model:
         return out
 
     def snapshot(self, now, cameras=None):
+        self.snap_now = now  # (BI5) the time a project's owner_work reads its wait at
         cams_by_agent = {}
         for slot, cam in (cameras or {}).items():
             for name in cam.get("agents") or []:

@@ -177,3 +177,48 @@ if LUA_BIN:
         check(ents["fusion-reactor"]["fluid"]["neighbour_bonus"] == 1 and ents["fusion-reactor"]["max_energy_usage_kw"] == 10000, ents)
         check("fluid" not in ents["iron-chest"], ents)
 print("test_dump_prototypes: ok")
+
+# (d22 batch102 BL1, Sol #1919: "gamedata recipes omit extra_count_fraction ...; module item records omit effects and
+# machine built-in productivity") the new pages fit, and a module's effects by quality follow the game's rule, checked
+# on a copy of world n's save against entity.effects of a machine holding each module at each quality (60 of 60)
+for cat in ("recipes", "items", "qualities", "effects"):
+    cmd = dp.command(cat, 1)
+    check("--" not in cmd and len(cmd.encode()) <= dp.MAX_COMMAND, (cat, len(cmd.encode())))
+check("extra_count_fraction" in dp.command("recipes", 1) and "module_effects" in dp.command("items", 1), "the new fields read")
+check("effect_receiver" in dp.command("effects", 1) and "get_crafting_speed(q)" in dp.command("effects", 1), "the machines' effects read")
+me = dp.module_effect
+check(me("speed", 0.5, 2.5) == 1.25 and me("consumption", 0.7, 2.5) == 0.7, "speed 3 legendary: speed x2.5, its consumption penalty unchanged")
+check(me("consumption", -0.5, 1.3) == -0.65 and me("pollution", -0.05, 1.6) == -0.08, "efficiency: the reduction scales (cut to 0.01)")
+check(me("quality", 0.25, 2.5) == 0.62 and me("speed", -0.05, 2.5) == -0.05, "quality 3 legendary: 0.625 read 0.62; speed penalty unchanged")
+check(me("productivity", 0.1, 1.6) == 0.16 and me("quality", -0.1, 1.9) == -0.1, "productivity scales; a quality penalty does not")
+with tempfile.TemporaryDirectory() as d:
+    with open(os.path.join(d, "items.json"), "w") as f:
+        json.dump([{"name": "speed-module-3", "type": "module", "module_effects": {"speed": 0.5, "consumption": 0.70000001, "quality": -0.25}},
+                   {"name": "iron-plate", "type": "item", "effects_by_quality": {"stale": {}}}], f)
+    with open(os.path.join(d, "qualities.json"), "w") as f:
+        json.dump([{"name": "legendary", "level": 5, "default_multiplier": 2.5}, {"name": "normal", "level": 0, "default_multiplier": 1},
+                   {"name": "quality-unknown", "level": 0, "hidden": True, "default_multiplier": 1}], f)
+    line = dp.add_module_qualities(d)
+    check("1 with effects_by_quality (normal, legendary)" in line, line)
+    its = {e["name"]: e for e in json.load(open(os.path.join(d, "items.json")))}
+    eq_ = its["speed-module-3"]["effects_by_quality"]
+    check(eq_["legendary"] == {"speed": 1.25, "consumption": 0.7, "quality": -0.25} and eq_["normal"]["speed"] == 0.5, eq_)
+    check(its["speed-module-3"]["module_effects"]["consumption"] == 0.7 and "effects_by_quality" not in its["iron-plate"], its)
+    with open(os.path.join(d, "entities.json"), "w") as f:
+        json.dump([{"name": "electromagnetic-plant", "type": "assembling-machine"}, {"name": "iron-chest", "type": "container", "effects": {"stale": 1}}], f)
+    line = dp.merge_effects(d, [{"name": "electromagnetic-plant", "type": "assembling-machine", "base_effect": {"productivity": 0.5},
+                                 "crafting_speed_by_quality": {"normal": 2, "legendary": 5.000001}, "allowed_module_categories": None}])
+    ents = {e["name"]: e for e in json.load(open(os.path.join(d, "entities.json")))}
+    check(ents["electromagnetic-plant"]["effects"] == {"base_effect": {"productivity": 0.5}, "crafting_speed_by_quality": {"normal": 2, "legendary": 5.0}}, ents)
+    check("effects" not in ents["iron-chest"] and "1 read, 1 merged" in line, (ents, line))
+# the kb as dumped from the copy (d22 15:08 save): the cases Sol named
+kb = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kb", "space-age-2.0.77")
+rec = {r["name"]: r for r in json.load(open(os.path.join(kb, "recipes.json")))}
+check(rec["electromagnetic-plant-recycling"]["products"][0] == {"amount": 37, "extra_count_fraction": 0.5, "name": "holmium-plate", "type": "item"}, "EM plant recycler: 37.5 holmium")
+check(rec["supercapacitor-recycling"]["products"][0]["extra_count_fraction"] == 0.5, "supercapacitor recycler: 0.5 holmium")
+ents = {e["name"]: e for e in json.load(open(os.path.join(kb, "entities.json")))}
+check(ents["electromagnetic-plant"]["effects"]["base_effect"] == {"productivity": 0.5}, "EM plant built-in productivity")
+check(ents["electromagnetic-plant"]["effects"]["crafting_speed_by_quality"]["legendary"] == 5, "EM plant legendary speed")
+qs = {q["name"]: q for q in json.load(open(os.path.join(kb, "qualities.json")))}
+check(qs["legendary"]["default_multiplier"] == 2.5 and qs["rare"]["next"] == "epic", qs.get("legendary"))
+print("test_dump_prototypes: BL1 ok (fractions, module effects by quality, machine effects, qualities)")

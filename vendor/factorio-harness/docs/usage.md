@@ -11674,6 +11674,91 @@ best of three.
     warm-up call first: the first call after a deploy fills caches.
   - The worst platforms are still over 10 ms. On Asterion (16-19 ms) that is the thrust lines' upstream walk of its
     pipes (2.1 ms), the ammo rows (3.7), defense (1.4), blockers (1.3), the jobs lines (1.1) and the reply's encoding.
+- Part 2, `platforms` (world n: 16 calls, 16.5 ms average). Those calls were the stream service's: `platforms
+  {platform: NAME}` for the first 4 platforms every 15 s, 43.6-47.9 ms a game second on world n and 49.9 ms for the
+  same 4 on main's runtime on the copy (so the copy runs these reads about 1.1x slower).
+  - With `fields`, a row makes only the parts those fields name (the reply is the same: tests/platform_inspect.lua,
+    and on the copy all 19 platforms' replies compared equal). The stream asks for its 13 fields (live.py
+    `PLATFORM_FIELDS`): 9.4 ms median, 15.4 worst before; 4.0 and 8.1 now; the first 4 in 14.0 ms.
+  - `compact: false` with no platform named: 2 full rows a page (`page`, `pages`, `count`, `next`: `platforms
+    {compact: false, page: N}`); `page` with the compact read or a platform named is refused. Every full row in one
+    call was 70-84 ms and 118 KB; a page is 5.7-11.9 ms and 3.7-19.7 KB. `eta_to` pages the same way (73-89 ms and
+    133 KB before; 9.2-11.0 ms and 17.9 KB a page).
+  - The compact read (19.3-22.1 ms before, 11.0-15.6 ms now, 12.7 KB either way): ghosts of both kinds counted in one
+    count by name (a count by name took half the time of one by type) and found only when there are some; the tile
+    rules' check only with ghosts; the turrets, thrusters and tanks from the platform's background read when one
+    count finds no other aboard (the finds were 5.7 ms for 19 platforms, the count 1.5), else found; an item's type
+    read once per name; the jobs lines only for full rows.
+  - The departure lines (agents' queues and orders that send a platform on) come from one walk for every platform,
+    the jobs lines only for the rows the reply has, and a hub's request counts are written with string.format (in
+    the game's Lua `..` with a number costs 8-22 us on the copy, string.format 0.3).
+- Part 3, the alerts' background read (world n: `pushalerts.drill_sites` 140.8 ms in a game second, `pushalerts.slice`
+  up to 164 ms). On the copy, main's runtime: drill_sites 394 ms in one second (29 steps), slices 147 ms (42 steps).
+  - `drill_sites` (the depleted-drill lookup, also the `drill_sites` read): its chunk keys were text (`cx..','..cy`)
+    for every ore tile and candidate centre, and its 1,200-odd candidates were tables sorted with a Lua comparison.
+    Now the keys are numbers, the distances are sorted as numbers (each distance's centres kept in x, then y order),
+    a candidate's table is made when it is examined, and the drills and entity ghosts round the candidates are found
+    once (a spot no box touches needs no find of its own). 44 lookups on the copy gave the same replies: 1,055 ms in
+    all before (the worst 58.6), 318 after (the worst 15.2, under load).
+  - The mine forecast (`ores {forecast}` and the alerts' mine_depleting) keyed each ore tile by text: a 34x32 stone
+    patch was 28 ms, now 2.6.
+  - The merge step keyed every cell and its 8 neighbours by text: 45-70 ms a step, now 12.5.
+  - The job is paced by its work: each step has a cost in units of about a microsecond on the copy (a slice's
+    entities by type, fitted to 838 slices: 8 a chest to 276 a silo; a depleted-drill lookup made now 10,000; a
+    forecast 500 and 80 a drill; the other steps by kind). A slice stops at 5,000 (and 150 entities), and after a step
+    the job waits its cost's share of 20,000 a second (`SECOND_COST`).
+  - profile_ticks on the copy, 60 s each, part 2's runtime against this one: pushalerts' worst second 467 ms against
+    67 (a garbage collection second; the next 58.7, then 33.8-35.8); seconds over 30 ms 16 against 13; drill_sites'
+    worst second 394 against 13.2; slices' 147 against 49.6 (that same second), then 35.5.
+  - The cost: a pass takes 42-47 s on the copy (2,539-2,829 ticks), where it started every 30 s; the alerts it finds
+    are that much older at most. `SECOND_COST` sets the trade.
+- Part 4, `platform_endurance` (world n: Kestrel IVb 66 ms) and `platform_supply` (about 20 ms). On the copy, main's
+  runtime and this one, each platform's best of three:
+
+  | | median | worst |
+  |---|---|---|
+  | platform_endurance, main | 17.7 ms | 64.9 (Asterion), 62.7 (Meridian-V) |
+  | platform_endurance, now | 7.4 ms | 15.0 (Asterion), 11.3 (Kestrel II) |
+  | with forecast, main | 19.7 ms | 71.2 (Asterion) |
+  | with forecast, now | 11.0 ms | 23.2 (Asterion) |
+  | platform_supply, main | 6.6 ms | 52.9 (Meridian-V), 17.5 (Asterion) |
+  | platform_supply, now | 5.6 ms | 17.3 (Asterion), 15.7 (Meridian-V) |
+
+  - platform_endurance takes the ammunition trace's background read, with its age (`read over 27 ticks in the
+    background (201 belts, 256 a tick), 9s ago`), as the platforms read and preflight do: a platform of up to 400 belts
+    was traced in the call (Kestrel IVb's 201 belts: 64 ms). Before the first background read, the reply says the
+    trace is under way and that stranded ammunition is not told apart until then.
+  - The hull's width (`freight.geometry`, which says whether a speed was measured on the same ship) comes from
+    counts of foundation in columns, 32 at a time and then one at a time from each side: every foundation tile read
+    was 14.6 ms of Asterion's read (18 platforms: 107 ms read, 11.7 counted, the same widths).
+  - platform_supply's chunk trace reads each belt's outputs, each inserter's filter and target, each machine's recipe
+    and each entity's type once a call, where each chunk type's walk read them again; the chunk names come from the
+    item prototypes once a load. The 18 platforms' replies compared equal on the copy.
+  - Over 10 ms still, on Asterion (8,000 entities) and Meridian-V: endurance's plan and forecast lines (3-4 ms each),
+    supply's thrust lines (up to 4.5 ms) and the trace's first walk of each belt (3.6 ms).
+- Part 5 (operator 17:26, world n after cp1 and cp2: `flight_watch` 10 calls, 36.4 ms average, a game second of 138
+  ms with 2; board.team up to 63 ms, with platalerts.lines 51). On a copy of world n's 17:39 autosave: Astra's
+  Asterion watch 595 (97 turrets, 23 railguns, 160 accumulators) and 3 of Sol's watching, read as the agents read them
+  (`{id}` and `{}`) every 2 s during a 60 s profile, cp4's runtime against this one:
+
+  | | cp4 | now |
+  |---|---|---|
+  | dispatch flight_watch | 20.7 ms average, worst 189.4 (a GC second) | 11.5, worst 32.8 |
+  | board.team | 6.3 ms average, worst 26.3 | 3.1, worst 11.5 |
+  | platalerts.lines | 4.3 ms average, worst 16.6 | 1.0, worst 6.7 |
+  | platalerts.scan (new, background) | - | 0.72 ms a step, worst second 10.5 |
+
+  - The read itself was not the cost. Every reply's team block read each platform's alert scan when they expired (600
+    ticks, read for all platforms in one reply). Now `platalerts.tick` reads the oldest expired scan of a platform
+    whose lines were read in the last 5 minutes, one every 20 ticks. A reply takes a scan up to 1,200 ticks old while
+    the background runs, and reads one itself only past that.
+  - The fuel outlook (in each running watch's totals, the alerts' scans in flight, platform_endurance) takes the
+    thrusters and tanks from the platform's background read when a count finds no other aboard, and its speed check
+    has part 4's hull width by counts (every foundation tile was read before).
+  - A full read of watch 595 does about 8 ms of work on the copy, against 15.3 on world n's runtime. Its 41 KB reply
+    took 20.7 ms to write as JSON there; on world n, 0.4 ms (`encode flight_watch` in your profile). The list of 8
+    watches does 11.6 against 17.9; its 4 running watches' fuel outlooks are 6.4 ms of that.
+
 ### d22 batch93 BC2: status brief's vehicle_fire
 
 - Viewer Foobator (13:33): the stream's camera on a spidertron firing rockets left half the action out. `status {brief:
@@ -11775,7 +11860,76 @@ Cost on the x86 private copy (world n's _autosave11 of d22): a read of the base'
 chunks, 788-1,551 entities, 17-30 KB), 6 outer chunks 4.5-5.2 ms, `check` 64 or 128 with `dirty` 1.5 ms (about 0.06
 ms a dense chunk counted). The event marks: see BG3 cp2 in the batch report (profile_ticks). Strings rather than
 tables of numbers: table_to_json takes about 28 us a number on that copy. Tests: tests/d22_batch97.lua.
+## d22 batch104 BN1: a belt pickup's count and where it went (Sol #1925)
 
+- Sol's report: `pickup {belt: true}` on Fulgora (area (-346,-23)-(-345,-8), 15 belts) reported 1000 and 200 picked
+  while scans before and after showed 120 scrap on the same 15 belts (full: 8 a tile).
+- The count is what the belt lines gave up: each take inserts into the character, then `remove_item` on the lane, and
+  only what that returns is counted (what the belt did not give back is taken out of the character again). Reproduced
+  on a copy of world n's _autosave12 (d22, the save before Sol's calls), Sol's character placed where it stood, the 15
+  belts given 58 scrap: the pickup took 60 (the 58 and 2 that the belt brought in from upstream), the belts held 0 after.
+  Sol's request max for scrap is 0, so the game moves what is picked to the trash slots within a few ticks, and the
+  logistic robots of network 848 took it from there within about 60 ticks to the storage chest at (-316.5,-11.5)
+  (541 -> 601). Between the saves before and after Sol's calls that chest went 541 -> 1100. So an item counted had left
+  the belt; a belt fed from upstream as fast as it is taken (a fast belt brings up to 30 items a second; Sol's first
+  pickup took 1000 in 2089 ticks, 0.48 a tick) shows the same count before and after.
+- Now the end says it: `last.belt` gives each belt before -> after (those that changed first, 32 at most),
+  `area_before`, `area_after`, `came_in` (taken less the area's drop), and where what was taken is: `kept` (main
+  inventory), `in_trash` (trash slots), `gone_from_you` (to the trash over a request max and taken by robots, or used),
+  and a `line` saying all of it. Three passes over belts in reach that show the items but remove none end it
+  `nothing_removed` (before, it tried until its ticks ran out).
+
+
+## d22 batch99 BI5: a project's owner's running test beside its progress check (viewer Aurora site:4333)
+
+- `status {brief: true, work: true}`'s `watches` also lists the flight watches the agent set (flightwatch.lua
+  `M.card`): `id` `flight#N`, `kind` `flight_watch`, `scope` its platform, `state` armed (waiting for its departure),
+  running, or done until its result is read, `start_tick`, `end_tick` (its time limit), `line`. The bounded watches
+  (measures.lua: uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) come first, as before.
+- The stream service (model.py `owner_work`) puts the project owner's running or armed watches and current wait
+  beside the project's progress check on the board card. Each has its line and end tick, and says what it names: an
+  item's `#id` in its scope or reason, or this project when the project's title names the watch's scope or a platform
+  the scope names. The check's own state is unchanged.
+## d22 batch105 BO1 (eng/d20-batch105): the forecast over the part of a leg flown (Astra #1927)
+
+- Astra: Asterion flew only the first part of its outer legs, and `platform_endurance {forecast: true}` scaled them
+  `x1.00`, as if the legs flown were the whole connection.
+- Reproduced on a private copy of world n's _autosave1 (15:53, tick ~48621000), route aquilo -> solar-system-edge ->
+  aquilo, with the save's runtime:
+  - `scaled from the legs flown in the last 2 hours: aquilo->solar-system-edge, solar-system-edge->aquilo, ...`;
+  - every kind `(flown ...)` equal to the leg's own mean;
+  - each ammunition `x1.00`.
+- What freight.lua had recorded for Asterion: aquilo->solar-system-edge (100,000 km) flown 0-13% then turned back
+  (solar-system-edge->aquilo 87-100%), the same again to 15%, and out now at 13%.
+- Now (routeammo.lua):
+  - The legs flown are those finished in the last 2 hours and the leg flown now, so far. The moving rate they scale
+    counts it too.
+  - Each has the part of its connection flown, `km0 / length` to `km1 / length` the way it was flown (freight's distance
+    along the connection). A leg recorded before those were kept counts as flown whole (0-100%). One opened mid-flight
+    without them says `the part flown not recorded: the whole connection taken`.
+  - Its asteroids are the game's spawn chance over that part: `asteroid_spawn_definitions`' spawn points, by distance
+    from the connection's own `from` (a leg flown the other way reads them from 1), linear between points, averaged
+    over the part (`density_range`). The use is scaled by the route leg's whole mean over that.
+  - Each route leg's line adds how much of it the legs flown cover, the way it flies: `the legs flown cover 15% of it
+    (0-15%); the other 85% is the game's spawn definition, not measured`, or `cover all of it`, or `include none of
+    this connection: all of it is the game's spawn definition, scaled by the rate measured elsewhere`.
+  - `forecast_coverage [{leg, flown (the parts, joined), flights, covered (0..1)}]`.
+- On the copy with the branch:
+  - `scaled from the legs flown in the last 2 hours (each the part of its connection flown, and minutes):
+    aquilo->solar-system-edge 0-13% 15m00s, solar-system-edge->aquilo 87-100% 6m53s, aquilo->solar-system-edge 0-15%
+    17m03s, solar-system-edge->aquilo 85-100% 7m44s, aquilo->solar-system-edge 0-13% (flying now) 14m09s (1h00m)`;
+  - each outer leg `the legs flown cover 15% of it`;
+  - the flown spawn chance of the huge asteroids is 0.0000 against 0.0003-0.0004 over the leg (they spawn further
+    out);
+  - so the use scales x2.61 (magazines), x2.66 (railgun ammo) and x16.30 (rockets, 432 a huge asteroid) instead of
+    x1.00.
+  - The read took 60-83 ms on the copy (173 ms with the save's runtime, the first call).
+- Test tests/d22_batch105.lua:
+  - the mean over a part, either way flown, and at a point;
+  - the scale line with each part, and the leg flown now;
+  - a route leg covered 25%, its scale x4.96 worked out by hand, and one not flown;
+  - the coverage rows;
+  - a leg flown whole before km was kept, and one with no part recorded.
 ## d22 batch100 BJ2 (eng/d20-batch100): game objects checked as tables (audit)
 
 BJ1 found `type(platform) == 'table'` dropping a LuaSpacePlatform. In 2.0 every game object is userdata. Read on a
@@ -11845,3 +11999,109 @@ Each fails on the code before the fix.
   - Now the item is kept by its name, from a name, the prototype, or `target_item.name`. A record noted before the fix,
     holding the prototype, is read by its name.
   - Test tests/d22_batch100c.lua (userdata fakes; on the old code both calls raise at robotloss.lua:54).
+## d22 batch103 BM1 (eng/d20-batch103): requests on a section the game controls (Astra #1920)
+
+- Astra (shift59, 23:12:53Z) sent three `requests` calls to Kestrel II in one second: section 1 calcite 300..400 from
+  nauvis, section 2 from fulgora, section 3 from aquilo.
+  - Section 1 was refused, `section 1 is controlled by the game`; sections 2 and 3 were set.
+  - Her tell then named section 1 as set. 13 minutes later she found it missing and added section 8 with `add_section:
+    true`.
+  - So the harness did not accept the write. Its refusal named neither what controls the section nor how to keep the
+    request.
+- 2.0.77, read on a private copy of world n's _autosave12 (15:38):
+  - `LuaLogisticSection.type`: manual 0, circuit_controlled 1, transitional_request_controlled 2 (a rocket silo's one
+    section), request_missing_materials_controlled 3 (Kestrel II's section 1: its hub's construction requests);
+  - a script's `set_slot` on such a section raises `trying to change logistic section that is not manual`.
+  - So there is no write for an `override` to make: the game refuses it whatever the harness does.
+- Now, for `requests`:
+  - a set or clear on such a section is refused with what controls it, and the same call with `add_section: true` in
+    place of `section`. Kestrel II's section 1: `section 1 is controlled by the game: the hub's construction requests
+    (Request missing construction materials): the game writes what the platform's ghosts need; the game refuses a
+    script's write to it and writes its own requests there, so a manual request there does not last; a new manual
+    section keeps these requests: requests {"platform":"Kestrel II","set":[{"item":"calcite","min":300,"max":400,
+    "from":"nauvis","min_payload":100}],"add_section":true}`;
+  - `remove_section` on one is refused the same way (`only the game removes it`);
+  - every section row has `controlled` (true or false) and, when true, `controlled_by` (a hub's construction requests,
+    a silo's automatic requests, the circuit network).
+  - Rows come from the requests read and from every requests write's reply, the only section rows the harness gives.
+- On the copy, with the branch runtime:
+  - Astra's call got the refusal above;
+  - the call it names, sent as given, made section 9 with calcite 300..400 from nauvis, min payload 100;
+  - the read: section 1 `controlled: true` with its kind, the manual ones `controlled: false`.
+  - With the save's runtime, the same call read `section 1 is controlled by the game`.
+- Test tests/d22_batch103.lua (userdata fakes; the fake section raises the game's error on a write):
+  - the refusal, its call and nothing written;
+  - clear and remove_section;
+  - the rows;
+  - the three kinds.
+
+## d22 batch104 BN2: an inserter's wait for a full hand (luna #1931)
+
+- luna's request: `wait_for_full_hand` (boolean) in `configure` for inserters and their ghosts, read back by `inspect`;
+  a lab feed that gets science packs now and then needs it false.
+- 2.0.77 has no such setting on an inserter. Checked on a copy of world n's newest save (_autosave1, tick 48621075):
+  - LuaEntity (built and ghost), the inserter's control behavior and LuaEntityPrototype each refuse
+    `wait_for_full_hand` and `inserter_wait_for_full_hand` ("LuaEntity doesn't contain key ...").
+  - The game's English locale has no such control, and a stack inserter's blueprint entry holds only its name and
+    position.
+  - It is InserterPrototype's `wait_for_full_hand`, set at data stage only: Space Age's stack-inserter has true; the
+    default, false, holds for burner-inserter, inserter, fast-inserter, long-handed-inserter and bulk-inserter (the six
+    inserter prototypes in the world).
+- What it does, on the copy (a chest of 3 iron plates, the inserter, a chest; powered):
+  - bulk-inserter and fast-inserter moved the 3 plates;
+  - stack-inserter held them 5 s with status waiting_for_more_items (hand 16);
+  - after 5 more plates went into its source, it held 5 and still waited;
+  - with hand_size 3 (its stack size override), it dropped the 3;
+  - with a circuit's set stack size of 3, it dropped the 5 it held;
+  - feeding a lab from a chest with 1 automation pack: the bulk inserter put it in the lab; the stack inserter held it
+    4 s with the lab empty.
+- `configure {wait_for_full_hand}` (an inserter, built or ghost):
+  - The same as the inserter's own is read back: `wait_for_full_hand`, `wait_for_full_hand_before`, `unchanged: true`
+    and a `line`.
+  - The other is refused, with the facts above, and nothing in the call changes.
+  - With `filters`, `spoil_priority` or `hand_size` in the same call, those are set as without it, and the reply adds
+    `wait_for_full_hand` and `wait_for_full_hand_line`.
+  - Absent, configure is unchanged.
+- The reads:
+  - `inspect` has `wait_for_full_hand` on an inserter or its ghost.
+  - On a built inserter holding part of a hand with status waiting_for_more_items, `inspect` also has `hand_wait`
+    ("holds 3 iron-plate of a hand of 16 and waits for more items (stack-inserter waits for a full hand: ...)").
+  - The same appears as `hand_wait` in a feeder row (feeders), in the `labs` group line ("N idle: hold part of a hand
+    and wait for a full one (stack-inserter: ...)"), and in inspect's `inserter_line` ("holding 3 iron-plate of
+    a hand of 16, waiting for more items (stack-inserter waits for a full hand)").
+## d22 batch106 BP1: fh wait while a belt_flow sample runs (Luna)
+
+- Luna's request (shift60, 02:32): "Belt-flow measurement #49028604 is still active >100 seconds after requesting 30
+  seconds; the wait action returns a stale completed gather rather than waiting."
+- The journal (runs/shift60/luna/journal.jsonl, lines 192-273):
+  - `belt_flow {position, seconds: 30}` at tick 49028604 (02:31:41Z), until_tick 49030404.
+  - `fh call belt_flow` then read `belt_flow {}` each second (seconds_left 29 down to 1).
+  - Two `fh wait` calls at 02:31:54 and 02:31:58 (`status {peek, brief}`, then a small observe) returned at once.
+  - `stop` at 02:32:02; the sample went on (seconds_left 9 at the next read).
+  - `belt_flow {}` at tick 49030406 (02:32:11Z) gave the result. At 60 UPS the sample ran its 30 s.
+- Why: `fh wait` (host/cli.ts waitForIdle) waits on the character's action (status `active`, `combat`). A belt_flow
+  sample is a bounded watch (measures.lua), not an action, so with nothing active the wait returned the last ended
+  action. `stop` pauses the queue and ends the action and combat (runtime.lua handlers.stop); it does not touch a
+  watch. A sample ends at its until_tick, or when a new `belt_flow {position}` replaces it.
+- The change (CLI):
+  - fh wait's polls ask for the watches: `status {peek, brief, work: true}`; a runtime that refuses `work` gets the
+    polls as before.
+  - With no action or combat running, and a `belt_flow` sample running that began after the last action ended, fh wait
+    waits for the sample:
+    - The budget is the sample's end tick, as for an action's; `--max` as given.
+    - The wake rules are the same: a tell or mention ends it unless `--wait-through-tells` (`outcome: told`,
+      `still_running: belt_flow sample ID, up to N s more`, exit 3), and an action begun meanwhile becomes what it
+      waits for.
+    - At the end it reads `belt_flow {}` once and gives its result, with `waited_for` (the watch id) and a note.
+    - At the cap: `wait_timeout`, "your belt_flow sample ID is STILL SAMPLING ...", exit 3.
+  - Any other watch running (uptime, turret_tally, collector_tally, asteroid_watch, flight_watch), or a sample begun
+    before the action that ended: the reply has `watches` (their rows), and the note names each one: its id, end tick
+    and seconds left, that no action or stop ends it, and the read that gives its result (`KIND {}`;
+    `platform_supply {platform, collection: true}`, `platform_defense {platform, asteroids: true}`,
+    `flight_watch {id: N}`).
+  - Exit 3's stderr line for a sample says that no action or stop ends it (the action line's "a call that drives
+    your character stops it" does not hold for a sample).
+- belt_flow's start and progress replies have `ends`: "the sample ends at until_tick: stop and your actions do not end
+  it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
+  the same.
+

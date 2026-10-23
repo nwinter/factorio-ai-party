@@ -165,7 +165,8 @@ return function(api)
   end
   local walker
   local function walk() walker = walker or api.walk or require('walk'){state=api.state}; return walker end
-  local READ_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'lane-splitter', 'linked-belt', 'inserter'}
+  local READ_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'lane-splitter', 'linked-belt', 'inserter',
+    'ammo-turret', 'thruster', 'storage-tank'}
   function M.belt_tick(tick)
     if tick % M.BELT_STEP ~= 0 then return end
     local bt = belt_store()
@@ -200,7 +201,7 @@ return function(api)
       end
       if not box then bt[best.index].done = {tick=tick, belts={}, hands={}, belt_entities=0}; return end
       bt[best.index].job = {start=tick, walk={surface=best.surface.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=1, max=1},
-        belts={}, hands={}, n=0}
+        belts={}, hands={}, n=0, turrets={}, tanks={}}
       bt.active = best.index
       return
     end
@@ -217,7 +218,7 @@ return function(api)
         if #job.queue > 0 then break end
       end
       if job.walked and #job.queue == 0 then
-        rec.done = {tick=job.start, belts=job.belts, hands=job.hands, belt_entities=job.n, capped=job.capped}
+        rec.done = {tick=job.start, belts=job.belts, hands=job.hands, belt_entities=job.n, capped=job.capped, turrets=job.turrets, tanks=job.tanks}
         rec.job, bt.active = nil, nil
         return
       end
@@ -228,7 +229,10 @@ return function(api)
     job.qi = last + 1
     for _, e in ipairs(list) do
       if e.valid then
-        if e.type == 'inserter' then
+        -- (the platforms read's ammo and fuel: the turrets, thrusters and tanks the walk met, entity references)
+        if e.type == 'ammo-turret' then job.turrets[#job.turrets+1] = e
+        elseif e.type == 'thruster' or e.type == 'storage-tank' then job.tanks[#job.tanks+1] = e
+        elseif e.type == 'inserter' then
           local h = try(function() return e.held_stack end)
           if h and try(function() return h.valid_for_read end) then job.hands[h.name] = (job.hands[h.name] or 0) + h.count end
         elseif job.n < M.MAX_BELTS then
@@ -246,6 +250,24 @@ return function(api)
         else job.capped = M.MAX_BELTS end
       end
     end
+  end
+  -- (BF1) A platform's turrets, and its thrusters and tanks, as its last background read listed them (valid ones),
+  -- {turrets, tanks, tick}; nil before one, and nil when a count finds more of them aboard now (one built since: the
+  -- listed ones still there are among those counted, so as many means the same ones). The platform counts as read
+  -- lately (its read is kept fresh).
+  function M.platform_lists(pl)
+    if not pl.index then return nil end
+    local bt = belt_store()
+    local rec = bt[pl.index] or {}
+    bt[pl.index] = rec
+    rec.wanted = game and game.tick or 0
+    local d = rec.done
+    if not (d and d.turrets) then return nil end
+    local function valid(list) local out = {} for _, e in ipairs(list) do if e.valid then out[#out+1] = e end end return out end
+    local out = {turrets=valid(d.turrets), tanks=valid(d.tanks or {}), tick=d.tick}
+    local n = try(function() return pl.surface.count_entities_filtered{type={'ammo-turret', 'thruster', 'storage-tank'}, force=pl.force} end)
+    if n ~= #out.turrets + #out.tanks then return nil end
+    return out
   end
   function M.stock_places(pl, want)
     want = want or want_default()
@@ -603,15 +625,25 @@ return function(api)
   end
   -- (K4) The ship as it flies: its thrusters (count) and its hull's width (the foundation's x extent, in tiles, within
   -- 128 tiles of the hub: Swift's 771 tiles read in 0.46 ms on the private copy; read when a leg begins).
+  -- (d22 batch96 BF1) the hull's width from counts of foundation in columns of -128..127, 32 columns at a time and then
+  -- one at a time from each side: every foundation tile read was 14.6 ms of Asterion's platform_endurance on a copy of
+  -- world n (18 platforms: 107 ms read, 11.7 counted, the same widths)
   function M.geometry(pl)
     local s = try(function() return pl.surface end)
     local out = {thrusters=s and try(function() return s.count_entities_filtered{type='thruster', force=pl.force} end) or nil}
-    local tiles = s and try(function() return s.find_tiles_filtered{name='space-platform-foundation', area={{-128, -128}, {128, 128}}} end)
-    if tiles and #tiles > 0 then
-      local lo, hi = math.huge, -math.huge
-      for _, t in pairs(tiles) do local x = t.position.x; if x < lo then lo = x end; if x > hi then hi = x end end
-      out.width = hi - lo + 1
+    local function has(x0, x1)
+      return (try(function() return s.count_tiles_filtered{name='space-platform-foundation', area={{x0, -128}, {x1, 128}}, limit=1} end) or 0) > 0
     end
+    local lo, hi
+    if s then
+      for x = -128, 96, 32 do
+        if has(x, x + 32) then for c = x, x + 31 do if has(c, c + 1) then lo = c; break end end; break end
+      end
+      for x = 96, -128, -32 do
+        if lo and has(x, x + 32) then for c = x + 31, x, -1 do if has(c, c + 1) then hi = c; break end end; break end
+      end
+    end
+    if lo and hi then out.width = hi - lo + 1 end
     return out
   end
   -- The speed an estimate flies at: the higher of now and the cruise (km a tick); nil before any flight seen.

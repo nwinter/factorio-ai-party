@@ -500,7 +500,14 @@ return function(api)
       parts[#parts+1] = (try(function() return e.inserter_filter_mode end) == 'blacklist' and 'filter not ' or 'filter ') .. table.concat(fl, ', ')
     end
     local h = try(function() return e.held_stack end)
-    if h and h.valid_for_read then parts[#parts+1] = string.format('holding %d %s', h.count, h.name) end
+    if h and h.valid_for_read then
+      parts[#parts+1] = string.format('holding %d %s', h.count, h.name)
+      -- waiting for the rest of its hand (a stack-inserter waits for a full hand; d22 batch104 BN2)
+      if try(function() return e.status == defines.entity_status.waiting_for_more_items end) then
+        parts[#parts] = parts[#parts] .. string.format(' of a hand of %s, waiting for more items%s', tostring(try(function() return e.inserter_target_pickup_count end) or '?'),
+          e.name == 'stack-inserter' and ' (stack-inserter waits for a full hand)' or '')
+      end
+    end
     local function at_(x) return x and x.valid and string.format('%s (%g,%g)', x.name, x.position.x, x.position.y) end
     local pick, drop = try(function() return e.pickup_target end), try(function() return e.drop_target end)
     local dp = try(function() return e.drop_position end)

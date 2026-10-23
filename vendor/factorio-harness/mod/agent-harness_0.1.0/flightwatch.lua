@@ -566,6 +566,26 @@ return function(api)
       or string.format('flight watch #%d on %s: begins at its next departure%s and runs until the arrival after it or %d min', w.id, pl.name, w.seen_stopped and '' or ' (it flies now: the departure after its next stop)', minutes),
       note=M.NOTE}
   end
+  -- (d22 batch99 BI5, viewer Aurora site:4333: "Asterion still shows stalled while Astra's timed flight watch is
+  -- running") the setter's flight watches for its card and its projects (status {brief, work}), as measures.card rows:
+  -- armed (waiting for the departure) or running, and done until its result is read; end_tick is the time limit.
+  function M.card(who)
+    local st = api.state().flightwatch
+    if not st then return nil end
+    local out = {}
+    for _, w in ipairs(st.list) do
+      if w.setter == who and (w.state ~= 'done' or not w.read_tick) then
+        -- its line from the record alone (M.row reads the platform: not for a poll)
+        local line = w.state == 'armed' and string.format('flight watch #%d on %s: waiting for its next departure, then at most %d min', w.id, w.platform, w.minutes)
+          or w.state == 'watching' and string.format('flight watch #%d on %s: watching until its next arrival or tick %d (%s more), %d samples', w.id, w.platform,
+            w.until_tick, secs(w.until_tick - game.tick), w.samples or 0)
+          or string.format('flight watch #%d on %s: ended (%s), its result not read yet', w.id, w.platform, tostring(w.why))
+        out[#out+1] = {id='flight#' .. w.id, kind='flight_watch', scope=w.platform, state=w.state == 'watching' and 'running' or w.state,
+          start_tick=w.start, end_tick=w.until_tick, minutes=w.minutes, line=line}
+      end
+    end
+    return #out > 0 and out or nil
+  end
   -- team.alerts lines for agent p: its watches' beginnings and ends since it last heard (h: its hint state).
   function M.lines(p, h)
     local st = api.state().flightwatch

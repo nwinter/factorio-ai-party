@@ -51,6 +51,13 @@ st, body, _ = call("POST", "/v1/state", {"tick": 144720, "game_time": "0h40m", "
 check("state POST with token", st == 200 and body.get("ok"), body)
 st, body, _ = call("GET", "/v1/state?fresh=1")
 check("state round trip", st == 200 and body["state"]["tick"] == 144720 and body["age_s"] is not None, body)
+# (d22 batch99 BI3) the full board document: public GET, token POST, a round trip
+st, body, _ = call("POST", "/v1/board", {"tick": 1, "items": []})
+check("board POST needs token", st == 401, st)
+st, body, _ = call("POST", "/v1/board", {"tick": 144720, "items": [{"id": 1, "status": "done"}], "reminders": []}, auth=True)
+check("board POST with token", st == 200 and body.get("ok"), body)
+st, body, _ = call("GET", "/v1/board?fresh=1")
+check("board round trip", st == 200 and body["board"]["items"][0]["status"] == "done" and body["age_s"] is not None, body)
 
 st, body, _ = call("POST", "/v1/chat", {"name": "tester", "text": "hello factory"}, ip="198.51.100.1")
 check("chat post", st == 200 and body["message"]["text"] == "hello factory", body)

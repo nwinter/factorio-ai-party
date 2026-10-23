@@ -9,7 +9,7 @@ redacts e-mail addresses, local paths, key-like tokens and IP addresses from eve
 API/v1/state with the publish token. The token comes from $POG_LIVE_TOKEN or site/worker/.secrets.json
 (gitignored; never commit it).
 """
-import argparse, fcntl, json, os, re, sys, tempfile, time, urllib.error, urllib.request
+import argparse, fcntl, hashlib, json, os, re, sys, tempfile, time, urllib.error, urllib.request
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -372,6 +372,42 @@ def public_reminders(rem):
             out["jobs"] = head + [j for k, j in enumerate(tail) if k not in gone]
         out.setdefault("total", len(rem["jobs"]))
     return out
+
+
+# (d22 batch99 BI3, viewer Aurora site:4316: "Could the board show all tasks and reminders, with paging if needed?
+# Hidden jobs and the nine omitted reminders make it hard to check what's actually finished.") The state keeps its
+# first view (BOARD_BYTES, REMINDER_BYTES: 20 doing of 36, 19 reminders of 31 on world n at 16:20); every task,
+# request, claim, project and reminder goes in a document of its own (serve.py /board.json -> worker /v1/board), sent
+# when it changed and at most every BOARD_EVERY seconds, which the live page reads when a full list is opened.
+BOARD_ALL_BYTES = 240 * 1024  # the worker takes 256 KB a document
+BOARD_EVERY, BOARD_STALE = 30.0, 300.0  # seconds: at most this often when it changed; at least this often anyway
+
+
+def public_board_all(doc, limit=BOARD_ALL_BYTES):
+    """The full board document within `limit`: over it, each row keeps its newest evidence line, then the finished
+    projects lose their steps, then the reminders their recipients' results, then the oldest tasks go (items_total
+    keeps the count)."""
+    if not isinstance(doc, dict):
+        return doc
+    out = dict(doc)
+    size = lambda: len(json.dumps(out, ensure_ascii=False, separators=(",", ":")))  # noqa: E731
+    if size() > limit:
+        for key in ("items", "claims", "projects", "reminders"):
+            out[key] = [newest_evidence(r) for r in out.get(key) or []]
+    if size() > limit:
+        out["projects"] = [dict(p, steps=None, steps_cut=True) if p.get("status") in ("done", "dropped") and p.get("steps")
+                           else p for p in out.get("projects") or []]
+    for same_only in (True, False):
+        if size() > limit:
+            out["reminders"] = [latest_without_results(j, same_only) for j in out.get("reminders") or []]
+    while size() > limit and out.get("items"):
+        out["items"] = out["items"][:max(0, len(out["items"]) - max(1, len(out["items"]) // 10))]
+    return out
+
+
+def board_url(source):
+    """serve.py's /board.json beside its /state.json."""
+    return re.sub(r"/state\.json$", "", source.rstrip("/")) + "/board.json"
 
 
 PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings", "core")
@@ -814,6 +850,49 @@ def take_lock(path=None):
     return f, None
 
 
+def push_board(a, tok, board, now=None):
+    """(BI3) The full board document (serve.py /board.json) to the worker's /v1/board: when it changed and BOARD_EVERY
+    seconds passed, or BOARD_STALE seconds passed; a worker without the route (404) is asked again in 10 minutes."""
+    now = time.time() if now is None else now
+    if now < board["off_until"] or now - board["at"] < BOARD_EVERY:
+        return None
+    try:
+        with urllib.request.urlopen(board_url(a.source), timeout=5) as r:
+            doc = json.load(r)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None  # an older serve.py, or no board read yet: nothing to send
+    if not isinstance(doc, dict):
+        return None
+    doc = public_board_all(doc)
+    body = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode()
+    h = hashlib.sha1(json.dumps(dict(doc, tick=None), sort_keys=True).encode()).hexdigest()
+    if h == board["hash"] and now - board["at"] < BOARD_STALE:
+        return None
+    if a.print:
+        print(json.dumps({"board_document": doc}, indent=1))
+    else:
+        try:
+            req = urllib.request.Request(a.api.rstrip("/") + "/v1/board", data=body, method="POST",
+                                         headers={"Content-Type": "application/json", "Authorization": "Bearer " + tok,
+                                                  "User-Agent": "pog-push-live/1"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                board["off_until"] = now + 600
+                print(f"[push] {time.strftime('%H:%M:%S')} the worker has no /v1/board yet: asking again in 10 min", flush=True)
+            else:
+                print(f"[push] {time.strftime('%H:%M:%S')} board document failed: {e.code}", flush=True)
+            board["at"] = now
+            return None
+        except (urllib.error.URLError, OSError) as e:
+            print(f"[push] {time.strftime('%H:%M:%S')} board document failed: {type(e).__name__}: {e}", flush=True)
+            board["at"] = now
+            return None
+    board.update(hash=h, at=now, bytes=len(body))
+    return len(body)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default="http://127.0.0.1:8787/state.json", help="serve.py state URL")
@@ -836,6 +915,7 @@ def main():
     # once a minute an ok line (shake3's push-live.log was empty: this printed only on failure, so a quiet log could
     # not tell pushes that went through from a process that never ran)
     window = {"ok": 0, "failed": 0, "bytes": 0, "tick": None, "agents": 0}
+    board = {"hash": None, "at": 0.0, "bytes": 0, "off_until": 0.0}  # (BI3) the full board document's last push
     next_report = time.time() + a.report
     if not a.print:
         print(f"[push] {time.strftime('%H:%M:%S')} start: {a.source} -> {a.api} every {a.interval:g} s", flush=True)
@@ -865,13 +945,15 @@ def main():
             window["failed"] += 1
             if fails in (1, 3) or fails % 30 == 0:
                 print(f"[push] {time.strftime('%H:%M:%S')} failed ({fails}): {type(e).__name__}: {e}", flush=True)
+        push_board(a, tok, board)
         if a.once:
             return 1 if fails else 0
         if not a.print and time.time() >= next_report:
             next_report = time.time() + a.report
             print(f"[push] {time.strftime('%H:%M:%S')} {'ok' if window['ok'] else 'NO PUSHES'}: {window['ok']} pushed, "
                   f"{window['failed']} failed in the last {a.report:g} s, {window['bytes'] // max(1, window['ok'])} bytes each, "
-                  f"tick {window['tick']}, {window['agents']} agents, terrain frames {len(_terrain['rows'])}"
+                  f"tick {window['tick']}, {window['agents']} agents, terrain frames {len(_terrain['rows'])}, "
+                  f"board document {board['bytes']} bytes"
                   + (f" (index read failed: {_terrain['error']})" if _terrain["error"] else "")
                   + f", chart v{_chart['v']}" + (f" (index read failed: {_chart['error']})" if _chart["error"] else ""), flush=True)
             window = dict(window, ok=0, failed=0, bytes=0)

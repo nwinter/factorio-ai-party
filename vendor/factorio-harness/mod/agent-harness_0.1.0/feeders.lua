@@ -31,12 +31,14 @@ return function(api)
     local inv = try(function() return src.get_output_inventory() end) or try(function() return src.get_inventory(defines.inventory.chest) end)
     return inv and try(function() return inv.get_item_count(item) end) or 0
   end
-  -- One inserter: {position, name, hand {item, count}, source {name, position, counts}, takes_from, condition,
+  -- One inserter: {position, name, hand {item, count}, hand_wait, source {name, position, counts}, takes_from, condition,
   -- holds_back, set_by}. items: the item names whose stock at the source is read. budget.traces: combinator traces left.
   function M.read(ins, items, budget)
     local f = {position=ins.position, name=ins.name}
     local h = try(function() return ins.held_stack end)
     if h and h.valid_for_read then f.hand = {item=h.name, count=h.count} end
+    -- holding part of a hand and waiting for more (a stack-inserter waits for a full hand; d22 batch104 BN2)
+    f.hand_wait = api.hand_wait and try(function() return api.hand_wait(ins) end) or nil
     local pick = try(function() return ins.pickup_target end)
     if pick and pick.valid then
       local counts, parts = {}, {}

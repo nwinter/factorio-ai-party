@@ -3,8 +3,9 @@ agent cards show the engineer's own current task plus background tests/deadlines
 Sonnet's plan still says free while sampling Cinder").
 
 Work rows come from reads the service makes anyway:
-  watch   the agent's bounded watches (status {brief, work}: uptime, turret_tally, belt_flow), running or needing it
-          (late, stalled, invalid, final not read), with its scope, end and latest sample
+  watch   the agent's bounded watches (status {brief, work}: uptime, turret_tally, belt_flow, collector_tally,
+          asteroid_watch, and the flight watches it set, d22 batch99 BI5), running or needing it (late, stalled,
+          invalid, final not read; a flight watch armed, waiting for its departure), with its scope, end and latest sample
   queue   each queue lane's active step (status brief queues): the step, when it started, the submission it came in
   order   a standing order running (status brief order)
   repeat  the same request sent again and again at a steady interval, read from the agent's journal (RepeatFeed): a
@@ -38,7 +39,9 @@ REPEAT_SKIP = {"sleep", "sleep_check", "status", "chat", "describe", "profiles",
                "wait_ticks", "board", "board_events", "board_plan", "board_focus", "reminders", "tells", "inbox",
                "help", "whoami", "pending", "chat_ack", "reminder_ack", "conflicts"}
 KIND_WORDS = {"uptime": ("uptime",), "turret_tally": ("turret", "tally"), "belt_flow": ("belt", "flow"),
-              "collector_tally": ("collector", "tally"), "asteroid_watch": ("asteroid", "watch")}
+              "collector_tally": ("collector", "tally"), "asteroid_watch": ("asteroid", "watch"),
+              # (d22 batch99 BI5) the flight watches the agent set (status work: kind flight_watch, scope its platform)
+              "flight_watch": ("flight", "watch")}
 STOP_WORDS = {"with", "from", "into", "onto", "then", "that", "this", "wait", "ticks", "until", "step", "steps", "more"}
 
 
@@ -167,7 +170,7 @@ def rows(watches, queues, order, repeats, tick):
         if not isinstance(w, dict):
             continue
         kind, state = w.get("kind") or "watch", w.get("state")
-        what = f"{kind} watch {w.get('id') or ''}".strip()
+        what = f"{'flight' if kind == 'flight_watch' else kind} watch {w.get('id') or ''}".strip()
         scope = w.get("scope") or ""
         latest = (w.get("latest") or {}).get("line")
         left = _ago(w.get("end_tick"), tick)
@@ -182,6 +185,7 @@ def rows(watches, queues, order, repeats, tick):
                 "late": f"late: ended {fmt_age(since or 0)} ago and no final result came",
                 "stalled": "stalled: no sample lately",
                 "invalid": "invalid: nothing left to read",
+                "armed": "waiting for its next departure" + (f", then at most {fmt_age(w['minutes'] * 60)}" if number(w.get("minutes")) else ""),
             }.get(state, str(state))
         if w.get("reason"):
             text += f"; its reason: {w['reason']}"

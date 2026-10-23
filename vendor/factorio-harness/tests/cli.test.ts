@@ -1048,3 +1048,93 @@ test('a flag the command does not read is refused before anything is sent, namin
     assert.equal(sent.length,3);
   });
 });
+// d22 batch106 BP1 (Luna: "the wait action returns a stale completed gather rather than waiting" while her belt_flow
+// sample ran): fh wait's polls ask for the watches (status {brief, work}); with no action running and a belt_flow sample
+// begun after the last action ended, it waits for the sample and gives its result.
+const flowRow=(state:string,end=160)=>({id:'belt_flow@100',kind:'belt_flow',scope:'5 points',state,start_tick:100,end_tick:end,line:'belt_flow@100 5 points: '+state});
+test('fh wait with no action running waits for a running belt_flow sample and gives its result; its polls ask for work',async()=>{
+  const seen:any[]=[]; let polls=0;
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='status'){polls++; const tick=100+polls*20;
+      return {ok:true,tick,result:{active:false,combat:false,last:{kind:'gather',outcome:'timed_out',tick:50},watches:[flowRow(tick<160?'running':'done')]}};}
+    if(request.action==='belt_flow')return {ok:true,tick:170,result:{lines:['section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5/min (iron-plate 4)'],samples:12}};
+    return {ok:true,result:{}};
+  },async port=>{
+    const json=JSON.parse((await cli(port,['wait'])).stdout);
+    assert.equal(json.ok,true); assert.equal(json.result.waited_for,'belt_flow@100');
+    assert.deepEqual(json.result.lines,['section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5/min (iron-plate 4)']);
+    assert.equal(json.result.note,'no action ran when this wait began; it waited for your belt_flow sample belt_flow@100 (until tick 160): this is its result');
+    const statuses=seen.filter(r=>r.action==='status');
+    assert(statuses.length>=3 && statuses.every(r=>r.args.work===true && r.args.brief===true),JSON.stringify(statuses.map(r=>r.args)));
+    assert.equal(seen.filter(r=>r.action==='belt_flow').length,1);
+  });
+  // compact: the result's lines and the note
+  polls=0;
+  await engine(request=>{
+    if(request.action==='status'){polls++; const tick=100+polls*20; return {ok:true,tick,result:{active:false,combat:false,last:false,watches:[flowRow(tick<160?'running':'done')]}};}
+    if(request.action==='belt_flow')return {ok:true,tick:170,result:{lines:['section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5/min (iron-plate 4)']}};
+    return {ok:true,result:{}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['wait']);
+    assert.equal(code,0,stdout); assert.match(stdout,/left lane 112\.5\/min/); assert.match(stdout,/it waited for your belt_flow sample belt_flow@100/);
+  });
+});
+test('fh wait on a belt_flow sample keeps --max and the wake rules: STILL SAMPLING at the cap, a tell ends it with the sample going on',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='status'){polls++; return {ok:true,tick:100+polls*20,result:{active:false,combat:false,last:false,watches:[flowRow('running',100000)]}};}
+    return {ok:true,result:{}};
+  },async port=>{
+    await assert.rejects(cli(port,['wait','--max','1']),(error:any)=>{
+      const reply=JSON.parse(error.stdout);
+      assert.equal(reply.error.code,'wait_timeout');
+      assert.match(reply.error.message,/^your belt_flow sample belt_flow@100 is STILL SAMPLING: the wait gave up after \d+ s, up to \d+ s more, until tick 100000\. No action of yours or stop ends it; belt_flow \{\} reads its result once it ends/);
+      assert.match(reply.result.still_running,/^belt_flow sample belt_flow@100, up to \d+ s more$/); return true;
+    });
+  });
+  polls=0;
+  await engine(request=>{
+    if(request.action==='status'){polls++; const tick=100+polls*20;
+      return {ok:true,tick,result:{active:false,combat:false,last:false,watches:[flowRow('running',100000)],...(polls>=2?{inbox:{tick:130,woke:'told',from:'sol'}}:{})}};}
+    return {ok:true,result:{}};
+  },async port=>{
+    // exit 3: the wait ended while the sample goes on, said on stderr as a sample's
+    await assert.rejects(cli(port,['wait']),(error:any)=>{
+      assert.equal(error.code,3);
+      const json=JSON.parse(error.stdout);
+      assert.equal(json.ok,true); assert.equal(json.result.outcome,'told'); assert.equal(json.result.from,'sol');
+      assert.match(json.result.still_running,/^belt_flow sample belt_flow@100, up to \d+ s more$/);
+      assert.match(json.result.note,/a tell from sol ended this wait \(the team block has it\); your belt_flow sample belt_flow@100 keeps going: fh wait waits for it again/);
+      assert.match(error.stderr,/still running \(exit 3\): belt_flow sample belt_flow@100, up to \d+ s more goes on after this wait ended; fh wait resumes waiting for it\. No action of yours or stop ends it \(it ends at its until_tick\)/);
+      assert.doesNotMatch(error.stderr,/A call that drives your character/); return true;
+    });
+  });
+});
+test('fh wait names the other watches running, and a sample begun before the action that ended, without waiting for them',async()=>{
+  const uptime={id:'uptime@90',kind:'uptime',scope:'4 machines',state:'running',start_tick:90,end_tick:4000,line:'uptime@90 ...'};
+  const flight={id:'flight#3',kind:'flight_watch',scope:'Spindle',state:'running',start_tick:95,end_tick:9000,line:'flight watch #3 ...'};
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='status'){polls++; return {ok:true,tick:400,result:{active:false,combat:false,last:{kind:'move_to',outcome:'arrived',tick:390},
+      watches:[uptime,flight,{...uptime,id:'turret_tally@80',kind:'turret_tally',state:'done'}]}};}
+    return {ok:true,result:{}};
+  },async port=>{
+    const json=JSON.parse((await cli(port,['wait'])).stdout);
+    assert.equal(json.ok,true); assert.equal(polls>=1,true); assert.equal(json.result.last.outcome,'arrived');
+    assert.deepEqual(json.result.watches.map((r:any)=>r.id),['uptime@90','flight#3']);
+    assert.equal(json.result.note,'no action runs; your uptime uptime@90 runs until tick 4000 (60 s more): no action of yours or stop ends it; uptime {} reads its result; '
+      +'your flight_watch flight#3 runs until tick 9000 (144 s more): no action of yours or stop ends it; flight_watch {id: 3} reads its result');
+  });
+  // the move_to ended at tick 390, after the sample began at 100: the wait is the move_to's, the sample named
+  await engine(request=>{
+    if(request.action==='status')return {ok:true,tick:400,result:{active:false,combat:false,last:{kind:'move_to',outcome:'arrived',tick:390},watches:[flowRow('running',1000)]}};
+    return {ok:true,result:{}};
+  },async port=>{
+    const json=JSON.parse((await cli(port,['wait'])).stdout);
+    assert.equal(json.result.last.outcome,'arrived'); assert.equal(json.result.waited_for,undefined);
+    assert.match(json.result.note,/your belt_flow belt_flow@100 runs until tick 1000 \(10 s more\): no action of yours or stop ends it; belt_flow \{\} \(fh call belt_flow \{\} waits for it\) reads its result/);
+    const {stdout}=await compact(port,['wait']);
+    assert.match(stdout,/your belt_flow belt_flow@100 runs until tick 1000/);
+  });
+});

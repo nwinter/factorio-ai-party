@@ -8,8 +8,8 @@
   full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
   naming them), `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
   and 3000 tile ghosts and says `at least` and how many were counted past that). With no platform named the read is
-  compact: a line a platform, blockers only when new to you; `compact: false` gives every platform's full row,
-  `request_edits: true` each hub section's last edit. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
+  compact: a line a platform, blockers only when new to you; `compact: false` gives every platform's full row, 2
+  a page (`page`; the reply's `next` names the next), `request_edits: true` each hub section's last edit. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
   there is none.
 - `./fh platform NAME`: one platform, the same read as `./fh call platform --args '{"name":"Kestrel"}'` (`platforms`
   of that one): hub free slots, cargo, speed, next stop, ETA; `hub_chunks` (hub slots asteroid chunks take);
@@ -114,7 +114,9 @@
   (each ammunition over the route: used, aboard, made, short or spare, a rocket's lift of it); `solar` with low and no
   power counts; flying, each line's last 60 s. `forecast: true` adds per leg the asteroids its connection spawns by
   kind against the legs flown lately, the shots one of each takes of each ammunition aboard (`none hurt`: the
-  ammunition cannot), and the use scaled from the legs flown, made meanwhile and left at each arrival; `pessimistic:
+  ammunition cannot), and the use scaled from the legs flown, made meanwhile and left at each arrival. Each leg flown
+  counts only the part of its connection flown (`0-15%`), the leg flown now too; each route leg says how much of it the
+  legs flown cover and that the rest is the game's spawn definition, not measured (`forecast_coverage`); `pessimistic:
   {speed, dwell_s}` slows the legs and adds time at each stop.
   Example: `./fh call platform_endurance --args '{"platform":"Wayfarer","route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}'`
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and

@@ -475,6 +475,7 @@ return function(api)
       out.held = held or 'nothing'
       out.held_blocked=M.held_blocked(e)
       out.pickup_wait=M.pickup_wait(e)
+      out.hand_wait=M.hand_wait(e)
       out.pickup_target = where(try(function() return e.pickup_target end))
       out.drop_target = where(try(function() return e.drop_target end))
       -- Nothing to drop into: the tile its items land on (on a platform,
@@ -501,6 +502,59 @@ return function(api)
       out.ghosts_here = #rows > 0 and rows or nil
     end
     return out
+  end
+  -- An inserter's wait for a full hand (d22 batch104 BN2, luna #1931: "Add wait_for_full_hand boolean to configure on
+  -- inserters (built and ghosts) and return its live state from inspect"). In 2.0.77 it is InserterPrototype's
+  -- wait_for_full_hand, set at data stage only (Space Age's stack-inserter: true; the default, false, for the other
+  -- five), and there is no runtime key for it: on a copy of world n, LuaEntity (built or ghost), its control behavior
+  -- and LuaEntityPrototype each refuse wait_for_full_hand and inserter_wait_for_full_hand, the GUI's locale has no such
+  -- control, and a stack inserter's blueprint entry holds its name and position only. So it is read by prototype name
+  -- from 2.0.77's data (nil for an inserter not among them), and a stack inserter holds what it took until its hand is
+  -- full: on the copy, 3 plates from a chest held 5 s (status waiting_for_more_items) and 1 science pack bound for a lab
+  -- held 4 s with the lab empty, where a bulk inserter moved them; its hand size override (configure hand_size) is the
+  -- hand it waits for: at 3 it dropped the 3.
+  M.WAIT_FOR_FULL_HAND = {['burner-inserter']=false, inserter=false, ['fast-inserter']=false, ['long-handed-inserter']=false,
+    ['bulk-inserter']=false, ['stack-inserter']=true}
+  M.WAIT_FOR_FULL_HAND_FACT = '2.0.77 has no per-inserter wait for a full hand: it is the prototype\'s wait_for_full_hand, fixed at data stage (no GUI control, no key on a built inserter, a ghost or a blueprint); of the six inserters only stack-inserter waits'
+  local function inserter_kind(e)
+    return e.type == 'inserter' or (e.type == 'entity-ghost' and try(function() return e.ghost_type end) == 'inserter')
+  end
+  function M.wait_for_full_hand(e)
+    if not inserter_kind(e) then return nil end
+    local name = e.type == 'entity-ghost' and try(function() return e.ghost_name end) or e.name
+    return M.WAIT_FOR_FULL_HAND[name]
+  end
+  -- A built inserter that holds part of its hand and waits for more (status waiting_for_more_items): one line, or nil.
+  function M.hand_wait(e)
+    local waiting = try(function() return defines.entity_status.waiting_for_more_items end)
+    if e.type ~= 'inserter' or not waiting or try(function() return e.status end) ~= waiting then return nil end
+    local h = try(function() return e.held_stack end)
+    local held = h and h.valid_for_read and h.count .. ' ' .. h.name or 'nothing'
+    local hand = try(function() return e.inserter_target_pickup_count end)
+    local full = M.wait_for_full_hand(e)
+    return string.format('holds %s of a hand of %s and waits for more items%s', held, tostring(hand or '?'),
+      full and ' (stack-inserter waits for a full hand: its prototype\'s wait_for_full_hand, fixed in 2.0.77; its hand size override, configure hand_size, is the hand it waits for)' or '')
+  end
+  -- configure wait_for_full_hand: the same as the inserter's own is read back (unchanged); the other is refused with
+  -- what the game has.
+  function M.configure_wait_for_full_hand(e, want)
+    local ghost = e.type == 'entity-ghost'
+    local name = ghost and e.ghost_name or e.name
+    if not inserter_kind(e) then
+      error(string.format('wait_for_full_hand applies to inserters (built or ghost); %s is a %s', name, tostring(ghost and e.ghost_type or e.type)), 0)
+    end
+    if type(want) ~= 'boolean' then error('wait_for_full_hand must be true or false', 0) end
+    local fixed = M.wait_for_full_hand(e)
+    if fixed == nil then error(string.format('%s is not one of 2.0.77\'s inserters, whose wait for a full hand is known here; %s', name, M.WAIT_FOR_FULL_HAND_FACT), 0) end
+    if want ~= fixed then
+      error(string.format('%s%s (%g,%g) %s: %s. %s', ghost and 'ghost of ' or '', name, e.position.x, e.position.y,
+        fixed and 'waits for a full hand' or 'does not wait for a full hand', M.WAIT_FOR_FULL_HAND_FACT,
+        fixed and 'A stack inserter waits for its hand size: configure hand_size N (or a circuit set stack size) makes the hand N; a bulk-inserter does not wait'
+          or 'A stack-inserter waits until its hand is full'), 0)
+    end
+    return {wait_for_full_hand=fixed, wait_for_full_hand_before=fixed, unchanged=true,
+      line=string.format('%s%s (%g,%g): wait for a full hand %s, as its prototype has it (%s)', ghost and 'ghost of ' or '', name, e.position.x, e.position.y,
+        fixed and 'on' or 'off', M.WAIT_FOR_FULL_HAND_FACT)}
   end
   return M
 end

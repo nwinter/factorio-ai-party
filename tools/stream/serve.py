@@ -262,7 +262,7 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None):
+                 platform=None, look=None, show=None, host=None, board_all=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -292,6 +292,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 path = "/static/replay.html"
             if path == "/state.json":
                 return self.send(200, hub.payload, "application/json; charset=utf-8")
+            if path == "/board.json":  # (d22 batch99 BI3) every task, request, claim, project and reminder (push_live)
+                body = board_all() if board_all else None
+                return self.send(200, json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8")
             if path == "/director.json":
                 return self.send(200, json.dumps(list(decisions())).encode(), "application/json")
             if path == "/events":
@@ -809,11 +812,16 @@ def main():
     if getattr(source, "h", None):
         threading.Thread(target=artillery_poller, daemon=True).start()
     threading.Thread(target=ticker, daemon=True).start()
+    def board_all():
+        with lock:
+            return model.board_all_snapshot()
+
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
-                                                                    show=show, host=host))
+                                                                    show=show, host=host,
+                                                                    board_all=board_all))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

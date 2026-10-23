@@ -639,6 +639,8 @@ export function stillRunningLine(reply: Reply): string | undefined {
   const ends = [reply.result, reply.result?.completion];
   const what = ends.map(r => r && typeof r === 'object' ? r.still_running : undefined).find(v => v !== undefined && v !== false);
   const label = typeof what === 'string' ? what : typeof what === 'object' && what && typeof (what as any).kind === 'string' ? (what as any).kind : 'the action';
+  // a belt_flow sample fh wait waited for (d22 batch106 BP1) is no character action: nothing ends it before its end tick
+  if (label.startsWith('belt_flow sample ')) return `still running (exit 3): ${label} goes on after this wait ended; fh wait resumes waiting for it. No action of yours or stop ends it (it ends at its until_tick); belt_flow {} reads its result then`;
   return `still running (exit 3): ${label} goes on after this wait ended (a walk keeps walking); fh wait resumes waiting for it. A call that drives your character (move_to, transfer, collect, feed, build, mine, rearm, refuel ...) stops it; reads (observe, inspect, status, trace, supply ...), say, tell, chat, craft, planners (place_ghosts, deconstruct, requests) and calls by remote view or on another surface leave it running`;
 }
 function setExit(reply: Reply) {
@@ -1283,16 +1285,21 @@ async function main() {
   let briefable = !bridged;
   // urgentSince: a body action's wait asks the runtime for an urgent alert since that tick (A2).
   let urgentPollable = true;
-  async function poll(urgentSince?: number): Promise<Reply> {
+  // work: fh wait's polls also ask for the agent's bounded watches (status {brief, work}; d22 batch106 BP1).
+  let workable = true;
+  async function poll(urgentSince?: number, work = false): Promise<Reply> {
+    const watches = work && workable ? {work:true} : {};
     if (urgentSince !== undefined && urgentPollable && briefable) {
       const radius = urgentRadius();
-      const reply = await harness.request('status',{peek:true,brief:true,urgent_since:urgentSince,...(radius !== undefined ? {urgent_radius:radius} : {})});
+      const reply = await harness.request('status',{peek:true,brief:true,urgent_since:urgentSince,...(radius !== undefined ? {urgent_radius:radius} : {}),...watches});
+      if (work && workable && !reply.ok && /argument work\b/.test(String(reply.error?.message ?? ''))) { workable = false; return poll(urgentSince, work); }
       if (reply.ok || !/argument urgent_(since|radius)\b/.test(String(reply.error?.message ?? ''))) return reply;
       urgentPollable = false;
     }
     if (briefable) {
-      const reply = await harness.request('status',{peek:true,brief:true});
+      const reply = await harness.request('status',{peek:true,brief:true,...watches});
       const message = String(reply.error?.message ?? '');
+      if (work && workable && !reply.ok && /argument work\b/.test(message)) { workable = false; return poll(urgentSince, work); }
       if (reply.ok || !/argument (brief|peek)\b/.test(message)) return reply;
       briefable = false;
       if (/argument peek\b/.test(message)) peekable = false;
@@ -1773,11 +1780,60 @@ async function main() {
   // fh wait: block until whatever the character is doing (and any combat) ends.
   // capMs: fh wait --max S (or --until idle): at most that long (friction1300: Grok and Haiku took `fh wait --max 150`
   // for a wait on the walk; it slept the whole 150 s, the walk done after 46).
+  // (d22 batch106 BP1, Luna: "Belt-flow measurement #49028604 is still active >100 seconds after requesting 30 seconds; the
+  // wait action returns a stale completed gather rather than waiting.") A bounded watch (belt_flow, uptime,
+  // turret_tally, collector_tally, asteroid_watch, flight_watch) is no character action: fh wait, finding none, gave the
+  // last action that ended. The watches running now (status {brief, work}) and the read that gives each one's result.
+  const WATCH_READ: Record<string, string> = {belt_flow:'belt_flow {} (fh call belt_flow {} waits for it)',
+    collector_tally:'platform_supply {platform, collection: true}', asteroid_watch:'platform_defense {platform, asteroids: true}'};
+  function runningWatches(status: Reply): any[] {
+    const rows = status.result?.watches;
+    return Array.isArray(rows) ? rows.filter((r: any) => r && r.state === 'running') : [];
+  }
+  function watchRead(r: any): string {
+    if (r.kind === 'flight_watch') return `flight_watch {id: ${String(r.id).replace(/^flight#/, '')}}`;
+    return WATCH_READ[r.kind] ?? `${r.kind} {}`;
+  }
+  function secondsLeft(r: any, tick: unknown): number | undefined {
+    return typeof r.end_tick === 'number' && typeof tick === 'number' ? Math.max(0, Math.ceil((r.end_tick - tick) / 60)) : undefined;
+  }
+  function watchLine(r: any, tick: unknown): string {
+    const left = secondsLeft(r, tick);
+    return `your ${r.kind} ${r.id} runs until tick ${r.end_tick}${left !== undefined ? ` (${left} s more)` : ''}: no action of yours or stop ends it; ${watchRead(r)} reads its result`;
+  }
+  // An idle wait's reply with the watches running: watches (their rows) and the note says each.
+  function withWatches(status: Reply): Reply {
+    const running = runningWatches(status);
+    if (!running.length || !status.result) return status;
+    const tick = status.tick ?? status.result.tick;
+    const said = `no action runs; ${running.map(r => watchLine(r, tick)).join('; ')}`;
+    return {...status, result:{...status.result, watches:running, note:status.result.note ? `${status.result.note}; ${said}` : said}};
+  }
+  // The belt_flow sample this wait waited for has ended: its result, read once (belt_flow {}).
+  async function sampleEnded(sample: any, status: Reply, started: number): Promise<Reply> {
+    const read = await harness.request('belt_flow', {});
+    if (!read.ok) return read;
+    const row = Array.isArray(status.result?.watches) ? status.result.watches.find((r: any) => r && r.id === sample.id) : undefined;
+    const note = read.result?.sampling
+      ? `no action ran when this wait began; it waited for your belt_flow sample ${sample.id}, which is no longer running${row?.state ? ` (${row.state})` : ''} and has no result yet: belt_flow {} reads it`
+      : `no action ran when this wait began; it waited for your belt_flow sample ${sample.id} (until tick ${sample.end_tick}): this is its result`;
+    return withSlow(withTells({...read, result:{...read.result, waited_for:sample.id, waited_ms:Date.now()-started, note}}));
+  }
+  function sampleTimedOut(sample: any, status: Reply, waitedMs: number, pacer: Pacer, ending: string): Reply {
+    const tick = status.tick ?? status.result?.tick;
+    const left = secondsLeft(sample, tick);
+    const slow = slowGame(pacer);
+    const why = ending === 'paused' ? ` (no game tick passed for ${Math.round(STALL_MS/1000)} s: the game is paused or stopped)` : slow ? ` (slow_game: ${slow})` : '';
+    return {...status, ok:false,
+      result:{timed_out:true, still_running:`belt_flow sample ${sample.id}${left !== undefined ? `, up to ${left} s more` : ''}`, waited_ms:waitedMs, ...(slow ? {slow_game:slow} : {})},
+      error:{code:'wait_timeout', message:`your belt_flow sample ${sample.id} is STILL SAMPLING: the wait gave up after ${Math.round(waitedMs/1000)} s${why}`
+        + `${left !== undefined ? `, up to ${left} s more, until tick ${sample.end_tick}` : ''}. No action of yours or stop ends it; belt_flow {} reads its result once it ends (fh call belt_flow {} waits for it)`}};
+  }
   async function waitForIdle(capMs?: number): Promise<Reply> {
     const started = Date.now();
     // The newest reply's tick before this wait (the pace file): an action that ended before it is not this wait's.
     const priorTick = paceFile ? pace().tick : undefined;
-    let first = await poll();
+    let first = await poll(undefined, true);
     if (!first.ok) return first;
     const since = typeof first.tick === 'number' ? first.tick + 1 : undefined;
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
@@ -1790,11 +1846,37 @@ async function main() {
     pacer.see(first.tick, started);
     let status = first;
     let ending: ReturnType<typeof overtime> = 'go';
+    // (BP1) the belt_flow sample this wait waits for: no action ran when it began, and none ended after the sample began.
+    // It keeps the budget (the sample's end tick, or --max as given) and the wake rules; its result is the reply.
+    let sample: any;
     // The poll after the deadline still counts: idle there ends the wait as idle (as in waitForActionEnd); the
     // overtime rule (pace.ts) says when the deadline has come.
     while (!stopping) {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
+        const flow = runningWatches(status).find(r => r.kind === 'belt_flow');
+        if (flow && (sample || (status === first && !(typeof last?.tick === 'number' && typeof flow.start_tick === 'number' && last.tick >= flow.start_tick)))) {
+          if (!sample && !explicit) {
+            budget = waitBudget(flow.end_tick, first.tick ?? first.result?.tick);
+            deadline = started+budget; cap = slowCap(started, budget);
+          }
+          sample = flow;
+          if (status !== first && told(status, since)) {
+            const inbox = wakeInbox(status, since);
+            if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox, active:{kind:`belt_flow sample ${flow.id}`, until_tick:flow.end_tick}}}}, started, undefined, 'belt_flow');
+            noteTell(inbox);
+          }
+          ending = overtime(pacer, deadline, cap);
+          if (ending !== 'go') break;
+          await delay(pollDelay({...status, result:{...status.result, active:{until_tick:flow.end_tick}}}, started));
+          status = await poll(undefined, true);
+          pacer.see(status.tick);
+          if (!status.ok) return status;
+          // an action begun meanwhile (the queue) is what the wait follows from here, as without a sample
+          if (status.result?.active || status.result?.combat) sample = undefined;
+          continue;
+        }
+        if (sample) return sampleEnded(sample, status, started);
         // Nothing running when the wait began, and the last action ended before the call before this one (friction3:
         // Haiku's two waits after a rearm had ended printed its old timed_out as a fresh error, exit 1; Luna and Muse took
         // a walk's and a collect's old outcome as the wait's): said so, exit 0.
@@ -1804,17 +1886,18 @@ async function main() {
             + `${ago !== undefined ? ` ${ago} s ago` : ''}, before your previous call; its result is given as it ended`;
           // Its result kept (E10, Luna 2x: a transfer and a load_silo that ended before fh wait read as a bare idle line),
           // never an error exit for an old outcome (friction3).
-          const quiet = {...status, ok:true, result:{...status.result, note}};
+          const quiet = withWatches({...status, ok:true, result:{...status.result, note}});
           if (compactWaits) return withSlow(withTells(await brief(quiet, started)));
           const full = await finalReply(quiet);
-          return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note, last, last_combat:status.result?.last_combat,
-            waited_ms:Date.now()-started, team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
+          return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note:quiet.result?.note, last, last_combat:status.result?.last_combat,
+            watches:quiet.result?.watches, waited_ms:Date.now()-started, team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
         }
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome) || (last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true);
-        const ended = {...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
+        const ended = withWatches({...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})});
         if (compactWaits) return withSlow(withTells(await brief(ended, started)));
         const full = await finalReply(ended);
         return withSlow(withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
+          ...(ended.result?.watches ? {watches:ended.result.watches, note:ended.result.note} : {}),
           team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
       }
       if (!explicit) {
@@ -1829,7 +1912,7 @@ async function main() {
       // rocket load and an egg handoff, and robots took the eggs); an urgent alert or a tell with --wake ends it.
       const wasActive = status.result?.active;
       const tour = !!wasActive && (['gather','feed'].includes(wasActive.kind) || ['collect','feed','load_silo','rearm','refuel','recover','transfer','pickup'].includes(wasActive.walking_for));
-      status = await poll(tour && values['no-urgent'] !== true ? since : undefined);
+      status = await poll(tour && values['no-urgent'] !== true ? since : undefined, true);
       pacer.see(status.tick);
       if (!status.ok) return status;
       const active = status.result?.active;
@@ -1847,6 +1930,7 @@ async function main() {
       }
     }
     if (stopping) throw new Error('Stopped waiting; inspect status.');
+    if (sample && !status.result?.active && !status.result?.combat) return sampleTimedOut(sample, status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
     return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
   // The parts of one long say or tell in order; reply_to and look go with the first, aloud with each. A tell's parts

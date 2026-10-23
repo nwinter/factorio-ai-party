@@ -68,6 +68,9 @@ function ago(s) { return Math.round(s / 60) + ' min ago'; }
 function avatar(o) { return '<i></i>'; }
 var listeners = [], app = { addEventListener: function (t, f) { if (t === 'click') listeners.push(f); }, querySelector: function () { return null; } };
 var lastState = null, team = { sol: { name: 'sol', display_name: 'Sol' }, astra: { name: 'astra', display_name: 'Astra' } };
+var demo = true, API = '';  // (d22 batch99 BI3) no live API: the board document is not read
+function getJSON() { return new Promise(function () {}); }
+function gameAgo() { return ''; }
 """
 
 
@@ -90,6 +93,8 @@ function click(attrs) {
   return box.outerHTML;
 }
 out.all = click({ action: 'reminders-all' });
+out.page2 = click({ page: 'rem', to: '1' });  // (d22 batch99 BI3) 20 a page
+click({ page: 'rem', to: '0' });
 out.active = click({ remFilter: 'active' });
 out.overdue = click({ remFilter: 'overdue' });
 out.refresh = remindersHtml(rem, team);
@@ -105,8 +110,10 @@ process.stdout.write(JSON.stringify(out));
     # the first view: 12 and the button to the rest
     assert li(o["first"]) == 12 and 'data-action="reminders-all" aria-expanded="false">Show all 27 reminders (+15 more)</button>' in o["first"], o["first"]
     assert "data-rem-filter" not in o["first"]
-    # opened: every job sent, the filters with their counts, the ones not sent
-    assert li(o["all"]) == 25 and 'aria-expanded="true">Show the first 12</button>' in o["all"], o["all"]
+    # opened: every job sent, 20 a page (BI3), the filters with their counts, the ones not sent
+    assert li(o["all"]) == 20 and 'aria-expanded="true">Show the first 12</button>' in o["all"], o["all"]
+    assert '1–20 of 25' in o["all"] and li(o["page2"]) == 5 and '21–25 of 25' in o["page2"], o["page2"]
+    assert ">Waiting or open (3)<" in o["all"] and ">Finished (22)<" in o["all"], o["all"]
     assert 'data-rem-filter="all" aria-pressed="true">All (25)' in o["all"] and ">Active (10)<" in o["all"] and ">Overdue (3)<" in o["all"], o["all"]
     assert "+2 more not sent (the page's size limit)" in o["all"], o["all"]
     # Active: on and not finished (7 + 3 overdue); Overdue: a recipient overdue, its chip whole

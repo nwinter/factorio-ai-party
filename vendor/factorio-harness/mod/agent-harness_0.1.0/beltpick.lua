@@ -6,9 +6,14 @@
 -- carries one when none in reach does. An item keeps its spoilage. Ends when count is taken (picked_up), when the
 -- inventory is full, when no belt in the area has carried one for 3 seconds (picked_up with what it took, or
 -- nothing_on_belts), when a belt cannot be walked to (blocked), or at its ticks (timed_out).
+-- (d22 batch104 BN1, Sol #1925: "reported 200 picked, but before/after scan still 120 scrap on same 15 belts") the count
+-- is what the belt lines gave up (remove_item's return); the end says each belt's count before and after, how many came
+-- in from upstream meanwhile (taken less the area's drop), and where the items went: kept in the main inventory, in the
+-- trash slots now, or gone from you (a request max moved them to the trash and robots took them); a pass over belts in
+-- reach that removes nothing three times running ends it (nothing_removed).
 return function(api)
   local M = {}
-  local PICK_EVERY, PER_PICK, IDLE_TICKS, MAX_SKIPS, SAMPLE = 6, 6, 180, 8, 512
+  local PICK_EVERY, PER_PICK, IDLE_TICKS, MAX_SKIPS, SAMPLE, ZERO_PASSES, BELT_LINES = 6, 6, 180, 8, 512, 3, 32
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
@@ -45,6 +50,28 @@ return function(api)
     return try(function() return surface.find_entities_filtered{area=box, type=BELTS, force=force, limit=SAMPLE} end) or {}
   end
 
+  -- The wanted items in the area's belts, each belt by position: ({key: {position, count}}, total).
+  local function area_counts(p, box, wanted)
+    local out, total = {}, 0
+    for _, e in ipairs(belts_in(p.surface, p.force, box)) do
+      local _, w = carried(e, wanted)
+      out[string.format('%g,%g', e.position.x, e.position.y)] = {position={x=e.position.x, y=e.position.y}, count=w}
+      total = total + w
+    end
+    return out, total
+  end
+  -- The wanted items the character holds: main inventory and trash slots.
+  local function held(p, wanted)
+    local c = try(function() return p.character end)
+    local main = c and try(function() return c.get_main_inventory() end)
+    local trash = c and try(function() return c.get_inventory(defines.inventory.character_trash) end)
+    local m, t = 0, 0
+    for name in pairs(wanted) do
+      m = m + (main and try(function() return main.get_item_count(name) end) or 0)
+      t = t + (trash and try(function() return trash.get_item_count(name) end) or 0)
+    end
+    return m, t
+  end
   function M.pickup(p, a)
     local wanted, names = wanted_of(a)
     local box
@@ -96,6 +123,9 @@ return function(api)
     local action = {kind='pickup', belt=true, area=box, items=names, count=count, reach=reach, until_tick=game.tick + ticks,
       spoiled_first=a.spoiled_first or nil, min_spoiled=min_spoiled,
       skips={}, skipped=0, taken=0, idle_since=game.tick, to=to, to_position=to and {x=to.position.x, y=to.position.y} or nil}
+    -- (BN1) the area's belts and what the character holds, before
+    action.before, action.area_before = area_counts(p, box, wanted)
+    action.main_before, action.trash_before = held(p, wanted)
     api.start(p, action)
     return {until_tick=action.until_tick, area=box, belt_tiles=tiles, on_belts=on, count=count,
       to=to and string.format('%s %s: what is taken goes in there at the end, in the same walk', to.name, at(to.position)) or nil,
@@ -275,13 +305,23 @@ return function(api)
       if tick < (action.next_pick or 0) then return nil end
       action.next_pick = tick + PICK_EVERY
       local left = math.min(PER_PICK, action.count - action.taken)
+      local pass = 0
       for _, e in ipairs(here) do
         if left <= 0 then break end
         local got, why = take(p, e, action, left)
         action.taken = action.taken + got
+        pass = pass + got
         left = left - got
         if why then return why end
       end
+      -- (BN1) belts in reach carry the items, and taking gave nothing: three passes so, and it ends
+      if pass == 0 then
+        action.zero_passes = (action.zero_passes or 0) + 1
+        if action.zero_passes >= ZERO_PASSES then
+          action.why = string.format('%d passes over %d belt%s in reach removed nothing (they show the items, and the belt lines gave none up)', action.zero_passes, #here, #here == 1 and '' or 's')
+          return 'nothing_removed'
+        end
+      else action.zero_passes = 0 end
       return action.taken >= action.count and 'picked_up' or nil
     end
     if action.target and not action.nav then
@@ -312,6 +352,41 @@ return function(api)
     return nil
   end
   M.take = take
+  -- (BN1) the end's facts: each belt's count before and after (those that changed, then the rest, at most BELT_LINES),
+  -- the area's totals, what came in from upstream meanwhile, and where what was taken is now.
+  function M.facts(p, action)
+    if not action.before then return nil end
+    local wanted = {}
+    for _, name in ipairs(action.items) do wanted[name] = true end
+    local after, area_after = area_counts(p, action.area, wanted)
+    local rows, keys = {}, {}
+    for k in pairs(action.before) do keys[k] = true end
+    for k in pairs(after) do keys[k] = true end
+    for k in pairs(keys) do
+      local b, a = action.before[k], after[k]
+      local pos = (b or a).position
+      rows[#rows+1] = {position=pos, before=b and b.count or 0, after=a and a.count or 0}
+    end
+    table.sort(rows, function(x, y)
+      local cx, cy = x.before ~= x.after, y.before ~= y.after
+      if cx ~= cy then return cx end
+      if x.position.y ~= y.position.y then return x.position.y < y.position.y end
+      return x.position.x < y.position.x
+    end)
+    local lines = {}
+    for i = 1, math.min(#rows, BELT_LINES) do lines[i] = string.format('%s %d -> %d', at(rows[i].position), rows[i].before, rows[i].after) end
+    if #rows > BELT_LINES then lines[#lines+1] = string.format('+%d more belts', #rows - BELT_LINES) end
+    local main, trash = held(p, wanted)
+    local taken = action.taken or 0
+    local inflow = math.max(0, taken - (action.area_before - area_after))
+    local kept, in_trash = main - (action.main_before or 0), trash - (action.trash_before or 0)
+    local gone = math.max(0, taken - math.max(0, kept) - math.max(0, in_trash))
+    local out = {belts=lines, area_before=action.area_before, area_after=area_after, came_in=inflow, kept=kept, in_trash=in_trash, gone_from_you=gone}
+    out.line = string.format('%d taken off the belts; the area held %d before and %d now, so %d came in from upstream meanwhile; of what was taken, %d in your main inventory, %d in your trash slots, %d gone from you%s',
+      taken, action.area_before, area_after, inflow, math.max(0, kept), math.max(0, in_trash), gone,
+      gone > 0 and ' (moved to the trash over a request max and taken by robots, or used)' or '')
+    return out
+  end
   function M.count(e,item,quality)
     local n=0
     for i=1,try(function() return e.get_max_transport_line_index() end) or 0 do

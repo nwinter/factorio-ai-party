@@ -544,6 +544,12 @@ class LiveSource:
         return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
+    # route and speed; and for the Space widget (model.platform_card) the defence, repair packs, damaged entities and
+    # hub cargo (eng/platformalerts); ammo made/used and when it runs out in flight (onecam's danger shot; viewer
+    # joonazan, d15 10:45)
+    PLATFORM_FIELDS = ("state", "at", "speed", "schedule", "paused", "thrusters", "weight", "defense", "repair_packs",
+                       "damaged", "damaged_count", "hub_items", "ammo_rates")
+
     def observe_platforms(self, space, errors):
         """Platform detail (state, location or route, speed, schedule) with a peek `platforms` read per platform,
         every platform_every seconds, at most 4 platforms; between reads the score's name and location stand."""
@@ -553,17 +559,13 @@ class LiveSource:
             detail = {}
             for row in space["platforms"][:4]:
                 try:
-                    res, _ = self.read("platforms", {"platform": row["name"]}, **self.reader())
+                    # (d22 batch96 BF1) only these fields: the read then makes only their parts of the row (each of
+                    # these 4 reads was 11-15 ms in one tick on a copy of world n, the whole row with its freight,
+                    # engine and request lines)
+                    res, _ = self.read("platforms", {"platform": row["name"], "fields": list(self.PLATFORM_FIELDS)},
+                                       **self.reader())
                     for p in res.get("platforms") or []:
-                        # route and speed; and for the Space widget (model.platform_card) the defence, repair
-                        # packs, damaged entities and hub cargo (eng/platformalerts)
-                        detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
-                                                                       "thrusters", "weight", "defense", "repair_packs",
-                                                                       "damaged", "damaged_count", "hub_items",
-                                                                       # ammo made/used and when it runs out in flight
-                                                                       # (onecam's danger shot; viewer joonazan, d15 10:45)
-                                                                       "ammo_rates")
-                                                 if p.get(k) is not None}
+                        detail[p.get("name")] = {k: p.get(k) for k in self.PLATFORM_FIELDS if p.get(k) is not None}
                 except Exception as e:
                     errors["platforms"] = str(e)
             self.platform_detail = detail
@@ -922,13 +924,25 @@ class LiveSource:
                         active["items"] += part.get("items") or []
                 except Exception:
                     active = None
+                # (d22 batch99 BI3, viewer Aurora site:4316: "Hidden jobs ... make it hard to check what's actually
+                # finished") the finished tasks and requests too, for the site's full list (on world n at 16:20 the board
+                # kept 18 done tasks and 8 done requests; each read about 0.1 s through fh)
+                try:
+                    finished = {"items": []}
+                    for kind in ("task", "request"):
+                        part, _ = self.read("board", {"kind": kind, "status": ["done", "dropped"], "limit": 60}, **self.reader())
+                        finished["items"] += part.get("items") or []
+                except Exception:
+                    finished = None
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
-                         + (projects.get("items") or []) + ((active or {}).get("items") or [])}
+                         + (projects.get("items") or []) + ((active or {}).get("items") or [])
+                         + ((finished or {}).get("items") or [])}
                 focus = self.read_focus(errors)
                 progress = self.read_progress(errors)  # (d22 batch75 AK11) the progress checks' facts per owned item
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"), "focus": focus, "progress": progress,
                                 "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
-                                "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None}
+                                "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None,
+                                "finished_ids": [it.get("id") for it in finished.get("items") or []] if isinstance(finished, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)
                     try:
                         planlog.save(self.journals, planlog.record(res.get("plan"), obs["board"]["items"],
