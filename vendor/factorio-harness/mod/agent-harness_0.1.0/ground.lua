@@ -17,6 +17,21 @@ return function(api)
   local PICK_EVERY = 6          -- one stack every 6 ticks, as pickup does
   local MAX_SKIPS = 8
 
+  -- (d23 batch121 CD3, viewer Aurora site:4362: "Could scans label entities, item counts and usable storage slots
+  -- separately? Gleba's cleanup was estimated at 120 chests before Astra clarified the counts and calculated eight.")
+  -- Sonnet read the status line's "11793 item stacks on the ground" as full stacks; each was one item on the ground.
+  -- An item's storage slots: its count over its stack size, rounded up.
+  local sizes = {}
+  local function stack_size(name)
+    local n = sizes[name]
+    if n == nil then
+      local ok, v = pcall(function() return prototypes.item[name].stack_size end)
+      n = ok and type(v) == 'number' and v > 0 and v or false
+      sizes[name] = n
+    end
+    return n or nil
+  end
+  M.stack_size = stack_size
   local function key_of(stack)
     local q = stack.quality and stack.quality.name
     return stack.name .. ((q and q ~= 'normal') and ' (' .. q .. ')' or '')
@@ -32,7 +47,7 @@ return function(api)
         local k, pos = key_of(s), e.position
         local r = by[k]
         if not r then
-          r = {name=k, count=0, stacks=0, box={left_top={x=pos.x, y=pos.y}, right_bottom={x=pos.x, y=pos.y}}}
+          r = {name=k, base=s.name, count=0, stacks=0, box={left_top={x=pos.x, y=pos.y}, right_bottom={x=pos.x, y=pos.y}}}
           by[k] = r; order[#order+1] = r
         end
         r.count = r.count + s.count; r.stacks = r.stacks + 1
@@ -46,7 +61,16 @@ return function(api)
     end
     if stacks == 0 then return nil end
     table.sort(order, function(x, y) if x.count ~= y.count then return x.count > y.count end return x.name < y.name end)
-    local out = {stacks=stacks, items={}}
+    -- stacks: entities on the ground (each one item stack, often of 1); count: the items they hold; slots: the storage
+    -- slots those items fill at their stack size (an item whose stack size is not read leaves slots out)
+    local count, slots = 0, 0
+    for _, r in ipairs(order) do
+      local size = stack_size(r.base)
+      r.slots = size and math.ceil(r.count / size) or nil
+      count, slots = count + r.count, slots and r.slots and slots + r.slots or nil
+      r.base = nil
+    end
+    local out = {stacks=stacks, count=count, slots=slots, items={}}
     for i = 1, math.min(#order, limit or 16) do out.items[i] = order[i] end
     if #order > #out.items then out.more_items = #order - #out.items end
     return out
@@ -256,10 +280,17 @@ return function(api)
       end
     end
   end
+  -- (CD3) the entities on the ground, the items they hold and the storage slots those fill, each labelled
+  local function counts_text(n, sum, sampled)
+    if not sum then return string.format('entities %d (each an item stack on the ground); items not read', n) end
+    return string.format('entities %d (each an item stack on the ground); items %d%s: %s; storage slots they fill %s',
+      n, sum.count or 0, sampled and string.format(' in the %d entities read', sampled) or '', short(sum, 5),
+      sum.slots and tostring(sum.slots) .. ' (at each item\'s stack size)' or 'not read')
+  end
+  M.counts_text = counts_text
   local function pad_line(pad)
-    return string.format('cargo landing pad at %s on %s is full (%d/%d slots) and pods spill: %d item stacks on the ground within %d tiles%s: %s',
-      xy(pad.position), pad.surface, pad.slots, pad.slots, pad.stacks, PAD_RADIUS,
-      pad.sampled and string.format(' (items counted in %d of them)', pad.sampled) or '', pad.items and short(pad.items, 5) or '?')
+    return string.format('cargo landing pad at %s on %s is full (%d/%d slots) and pods spill within %d tiles: %s',
+      xy(pad.position), pad.surface, pad.slots, pad.slots, PAD_RADIUS, counts_text(pad.stacks, pad.items, pad.sampled))
   end
   local function pile_line(pile)
     local lt, rb = pile.area.left_top, pile.area.right_bottom
@@ -272,8 +303,8 @@ return function(api)
       end
       lt, rb = {x=x1, y=y1}, {x=x2, y=y2}
     end
-    return string.format('%d item stacks on the ground at %s-%s on %s, near our buildings%s: %s', pile.stacks, xy(lt), xy(rb), pile.surface,
-      pile.sampled and string.format(' (items counted in %d of them)', pile.sampled) or '', pile.items and short(pile.items, 5) or '?')
+    return string.format('items on the ground at %s-%s on %s, near our buildings: %s', xy(lt), xy(rb), pile.surface,
+      counts_text(pile.stacks, pile.items, pile.sampled))
   end
   -- status alerts: every spilling pad and the largest piles.
   function M.alerts(p)
@@ -385,7 +416,7 @@ return function(api)
     local before = cancel and robot_orders(p.surface, p.force, box)
     local n, already, marked = 0, 0, {}
     local nets, net_seen, outside, cover = 0, {}, 0, {}
-    local storages = 0
+    local storages, chests = 0, {}
     for i, e in ipairs(list) do
       if i > MAX_MARK then out.items_truncated = true; break end
       if e.valid then
@@ -407,7 +438,7 @@ return function(api)
               local id = net.network_id
               if id and not net_seen[id] then
                 net_seen[id] = true; nets = nets + 1
-                pcall(function() storages = storages + #net.storages end)
+                pcall(function() storages = storages + #net.storages; for _, st in ipairs(net.storages) do chests[#chests+1] = st end end)
               end
             end
           end
@@ -440,9 +471,32 @@ return function(api)
       out.robot_networks = nets
       out.storage_chests = storages
       out.outside_construction_area = outside > 0 and outside or nil
+      -- (CD3) labelled apart: the entities marked, the items they hold, the storage slots those fill, and the empty slots
+      -- of the storage chests robots may put them in (no filter, or a filter on one of these items; read up to
+      -- STORAGE_READ chests; a filtered chest takes only its item, and a part-filled stack of the same item takes more)
+      if sum then
+        out.items_total, out.storage_slots_needed = sum.count, sum.slots
+        local names = {}
+        for _, e in ipairs(marked) do local okn, st = pcall(function() return e.stack.name end); if okn and st then names[st] = true end end
+        local free, read = 0, 0
+        for _, st in ipairs(chests) do
+          if read >= M.STORAGE_READ then break end
+          read = read + 1
+          local okf, flt = pcall(function() return st.storage_filter end)
+          local fname = okf and flt and (type(flt) == 'table' and (type(flt.name) == 'table' and flt.name.name or flt.name) or flt) or nil
+          if not fname or names[fname] then
+            local oki, inv = pcall(function() return st.get_inventory(defines.inventory.chest) end)
+            if oki and inv then free = free + (inv.count_empty_stacks() or 0) end
+          end
+        end
+        out.storage_free_slots = free
+        out.counts = string.format('entities %d marked (each an item stack on the ground); items %d; storage slots they fill %s; empty slots in the storage chests that may take them: %d (%d of %d chests read)',
+          n, sum.count, sum.slots and tostring(sum.slots) or 'not read', free, read, storages)
+      end
     end
     return out
   end
+  M.STORAGE_READ = 256
 
   -- pickup over an area: a timed action that picks up every stack in reach,
   -- then walks to the nearest one left in the area.

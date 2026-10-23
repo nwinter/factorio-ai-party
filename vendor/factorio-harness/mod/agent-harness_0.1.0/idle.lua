@@ -253,6 +253,13 @@ return function(api)
         sleep_reason=sleeping and sl.reason or nil,  -- (d20 batch70 AF1) the agent's own reason to wait, as given
         unread_chat=unread.unread or 0, unread_mentions=c.unread_mentions or 0, unread_tells=c.tells or 0,
         unread_board=c.unread_board or 0,
+        -- (d23 batch121 CD1, viewer Aurora site:4387, 4406) of the unread chat lines, those naming it (they reached it in
+        -- team blocks as mentions; only a chat read marks chat lines read, chat_ack does not); the tells delivered in a
+        -- team block and not yet acknowledged (chat_ack, reply_to or a tells read), apart from unread_tells (pending
+        -- delivery), with the oldest's age
+        unread_chat_to_you=unread.to_you, unread_chat_kept=unread.of_newest,
+        unacked_tells=c.unacked_tells or 0,
+        unacked_oldest_s=c.unacked_oldest_tick and math.floor((game.tick - c.unacked_oldest_tick) / 60) or nil,
         last_request_s=clock_ and math.floor((game.tick - math.max(clock_.call_tick, clock_.seen_tick or 0)) / 60) or nil,
         -- Standing orders (orders.lua): {set, running, reason, paused}; a running order is a running queue, so not standing.
         orders=api.orders and api.orders(ag.index) or nil,

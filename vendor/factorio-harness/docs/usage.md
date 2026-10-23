@@ -1376,6 +1376,10 @@ fh board events --since 40
   reply that succeeded whole (Muse, shift12: an OPERATOR line ahead of the JSON on every data call).
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
+  `unread` counts every chat line after your last chat read, to anyone, of the newest 200 the log keeps (`of_newest:
+  200` when the oldest kept is unread too: older lines are gone uncounted); `to_you` counts those naming you (each
+  also reached you as a mention in a team block). Only a chat read marks chat lines read: `chat_ack` closes unanswered
+  lines and marks tells read (d23 batch121 CD1, viewer Aurora: Opus's 158 were the team's lines since his last read).
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
@@ -4249,11 +4253,17 @@ Items on the ground:
   centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
   {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
   `from_machine` and `from_building` as `to_player`, for every entity kind.
-- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
-  more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
-  (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, count, slots, items: [{name, count,
+  stacks, slots, box}], more_items}`), by item, instead of one row per stack; rows for them come only when the call
+  filters for them (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+  (d23 batch121 CD3, viewer Aurora: 11,793 entities read as full stacks made a 120-chest estimate for 8) `stacks` counts
+  entities on the ground (each one item stack, often of 1 item), `count` the items they hold, `slots` the storage slots
+  those items fill at each item's stack size. The status lines below and `deconstruct {items_on_ground}` (`items_total`,
+  `storage_slots_needed`, `storage_free_slots`: empty slots in the covering networks' storage chests with no filter or
+  a filter on one of those items, up to 256 chests read; `counts`, one line) label the three apart.
 - `status` `alerts.ground_items`: a cargo landing pad that is full while item stacks lie within 40 tiles of it
-  (position, slots, stacks, the items), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
+  (position, slots, then `entities N (each an item stack on the ground); items N: the items; storage slots they fill
+  N`), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
   (box, stacks, items; the largest 3). Item counts come from up to 5000 stacks per place (the line says so when
   there are more). One pass per force every 30 s, run on demand; a place new to you, or grown by half since you
   were told, is also in the reply's `team.alerts` once.
@@ -4930,9 +4940,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `sleep` also ends early with `woke: board` (and `board: <line>`) when a board line about the sleeper's own items
   arrives (any of the `board` lines above except new unowned requests and the 2-minute nudge).
 - `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions` (tells
-  included), `at_mentions` (@name/@everyone, and tells), `tells`, `unread_board` (board lines about their items not yet
-  in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent that was
-  mentioned. It does not consume anything.
+  included), `at_mentions` (@name/@everyone, and tells), `tells` (pending: not yet shown in a team block),
+  `unacked_tells` and `unacked_oldest_tick` (shown in a team block and not yet marked read by `chat_ack`, `reply_to` or
+  a `tells` read; the newest 8 kept; fyi and operator tells are never owed one), `unread_board` (board lines about their
+  items not yet in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent
+  that was mentioned. It does not consume anything.
 - `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
   The operator answers with notes and a `server: harness vN: ...` chat line.
 - Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
@@ -5015,7 +5027,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
   they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
-  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
+  `unread_chat` (with `unread_chat_to_you`, those naming it, and `unread_chat_kept` 200 when the count reached the
+  log's oldest line), `unread_mentions` (tells included), `unread_tells` (pending delivery), `unacked_tells` and
+  `unacked_oldest_s` (delivered in a team block, not acknowledged), `unread_board`, `last_request_s`, `stand_ended
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
   messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
   game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,
@@ -8811,6 +8825,14 @@ fh watch    # deploy on every change
   for carbon-fiber >= 250: the hub holds 0, 250 short; fulgora holds 100 (100 in its logistic networks, 0 outside them)
   and made 0 a minute over the last 10 min: not met at this rate` (world n, Kestrel II). The rate is the planet's
   making, not what reaches the hub. 0.01-2.5 ms a platform on world n.
+  (d23 batch121 CD2, viewer Aurora: Anvil docked 2 h at Vulcanus on copper-plate >= 5000 while its hub asked for
+  copper from Nauvis only) Where the item can come from at that stop follows (`sources:`): the hub's import requests
+  for it (active sections; only a request from that planet brings it up there), what was made aboard over the last 10
+  minutes (the platform surface's production statistics) and the crafting machines aboard set to a recipe that makes
+  it (up to 200 read), and with a request from that planet the other platforms that stop there holding it. With none,
+  the line says `no known source at vulcanus: the hub asks for it from nauvis only, not from vulcanus, nothing aboard
+  made it over the last 10 min and no machine aboard is set to make it (...)`; a request from the planet that holds
+  none, made none, with no platform bringing it and nothing aboard says `no known source` too. A fact: the wait stays.
 - A hub too full for its payload (B3, Grok: Spindle's hub filled with ore twice and the science rocket could not board,
   seen only in the silo line's hub_full): every 10 s one platform waiting at a stop, in turn (hubfull.lua); each silo
   of ours on that planet (census list) whose request row for it reads hub_full is told once per wait, as a line that

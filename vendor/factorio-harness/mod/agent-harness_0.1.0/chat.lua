@@ -299,20 +299,32 @@ return function(api)
   -- Summary for other replies: count and newest unread message from someone
   -- else. Shown when the newest unread message changed since this player was
   -- last told (always for 'always', without remembering for 'peek').
+  -- (d23 batch121 CD1, viewer Aurora site:4387: "Is Opus's 158 unread count current, and does it include messages
+  -- addressed to him?") unread counts every chat line after your read, to anyone, of the newest MAX_LOG kept (of_newest
+  -- when the oldest kept is unread too, so older ones are gone uncounted); to_you: those naming you (each reached you as
+  -- a mention in a team block). chat_ack closes unanswered lines and marks tells read; only a chat read marks chat lines.
   function M.unread(index, mode)
     local c = log()
-    local n, latest = 0, nil
+    local n, latest, first = 0, nil, nil
     for _, m in ipairs(c.messages) do
-      if not is_read(c, index, m) then n = n + 1; latest = m end
+      if not is_read(c, index, m) then n = n + 1; latest = m; first = first or m end
     end
     if n == 0 then c.told[index] = nil; return nil end
     if mode ~= 'peek' then
       if mode ~= 'always' and c.told[index] == latest.seq then return nil end
       c.told[index] = latest.seq
     end
+    local to_you = 0
+    if api.mention_of then
+      for _, m in ipairs(c.messages) do
+        if not is_read(c, index, m) and api.mention_of(index, m) then to_you = to_you + 1 end
+      end
+    end
     local where = api.where_from and api.where_from(index)
     local away = where and where(latest.from)
-    return {unread=n, latest=latest.from .. (away and ' (' .. away .. ')' or '') .. ': ' .. latest.text, read_with='chat'}
+    return {unread=n, to_you=to_you, of_newest=#c.messages >= MAX_LOG and first == c.messages[1] and MAX_LOG or nil,
+      latest=latest.from .. (away and ' (' .. away .. ')' or '') .. ': ' .. latest.text,
+      read_with='chat (chat_ack does not mark chat lines read)'}
   end
   function M.on_console_chat(event)
     local p = event.player_index and game.get_player(event.player_index)
