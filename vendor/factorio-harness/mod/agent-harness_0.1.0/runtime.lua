@@ -4709,20 +4709,25 @@ end
 -- unit_number or a position on its footprint, on a chunk the map draws; reach
 -- transfer (the engine's own test: 10 tiles, ore, trees, plants and rocks 2.7), build
 -- (build_distance) or tiles.
+-- An entity by unit_number alone, on the character's surface. By number alone the game finds only prototypes flagged
+-- get-by-unit-number (vehicles and the like; read on a private 2.0.77 server: an iron chest's own number found
+-- nothing): others need their position too (form: the call's form with position, %d the number).
+function M.by_unit_number(p,n,form)
+  local ok,e=pcall(function() return game.get_entity_by_unit_number(n) end)
+  e=ok and e or nil
+  if not (e and e.valid) then
+    error(string.format('the game finds no entity by unit_number %d alone (only vehicles and the like); give its position too: '..form,n,n),0)
+  end
+  if e.surface~=p.surface then error(string.format('unit_number %d (%s) is on %s; the character is on %s',n,e.name,e.surface.name,p.surface.name),0) end
+  return e
+end
 function M.walk_target(p,a)
   local t=a.target
   assert(type(t)=='table','target is an entity: {position={x,y}} or {unit_number=N}, with optional name; reach is build, transfer or tiles')
   local e
   assert(t.unit_number==nil or type(t.unit_number)=='number','target.unit_number must be a number')
   if t.unit_number~=nil and t.position==nil and t.x==nil and t[1]==nil then
-    -- By number alone the game finds only prototypes flagged get-by-unit-number (vehicles and the like; read on a
-    -- private 2.0.77 server: an iron chest's own number found nothing): others need their position too.
-    local ok,found=pcall(function() return game.get_entity_by_unit_number(t.unit_number) end)
-    e=ok and found or nil
-    if not (e and e.valid) then
-      error(string.format('the game finds no entity by unit_number %d alone (only vehicles and the like); give its position too: target={position={x,y},unit_number=%d}',t.unit_number,t.unit_number),0)
-    end
-    if e.surface~=p.surface then error(string.format('unit_number %d (%s) is on %s; the character is on %s',t.unit_number,e.name,e.surface.name,p.surface.name),0) end
+    e=M.by_unit_number(p,t.unit_number,'target={position={x,y},unit_number=%d}')
     if not charted(p,e.position) then error(string.format('target %s (%g,%g) is on a chunk the map has not charted',e.name,e.position.x,e.position.y),0) end
   else
     e=entity(p,{position=t.position or t,name=t.name,unit_number=t.unit_number},'walk')
@@ -8849,7 +8854,7 @@ local function infer_inventory(e,a)
       else fallback=fallback or {name,inv} end
     end
   end
-  assert(fallback,'entity has no transferable inventory')
+  if not fallback then error(string.format('%s at (%g,%g) on %s has no transferable inventory',e.name,e.position.x,e.position.y,e.surface and e.surface.name or '?'),0) end
   return fallback[1],fallback[2]
 end
 -- Moves matching stacks with transfer_stack so item metadata travels intact.
@@ -11299,12 +11304,13 @@ function M.transfer_walk(p,a)
   local entities,far={},0
   -- A stop that does not resolve (Muse 06:21 and 09:24, 4+ times: one bad position aborted the whole tour) is left out
   -- and named (skipped); none left: refused with the first reason.
-  local skipped={}
+  local skipped,invs={},{}
   for _,pos in ipairs(list) do
     -- Seen, not yet in reach (a read's sight): the walk brings it into reach.
     local ok,e=pcall(function()
       local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
       friendly(p,e)
+      invs[e.unit_number or e]=M.walk_inventory(p,e,a,pos)
       return e
     end)
     if ok then
@@ -11318,13 +11324,34 @@ function M.transfer_walk(p,a)
   if #entities==0 then error(#skipped>1 and string.format('none of the %d positions resolves; the first: %s',#skipped,skipped[1]) or skipped[1],0) end
   if #skipped>0 then
     if a.positions then args.positions={} for _,e in ipairs(entities) do args.positions[#args.positions+1]={x=e.position.x,y=e.position.y,name=e.name} end end
-    local out=M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+    local out=M.transfer_walk_go(p,a,args,entities,far,fill,ticks,invs)
     if type(out)=='table' then out.skipped=skipped end
     return out
   end
-  return M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+  return M.transfer_walk_go(p,a,args,entities,far,fill,ticks,invs)
 end
-function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+-- The inventory a walking transfer uses at e, found before the walk (Luna, shift62 03:58: a take of wood at a Gleba
+-- chest's position, made from Nauvis, walked 512 tiles to the solar panel on that tile there and was refused on
+-- arrival): its name, or a refusal naming the entity, its surface and the position given.
+function M.walk_inventory(p,e,a,pos)
+  if a.inventory~=nil then
+    local named=type(a.inventory)=='string' and M.inventory_name(e,a.inventory) or a.inventory
+    if pcall(inventory,e,named) then return tostring(a.inventory) end
+  else
+    for _,dir in ipairs(a.direction and {a.direction} or {'to_player','to_entity'}) do
+      local args={}
+      for k,v in pairs(a) do args[k]=v end
+      args.direction=dir
+      local ok,name=pcall(infer_inventory,e,args)
+      if ok then return name end
+    end
+  end
+  local okp,q=pcall(position,pos)
+  local at=okp and (q.x~=e.position.x or q.y~=e.position.y) and string.format(' (position (%g,%g) is on its footprint)',q.x,q.y) or ''
+  error(string.format('%s at (%g,%g) on %s%s has no %s: nothing walked; %s',e.name,e.position.x,e.position.y,e.surface and e.surface.name or p.surface.name,at,
+    a.inventory~=nil and 'inventory '..tostring(a.inventory) or 'inventory a transfer reaches',M.inventory_names(e)),0)
+end
+function M.transfer_walk_go(p,a,args,entities,far,fill,ticks,invs)
   local via=args.via
   args.via=nil
   -- All in reach: the transfer at once (a fill is its total there).
@@ -11404,6 +11431,8 @@ function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
     for _,t in ipairs(action.targets) do stops[#stops+1]=t end
   end
   out.legs,out.legs_more=M.legs(p,stops)
+  for i,row in ipairs(out.legs) do local e=stops[i].entity; row.inventory=invs and e and invs[e.unit_number or e] or nil end
+  out.surface=p.surface.name
   return out
 end
 -- A walking call's route, one row per stop in the order it walks them (Opus 10:50: transfer and feed over positions
@@ -12150,6 +12179,17 @@ function handlers.transfer(p,a)
   if a.from~=nil then return M.from_nearest(p,a) end
   assert(a.radius==nil,'radius goes with from: "nearest"')
   if a.items~=nil then return M.transfer_items(p,a) end
+  -- unit_number without position (opus, shift62 06:26: a spidertron's ammo by its number failed on a nil position):
+  -- the entity by its number, at its position.
+  if a.position==nil and a.positions==nil and a.to==nil then
+    assert(a.unit_number~=nil,'transfer requires position (or positions, pick + positions, from: "nearest", to_player, unit_number)')
+    assert(type(a.unit_number)=='number','unit_number must be a number')
+    local e=M.by_unit_number(p,a.unit_number,'position={x,y},unit_number=%d')
+    local args={}
+    for k,v in pairs(a) do args[k]=v end
+    args.position={x=e.position.x,y=e.position.y}
+    return handlers.transfer(p,args)
+  end
   -- to on the entity position names, at another of its tiles (a 9x9 silo): the one entity named twice, a give there.
   if a.items==nil and a.to~=nil and a.position~=nil and a.positions==nil and (a.direction==nil or a.direction=='to_entity') then
     local ok,e,there=pcall(function()

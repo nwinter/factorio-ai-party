@@ -12320,3 +12320,17 @@ ends at the edge arrival, and the return-leg watch had to be started by hand.
 - Tests: tests/d22_batch116.lua (the dry run in both lanes, the default platform, a replace at the turnaround from a lane
   step and the full read after, a running and an armed one replaced, the card, a refused start at the limit);
   tests/d21_batch72.lua updated for the kept replaced watch.
+
+## d22 batch118 CA3, CA4 (eng/d20-batch118): transfer by unit_number; a walking transfer's target checked first
+
+- `transfer {unit_number: N}` with no `position` (opus, shift62 06:26: a spidertron's rockets failed with "attempt
+  to index local 'pos' (a nil value)") finds the entity by its number, as `move_to {target: {unit_number}}` does: the
+  game finds only prototypes flagged `get-by-unit-number` (vehicles and the like) by number; another is refused,
+  naming the form with `position`. With neither: "transfer requires position (...)".
+- A walking transfer (`walk: true`, or a target out of reach within 64 tiles) finds the inventory it uses at each stop
+  before the walk (Luna, shift62 03:58: a take of wood at a Gleba chest's position, made from Nauvis, walked 512 tiles
+  to the solar panel whose footprint covers that tile on Nauvis, and was refused on arrival). A stop without it is
+  `skipped`; none left: refused, e.g. "solar-panel at (213.5,77.5) on nauvis (position (214.5,78.5) is on its
+  footprint) has no inventory a transfer reaches: nothing walked; solar-panel takes inventory none". A walk's `legs`
+  rows carry `inventory` (the one it uses there) and the reply `surface` (the character's: transfer acts there).
+- In reach, the refusal names the entity: "solar-panel at (213.5,77.5) on nauvis has no transferable inventory".
