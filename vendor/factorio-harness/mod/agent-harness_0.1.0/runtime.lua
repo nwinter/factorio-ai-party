@@ -4298,6 +4298,8 @@ function handlers.platforms(p,a)
     end
   end
   out.eta_to=lines
+  -- (d22 batch96 BF1) the rows come a page at a time: the next page asks for the same ETA
+  if out.next then out.next=string.format('platforms {eta_to: "%s", page: %d}',a.eta_to,out.page+1) end
   return out
 end
 -- platform {platform | name} as the help's `fh platform NAME` reads (A5, Gemini 21:29: fh call platform was an
@@ -18317,6 +18319,15 @@ for _,name in ipairs({'platforms','inspect','status'}) do
     for k,v in pairs(a) do if k~='fields' then rest[k]=v end end
     -- (d22 batch90 AZ4) fields picks from the full rows, platforms' compact default aside
     if name=='platforms' and rest.compact==nil then rest.compact=false end
+    -- (d22 batch96 BF1) the platforms read makes only the parts of a row those fields name (__want: each name's part
+    -- before a dot)
+    if name=='platforms' then
+      local want={}
+      for _,v in ipairs(type(a.fields)=='string' and {a.fields} or type(a.fields)=='table' and a.fields or {}) do
+        for raw in tostring(v):gmatch('[^|,%s]+') do local k=raw:match('^[^.]+'); if k then want[k]=true end end
+      end
+      rest.__want=want
+    end
     return M.project(h(p,rest),a.fields,name)
   end
 end
@@ -18508,7 +18519,7 @@ M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){delivered=function(info) if M.reminders then M.reminders.trigger('delivered',info) end end,
-  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,census_where=function(f,sf) return M.census and M.census.where_index(f,sf) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end,
+  leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,census_where=function(f,sf) return M.census and M.census.where_index(f,sf) end,state=state,spoil=M.spoil,pods=M.pods,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,
   ammomodel=function() return M.ammomodel end}
 -- One ammunition model for a trip (ammomodel.lua; d20 batch51 H1, viewer Aurora 09:36): platform_endurance, its route
 -- forecast, and the ammo_rates of preflight and the platforms read count stock, rockets on their way and what is made the
@@ -18622,8 +18633,12 @@ do
   local plain=handlers.platforms
   handlers.platforms=function(p,a)
     local out=plain(p,a)
-    local ok,by=pcall(M.platjobs.all)
-    if ok and type(out)=='table' and type(out.platforms)=='table' then
+    -- (d22 batch96 BF1) the jobs lines only for full rows: the compact read has none (1 ms a call on a copy of world n)
+    if not (type(out)=='table' and type(out.platforms)=='table') then return out end
+    local want={}
+    for _,row in ipairs(out.platforms) do if type(row)=='table' and row.name then want[row.name]=true end end
+    local ok,by=pcall(M.platjobs.all,want)
+    if ok then
       for _,row in ipairs(out.platforms) do
         if type(row)=='table' and row.name and by[row.name] then row.jobs=M.platjobs.lines(row.name,by) end
       end
@@ -18670,8 +18685,8 @@ M.platwait=require('platwait'){state=state}
 -- Who edited a request section or a departure gate (editlog.lua; d19 batch41 B1, Sol seq 861).
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
-space=space_module{plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
-  plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
+  plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
