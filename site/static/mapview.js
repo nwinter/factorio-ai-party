@@ -28,9 +28,9 @@
     ['o', '#b04fb5', 'Crude oil'], ['u', '#6fe05a', 'Uranium ore'], ['x', '#9a9a9a', 'Other resource']];
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
-  var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
+  var LAYERS = [['chart', 'Chart'], ['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
     ['readiness', 'Turret state'], ['library', 'Blueprints'], ['power', 'Power'], ['robots', 'Logistics'], ['nests', 'Nests'], ['threats', 'Attacks'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, threats: true, agents: true, attention: true, alerts: true };
+  var DEFAULT_ON = { chart: true, terrain: true, ore: true, cloud: true, buildings: true, coverage: false, readiness: true, library: true, power: false, robots: false, nests: true, threats: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)', empty: '#ff3b30', nopower: '#f2c94c', unknown: '#9a9a9a' };
   // (d20 batch50 G1, viewer Aurora: "Could the map flag turrets lacking ammo, fuel or energy and mark stale or unknown
@@ -279,6 +279,28 @@
     return parts.length ? { text: parts.join(' · ') } : null;
   }
 
+  // (d22 batch97 BG3: a map like the Galaxy of Fame's) the chart the stream service draws from the game
+  // (tools/stream/chart.py): 384-tile cells at 1 px a tile in the game's map colours, published with the site under
+  // data.chart.base (/live/chart/); data.chart.index {v, cell, tick, surfaces: {name: {platform, cells: {"cx,cy":
+  // [version, oldest read tick, newest, chunks, x0, y0, x1, y1 (the box round our buildings)]}}}}; data.chart_labels:
+  // the labels files loaded so far (the viewer's cache: src -> {recipes, stops}).
+  var CHART_CELL = 384;
+  function chartSafe(s) { return String(s).replace(/[^\w.-]/g, '_'); }
+  function chartCells(data, surface) {
+    var ch = data.chart, idx = ch && ch.index, sf = idx && idx.surfaces && idx.surfaces[surface];
+    if (!sf || !sf.cells || typeof sf.cells !== 'object') return [];
+    var cell = num(idx.cell) ? idx.cell : CHART_CELL, base = typeof ch.base === 'string' ? ch.base : '/live/chart/';
+    return Object.keys(sf.cells).map(function (k) {
+      var m = /^(-?\d+),(-?\d+)$/.exec(k), r = sf.cells[k];
+      if (!m || !Array.isArray(r) || !num(r[0])) return null;
+      var cx = +m[1], cy = +m[2], stem = base + chartSafe(surface) + '/' + cx + '_' + cy;
+      return { cx: cx, cy: cy, x0: cx * cell, y0: cy * cell, cell: cell, v: r[0], t0: r[1], t1: r[2], n: r[3],
+        box: r.length >= 8 && [r[4], r[5], r[6], r[7]].every(num) ? [r[4], r[5], r[6], r[7]] : null,
+        src: stem + '.png?v=' + r[0], labels: stem + '.labels.json?v=' + r[0] };
+    }).filter(Boolean);
+  }
+  function chartAge(d, t) { return num(t) && d.now_tick != null && d.now_tick >= t ? (d.now_tick - t) / 60 : null; }
+
   // What the data holds, normalised: grids, the core box with its outposts, and the automatic view {cx, cy, span}:
   // the base's core and the agents, alerts and fights near it (far ones are pinned to the edge), or data.box.
   function prepare(data) {
@@ -312,6 +334,11 @@
     d.cloud = d.clouds.filter(function (c) { return c.surface === surface; })[0] || null;
     // the planets with a map (the switch)
     d.planets = Object.keys(data.planets || {}).filter(function (k) { return k !== 'nauvis' && validGrid(data.planets[k]) && data.planets[k].rows.length; }).sort();
+    d.chart = chartCells(data, surface);
+    d.chartLabels = data.chart_labels || {};
+    var ts = d.chart.map(function (c) { return c.t0; }).filter(num), tn = d.chart.map(function (c) { return c.t1; }).filter(num);
+    d.chartOldest = ts.length ? chartAge(d, Math.min.apply(0, ts)) : null;
+    d.chartNewest = tn.length ? chartAge(d, Math.max.apply(0, tn)) : null;
     d.cloudAt = {};
     if (d.cloud) d.cloud.cells.forEach(function (x) { d.cloudAt[x[0] + ',' + x[1]] = x[2]; });
     d.away = (data.agents || []).filter(function (a) { return a && elsewhere(a, surface); });
@@ -360,6 +387,11 @@
       d.box = { x0: core.x0, y0: core.y0, x1: core.x0 + core.w * core.cell, y1: core.y0 + (core.h || core.rows.length) * core.cell };
       d.box.out = base ? outposts(base, d.box) : [];
     } else if (base) d.box = baseCore(base);
+    else if (home && data.base && Array.isArray(data.base.core_box) && data.base.core_box.length === 4 && data.base.core_box.every(num)) {
+      // (BG3) with the chart published push_live leaves out the grids and sends the core's box: the framing
+      var cb = data.base.core_box;
+      d.box = { x0: cb[0], y0: cb[1], x1: cb[2], y1: cb[3], out: [] };
+    }
     var bcx = 0, bcy = 0, reach = Infinity;
     if (d.box) { bcx = (d.box.x0 + d.box.x1) / 2; bcy = (d.box.y0 + d.box.y1) / 2; reach = Math.max(96, d.box.x1 - d.box.x0, d.box.y1 - d.box.y0); }
     d.dist = function (p) { return Math.round(Math.max(Math.abs(p.x - bcx), Math.abs(p.y - bcy))); };
@@ -372,6 +404,9 @@
       d.agents.map(function (a) { return a.position; }).concat(d.pins.map(function (p) { return p.position; }), d.fights.map(function (f) { return f.position; }))
         .filter(near).forEach(function (p) { xs.push(p.x); ys.push(p.y); });
       if (d.box) { xs.push(d.box.x0, d.box.x1); ys.push(d.box.y0, d.box.y1); }
+      else if (d.chart.some(function (c) { return c.box; })) {
+        d.chart.forEach(function (c) { if (c.box) { xs.push(c.box[0], c.box[2]); ys.push(c.box[1], c.box[3]); } });
+      } else if (d.chart.length) d.chart.forEach(function (c) { xs.push(c.x0, c.x0 + c.cell); ys.push(c.y0, c.y0 + c.cell); });
       else if (d.cloud) d.cloud.cells.forEach(function (x) { xs.push(x[0] * 32, x[0] * 32 + 32); ys.push(x[1] * 32, x[1] * 32 + 32); });
       if (!xs.length) return d;
       var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
@@ -455,6 +490,13 @@
     (Array.isArray(data.clouds) ? data.clouds : []).forEach(function (c) {
       if (c && typeof c.surface === 'string' && c.surface !== 'nauvis' && !memo.seen[c.surface]) memo.seen[c.surface] = { text: c.label || cap(c.surface) };
     });
+    // (BG3) every surface the published chart has: a planet by name, a platform by its own name
+    var cs = data.chart && data.chart.index && data.chart.index.surfaces;
+    Object.keys(cs && typeof cs === 'object' ? cs : {}).sort().forEach(function (k) {
+      var row = cs[k];
+      if (k === 'nauvis' || !row || !row.cells || !Object.keys(row.cells).length) return;
+      if (!memo.seen[k] || !memo.seen[k].planet) memo.seen[k] = row.platform ? { text: String(row.platform), platform: true, chart: true } : { text: cap(k), planet: true, chart: true };
+    });
     var seen = {};
     Object.keys(memo.seen).forEach(function (k) { seen[k] = memo.seen[k]; });
     var planets = {};
@@ -488,16 +530,32 @@
   // The surface switch: Nauvis, then every surface seen (planets with a map by name, then cloud-only ones), each kept
   // map OLD_S or older with its age ("Gleba · 12 min old"); [] while nothing but Nauvis is known.
   function switchList(data) {
-    var seen = (data && data.seen) || {}, planets = [], clouds = [];
+    var seen = (data && data.seen) || {}, planets = [], clouds = [], platforms = [];
     Object.keys(seen).sort().forEach(function (k) {
       var age = mapAge(data, k), held = heldAge(data, data.planet_list, data.planets && data.planets[k], k) != null;
       var row = { surface: k, text: seen[k].text + (age != null && (age >= OLD_S || held) ? ' · ' + ageText(age) + ' old' : ''), age: age, held: held };
-      (data.planets && data.planets[k] ? planets : clouds).push(row);
+      (seen[k].platform ? platforms : data.planets && data.planets[k] || seen[k].chart ? planets : clouds).push(row);
     });
-    var others = planets.concat(clouds);
+    platforms.forEach(function (r) { r.platform = true; });
+    var others = planets.concat(clouds, platforms);
     return others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others) : [];
   }
 
+  // A train stop's name as text: rich text tags as words ("[item=iron-plate]" -> "iron plate"), at most 40 characters.
+  function plainLabel(t) {
+    t = String(t == null ? '' : t).replace(/\[(?:item|fluid|virtual-signal|entity|recipe|planet|space-location|quality)=([^\],]+)(?:,[^\]]*)?\]/g, function (m, n) { return n.replace(/-/g, ' '); })
+      .replace(/\[\/?[a-z-]+(=[^\]]*)?\]/g, '').replace(/\s+/g, ' ').trim();
+    return t.length > 40 ? t.slice(0, 39) + '…' : t;
+  }
+  // The chart's cell under a tile position: when its chunks were read (game time before the state's tick).
+  function chartHit(d, x, y) {
+    if (!d.chart || !d.chart.length) return null;
+    var c = d.chart.filter(function (c) { return x >= c.x0 && x < c.x0 + c.cell && y >= c.y0 && y < c.y0 + c.cell; })[0];
+    if (!c) return null;
+    var a = chartAge(d, c.t0), b = chartAge(d, c.t1);
+    var when = a == null ? 'read time unknown' : 'read ' + (b != null && Math.abs(a - b) >= 60 ? ago(b).replace(/ ago$/, '') + ' to ' + ago(a) : ago(a));
+    return { text: 'Chart cell (' + c.cx + ', ' + c.cy + '), ' + c.n + ' chunks, ' + when };
+  }
   // The cloud's chunk under a tile position: its amount, as the game's map shows it on hover.
   function cloudHit(d, x, y) {
     if (!d.cloud) return null;
@@ -561,10 +619,30 @@
     for (var gx = Math.ceil((v.cx - hw) / step) * step; gx < v.cx + hw; gx += step) sc.grid.xs.push(px(gx));
     for (var gy = Math.ceil((v.cy - hh) / step) * step; gy < v.cy + hh; gy += step) sc.grid.ys.push(py(gy));
     var place = function (g) { return { x: px(g.x0), y: py(g.y0), s: g.cell * k, runs: runs(g) }; };
-    sc.terrain = on.terrain ? d.terrain.filter(function (t) {
+    sc.chart = on.chart ? d.chart.filter(function (c) {
+      return c.x0 + c.cell > v.cx - hw && c.x0 < v.cx + hw && c.y0 + c.cell > v.cy - hh && c.y0 < v.cy + hh;
+    }).map(function (c) { return { src: c.src, labels: c.labels, x: px(c.x0), y: py(c.y0), s: c.cell * k }; }) : [];
+    var charted = sc.chart.length > 0;
+    sc.smooth = k < 1;  // nearest-neighbour from 1 px a tile up
+    // recipe and train stop names as text over it, decluttered: stops from 0.5 px a tile, recipes from 6 (a 3-tile
+    // machine 18 px), each kept only where it overlaps no label kept before it (stops first)
+    sc.labels = [];
+    if (charted) {
+      var boxes = [], lab = function (x, y, text, kind) {
+        var w = Math.min(160, text.length * (kind === 'stop' ? 6.2 : 5.4) + 6), h = kind === 'stop' ? 14 : 12, X = px(x), Y = py(y);
+        if (X < -w || Y < -h || X > W + w || Y > H + h) return;
+        var b = [X - w / 2, Y - h / 2, X + w / 2, Y + h / 2];
+        if (boxes.some(function (o) { return b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]; })) return;
+        boxes.push(b); sc.labels.push({ x: X, y: Y, text: text, kind: kind });
+      };
+      var files = sc.chart.map(function (c) { return d.chartLabels[c.labels]; }).filter(Boolean);
+      if (k >= 0.5) files.forEach(function (f) { (f.stops || []).forEach(function (r) { if (Array.isArray(r) && num(r[0]) && num(r[1])) lab(r[0], r[1], plainLabel(r[2]), 'stop'); }); });
+      if (k >= 6) files.forEach(function (f) { (f.recipes || []).forEach(function (r) { if (Array.isArray(r) && num(r[0]) && num(r[1])) lab(r[0], r[1], String(r[2] || '').replace(/-/g, ' '), 'recipe'); }); });
+    }
+    sc.terrain = on.terrain && !charted ? d.terrain.filter(function (t) {
       return t.x1 > v.cx - hw && t.x0 < v.cx + hw && t.y1 > v.cy - hh && t.y0 < v.cy + hh;
     }).map(function (t) { return { src: t.src, x: px(t.x0), y: py(t.y0), w: (t.x1 - t.x0) * k, h: (t.y1 - t.y0) * k, tick: t.tick, t: t.t }; }) : [];
-    sc.ground = on.terrain && d.ground ? place(d.ground) : null;
+    sc.ground = on.terrain && d.ground && !charted ? place(d.ground) : null;
     if (sc.ground) { sc.ground.pal = d.groundPal || GROUND; sc.ground.gw = d.ground.w; sc.ground.gh = d.ground.h; }
     // (AK9) on the live map (data.now; not the run pages' time-lapse), each frame OLD_TERRAIN_S or more old and not
     // under a newer frame: "terrain from 2 h ago" at its top-left corner (kept inside the map)
@@ -576,7 +654,7 @@
       .reverse().filter(function (l, i, all) {  // the newest first; none within 60 px of one kept
         return !all.slice(0, i).some(function (m) { return m.kept && Math.abs(m.x - l.x) < 60 && Math.abs(m.y - l.y) < 60; }) && (l.kept = true);
       });
-    sc.ore = on.ore && d.ore ? place(d.ore) : null;
+    sc.ore = on.ore && d.ore && !charted ? place(d.ore) : null;
     // the cloud: each chunk in view in the pollutant's map colour, stronger where there is more (as the overlay draws it)
     sc.cloud = null;
     if (on.cloud && d.cloud) {
@@ -594,7 +672,7 @@
         sc.hits.push({ x: m.x, y: m.y, r: 8, text: 'Enemy nest the ' + (d.cloud.pollutant === 'spores' ? 'spores' : 'pollution') + ' reached' });
       });
     }
-    if (on.buildings && d.base) {
+    if (on.buildings && d.base && !charted) {
       sc.base = place(d.base);
       if (d.fine) { sc.core = place(d.fine); sc.clip = { x0: px(d.box.x0), y0: py(d.box.y0), x1: px(d.box.x1), y1: py(d.box.y1) }; }
     }
@@ -759,6 +837,11 @@
     // (AK9) the ground read from the game first, the frames over it (where a frame has no charted ground it is
     // transparent and the ground shows), then one dimming pass over both
     if (sc.ground) fillRuns(ctx, sc.ground, sc.ground.pal || GROUND, 1);
+    (sc.chart || []).forEach(function (c) {
+      var img = images && images(c.src);
+      if (img) { ctx.imageSmoothingEnabled = !!sc.smooth; ctx.drawImage(img, c.x, c.y, c.s, c.s); }
+    });
+    ctx.imageSmoothingEnabled = true;
     var shown = sc.terrain.filter(function (t) {
       var img = images && images(t.src);
       if (img) { ctx.imageSmoothingEnabled = t.w < img.width; ctx.drawImage(img, t.x, t.y, t.w, t.h); }
@@ -788,7 +871,9 @@
     ctx.globalAlpha = sc.terrain.length ? 0.45 : 1; ctx.stroke(); ctx.globalAlpha = 1;
     if (sc.ore) fillRuns(ctx, sc.ore, ORE, 0.38);
     if (sc.cloud) {
-      sc.cloud.cells.forEach(function (c) { ctx.fillStyle = 'rgba(' + sc.cloud.rgb + ', ' + c.a + ')'; ctx.fillRect(c.x, c.y, c.s + 0.5, c.s + 0.5); });
+      // (BG3) over the chart the cloud is lighter, so the buildings under it still read
+      var thin = sc.chart && sc.chart.length ? 0.4 : 1;
+      sc.cloud.cells.forEach(function (c) { ctx.fillStyle = 'rgba(' + sc.cloud.rgb + ', ' + (c.a * thin).toFixed(3) + ')'; ctx.fillRect(c.x, c.y, c.s + 0.5, c.s + 0.5); });
       sc.cloud.reached.forEach(function (n) {
         ctx.strokeStyle = '#000'; ctx.lineWidth = 3; circle(ctx, n.x, n.y, 6); ctx.stroke();
         ctx.strokeStyle = '#ff5a44'; ctx.lineWidth = 1.8; circle(ctx, n.x, n.y, 6); ctx.stroke();
@@ -852,6 +937,12 @@
         ctx.font = '600 10px ' + font; ctx.textAlign = 'left'; ctx.fillStyle = col;
         ctx.fillText(m.name.length > 28 ? m.name.slice(0, 27) + '…' : m.name, m.x0 + 3, Math.max(m.y0 + 11, 11));
       }
+    });
+    (sc.labels || []).forEach(function (l) {
+      ctx.font = (l.kind === 'stop' ? '700 10.5px ' : '600 9px ') + font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, .8)'; ctx.strokeText(l.text, l.x, l.y);
+      ctx.fillStyle = l.kind === 'stop' ? '#ffd27a' : 'rgba(240, 238, 232, .92)'; ctx.fillText(l.text, l.x, l.y);
+      ctx.textBaseline = 'alphabetic';
     });
     sc.nests.forEach(function (n) {
       ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
@@ -931,7 +1022,7 @@
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function has(d, layer) {
-    return layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
+    return layer === 'chart' ? d.chart.length > 0 : layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
       layer === 'cloud' ? !!d.cloud : layer === 'library' ? d.areas.length > 0 :
       layer === 'power' ? !!(d.net && d.net.grid) : layer === 'robots' ? !!(d.net && d.net.logistic.length) :
       layer === 'coverage' ? d.turrets.length > 0 : layer === 'readiness' ? !!d.tstate : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
@@ -972,6 +1063,11 @@
     // (AD3) the item picked: its sources and consumers on the planet shown
     this.item = null;
     el.addEventListener('change', function (ev) {
+      if (ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-platform')) {
+        // (BG3) a platform's chart from the picker
+        if (ev.target.value) self.onClick({ target: { closest: function () { return { dataset: { surface: ev.target.value } }; } } });
+        return;
+      }
       if (!ev.target || !ev.target.hasAttribute || !ev.target.hasAttribute('data-item')) return;
       self.item = ev.target.value || null; self.showTip(null);
       self.renderLayers(); self.renderLegend(); self.draw();
@@ -994,6 +1090,7 @@
     // (D1) every surface seen keeps its switch and last map: the surface shown and the view (pan, zoom) stay
     this.memo = this.memo || {};
     data = this.data = remember(this.memo, unpackData(data));
+    data.chart_labels = this.labelCache = this.labelCache || {};
     if (this.surface !== 'nauvis' && !data.seen[this.surface]) this.surface = 'nauvis';
     this.d = prepareSafe(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
@@ -1046,6 +1143,7 @@
       return;
     }
     this.root.dataset.paintMs = Date.now() - t0;  // tools/site_shots.js reads how long a frame took
+    this.chartLabels();
     // (AD1) the buildings' read on every surface: Nauvis's basemap once a minute, a planet's kept map
     var age = mapAge(this.data, this.d.surface);
     var old = age == null ? '' : ' · map from ' + (age < 60 ? 'under a minute' : ageText(age)) + ' ago';
@@ -1057,9 +1155,25 @@
     var newest = tf.length && num(tn) ? Math.max.apply(0, tf.map(function (t) { return t.t; })) : null;
     if (newest != null && tn - newest >= OLD_TERRAIN_S) old += ' · terrain frames from ' + ago(tn - newest) + (this.d.groundAge != null ? ', ground read ' + ago(this.d.groundAge) : '');
     else if (this.sc.ground && this.d.groundAge != null) old += ' · ground read ' + ago(this.d.groundAge);
+    if (this.sc.chart.length && this.d.chartOldest != null) {
+      old = ' · chart: oldest cell ' + ago(this.d.chartOldest).replace(/ ago$/, '') + (this.d.chartNewest != null ? ', newest ' + ago(this.d.chartNewest).replace(/ ago$/, '') : '') +
+        (this.d.base ? '' : '');
+    }
     this.root.querySelector('.mapview-scale').textContent = '≈' + Math.round(v.span) + ' tiles across · grid ' + this.sc.grid.step + ' tiles' + old + gone;
     var fb = this.root.querySelector('[data-mv="reset"]');
     fb.disabled = !this.view && !this.follow;
+  };
+  Viewer.prototype.chartLabels = function () {
+    var self = this;
+    this.labelCache = this.labelCache || {};
+    (this.sc && this.sc.chart || []).forEach(function (c) {
+      if (self.labelCache[c.labels] !== undefined || typeof fetch !== 'function') return;
+      self.labelCache[c.labels] = null;
+      fetch(c.labels).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        if (!j) return;
+        self.labelCache[c.labels] = j; self.d.chartLabels = self.labelCache; self.draw();
+      }).catch(function () { /* the cell shows without its labels */ });
+    });
   };
   Viewer.prototype.image = function (src) {
     var self = this, im = this.images[src];
@@ -1081,12 +1195,12 @@
   // item picker, use Power/Logistics labels, keep planets separate and wrap groups on small screens") the groups two to
   // a row, each label over its buttons (style.css .mapview-groups: one a row when the toolbar is narrow); the network
   // toggles say Power and Logistics, their full names (LONG) in the tooltip and the disabled reason.
-  var LONG = { power: 'Power networks', robots: 'Logistic networks' };
+  var LONG = { power: 'Power networks', robots: 'Logistic networks', chart: 'Chart: the ground, resources and buildings in the game\'s map colours' };
   // (d22 batch75 AK7, viewer Aurora site:4183: "Could you put category labels beside the buttons and tighten the gaps
   // between groups, rows and the planet selector?") each label at the left of its buttons at every width, the pairs
   // below a row each (style.css .mapview-pair)
   var PAIRS = [['terrain', 'networks'], ['combat', 'team']];
-  var GROUPS = [['terrain', 'Terrain', ['terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
+  var GROUPS = [['terrain', 'Terrain', ['chart', 'terrain', 'ore', 'buildings', 'cloud']], ['networks', 'Networks', ['power', 'robots']],
     ['combat', 'Combat', ['coverage', 'readiness', 'nests', 'threats', 'alerts']], ['team', 'Team', ['agents', 'attention', 'library']]];
   // (d22 batch75 AK10, viewer Aurora site:4283: "Could disabled map layers distinguish missing data from a real zero?
   // Vulcanus currently labels unavailable power and logistics overlays as 'none', which is easy to misread.") Why a
@@ -1132,6 +1246,8 @@
         (read.length ? '; it has: ' + read.map(function (c) { return cap(c.surface); }).join(', ') : '') + ')';
     }
     if (k === 'library') return data.library_read === false ? 'not read: no library areas in the live state yet' : 'none: no placed library area on ' + where;
+    if (k === 'chart') return data.chart && data.chart.index ? 'not read: the published chart has no cell of ' + where + ' yet (the stream service draws it; the site publishes it hourly)'
+      : 'not read: no chart published yet';
     if (k === 'threats') return 'none: no enemy group on its way and no demolisher near ours on ' + where + ' now (read every 2-10 s)';
     if (k === 'agents') return 'none: no agent on ' + where + ' now';
     if (k === 'attention') return 'none: no agent on ' + where + ' has an attention mark now';
@@ -1161,9 +1277,12 @@
     box.dataset.sig = sig;
     var byKey = {}, short = {};
     LAYERS.forEach(function (l) { byKey[l[0]] = LONG[l[0]] || l[1]; short[l[0]] = l[1]; });
-    var planets = surfaces.length ? '<div class="mapview-planets" role="group" aria-label="Planet">' + surfaces.map(function (x) {
+    var plats = surfaces.filter(function (x) { return x.platform; });
+    var planets = surfaces.length ? '<div class="mapview-planets" role="group" aria-label="Planet">' + surfaces.filter(function (x) { return !x.platform; }).map(function (x) {
       return '<button type="button" class="fx-btn small mapview-surface" data-surface="' + esc(x.surface) + '" aria-pressed="' + (self.surface === x.surface ? 'true' : 'false') + '">' + esc(x.text) + '</button>';
-    }).join('') + '</div>' : '';
+    }).join('') + (plats.length ? '<select class="mapview-platform" data-platform aria-label="Platform"><option value="">Platform…</option>' + plats.map(function (x) {
+      return '<option value="' + esc(x.surface) + '"' + (self.surface === x.surface ? ' selected' : '') + '>' + esc(x.text) + '</option>';
+    }).join('') + '</select>' : '') + '</div>' : '';
     var boxes = {};
     GROUPS.forEach(function (g) { boxes[g[0]] = ''; });
     GROUPS.forEach(function (g) { boxes[g[0]] = (function () {
@@ -1193,6 +1312,11 @@
   };
   Viewer.prototype.renderLegend = function () {
     var d = this.d, on = this.on, h = '';
+    if (d.chart.length && on.chart) {
+      h += '<li><i class="mv-chart"></i>' + esc('Chart: the ground, resources and buildings in the game\'s map colours, read from the game (' +
+        d.chart.length + ' cell' + (d.chart.length > 1 ? 's' : '') + (d.chartOldest != null ? '; oldest cell ' + ago(d.chartOldest).replace(/ ago$/, '') : '') +
+        (d.chartNewest != null ? ', newest ' + ago(d.chartNewest).replace(/ ago$/, '') : '') + '; the site publishes it hourly); recipe and train stop names as text') + '</li>';
+    }
     if (d.terrain.length && on.terrain) h += '<li><i class="mv-terrain"></i>Terrain: the game\'s map view, ' + esc(d.terrainNote) + '</li>';
     // (AK9) the charted ground read from the game, and how fresh it is
     if (d.ground && on.terrain && d.groundPal !== GROUND) {
@@ -1286,7 +1410,9 @@
     if (a) this.followEl.querySelector('span').textContent = 'Following ' + (a.display_name || a.name);
     this.draw();
   };
-  Viewer.prototype.cloudHit = function (q) { return q && this.on.cloud ? cloudHit(this.d, q.x, q.y) : null; };
+  Viewer.prototype.cloudHit = function (q) {
+    return (q && this.on.cloud ? cloudHit(this.d, q.x, q.y) : null) || (q && this.on.chart ? chartHit(this.d, q.x, q.y) : null);
+  };
   Viewer.prototype.showTip = function (hit, x, y) {
     if (!hit) { this.tip.hidden = true; return; }
     this.tip.textContent = hit.text;
@@ -1385,7 +1511,7 @@
   root.PogMap = {
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
-    prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs, coordsText: coordsText,
+    prepare: prepare, areaMark: areaMark, hookText: hookText, parseNet: parseNet, itemFacts: itemFacts, netHit: netHit, unpack: unpack, unpackData: unpackData, scene: scene, hitAt: hitAt, cloudHit: cloudHit, chartHit: chartHit, chartCells: chartCells, plainLabel: plainLabel, paint: paint, runs: runs, coordsText: coordsText,
     remember: remember, switchList: switchList, mapAge: mapAge, heldAge: heldAge, OLD_S: OLD_S, GROUPS: GROUPS, absentWhy: absentWhy,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
