@@ -90,6 +90,8 @@ planet_maps 13 KB).
                             "crafting": {"queue": [{"recipe": "inserter", "count": 5}], "items": 5, "progress": 0.46},
                             "building": {"kind": "construct", "done": 7, "total": 20}, "age_s": 3.2}}],
     "chat": [{"seq": 1, "tick": 144720, "from": "Muse", "agent": "muse", "text": "...", "t": 1791695551.8}],  // last 40
+    // label: an infinite technology by the level under way ("Mining productivity 15" for mining-productivity-3 with
+    // next 15; d23 batch119 CB1); a board research event for one of its levels by the level done
     "research": {"current": "engine", "label": "Engine", "progress": 0.54, "done_count": 8,
                  "recent": [{"name": "steel-processing", "label": "Steel processing", "t": null}],
                  // (d20 batch57 S4, viewer Foobator) each infinite technology researched at least once (or being

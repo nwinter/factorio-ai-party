@@ -640,6 +640,28 @@ def repeating_levels(rows, current=None, progress=None):
     return out[:REPEATING_MAX]
 
 
+def research_label(name, rows):
+    """(d23 batch119 CB1, viewer Aurora site:4386: "The research header says Mining productivity 3, but the detailed
+    panel says level 16 reached and researching 17") The running technology for viewers: an infinite one by the level
+    it is researching ("Mining productivity 17": the prototype's "-3" is the level it starts at), from the extras
+    read's rows (repeating_levels); any other by its name."""
+    for r in rows or []:
+        if r.get("name") == name and isinstance(r.get("next"), int):
+            return f"{r['label']} {r['next']}"
+    return tech_label(name)
+
+
+def level_done_label(row, tick, read_tick):
+    """A finished level of an infinite technology (research.lua's board event, titled by the prototype name only) by
+    the level done, from its row in the extras read at read_tick (repeating_levels): the row's level when the read came
+    after the event, one more when the event is newer (the read runs every 3 s). None when the level cannot be told
+    (the event has no tick): the caller names the technology without a level. A technology with no row yet is on its
+    first level, the prototype's own (tech_label: "Mining productivity 3"; names have no number from level 1)."""
+    if read_tick is None or not isinstance(tick, int):
+        return None
+    return f"{row['label']} {row['level'] if tick <= read_tick else row['level'] + 1}"
+
+
 def human_name(name):
     """A prototype name for viewers: 'assembling-machine-2' -> 'Assembling machine 2', 'travel to vulcanus' ->
     'Travel to vulcanus'."""
@@ -1446,6 +1468,7 @@ class Model:
         res["packs"] = list(r.get("packs") or [])  # the running technology's packs (score's current_packs)
         if "repeating" in r:
             res["repeating"] = repeating_levels(r.get("repeating"), r.get("current"), r.get("progress"))
+            res["repeating_tick"] = self.tick  # the game tick of this read (level_done_label)
 
     def unused_unlocks(self, now=None):
         """Researched technologies whose building the team has none of, oldest first: [{tech, unlocks, built,
@@ -1541,7 +1564,12 @@ class Model:
         title = e.get("title") or it.get("title") or ""
         if kind == "research":  # a finished technology (research.lua): no item, by "research"
             self._tech_unlocks(title, e.get("text"), now)
-            title = tech_label(title)
+            row = next((r for r in self.research.get("repeating") or [] if r.get("name") == title), None)
+            if row:  # an infinite technology: the level done (CB1); a restart's replay names it without one
+                title = (None if restored else level_done_label(row, e.get("tick"), self.research.get("repeating_tick"))) \
+                    or row["label"]
+            else:
+                title = tech_label(title)
         entry = {"seq": e.get("seq"), "tick": e.get("tick"), "by": e.get("by"), "agent": agent, "id": e.get("id"),
                  "verb": verb, "title": clean_text(title), "kind": kind,
                  "owner": it.get("owner"), "owner_agent": self._who(it.get("owner")), "t": t,
@@ -2703,7 +2731,7 @@ class Model:
             # the run's chronicle, newest last: the agents' entries and the events the harness saw (the site's live page;
             # the hosts read a new entry)
             "chronicle": {"entries": list(self.chronicle_entries)[-8:], "events": list(self.chronicle_events)[-12:]},
-            "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
+            "research": {"current": res["current"], "label": research_label(res["current"], res.get("repeating")), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4],
                          "repeating": res.get("repeating") or []},
             "unused_unlocks": self.unused_unlocks(now),
