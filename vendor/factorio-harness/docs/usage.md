@@ -3550,8 +3550,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
     another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
     tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
-    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
-    ghost over a machine it upgrades reads `ok` with `replaces ...`. What the call takes in its way follows the
+    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, except
+    for one of its fast-replace group of ours standing on its tiles (a splitter over a belt, a turbo belt over a fast
+    belt): the game's ghost check takes it as a player's fast replace, and a script ghost does not go in, so
+    place_ghosts and a `normal` or `forced` paste read it blocked, as the call refuses it (d22 batch122, below). What
+    the call takes in its way follows the
     call: place_ghosts and a `forced` paste mark trees and rocks (`ok`, `marks tree-01 (5.5,0.5) for removal`), a
     `superforced` paste our own entities too, while a `normal` paste and a hand build take nothing (`blocked by
     tree-01 ...`). Rails may cross rails. A hand build over one of its fast-replace group that is off its centre or of
@@ -12495,3 +12498,28 @@ Regression: tests/d22_batch122b.lua.
     1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
     Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
 
+## d22 batch122: place_ghosts over one of its fast-replace group (Astra #2064, 14:32)
+
+Astra's dry run of a fast-splitter at (23,-38.5) on Asterion read `6 placeable (of 6)` over the fast belt at
+(23.5,-38.5); the call refused it with a bare `placement blocked`, and placed it after the belt was marked for
+deconstruction. Measured on a 2.0.77 copy of world n (its 14:31 save): `can_place_entity` with `manual_ghost` (forced
+or not) and `manual` takes the splitter there, and `blueprint_ghost` does not; `create_entity` of the ghost gives nil,
+with `fast_replace` or without. The same holds on a belt's centre for a turbo belt, a fast underground belt and a fast
+belt turned another way. A blueprint of the splitter placed no ghost in `normal` or `forced` mode; `superforced` marked
+the belt for deconstruction and placed it. With the belt marked for deconstruction `create_entity` placed the splitter
+ghost. A straight rail ghost crossing a built straight rail went in (rails are left to the game's check).
+
+Now `construction.ghost_replaces` lists ours of the entity's fast-replace group standing in its footprint and not marked
+for deconstruction, and `ghost_placeable` (the check the dry run and the call share) is false while any stands. The call
+refuses the entry with, and the dry run blocks it with:
+
+`placement blocked by fast-transport-belt (23.5,-38.5), of its fast-replace group (transport-belt): a player's ghost
+over it is a fast replace, which a script ghost is not; place_ghosts puts its ghost in over one marked for
+deconstruction (deconstruct it first)`
+
+On the entity's own centre and of its size, another of its type adds `; upgrade {position: {x: 23.5, y: -39.5}, to:
+"turbo-transport-belt"} changes the one standing there in place, keeping its wires and settings`, and the same entity
+turned adds `; rotate {position, direction} turns the one standing there`. An entry standing as asked is still skipped
+(`already`). A `normal` or `forced` paste's dry run reads it blocked too, adding `; a superforced paste marks it for
+deconstruction and places the ghost`; a `superforced` one reads `ok` and names the belt it marks. Regression:
+tests/dryrun.lua (the d20 batch122 block), failing on the old dryrun.lua and construction.lua.

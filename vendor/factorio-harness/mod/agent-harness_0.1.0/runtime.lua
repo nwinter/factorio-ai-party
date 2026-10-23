@@ -13221,6 +13221,9 @@ M.dryrun=require('dryrun'){railsignal=function() return M.railsignal end,rolling
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
+  ghost_replaces=function(p,proto,pos,direction) return construction.ghost_replaces(p.surface,p.force,proto,pos,direction) end,
+  ghost_replaces_text=function(...) return construction.ghost_replaces_text(...) end,
+  same_standing=function(p,spec) return M.same_standing(p,spec) end,
   crafting_count=function(p,item) return crafting_count(p,item) end,
   rail_box=function(name,pos,dir) return M.rails and M.rails.box(name,pos,dir) end,
   rail_overlaps=function(shape,l,t,r,b) return M.rails.overlaps(shape,l,t,r,b) end,
@@ -14396,6 +14399,12 @@ local function place_ghost(p,spec)
     sig=M.railsignal.resolve(p.surface,p.force,spec.name,pos,direction,M.railsignal.layer_arg(spec.rail_layer),true)
     direction=sig.direction
   elseif spec.rail_layer~=nil then error('rail_layer goes with rail signals and chain signals',0) end
+  -- (d20 batch122, Astra #2064) ours of its fast-replace group standing there: the game's ghost check takes a player's
+  -- ghost over it (a fast replace), create_entity does not; named, with what changes it in place
+  if not sig then
+    local rep=construction.ghost_replaces(p.surface,p.force,proto,pos,direction)
+    if #rep>0 then error('placement blocked'..construction.ghost_replaces_text(proto,pos,direction,rep),0) end
+  end
   if not sig and not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
     -- (d22 batch95 BE1, Astra #1892: a decider on Aquilo's rough ice) tiles a forced placement does not lay (concrete;
     -- ice platform then concrete): tile entries before it lay their ghosts first, and the game takes its ghost over them

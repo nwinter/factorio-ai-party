@@ -1250,4 +1250,72 @@ do
   eq(R.dry_verdict(before, {dry_run=true}).dry_run_ok, true)
   eq(R.dry_verdict(after, {dry_run=true}).dry_run_ok, false)
 end
+-- d20 batch122 (Astra #2064, 14:32: a fast-splitter's dry run read placeable over a fast belt half a tile off; the call
+-- refused it "placement blocked", and went in after the belt was marked for deconstruction). On a 2.0.77 copy of world n
+-- can_place_entity (manual_ghost, forced) took the splitter there, a turbo belt and a fast underground on a fast belt's
+-- centre, and a fast belt turned on one; create_entity gave no ghost for any; with the belt marked for deconstruction
+-- the splitter ghost went in. A normal or forced paste placed none; superforced marked the belt and placed it. The dry
+-- run refuses what the call refuses, with the same words.
+do
+  local BELT = mask('object', 'transport_belt', 'water_tile')
+  local function belt_proto(name, kind, b)
+    prototypes.entity[name] = {name=name, type=kind, fast_replaceable_group='transport-belt', tile_width=1, tile_height=1,
+      collision_box=b or box(0.4), collision_mask=BELT, items_to_place_this={{name=name, count=1}}}
+  end
+  belt_proto('fast-transport-belt', 'transport-belt'); belt_proto('turbo-transport-belt', 'transport-belt')
+  belt_proto('fast-underground-belt', 'underground-belt')
+  belt_proto('fast-splitter', 'splitter', {left_top={x=-0.9, y=-0.4}, right_bottom={x=0.9, y=0.4}})
+  local belt = {name='fast-transport-belt', type='transport-belt', position={x=23.5, y=-38.5}, direction=0, minable=true}
+  belt.to_be_deconstructed = function() return belt.marked == true end
+  local surface = world(function() return 'grass-1' end, {belt})
+  -- the game's ghost check: the whole fast-replace group taken (a player's fast replace)
+  surface.can_place_entity = function(a)
+    eq(a.build_check_type, defines.build_check_type.manual_ghost); return true
+  end
+  local construction = dofile('mod/agent-harness_0.1.0/construction.lua'){directions={}}
+  local rap = setmetatable({
+    ghost_placeable=function(q, proto, pos, dir) return construction.ghost_placeable(q.surface, q.force, proto, pos, dir) end,
+    ghost_replaces=function(q, proto, pos, dir) return construction.ghost_replaces(q.surface, q.force, proto, pos, dir) end,
+    ghost_replaces_text=function(...) return construction.ghost_replaces_text(...) end,
+    -- as runtime.lua M.same_standing: the call skips an entry standing as asked
+    same_standing=function(q, spec)
+      if spec.name == belt.name and spec.position.x == belt.position.x and spec.position.y == belt.position.y and (spec.direction or 0) == belt.direction then return 'built' end
+    end}, {__index=api})
+  local dr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(rap)
+  local rp = {surface=surface, force=force, position={x=20, y=-38}, get_main_inventory=p.get_main_inventory}
+  local function one(entry, kind, mode)
+    entry.index = 1
+    local o, recs = dr.check(rp, {kind=kind or 'ghosts', mode=mode, entities={entry}})
+    return recs[1]
+  end
+  local splitter = {name='fast-splitter', position={x=23, y=-38.5}, direction=0}
+  local refusal = 'blocked by fast-transport-belt (23.5,-38.5), of its fast-replace group (transport-belt): a player\'s ghost over it is a fast replace, which a script ghost is not; place_ghosts puts its ghost in over one marked for deconstruction (deconstruct it first)'
+  local row = one(splitter)
+  eq(row.status, 'blocked', 'before: ok'); eq(row.why, refusal)
+  -- the call's refusal: 'placement blocked' and the same words
+  local sp = prototypes.entity['fast-splitter']
+  eq(construction.ghost_placeable(surface, force, sp, {x=23, y=-38.5}, 0), false)
+  eq('placement blocked'..construction.ghost_replaces_text(sp, {x=23, y=-38.5}, 0, construction.ghost_replaces(surface, force, sp, {x=23, y=-38.5}, 0)),
+    'placement '..refusal)
+  -- on its centre: another of its type is an upgrade, the same one turned a rotate, an underground neither
+  row = one({name='turbo-transport-belt', position={x=23.5, y=-38.5}, direction=0})
+  eq(row.status, 'blocked'); has(row.why, '(deconstruct it first); upgrade {position: {x: 23.5, y: -38.5}, to: "turbo-transport-belt"} changes the one standing there in place, keeping its wires and settings')
+  row = one({name='fast-transport-belt', position={x=23.5, y=-38.5}, direction=4})
+  eq(row.status, 'blocked'); has(row.why, '(deconstruct it first); rotate {position: {x: 23.5, y: -38.5}, direction} turns the one standing there')
+  row = one({name='fast-underground-belt', position={x=23.5, y=-38.5}, direction=0})
+  eq(row.status, 'blocked'); eq(row.why:find('upgrade', 1, true), nil); eq(row.why:find('rotate', 1, true), nil)
+  -- standing as asked: the call skips it
+  eq(one({name='fast-transport-belt', position={x=23.5, y=-38.5}, direction=0}).status, 'exists')
+  -- a paste: normal and forced place none there; superforced marks the belt
+  row = one({name='fast-splitter', position={x=23, y=-38.5}, direction=0}, 'paste', 'forced')
+  eq(row.status, 'blocked'); has(row.why, '; a superforced paste marks it for deconstruction and places the ghost')
+  row = one({name='fast-splitter', position={x=23, y=-38.5}, direction=0}, 'paste', 'superforced')
+  eq(row.status, 'ok'); has(row.note, 'marks fast-transport-belt (23.5,-38.5) for removal')
+  -- marked for deconstruction: the ghost goes in, dry run and call alike
+  belt.marked = true
+  eq(one({name='fast-splitter', position={x=23, y=-38.5}, direction=0}).status, 'ok')
+  eq(construction.ghost_placeable(surface, force, sp, {x=23, y=-38.5}, 0), true)
+  -- rails are the game's to judge: a crossing rail ghost goes in over a built rail
+  eq(#construction.ghost_replaces(surface, force, {name='straight-rail', type='straight-rail', fast_replaceable_group='straight-rail', collision_box=box(1)}, {x=23, y=-39}, 0), 0)
+end
 print('dryrun: ok')
