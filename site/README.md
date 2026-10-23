@@ -102,7 +102,11 @@ npx wrangler pages deploy site/dist --project-name player-of-games --branch prev
 checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, `test_archive.py`, `test_agents.py`, then preview and production (production only if
 the preview went up). `tools/shift-change.sh` runs it in the background once the previous shift is stopped, with its log
 in `runs/PREV/site-refresh.log`; a failure never blocks the shift (`POG_SITE_REFRESH=0` skips it). It leaves
-`site/live/status.json` modified in the checkout: commit it when convenient.
+`site/live/status.json` modified in the checkout: commit it when convenient. (d22 batch97 BG3) `tools/start-team.sh` also
+runs it every hour (`runs/RUN/site-hourly.log`; `POG_SITE_HOURLY=0` or `POG_PUSH_LIVE=0` turns it off), so the chart the
+stream service draws (`runs/RUN/chart/out/`, published under `/live/chart/` by `site/chartpub.py`) is at most about an
+hour old on the site. Two refreshes never run at once: the second waits for the first's lock (`$TMPDIR/pog-site-refresh.lock`,
+up to 10 minutes; one whose pid is gone is taken over).
 
 The Cloudflare Pages project `player-of-games` has `main` as its production branch. Any other `--branch` makes a
 preview deployment: each gets its own URL, and the branch also gets a stable alias

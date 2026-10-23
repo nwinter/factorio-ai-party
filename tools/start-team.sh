@@ -324,6 +324,14 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n 
     helpers+=("push-live:$!:$rundir/push-live.log")
   fi
 fi
+# (d22 batch97 BG3) the site rebuilt and deployed every hour (tools/site-refresh.sh), so the chart's cells the stream
+# service draws (runs/RUN/chart/out/, published under /live/chart/) are at most about an hour old. POG_SITE_HOURLY=0
+# turns it off; off with POG_PUSH_LIVE=0 (test runs must not deploy the public site).
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_SITE_HOURLY:-1}" != 0 ]; then
+  nohup bash -c 'while sleep 3600; do tools/site-refresh.sh; done' >"$rundir/site-hourly.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("site-hourly:$!:$rundir/site-hourly.log")
+fi
 # The site's polls (site/polls_relay.py): RUN/polls.json for ./fh poll, the agents' team-block line, the stream's poll
 # strip and the hosts; agents' votes (./fh poll vote) posted with the token; agents' and viewers' poll ideas into the
 # operator inbox. POG_POLLS=0 turns it off; off with POG_PUSH_LIVE=0 (test runs must not vote in the public polls).

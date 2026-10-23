@@ -37,6 +37,19 @@ step() { echo "$(ts) site-refresh: $*"; }
 fail() { step "FAILED: $*"; exit 1; }
 
 step "start (runs $runs, out $out${last:+, last run $last})"
+# (d22 batch97 BG3) one refresh at a time: the hourly one (tools/start-team.sh) and a shift change's can meet; the
+# second waits for the first (a lock directory with its pid; one whose pid is gone is taken over), up to 10 minutes.
+lock=${POG_SITE_REFRESH_LOCK:-${TMPDIR:-/tmp}/pog-site-refresh.lock}
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+  holder=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -rf "$lock"; continue; fi
+  [ $waited -ge ${POG_SITE_REFRESH_WAIT:-600} ] && fail "another site refresh (pid ${holder:-?}) held the lock for ${waited} s"
+  [ $waited = 0 ] && step "waiting for another site refresh (pid ${holder:-?})"
+  sleep 5; waited=$((waited + 5))
+done
+echo $$ > "$lock/pid"
+trap 'rm -rf "$lock"' EXIT
 if [ -n "$last" ]; then
   python3 site/status_update.py "$last" --runs-dir "$runs" --status "$status" || fail "status.json update"
 fi
