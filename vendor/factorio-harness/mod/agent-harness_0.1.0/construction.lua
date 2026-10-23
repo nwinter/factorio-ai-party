@@ -600,10 +600,49 @@ return function(api)
   end
   -- The same read-only gate for place_ghosts and its dry run. Trees/rocks
   -- retain the existing fallback for engine checks that refuse soft obstacles.
+  -- What the game's ghost check takes and a script ghost does not (d20 batch122, Astra #2064: a fast-splitter over a
+  -- fast belt read placeable in the dry run, then "placement blocked"): ours of its fast-replace group standing in its
+  -- footprint, not marked for deconstruction. On a 2.0.77 copy of world n can_place_entity (manual_ghost) took a
+  -- fast-splitter half a tile off a fast belt, a turbo belt and a fast underground on the belt's centre, and
+  -- create_entity gave no ghost for any of them; with the belt marked for deconstruction the splitter ghost went in.
+  -- Rails are left to the game's check: a straight rail ghost crossing a built one went in.
+  function M.ghost_replaces(surface, force, proto, pos, direction)
+    local group = proto.fast_replaceable_group
+    if not group or proto.type:find('rail', 1, true) then return {} end
+    local out = {}
+    for _, e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction),force=force}) do
+      if e.valid and e.type ~= 'entity-ghost' and not e.to_be_deconstructed() then
+        local ok, g = pcall(function() return e.prototype.fast_replaceable_group end)
+        if ok and g == group then out[#out+1] = e end
+      end
+    end
+    return out
+  end
+  -- Why a ghost is refused over them, and what changes them in place: ' by NAME (x,y)...: ...'.
+  function M.ghost_replaces_text(proto, pos, direction, list)
+    local names, fix = {}, nil
+    local function same_size(o)
+      local a, b = proto.collision_box, o.prototype.collision_box
+      return math.abs((a.right_bottom.x-a.left_top.x)-(b.right_bottom.x-b.left_top.x)) < 0.01
+        and math.abs((a.right_bottom.y-a.left_top.y)-(b.right_bottom.y-b.left_top.y)) < 0.01
+    end
+    for i, o in ipairs(list) do
+      if i <= 3 then names[#names+1] = string.format('%s (%g,%g)', o.name, o.position.x, o.position.y) end
+      if #list == 1 and math.abs(o.position.x-pos.x) < 0.01 and math.abs(o.position.y-pos.y) < 0.01 and same_size(o) then
+        if o.name ~= proto.name and o.type == proto.type then
+          fix = string.format('; upgrade {position: {x: %g, y: %g}, to: "%s"} changes the one standing there in place, keeping its wires and settings', pos.x, pos.y, proto.name)
+        elseif (o.direction or 0) ~= (direction or 0) then
+          fix = string.format('; rotate {position: {x: %g, y: %g}, direction} turns the one standing there', pos.x, pos.y)
+        end
+      end
+    end
+    return string.format(' by %s%s, of its fast-replace group (%s): a player\'s ghost over it is a fast replace, which a script ghost is not; place_ghosts puts its ghost in over one marked for deconstruction (deconstruct it first)%s',
+      table.concat(names, ', '), #list > 3 and string.format(' and %d more', #list-3) or '', proto.fast_replaceable_group, fix or '')
+  end
   function M.ghost_placeable(surface, force, proto, pos, direction)
-    return surface.can_place_entity{name=proto.name,position=pos,direction=direction,force=force,
+    return (surface.can_place_entity{name=proto.name,position=pos,direction=direction,force=force,
       build_check_type=defines.build_check_type.manual_ghost,forced=true}
-      or M.only_obstacles(surface,proto,pos,direction)
+      or M.only_obstacles(surface,proto,pos,direction)) and #M.ghost_replaces(surface,force,proto,pos,direction) == 0
   end
   function M.in_box(pos,box)
     return pos.x>box.left_top.x and pos.x<box.right_bottom.x and pos.y>box.left_top.y and pos.y<box.right_bottom.y

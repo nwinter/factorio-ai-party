@@ -191,6 +191,9 @@ local alerts=st.team and st.team.alerts or st.alerts
 local said=has(alerts,'spidertron #7001: no progress toward (90,4)')
 assert(said and said:find('vehicle {go_to, mode: "replace"} sets a new one, {clear: true} empties it',1,true),tostring(said))
 r=astra('vehicle',{position={x=4,y=4}}); assert(r.stalled and r.stalled.for_s>=10 and r.stalled.line:find('standing at (4,4) (86 tiles from it)',1,true),tostring(r.stalled and r.stalled.line))
+-- (d22 batch122 CE2) its body swaying where it stands (1.2 tiles, nearer the target by as much) is no move
+spider.position={x=5.2,y=4}; advance(61)
+eq(has((astra('status',{}).team or {}).alerts,'moves again'),nil,'a sway is not moving again')
 spider.position={x=10,y=4}; advance(61)
 assert(has((astra('status',{}).team or {}).alerts,'spidertron #7001 moves again: at (10,4) toward (90,4)'),'moves again said')
 astra('vehicle',{position={x=10,y=4},clear=true}); advance(61)

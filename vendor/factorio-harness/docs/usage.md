@@ -3554,8 +3554,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
     another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
     tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
-    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
-    ghost over a machine it upgrades reads `ok` with `replaces ...`. What the call takes in its way follows the
+    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, except
+    for one of its fast-replace group of ours standing on its tiles (a splitter over a belt, a turbo belt over a fast
+    belt): the game's ghost check takes it as a player's fast replace, and a script ghost does not go in, so
+    place_ghosts and a `normal` or `forced` paste read it blocked, as the call refuses it (d22 batch122, below). What
+    the call takes in its way follows the
     call: place_ghosts and a `forced` paste mark trees and rocks (`ok`, `marks tree-01 (5.5,0.5) for removal`), a
     `superforced` paste our own entities too, while a `normal` paste and a hand build take nothing (`blocked by
     tree-01 ...`). Rails may cross rails. A hand build over one of its fast-replace group that is off its centre or of
@@ -7090,7 +7093,7 @@ fh watch    # deploy on every change
   checked (one a call, every 2 s): our entities in its area, else in its owner's active claims (robots, characters,
   vehicles left out); what it needs (names with counts) reaching the count on its owner's planet; shipment lines of
   platforms its title names; its board edits and notes. Any of them: progress. None: unchanged; across 2 checks:
-  stalled, unless its owner is in a sleep, wait step or wait_until or has a queue running (waiting). Each check puts
+  stalled, unless its owner waits on something (wait_until, a sleep with a game condition, a queue running: waiting) or rests (a quota or pace rest: resting; d22 batch122 CE2); a sleep or wait_ticks on no condition counts toward stalled. Each check puts
   one line in the owner's reply (team.alerts): progress seen, its next action or blocker as last written (the owner's
   last note, a project's next step), or that none is written. Nothing reassigns. `board_progress {owner?, id?}`: the
   checks per item, stalled first, the age of the last board change, the owner's repeated failures (selfview) and
@@ -12417,6 +12420,72 @@ sources on their networks (an arithmetic combinator's +10000, two readers on one
   segment ends; `double_counts` compares segments.
 - Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
   `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.
+
+## d22 batch122 CE1 (eng/d20-batch122): a reply closes only what it answers, for teammates too
+
+Viewer Aurora (08:48): "can an unrelated reply to someone clear their other unanswered requests?" It could, for
+teammates. batch57 S1 had held a viewer's lines to closing by name only while one was open, but for a teammate:
+- a say or team tell naming the sender closed every open request of theirs, with or without `reply_to`;
+- any tell to them closed all of theirs, including a tell with `reply_to` to one of them.
+
+Case (tests/d22_batch122.lua, through the runtime): Sol asked Muse two things; Muse's `say {reply_to: <the second>,
+text: "@sol yes, sending 50 plates now."}` closed both.
+
+Now (owed.lua, board.lua, tells.lua), the same rule for viewers and teammates:
+- `reply_to` on a say or tell closes exactly the lines it names.
+- Without it, a say or team tell naming the sender, or a tell to them, closes their line only while it is their one
+  open line to you.
+- A say's or tell's `left_open` names the senders it left several open lines of: "sol has 2 open requests to you
+  (#11, #12): a say or tell naming them closes none; reply_to closes the one it names".
+- The unanswered line for a teammate reads "reply_to: 11 answers it (a say or tell naming sol, or a tell to them,
+  does while it is their only open request)".
+
+## d22 batch122 CE2: board progress tells repeated sleeps from waits and rests (viewer Aurora site:4485)
+
+Before, a board item's 10-minute check (progress.lua) read "waiting (sleep)" whenever its owner was in an fh sleep,
+and the unchanged count stood still: an agent sleeping in repeated 300 s sleeps with no progress kept its items
+"waiting" for ever, never stalled. A quota rest (rests.lua) read "stalled". A board_focus on a task (no step) never
+flagged. Now the runtime gives the owner's wait a kind:
+- a wait on something (wait_until, a sleep with a game condition, a running queue or its wait step): "waiting
+  (wait_until)", "waiting (sleep until item_count)"; the count holds;
+- a rest: "resting until 15:59 (quota)"; the count holds;
+- a sleep with no game condition, or a direct wait_ticks: the count goes on, said beside it: "stalled: unchanged across
+  2 checks (its owner in a sleep on no game condition at this check; at 1 of these 2)".
+A focus on the item alone counts its unchanged checks by the same rule: "the focused item shows no progress across 2
+checks". board_critical's agents line gives the same wait text. The idle nudge (tools/idle_nudge.py) and supervise.sh
+were checked with the same cases: repeated sleeps, wait_until and wait_ticks are nudged with the wait named ("sleeping 5
+min", "in wait_until"), a rest in resting.json is skipped ("out of quota until Sat 09:25"); unchanged.
+
+## d22 batch122 CE2: nutrient accounting, fuel, spoiling, time windows and stock scope (viewer Aurora 10:13)
+
+Measured on a private 2.0.77 copy of world n's 10:26 save:
+- spoiling counts on neither side of the production statistics: 100 nutrients spoiled in a chest read used 0, and
+  spoilage made 0;
+- fuel counts as used when a burner takes it from its fuel slot (a biochamber's 5 nutrients: used 5);
+- a productivity bonus's extra products count as made, ingredients only for the crafts run; a returned catalyst
+  (pentapod-egg: 1 in, 2 out) counts on neither side, so an egg craft at +50% reads 1.5 made;
+- the ten-minute flow read (count) matched the running totals' difference over the same 10 minutes within 0.2%
+  (40,509 against 40,585 made over 36,045 ticks);
+- Gleba, 10 game minutes: nutrients made 40,585 and used 34,943 (egg recipes 2,992 a minute, biochambers' fuel about
+  500 a minute); every place held 3,758 then 3,704, so 5,696 (569 a minute) spoiled. That is the positive balance.
+
+Before: supply, stock, freight_audit, fuel_budget and dependency gave made above used with no word of spoiling;
+supply's `where` left out fuel slots (195 of Gleba's 3,792) and the ground; stock counts networks, chests, pads, silos
+and labs (2,687); dependency read nutrients "sustained" and took the egg crafts as 74.6 a minute (made / 2), 99.7
+measured.
+
+Now (spoilflow.lua):
+- supply `flow` of an item that spoils says what the statistics leave out; a read of the whole surface keeps its count,
+  and the next one 1-60 min later gives `uncounted`: "over the last 5 min (whole-surface counts at tick T and now): made
+  20120, used 17445; held 3758 then, 3770 now; 2663 left uncounted (532.6 a minute): spoiled, or carried off the
+  surface". `where` adds fuel slots (machines, heating towers, boilers, burner drills, vehicles) and, read whole, the
+  stacks on the ground as the ground watch last binned them.
+- stock {item, surface}, freight_audit, fuel_budget: the made/used line of an item that spoils adds the note, and the
+  last measure (at most 30 min old) a minute.
+- dependency: an ingredient that spoils is short or not sustained by made - used - what left uncounted a minute, when
+  supply measured it; otherwise the last line names it as not counted. The crafts run: made over what the statistics
+  count a craft (products past a returned catalyst, with the makers' average productivity bonus from the census).
+Regression: tests/d22_batch122b.lua.
 - cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
   tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
   - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
@@ -12531,3 +12600,36 @@ Sat 16:00 (rests.lua; batch108), and Astra arranged at 20:06 for Sonnet to cover
   and game_alerts now say so; choosing someone else there would pick for the agents.
 - On the copy (copy of the 21:24 save, paused): status by astra takes 11.1-11.4 ms on the branch against 11.2-12.0 on
   main, warm. game_alerts on Gleba (18.3 KB) takes 12.7 ms.
+## d22 batch122: place_ghosts over one of its fast-replace group (Astra #2064, 14:32)
+
+Astra's dry run of a fast-splitter at (23,-38.5) on Asterion read `6 placeable (of 6)` over the fast belt at
+(23.5,-38.5); the call refused it with a bare `placement blocked`, and placed it after the belt was marked for
+deconstruction. Measured on a 2.0.77 copy of world n (its 14:31 save): `can_place_entity` with `manual_ghost` (forced
+or not) and `manual` takes the splitter there, and `blueprint_ghost` does not; `create_entity` of the ghost gives nil,
+with `fast_replace` or without. The same holds on a belt's centre for a turbo belt, a fast underground belt and a fast
+belt turned another way. A blueprint of the splitter placed no ghost in `normal` or `forced` mode; `superforced` marked
+the belt for deconstruction and placed it. With the belt marked for deconstruction `create_entity` placed the splitter
+ghost. A straight rail ghost crossing a built straight rail went in (rails are left to the game's check).
+
+Now `construction.ghost_replaces` lists ours of the entity's fast-replace group standing in its footprint and not marked
+for deconstruction, and `ghost_placeable` (the check the dry run and the call share) is false while any stands. The call
+refuses the entry with, and the dry run blocks it with:
+
+`placement blocked by fast-transport-belt (23.5,-38.5), of its fast-replace group (transport-belt): a player's ghost
+over it is a fast replace, which a script ghost is not; place_ghosts puts its ghost in over one marked for
+deconstruction (deconstruct it first)`
+
+On the entity's own centre and of its size, another of its type adds `; upgrade {position: {x: 23.5, y: -39.5}, to:
+"turbo-transport-belt"} changes the one standing there in place, keeping its wires and settings`, and the same entity
+turned adds `; rotate {position, direction} turns the one standing there`. An entry standing as asked is still skipped
+(`already`). A `normal` or `forced` paste's dry run reads it blocked too, adding `; a superforced paste marks it for
+deconstruction and places the ghost`; a `superforced` one reads `ok` and names the belt it marks. Regression:
+tests/dryrun.lua (the d20 batch122 block), failing on the old dryrun.lua and construction.lua.
+
+Astra #2066 (14:54), taken with it: `place_ghosts {check_inserters: true, dry_run: false}` refused with `dry_run must be
+true or false`. check_inserters runs the call's own dry run first and passed every argument on, `dry_run: false` among
+them, and the `dry_run` action took only true or nothing in its args. The check no longer passes the call's `dry_run`
+on, and the `dry_run` action takes its args' `dry_run` true, false or left out (anything else is still refused). On the
+copy, Astra's belt and filtered inserter with `check_inserters` and `dry_run: false` placed 2 with the inserter's row ok;
+`dry_run: true` checked them and placed nothing. Regression: mod/tests/runtime_test.lua (the check_inserters block),
+failing on the old runtime.lua with Astra's error.

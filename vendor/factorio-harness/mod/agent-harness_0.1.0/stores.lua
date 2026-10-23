@@ -159,7 +159,7 @@ return function(api)
     return {rows=rows, lines=lines, research_units=ru > 0 and math.floor(ru * 100 + 0.5) / 100 or nil,
       made_per_min=per_min('input'), used_per_min=per_min('output'), tick=game.tick,
       spoil_read=spoils and string.format('the largest %d of %d places read for spoil', math.min(read, M.CENSUS_PLACES), #list) or nil,
-      note='made and used a minute: the production statistics over the last 10 minutes (used: what labs, machines and launches consumed)'}
+      note='made and used a minute: the production statistics over the last 10 minutes (used: what labs, machines and launches consumed, and fuel burned; spoiling counts in neither)'}
   end
   function M.where_is(p, a)
     local item = a.item

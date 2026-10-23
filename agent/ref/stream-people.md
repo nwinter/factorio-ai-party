@@ -21,9 +21,9 @@
   Example: `./fh chronicle "The first rocket left Nauvis at 41h." --title "First launch"`
 - `chat_ack {seq}`: closes unanswered mentions (`seq`: one, an array, or "all"; `{all: true}` too). A viewer's @mention, a teammate's
   @mention, and a mention or tell that asks stay open until you answer (a say or tell naming them, a tell to the asker,
-  or `reply_to: SEQ` on say or tell) or ack them; reading chat does not close them. A viewer's line closes by name only
-  while it is that viewer's one open line to you; `reply_to` closes only the line it names, and a say's `left_open`
-  lists a named viewer's open lines it closed none of. Every reply's `unanswered` gives
+  or `reply_to: SEQ` on say or tell) or ack them; reading chat does not close them. By name or by a tell to them, a
+  sender's line closes only while it is their one open line to you, viewer or teammate; `reply_to` closes only the
+  lines it names, and a say's or tell's `left_open` lists a named sender's open lines it closed none of. Every reply's `unanswered` gives
   the oldest; one reminder wakes you when one is 10 minutes old. It also marks those tells read (`read`: how many), which
   ends their `unread` lines in the team block.
 - `./fh operator "..."`: a request to the operator, the people running the harness and the stream: a tool that fails

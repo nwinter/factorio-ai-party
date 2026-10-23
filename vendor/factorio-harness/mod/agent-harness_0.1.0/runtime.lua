@@ -13221,6 +13221,9 @@ M.dryrun=require('dryrun'){railsignal=function() return M.railsignal end,rolling
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
+  ghost_replaces=function(p,proto,pos,direction) return construction.ghost_replaces(p.surface,p.force,proto,pos,direction) end,
+  ghost_replaces_text=function(...) return construction.ghost_replaces_text(...) end,
+  same_standing=function(p,spec) return M.same_standing(p,spec) end,
   crafting_count=function(p,item) return crafting_count(p,item) end,
   rail_box=function(name,pos,dir) return M.rails and M.rails.box(name,pos,dir) end,
   rail_overlaps=function(shape,l,t,r,b) return M.rails.overlaps(shape,l,t,r,b) end,
@@ -14207,7 +14210,9 @@ M.modules=require('modules'){out_of_reach=function(p,e) return M.out_of_reach(p,
 M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w) end,remote_entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
 function handlers.deliver(p,a) return M.deliver.handler(p,a) end
 -- An item and its recipe's ingredients joined: rates, stock, freight on the way, rocket loads (dependency.lua; #818).
-M.dependency=require('dependency'){total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
+-- (d20 batch122 CE2, viewer Aurora 10:13) what the production statistics leave out for an item that spoils (spoilflow.lua)
+M.spoilflow=require('spoilflow'){state=state,secs=function(t) return M.spoil.secs(t) end}
+M.dependency=require('dependency'){spoilflow=M.spoilflow,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
   in_flight=function(force,to) return M.pods and M.pods.in_flight(force,to) end,pads=function(planet,force) return M.freight.pads(planet,force) end}
 function handlers.dependency(p,a) return M.dependency.read(p,a) end
 -- Gleba farming reads and burner fuel (farm.lua).
@@ -14394,6 +14399,12 @@ local function place_ghost(p,spec)
     sig=M.railsignal.resolve(p.surface,p.force,spec.name,pos,direction,M.railsignal.layer_arg(spec.rail_layer),true)
     direction=sig.direction
   elseif spec.rail_layer~=nil then error('rail_layer goes with rail signals and chain signals',0) end
+  -- (d20 batch122, Astra #2064) ours of its fast-replace group standing there: the game's ghost check takes a player's
+  -- ghost over it (a fast replace), create_entity does not; named, with what changes it in place
+  if not sig then
+    local rep=construction.ghost_replaces(p.surface,p.force,proto,pos,direction)
+    if #rep>0 then error('placement blocked'..construction.ghost_replaces_text(proto,pos,direction,rep),0) end
+  end
   if not sig and not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
     -- (d22 batch95 BE1, Astra #1892: a decider on Aquilo's rough ice) tiles a forced placement does not lay (concrete;
     -- ice platform then concrete): tile entries before it lay their ghosts first, and the game takes its ghost over them
@@ -15771,7 +15782,8 @@ function handlers.dry_run(p,a)
   local action,args=a.action,a.args
   assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place, build, rail_route or belt_route) and args (that call\'s arguments)')
   assert(type(args)=='table','args must be the call\'s arguments')
-  assert(args.dry_run==nil or args.dry_run==true,'dry_run must be true or false')
+  -- (d20 batch122, Astra #2066) a call's own dry_run in its args: true, false or left out alike here (this is the dry run)
+  assert(args.dry_run==nil or type(args.dry_run)=='boolean','dry_run must be true or false')
   local inner={}
   for k,v in pairs(args) do if k~='dry_run' then inner[k]=v end end
   -- details (every entry with its footprint) is the paste's own argument; the others take it here.
@@ -16155,8 +16167,10 @@ do
   -- any inserter with a problem refuses the whole call before anything is placed, with every inserter's row; all
   -- good, the call runs and the reply carries the rows (inserter_check).
   function M.inserter_check(p,action,a)
+    -- (d20 batch122, Astra #2066: check_inserters with dry_run: false refused "dry_run must be true or false") the
+    -- call's dry_run is not passed on: this is its dry run
     local args={}
-    for k,v in pairs(a) do if k~='check_inserters' then args[k]=v end end
+    for k,v in pairs(a) do if k~='check_inserters' and k~='dry_run' then args[k]=v end end
     local dry_out=handlers.dry_run(p,{action=action,args=args})
     local entries=action=='build' and (a.builds or {a}) or a.entities or {}
     local unpowered={}
@@ -16518,6 +16532,7 @@ M.rests=require('rests'){state=state,resolve=M.board.resolve,
   end}
 M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
+  owed_left=function(index,names,text) if text then return M.owed.held(index,text) end return M.owed.held_for(index,names) end,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
   deaf=function(index,from)
@@ -17936,7 +17951,7 @@ M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
+M.supply=require('supply'){feeders_held=function(e,item,b) return M.feeders and M.feeders.held(e,item,b) end,elsewhere=function(...) return M.elsewhere.line(...) end,makers_all=function(p,item,surface,a) return M.makersall.read(p,item,surface,a) end,timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,census_crafters=function(f,s) if M.census then return M.census.crafters(f,s) end end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,spoilflow=M.spoilflow,ground_index=function(f,s,item) return M.ground and M.ground.on_ground_index(f,s,item) end,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact: lines only (supply.lua M.compact).
 function M.compact_supply(out) return M.supply.compact(out) end
@@ -18191,13 +18206,13 @@ M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.c
 M.feeders=require('feeders'){condition_parts=function(e) return M.circuits.condition_parts(e,M.circuits.read(e)) end,trace=function(e) return M.circuits.trace_from(e) end,
   hand_wait=function(e) return M.details.hand_wait(e) end}
 M.fuelreactor=require('fuelreactor'){status_name=function(e) return M.machine_status(e) end,feeders=M.feeders}
-M.fuelbudget=require('fuelbudget'){reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
+M.fuelbudget=require('fuelbudget'){spoilflow=M.spoilflow,reactors=M.fuelreactor,fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
   belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
 M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
-M.packaudit=require('packaudit'){census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
+M.packaudit=require('packaudit'){spoilflow=M.spoilflow,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
   where=function(pl) return M.freight.where(pl) end,rocket_room=function(silo,item) return space.rocket_room(silo,item) end}
 function handlers.freight_audit(p,a) return M.packaudit.read(p,a) end
 -- The factory's shortages in one read (shortages.lua; Opus 13:51).
@@ -18652,12 +18667,25 @@ M.progress=require('progress'){state=state,items=function() return M.board.items
   shipment_seq=function() return state().shipment and state().shipment.seq or 0 end,
   repeated=function(index,since) return M.selfview.repeated(index,since) end,
   counted=function(index,minutes) return M.idle.counted(index,minutes) end,
-  waiting=function(index)
+  -- (d22 batch122 CE2, viewer Aurora site:4485: "Keep genuine waits and quota rests distinct") the owner's wait as text
+  -- and its kind: rest (a quota or pace rest, rests.lua), wait (on something: wait_until, a sleep with a game condition,
+  -- a running queue or its wait step) or sleep (an fh sleep with no game condition, a direct wait_ticks: on nothing)
+  waiting=function(index,name)
     local s=state()
+    local rest=name and M.rests and M.rests.get(name)
+    if rest then return M.rests.label(rest),'rest' end
+    local act=s.active and s.active[index]
+    if act and act.kind=='wait_ticks' then return 'wait_ticks, a timed wait on no condition','sleep' end
     local w=M.idle.waiting(s,index)
-    if w then return w end
+    if w=='sleep' then
+      local sl=s.sleeps and s.sleeps[index]
+      local c=sl and sl.conditions and sl.conditions[1]
+      if c then return 'sleep until '..tostring(c['until'] or 'its condition')..(#sl.conditions>1 and ' (and more)' or ''),'wait' end
+      return 'sleep on no game condition','sleep'
+    end
+    if w then return w,'wait' end
     local q=s.queues and s.queues[index]
-    if q and not q.paused and q.current then return 'queue running: '..tostring(q.current.action) end
+    if q and not q.paused and q.current then return 'queue running: '..tostring(q.current.action),'wait' end
   end,
   standing=function(index) local t=state().stand and state().stand[index]; return t and game.tick-t or nil end}
 function handlers.board_progress(p,a) return M.progress.read(p,a) end
