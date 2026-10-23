@@ -639,10 +639,12 @@
       if (k >= 0.5) files.forEach(function (f) { (f.stops || []).forEach(function (r) { if (Array.isArray(r) && num(r[0]) && num(r[1])) lab(r[0], r[1], plainLabel(r[2]), 'stop'); }); });
       if (k >= 6) files.forEach(function (f) { (f.recipes || []).forEach(function (r) { if (Array.isArray(r) && num(r[0]) && num(r[1])) lab(r[0], r[1], String(r[2] || '').replace(/-/g, ' '), 'recipe'); }); });
     }
-    sc.terrain = on.terrain && !charted ? d.terrain.filter(function (t) {
+    // (cp7) the coarse layers stay under the chart: a cell's unread chunks are transparent, so they show there and
+    // wherever no cell is published (viewer Aurora 21:36: six cells hid Nauvis's terrain and buildings elsewhere)
+    sc.terrain = on.terrain ? d.terrain.filter(function (t) {
       return t.x1 > v.cx - hw && t.x0 < v.cx + hw && t.y1 > v.cy - hh && t.y0 < v.cy + hh;
     }).map(function (t) { return { src: t.src, x: px(t.x0), y: py(t.y0), w: (t.x1 - t.x0) * k, h: (t.y1 - t.y0) * k, tick: t.tick, t: t.t }; }) : [];
-    sc.ground = on.terrain && d.ground && !charted ? place(d.ground) : null;
+    sc.ground = on.terrain && d.ground ? place(d.ground) : null;
     if (sc.ground) { sc.ground.pal = d.groundPal || GROUND; sc.ground.gw = d.ground.w; sc.ground.gh = d.ground.h; }
     // (AK9) on the live map (data.now; not the run pages' time-lapse), each frame OLD_TERRAIN_S or more old and not
     // under a newer frame: "terrain from 2 h ago" at its top-left corner (kept inside the map)
@@ -654,7 +656,7 @@
       .reverse().filter(function (l, i, all) {  // the newest first; none within 60 px of one kept
         return !all.slice(0, i).some(function (m) { return m.kept && Math.abs(m.x - l.x) < 60 && Math.abs(m.y - l.y) < 60; }) && (l.kept = true);
       });
-    sc.ore = on.ore && d.ore && !charted ? place(d.ore) : null;
+    sc.ore = on.ore && d.ore ? place(d.ore) : null;
     // the cloud: each chunk in view in the pollutant's map colour, stronger where there is more (as the overlay draws it)
     sc.cloud = null;
     if (on.cloud && d.cloud) {
@@ -672,7 +674,7 @@
         sc.hits.push({ x: m.x, y: m.y, r: 8, text: 'Enemy nest the ' + (d.cloud.pollutant === 'spores' ? 'spores' : 'pollution') + ' reached' });
       });
     }
-    if (on.buildings && d.base && !charted) {
+    if (on.buildings && d.base) {
       sc.base = place(d.base);
       if (d.fine) { sc.core = place(d.fine); sc.clip = { x0: px(d.box.x0), y0: py(d.box.y0), x1: px(d.box.x1), y1: py(d.box.y1) }; }
     }
@@ -831,17 +833,23 @@
     ctx.restore();
   }
   function circle(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+  function paintBase(ctx, sc, W, H) {
+    if (!sc.base) return;
+    if (sc.core) {
+      // the coarse grid only outside the fine core, so the two never draw over each other
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H);
+      ctx.rect(sc.clip.x1, sc.clip.y0, sc.clip.x0 - sc.clip.x1, sc.clip.y1 - sc.clip.y0);
+      ctx.clip('evenodd'); fillRuns(ctx, sc.base, BASE); ctx.restore();
+      fillRuns(ctx, sc.core, BASE);
+    } else fillRuns(ctx, sc.base, BASE);
+  }
+
   function paint(ctx, sc, images, font, offscreen) {
     var W = sc.W, H = sc.H;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
     // (AK9) the ground read from the game first, the frames over it (where a frame has no charted ground it is
     // transparent and the ground shows), then one dimming pass over both
     if (sc.ground) fillRuns(ctx, sc.ground, sc.ground.pal || GROUND, 1);
-    (sc.chart || []).forEach(function (c) {
-      var img = images && images(c.src);
-      if (img) { ctx.imageSmoothingEnabled = !!sc.smooth; ctx.drawImage(img, c.x, c.y, c.s, c.s); }
-    });
-    ctx.imageSmoothingEnabled = true;
     var shown = sc.terrain.filter(function (t) {
       var img = images && images(t.src);
       if (img) { ctx.imageSmoothingEnabled = t.w < img.width; ctx.drawImage(img, t.x, t.y, t.w, t.h); }
@@ -860,6 +868,17 @@
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = TERRAIN_DIM; ctx.fillStyle = C.bg; ctx.fill();
       ctx.restore();
     }
+    // (cp7) with the chart: ore and the coarse buildings under its cells, which cover them where their chunks are read
+    var chartOn = !!(sc.chart && sc.chart.length);
+    if (chartOn) {
+      if (sc.ore) fillRuns(ctx, sc.ore, ORE, 0.38);
+      paintBase(ctx, sc, W, H);
+      sc.chart.forEach(function (c) {
+        var img = images && images(c.src);
+        if (img) { ctx.imageSmoothingEnabled = !!sc.smooth; ctx.drawImage(img, c.x, c.y, c.s, c.s); }
+      });
+      ctx.imageSmoothingEnabled = true;
+    }
     // (AK9) an old frame's age at its corner
     (sc.terrainAges || []).forEach(function (l) {
       ctx.font = '600 10px ' + font; ctx.textAlign = 'left'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 0, 0, .75)';
@@ -869,7 +888,7 @@
     sc.grid.xs.forEach(function (x) { ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, H); });
     sc.grid.ys.forEach(function (y) { ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); });
     ctx.globalAlpha = sc.terrain.length ? 0.45 : 1; ctx.stroke(); ctx.globalAlpha = 1;
-    if (sc.ore) fillRuns(ctx, sc.ore, ORE, 0.38);
+    if (sc.ore && !chartOn) fillRuns(ctx, sc.ore, ORE, 0.38);
     if (sc.cloud) {
       // (BG3) over the chart the cloud is lighter, so the buildings under it still read
       var thin = sc.chart && sc.chart.length ? 0.4 : 1;
@@ -879,15 +898,7 @@
         ctx.strokeStyle = '#ff5a44'; ctx.lineWidth = 1.8; circle(ctx, n.x, n.y, 6); ctx.stroke();
       });
     }
-    if (sc.base) {
-      if (sc.core) {
-        // the coarse grid only outside the fine core, so the two never draw over each other
-        ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H);
-        ctx.rect(sc.clip.x1, sc.clip.y0, sc.clip.x0 - sc.clip.x1, sc.clip.y1 - sc.clip.y0);
-        ctx.clip('evenodd'); fillRuns(ctx, sc.base, BASE); ctx.restore();
-        fillRuns(ctx, sc.core, BASE);
-      } else fillRuns(ctx, sc.base, BASE);
-    }
+    if (!chartOn) paintBase(ctx, sc, W, H);
     if (sc.coverage.length) {
       // drawn opaque on its own canvas, then laid over at a low alpha, so overlaps do not darken
       var off = offscreen && offscreen(W, H);

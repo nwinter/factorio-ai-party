@@ -137,11 +137,18 @@ logged.clear()
 old = NOW - 3600
 f3.ingest([dict(line(2754, "Aurora", "@Sol check the hull", old), backlog=True),
            dict(line(2760, "Foobator", "operator: something", old), backlog=True),
-           dict(line(2770, "Enginerd", "@Opus more chests", old), backlog=True)], [], now=NOW)
+           dict(line(2770, "Enginerd", "@Opus more chests", old), backlog=True),
+           dict(line(2771, "Enginerd", "@Opus older chests", NOW - 40 * 3600), backlog=True)], [], now=NOW)
 d = {r["id"]: r for r in f3.lane()[1]["delivery"]}
 check("restart backlog: a line in the relayed file reads relayed", d.get("site:2754", {}).get("status") == "relayed", d.get("site:2754"))
 check("restart backlog: a line the log refused keeps its verdict", d.get("site:2760", {}).get("status") == "not_relayed" and d["site:2760"]["why"] == "clef:injection", d.get("site:2760"))
-check("restart backlog: a line with no record has no status, and nothing is logged", "site:2770" not in d and not logged, (d.get("site:2770"), logged))
+# (d22 batch114) since d20 batch65 AA5 a line in no record, inside the 36 h the preloaded logs cover, was never read by
+# any service: expired, said why. This check passed only while the wall clock was 36 h past NOW (backlog_status read
+# time.time(), not the read's now); a line older than that has no status, as before.
+check("restart backlog: a line with no record within 36 h expired as never read, and nothing is logged",
+      d.get("site:2770", {}).get("status") == "expired" and d["site:2770"]["why"].startswith("the stream service was not running")
+      and not logged, (d.get("site:2770"), logged))
+check("restart backlog: a line with no record older than 36 h has no status", "site:2771" not in d, d.get("site:2771"))
 print()
 print("all passed" if failures == 0 else f"{failures} failed")
 sys.exit(1 if failures else 0)

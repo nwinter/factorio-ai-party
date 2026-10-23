@@ -17,6 +17,9 @@ return function(api)
   -- ROT_SOON ticks, and the one whose fuel spoils first (its stack's spoil_tick).
   local ROT_SOON=3600
   local SPOILS={}
+  -- (d22 batch110 BT1: a closure a stack was garbage each survey) the reads first_spoil protects, as pcall(f, stack)
+  local function spoil_ticks_of(st) return st.prototype.get_spoil_ticks() end
+  local function spoil_tick_of(st) return st.spoil_tick end
   local function first_spoil(inv)
     local best,item
     for i=1,#inv do
@@ -24,11 +27,11 @@ return function(api)
       if st.valid_for_read then
         local name=st.name
         if SPOILS[name]==nil then
-          local ok,t=pcall(function() return st.prototype.get_spoil_ticks() end)
+          local ok,t=pcall(spoil_ticks_of,st)
           SPOILS[name]=ok and type(t)=='number' and t>0 or false
         end
         if SPOILS[name] then
-          local ok,tick=pcall(function() return st.spoil_tick end)
+          local ok,tick=pcall(spoil_tick_of,st)
           if ok and type(tick)=='number' and tick>0 and (not best or tick<best) then best,item=tick,name end
         end
       end
@@ -203,16 +206,27 @@ return function(api)
     return string.format(', +%d more (status {list: "%s"} lists all %d)',total-shown,kind,total)
   end
   local function first(t,n) local o={} for i=1,math.min(#t,n) do o[i]=t[i] end return o end
-  local function at(e) return string.format('(%s,%s)',e.position.x,e.position.y) end
+  local function at_pos(p) return string.format('(%s,%s)',p.x,p.y) end
+  local function at(e) return at_pos(e.position) end
+  -- (BT1) the find ahead of a belt end: one filter table, its position and force set for each find (the engine reads
+  -- it during the call and keeps nothing).
+  local AHEAD_POS={x=0,y=0}
+  local AHEAD={position=AHEAD_POS,radius=0.3,type=BELT_TYPES,limit=1}
   -- One underground or transport belt into the belt tally b.
-  local function belt_one(b,surface,force,e,kind)
+  -- p: its position when the caller has it (the band's read; a belt does not move).
+  local function belt_one(b,surface,force,e,kind,p)
     if e.valid==false then return end  -- gone since the job's find (a slice a tick)
     if kind=='underground-belt' then
-      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at(e) end
+      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at_pos(p or e.position) end
     elseif #e.belt_neighbours.outputs==0 then
       local s=STEP[e.direction]
-      local ahead=s and surface.find_entities_filtered{position={x=e.position.x+s[1],y=e.position.y+s[2]},radius=0.3,type=BELT_TYPES,force=force,limit=1}[1]
-      if ahead then b.stuck[#b.stuck+1]=at(e)..' into '..ahead.name else b.ends[#b.ends+1]=at(e) end
+      p=p or e.position
+      local ahead
+      if s then
+        AHEAD_POS.x,AHEAD_POS.y=p.x+s[1],p.y+s[2]; AHEAD.force=force
+        ahead=surface.find_entities_filtered(AHEAD)[1]
+      end
+      if ahead then b.stuck[#b.stuck+1]=at_pos(p)..' into '..ahead.name else b.ends[#b.ends+1]=at_pos(p) end
     end
   end
   local function belts_done(b,warnings,detail)
@@ -234,101 +248,145 @@ return function(api)
     return {machines={},order={},fuel={},fuel_order={},labs=0,missing={},lab_count=0,powered=0,starved=0,unpowered=0,unconnected=0,
       turrets={},turret_order={},flamers={},flamer_order={}}
   end
-  local function acc_entity(a,e,tech)
+  -- The engine's status names by id, as runtime.lua's entity_status_names (built on first use).
+  local STATUS_NAMES
+  local function status_names()
+    if not STATUS_NAMES then
+      STATUS_NAMES={}
+      for name,value in pairs(defines.entity_status or {}) do STATUS_NAMES[value]=name end
+    end
+    return STATUS_NAMES
+  end
+  -- (BT1) what the last-fuel line reads, as pcall(f, e): no closure a burner
+  local function max_usage(e) return e.prototype.get_max_energy_usage(e.quality) end
+  local function base_usage(e) return e.prototype.energy_usage or 0 end
+  -- What runtime.lua machine_status (api.status_name) reads for a burner burnt.stuck finds stopped (burnt.lua M.UNUSABLE,
+  -- M.STATE).
+  local STUCK_UNUSABLE,STUCK_STATE='fuel_unusable','burnt_result_full'
+  -- One entity into the accumulator. t: its type when the caller read it (the job's slice does).
+  -- (d22 batch110 BT1, survey.slice 33 KB a call on a copy of the live world) each read once: e.position (a new table
+  -- each read) when a line needs it, the burner and its inventory once, burnt.stuck once a burner (it was read twice:
+  -- for the status name and the fuel part), the status name only for the machine counts (the one place it is used).
+  -- The status name is what api.status_name (runtime.lua machine_status) gives, without its reads: a machine with no
+  -- burner reads its engine status name (burnt.stuck finds nothing without a burner; it made two closures to find
+  -- that), a burner one burnt.stuck's state when it is stopped, else its engine status name.
+  -- p: its position when the caller has it (the band's read: none of the survey's types moves).
+  local function acc_entity(a,e,tech,t,p)
     local machines,order,fuel,fuel_order,missing=a.machines,a.order,a.fuel,a.fuel_order,a.missing
     local turrets,turret_order,flamers,flamer_order=a.turrets,a.turret_order,a.flamers,a.flamer_order
     local status_ids=defines.entity_status
-      if e.valid then
-        local status=api.status_name(e) or 'unknown'
-        if MACHINE_TYPES[e.type] then
-          local m=machines[e.name]
-          if not m then m={type=e.type,total=0,counts={},positions={}}; machines[e.name]=m; order[#order+1]=e.name end
+      if t or e.valid then
+        t=t or e.type
+        local name,estatus,burner,pos=e.name,e.status,e.burner,p
+        local binv=burner and burner.inventory
+        -- Stopped by a full burnt-result slot (burnt.lua), whatever the status reads: read once for the fuel part and
+        -- the status name.
+        local stuck=binv and api.burnt_stuck and api.burnt_stuck(e)
+        if MACHINE_TYPES[t] then
+          local status
+          if not burner then status=status_names()[estatus]
+          elseif binv and api.burnt_stuck then status=stuck and (stuck.unusable and STUCK_UNUSABLE or STUCK_STATE) or status_names()[estatus]
+          else status=api.status_name(e) end
+          status=status or 'unknown'
+          local m=machines[name]
+          if not m then m={type=t,total=0,counts={},positions={}}; machines[name]=m; order[#order+1]=name end
           m.total=m.total+1; m.counts[status]=(m.counts[status] or 0)+1
           if status~='working' then
             local list=m.positions[status] or {}; m.positions[status]=list
-            if #list<16 then list[#list+1]={x=e.position.x,y=e.position.y} end
+            if #list<16 then pos=pos or e.position; list[#list+1]={x=pos.x,y=pos.y} end
           end
         end
-        local burner=e.burner
-        if burner and burner.inventory then
-          local f=fuel[e.name]
-          if not f then f={type=e.type,total=0,empty=0,low=0}; fuel[e.name]=f; fuel_order[#fuel_order+1]=e.name end
+        if binv then
+          local f=fuel[name]
+          if not f then f={type=t,total=0,empty=0,low=0}; fuel[name]=f; fuel_order[#fuel_order+1]=name end
           f.total=f.total+1
-          if e.status==status_ids.no_fuel then
+          if estatus==status_ids.no_fuel then
             f.empty=f.empty+1
             -- where (D1, Gemini 16:51 and 18:24: 'heating-tower 2/2 no_fuel' named no place)
             f.empty_at=f.empty_at or {}
-            if #f.empty_at<LIST_MAX then f.empty_at[#f.empty_at+1]=string.format('(%g,%g)',e.position.x,e.position.y) end
-          elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then
+            if #f.empty_at<LIST_MAX then pos=pos or e.position; f.empty_at[#f.empty_at+1]=string.format('(%g,%g)',pos.x,pos.y) end
+          elseif binv.is_empty() and (burner.remaining_burning_fuel or 0)>0 then
             f.low=f.low+1
             -- Each burner on its last fuel, where and about how long it burns on (Luna 04:51: two biochambers low, one
             -- named): at its full draw, the time the fuel left in it lasts.
             f.last=f.last or {}
             if #f.last<LIST_MAX then
               local usage=0
-              pcall(function() usage=e.prototype.get_max_energy_usage(e.quality) end)
-              if usage<=0 then pcall(function() usage=e.prototype.energy_usage or 0 end) end
+              local ok,u=pcall(max_usage,e)
+              if ok then usage=u end
+              if usage<=0 then ok,u=pcall(base_usage,e); if ok then usage=u end end
               local s=usage>0 and burner.remaining_burning_fuel/usage/60 or nil
-              f.last[#f.last+1]=string.format('(%g,%g)%s',e.position.x,e.position.y,s and string.format(' %ds left',math.floor(s+0.5)) or '')
+              pos=pos or e.position
+              f.last[#f.last+1]=string.format('(%g,%g)%s',pos.x,pos.y,s and string.format(' %ds left',math.floor(s+0.5)) or '')
             end
           end
-          -- Stopped by a full burnt-result slot (burnt.lua), whatever the status reads.
-          local stuck=api.burnt_stuck and api.burnt_stuck(e)
           if stuck then
             f.stuck=(f.stuck or 0)+1
-            f.stuck_at=f.stuck_at or {at=at(e),burnt=stuck.unusable and ('its fuel slot holds '..stuck.fuel..', which it does not burn') or stuck.burnt}
+            if not f.stuck_at then
+              pos=pos or e.position
+              f.stuck_at={at=at_pos(pos),burnt=stuck.unusable and ('its fuel slot holds '..stuck.fuel..', which it does not burn') or stuck.burnt}
+            end
           end
-          local tick,item=first_spoil(burner.inventory)
+          local tick,item=first_spoil(binv)
           if tick then
             if tick-game.tick<ROT_SOON then f.rot=(f.rot or 0)+1 end
-            if not f.first or tick<f.first.tick then f.first={tick=tick,item=item,at=at(e)} end
+            if not f.first or tick<f.first.tick then pos=pos or e.position; f.first={tick=tick,item=item,at=at_pos(pos)} end
           end
-        elseif e.electric_buffer_size and e.electric_buffer_size>0 and e.type~='boiler' then
-          a.powered=a.powered+1
-          -- each kind's first places by name (D1, Gemini: 'machines low_power' named none)
-          local kind
-          if e.status==status_ids.low_power then a.starved=a.starved+1; kind='low_power'
-          -- no_power without a network id: no pole reaches it.
-          elseif e.status==status_ids.no_power then
-            if e.electric_network_id then a.unpowered=a.unpowered+1; kind='no_power' else a.unconnected=a.unconnected+1; kind='unconnected' end
-          end
-          if kind then
-            a.power_at=a.power_at or {}
-            local list=a.power_at[kind] or {}; a.power_at[kind]=list
-            if #list<6 then list[#list+1]=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y) end
+        else
+          local buffer=e.electric_buffer_size
+          if buffer and buffer>0 and t~='boiler' then
+            a.powered=a.powered+1
+            -- each kind's first places by name (D1, Gemini: 'machines low_power' named none)
+            local kind
+            if estatus==status_ids.low_power then a.starved=a.starved+1; kind='low_power'
+            -- no_power without a network id: no pole reaches it.
+            elseif estatus==status_ids.no_power then
+              if e.electric_network_id then a.unpowered=a.unpowered+1; kind='no_power' else a.unconnected=a.unconnected+1; kind='unconnected' end
+            end
+            if kind then
+              a.power_at=a.power_at or {}
+              local list=a.power_at[kind] or {}; a.power_at[kind]=list
+              if #list<6 then pos=pos or e.position; list[#list+1]=string.format('%s (%g,%g)',name,pos.x,pos.y) end
+            end
           end
         end
-        if e.type=='ammo-turret' then
-          local t=turrets[e.name]
-          if not t then t={total=0,empty=0,low=0,empty_at={},low_at={}}; turrets[e.name]=t; turret_order[#turret_order+1]=e.name end
+        if t=='ammo-turret' then
+          local tt=turrets[name]
+          if not tt then tt={total=0,empty=0,low=0,empty_at={},low_at={}}; turrets[name]=tt; turret_order[#turret_order+1]=name end
           local inv=e.get_inventory(defines.inventory.turret_ammo)
           local n=inv and inv.get_item_count() or 0
-          t.total=t.total+1
-          -- Where to go: the first few empty and low turrets by position.
-          local at=string.format('(%g,%g)',e.position.x,e.position.y)
-          if n==0 then t.empty=t.empty+1; if #t.empty_at<LIST_MAX then t.empty_at[#t.empty_at+1]=at end
-          elseif n<LOW_AMMO then t.low=t.low+1; if #t.low_at<LIST_MAX then t.low_at[#t.low_at+1]=at end end
-        elseif e.type=='fluid-turret' then
+          tt.total=tt.total+1
+          -- Where to go: the first few empty and low turrets by position (the text made only for a turret listed).
+          if n==0 then
+            tt.empty=tt.empty+1
+            if #tt.empty_at<LIST_MAX then pos=pos or e.position; tt.empty_at[#tt.empty_at+1]=string.format('(%g,%g)',pos.x,pos.y) end
+          elseif n<LOW_AMMO then
+            tt.low=tt.low+1
+            if #tt.low_at<LIST_MAX then pos=pos or e.position; tt.low_at[#tt.low_at+1]=string.format('(%g,%g)',pos.x,pos.y) end
+          end
+        elseif t=='fluid-turret' then
           -- all it holds, its own buffer too (flameroil.lua; Astra, shift11 16:36: fluidbox[1] alone read all 12 dry)
           local ok,amount,cap,fluid=pcall(flameroil.read,e)
           if ok then
-            local t=flamers[e.name]
-            if not t then t={total=0,dry=0,low=0,dry_at={},low_at={},rows={}}; flamers[e.name]=t; flamer_order[#flamer_order+1]=e.name end
-            t.total=t.total+1
-            t.rows[#t.rows+1]={amount=amount,fluid=fluid,position=e.position}
-            local at=string.format('(%g,%g)',e.position.x,e.position.y)
-            if amount<1 then t.dry=t.dry+1; if #t.dry_at<6 then t.dry_at[#t.dry_at+1]=at end
+            local ft=flamers[name]
+            if not ft then ft={total=0,dry=0,low=0,dry_at={},low_at={},rows={}}; flamers[name]=ft; flamer_order[#flamer_order+1]=name end
+            ft.total=ft.total+1
+            pos=pos or e.position
+            ft.rows[#ft.rows+1]={amount=amount,fluid=fluid,position=pos}
+            local at=string.format('(%g,%g)',pos.x,pos.y)
+            if amount<1 then ft.dry=ft.dry+1; if #ft.dry_at<6 then ft.dry_at[#ft.dry_at+1]=at end
             elseif type(cap)=='number' and cap>0 and amount/cap<LOW_OIL then
-              t.low=t.low+1; if #t.low_at<6 then t.low_at[#t.low_at+1]=at..' '..math.floor(100*amount/cap+0.5)..'%' end
+              ft.low=ft.low+1; if #ft.low_at<6 then ft.low_at[#ft.low_at+1]=at..' '..math.floor(100*amount/cap+0.5)..'%' end
             end
           end
         end
-        if e.type=='lab' then
+        if t=='lab' then
           a.lab_count=a.lab_count+1
-          if tech and e.status==status_ids.missing_science_packs then
+          if tech and estatus==status_ids.missing_science_packs then
             local inv=e.get_inventory(defines.inventory.lab_input)
+            local count=inv and inv.get_item_count  -- (BT1: the method read once a lab, not once a pack)
             for _,ingredient in ipairs(tech.research_unit_ingredients) do
-              if inv and inv.get_item_count(ingredient.name)==0 then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
+              if count and count(ingredient.name)==0 then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
             end
             a.labs=a.labs+1
           end
@@ -487,6 +545,27 @@ return function(api)
     return fn(...)
   end
   local step_do
+  -- (d22 batch110 BT1, survey.tick 19.9 KB a tick on a copy of the live world) the job allocates little of its own: the
+  -- cache's keys go in one table kept between ticks, a step's profile label is a constant, the band's filter is one
+  -- table with its force set for the find (walk.band copies it), and the force and surface come from a cache of the
+  -- objects (game.forces[...] and game.get_surface make a new object each read), each checked valid before use.
+  local KEYS,KEYS_N={},0
+  local LABEL_DONE,LABEL_SLICE,LABEL_BAND='survey.done','survey.slice','survey.band'
+  local BAND_FILTER={type=WALK_TYPES}
+  local FORCES,SURFACES={},{}
+  local POS,POS_LIST={},{}
+  local function force_named(name)
+    local f=FORCES[name]
+    if f and f.valid then return f end
+    f=game.forces[name]; FORCES[name]=f
+    return f
+  end
+  local function surface_at(index)
+    local s=SURFACES[index]
+    if s and s.valid then return s end
+    s=game.get_surface(index); SURFACES[index]=s
+    return s
+  end
   function M.tick(tick)
     local st=api.state()
     st.survey_bg=true
@@ -494,10 +573,13 @@ return function(api)
     st.survey_cache=cache
     st.survey_jobs=st.survey_jobs or {}
     st.survey_read=st.survey_read or {}
-    local keys={}
-    for key in pairs(cache) do keys[#keys+1]=key end
+    local keys,n=KEYS,0
+    for key in pairs(cache) do n=n+1; keys[n]=key end
+    for i=n+1,KEYS_N do keys[i]=nil end
+    KEYS_N=n
     table.sort(keys)
-    for _,key in ipairs(keys) do
+    for i=1,n do
+      local key=keys[i]
       -- A step that fails ends its job (noted in survey_errors and on the survey, snapfail.lua); the survey keeps the tick
       -- it was taken at and the next job starts BG_TICKS after the failure.
       local ok,err=pcall(M.step,st,cache,key,tick)
@@ -523,13 +605,13 @@ return function(api)
       elseif job and walk.due(job,tick,BG_TICKS) then
         job.steps=job.steps+1
         -- (each kind of step its own profile part, survey.<kind>: operator 18:12, survey.tick 66 ms in one game second)
-        timed('survey.'..(job.done and 'done' or job.list and 'slice' or 'band'),step_do,st,cache,key,job)
+        timed(job.done and LABEL_DONE or job.list and LABEL_SLICE or LABEL_BAND,step_do,st,cache,key,job)
       end
     end
   end
   step_do=function(st,cache,key,job)
-    local force=game.forces[job.force]
-    local surface=force and game.get_surface(job.surface)
+    local force=force_named(job.force)
+    local surface=force and surface_at(job.surface)
     if not (force and surface) then st.survey_jobs[key]=nil
     elseif job.done then
       -- (a survey taken since the job started, a forced read, is newer: the job's is dropped)
@@ -544,17 +626,28 @@ return function(api)
     elseif not job.list then
       job.walk=job.walk or walk.start(surface)
       job.tech=job.tech or force.current_research
-      local list=walk.band(job.walk,surface,{force=force,type=WALK_TYPES})
+      BAND_FILTER.force,BAND_FILTER.area,BAND_FILTER.position=force,nil,nil  -- (only force and type, whatever a walk set)
+      -- The positions the band read, list[i]'s in pos[i] (walk.band's out_pos; a walk without it returns none): one
+      -- table a key kept between bands, used only for the list it was filled with (after a load the list is another
+      -- table, and the slice reads e.position as before).
+      local pos=POS[key] or {}
+      POS[key]=pos
+      local list,filled=walk.band(job.walk,surface,BAND_FILTER,pos)
+      POS_LIST[key]=filled==pos and list or nil
       if list then job.list,job.i=list,1 else job.done=true end
     else
-      local last=math.min(#job.list,job.i+SLICE-1)
+      local list,a,b,tech=job.list,job.a,job.b,job.tech
+      local pos=POS_LIST[key]==list and POS[key] or nil
+      local n=#list
+      local last=math.min(n,job.i+SLICE-1)
       for i=job.i,last do
-        local e=job.list[i]
+        local e=list[i]
         local t=e.valid and e.type
-        if t=='underground-belt' or t=='transport-belt' then belt_one(job.b,surface,force,e,t) elseif t then acc_entity(job.a,e,job.tech) end
+        local p=pos and pos[i]
+        if t=='underground-belt' or t=='transport-belt' then belt_one(b,surface,force,e,t,p) elseif t then acc_entity(a,e,tech,t,p) end
       end
       job.i=last+1
-      if job.i>#job.list then job.list,job.i=nil,nil end
+      if job.i>n then job.list,job.i=nil,nil; POS_LIST[key]=nil end
     end
   end
 

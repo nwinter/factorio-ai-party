@@ -90,6 +90,8 @@ planet_maps 13 KB).
                             "crafting": {"queue": [{"recipe": "inserter", "count": 5}], "items": 5, "progress": 0.46},
                             "building": {"kind": "construct", "done": 7, "total": 20}, "age_s": 3.2}}],
     "chat": [{"seq": 1, "tick": 144720, "from": "Muse", "agent": "muse", "text": "...", "t": 1791695551.8}],  // last 40
+    // label: an infinite technology by the level under way ("Mining productivity 15" for mining-productivity-3 with
+    // next 15; d23 batch119 CB1); a board research event for one of its levels by the level done
     "research": {"current": "engine", "label": "Engine", "progress": 0.54, "done_count": 8,
                  "recent": [{"name": "steel-processing", "label": "Steel processing", "t": null}],
                  // (d20 batch57 S4, viewer Foobator) each infinite technology researched at least once (or being
@@ -126,7 +128,7 @@ planet_maps 13 KB).
               "projects_total": 1,    // a project event row also has progress, steps_done, steps_total (verb step: step)
               // the jobs behind the counts (d15, viewer joonazan 08:19), from an active read of tasks and requests,
               // newest change first, 20 each; absent before such a read: open tasks/requests nobody owns, and those
-              // claimed or being done; each {id, title, kind, owner, agent, status, requested_by}
+              // claimed or being done; each {id, title, kind, owner, agent, status, requested_by, updated_tick}
               "open_items": [...], "open_items_total": 3, "doing_items": [...], "doing_items_total": 2,
               // the team plan (the harness's board_plan; the live page's Team plan; viewer Alex 22:12), null when it has
               // neither goals nor lines. Ticks are game ticks (60 a second): the page says "set N min ago" from the
@@ -258,18 +260,23 @@ rails as curves), with recipes and train stop names as text (no game icons or sp
 site/build.py publishes them with the site (tools/site-refresh.sh, hourly from tools/start-team.sh and at each shift
 change, so a cell is at most about an hour older than the stream's copy) under `/live/chart/`:
 `index.json` `{v, cell: 384, tick, surfaces: {name: {platform, cells: {"cx,cy": [version, oldest read tick, newest read
-tick, chunks, x0, y0, x1, y1]}}}}` (the last four: the box round our buildings in the cell, absent without any),
+tick, chunks, x0, y0, x1, y1]}, chunks: [stored, charted], complete}}}` (the last four: the box round our buildings in
+the cell, absent without any; `complete`: the surface's first pass is done, every charted chunk read and drawn, kept
+from then on),
 `SURFACE/CX_CY.png` (pixel (0,0) is tile (cx*384, cy*384)) and `SURFACE/CX_CY.labels.json` `{recipes: [[x, y, recipe]],
 stops: [[x, y, name]]}` (tiles). push_live reads the deployed index every 5 minutes and sends `chart {v, tick,
-surfaces, saved}`; the page fetches `index.json?v=` when `v` changes and each cell as `CX_CY.png?v=version`. With a
-published chart push_live leaves out what it replaces (`saved`: the bytes): on a charted Nauvis the basemap's `rows`,
+surfaces, complete, saved}`; the page fetches `index.json?v=` when `v` changes and each cell as `CX_CY.png?v=version`. Once a
+surface's published chart is `complete` (cp7, viewer Aurora 21:36: a first publish of six cells hid Nauvis's terrain
+and buildings elsewhere) push_live leaves out what it replaces (`saved`: the bytes): on a complete Nauvis the basemap's `rows`,
 `core`, `ore`, `terrain_grid` and `terrain` (it sends `core_box [x0, y0, x1, y1]`, the dense core's box, for the
-framing; nests, turrets and turret states stay), and a charted planet's `planet_map` and `planet_maps` entry (`planets`
+framing; nests, turrets and turret states stay), and a complete planet's `planet_map` and `planet_maps` entry (`planets`
 stays). On world n's state at 17:00 that is 18 KB with Nauvis, Vulcanus and a platform charted, 27 KB with every
-planet; the terrain grid (up to 96 KB) goes too once it is live.
+planet; the terrain grid (up to 96 KB) goes too once it is live. With every grid kept the state was 238.0 KB at
+21:45 (51 KB less with every planet complete).
 The map draws the chart as its base layer ("Chart", on by default, first in the Terrain group): each cell in view,
-nearest-neighbour from 1 px a tile up (smoothed when zoomed further out); where it is drawn the coarse grid, ore and
-terrain frames are not. Train stop names show from 0.5 px a tile and recipes from 6 px (a 3-tile machine is 18 px),
+nearest-neighbour from 1 px a tile up (smoothed when zoomed further out), over the coarse grid, ore, charted ground
+and terrain frames the state carries: a chunk not read yet is transparent in its cell, so they show there and where
+no cell is published. Train stop names show from 0.5 px a tile and recipes from 6 px (a 3-tile machine is 18 px),
 as text, rich text tags as words, each left out where it would overlap one shown before it (stops first). Hover on a
 cell says when its chunks were read ("Chart cell (0, -1), 144 chunks, read 3 to 41 min ago", from the state's tick);
 the legend and the scale line say the oldest and newest cell. Every surface in the index gets a switch: planets as

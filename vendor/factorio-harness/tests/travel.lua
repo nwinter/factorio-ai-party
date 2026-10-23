@@ -132,6 +132,9 @@ for _,ok in ipairs({{'tell',{to='sol',text='x'}},{'operator',{text='x'}},{'board
   {'wait_until',{['until']='item_count',item='coal',at_least=5,platform='alpha'}},
   {'wait_until',{['until']='researched'}},{'wait_until',{['until']='item_count',item='coal',at_least=5,positions={{x=0,y=0}}}},
   {'dry_run',{action='scan',args={}}}}) do bots.check_action(b.index,ok[1],ok[2]) end
+-- (d23 batch120 CC2, Sol #1986) chat_ack, and flight_watch reading, listing or clearing a watch; a new watch is refused.
+for _,ok in ipairs({{'chat_ack',{seq='all'}},{'flight_watch',{id=3}},{'flight_watch',{id=3,clear=true}},{'flight_watch',{}}}) do bots.check_action(b.index,ok[1],ok[2]) end
+fails(function() bots.check_action(b.index,'flight_watch',{platform='alpha'}) end,'remote view only')
 -- Sol, 23:13: every remote-view call with platform= or surface= works aboard (place_ghosts with surface=nauvis and its
 -- dry run were refused), as runtime.lua wraps them; without either, it is refused.
 for _,name in ipairs(bots.PLATFORM_ACTIONS) do bots.check_action(b.index,name,{platform='alpha'}) end
@@ -148,7 +151,7 @@ end
 bots.check_action(b.index,'configure',{}) -- the aboard surface's GUI, no body inventory
 -- The refusal names what works, from the same lists.
 local ok,err=pcall(bots.check_action,b.index,'move_to',{})
-assert(not ok and tostring(err):find('every read',1,true) and tostring(err):find('tell, chat, say, operator, board',1,true)
+assert(not ok and tostring(err):find('every read',1,true) and tostring(err):find('tell, chat, chat_ack, say, operator, board',1,true)
   and tostring(err):find('wait_until on platform_arrived, platform_left',1,true),tostring(err))
 assert(tostring(err):find('by remote view with platform=NAME: '..table.concat(bots.PLATFORM_ACTIONS,', '),1,true),tostring(err))
 assert(tostring(err):find('with surface=NAME (a planet): '..table.concat(bots.SURFACE_ACTIONS,', '),1,true),tostring(err))

@@ -204,6 +204,8 @@
   seated (your armor's without `vehicle`); `"operation":"list"` shows it, also by remote view; `inspect` on it too.
   The list counts pieces by name and quality (`name@rare*1`), with rows, shield, battery, free cells and `armor`.
   Example: `./fh call equipment --args '{"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}'`
+  A mined tank or spidertron becomes an item that carries its grid (`last.holds` names it and what its inventories
+  moved into yours); `inventory` lists such items as `item_grids`; `build` with it places that grid (reply `equipment`).
 - The walking tours (rearm, refuel, feed, collect, transfer `walk`) and `mine` check each place for enemies as
   `move_to` does, at the call too: `left_out` names the stops left out, and a tour whose every stop lies in such a
   reach is refused (`last.danger`, `last.dangers` for those found on the way). An attack that starts at the stop while

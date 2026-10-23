@@ -2,15 +2,15 @@
 
 tools/agy-quota.py writes runs/RUN/AGENT/resting.json before the agy loop sleeps: {since, until, reason (pace|quota),
 sleep_s, used?, resets?}; the next turn moves it to resting-last.json. The stream service (live.py: the card says
-"resting until 18:17 · pacing its weekly quota", the director skips it, the hosts hear it once), the supervisor
+"resting until 18:17 · pacing quota", the director skips it, the hosts hear it once), the supervisor
 (tools/supervise.sh: no nudge typed into the sleeping loop) and tools/idle_nudge.py (no tell) read it here.
 
 (d22 batch108 BR1, Grok's weekly limit at 20:04, reset Sat 15:59) Any agent can rest: tools/quota_rest.py writes the
 same file for a Grok, Codex or Claude agent, and start-team does it for an agent whose account is at its limit. Those
 have no loop to end the rest at their next turn (agy-quota.py --woke), so a rest is also over once the agent's journal
 holds a request of its own after the rest began, as the runtime's rests.lua ends it (describe, profiles, cameras and
-peeks do not count). The label names the day when the rest ends on another day than today: "waiting until Sat 15:59
-for its quota to reset".
+peeks do not count). The label names the day when the rest ends on another day than today: "out of quota until Sat
+15:59". (batch115: the labels are short enough for an agent card's line at 1080p.)
 
   python3 tools/stream/pacing.py until AGENT_DIR    (supervise.sh: "UNTIL CLOCK" of the rest now, or nothing)
 """
@@ -88,11 +88,11 @@ def clock(until, now=None):
 
 
 def label(row, now=None):
-    """'resting until 18:17 · pacing its weekly quota' (or 'waiting until Sat 15:59 for its quota to reset')."""
+    """'resting until 18:17 · pacing quota' (or 'out of quota until Sat 15:59')."""
     until = clock(row["until"], now)
     if row.get("reason") == "quota":
-        return f"waiting until {until} for its quota to reset"
-    return f"resting until {until} · pacing its weekly quota"
+        return f"out of quota until {until}"
+    return f"resting until {until} · pacing quota"
 
 
 if __name__ == "__main__":

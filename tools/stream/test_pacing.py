@@ -3,12 +3,12 @@
 python3 tools/stream/test_pacing.py
 
 1. pacing.resting reads runs/RUN/AGENT/resting.json (tools/agy-quota.py) while its until is ahead, and labels it.
-2. The stream: live.py puts it on the agent row; model.py's card says "resting until 18:17 · pacing its weekly quota"
+2. The stream: live.py puts it on the agent row; model.py's card says "resting until 18:17 · pacing quota"
    (activity resting, not idle or offline), the hosts get it once as a fact (an alert of kind rest, a new one per rest),
    and the director does not pick the agent; once the rest ends it is an agent as before.
 3. tools/idle_nudge.py sends no tell while the agent rests.
 4. (d22 batch108 BR1, Grok's weekly limit at 20:04 Thursday, reset Sat 15:59) a rest of a non-agy agent written by
-   tools/quota_rest.py: the card says "waiting until Sat 15:59 for its quota to reset" (the day named when it ends on
+   tools/quota_rest.py: the card says "out of quota until Sat 15:59" (the day named when it ends on
    another day), the nudger skips it, and the agent's own request in its journal after the rest began ends it
    (describe and peeks do not).
 """
@@ -36,10 +36,10 @@ def reads():
         write_rest(g, now - 60, now + 4440)
         r = pacing.resting(g, now)
         assert r and r["reason"] == "pace", r
-        assert pacing.label(r, now) == "resting until " + pacing.clock(now + 4440, now) + " · pacing its weekly quota"
+        assert pacing.label(r, now) == "resting until " + pacing.clock(now + 4440, now) + " · pacing quota"
         assert pacing.resting(g, now + 5000) is None  # over
         write_rest(g, now - 60, now + 600, "quota")
-        assert pacing.label(pacing.resting(g, now)).startswith("waiting until ") and "for its quota to reset" in pacing.label(pacing.resting(g, now))
+        assert pacing.label(pacing.resting(g, now)).startswith("out of quota until ")
         open(os.path.join(g, "resting.json"), "w").write("{broken")
         assert pacing.resting(g, now) is None
     print("reads: ok")
@@ -109,8 +109,8 @@ def grok():
         reset = time.mktime((2026, 10, 24, 15, 59, 0, 0, 0, -1))   # Sat 15:59
         assert pacing.clock(reset, hit) == "Sat 15:59" and pacing.clock(hit + 600, hit) == "20:14"
         row = {"since": hit, "until": reset, "reason": "quota"}
-        assert pacing.label(row, hit) == "waiting until Sat 15:59 for its quota to reset"
-        assert pacing.label(row, reset - 3600) == "waiting until 15:59 for its quota to reset"  # Saturday itself
+        assert pacing.label(row, hit) == "out of quota until Sat 15:59"
+        assert pacing.label(row, reset - 3600) == "out of quota until 15:59"  # Saturday itself
     finally:
         if tz is None:
             os.environ.pop("TZ")
@@ -134,7 +134,7 @@ def grok():
             r = pacing.resting(g, now)
             assert r and r["reason"] == "quota" and r["resets"] == quota_rest.when(now + 2 * 86400), r
             lab = pacing.label(r, now)
-            assert lab.startswith("waiting until ") and lab.split()[2] in pacing.DAYS, lab
+            assert lab.startswith("out of quota until ") and lab.split()[4] in pacing.DAYS, lab
             m = Model({"agents": {"grok": {"display_name": "Grok"}}})
             m.ingest({"agents": [{"name": "grok", "display_name": "Grok", "alive": True, "position": {"x": 0, "y": 0},
                                   "resting": r}]}, now=now)

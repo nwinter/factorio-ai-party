@@ -2052,7 +2052,7 @@ function handlers.describe(_,a)
         from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; a straight leg is read tile by tile; a leg that is not straight follows the remembered belt round its corners (each belt\'s direction, undergrounds to their exits; across a gap on the way the belt went while that nears the end, else toward it; from either end), refused when it does not lead there; at most 512 tiles',surface='optional surface name (default yours)',returns='ghost_breaks and ghost_line (from, to and line too): each stretch of the line standing only as ghosts, a break until built (they carry nothing): from, to, tiles, materials (the items that build it), robots (whether a roboport\'s construction area covers its ghosts, the network\'s count of each item and its idle construction robots); followed (legs followed round corners); missing and ghosts with observed_tick (a missing tile in sight: blocked_by {name, position, force} and line, what stands on it); unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
-      describe={if_bundle='optional: the bundle id of a describe you hold; when it is this runtime\'s, the reply is {bundle, unchanged=true} only',action='optional: an action name or a list of 1..16: only their entries (actions), and for a name there is not, the closest real ones (unknown)'}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): spoiling (each spoilable stack of the main inventory, soonest first, 24: its slot, the time left and how spoiled it is; one that triggers when it spoils, a pentapod egg, hatches in; spoiling_more), inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
+      describe={if_bundle='optional: the bundle id of a describe you hold; when it is this runtime\'s, the reply is {bundle, unchanged=true} only',action='optional: an action name or a list of 1..16: only their entries (actions), and for a name there is not, the closest real ones (unknown)'}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): spoiling (each spoilable stack of the main inventory, soonest first, 24: its slot, the time left and how spoiled it is; one that triggers when it spoils, a pentapod egg, hatches in; spoiling_more), inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), item_grids (items in the main inventory that carry a grid: a mined tank or spidertron, a spare armor; slot and equipment), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={surface='optional planet name: that planet by remote view (with position, or area for grid: your character stands elsewhere), within what our force has charted there',position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={surface='optional planet name: that planet by remote view (with position, or area for grid: your character stands elsewhere), within what our force has charted there',tile_runs='optional true: the charted tiles in the radius as runs along x, [{x,y,count,name}] row by row, and tile_count (a lake\'s shore from afar: with tile_names)',tile_names='with tile_runs: 1..32 tile names to keep (e.g. water, deepwater)',tiles_limit='tiles 1..4096 (default 4096); tile_runs 1..4096 runs (default 1024)',platform='optional owned platform: bounded schematic tile_runs [{x,y,count,name}], tile_count, entities with footprints and directions, centred on its hub or position; works aboard',position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box, fresh (an item that spoils: its stalest stack, percent fresh)}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={list='optional: belts_stuck, belts_unpaired, no_fuel, last_fuel, ammo_empty or ammo_low: every place that factory warning counts on your surface (the survey it comes from), 50 a page: list, what, count, rows, page, pages, next, line (a warning that shows fewer than it counts names this call)',page='with list: 1.. the page',fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name not in the reply is refused with the names there are',urgent_since='with peek (fh --wait polls): an urgent alert since this tick is given as urgent (one line), as a sleep wakes on it',urgent_radius='with urgent_since: 1..200 tiles',since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line, recovery {by, tick, checked, result, check, reopened, reopened_tick, lost_since} (losses {incident, recovery})}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
@@ -2329,7 +2329,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read, end_tick its time limit); none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read or replaced, end_tick its time limit); none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -3201,6 +3201,9 @@ end
 function handlers.inventory(p,a)
   assert(a==nil or a.full==nil or type(a.full)=='boolean','full must be true or false')
   local out=M.character_inventory(p,a and a.full==true)
+  -- Items that carry a grid (an equipped spidertron's or tank's item, a spare armor), with what each grid holds.
+  local okg,ig=pcall(M.grids.item_grids,p.get_main_inventory())
+  out.item_grids=okg and ig or nil
   local oks,sp=pcall(M.spoil_stacks,p.get_main_inventory(),24)
   if oks and sp then out.spoiling,out.spoiling_more=sp.lines,sp.more end
   return out
@@ -4725,20 +4728,25 @@ end
 -- unit_number or a position on its footprint, on a chunk the map draws; reach
 -- transfer (the engine's own test: 10 tiles, ore, trees, plants and rocks 2.7), build
 -- (build_distance) or tiles.
+-- An entity by unit_number alone, on the character's surface. By number alone the game finds only prototypes flagged
+-- get-by-unit-number (vehicles and the like; read on a private 2.0.77 server: an iron chest's own number found
+-- nothing): others need their position too (form: the call's form with position, %d the number).
+function M.by_unit_number(p,n,form)
+  local ok,e=pcall(function() return game.get_entity_by_unit_number(n) end)
+  e=ok and e or nil
+  if not (e and e.valid) then
+    error(string.format('the game finds no entity by unit_number %d alone (only vehicles and the like); give its position too: '..form,n,n),0)
+  end
+  if e.surface~=p.surface then error(string.format('unit_number %d (%s) is on %s; the character is on %s',n,e.name,e.surface.name,p.surface.name),0) end
+  return e
+end
 function M.walk_target(p,a)
   local t=a.target
   assert(type(t)=='table','target is an entity: {position={x,y}} or {unit_number=N}, with optional name; reach is build, transfer or tiles')
   local e
   assert(t.unit_number==nil or type(t.unit_number)=='number','target.unit_number must be a number')
   if t.unit_number~=nil and t.position==nil and t.x==nil and t[1]==nil then
-    -- By number alone the game finds only prototypes flagged get-by-unit-number (vehicles and the like; read on a
-    -- private 2.0.77 server: an iron chest's own number found nothing): others need their position too.
-    local ok,found=pcall(function() return game.get_entity_by_unit_number(t.unit_number) end)
-    e=ok and found or nil
-    if not (e and e.valid) then
-      error(string.format('the game finds no entity by unit_number %d alone (only vehicles and the like); give its position too: target={position={x,y},unit_number=%d}',t.unit_number,t.unit_number),0)
-    end
-    if e.surface~=p.surface then error(string.format('unit_number %d (%s) is on %s; the character is on %s',t.unit_number,e.name,e.surface.name,p.surface.name),0) end
+    e=M.by_unit_number(p,t.unit_number,'target={position={x,y},unit_number=%d}')
     if not charted(p,e.position) then error(string.format('target %s (%g,%g) is on a chunk the map has not charted',e.name,e.position.x,e.position.y),0) end
   else
     e=entity(p,{position=t.position or t,name=t.name,unit_number=t.unit_number},'walk')
@@ -5533,6 +5541,11 @@ function handlers.mine(p,a)
   end
   for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
     if product.type=='item' then action.products[#action.products+1]=product.name end
+  end
+  -- An equipped vehicle (d23 batch120 CC1): what its item carries and what its inventories move into this one.
+  local okv,_,vnames=pcall(M.grids.mining_line,e)
+  for _,name in ipairs(okv and vnames or {}) do
+    if action.held_before[name]==nil then local okc,n=pcall(function() return p.get_item_count(name) end); action.held_before[name]=okc and n or 0 end
   end
   if e.type=='resource' then
     for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
@@ -6419,6 +6432,8 @@ local function build_direct(p,stack,pos,direction,quality,kind,place,rail_layer)
   if ghost then
     local _,revived=ghost.revive{raise_revive=true}
     e=revived
+    -- (d23 batch120 CC1) an equipped vehicle's item: its grid and label go on the revived vehicle (grids.lua from_item)
+    if e and stack.is_item_with_entity_data then pcall(M.grids.from_item,stack,e) end
   else
     local args={name=proto.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual,rail_layer=rail_layer}
     if not surface.can_place_entity(args) then error(placement_error(p,proto,pos,direction,true),0) end
@@ -6460,6 +6475,9 @@ local function build_direct(p,stack,pos,direction,quality,kind,place,rail_layer)
       end
     end
     args.quality=quality; args.player=real(p); args.raise_built=true
+    -- (d23 batch120 CC1, Sol #2027: Haiku's rebuilt spidertron had an empty grid; the item carried fusion, shields,
+    -- batteries and lasers) An item with entity data builds with its grid, label and colour, as the game builds it.
+    if stack.is_item_with_entity_data then args.item=stack end
     if proto.type=='underground-belt' then args.type=kind or underground_type(surface,proto,pos,direction) end
     e=surface.create_entity(args)
   end
@@ -6525,6 +6543,9 @@ end
 -- come a tick later; checked on 2.0.77): read what stands on its points instead.
 local function built_summary(e)
   local out=summary(e); out.status_name=nil
+  -- A vehicle's grid as built (d23 batch120 CC1).
+  local okg,grid=pcall(function() return e.grid end)
+  if okg and grid then out.equipment=M.grids.view(grid) end
   if e.type=='inserter' and M.targets then
     local ok,t=pcall(M.targets.plan,e.surface,e.prototype,e.position,e.direction)
     out.io_warning=ok and t and t.missing or nil
@@ -6989,6 +7010,7 @@ function handlers.build(p,a)
   for _,o in ipairs(a.own_before or {}) do own[#own+1]=o end
   -- Tile entries: what their tiles took away (water-cane, fish) and what of a brush did not go down (Sol 12:55).
   local tiles_removed,tiles_not_placed={},{}
+  local grids={}
   for _,f in ipairs(a.failed_before or {}) do failed[#failed+1]=f end
   for _,e in ipairs(a.built_ents or {}) do built[#built+1]=e end
   for i,b in ipairs(a.builds) do
@@ -7061,6 +7083,10 @@ function handlers.build(p,a)
       M.entryset.built(p,b,i+(a.index_before or 0),settings)
       local e=result.entity or (result.entities and result.entities[1])
       placed[#placed+1]=e and e.position or b.position
+      -- (d23 batch120 CC1) a vehicle built with a grid: what the grid holds
+      if e and type(e.equipment)=='table' and #grids<16 then
+        grids[#grids+1]=string.format('%s %s (%g,%g): grid %s %s',e.name,tostring(e.unit_number),e.position.x,e.position.y,e.equipment.grid,e.equipment.equipment)
+      end
       if e and e.name and e.position then own[#own+1]={name=e.name,position=e.position,index=i+(a.index_before or 0)} end
       -- (summary gives an inserter's pickup tile, and only an inserter's)
       if e and e.pickup~=nil then inserters[#inserters+1]=e.position end
@@ -7106,7 +7132,7 @@ function handlers.build(p,a)
     closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,no_power_coverage=no_power,outside_construction_area=outside,underground_side_feed=side,last_belt=okb and last_belt or nil,
     belts=belt_lines,belts_more=belts_more and belts_more>0 and belts_more or nil,
     tiles_removed=#tiles_removed>0 and tiles_removed or nil,removed_note=#tiles_removed>0 and M.bots.REMOVED_NOTE or nil,
-    tiles_not_placed=#tiles_not_placed>0 and tiles_not_placed or nil},true)
+    tiles_not_placed=#tiles_not_placed>0 and tiles_not_placed or nil,equipment=#grids>0 and grids or nil},true)
 end
 -- Red, green and copper wires, as a player drags them (circuits.lua).
 function handlers.wire(p,a) return M.circuits.wire(p,a) end
@@ -8865,7 +8891,7 @@ local function infer_inventory(e,a)
       else fallback=fallback or {name,inv} end
     end
   end
-  assert(fallback,'entity has no transferable inventory')
+  if not fallback then error(string.format('%s at (%g,%g) on %s has no transferable inventory',e.name,e.position.x,e.position.y,e.surface and e.surface.name or '?'),0) end
   return fallback[1],fallback[2]
 end
 -- Moves matching stacks with transfer_stack so item metadata travels intact.
@@ -11315,12 +11341,13 @@ function M.transfer_walk(p,a)
   local entities,far={},0
   -- A stop that does not resolve (Muse 06:21 and 09:24, 4+ times: one bad position aborted the whole tour) is left out
   -- and named (skipped); none left: refused with the first reason.
-  local skipped={}
+  local skipped,invs={},{}
   for _,pos in ipairs(list) do
     -- Seen, not yet in reach (a read's sight): the walk brings it into reach.
     local ok,e=pcall(function()
       local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
       friendly(p,e)
+      invs[e.unit_number or e]=M.walk_inventory(p,e,a,pos)
       return e
     end)
     if ok then
@@ -11334,13 +11361,34 @@ function M.transfer_walk(p,a)
   if #entities==0 then error(#skipped>1 and string.format('none of the %d positions resolves; the first: %s',#skipped,skipped[1]) or skipped[1],0) end
   if #skipped>0 then
     if a.positions then args.positions={} for _,e in ipairs(entities) do args.positions[#args.positions+1]={x=e.position.x,y=e.position.y,name=e.name} end end
-    local out=M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+    local out=M.transfer_walk_go(p,a,args,entities,far,fill,ticks,invs)
     if type(out)=='table' then out.skipped=skipped end
     return out
   end
-  return M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+  return M.transfer_walk_go(p,a,args,entities,far,fill,ticks,invs)
 end
-function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+-- The inventory a walking transfer uses at e, found before the walk (Luna, shift62 03:58: a take of wood at a Gleba
+-- chest's position, made from Nauvis, walked 512 tiles to the solar panel on that tile there and was refused on
+-- arrival): its name, or a refusal naming the entity, its surface and the position given.
+function M.walk_inventory(p,e,a,pos)
+  if a.inventory~=nil then
+    local named=type(a.inventory)=='string' and M.inventory_name(e,a.inventory) or a.inventory
+    if pcall(inventory,e,named) then return tostring(a.inventory) end
+  else
+    for _,dir in ipairs(a.direction and {a.direction} or {'to_player','to_entity'}) do
+      local args={}
+      for k,v in pairs(a) do args[k]=v end
+      args.direction=dir
+      local ok,name=pcall(infer_inventory,e,args)
+      if ok then return name end
+    end
+  end
+  local okp,q=pcall(position,pos)
+  local at=okp and (q.x~=e.position.x or q.y~=e.position.y) and string.format(' (position (%g,%g) is on its footprint)',q.x,q.y) or ''
+  error(string.format('%s at (%g,%g) on %s%s has no %s: nothing walked; %s',e.name,e.position.x,e.position.y,e.surface and e.surface.name or p.surface.name,at,
+    a.inventory~=nil and 'inventory '..tostring(a.inventory) or 'inventory a transfer reaches',M.inventory_names(e)),0)
+end
+function M.transfer_walk_go(p,a,args,entities,far,fill,ticks,invs)
   local via=args.via
   args.via=nil
   -- All in reach: the transfer at once (a fill is its total there).
@@ -11420,6 +11468,8 @@ function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
     for _,t in ipairs(action.targets) do stops[#stops+1]=t end
   end
   out.legs,out.legs_more=M.legs(p,stops)
+  for i,row in ipairs(out.legs) do local e=stops[i].entity; row.inventory=invs and e and invs[e.unit_number or e] or nil end
+  out.surface=p.surface.name
   return out
 end
 -- A walking call's route, one row per stop in the order it walks them (Opus 10:50: transfer and feed over positions
@@ -12166,6 +12216,17 @@ function handlers.transfer(p,a)
   if a.from~=nil then return M.from_nearest(p,a) end
   assert(a.radius==nil,'radius goes with from: "nearest"')
   if a.items~=nil then return M.transfer_items(p,a) end
+  -- unit_number without position (opus, shift62 06:26: a spidertron's ammo by its number failed on a nil position):
+  -- the entity by its number, at its position.
+  if a.position==nil and a.positions==nil and a.to==nil then
+    assert(a.unit_number~=nil,'transfer requires position (or positions, pick + positions, from: "nearest", to_player, unit_number)')
+    assert(type(a.unit_number)=='number','unit_number must be a number')
+    local e=M.by_unit_number(p,a.unit_number,'position={x,y},unit_number=%d')
+    local args={}
+    for k,v in pairs(a) do args[k]=v end
+    args.position={x=e.position.x,y=e.position.y}
+    return handlers.transfer(p,args)
+  end
   -- to on the entity position names, at another of its tiles (a 9x9 silo): the one entity named twice, a give there.
   if a.items==nil and a.to~=nil and a.position~=nil and a.positions==nil and (a.direction==nil or a.direction=='to_entity') then
     local ok,e,there=pcall(function()
@@ -16208,7 +16269,9 @@ end local conditions=conditions_module{losses_since=function(f,s,since,names,max
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end,
   -- (d22 batch100 BJ1) a platform's departure logged since a tick (freight.lua), for platform_left's baseline
-  left_since=function(name,force,location,since) return M.freight and M.freight.left_since(name,force,location,since) end}
+  left_since=function(name,force,location,since) return M.freight and M.freight.left_since(name,force,location,since) end,
+  -- (d22 batch117 BZ1) platform_ammo_below's background reading (ammoreserve.lua)
+  ammo_reserve=function(pl,force,c) return M.ammoreserve.check(pl,force,c) end}
 M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
@@ -16216,6 +16279,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
   -- (d22 batch112 BV1) a build's entries its running action had left (a walk for the rest, a step aside): {count, line}
   left_undone=function(index) return M.left_undone(index) end,
+  guard_refusal=function(p,c) return conditions.guard_refusal(p,c) end,
   recheck_read=function(rc) return space.recheck_read(rc) end,
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
@@ -17229,6 +17293,7 @@ function M.moved_last(index,action,last)
     for name,c in pairs(action.picked or {}) do n=n+c; names[#names+1]=name end
   elseif action.kind=='mine' then
     local p=body(M.lookup(index))
+    last.holds=action.holds
     for name,b in pairs(action.held_before or {}) do
       local ok,now=pcall(function() return p.get_item_count(name) end)
       if ok and now>b then n=n+now-b end
@@ -18566,6 +18631,8 @@ function M.work_watches(p)
   for _,r in ipairs(ok and f or {}) do out[#out+1]=r end
   return #out>0 and out or nil
 end
+-- (d22 batch117 BZ1, Astra #1970) a platform's whole ammunition reserve, read in the background (ammoreserve.lua)
+M.ammoreserve=require('ammoreserve'){state=state}
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
   fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
@@ -19591,7 +19658,8 @@ function M.tick_action(index,action,event)
       finish(index,'out_of_reach')
     elseif action.done_tick then
       if event.tick>=action.done_tick then
-        if M.bots.mine(p,e) then finish(index,'target_mined')
+        local okh,holds=pcall(M.grids.mining_line,e)
+        if M.bots.mine(p,e) then action.holds=okh and holds or nil; finish(index,'target_mined')
         else
           -- The engine refuses for two reasons: no room for the products,
           -- or an entity that cannot be mined by hand (a stump or remnant).
@@ -19694,6 +19762,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
+  if state().ammo_reserve then pcall(M.timed,'ammoreserve.tick',M.ammoreserve.tick,event.tick) end  -- platform_ammo_below's readings (ammoreserve.lua): a band a step while a pass runs
   if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)
   if M.delivwatch then pcall(M.delivwatch.pod_tick,event.tick) end  -- (AB7) watched pods read each tick near landing; none followed: one lookup
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)

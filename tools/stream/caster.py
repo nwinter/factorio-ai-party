@@ -393,6 +393,8 @@ class Differ:
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
+            if m.get("history"):  # read again at a stream restart (model.py backlog_old, chat_time): never voiced
+                continue
             if not first and is_operator_line(m) and now - float(m.get("t") or now) < 30:
                 # the operator writes in game chat as `server` (shift01 16:25): voiced always, in its own voice
                 ev.append({"kind": "operator", "text": m.get("text", ""), "seq": m.get("seq")})
@@ -415,6 +417,8 @@ class Differ:
             if seq in self.board_seqs:
                 continue
             self.board_seqs.add(seq)
+            if b.get("history"):  # a restart's replay of the kept board events (model.py backlog_old)
+                continue
             verb = b.get("verb") or b.get("change")
             if not first and verb in ("posted", "taken", "started", "done", "blocked") \
                     and now - float(b.get("t") or now) < 60:
@@ -608,6 +612,23 @@ def pronouns_of(a):
     """An agent's chosen pronouns ("he/him"), else "they/them" (shake3: Grok chose he/him; the rules forced "they")."""
     p = re.sub(r"\s+", "", str(a.get("pronouns") or "")).lower()
     return p if re.fullmatch(r"[a-z]{2,6}(?:/[a-z]{2,6}){0,2}", p) else "they/them"
+
+
+HUSH_FILE = os.path.join(HERE, "logs", "hosts-hush.json")
+
+
+def hushed(path, now=None):
+    """The hush in `path` ({until, by, reason}, until in epoch seconds) while it lasts, else None (no file, a bad
+    file, or its time is up). tour.py writes it for a tour and removes it after."""
+    if not path:
+        return None
+    try:
+        with open(path) as f:
+            h = json.load(f)
+        until = float(h["until"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return dict(h, until=until) if until > (time.time() if now is None else now) else None
 
 
 def read_deadline(spec, now=None):
@@ -2541,6 +2562,8 @@ class Caster:
         return digest(s) != getattr(self, "last_digest", None)
 
     def caster_tick(self, now, st):
+        if self.hush_tick(now):
+            return
         with self.lock:
             s = self.snap
             top = max((e["prio"] for e in self.events if now - e["t"] < self.a.stale), default=0)
@@ -2612,6 +2635,28 @@ class Caster:
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
             self.request_segment([("research", {})], "research", news=True)
+
+    def hush_tick(self, now):
+        """(d23 batch125) The hosts stay quiet while --hush-file says so (tour.py's narrated tour): no lines, no
+        segment requests, no reactions; the gap starts again when it ends. The agents' voiced lines go on (the page
+        queues them behind the narrator)."""
+        h = hushed(getattr(self.a, "hush_file", None), now)
+        was = getattr(self, "hush", None)
+        if h:
+            if not was or was.get("until") != h.get("until"):
+                log(f"[hush] hosts quiet for {int(h['until'] - now)} s ({h.get('by') or '?'}: {h.get('reason') or ''})")
+                if not was:
+                    self.record(type="hush", on=True, by=h.get("by"), reason=h.get("reason"), until=h["until"])
+            self.hush = h
+            self.caster_free = max(self.caster_free, now)
+            self.yielding = None
+            self.pending_news = None
+            return True
+        if was:
+            log("[hush] off: the hosts may speak again")
+            self.record(type="hush", on=False)
+            self.hush = None
+        return False
 
     def yield_beat(self, now, top):
         """While the hosts yield to an agent line (yield_to): its reaction event, once, then "quiet" until the window
@@ -3180,6 +3225,8 @@ def parser():
     ap.add_argument("--duration", type=float, help="stop after this many seconds (tests)")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
+    ap.add_argument("--hush-file", default=HUSH_FILE,
+                    help="while this file holds {until} in the future the hosts stay quiet (tour.py writes it)")
     ap.add_argument("--bench", action="store_true", help="time writers on canned events from the live snapshot")
     ap.add_argument("--bench-writers", default="cf=@cf/google/gemma-4-26b-a4b-it,cf=@cf/qwen/qwen3.8-27b,"
                                                "cf=@cf/nvidia/nemotron-3-120b-a12b,claude=haiku,claude=sonnet")

@@ -113,7 +113,8 @@ do
   eq(#r.short_reads,1)
   local s=r.short_reads[1]
   eq(s.physical_belts,7); eq(s.segment_tiles,6); eq(#s.left_out,1); eq(s.left_out[1].side,'downstream'); eq(s.left_out[1].belts,2)
-  has(r.lines[1],'transport-belt (1.5,0.5) reads its whole belt onto red #12, and the game counts only its belt segment (6 tiles, 5 of the 7 belts in line); left out of the read: 2 belts downstream from (6.5,0.5) to (7.5,0.5)')
+  -- (d22 batch118 CA2: the line says the segment as the game counts it, and where it ends)
+  has(r.lines[1],'transport-belt (1.5,0.5) reads its belt segment onto red #12, as the game counts it (6 tiles, 5 of the 7 belts in line); not in this read: 2 belts downstream from (6.5,0.5) to (7.5,0.5) (its segment ends at underground-belt (5.5,0.5); transport-belt (6.5,0.5) past it is another segment)')
   -- one segment all along: nothing said
   for _,b in ipairs(belts) do b.get_transport_line=function() return {total_segment_length=7} end end
   eq(C.read({},{platform='Swiftlet'}).short_reads,nil)

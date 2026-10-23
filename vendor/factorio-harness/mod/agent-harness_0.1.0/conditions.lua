@@ -136,6 +136,128 @@ return function(api)
     end
     return out
   end
+  -- fluid_count's holders by kind (module level: built once, not at each check; d22 batch110 BT1)
+  local FLUID_KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
+    ['assembling-machine']='machines',furnace='machines',['mining-drill']='machines',['fusion-reactor']='fusion',
+    ['fusion-generator']='fusion',boiler='power',generator='power'}
+  local FLUID_TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace','mining-drill',
+    'fusion-reactor','fusion-generator','boiler','generator'}
+  local FLUID_ORDER={'tanks','pipes','thrusters','machines','fusion','power'}
+  local FLUID_SAID={fusion='fusion reactors and generators',power='boilers and generators'}
+  -- (d22 batch110 BT1: on a copy of world n, Asterion's guards read two fluids every 10 ticks, finding each of its
+  -- thousands of pipes, tanks and machines anew: 4 MB of garbage a second) a platform's holders found once and kept
+  -- while their count (count_entities_filtered, no entity objects made) is the same and every one kept is still valid;
+  -- else found again. The same entities as a find at each check. Module state: rebuilt after a load.
+  local fluid_cache={}
+  local FLUID_FIND={type=FLUID_TYPES,force=nil,limit=4096}
+  local function fluid_holders(surface,force)
+    FLUID_FIND.force=force
+    local key=surface.index
+    local okn,n=pcall(surface.count_entities_filtered,FLUID_FIND)
+    if not (okn and key) then return surface.find_entities_filtered(FLUID_FIND) end
+    local kept=fluid_cache[key]
+    if kept and kept.n==n and kept.force==force.index then
+      local all=true
+      for i=1,#kept.list do if not kept.list[i].valid then all=false; break end end
+      if all then return kept.list,kept.read end
+    end
+    local list=surface.find_entities_filtered(FLUID_FIND)
+    -- each one's get_fluid_count, read once with the list (a method read makes a new function each time)
+    local read={}
+    for i,e in ipairs(list) do read[i]=e.get_fluid_count end
+    fluid_cache[key]={n=#list,list=list,read=read,force=force.index}
+    return list,read
+  end
+  -- (d22 batch110 BT1: on a copy of world n the platform guards in queue lanes, checked every 10 ticks, found a
+  -- platform's every ammo turret (18 KB a check) and accumulator (8 KB) anew) kept as fluid_count's holders are: the
+  -- list, and each turret's ammo inventory and its get_item_count (a method read makes a new function), while the
+  -- count (count_entities_filtered: no entity objects) is the same and every one kept is valid; positions: each kept
+  -- turret valid (a turret does not move; another cannot stand on its tile). The same entities as a find at each
+  -- check; what each holds is read live. Module state: rebuilt after a load.
+  local TURRET_FIND={type='ammo-turret',force=nil,area=nil,limit=1025}
+  local turret_kept,turret_kept_by={},setmetatable({},{__mode='k'})  -- by surface index (every turret); by c.area or c.positions
+  local function kept_valid(kept)
+    for i=1,#kept.list do
+      local e,inv=kept.list[i],kept.inv[i]
+      if not e.valid or (inv and not inv.valid) then return false end
+    end
+    return true
+  end
+  local function platform_turrets(c,s,force)
+    local key,fi=s.index,force.index
+    local ref=c.positions or c.area
+    local kept
+    if ref then kept=turret_kept_by[ref] else kept=key and turret_kept[key] end
+    if kept and key and kept.s==key and kept.force==fi then
+      local n=kept.n
+      if not c.positions then
+        TURRET_FIND.force,TURRET_FIND.area=force,c.area
+        local okn,m=pcall(s.count_entities_filtered,TURRET_FIND)
+        TURRET_FIND.area=nil
+        n=okn and m or nil
+      end
+      if n==kept.n and kept_valid(kept) then return kept.list,kept.inv,kept.cnt end
+    end
+    local list
+    if c.positions then
+      list={}
+      for _,raw in ipairs(c.positions) do
+        local q=api.position(raw)
+        local found=s.find_entities_filtered{area={{q.x-0.01,q.y-0.01},{q.x+0.01,q.y+0.01}},type='ammo-turret',force=force,limit=1}
+        if not found[1] then error(string.format('no ammo turret of ours at (%g,%g) on %s',q.x,q.y,c.platform),0) end
+        list[#list+1]=found[1]
+      end
+    else
+      list=s.find_entities_filtered{area=c.area,type='ammo-turret',force=force,limit=1025}
+      assert(#list<=1024,'condition area exceeds 1024 entities')
+    end
+    -- each one's ammo inventory and get_item_count, read once with the list (ammo() at each check)
+    local inv,cnt={},{}
+    for i,e in ipairs(list) do
+      local v=e.valid and e.type=='ammo-turret' and e.get_inventory(defines.inventory.turret_ammo) or false
+      inv[i]=v; cnt[i]=v and v.get_item_count or false
+    end
+    -- (a surface that cannot count has its turrets found at each check, as before: the count kept differs)
+    if key then
+      kept={s=key,force=fi,n=#list,list=list,inv=inv,cnt=cnt}
+      if ref then turret_kept_by[ref]=kept else turret_kept[key]=kept end
+    end
+    return list,inv,cnt
+  end
+  local ACC_FIND={type='accumulator',force=nil}
+  local acc_kept={}
+  local function platform_accumulators(s,force)
+    ACC_FIND.force=force
+    local key=s.index
+    local okn,n=pcall(s.count_entities_filtered,ACC_FIND)
+    if not (okn and key) then return s.find_entities_filtered(ACC_FIND) end
+    local kept=acc_kept[key]
+    if kept and kept.n==n and kept.force==force.index then
+      local all=true
+      for i=1,#kept.list do if not kept.list[i].valid then all=false; break end end
+      if all then return kept.list end
+    end
+    local list=s.find_entities_filtered(ACC_FIND)
+    acc_kept[key]={n=#list,list=list,force=force.index}
+    return list
+  end
+  -- what a turret's ammo slots hold, as its GUI shows them (no closure a check)
+  local function held_text(inv)
+    local t={}
+    for _,r in ipairs(inv.get_contents()) do t[#t+1]=r.count..' '..r.name end
+    return table.concat(t,', ')
+  end
+  -- names given (c.names, c.entity_names) as a set, made once per list
+  local name_sets=setmetatable({},{__mode='k'})
+  local function name_set(list)
+    if not list then return nil end
+    local set=name_sets[list]
+    if not set then set={}; for _,n in ipairs(list) do set[n]=true end; name_sets[list]=set end
+    return set
+  end
+  local function ring_row(ring,size,s) local x=ring[(s-1)%size+1]; if x and x.s==s then return x end end
+  local function tenth(v) return math.floor(v*10+0.5)/10 end
+  local function location_name(pl) return pl.space_location and pl.space_location.name end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -158,23 +280,13 @@ return function(api)
     -- the ammo turrets on that platform, all of them, those at positions or in area (platform coordinates), as its
     -- turret GUIs show them; saw names the lowest turret and what it holds.
     ammo_below=function(p,c)
-      local list
+      local list,invs,cnts
       if c.platform then
         local pl=M.platform_named(p,c.platform)
         local s=pl.surface
         if not s then error('platform '..c.platform..' has no surface yet',0) end
-        if c.positions then
-          list={}
-          for _,raw in ipairs(c.positions) do
-            local q=api.position(raw)
-            local found=s.find_entities_filtered{area={{q.x-0.01,q.y-0.01},{q.x+0.01,q.y+0.01}},type='ammo-turret',force=p.force,limit=1}
-            if not found[1] then error(string.format('no ammo turret of ours at (%g,%g) on %s',q.x,q.y,c.platform),0) end
-            list[#list+1]=found[1]
-          end
-        else
-          list=s.find_entities_filtered{area=c.area,type='ammo-turret',force=p.force,limit=1025}
-          assert(#list<=1024,'condition area exceeds 1024 entities')
-        end
+        -- (BT1) kept while the same; each one's inventory and get_item_count with it
+        list,invs,cnts=platform_turrets(c,s,p.force)
       elseif c.positions then
         -- (X3) surface with positions: those turrets on that planet
         local s=surface_of(p,c)
@@ -188,20 +300,24 @@ return function(api)
         end
       else list=turrets(p,c) end
       local on=c.platform or (c.surface~=nil and surface_of(p,c).name) or nil
-      local low,n,lowest=0,0,nil
-      for _,e in ipairs(list) do
-        local k=e.valid and ammo(e)
+      local low,n,lowest,lowest_k,lowest_i=0,0,nil,nil,nil
+      for i,e in ipairs(list) do
+        local k
+        -- (BT1) a kept turret's count by its kept get_item_count, as ammo() reads it
+        if cnts then k=e.valid and (cnts[i] and cnts[i]() or nil) else k=e.valid and ammo(e) end
         if k then
           n=n+1
           if k<c.count then low=low+1 end
-          if not lowest or k<lowest.k then lowest={e=e,k=k} end
+          if not lowest or k<lowest_k then lowest,lowest_k,lowest_i=e,k,i end
         end
       end
       local saw=low..' turrets below '..c.count
       if lowest and on then
-        local inv=lowest.e.get_inventory(defines.inventory.turret_ammo)
-        local held=try(function() local t={} for _,r in ipairs(inv.get_contents()) do t[#t+1]=r.count..' '..r.name end return table.concat(t,', ') end)
-        saw=saw..string.format(' (of %d on %s; lowest %s (%g,%g): %s)',n,on,lowest.e.name,lowest.e.position.x,lowest.e.position.y,
+        local inv=invs and invs[lowest_i] or lowest.get_inventory(defines.inventory.turret_ammo)
+        local okh,held=pcall(held_text,inv)
+        if not okh then held=nil end
+        local pos=lowest.position
+        saw=saw..string.format(' (of %d on %s; lowest %s (%g,%g): %s)',n,on,lowest.name,pos.x,pos.y,
           held and held~='' and held or 'no ammo')
       elseif on then saw=saw..' (no ammo turret of ours '..(c.area and 'in that area' or c.platform and 'aboard' or 'within the radius')..' on '..on..')' end
       return low>0,saw
@@ -308,15 +424,12 @@ return function(api)
     -- the pipes alone) fusion reactors and fusion generators, boilers and heat exchangers, steam engines and turbines,
     -- and mining drills too, each kind said.
     fluid_count=function(p,c,estimate)
-      local KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
-        ['assembling-machine']='machines',furnace='machines',['mining-drill']='machines',['fusion-reactor']='fusion',
-        ['fusion-generator']='fusion',boiler='power',generator='power'}
-      local TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace','mining-drill',
-        'fusion-reactor','fusion-generator','boiler','generator'}
-      local list,on
+      local KIND,TYPES=FLUID_KIND,FLUID_TYPES
+      local list,on,read
       if c.platform then
         local pl=M.platform_named(p,c.platform)
-        list,on=pl.surface.find_entities_filtered{type=TYPES,force=p.force,limit=4096},c.platform
+        list,read=fluid_holders(pl.surface,p.force)
+        on=c.platform
       else
         local s=surface_of(p,c)
         list,on={},s.name
@@ -336,17 +449,17 @@ return function(api)
           for _,e in ipairs(found) do if charted(p,s,e.position) then add(e) end end
         end
       end
-      local n,by,count={},{},{}
+      local by,count={},{}
       local total=0
-      for _,e in pairs(list) do
-        local ok,k=pcall(function() return e.get_fluid_count(c.fluid) end)
-        local kind=KIND[e.type] or 'other'
-        if ok and k and k>0 then by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
+      for i,e in pairs(list) do
+        -- (BT1) the method itself under pcall, kept with the list: a closure per entity was most of a check's garbage
+        local ok,k=false,nil
+        if e.valid~=false then ok,k=pcall(read and read[i] or e.get_fluid_count,c.fluid) end
+        if ok and k and k>0 then local kind=KIND[e.type] or 'other'; by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
       end
       local parts={}
-      local SAID={fusion='fusion reactors and generators',power='boilers and generators'}
-      for _,kind in ipairs({'tanks','pipes','thrusters','machines','fusion','power'}) do
-        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',SAID[kind] or kind,math.floor(by[kind]+0.5),count[kind]) end
+      for _,kind in ipairs(FLUID_ORDER) do
+        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',FLUID_SAID[kind] or kind,math.floor(by[kind]+0.5),count[kind]) end
       end
       local met=(c.at_least==nil or total>=c.at_least) and (c.below==nil or total<c.below)
       return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),on,#parts>0 and table.concat(parts,', ')
@@ -354,7 +467,11 @@ return function(api)
         estimate and {value=total,scope='fluid:'..on..':'..c.fluid..(c.platform and '' or ':'..#list)} or nil
     end,
     -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
-    -- together, as a circuit wait condition reads it.
+    -- together, as a circuit wait condition reads it. A hub with no red or green wire reads every signal as 0, as the
+    -- game's own circuit wait conditions read it (d22 batch118 CA1, Astra: "no signal to read" held a below guard
+    -- unmet; measured on a copy of world n: a platform schedule's circuit condition rocket < 4850 on an unwired hub
+    -- was met at once and the platform left, rocket > -1 too; on a wired hub with no rocket signal, rocket < 4850 met,
+    -- rocket > 4850 not): below N (over 0) is met, at_least N (over 0) is never met while it has none.
     circuit_signal=function(p,c,estimate)
       local pl=M.platform_named(p,c.platform)
       local hub=pl.hub
@@ -369,9 +486,10 @@ return function(api)
           if okv and v then n=n+v end
         end
       end
-      local met=#wires>0 and (c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
+      local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
       return met,#wires>0 and string.format('%s %d on %s\'s hub (%s)',c.signal,n,c.platform,table.concat(wires,' and '))
-        or string.format('%s\'s hub has no red or green wire: no signal to read',c.platform),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
+        or string.format('%s\'s hub has no red or green wire: %s reads 0 there, as the game\'s own circuit conditions read an unwired hub (%s)',
+          c.platform,c.signal,met and 'met' or 'never met while it has none'),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
     end,
     -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
     -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
@@ -515,14 +633,15 @@ return function(api)
     -- each one (where, by what, when), as the game's destroyed alerts do.
     platform_loss=function(p,c,estimate,record)
       local pl
-      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
-      assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+      local force=p.force  -- (BT1) the force and the surface read once a check
+      for _,each in pairs(force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      local surface=pl and pl.surface
+      assert(surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
       local holder=record or c
       holder.loss_since=holder.loss_since or c.since_tick or game.tick
-      local names
-      if c.names then names={}; for _,n in ipairs(c.names) do names[n]=true end end
+      local names=name_set(c.names)  -- (BT1) made once per list
       local rows,n={},0
-      if api.losses_since then rows,n=api.losses_since(p.force.name,pl.surface.name,holder.loss_since,names,4) end
+      if api.losses_since then rows,n=api.losses_since(force.name,surface.name,holder.loss_since,names,4) end
       local want=c.at_least or 1
       if n==0 then return false,string.format('platform %s: nothing of ours%s lost since tick %d',c.platform,names and ' of those names' or '',holder.loss_since) end
       local parts={}
@@ -551,27 +670,25 @@ return function(api)
       local seq,ring=r and r.seq or 0,r and r.ring or {}
       local total=r and r.total and r.total.damage or 0
       size=size or 64
-      local function row(s) local x=ring[(s-1)%size+1]; if x and x.s==s then return x end end
       if holder.hit_seq==nil then
         -- the hits already after since_tick, back through the ring; older than the ring holds: counted from its oldest
         local s=seq
         while s>0 and s>seq-size do
-          local x=row(s)
+          local x=ring_row(ring,size,s)
           if not x or x.t<=holder.hit_since then break end
           s=s-1
         end
-        local after=row(s+1)
+        local after=ring_row(ring,size,s+1)
         holder.hit_seq,holder.hit_read,holder.hit_n,holder.hit_d,holder.hit_first=s,s,0,0,{}
         holder.hit_d0=after and after.D and after.D-after.d or total
         holder.hit_older=s>0 and s==seq-size and after~=nil or nil
       end
-      local names
-      if c.entity_names then names={}; for _,n in ipairs(c.entity_names) do names[n]=true end end
+      local names=name_set(c.entity_names)  -- (BT1) made once per list
       local from=holder.hit_read+1
       -- more hits between two checks than the ring holds: the overwritten ones are counted, not named
       if seq-from+1>size then holder.hit_unread=(holder.hit_unread or 0)+(seq-size-from+1); from=seq-size+1 end
       for s=from,seq do
-        local x=row(s)
+        local x=ring_row(ring,size,s)
         if x and (not names or names[x.n]) then
           holder.hit_n,holder.hit_d=holder.hit_n+1,holder.hit_d+(x.d or 0)
           if #holder.hit_first<4 then holder.hit_first[#holder.hit_first+1]={t=x.t,n=x.n,x=x.x,y=x.y,d=x.d,c=x.c,k=x.k} end
@@ -580,7 +697,7 @@ return function(api)
       holder.hit_read=math.max(holder.hit_read,seq)
       local n=names and holder.hit_n or seq-holder.hit_seq
       local dmg=names and holder.hit_d or math.max(0,total-holder.hit_d0)
-      local function g(v) return math.floor(v*10+0.5)/10 end
+      local g=tenth  -- (BT1) no closure a check
       local met
       if c.at_least==nil and c.damage==nil then met=n>=1
       else met=(c.at_least~=nil and n>=c.at_least) or (c.damage~=nil and dmg>=c.damage) end
@@ -612,8 +729,8 @@ return function(api)
       local asked=(c.from or c.to) and string.format(' (asked: %s->%s)',c.from or 'any',c.to or 'any') or ''
       local l=api.leg and api.leg(pl)
       if not l then
-        local at
-        pcall(function() at=pl.space_location and pl.space_location.name end)
+        local oka,at=pcall(location_name,pl)  -- (BT1) no closure a check
+        if not oka then at=nil end
         return false,string.format('platform %s: not flying (%s): not counted%s',c.platform,at and 'at '..at or 'no space location',asked)
       end
       local pct=math.floor(l.flown*1000+0.5)/10
@@ -626,14 +743,17 @@ return function(api)
         math.floor(c.at_least*1000+0.5)/10)
     end,
     -- (d22 batch92 BB2, Astra #1886: a probe flight's retreat when its power reserve drops) a platform's accumulators
-    -- together: the energy they hold over what they can hold, as each one's GUI shows them; met under fraction. Found
-    -- and read at each check (a platform holds tens of them).
+    -- together: the energy they hold over what they can hold, as each one's GUI shows them; met under fraction. Read
+    -- at each check (a platform holds tens of them); (d22 batch110 BT1) the list kept while the same, as fluid_count's
+    -- holders are.
     platform_energy_below=function(p,c)
       local pl
-      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
-      assert(pl and pl.surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
+      local force=p.force
+      for _,each in pairs(force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      local surface=pl and pl.surface
+      assert(surface,'no platform of ours named '..tostring(c.platform)..' with a surface')
       local stored,cap,n=0,0,0
-      for _,e in ipairs(pl.surface.find_entities_filtered{type='accumulator',force=p.force}) do
+      for _,e in ipairs(platform_accumulators(surface,force)) do
         n=n+1; stored=stored+(e.energy or 0); cap=cap+(e.electric_buffer_size or 0)
       end
       if n==0 or cap<=0 then return false,string.format('platform %s: no accumulator of ours',c.platform) end
@@ -829,12 +949,20 @@ return function(api)
     if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
     error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
   end
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|spoil_within|pod_landed|platform_arrived|platform_left|produced|platform_built|platform_ready|platform_loss|platform_hit|platform_energy_below|platform_progress|platform_ammo_below|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts',platform_damage='platform_hit'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
   -- conditions=[...]} met when each is; saw joins theirs. Members are plain conditions.
   checks.platform_ready=checks.platform_built
+  -- (d22 batch117 BZ1, Astra #1970: a full-edge abort that keeps the return leg's ammunition) a platform's whole stock
+  -- of one ammunition item: hub, turret slots, belts, inserter hands, machine outputs and chests, from the background
+  -- reading (ammoreserve.lua) with its age; a reading older than max_age (or none by then) meets it.
+  checks.platform_ammo_below=function(p,c)
+    local pl=M.platform_named(p,c.platform)
+    if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
+    return api.ammo_reserve(pl,p.force,c)
+  end
   checks['all']=function(p,c,estimate,record)
     local all,saws=true,{}
     for i,m in ipairs(c.conditions) do
@@ -846,7 +974,7 @@ return function(api)
   end
   -- Argument checks run when a plan is submitted, not when it first fires.
   local SURFACE_LIST='item_count, rocket_ready, rocket_parts, spoil_within, produced, ammo_below, fuel_below and fluid_count'
-  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_energy_below, platform_progress, platform_built, platform_ready, platform_arrived and platform_left'
+  local PLATFORM_LIST='ammo_below, item_count, fluid_count, circuit_signal, produced, ghosts_waiting, pod_landed, platform_loss, platform_hit, platform_energy_below, platform_progress, platform_ammo_below, platform_built, platform_ready, platform_arrived and platform_left'
   local SURFACE_KINDS,PLATFORM_KINDS={},{}
   for k in SURFACE_LIST:gsub(' and ',', '):gmatch('[%w_]+') do SURFACE_KINDS[k]=true end
   for k in PLATFORM_LIST:gsub(' and ',', '):gmatch('[%w_]+') do PLATFORM_KINDS[k]=true end
@@ -908,11 +1036,11 @@ return function(api)
       for _,pos in ipairs(c.positions) do api.position(pos) end
     end
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
-    -- (batch33 A2) quality: item_count reads it; no other condition does, and one given there is refused
+    -- (batch33 A2) quality: item_count and (d22 batch117 BZ1) platform_ammo_below read it; one given elsewhere is refused
     if c.quality~=nil then
-      assert(kind=='item_count','quality applies to item_count only (no other condition counts by quality)')
+      assert(kind=='item_count' or kind=='platform_ammo_below','quality applies to item_count and platform_ammo_below only (no other condition counts by quality)')
       assert(c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),
-        'item_count quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
+        kind..' quality is a quality name (normal, uncommon, rare, epic, legendary) or "any" (every quality summed)')
     end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')
@@ -1018,6 +1146,13 @@ return function(api)
       assert(type(c.platform)=='string' and #c.platform>0,'platform_energy_below requires platform (a platform of ours by name)')
       assert(type(c.fraction)=='number' and c.fraction>0 and c.fraction<=1,'platform_energy_below fraction: the share of the accumulators\' capacity, over 0 and up to 1 (0.3: under 30%)')
     end
+    if kind=='platform_ammo_below' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_ammo_below requires platform (a platform of ours by name)')
+      assert(type(c.item)=='string' and prototypes.item[c.item] and prototypes.item[c.item].type=='ammo','platform_ammo_below item: an ammunition item (firearm-magazine, rocket, railgun-ammo, ...)')
+      assert(type(c.count)=='number' and c.count>=1 and c.count<=1e6 and c.count==math.floor(c.count),'platform_ammo_below count: 1..1000000, met below it')
+      assert(c.quality==nil or c.quality=='any' or (type(c.quality)=='string' and prototypes.quality and prototypes.quality[c.quality]),'platform_ammo_below quality: a quality name or "any" (default normal)')
+      assert(c.max_age==nil or (type(c.max_age)=='number' and c.max_age>=30 and c.max_age<=900),'platform_ammo_below max_age: 30..900 seconds (default 120): a reading older than this meets it')
+    end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
     if kind=='pod_landed' then
@@ -1042,6 +1177,29 @@ return function(api)
         kind=='platform_left' and 'platform_left since_tick is a game tick up to now' or 'platform_arrived takes no since_tick')
     end
     return c
+  end
+  -- A guard that can never be met as things stand (d22 batch118 CA1, Astra: a guard on an unwired hub held unmet with
+  -- nothing said): circuit_signal at_least N (over 0) on a hub with no red or green wire (every signal reads 0 there),
+  -- alone or in all. The refusal's text, or nil.
+  function M.guard_refusal(p,c)
+    if type(c)~='table' then return nil end
+    local kind=M.ALIASES[c['until']] or c['until']
+    if kind=='all' then
+      for _,m in ipairs(type(c.conditions)=='table' and c.conditions or {}) do
+        local why=M.guard_refusal(p,m)
+        if why then return why end
+      end
+      return nil
+    end
+    if kind~='circuit_signal' or c.at_least==nil or c.at_least<=0 then return nil end
+    local ok,hub=pcall(function() return M.platform_named(p,c.platform).hub end)
+    if not (ok and hub and hub.valid) then return nil end
+    for _,w in ipairs({defines.wire_connector_id.circuit_red,defines.wire_connector_id.circuit_green}) do
+      local okn,net=pcall(function() return hub.get_circuit_network(w) end)
+      if okn and net then return nil end
+    end
+    return string.format('circuit_signal %s at_least %d on %s: its hub has no red or green wire, so %s reads 0 there (as the game\'s own circuit conditions read an unwired hub) and at_least %d is never met while it has none',
+      c.signal,c.at_least,c.platform,c.signal,c.at_least)
   end
   function M.check(p,c,estimate,record)
     if M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end

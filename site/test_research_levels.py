@@ -5,6 +5,9 @@ static/live.js under node (test_sitechat.py's stub page): state.research.repeati
 repeating_levels) becomes "Repeating research", a line saying the numbers are the level reached and the tech tree shows
 the next, and one row per technology in the state's order: its name, the level, and for the one being researched "
 researching N: P%". Without it the card is as before.
+(d23 batch119 CB1, viewer Aurora site:4386) The header above it shows the state's label, which names an infinite
+technology by the level under way (model.research_label: "Rocket fuel productivity 11", the row's "researching 11"),
+and the long run's shift pages say the same at a shift's end from the score's `infinite` (longrun.in_progress).
 """
 import json, os, re, shutil, subprocess, tempfile
 
@@ -28,11 +31,22 @@ def render(research):
         return json.loads(r.stdout)["research"]
 
 
+def longrun_levels():
+    import longrun
+    inf = {"mining-productivity-3": 14, "asteroid-productivity": 10}
+    assert longrun.in_progress("mining-productivity-3", inf) == "Mining productivity 17"
+    assert longrun.in_progress("asteroid-productivity", inf) == "Asteroid productivity 11"
+    assert longrun.in_progress("mining-productivity-3", {}) == "Mining productivity 3"  # its first level
+    assert longrun.in_progress("planet-discovery-gleba", inf) == "Planet discovery: Gleba"
+    assert longrun.in_progress(None, inf) is None
+
+
 def main():
+    longrun_levels()
     if not shutil.which("node"):
         print("research levels: skipped (no node)")
         return
-    base = {"current": "rocket-fuel-productivity", "label": "Rocket fuel productivity", "progress": 0.052, "done_count": 230, "recent": []}
+    base = {"current": "rocket-fuel-productivity", "label": "Rocket fuel productivity 11", "progress": 0.052, "done_count": 230, "recent": []}
     reps = [{"name": "mining-productivity-3", "label": "Mining productivity", "level": 14, "next": 15},
             {"name": "physical-projectile-damage-7", "label": "Physical projectile damage", "level": 10, "next": 11},
             {"name": "rocket-fuel-productivity", "label": "Rocket fuel productivity", "level": 10, "next": 11, "researching": True, "progress": 0.052},
@@ -45,9 +59,10 @@ def main():
     assert plain == ["Mining productivity 14", "Physical projectile damage 10", "Rocket fuel productivity 10 researching 11: 5%",
                      "Artillery shell damage 1"], plain
     assert 'class="is-researching"' in html and text
+    assert "<strong>Rocket fuel productivity 11</strong>" in html.split('class="research-levels"', 1)[0], html
     before = render(base)
     assert "Repeating research" not in before and "technologies done" in before
-    print("research levels: ok (repeating research on the research card: level reached, the one being researched with its progress)")
+    print("research levels: ok (repeating research on the research card: level reached, the one being researched with its progress; the header and the long run by level)")
 
 
 if __name__ == "__main__":

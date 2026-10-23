@@ -1370,7 +1370,7 @@ return function(api)
     -- builds no foundation that leaves a hole of empty space (tilecheck.lua);
     -- a region followed past HOLE_LIMIT tiles counts as open space. Tile
     -- ghosts already ordered count as foundation.
-    local holes, unchecked, holes_other = 0, false, nil
+    local holes, unchecked, holes_other, hole_regions = 0, false, nil, nil
     if on_platform then
       local filled, seeds = {}, {}
       for k, t in pairs(planned) do filled[k] = true; seeds[#seeds+1] = {t.x, t.y} end
@@ -1429,24 +1429,52 @@ return function(api)
           end
         end
       end
-      local required = {}
-      for _, fids in ipairs(seed_fids) do
-        local open_near, largest = false, nil
-        for fid in pairs(fids) do
-          if open_ids[fid] then open_near = true
-          elseif regions[fid] and (not largest or #regions[fid] > #regions[largest]) then largest = fid end
-        end
-        for fid in pairs(fids) do
-          if regions[fid] and (open_near or fid ~= largest) then required[fid] = true end
+      -- (d23 batch120 CC3, Astra #2019: Asterion's route crossed an empty corridor twice; each tile looked at alone saw
+      -- one enclosed region beside it, so the 65 tiles between the crossings were left out, and the floor check found the
+      -- last column of each crossing never built) the regions the new tiles join are grouped: two regions beside new
+      -- tiles that touch by a side were one empty space before and the hub never splits empty space, so of each group
+      -- all enclosed regions are filled when open space is among them, else all but the largest.
+      local parent = {}
+      local function find(a) while parent[a] and parent[a] ~= a do a = parent[a] end return a end
+      local function union(a, b) a, b = find(a), find(b); if a ~= b then parent[b] = a end end
+      local seed_at = {}
+      for si, seed in ipairs(seeds) do seed_at[key(seed[1], seed[2])] = si end
+      for si, seed in ipairs(seeds) do
+        for fid in pairs(seed_fids[si]) do union(-si, fid) end
+        for _, d in ipairs(DIRS) do
+          local sj = seed_at[key(seed[1]+d[1], seed[2]+d[2])]
+          if sj then union(-si, -sj) end
         end
       end
-      local other = 0
+      local open_group, largest = {}, {}
+      for fid in pairs(open_ids) do open_group[find(fid)] = true end
+      for fid, q in pairs(regions) do
+        local g = find(fid)
+        if not largest[g] or #q > #regions[largest[g]] then largest[g] = fid end
+      end
+      local required = {}
+      for fid in pairs(regions) do
+        local g = find(fid)
+        if open_group[g] or largest[g] ~= fid then required[fid] = true end
+      end
+      local other, filled_regions = 0, {}
       for fid, q in pairs(regions) do
         if required[fid] then
           for _, c in ipairs(q) do need(c[1], c[2], foundation_item, 'hole'); holes = holes + 1 end
+          local x0, y0, x1, y1 = q[1][1], q[1][2], q[1][1], q[1][2]
+          for _, c in ipairs(q) do x0, y0, x1, y1 = math.min(x0, c[1]), math.min(y0, c[2]), math.max(x1, c[1]), math.max(y1, c[2]) end
+          filled_regions[#filled_regions+1] = {n=#q, x0=x0, y0=y0, x1=x1, y1=y1}
         else other = other + #q end
       end
       holes_other = other > 0 and other or nil
+      -- the regions filled, largest first: their size and box
+      table.sort(filled_regions, function(a, b) if a.n ~= b.n then return a.n > b.n end if a.y0 ~= b.y0 then return a.y0 < b.y0 end return a.x0 < b.x0 end)
+      for i = 1, math.min(6, #filled_regions) do
+        local r = filled_regions[i]
+        hole_regions = hole_regions or {}
+        hole_regions[i] = string.format('%d tiles in %s-%s', r.n, tile_text(r.x0, r.y0), tile_text(r.x1, r.y1))
+      end
+      if #filled_regions > 6 then hole_regions[#hole_regions+1] = string.format('%d more regions', #filled_regions - 6) end
     end
 
     -- Tiles needed, by item; on a platform, new foundation that touches none
@@ -1476,8 +1504,9 @@ return function(api)
       end
       if holes > 0 then
         t.holes_note = string.format('%d empty tile%s would be enclosed by the new foundation; the game builds no foundation that leaves a hole, so they need foundation too (in positions)', holes, holes == 1 and '' or 's')
-          .. (holes_other and string.format('; %d more enclosed empty tiles are left out: beside each new tile with only enclosed regions round it, the largest may stay empty (the hub builds a tile once its empty side neighbours form one run)', holes_other) or '')
+          .. (holes_other and string.format('; %d more enclosed empty tiles are left out: of the enclosed regions the new tiles part (one empty space before), the largest may stay empty when no open space is among them (the hub builds a tile once its empty side neighbours form one run, and never splits empty space)', holes_other) or '')
         t.holes_other = holes_other
+        t.hole_regions = hole_regions
       end
       if unchecked then t.unchecked = 'the hole check stopped at its budget; some enclosed tiles may be missing' end
       if on_platform then
@@ -2678,6 +2707,14 @@ return function(api)
     end)
     out.checked = n
     out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')'..(over_cliffs > 0 and string.format('; %d over cliffs', over_cliffs) or '')) or nil
+    -- (d23 batch120 CC3, Astra #2019) a floor the hub would not finish, or one not checked yet, is in the summary
+    local ft = out.tiles
+    if out.summary and ft and ft.unbuilt_count then
+      out.summary = out.summary .. string.format('; %d foundation tile%s never built by the hub\'s rules (tiles.unbuilt)', ft.unbuilt_count, ft.unbuilt_count == 1 and '' or 's')
+    elseif out.summary and ft and ft.unchecked_count then
+      out.summary = out.summary .. (ft.check_id and string.format('; the floor is not checked yet: floor check #%d decides whether the hub builds all %d tiles (tiles.check)', ft.check_id, ft.unchecked_count)
+        or string.format('; the floor is not checked (%d tiles)', ft.unchecked_count))
+    end
     return out, recs, counts
   end
   return M

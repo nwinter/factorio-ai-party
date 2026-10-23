@@ -17,7 +17,8 @@ do
   local turret={valid=true,get_inventory=function() return inv({{name='rocket',count=10}}) end}
   local machine={valid=true,get_output_inventory=function() return inv({{name='rocket',count=2}}) end}
   local belt={valid=true,type='transport-belt',get_max_transport_line_index=function() return 2 end,
-    get_transport_line=function() return {get_contents=function() return {{name='rocket',count=5}} end} end}
+    -- (a transport line's # is its item count, as the game's: d22 batch110 BT1 reads no empty line's contents)
+    get_transport_line=function() return setmetatable({get_contents=function() return {{name='rocket',count=5}} end},{__len=function() return 5 end}) end}
   local surface={index=7,find_entities_filtered=function(f)
     finds[#finds+1]=f
     if f.type=='ammo-turret' then return {turret} end

@@ -116,7 +116,9 @@
   kind against the legs flown lately, the shots one of each takes of each ammunition aboard (`none hurt`: the
   ammunition cannot), and the use scaled from the legs flown, made meanwhile and left at each arrival. Each leg flown
   counts only the part of its connection flown (`0-15%`), the leg flown now too; each route leg says how much of it the
-  legs flown cover and that the rest is the game's spawn definition, not measured (`forecast_coverage`); `pessimistic:
+  legs flown cover and that the rest is the game's spawn definition, not measured (`forecast_coverage`). Shots count
+  for each ammunition only the asteroids its turrets target as built (priority list; ignore unprioritised targets on:
+  those only), none for an asteroid no turret targets; lines per ammunition and asteroid (`forecast_targets`); `pessimistic:
   {speed, dwell_s}` slows the legs and adds time at each stop.
   Example: `./fh call platform_endurance --args '{"platform":"Wayfarer","route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}'`
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
@@ -144,6 +146,7 @@
   foundation rules over every foundation tile ghost across ticks (about 150 rule checks a tick; a few thousand tiles
   take seconds) and gives its number; `floor_check: N` reads it: running, or done with `would_build` (the planned tiles
   the hub's rules build in turn once their items come), `never_built`, `by_reason`, the first 12 `unbuilt` with why,
+  every unbuilt tile as column runs (`unbuilt_tiles`, `(x,y0..y1)`), `groups` (touching unbuilt tiles: count, box, why)
   and `floor_now` (the foundation built now). `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
   the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
@@ -310,7 +313,10 @@
   first read empty, and at the end. Also damage taken by entity, entities lost, repair packs used, thruster fuel and
   oxidizer at the start and end. Kept in the save until `{id, clear: true}`. `{id}` reads one; `{}` lists them with
   `limit` (one watch a platform of the force), `counted` and `counting`: armed, watching, or done and not read; a done
-  one stops counting once read, kept 1 h after. A start at the limit is refused, naming the watches that count. The
+  one stops counting once read, kept 1 h after. `replace: true` keeps the watch it replaces readable by `{id}`
+  (a running one ends there, `ended_by` "replaced by #N"; an armed one is dropped); it stops counting, `replaced_by`
+  names the new one, kept 24 h unless read; the reply adds `replaced_watch` (its row) and `replaced_line`. It runs as a
+  step in the remote and platform lanes too. A start at the limit is refused, naming the watches that count. The
   setter hears in team.alerts when it begins at a departure and when it ends. A turret empty under a second between
   two samples can be missed. The `platform` read's defense row has `sampled_tick`: the tick its turrets were counted.
   Each sample (`sample_ticks`: 60) also reads `accumulators` together (`least_fraction` and its tick, `at_start`,
@@ -491,9 +497,10 @@
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
-  and so do tell, chat, say, operator, the board, research, platform calls, waits on `platform_arrived` and
-  `platform_left`, queue plans of the steps the remote lane allows, and every remote-view call with `platform=` or
-  `surface=` (place_ghosts, deconstruct, configure, circuit_set, requests with position, ...; the refusal lists them).
+  and so do tell, chat, `chat_ack`, say, operator, the board, `flight_watch {id}` or `{}`, research, platform calls,
+  waits on `platform_arrived` and `platform_left`, queue plans of the steps the remote lane allows, and every
+  remote-view call with `platform=` or `surface=` (place_ghosts, deconstruct, configure, circuit_set, requests with
+  position, ...; the refusal lists them).
   Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running; so does a `configure` its checks refuse. Aboard, `observe` gives `player.body: "none"`.
@@ -511,8 +518,10 @@
   one tick do not finish counts none unbuilt: `tiles.check` names the check across ticks it started, read with
   `platform_plan {platform, floor_check: N}`); for one with no foundation near,
   `tiles.connect` lists the fewest tiles that join it to the built floor (a chain touching by sides or corners,
-  `connect_line`); `holes` lists the enclosed tiles that need foundation (beside a new tile with only enclosed regions
-  round it, the largest may stay empty: `holes_other`).
+  `connect_line`); `holes` lists the enclosed tiles that need foundation and `hole_regions` their regions (size, box): of
+  the regions new tiles part from each other (one empty space before), all are filled when open space is among them,
+  else all but the largest (`holes_other`). The dry run's `summary` says when the floor is not checked yet or tiles
+  stay unbuilt.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
   to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
   a planet with no pad lands the same way, near its `near` spot.

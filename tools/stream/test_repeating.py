@@ -8,7 +8,11 @@ easily see the current level of ever increasing recurring research?"): python3 t
 - live.py passes it on as research.repeating ({} from Lua when empty becomes []);
 - model.repeating_levels: label without the prototype's starting number, the highest level first, the running one
   with research progress; the snapshot's research carries it; push_live keeps it (research is published whole);
-- the overlay's research card shows the first four as "Levels: Mining productivity 14 · ...".
+- the overlay's research card shows the first four as "Levels: Mining productivity 14 · ..." on its line under the bar;
+- (d23 batch119 CB1, viewer Aurora site:4386: "The research header says Mining productivity 3, but the detailed panel
+  says level 16 reached and researching 17") the snapshot's research label names an infinite technology by the level
+  under way ("Mining productivity 15"), and research.lua's board event for a finished level by the level done (the read
+  after the event: its level; an event newer than the read: one more; a restart's replay: no number).
 World n, d20 18:50 (saved first): this read took 1.79 ms and listed 18 (mining-productivity-3 at level 14,
 rocket-fuel-productivity 10 with 11 being researched); on the private copy the read took 1.8-2.6 ms against 1.3-2.0 ms
 before.
@@ -63,6 +67,29 @@ def snapshot():
     assert pub["research"]["repeating"][0]["level"] == 14, pub.get("research")
 
 
+def header_label():
+    assert model.research_label("mining-productivity-3", model.repeating_levels(ROWS)) == "Mining productivity 15"
+    assert model.research_label("rocket-fuel-productivity", model.repeating_levels(ROWS)) == "Rocket fuel productivity 11"
+    assert model.research_label("plastics", model.repeating_levels(ROWS)) == "Plastics"
+    # an infinite technology on its first level has no row yet: the prototype's own level is the name's number
+    assert model.research_label("mining-productivity-3", []) == "Mining productivity 3"
+    m = model.Model({"agents": {"sol": {}}})
+    m.ingest({"tick": 100, "agents": [], "research": {"current": "mining-productivity-3", "done": [], "progress": 0.4,
+                                                       "repeating": ROWS}}, now=1000)
+    assert m.snapshot(1001)["research"]["label"] == "Mining productivity 15"
+    # a finished level (research.lua titles the board event by the prototype name): the read at tick 100 came after
+    # the event at 90 (level 14 is the one done), the event at 130 is newer than the read (15 done)
+    m.ingest({"board_events": [
+        {"seq": 1, "tick": 90, "by": "research", "kind": "research", "title": "mining-productivity-3", "change": "done", "status": "done"},
+        {"seq": 2, "tick": 130, "by": "research", "kind": "research", "title": "mining-productivity-3", "change": "done", "status": "done"},
+        {"seq": 3, "tick": 131, "by": "research", "kind": "research", "title": "steel-axe", "change": "done", "status": "done"},
+        {"seq": 4, "tick": 132, "by": "research", "kind": "research", "title": "railgun-damage-1", "change": "done", "status": "done"}]},
+        now=1002)
+    titles = [e["title"] for e in m.snapshot(1003)["board"]["events"]]
+    assert titles == ["Mining productivity 14", "Mining productivity 15", "Steel axe", "Railgun damage 1"], titles
+    assert model.level_done_label({"label": "Mining productivity", "level": 14}, None, 100) is None
+
+
 def live_parse():
     import live
     src = open(live.__file__).read()
@@ -71,17 +98,19 @@ def live_parse():
 
 def overlay():
     code = open(os.path.join(HERE, "static", "overlay.js")).read()
-    assert 'researchCard.levels = el("div", "levels")' in code and '"Levels: " + reps.map((x) => x.label + " " + x.level)' in code
+    # (batch115) on the card's one line under the bar, after "N done · latest ...": it pans when longer than the card
+    assert 'if (levels) rb.append(' in code and '"Levels: " + reps.map((x) => x.label + " " + x.level)' in code
 
 
 def main():
     lua()
     levels()
     snapshot()
+    header_label()
     live_parse()
     overlay()
     print("repeating research: ok (the extras read's infinite technologies, labelled and ordered by level, on the "
-          "snapshot, the site state and the overlay card)")
+          "snapshot, the site state and the overlay card; the header and finished levels by level)")
 
 
 if __name__ == "__main__":

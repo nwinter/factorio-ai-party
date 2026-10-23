@@ -31,6 +31,11 @@
   `platform_progress` (`platform`, `at_least` 0..1, `from?`, `to?`: the share of its leg flown, as `platforms` shows it,
   in the direction it flies; on the leg asked only, so a return leg, another leg or a stop never meets it; a fired
   guard keeps the progress and leg; remote and platform lanes);
+  `platform_ammo_below` (`platform`, `item` (ammunition), `count`, `quality?` (default normal, or "any"), `max_age?`
+  30..900 s, default 120): that item aboard in all (hub, turret slots, belts, inserter hands, machine outputs, chests)
+  under count, from a background reading begun every 30 s while a check asks (a pass about 2 s on 6743 belts); saw
+  gives the total by place and its age; met too when the reading is older than max_age, or none by max_age after the
+  first check; remote and platform lanes);
   `ghosts_waiting` with `platform` (every ghost aboard, or `area`;
   remote and platform lanes too); `produced` (`positions`, `item`, `at_least`: made since the wait began, by the machines'
   products-finished counter; `surface` (a planet): those machines there by remote view, in a charted chunk, in the
@@ -39,7 +44,7 @@
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: every tank,
   pipe, thruster and machine of ours there holding it (fusion reactors and generators too), saw saying how much in each kind; or `surface` (a planet) with
-  `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
+  `positions` or `area`: our tanks, pipes and machines there) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires; a hub with no wire reads every signal as 0, as the game's own circuit conditions do, so `below` is met and a guard `at_least` over 0 is refused there), queue
   steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
   `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
   every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
@@ -100,8 +105,8 @@
   any distance, with move_to's enemy checks (`walk: false` keeps it from walking; standing orders keep `max_walk`). `guards` (up to 8
   `{when, goto | steps}`) are checked while the plan runs. `dry_run: true` checks the plan and queues nothing.
   `lane: "remote"`: the remote lane (`./fh help space-age`; its `configure`, `circuit_set`, `circuit`, `wire`,
-  `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do); `lane: "platform:NAME"`: a remote lane of its own for that
-  platform (the same steps), apart from the remote lane and the other platforms' lanes; each queue call takes the same
+  `requests`, `place_ghosts` and `deconstruct` steps take `platform` or `surface`, as their direct calls do; `flight_watch` too); `lane: "platform:NAME"`: a remote lane of its own for that
+  platform (the same steps; a `flight_watch` start without `platform` or `id` watches that platform), apart from the remote lane and the other platforms' lanes; each queue call takes the same
   `lane`, and `queue_status`'s `lanes.platforms` lists them. A queue step or standing order step that ends with you 8
   or more tiles from where it began is named in your next reply: `moved_by`
   (`standing order rearm-se (rearm, done) moved you from (10,4) to (53,112) (112 tiles)`). Example:

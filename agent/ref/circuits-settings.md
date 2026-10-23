@@ -20,11 +20,13 @@
     condition); provider chests send contents whenever wired; no chest has a logistic condition. A roboport: `read:
     {logistic_network_contents: true}`.
   - `settings: {filters, filter_mode}` sets inserter and loader filters as `configure` does. A belt's
-    `read_contents_mode`: pulse, hold (this tile), entire_belt_hold (the whole belt); inspect's `belt_segment` names
-    the physical segment and the whole belt apart (the whole belt as the harness follows it), beside what the wires
-    read now (the game's own signal; a read switched on this tick shows from the next), and the belts on those
-    networks that read their contents with each one's mode (this one marked; `belt_readers`) and the other entities
-    on them.
+    `read_contents_mode`: pulse, hold (this tile), entire_belt_hold (its belt segment, as the game counts it: through
+    corners, underground pairs and belt tier changes, and along the main line past a side-load; a belt side-loading
+    onto another ends its own segment there, and a splitter ends one; what is under an underground pair and inside a
+    splitter's lanes at the segment's ends counts too). inspect's `belt_segment` names that segment (belts, where
+    each end is) and what it holds, beside what the wires read now (the game's own signal; a read switched on this
+    tick shows from the next), and the belts on those networks that read their contents with each one's mode (this
+    one marked; `belt_readers`) and the other entities on them.
   - An unknown argument's refusal names the closest valid name and what that entity takes (on `configure` too).
   - Quality: every signal is `"name"`, `"name@quality"` (`"iron-plate@uncommon"`), `"type:name@quality"` or `{type?,
     name, quality?}`; a `signals` entry `{signal, count, quality?}` and a decider output `{signal, quality?, ...}` take
@@ -58,9 +60,9 @@
   on another planet by remote view; entities out of sight now are not read, `out_of_sight` counts them): with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
-  (`entire_belt_hold`) on one network whose belts overlap (counted twice); each whole-belt reader whose read is shorter
-  than the belt in line through it (the game reads the reader's belt segment), with the belts left out upstream and
-  downstream, undergrounds crossed (`short_reads`); and each asteroid collector whose filter the circuit sets: the
+  (`entire_belt_hold`) on one network whose segments share belts (counted twice); each whole-belt reader whose segment
+  (the same rule as inspect's) is shorter than the belt in line through it, with the belts left out upstream and
+  downstream and where its segment ends (`short_reads`); and each asteroid collector whose filter the circuit sets: the
   filter it holds and the chunk signals there. `feeders` (and `feeder_rows`): each inserter or loader whose filters the
   circuit sets or which it turns on and off, on the platform or among the entities of `area` or `positions` (the first
   8; `inserter: {x, y}` reads one): its filter mode, what it takes now and its pickup, the signals on its

@@ -1,9 +1,9 @@
 -- circuit_audit {platform} (d17 batch14 A7b, Sol: twice metal-starved while a collector filtered oxide despite a
 -- positive metal demand; and whole-belt readers counting the same belt twice): a platform's circuit readings that
 -- mislead, as the entities' settings and the networks show them now.
--- - belts reading their entire belt (read_contents_mode entire_belt_hold): each one's whole belt (followed through
---   its inputs and outputs, an underground to its pair, one each way; a splitter or side-load ends it), and two such
---   readers on the same circuit network whose whole belts share tiles: those items reach the network twice;
+-- - belts reading their entire belt (read_contents_mode entire_belt_hold): each one's belt segment as the game counts
+--   it (beltseg.lua), the belts in line past its ends, and two such readers on the same circuit network whose
+--   segments share belts: those items reach the network twice;
 -- - asteroid collectors whose filters the circuit sets (set_filter): the chunk signals on their networks with their
 --   values (only a positive one sets a filter), and the filter the collector holds now.
 -- Read only; bounded: 256 readers, 64 collectors, SEG tiles each way of a belt.
@@ -23,49 +23,27 @@ return function(api)
     end
     return out
   end
-  -- The whole belt through e: {set, n, ways} (ways: each way's belts in order from e)
-  local function whole(e)
-    local set, n, ways = {[key(e)]=true}, 1, {inputs={}, outputs={}}
-    for _, way in ipairs({'inputs', 'outputs'}) do
-      local cur, steps = e, 0
-      while steps < SEG do
-        local bn = try(function() return cur.belt_neighbours end)
-        local list = bn and bn[way] or {}
-        local nxt = #list == 1 and list[1] or nil
-        if not nxt and cur.type == 'underground-belt' then
-          local pair = try(function() return cur.neighbours end)
-          local t = try(function() return cur.belt_to_ground_type end)
-          if pair and pair.valid and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
-        end
-        if not nxt or nxt.type == 'splitter' or set[key(nxt)] then break end
-        set[key(nxt)] = true; n = n + 1; ways[way][#ways[way]+1] = nxt
-        cur = nxt; steps = steps + 1
-      end
-    end
-    return set, n, ways
-  end
-  -- What a whole-belt read leaves out (d17 batch19 B2, Astra: Swiftlet's mixed-ingredient control deadlocked; inspect
-  -- showed eight tiles and the read covered fewer): the game reads the reader's belt segment, and every belt of one
-  -- segment reports the same total_segment_length, the sum of their line lengths (measured on world n's Spindle: 14
-  -- belts, a lane 12.83 and 14.30 tiles). Walking out from the reader along the physical belt (undergrounds to their
-  -- pair, as whole), the belts from the first with another segment length on are left out: {runs, n, seg} or nil.
-  local function seglen(e) return try(function() return e.get_transport_line(1).total_segment_length end) end
-  local function left_out(e, ways)
-    local mine = seglen(e)
-    if not mine then return nil end
+  -- The belt segment a whole-belt reader counts, and the belt in line through it (beltseg.lua; d22 batch118 CA2,
+  -- measured on a private 2.0.77 server): {set (the segment's belts by key), n, phys (belts in line), out (the belts
+  -- in line left out of the read: {runs, n, seg}, or nil)}.
+  local beltseg = api.beltseg or require('beltseg')()
+  local function reading(e)
+    local w = beltseg.walk(e, SEG, true)
+    local p = w.phys
+    local set = {}
+    for _, x in ipairs(w.list) do set[key(x)] = true end
     local runs, n = {}, 0
-    for _, way in ipairs({'outputs', 'inputs'}) do
-      local list, cut = ways[way], nil
-      for i, b in ipairs(list) do
-        local l = seglen(b)
-        if not cut and (not l or math.abs(l - mine) > 0.001) then cut = i end
-      end
-      if cut then
-        runs[#runs+1] = {side=way == 'outputs' and 'downstream' or 'upstream', from=list[cut].position, to=list[#list].position, belts=#list - cut + 1}
-        n = n + #list - cut + 1
-      end
+    local up = p.at - w.at
+    if up > 0 then
+      runs[#runs+1] = {side='upstream', from=p.list[up].position, to=p.list[1].position, belts=up, why=w.ends.inputs}
+      n = n + up
     end
-    return n > 0 and {runs=runs, n=n, seg=mine} or nil
+    local down = (#p.list - p.at) - (#w.list - w.at)
+    if down > 0 then
+      runs[#runs+1] = {side='downstream', from=p.list[#p.list - down + 1].position, to=p.list[#p.list].position, belts=down, why=w.ends.outputs}
+      n = n + down
+    end
+    return {set=set, n=#w.list, phys=#p.list, out=n > 0 and w.length and {runs=runs, n=n, seg=w.length} or nil}
   end
   local MODE
   -- Networks across entities (d17 batch16 B3, Sol: deficit wiring took dozens of inspect calls and comparing networks
@@ -168,7 +146,7 @@ return function(api)
   -- crusher feed): each inserter of ours whose filters the circuit sets, or which the circuit turns on and off, with the
   -- signals on its networks, the combinators putting out onto them (and the networks those read, FEED_DEPTH deep), and
   -- each belt reader among them: its read mode, exactly which belts its count covers (hold: its own belt; whole belt:
-  -- the game's segment, as left_out reads it), what that count holds now of the items the inserter takes, the belts of
+  -- the game's segment, beltseg.lua), what that count holds now of the items the inserter takes, the belts of
   -- it past the inserter's pickup (it cannot take what they hold), and side-loads joining inside the count. The hub's
   -- read is said apart. Bounded: FEEDERS inserters, NET_CONNS connectors a network.
   local FEEDERS, NET_CONNS, FEED_DEPTH, SOURCES = 8, 96, 3, 8
@@ -197,9 +175,7 @@ return function(api)
     end
     return c[item] or 0
   end
-  -- the belts a reader's count covers, in flow order, and the reader's index in it
-  -- (the walk follows the straight input at a side-load, as the game's segment does, an underground to its pair, and
-  -- stops at a splitter or where the segment length changes)
+  -- the belts a reader's count covers, in flow order, and the reader's index in it (beltseg.lua: the game's segment)
   local covered_walk
   local function covered(b, mode)
     if mode ~= 'entire_belt_hold' then return {b}, 1 end
@@ -213,34 +189,8 @@ return function(api)
     return list, at_i
   end
   covered_walk = function(b)
-    local mine = seglen(b)
-    local seen = {[key(b)]=true}
-    local function step(cur, way)
-      local list = try(function() return cur.belt_neighbours[way] end) or {}
-      local nxt
-      if #list == 1 then nxt = list[1]
-      elseif way == 'inputs' then
-        for _, x in ipairs(list) do if x.direction ~= nil and x.direction == cur.direction then nxt = x end end
-      end
-      if not nxt and cur.type == 'underground-belt' then
-        local pair = try(function() return cur.neighbours end)
-        local t = try(function() return cur.belt_to_ground_type end)
-        if pair and pair.valid and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
-      end
-      if not nxt or nxt.type == 'splitter' or seen[key(nxt)] then return nil end
-      if mine and math.abs((seglen(nxt) or -1) - mine) > 0.001 then return nil end
-      seen[key(nxt)] = true
-      return nxt
-    end
-    local up, cur = {}, b
-    for _ = 1, SEG do cur = step(cur, 'inputs'); if not cur then break end; up[#up+1] = cur end
-    local list = {}
-    for i = #up, 1, -1 do list[#list+1] = up[i] end
-    list[#list+1] = b
-    local at_i = #list
-    cur = b
-    for _ = 1, SEG do cur = step(cur, 'outputs'); if not cur then break end; list[#list+1] = cur end
-    return list, at_i
+    local w = beltseg.walk(b, SEG)
+    return w.list, w.at
   end
   local function connectors(e)
     local W = defines.wire_connector_id
@@ -433,8 +383,9 @@ return function(api)
       if cb and try(function() return cb.read_contents end) and try(function() return cb.read_contents_mode end) == MODE then
         local nets = networks(b)
         if #nets > 0 then
-          local set, n, ways = whole(b)
-          readers[#readers+1] = {e=b, nets=nets, set=set, n=n, out=left_out(b, ways)}
+          local r = reading(b)
+          r.e, r.nets = b, nets
+          readers[#readers+1] = r
         end
       end
     end
@@ -448,7 +399,7 @@ return function(api)
           for _, nx in ipairs(x.nets) do
             for _, ny in ipairs(y.nets) do
               if nx.id == ny.id then
-                doubles[#doubles+1] = string.format('%s %s and %s %s both read the whole belt (%d tiles shared) onto %s network #%d: those items reach it twice',
+                doubles[#doubles+1] = string.format('%s %s and %s %s both read one belt segment (%d belts shared) onto %s network #%d: those items reach it twice',
                   x.e.name, at(x.e.position), y.e.name, at(y.e.position), shared, nx.color, nx.id)
               end
             end
@@ -459,19 +410,20 @@ return function(api)
     local short = {}
     for _, r in ipairs(readers) do
       if r.out then
-        local parts, names = {}, {}
+        local parts, names, rows = {}, {}, {}
         for _, x in ipairs(r.out.runs) do
-          parts[#parts+1] = string.format('%d belt%s %s from %s to %s', x.belts, x.belts == 1 and '' or 's', x.side, at(x.from), at(x.to))
+          parts[#parts+1] = string.format('%d belt%s %s from %s to %s (its segment ends %s)', x.belts, x.belts == 1 and '' or 's', x.side, at(x.from), at(x.to), x.why)
+          rows[#rows+1] = {side=x.side, from=x.from, to=x.to, belts=x.belts}
         end
         for _, nt in ipairs(r.nets) do names[#names+1] = nt.color .. ' #' .. nt.id end
-        short[#short+1] = {position=r.e.position, segment_tiles=math.floor(r.out.seg * 100 + 0.5) / 100, physical_belts=r.n, left_out=r.out.runs}
-        lines[#lines+1] = string.format('%s %s reads its whole belt onto %s, and the game counts only its belt segment (%g tiles, %d of the %d belts in line); left out of the read: %s; what they carry never reaches the network',
-          r.e.name, at(r.e.position), table.concat(names, ' and '), math.floor(r.out.seg * 100 + 0.5) / 100, r.n - r.out.n, r.n, table.concat(parts, '; '))
+        short[#short+1] = {position=r.e.position, segment_tiles=math.floor(r.out.seg * 100 + 0.5) / 100, physical_belts=r.phys, left_out=rows}
+        lines[#lines+1] = string.format('%s %s reads its belt segment onto %s, as the game counts it (%g tiles, %d of the %d belts in line); not in this read: %s',
+          r.e.name, at(r.e.position), table.concat(names, ' and '), math.floor(r.out.seg * 100 + 0.5) / 100, r.n, r.phys, table.concat(parts, '; '))
       end
     end
     for i, d in ipairs(doubles) do if i <= 12 then lines[#lines+1] = d end end
     if #doubles > 12 then lines[#lines+1] = string.format('+%d more pairs', #doubles - 12) end
-    lines[#lines+1] = string.format('%d belt%s read their whole belt onto a network; %d pair%s on one network share tiles', #readers, #readers == 1 and '' or 's',
+    lines[#lines+1] = string.format('%d belt%s read their whole belt (its segment) onto a network; %d pair%s on one network share belts', #readers, #readers == 1 and '' or 's',
       #doubles, #doubles == 1 and '' or 's')
     -- collectors whose filters the circuit sets
     local cols = {}
@@ -526,6 +478,6 @@ return function(api)
       collectors=#cols > 0 and cols or nil, feeders=#feeders > 0 and feeders or nil, feeder_rows=#feeder_rows > 0 and feeder_rows or nil}
   end
   M.schema = {circuit_audit = {surface='optional planet, surface or platform name (default yours): with area or positions: the networks of our entities there; one out of sight now (no radar coverage) is not read, said as out_of_sight there by remote view (d20 batch62 X4)',platform='platform name (with area or positions: optional, else your surface)',inserter='optional {x, y}, with platform: that one feeder\'s circuit read (feeders)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
-    returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose whole belts share tiles (those items reach the network twice); each such reader whose belt segment (what the game reads) is shorter than the belt in line through it, across undergrounds: the belts left out of the read, upstream and downstream (short_reads [{position, segment_tiles, physical_belts, left_out [{side, from, to, belts}]}]); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]; feeders (lines) and feeder_rows [{name, position, filters, set_filters, gated, mode, pickup, readers [{position, mode, belts, from, to, holds, past_pickup, joins}], line}]: each inserter or loader whose filters the circuit sets or which it turns on and off, on the platform or among the entities of area or positions (the first 8; inserter: one): what it takes now, its pickup, the signals on its networks, the combinators putting out onto them and the networks those read (3 deep), constant combinators, the hub\'s own read apart, and each belt reader on them: its read mode, the belts its count covers (whole belt: the game\'s segment, in flow order), what it holds now of what the inserter takes, the belts of it past the inserter\'s pickup (it cannot take those) and side-loads joining inside the count (a read walks at most 160 belts, 400 for one inserter; a reader past that is named, not walked). With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
+    returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose segments share belts (those items reach the network twice); each such reader whose belt segment (what the game reads: through corners, undergrounds and tier changes, and along the main line past a side-load; a belt side-loading onto another ends its own segment, and a splitter ends one) is shorter than the belt in line through it, across undergrounds: the belts left out of the read, upstream and downstream (short_reads [{position, segment_tiles, physical_belts, left_out [{side, from, to, belts}]}]); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]; feeders (lines) and feeder_rows [{name, position, filters, set_filters, gated, mode, pickup, readers [{position, mode, belts, from, to, holds, past_pickup, joins}], line}]: each inserter or loader whose filters the circuit sets or which it turns on and off, on the platform or among the entities of area or positions (the first 8; inserter: one): what it takes now, its pickup, the signals on its networks, the combinators putting out onto them and the networks those read (3 deep), constant combinators, the hub\'s own read apart, and each belt reader on them: its read mode, the belts its count covers (whole belt: the game\'s segment, in flow order), what it holds now of what the inserter takes, the belts of it past the inserter\'s pickup (it cannot take those) and side-loads joining inside the count (a read walks at most 160 belts, 400 for one inserter; a reader past that is named, not walked). With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
   return M
 end

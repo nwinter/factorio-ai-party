@@ -289,31 +289,83 @@ return function(api)
     trees[kind] = out
     return out
   end
+  -- What one asteroid of a kind breaks into, one level: {child: count}.
+  local kids = {}
+  local function children(kind)
+    if kids[kind] then return kids[kind] end
+    local out = {}
+    local e = prototypes.entity[kind]
+    for _, t in ipairs(e and try(function() return e.dying_trigger_effect end) or {}) do
+      local child = t.type == 'create-entity' and t.entity_name and prototypes.entity[t.entity_name]
+      if child and try(function() return child.type end) == 'asteroid' then
+        out[t.entity_name] = (out[t.entity_name] or 0) + #(t.offsets or {{0, 0}}) * (t.repeat_count or 1) * (t.probability or 1)
+      end
+    end
+    kids[kind] = out
+    return out
+  end
+  -- (d22 batch105 BO2, Astra 20:24: "Asterion rocket turrets target ONLY big asteroids; rails handle huge") The
+  -- turrets aboard as built and what each fires at: the game's rule (2.0.77; platdefense.lua reads the same) is the
+  -- turret's own priority list (the turret GUI's) with Ignore unprioritised targets: on, it fires at the listed
+  -- entities only; off, at any (the list only orders them). Every turret and asteroid prototype has the same target mask
+  -- (common) and no ammunition a target filter. The prototype has no default list to read: a turret built new has none
+  -- and ignore off (read on a copy of world n). {name, cats (ammo categories), held, set (nil: any), list,
+  -- unknown (not read)} each.
+  local TURRET_TYPES = {'ammo-turret', 'electric-turret', 'fluid-turret'}
+  local function scan_turrets(pl)
+    local out, cats = {}, {}
+    for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type=TURRET_TYPES, force=pl.force} end) or {}) do
+      local row = {name=t.name}
+      if not cats[t.name] then cats[t.name] = try(function() return t.prototype.attack_parameters.ammo_categories end) or {} end
+      row.cats = cats[t.name]
+      if #row.cats > 0 then
+        local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
+        row.held = inv and try(function() return inv.get_contents() end) or {}
+      end
+      local ign = try(function() return t.ignore_unprioritised_targets end)
+      local list = try(function() local l = {}; for _, x in pairs(t.priority_targets) do l[#l+1] = x.name end; return l end)
+      if type(ign) ~= 'boolean' or not list then row.unknown = true
+      elseif ign then
+        row.set, row.list = {}, list
+        for _, n in ipairs(list) do row.set[n] = true end
+      end
+      out[#out+1] = row
+    end
+    return out
+  end
+  M.scan_turrets = scan_turrets
+  local function engages(t, kind) return t.unknown or not t.set or t.set[kind] == true end
+  local function fires(t, cat)
+    for _, c in ipairs(t.cats or {}) do if c == cat then return true end end
+    return false
+  end
   local function shots_of(kind, ammo, force, turret, cache, quality)
     cache[kind] = cache[kind] or {}
     if cache[kind][ammo] == nil then local s = M.shots(kind, ammo, force, turret, quality); cache[kind][ammo] = s == nil and 'unknown' or s end
     return cache[kind][ammo]
   end
   -- Shots of ammo one asteroid of a kind takes, its fragments it can hurt included: total, the kind's own (number,
-  -- false or 'unknown'), and the fragments' part.
-  local function tree_shots(kind, ammo, force, turret, cache, quality)
+  -- false or 'unknown'), the fragments' part, and whether its turrets target it. (BO2) aim {targets (kind -> its
+  -- turrets target it), hit (kind -> a turret aboard targets it)}: a kind its turrets do not target adds no shots of its
+  -- own; a kind no turret aboard targets is not destroyed, so neither it nor its fragments add any. No aim: every kind.
+  local function tree_shots(kind, ammo, force, turret, cache, quality, aim, depth)
+    depth = depth or 0
     local own = shots_of(kind, ammo, force, turret, cache, quality)
+    if aim and not aim.hit(kind) then return 0, own, 0, false end
+    local mine = not aim or aim.targets(kind)
     local frag = 0
-    for k, n in pairs(M.breakup(kind)) do
-      if k ~= kind then
-        local s = shots_of(k, ammo, force, turret, cache, quality)
-        if s ~= false then frag = frag + n * (s == 'unknown' and 1 or s) end
-      end
+    if depth < 4 then
+      for k, n in pairs(children(kind)) do frag = frag + n * (tree_shots(k, ammo, force, turret, cache, quality, aim, depth + 1)) end
     end
-    return (own == false and 0 or own == 'unknown' and 1 or own) + frag, own, frag
+    return (mine and (own == false and 0 or own == 'unknown' and 1 or own) or 0) + frag, own, frag, mine
   end
   -- Weighted shooting of a density table for one ammunition: sum of chance x shots, fragments included (unknown shots
   -- count 1, can't-hurt 0); cant: the kinds it cannot hurt (itself; their fragments may count).
-  local function load_of(dens, ammo, force, turret, cache, quality)
+  local function load_of(dens, ammo, force, turret, cache, quality, aim)
     local w, cant = 0, {}
     for kind, p in pairs(dens) do
-      local t, own = tree_shots(kind, ammo, force, turret, cache, quality)
-      if own == false then cant[#cant+1] = kind end
+      local t, own, _, mine = tree_shots(kind, ammo, force, turret, cache, quality, aim)
+      if own == false and mine then cant[#cant+1] = kind end
       w = w + p * t
     end
     table.sort(cant)
@@ -339,6 +391,32 @@ return function(api)
     end
     return out
   end
+  -- (BO2) asteroid names by size: 'big' for all four kinds of a size, else 'big-metallic/oxide'.
+  local FOUR = {metallic=true, carbonic=true, oxide=true, promethium=true}
+  local function set_text(list)
+    local by, order = {}, {}
+    for _, n in ipairs(list) do
+      local size, stem = n:match('^(%a+)%-(.-)%-asteroid$')
+      local key = size or n
+      if by[key] == nil then by[key] = size and {} or false; order[#order+1] = key end
+      if size then table.insert(by[key], stem) end
+    end
+    local parts = {}
+    for _, k in ipairs(order) do
+      local st = by[k]
+      local all = st and #st == 4
+      for _, x in ipairs(st or {}) do if not FOUR[x] then all = false end end
+      if st == false or all then parts[#parts+1] = k
+      else table.sort(st); parts[#parts+1] = k .. '-' .. table.concat(st, '/') end
+    end
+    return table.concat(parts, ', ')
+  end
+  local function targets_text(t)
+    if t.unknown then return 'its targets not read (counted as any)' end
+    if not t.set then return 'any asteroid (ignore unprioritised targets off)' end
+    if #t.list == 0 then return 'nothing (ignore unprioritised targets on, an empty list)' end
+    return set_text(t.list) .. ' only'
+  end
   -- legs: endurance's legs ({from, to, km, minutes}); rows: its ammunition rows ({name, stock, received, phases});
   -- model: endurance's ammomodel (optional: without it, made is the rate times the time).
   function M.forecast(pl, legs, rows, opts, model)
@@ -356,10 +434,52 @@ return function(api)
     for k, p in pairs(fd) do fd[k] = p / fmin end
     local cache, lines = {}, {}
     hits = {}  -- (AX1) the force's bonuses as they are now
-    local fire = {}  -- ammunition -> {turret, quality} (turret_for, once a forecast)
+    -- (BO2) the turrets aboard, read once: the turret that fires each ammunition (the first of its category) and the
+    -- ammunition's quality (the first holding it), as turret_for; and what each targets
+    local turrets = scan_turrets(pl)
+    local fire = {}  -- ammunition -> {turret, quality}
     local function fire_of(ammo)
-      if not fire[ammo] then local t, q = turret_for(pl, ammo); fire[ammo] = {t, q} end
+      if not fire[ammo] then
+        local cat = category(ammo)
+        local name, quality
+        for _, t in ipairs(turrets) do
+          if fires(t, cat) then
+            name = name or t.name
+            for _, c in ipairs(t.held or {}) do
+              if c.name == ammo then quality = type(c.quality) == 'table' and c.quality.name or c.quality or 'normal'; break end
+            end
+            if quality then break end
+          end
+        end
+        fire[ammo] = {name, quality or 'normal'}
+      end
       return fire[ammo][1], fire[ammo][2]
+    end
+    local hit_by = {}
+    local function hit(kind)
+      if hit_by[kind] == nil then
+        hit_by[kind] = false
+        for _, t in ipairs(turrets) do if engages(t, kind) then hit_by[kind] = true; break end end
+      end
+      return hit_by[kind]
+    end
+    local aims = {}
+    -- an ammunition's aim (tree_shots): its turrets and the kinds they target; nil with no turret aboard read
+    local function aim_of(ammo)
+      if #turrets == 0 then return nil end
+      if not aims[ammo] then
+        local cat = category(ammo)
+        local mine, tg = {}, {}
+        for _, t in ipairs(turrets) do if fires(t, cat) then mine[#mine+1] = t end end
+        aims[ammo] = {mine=mine, hit=hit, targets=function(kind)
+          if tg[kind] == nil then
+            tg[kind] = false
+            for _, t in ipairs(mine) do if engages(t, kind) then tg[kind] = true; break end end
+          end
+          return tg[kind]
+        end}
+      end
+      return aims[ammo]
     end
     local seen_kinds, kind_list = {}, {}
     local flown_names = {}
@@ -381,6 +501,7 @@ return function(api)
       return parts
     end
     lines[#lines+1] = 'fragments counted: an asteroid destroyed breaks into smaller ones by its prototype (huge into 3 big, big into 3 medium, medium into 3 small), and shots per asteroid add those of its fragments each ammunition can hurt'
+      .. (#turrets > 0 and ' and its turrets target; an asteroid no turret aboard targets adds none, nor its fragments (turret targets below)' or '; no turret aboard read: every asteroid counted for each ammunition')
     local left, t_cum, made_cum = {}, {}, {}
     for _, r in ipairs(rows) do left[r.name] = (r.stock or 0) + (r.received or 0) end
     for i, l in ipairs(legs) do
@@ -407,25 +528,28 @@ return function(api)
         end
         for _, r in ipairs(rows) do
           local turret, quality = fire_of(r.name)
-          local w, cant = load_of(dens, r.name, pl.force, turret, cache, quality)
+          local aim = aim_of(r.name)
+          local w, cant = load_of(dens, r.name, pl.force, turret, cache, quality, aim)
           local shots = {}
           for j = 1, math.min(4, #kinds) do
-            local _, s, frag = tree_shots(kinds[j].k, r.name, pl.force, turret, cache, quality)
-            shots[#shots+1] = string.format('%s %s%s', kinds[j].k, s == false and 'none hurt' or s == 'unknown' and '?' or tostring(s),
-              frag > 0 and string.format(' + %d for its fragments', math.floor(frag + 0.5)) or '')
+            local _, s, frag, mine = tree_shots(kinds[j].k, r.name, pl.force, turret, cache, quality, aim)
+            local fr = frag > 0 and string.format(' + %d for its fragments', math.floor(frag + 0.5)) or ''
+            shots[#shots+1] = aim and not aim.hit(kinds[j].k) and kinds[j].k .. ': no turret aboard targets it'
+              or not mine and string.format('%s not its turrets\' target%s', kinds[j].k, fr)
+              or string.format('%s %s%s', kinds[j].k, s == false and 'none hurt' or s == 'unknown' and '?' or tostring(s), fr)
           end
           local mv = r.phases and r.phases.moving
           local st = r.phases and r.phases.stopped
           local text = string.format('  %s%s: shots per asteroid %s%s', r.name, turret and ' (' .. turret .. ')' or '', table.concat(shots, ', '),
             #cant > 0 and '; cannot hurt ' .. table.concat(cant, ', ') or '')
           if mv and #fl > 0 and m then
-            local wf = load_of(fd, r.name, pl.force, turret, cache, quality)
+            local wf = load_of(fd, r.name, pl.force, turret, cache, quality, aim)
             local ratio = wf > 0 and w / wf or nil
             -- (K4) the part of this leg's shooting from kinds the legs flown met none of: the scale has no measure for it
             local unmet, unmet_kinds = 0, {}
             for k, p in pairs(dens) do
               if not fd[k] or fd[k] <= 0 then
-                local t = tree_shots(k, r.name, pl.force, turret, cache, quality)
+                local t = tree_shots(k, r.name, pl.force, turret, cache, quality, aim)
                 if t > 0 then unmet = unmet + p * t; unmet_kinds[#unmet_kinds+1] = k end
               end
             end
@@ -451,12 +575,83 @@ return function(api)
               text = text .. string.format('; uses about %d (%g/min on the legs flown x%.2f for these asteroids%s), about %d made%s; %d left at %s',
                 round(use), mv.used_per_min, ratio, dwell > 0 and string.format(', + %s at the stop', mins(dwell)) or '', round(made),
                 bound and string.format(' (the ingredients bind: %s)', cap.item) or '', round(left[r.name]), l.to)
+            elseif aim and #aim.mine == 0 then
+              text = text .. '; no turret aboard fires it: no use estimate'
             else
               text = text .. '; the legs flown spawn none it shoots: no use estimate'
             end
           end
           lines[#lines+1] = text
         end
+      end
+    end
+    -- (BO2) What the turrets aboard target: per ammunition its turrets' settings, grouped; per asteroid of the route (its
+    -- fragments too) the turrets that target it.
+    local target_rows = {ammo={}, asteroids={}}
+    if #turrets > 0 and #rows > 0 then
+      lines[#lines+1] = 'turret targets as built (each turret\'s priority list, the turret GUI\'s: with ignore unprioritised targets on it fires at the listed asteroids only, off at any); the shots above count for each ammunition only what its turrets target, and an asteroid targeted by turrets of two ammunitions counts in full for each:'
+      for _, r in ipairs(rows) do
+        local aim = aim_of(r.name)
+        local groups, order, n = {}, {}, 0
+        for _, t in ipairs(aim.mine) do
+          local sig = t.unknown and '?' or not t.set and '*' or (function() local l = {}; for k in pairs(t.set) do l[#l+1] = k end; table.sort(l); return table.concat(l, ',') end)()
+          local key = t.name .. '|' .. sig
+          if not groups[key] then groups[key] = {turret=t.name, count=0, text=targets_text(t), targets=t.unknown and 'unknown' or not t.set and 'any' or t.list}; order[#order+1] = key end
+          groups[key].count = groups[key].count + 1
+          n = n + 1
+        end
+        local parts, settings = {}, {}
+        for _, key in ipairs(order) do
+          local g = groups[key]
+          parts[#parts+1] = string.format('%d %s %s', g.count, g.turret, g.text)
+          settings[#settings+1] = {turret=g.turret, count=g.count, targets=g.targets}
+        end
+        lines[#lines+1] = n == 0 and string.format('  %s: no turret aboard fires it', r.name)
+          or string.format('  %s: %d %s it%s: %s', r.name, n, n == 1 and 'turret fires' or 'turrets fire', #order > 1 and ', mixed settings' or '', table.concat(parts, '; '))
+        target_rows.ammo[#target_rows.ammo+1] = {ammo=r.name, turrets=n, settings=settings, mixed=#order > 1 or nil}
+      end
+      local SIZE = {small=1, medium=2, big=3, huge=4}
+      local ks = {}
+      for _, k in ipairs(kind_list) do ks[#ks+1] = k end
+      table.sort(ks, function(x, y)
+        local a, b = SIZE[x:match('^(%a+)%-') or ''] or 9, SIZE[y:match('^(%a+)%-') or ''] or 9
+        if a ~= b then return a > b end
+        return x < y
+      end)
+      local groups, order = {}, {}
+      for _, k in ipairs(ks) do
+        local by, names = {}, {}
+        for _, t in ipairs(turrets) do
+          if engages(t, k) then
+            if not by[t.name] then by[t.name] = 0; names[#names+1] = t.name end
+            by[t.name] = by[t.name] + 1
+          end
+        end
+        table.sort(names)
+        local parts, tr = {}, {}
+        for _, nm in ipairs(names) do
+          local ammo = {}
+          for _, r in ipairs(rows) do
+            for _, t in ipairs(aim_of(r.name).mine) do if t.name == nm then ammo[#ammo+1] = r.name; break end end
+          end
+          parts[#parts+1] = string.format('%s %d%s', nm, by[nm], #ammo > 0 and ' (' .. table.concat(ammo, ', ') .. ')' or '')
+          tr[#tr+1] = {turret=nm, count=by[nm], ammo=#ammo > 0 and ammo or nil}
+        end
+        target_rows.asteroids[#target_rows.asteroids+1] = {asteroid=k, turrets=tr}
+        local sig = table.concat(parts, ', ')
+        local key = (k:match('^(%a+)%-') or k) .. '|' .. sig
+        if not groups[key] then groups[key] = {kinds={}, sig=sig}; order[#order+1] = key end
+        table.insert(groups[key].kinds, k)
+      end
+      for _, key in ipairs(order) do
+        local g = groups[key]
+        local names = g.kinds[1]
+        if #g.kinds > 1 then
+          local stems = {}
+          for _, k in ipairs(g.kinds) do stems[#stems+1] = k:match('^%a+%-(.-)%-asteroid$') or k end
+          names = (g.kinds[1]:match('^(%a+)%-') or '') .. '-' .. table.concat(stems, '/') .. '-asteroid'
+        end
+        lines[#lines+1] = string.format('  %s: %s', names, g.sig ~= '' and g.sig or 'no turret aboard targets it: no ammunition counted for it or its fragments')
       end
     end
     -- (AX1) The damage behind the shots: each ammunition's shot as platform_defense ammo_use gives it, and against each
@@ -507,7 +702,7 @@ return function(api)
           (r.received or 0) > 0 and string.format(', %d on rockets on their way up counted at the start', r.received) or '', model.binds(r.name, mv.made_per_min, t_cum[r.name]).line)
       end
     end
-    return lines, damage_rows, coverage
+    return lines, damage_rows, coverage, target_rows
   end
   return M
 end

@@ -22,6 +22,12 @@
    next segment replaced it (shake13, Nick: a replay card at 90%, "Length 15 s", not doing anything). */
 [hidden] { display: none !important; }
 
+/* marquee.js: a line of changing text wider than its box shows its start, now and then pans to its end and back; a
+   soft fade at the right edge says more follows (in place of "…", which would hide the whole moving span) */
+.mq { overflow: hidden; white-space: nowrap; text-overflow: clip !important; min-width: 0; }
+.mq-in { display: inline-block; vertical-align: top; }
+.mq.mq-over { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1.5em), transparent); }
+
 html, body {
   margin: 0;
   width: 1920px;
@@ -323,16 +329,15 @@ html body.portrait[data-density] .card.waiting .doing { font-size: 14px; }
 .research .rlabel { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-right: 8px; }
 .research .top { min-width: 0; }
 .research .tech { min-width: 0; flex: 1; }
-.research .top { display: flex; justify-content: space-between; align-items: baseline; }
+.research .top { display: flex; justify-content: space-between; align-items: baseline; line-height: 1.2; }
 .research .tech { font-size: 18px; font-weight: 700; color: var(--head); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .research .pct { font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; margin-left: 8px; }
-.research .levels { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar { height: 10px; border-radius: var(--fx-r-1); background: var(--fx-deep); box-shadow: var(--fx-inset-shadow); overflow: hidden; padding: 2px; box-sizing: border-box; }
 .bar > i {
   display: block; height: 100%; width: 0; border-radius: 1px; transition: width 1.2s ease;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0, rgba(255, 255, 255, 0.12) 40%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.22) 100%), var(--fx-cyan);
 }
-.research .recent { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.research .recent { font-size: 13px; line-height: 1.25; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .research .recent b { color: #d0d0d0; font-weight: 600; }
 
 /* ---- production: science per minute headline, then the items that matter at this stage (rotating) ---- */
@@ -666,9 +671,9 @@ body[data-density="2"] .card .name { font-size: 19px; }
 body[data-density="2"] .card .model { font-size: 13.5px; }
 body[data-density="2"] .card .doing { font-size: 14.5px; }
 body[data-density="2"] .card .doing .where { font-size: 13.5px; }
-body[data-density="2"] .card.research { padding: 7px 14px; gap: 4px; }
+body[data-density="2"] .card.research { padding: 6px 14px; gap: 3px; }
 body[data-density="2"] .research .tech { font-size: 16.5px; }
-body[data-density="2"] .research .recent, body[data-density="2"] .research .levels { font-size: 12.5px; }
+body[data-density="2"] .research .recent { font-size: 12.5px; }
 
 body[data-density="3"] #cards { grid-auto-rows: 60px; gap: 6px 10px; }
 body[data-density="3"] .card { padding: 5px 12px 5px 10px; gap: 9px; }
@@ -685,7 +690,7 @@ body[data-density="3"] .dot { width: 8px; height: 8px; }
 body[data-density="3"] .card.research { padding: 5px 14px; gap: 3px; }
 body[data-density="3"] .research .tech { font-size: 15px; }
 body[data-density="3"] .research .pct { font-size: 13px; }
-body[data-density="3"] .research .recent, body[data-density="3"] .research .levels { font-size: 12px; }
+body[data-density="3"] .research .recent { font-size: 12px; }
 body[data-density="3"] .bar { height: 8px; }
 
 /* ---- the trio (onecam.py): one big tile and two small ones; one camera otherwise (no small tiles) ---- */

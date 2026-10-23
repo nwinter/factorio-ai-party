@@ -83,7 +83,7 @@ def main():
                          "how/lessons/index.html", "how/operations/index.html", "how/setup/index.html",
                          "index.html", "live/index.html", "polls/index.html",
                          "runs/long/index.html", "runs/long/shift-1/index.html", "runs/long/shift-2/index.html",
-                         "search/index.html", "timeline/index.html"], pages
+                         "search/index.html", "timeline/index.html", "updates/index.html"], pages
         before = set(content["runs"]) | set(content["studies"]) | {"shake3", "shake4", "smoke-x1"}
         ids = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(before))) + r"|shake\d+|smoke-[\w-]+|Fable)(?![\w-])")
         for p, t in text_files(out):
@@ -96,7 +96,7 @@ def main():
                 assert not href.startswith("/runs/") or href.startswith("/runs/long/"), (p, href)
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "How it was made", "About", "GitHub"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Search", "Updates", "How it was made", "About", "GitHub"], nav
         page = (out / "runs" / "long" / "index.html").read_text()
         assert "0h01m to 1h01m" in page and "Rocket silo" in page and "Dawn" in page and "Oldship" not in page
         about = (out / "about" / "index.html").read_text()

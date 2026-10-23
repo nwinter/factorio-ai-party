@@ -233,6 +233,15 @@ fh call status
     its cell). A piece that does not fit names the free cells.
   - `inspect` on a vehicle with a grid shows the same `equipment` block. The operator's `loadout` gives
     `vehicle_equipment` for the vehicle an agent sits in.
+  - Mining and building an equipped vehicle (d23 batch120 CC1, Sol #2027: Haiku mined spidertron 22731300 with a
+    fusion reactor, two shield mk2, two battery mk2 and two lasers and built it again with an empty grid). The game's
+    mine (`mine_entity`) gives an item that carries the grid and moves the vehicle's inventories into the miner's
+    (checked on a copy of world n's save, 2.0.77); the build created the vehicle without the item. `build` now passes the
+    item to `create_entity` (grid, label and colour come with it; revived over a ghost, the item's equipment is put in
+    the same cells). Replies: a finished mine of a vehicle has `last.holds` (`the spidertron item carries its grid
+    (10x6): fusion-reactor-equipment*1 ...; its inventories held rocket*400, now in your inventory`), and `moved`
+    counts those items; `inventory` has `item_grids` (`spidertron (slot 50): grid ...`, also a spare armor's); `build`
+    has `equipment` (`spidertron 27296250 (-148,-532.5): grid 10x6 ...`).
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
@@ -2767,7 +2776,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
 - A bot aboard a platform has no body and acts by remote view (Astra, 18:16: tell, operator, scan with platform,
   science and wait_until platform_arrived were refused while the refusal said scan works). Aboard work: every read
   (status, scan, inspect, science, supply, networks, platforms, map and the rest: of the platform, or of a planet with
-  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `say`, `operator`, the board and votes; research;
+  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `chat_ack`, `say`, `operator`, the board and votes;
+  `flight_watch {id}` (read or clear) and `flight_watch {}` (the list; d23 batch120 CC2, Sol #1986: a fleet archiver
+  aboard Anvil had 10 reads refused; a new watch with `platform` stays refused aboard); research;
   `platform_schedule`, `platform_create`, `requests` (`platform=` or `position=`), `drop` and `land`; every call that
   acts by remote view, with `platform=NAME` (`place_ghosts`, `deconstruct`, `cancel_deconstruction`, `paste`,
   `blueprint_place`, `grid`, `scan`, `inspect`, `configure`, `flush`, `circuit_set`, `circuit`, `wire`, `ports`,
@@ -7698,6 +7709,21 @@ fh watch    # deploy on every change
   - Holes: beside each new tile, an enclosed region needs filling when open space is beside that tile too; with only
     enclosed regions round it, all but the largest. A region no new tile needs filled is left out (`holes_other`).
     A column across an enclosed 9x3 hole now asks for 12 tiles, not 24.
+  - (d23 batch120 CC3, Astra #2019: Asterion's belt_route dry run planned 412 tiles; the floor check said 25 never
+    build, 12 named, near (-34.5,105.5)) The route's floor crossed an empty corridor about 5 tiles wide several
+    times (the crossing at y 105..120 is 16 rows thick): no single new tile had two regions beside it, so the per-tile rule left 1223 tiles of three corridor
+    parts out, and the last column of each crossing would part the corridor (reproduced on a copy of world n's save).
+    The hub never parts empty space: a tile whose empty side neighbours form one run leaves every path through it
+    open, so a region can only stay empty if it was apart before. The regions are now grouped through the new tiles
+    (two regions beside new tiles that touch by a side were one empty space): of each group all enclosed regions are
+    filled when open space is among them, else all but the largest. The same call now plans 1635 tiles (1470 holes;
+    `tiles.hole_regions`: `664 tiles in (-38.5,137.5)-(-27.5,208.5)`, `498 tiles in (-38.5,15.5)-(-31.5,104.5)`, ...)
+    and its floor check reads 1635 of 1635 built. The dry run's `summary` adds `the floor is not checked yet: floor
+    check #N decides whether the hub builds all N tiles (tiles.check)` while the check runs, and `N foundation tiles
+    never built by the hub's rules (tiles.unbuilt)` when the inline play finds some. `platform_plan {floor_check: N}`
+    adds `unbuilt_tiles` (every unbuilt tile, up to 500, as column runs `(-34.5,105.5..120.5)`, 64 runs and
+    `unbuilt_tiles_more`) and `groups` (touching unbuilt tiles, largest first, 12: count, box, why; for a split, that
+    every region they would part from the rest but one needs foundation, which a dry run of the same placement plans).
   - A refused entity ghost over empty space on a platform says the dry run gives those fields.
   tests/dryrun.lua.
 - A2 (Astra): a partial load went up with two underground belts and a rocket was spent. `load_silo {launch,
@@ -11936,6 +11962,44 @@ tables of numbers: table_to_json takes about 28 us a number on that copy. Tests:
   - a route leg covered 25%, its scale x4.96 worked out by hand, and one not flown;
   - the coverage rows;
   - a leg flown whole before km was kept, and one with no part recorded.
+
+## d22 batch105 BO2 (eng/d20-batch105): the forecast by the turrets' targets (Astra 20:24)
+
+Astra after BO1: "forecast rocket line counts 432 shots per huge and scales x8.85, but Asterion rocket turrets target
+ONLY big asteroids; rails handle huge." The forecast counted every asteroid of the route, and its fragments, against
+every ammunition aboard.
+
+- The game's rule (2.0.77; platdefense.lua reads the same): a turret fires at the entities on its own priority list
+  (the turret GUI's) only when Ignore unprioritised targets is on; off, at any (the list only orders them). Turret,
+  asteroid and ammunition prototypes share one target mask (common) and no ammunition has a target filter. A turret
+  prototype has no default list to read at runtime; a rocket turret built new on the copy read an empty list and
+  ignore off.
+- platform_endurance `forecast: true` (routeammo.lua, endurance.lua; runtime deploy needed) reads the turrets aboard
+  once (each one's ammunition category, ammo, list and ignore flag; before, a surface search per ammunition). For each
+  ammunition, an asteroid counts its own shots only when one of the turrets that fire it targets it. Its fragments
+  count when a turret aboard targets the asteroid, each fragment the same way. An asteroid no turret aboard targets
+  counts for no ammunition, nor do its fragments. An asteroid targeted by turrets of two ammunitions counts in full for
+  each. With no turret read aboard, every asteroid counts for each ammunition, as before, and the line says so.
+- Shots text: `huge-metallic-asteroid not its turrets' target + 15 for its fragments`, `X: no turret aboard targets
+  it`; `no turret aboard fires it: no use estimate`.
+- A `turret targets as built` block:
+  - per ammunition, the turrets that fire it with their settings grouped (`rocket: 26 turrets fire it, mixed settings:
+    24 rocket-turret big only; 2 rocket-turret big, medium only`; `any asteroid (ignore unprioritised targets off)`;
+    `its targets not read (counted as any)`);
+  - per asteroid of the route and its fragments, the turrets that target it (`medium-carbonic/metallic/oxide-asteroid:
+    gun-turret 48 (firearm-magazine), rocket-turret 2 (rocket)`; `no turret aboard targets it: no ammunition counted
+    for it or its fragments`).
+  Row `forecast_targets {ammo [{ammo, turrets, settings [{turret, count, targets (names, any, unknown)}], mixed}],
+  asteroids [{asteroid, turrets [{turret, count, ammo}]}]}`.
+- Headless copy of world n's 19:23 autosave, Asterion flying aquilo->solar-system-edge, route [aquilo,
+  solar-system-edge, aquilo]: 23 railgun turrets huge only, 48 gun turrets small and medium only, 24 rocket turrets
+  big only and 2 big and medium only, ignore unprioritised targets on for all 97.
+  - rocket: x8.87 (huge 432 + 42 for its fragments) before; now x2.09 (big 2 + 3, huge not its target + 15), about
+    13553 used on the first leg where it read 57500.
+  - railgun-ammo: x2.12 before; now x17.59 (huge 1 each; its measured 0.9/min is from legs whose part flown spawns
+    huge at under 0.00005), about 1702 on the first leg where it read 205.
+  - firearm-magazine: x2.09 both (big and huge are other turrets' targets; their fragments counted before too).
+  - The read: 26-48 ms before, 29-46 ms after (four calls each).
 ## d22 batch100 BJ2 (eng/d20-batch100): game objects checked as tables (audit)
 
 BJ1 found `type(platform) == 'table'` dropping a LuaSpacePlatform. In 2.0 every game object is userdata. Read on a
@@ -12111,6 +12175,35 @@ Each fails on the code before the fix.
   it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
   the same.
 
+## d22 batch110 BT1: the harness's garbage (Lua heap churn)
+
+- The operator's profile of world n (20:24-20:25): the harness 3.95 ms a tick, the Lua heap growing 17.47 MB a second
+  and falling in 5 of 61 seconds, those 5 the worst seconds (359-872 ms of harness work).
+- Measuring who allocates (operator): `profile_ticks {seconds=N, alloc=true}` adds, per key at the end of the run,
+  `agent-harness profile alloc ticks=T n=N key=K kb=KB gc_inside=G`: the heap grown inside each timed call
+  (`collectgarbage("count")` before and after; a key's parts are inside it, and a call the heap fell in is counted in
+  `gc_inside`, its growth not). `gc="stop"` stops the collector for the run and restarts it at the end, so nothing is
+  freed inside a call and each count is what it allocated; the heap then grows by all of it for the run's seconds
+  (keep runs short). The start reply's `collector` says the heap then, whether the collector ran and whether the stop
+  was taken. `tools/profile_log.py` ranks the keys by MB, MB a second and KB a call. The timing wrapper itself makes
+  about 1 KB a call.
+- In 2.0.77 the harness's Lua state (Lua 5.2) takes `collectgarbage("count")`, `"isrunning"`, `"stop"` and `"restart"`
+  (read on a copy of world n through the profiler).
+- On a copy of world n's _autosave12 (d22 19:23), with shift60's usual calls replayed (per second 5 sleep_check
+  observes over the 9 agents, 1.7 artillery_live operator reads, and status, platform, inspect, observe power and
+  big_enemies_live at their journal rates), collector stopped for 20 s: the harness tick allocated 16.5 MB a second,
+  scheduler.tick 5.3 MB of it.
+  - Most of scheduler.tick was in the platform lanes' guards: Astra's Asterion lane (7 guards, among them two
+    fluid_count) and Meridian-V and Anvil, checked every 10 ticks. fluid_count on a platform found every tank, pipe,
+    thruster and machine aboard at each check (thousands of entity objects) and made a closure for each one; and
+    reading an entity's method (`e.get_fluid_count`) makes a new function each time. 111 KB a check.
+  - fluid_count now keeps a platform's holders and each one's `get_fluid_count` while their count
+    (`count_entities_filtered`, no entity objects) is the same and each one kept is valid, and finds them again
+    otherwise: the same entities and amounts as before, read live at each check. 4.5 KB a check (1 KB of it the
+    profiler's).
+  - With the same replay: the heap grew 15.60 MB a second before (main 88ba0901) and 11.98 after; the tick allocated
+    16.5 and 11.2 MB a second, scheduler.tick 5.3 and 1.6.
+
 
 ### d22 batch109 BS1: flight watches, one per platform (#1952)
 
@@ -12216,3 +12309,164 @@ job-36447 `{reason: interrupted}` with 4 tiles unplaced ((-136.5,-394.5), (-147.
     character, stop, a failed call, a death, a harness update ...) and, for a build not run again, `left_undone`
     {count, positions} and `not_requeued` ("not run again: 4 entries left unbuilt (ice-platform (-136.5,-394.5), ...)").
 
+## d22 batch117 BZ1 (eng/d20-batch117): platform_ammo_below, a platform's whole ammunition reserve (Astra #1970)
+
+A full-edge abort must keep the return leg's ammunition. `item_count` with `platform` reads the hub alone and
+`ammo_below` each turret alone, so no wait or guard could test the total aboard.
+
+- New condition kind for `wait_until` and queue guards, in the body, remote and platform lanes (conditions.lua,
+  ammoreserve.lua; runtime deploy needed): `platform_ammo_below {platform, item, count, quality?, max_age?}`.
+  - `item`: an ammunition item. `quality`: as `item_count` (default normal; a quality name; "any" sums every quality;
+    the item's name alone is normal quality only, checked on the copy).
+  - The count is the item aboard in all places a player can open: the hub's main inventory, each ammo turret's ammo
+    slots, each belt's transport lines (an underground exit's buried lines are its entrance's, counted once), each
+    inserter's hand, each assembling machine's and furnace's output, each chest. Met below `count`.
+  - `saw`: "platform Asterion: 5534 rocket aboard (hub 10, turrets 261, belts 5244, hands 6, machines 13) as read 12s
+    ago (ticks 49811640-49811773: hub, 97 ammo turrets, 6743 belts, 289 inserters, 56 machines, 0 chests); met below 1".
+- The reading is kept in the background (ammoreserve.lua), never read at a check: a check marks the platform as asked
+  about, and a platform asked about within 10 min gets a pass begun every 30 s (1800 ticks), one pass at a time across
+  platforms. A pass walks the platform's chunks one band a step (walk.lua, one chunk a band), reads at most 100 entities
+  a tick, and reads the hub on its last step. Each entity is read once a pass, so nothing is counted twice within one
+  reading. An item that moves between two places during the pass (about 2.2 s on Asterion) can be counted in both or
+  in neither.
+- Age and staleness (conservative, as Astra asked): age is ticks since the reading's pass began. With `max_age`
+  (30..900 s, default 120) the condition is also met when the newest reading is older than max_age ("...; older than
+  max_age 2m00s: met (stale reading)"), and when there is no reading max_age after the platform's first check. A guard
+  on it therefore fires on a stale reading. While the first pass has not finished within max_age it is not met, and saw
+  says so ("no reading of its ammunition yet (a pass began 0s ago; ...; met if none by max_age 2m00s)").
+- A guard's baseline line names the background reading and max_age. The wait estimate label is "platform_ammo_below
+  ITEM aboard PLATFORM" (it said "in PLATFORM hub").
+- Measured on a headless copy of world n's 22:10 autosave (Asterion at Aquilo: 6743 belts with 14510 transport lines
+  read, 289 inserters, 97 ammo turrets, 56 machines, no chest), with Astra's platform lane waiting on it:
+  - `profile_ticks {seconds=60}`: `ammoreserve.tick` 323 ms over 60 s (0.09 ms a tick on average). That includes one
+    second of 217 ms in which a garbage collection finished (the heap fell 71.6 MB). Without it, each pass took
+    29 + 30 + 1.3 ms over three game seconds (about 0.5 ms a tick while it runs, 133 steps), and each second between
+    passes about 0.14 ms (2 µs a tick). Over the 30 s cycle that is about 0.034 ms a tick.
+  - The same pass run synchronously with the game paused: 49 ms in all. A one-tick full count by the same rules: 39 ms
+    (find 4.8 ms, read 34.4 ms).
+  - Against a full count: with the game paused, the pass's reading equalled a one-tick full count in every item,
+    quality and place (rockets 5534; firearm-magazine 7173; railgun-ammo 2501). Running, three readings against a full
+    count taken a few ticks after the check: 5534/5534, 5534/5534, 5532/5536.
+- Tests: tests/d22_batch117.lua (arguments, first check, a pass by place and quality, the underground's buried lines
+  once, the refresh after 30 s, stale and no-reading cases, the record dropped after 10 min, the remote and platform
+  lanes' dry runs as a wait and a guard); tests/conditions.lua's quality refusal text updated.
+## d22 batch116 BY1 (eng/d20-batch116): flight_watch in the remote and platform lanes (Astra #1968)
+
+Astra's dry run of a full-edge plan (runs/shift60 full-edge-dry-run.json, lane `platform:Asterion`) refused its first
+step: "steps[1] (flight_watch): action flight_watch is not supported in the remote lane (no body steps)". The watch
+ends at the edge arrival, and the return-leg watch had to be started by hand.
+
+- `flight_watch` runs as a step in the remote lane and in each platform lane (queue_lanes.lua; runtime deploy needed),
+  as it ran in the body lane: it sets the harness's own watch, drives no character and changes no schedule. Dry runs
+  accept it the same way.
+- In lane `platform:NAME` a `flight_watch` step without `platform` and without `id` starts a watch on NAME (the step's
+  args in the history then carry `platform`). `{}` in the remote lane lists the watches, as the direct call does.
+- `replace: true` (flightwatch.lua) keeps the watch it replaces readable by `{id}`:
+  - a done one (the outbound leg, ended "arrived at solar-system-edge") stays as it ended;
+  - a watching one ends there, `ended_by` "replaced by #N", with its end totals taken;
+  - an armed one (it never began) is dropped, as before.
+  A kept one no longer counts against the limit, carries `replaced_by` (the new id) and `replaced_tick`, and is kept
+  24 h unless read; once read it is kept 1 h after the read (at most 16 read or replaced a force, the oldest dropped).
+  It no longer shows on the setter's card (status work rows).
+- The start's reply adds `replaced_watch` (the replaced one's row without turret rows: id, state, ended_by, end_tick,
+  replaced_by, line with leg, time watched, worst turret, damage, losses, repair packs and fuel) and `replaced_line`,
+  e.g. "flight watch #1 on Asterion (ended: arrived at solar-system-edge) is kept: flight_watch {id: 1} reads it in
+  full; it no longer counts against the limit; kept 24h00m00s unless read, then 1h00m00s after the read". For an armed
+  one: "flight watch #N on X was waiting for its next departure: dropped, nothing read yet". `watch.replaced` is the id
+  as before. A lane step's result keeps all of this in the queue history.
+- Tests: tests/d22_batch116.lua (the dry run in both lanes, the default platform, a replace at the turnaround from a lane
+  step and the full read after, a running and an armed one replaced, the card, a refused start at the limit);
+  tests/d21_batch72.lua updated for the kept replaced watch.
+
+## d22 batch118 CA3, CA4 (eng/d20-batch118): transfer by unit_number; a walking transfer's target checked first
+
+- `transfer {unit_number: N}` with no `position` (opus, shift62 06:26: a spidertron's rockets failed with "attempt
+  to index local 'pos' (a nil value)") finds the entity by its number, as `move_to {target: {unit_number}}` does: the
+  game finds only prototypes flagged `get-by-unit-number` (vehicles and the like) by number; another is refused,
+  naming the form with `position`. With neither: "transfer requires position (...)".
+- A walking transfer (`walk: true`, or a target out of reach within 64 tiles) finds the inventory it uses at each stop
+  before the walk (Luna, shift62 03:58: a take of wood at a Gleba chest's position, made from Nauvis, walked 512 tiles
+  to the solar panel whose footprint covers that tile on Nauvis, and was refused on arrival). A stop without it is
+  `skipped`; none left: refused, e.g. "solar-panel at (213.5,77.5) on nauvis (position (214.5,78.5) is on its
+  footprint) has no inventory a transfer reaches: nothing walked; solar-panel takes inventory none". A walk's `legs`
+  rows carry `inventory` (the one it uses there) and the reply `surface` (the character's: transfer acts there).
+- In reach, the refusal names the entity: "solar-panel at (213.5,77.5) on nauvis has no transferable inventory".
+
+## d22 batch118 CA2 (eng/d20-batch118): one whole-belt rule for inspect and circuit_audit, the game's
+
+Viewer Aurora (site:4407): inspect said an `entire_belt_hold` reader reads "the whole belt followed through its
+inputs and outputs" (a side-load ended the walk upstream, and a belt side-loading onto another went on into it);
+circuit_audit said the game counts only the reader's belt segment. Both now walk the segment in `beltseg.lua`.
+
+Measured on a private 2.0.77 server (a lab surface, items placed one per belt, readers wired to constant combinators,
+game paused, two ticks run): a reader's signal was exactly the items of its segment. The segment ran through
+straight belts, a corner, an underground pair and a belt tier change (transport to fast), and along the main line past
+a side-load both ways; the belts side-loading onto it were a 2-tile segment of their own (a reader on one read only
+those 2); a splitter ended it downstream, and a reader just past a splitter read its own segment only. A 300-belt
+straight belt was one segment (300 read). Every belt of a segment reports one `total_segment_length` per lane; two
+readers of one segment on one network double the signal.
+
+On a copy of world n (Asterion, 47 wired readers), the item counts first differed for 36 readers. What the read sums
+is each lane's transport lines of the segment: belt lanes, the lines under an underground pair (an entrance's lines 3
+and 4; an exit's are one-tile lines of their own), and a splitter's lanes at the segment's ends on its side (lines
+1-2 left input, 3-4 right input, 5-6 left output, 7-8 right output, as it faces; one splitter's other side was
+another segment of the same length). Counted so, 42 readers match their wires exactly; the other 5 have other
+sources on their networks (an arithmetic combinator's +10000, two readers on one network).
+
+- inspect's `circuit.belt_segment`: the segment (belts, `total_segment_length`, where each end is and why), what its
+  lines hold, the wires' read, and the rule in words.
+- circuit_audit `{platform}`: `short_reads` and its lines name the belts in line past the segment's ends and where the
+  segment ends; `double_counts` compares segments.
+- Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
+  `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.
+- cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
+  tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
+  - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
+    taken out; an optional out_pos hands each entity's position (as the band read it) to the caller, so survey,
+    pushalerts and census read no position again.
+  - survey.lua: the status name read only for the machine counts (a machine with no burner reads its engine status
+    name, as machine_status gives it; a burner one burnt.stuck once, not twice); each read once an entity; no
+    closures.
+  - pushalerts.lua: guarded reads through shared getters (no closure a read; 5-10 an entity before); an entity's type,
+    position, status and burner read once; burnt.stuck asked of burners only; a working machine's seed check ends
+    before its recipe is read; output_chest_full and catalyst_gone ran a second time untimed when they found nothing:
+    once now; inserter records rewritten in place; prototype facts cached by name. lightning.lua: a building's
+    position read once.
+  - census.lua: positions from the band; a recipe read once; no closures; the step's lookups kept between steps.
+  - networks.lua: the view walk and samples read each entity once and make no closures (see its commit).
+  - conditions.lua: ammo_below and platform_energy_below on a platform keep their turret and accumulator lists as
+    fluid_count does (counts and energy read live); platform_hit and platform_loss make no closures.
+  - beltgaps.lua: a one-tile belt's tile from its prototype's collision box (cached by name) when the box stays inside
+    the tile, else read as before; a belt row refreshed in the same call updated in place (the same fields).
+  - threat.lua, spoil.lua, platalerts.lua, flightwatch.lua: scratch tables reused, force, surface and platform kept
+    while valid, no closures; spoil.tick returns before reading the force between sweeps.
+  - freight.lua: each hub's inventories and the kinds they held kept per platform; a read counts those kinds
+    (get_item_count, no table) and takes them while they add up to the inventory's total, else reads get_contents;
+    the item statistics and their counting methods kept; a space connection's ends by name; the belt read keeps its
+    platform and surface, skips empty lines (#line), reads a prototype's line count once. A tie in spoil matching is
+    now in name order (before: the order of the hub's listing). shipment.lua: a silo's cargo, deliveries and
+    request_rows read only when a row needs them.
+  - Caches are module state, found again after a load: a peer that joins starts with none and reads in full. The
+    counts and lines are the same; the hub counts' key order can differ on such a peer (it does not change a count).
+  - On the copy (fresh load of _autosave12 each run, the same replay, 180 s): the heap grew 15.45 MB a second on main
+    (88ba0901) and 9.46 after; the harness tick 4.34 ms a tick on average and 3.20 after; the worst game second
+    1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
+    Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
+
+
+## d22 batch118 CA1 (eng/d20-batch118): circuit_signal on an unwired hub reads 0, as the game does
+
+Astra (shift62 seq 916): "Asterion hub unwired; wait_until circuit_signal rocket below4850 not met, saw no red or green
+wire: no signal to read", so a reserve guard on it could never fire. The game's rule, measured on a copy of world n:
+a platform schedule's circuit wait condition reads an unwired hub's signals as 0. Asterion (hub unwired, 10 rockets
+aboard, paused at Aquilo), given the stop condition `rocket < 4850` and unpaused, left at once (on_the_path to its next
+stop). Crucible (hub unwired, no rockets), each run from a paused stop: `rocket < 4850` met (twice), `rocket > -1` met;
+its hub wired to an empty constant combinator: `rocket < 4850` met, `rocket > 4850` not met (still waiting after 300
+ticks). The first run on Crucible, from its unscheduled state, stayed waiting 368 ticks and is not explained.
+
+- `circuit_signal` with no red or green wire on the hub now reads the signal as 0: `below N` (over 0) is met, `at_least
+  N` (over 0) is not; saw: "Asterion's hub has no red or green wire: rocket reads 0 there, as the game's own circuit
+  conditions read an unwired hub (met)" or "(never met while it has none)".
+- A guard whose `when` can never be met as things stand (circuit_signal `at_least` over 0 on an unwired hub, alone or
+  inside `all`) is refused at queue_submit, in a dry run and in queue_edit guards, in every lane, naming why. A `below`
+  guard there is met at its first check.

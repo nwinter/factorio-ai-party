@@ -780,6 +780,9 @@ class LiveSource:
         if c.due():
             c.step(lambda args: self.h.operator_read("chart", args)[0])
             obs["chart"] = c.status()
+            line = c.log_line()  # (cp6) the service log says the chart is going (shift60's log had no chart line)
+            if line:
+                print(line, flush=True)
         if c.error:
             errors["chart"] = c.error
 

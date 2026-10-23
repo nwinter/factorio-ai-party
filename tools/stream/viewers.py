@@ -1438,11 +1438,11 @@ class Feed:
                 # per-author rate filter again and showed "not relayed: rate" (site:4142, site:4181 in shift57)
                 lg = self.logged.get(m.get("id"))
                 if (lg and not lg[0]) or self.in_inbox(m) or (self.relay and m.get("id") in self.relay.done):
-                    self.backlog_status(m)
+                    self.backlog_status(m, now)
                     continue
             if m.get("backlog") and not m.get("queued") and now - float(m.get("t") or 0) > self.max_age:
                 self.dropped["backlog"] += 1
-                self.backlog_status(m)
+                self.backlog_status(m, now)
                 continue
             v, reasons = self.filt.check(m, now)
             if m.get("queued"):
@@ -1737,11 +1737,11 @@ class Feed:
             log(f"viewer deletions: {e}")
         return row
 
-    def backlog_status(self, m):
+    def backlog_status(self, m, now=None):
         """(d17 batch35 cp3, operator 16:03: after a restart the re-read backlog showed 47 lines not relayed, 37 of them in
         viewer-relayed.jsonl) an old line read again at a restart keeps what happened to it: relayed when its id is in the
         relayed files (this run's and the last), with its record there (restored), its verdict when the verdict logs
-        refused it, else no status."""
+        refused it, else no status. `now`: the read's time (ingest's), as every other age in the read."""
         # (d20 batch65 AA1) a line in the operator's inbox keeps that receipt; one to the operator alone is delivered
         if self.in_inbox(m):
             m["inbox"] = True
@@ -1755,7 +1755,9 @@ class Feed:
         elif lg and not lg[0]:
             self.deliver(m, "not_relayed", ", ".join(lg[1]) or "refused")
         elif not lg and not m.get("inbox") and self.preloaded and not m.get("host") \
-                and time.time() - float(m.get("t") or 0) < 36 * 3600:  # well inside the logs preload reads (2 days)
+                and (now or time.time()) - float(m.get("t") or 0) < 36 * 3600:  # well inside the logs preload reads (2 days)
+            # (d22 batch114) the read's now, not the wall clock: test_site_queue.py's line at a fixed T (Wed 09:33:53) began
+            # failing at T + 36 h, Thu 21:33:53
             # (AA5) in no verdict log, the inbox or the relayed files: no stream service ever read it (it came while
             # none ran, before the cursor kept such lines queued)
             self.deliver(m, "expired", "the stream service was not running when it came (between shifts or restarting) and never read it")
