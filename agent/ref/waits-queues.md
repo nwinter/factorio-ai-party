@@ -225,7 +225,11 @@
 - `./fh wait --max 150` (or `--until idle`) waits for your running action (and combat) to end, at most 150 s, and
   returns at once when nothing runs (`outcome: idle`, exit 0, naming the last action and how long ago it ended when
   that was before your previous call); after the action already ended it gives its result. `--wait` replies are brief
-  (outcome, position, inventory change; `--full` for the whole status).
+  (outcome, position, inventory change; `--full` for the whole status). A watch is no action: with nothing running and
+  a `belt_flow` sample begun after your last action ended, it waits for the sample (its end tick, or `--max`; a tell
+  ends it with exit 3, the sample going on) and gives its result (`waited_for`); any other watch running (`uptime`,
+  `turret_tally`, `collector_tally`, `asteroid_watch`, `flight_watch`) is named in `watches` and the note, with its end
+  tick and the read that gives its result. `stop` ends none of them.
 - The clock line counts a wait or sleep as idle: `game 98h40m; +5m00s, idle 5m00s (100%, 4m30s in wait_ticks)`, and so
   do your stream card and the operator's idle nudge. With a standing order on (not paused, none running) it is still
   idle, and the clock and sleep lines add `on watch: NAMES` (the orders that act when a trigger holds). Queues,

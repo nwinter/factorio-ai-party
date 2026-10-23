@@ -11879,3 +11879,40 @@ Each fails on the code before the fix.
   - clear and remove_section;
   - the rows;
   - the three kinds.
+
+## d22 batch106 BP1: fh wait while a belt_flow sample runs (Luna)
+
+- Luna's request (shift60, 02:32): "Belt-flow measurement #49028604 is still active >100 seconds after requesting 30
+  seconds; the wait action returns a stale completed gather rather than waiting."
+- The journal (runs/shift60/luna/journal.jsonl, lines 192-273):
+  - `belt_flow {position, seconds: 30}` at tick 49028604 (02:31:41Z), until_tick 49030404.
+  - `fh call belt_flow` then read `belt_flow {}` each second (seconds_left 29 down to 1).
+  - Two `fh wait` calls at 02:31:54 and 02:31:58 (`status {peek, brief}`, then a small observe) returned at once.
+  - `stop` at 02:32:02; the sample went on (seconds_left 9 at the next read).
+  - `belt_flow {}` at tick 49030406 (02:32:11Z) gave the result. At 60 UPS the sample ran its 30 s.
+- Why: `fh wait` (host/cli.ts waitForIdle) waits on the character's action (status `active`, `combat`). A belt_flow
+  sample is a bounded watch (measures.lua), not an action, so with nothing active the wait returned the last ended
+  action. `stop` pauses the queue and ends the action and combat (runtime.lua handlers.stop); it does not touch a
+  watch. A sample ends at its until_tick, or when a new `belt_flow {position}` replaces it.
+- The change (CLI):
+  - fh wait's polls ask for the watches: `status {peek, brief, work: true}`; a runtime that refuses `work` gets the
+    polls as before.
+  - With no action or combat running, and a `belt_flow` sample running that began after the last action ended, fh wait
+    waits for the sample:
+    - The budget is the sample's end tick, as for an action's; `--max` as given.
+    - The wake rules are the same: a tell or mention ends it unless `--wait-through-tells` (`outcome: told`,
+      `still_running: belt_flow sample ID, up to N s more`, exit 3), and an action begun meanwhile becomes what it
+      waits for.
+    - At the end it reads `belt_flow {}` once and gives its result, with `waited_for` (the watch id) and a note.
+    - At the cap: `wait_timeout`, "your belt_flow sample ID is STILL SAMPLING ...", exit 3.
+  - Any other watch running (uptime, turret_tally, collector_tally, asteroid_watch, flight_watch), or a sample begun
+    before the action that ended: the reply has `watches` (their rows), and the note names each one: its id, end tick
+    and seconds left, that no action or stop ends it, and the read that gives its result (`KIND {}`;
+    `platform_supply {platform, collection: true}`, `platform_defense {platform, asteroids: true}`,
+    `flight_watch {id: N}`).
+  - Exit 3's stderr line for a sample says that no action or stop ends it (the action line's "a call that drives
+    your character stops it" does not hold for a sample).
+- belt_flow's start and progress replies have `ends`: "the sample ends at until_tick: stop and your actions do not end
+  it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
+  the same.
+
