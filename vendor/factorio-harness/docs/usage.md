@@ -11762,3 +11762,73 @@ best of three.
   and a `line` saying all of it. Three passes over belts in reach that show the items but remove none end it
   `nothing_removed` (before, it tried until its ticks ran out).
 
+
+## d22 batch100 BJ2 (eng/d20-batch100): game objects checked as tables (audit)
+
+BJ1 found `type(platform) == 'table'` dropping a LuaSpacePlatform. In 2.0 every game object is userdata. Read on a
+private copy of world n's _autosave8 (14:38, tick 48351336): `prototypes`, `prototypes.entity`, a quality prototype, a
+platform, a force and a surface are all `userdata`.
+- Method: the runtime's 446 `type(x) == 'table'` checks, and its `'string'` checks on fields, narrowed in two ways:
+  - by name (entity, surface, force, platform, prototype, quality, stack, ...);
+  - by where the value came from: an API call or field within 40 lines above.
+- The API values they test, read on the copy:
+  - plain tables with string names and qualities: an inserter's `get_filter`, a splitter's filter, `get_contents` rows
+    (inventories, transport lines), logistic section filter values, logistic point `filters`, a landing pad's
+    `get_logistic_point()` (a table of 3 points);
+  - userdata: `LuaItemStack.quality`, `entity.quality`, `get_recipe()` (a LuaRecipe and a quality), a robot order's
+    `target_item.name` (LuaItemPrototype) and `.quality`;
+  - `unit.spawner` is no key in 2.0.77 (`LuaEntity doesn't contain key spawner`); it is `unit.commandable.spawner`.
+
+Fixed (each restores what it was written for; no new tell or alert):
+
+| Where | What it skipped on the real engine | Seen on the copy |
+|---|---|---|
+| space.lua:2178 (cp1) | platform_schedule's departure record | BJ1 |
+| lessonbook.lua:211 | `type(prototypes) == 'table'`: ground_rule_add/edit `applies_to` names never checked (a misspelled name was saved) | before: `ground_rule_edit {id: 3, applies_to: ["electric-mining-dril"]}` saved it; after: `applies_to: no entity, item or recipe named electric-mining-dril` |
+| serves.lua:19 | the same: an order's or reminder's `serves.name` never checked | unit test |
+| supply.lua:463 | a robot's pickup item (`target_item.name`, a prototype) never matched, so supply's network lines never named who reserved the providers' stock (`reserved for (x,y) requester-chest N`) | Nauvis, 7 items: 0 reservation lines before, every item named them after (e.g. iron-plate: `reserved for (-32.5,-9.5) requester-chest 76, ... (+35 more)`) |
+| threat.lua:597 | an attack's source as the unit's own spawner (`from nest` instead of `likely from nest`): unit.spawner errors in 2.0.77, and the spawner, userdata, failed the table check | not seen to fire, see below |
+
+threat.lua on the copy, three attacks on our entities:
+- a big spitter and a big biter commanded to attack: at the hit their `commandable.spawner` read nil;
+- a gun turret by a nest: worms hit first, and the source is looked up once an incident, on the first hit.
+
+All three read `likely from nest`, the nearest charted spawner, as before. Idle units by a nest do give
+`commandable.spawner`. The fix reads it when it is there.
+
+Left, as the operator asked, because a fix would start messages:
+- space.lua:2197, platform_schedule_call: the schedule edit log's tells (`told_of_setting_edit`, `told_of_edit`) have
+  been off on the real engine since they were written.
+- robotloss.lua:35/54: a lost robot's `job.item` is stored as the item prototype (userdata). When its order has no
+  target, `j.order .. ' ' .. j.item` raises, so the robot_losses read and its alert groups fail for that robot. A fix
+  would let those lines show.
+
+Harmless (the check is wrong for userdata, but the code works):
+- inputs.lua:86: `get_recipe()` gives a LuaRecipe, so the conversion to a prototype is skipped; a LuaRecipe has
+  `ingredients` as well.
+- the `type(x.quality) == 'table' and x.quality.name or x.quality` reads on `get_contents` rows (pods.lua:23,
+  robots.lua:19, runtime.lua:7541 and 7605, routeammo.lua:194, platdelete.lua:17, ammorate.lua:171 and 188,
+  space.lua:2358): there the quality is a string;
+- networks.lua:235, trash.lua:24 (logistic point filters), minpayload.lua:63, space.lua:554 (section filters),
+  beltfit, circuits, lanecheck, trace and inputs (`get_filter`): strings;
+- packaudit.lua:73: called for landing pads only, which give a table.
+
+Already right for userdata: runtime.lua:10069 and 13678, details.lua:18, silo.lua:28, space.lua:99, turretammo.lua:217,
+pods.lua:35, freight.lua:131, reqgroups.lua:20, reservations.lua:107, stock.lua:316, robots.lua:29, and avoid.lua
+(reads `commandable`).
+
+Tests use userdata fakes (a file handle with its own metatable), never table fakes for game objects:
+- tests/d22_batch100b.lua (serves and applies_to against a userdata `prototypes`);
+- tests/supply.lua (robot orders as 2.0.77 gives them);
+- tests/threat.lua (the unit, its commandable and its spawner);
+- tests/d22_batch100.lua (BJ1's platform and force).
+
+Each fails on the code before the fix.
+- BJ3 (operator: a failing read, not a new message): robotloss.lua kept a lost robot's order item as the item
+  prototype (2.0.77's `target_item.name`, userdata). When the order had no target, the group line joined it and raised
+  `attempt to concatenate a userdata value` (robotloss.lua:54), in `robot_losses` and in `alert_groups`. That failed
+  the read, and since the alert groups are built for the whole force at once, it dropped every robots_lost alert of that
+  force while the record was kept (KEEP, 15 minutes).
+  - Now the item is kept by its name, from a name, the prototype, or `target_item.name`. A record noted before the fix,
+    holding the prototype, is read by its name.
+  - Test tests/d22_batch100c.lua (userdata fakes; on the old code both calls raise at robotloss.lua:54).

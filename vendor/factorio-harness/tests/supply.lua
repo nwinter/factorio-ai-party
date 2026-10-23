@@ -155,8 +155,12 @@ end
 local r11=robot(10,N11,{[AC]=2}); robot(220,N12,{['iron-plate']=1}); robot(230,N12,{[AC]=1})
 -- Its orders (Grok, 10:50: who reserved the provider's 3): pick 2 at c1 for c2, then 1 at c1 for c3.
 defines.robot_order_type={pickup=1,deliver=2}
-r11.robot_order_queue={{type=1,target=c1,target_item={name=AC,quality='normal'},target_count=2},{type=2,target=c2},
-  {type=1,target=c1,target_item=AC,target_count=1},{type=2,target=c3}}
+-- (d22 batch100 BJ2) as 2.0.77 gives them (read on a copy of world n): target_item {name, quality}, each a prototype
+-- (userdata); a check for a table name dropped every pickup, so no reservation was ever named on the real engine
+local function ud(fields) local u=io.tmpfile(); debug.setmetatable(u,{__index=fields}); return u end
+local function item_id(name) return {name=ud{name=name,object_name='LuaItemPrototype'},quality=ud{name='normal',object_name='LuaQualityPrototype'}} end
+r11.robot_order_queue={{type=1,target=c1,target_item=item_id(AC),target_count=2},{type=2,target=c2},
+  {type=1,target=c1,target_item=item_id(AC),target_count=1},{type=2,target=c3}}
 -- A silo whose rocket is an export: 10 in its rocket, 50 requested.
 local silo=entity{name='rocket-silo',type='rocket-silo',position={x=250,y=0},status='waiting_for_space_in_platform_hub'}
 local rocket=inv({[AC]=10})
