@@ -1742,7 +1742,52 @@ class Model:
             chk = {"state": pr.get("state"), "stalled": pr.get("stalled") or None, "unchanged_checks": pr.get("unchanged_checks"),
                    "checked_s": pr.get("checked_s"), "last_change_s": pr.get("last_change_s"), "error": pr.get("check_error")}
             out["check"] = {k: v for k, v in chk.items() if v is not None}
+        work = self.owner_work(it)
+        if work:
+            out["owner_work"] = work
         return out
+
+    def owner_work(self, it, now=None):
+        """(d22 batch99 BI5, viewer Aurora site:4333: "Asterion still shows stalled while Astra's timed flight watch is
+        running. Could the board show the active test and its deadline alongside the last progress check?") The
+        project owner's running bounded watches (status work: uptime, turret_tally, belt_flow, collector_tally,
+        asteroid_watch, and the flight watches it set) and its current wait, as its card reads them: [{kind, line,
+        end_tick, names}], names the board items a watch names (an item's #id in its scope or reason); this: true when it
+        names this item: its #id, or this item's title naming, as a word, the watch's scope or a platform its scope
+        names (Astra's asteroid_watch "asteroids and 97 turrets on Asterion" and project #1807 "Asterion: finish
+        coldstart ...", world n 17:05). Facts only:
+        the progress check's state stays as it is."""
+        ag = self.agents.get(it.get("owner")) if it.get("owner") else None
+        if not ag:
+            return None
+        now = (getattr(self, "snap_now", None) or time.time()) if now is None else now
+        title = (it.get("title") or "").lower()
+        items = self.board.get("items") or {}
+        plats = [p["name"] for p in (self.space.get("platforms") or []) if isinstance(p, dict) and p.get("name")]
+        rows = []
+        for w in ag.watches or []:
+            if not isinstance(w, dict) or w.get("state") not in ("running", "armed"):
+                continue
+            line = workcard.rows([w], None, None, None, self.tick)[0]["line"]
+            text = " ".join(str(w.get(k) or "") for k in ("scope", "reason", "line"))
+            named = []
+            for m in re.finditer(r"#(\d+)", text):
+                i = int(m.group(1))
+                if i in items and i not in [n["id"] for n in named]:
+                    named.append({"id": i, "title": clean_text(items[i].get("title") or "")})
+            # the places it watches: its scope as a whole (a flight watch's platform), and each platform it names
+            # ("asteroids and 97 turrets on Asterion"); this item when its title names one of them as a word
+            scope = str(w.get("scope") or "").strip()
+            places = [scope] + [p for p in plats if re.search(r"\b" + re.escape(p.lower()) + r"\b", scope.lower())]
+            this = any(n["id"] == it.get("id") for n in named) or any(
+                len(x) >= 4 and re.search(r"\b" + re.escape(x.lower()) + r"\b", title) for x in places)
+            row = {"kind": w.get("kind") or "watch", "line": line, "end_tick": w.get("end_tick"),
+                   "names": named or None, "this": this or None}
+            rows.append({k: v for k, v in row.items() if v is not None})
+        wl = waitcard.line(ag.wait, self.tick, now) if ag.wait else None
+        if wl:
+            rows.append({"kind": "wait", "line": wl, "end_tick": (ag.wait or {}).get("until_tick")})
+        return rows or None
 
     def plan_snapshot(self):
         """The team plan for the board widget and the site's Team plan: goals, each agent's line (agent name matched to
@@ -2528,6 +2573,7 @@ class Model:
         return out
 
     def snapshot(self, now, cameras=None):
+        self.snap_now = now  # (BI5) the time a project's owner_work reads its wait at
         cams_by_agent = {}
         for slot, cam in (cameras or {}).items():
             for name in cam.get("agents") or []:

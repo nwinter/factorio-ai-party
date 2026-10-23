@@ -1061,6 +1061,12 @@
       rows.push('Progress check' + (c.checked_s != null ? ' ' + ago(c.checked_s) : '') + ': ' + c.state + (c.error ? ' (' + c.error + ')' : '') +
         (c.last_change_s != null ? '; last board change ' + ago(c.last_change_s) : ''));
     }
+    // (d22 batch99 BI5, viewer Aurora site:4333) beside the check: the owner's running watches and wait, with their end,
+    // and the item a watch names when it names one (model.py owner_work); the check's own state stays as it is
+    (p.owner_work || []).forEach(function (w) {
+      var names = w.this ? 'names this project' : (w.names || []).map(function (n) { return 'names #' + n.id + (n.title ? ' ' + n.title : ''); }).join('; ');
+      rows.push(who(p.owner) + '\'s ' + (w.kind === 'wait' ? 'wait' : 'test') + ': ' + w.line + (w.end_tick != null ? ' (until tick ' + w.end_tick + ')' : '') + (names ? '; ' + names : ''));
+    });
     return rows.map(function (r) { return '<span class="small project-fact">' + esc(r) + '</span>'; }).join('');
   }
   function projectItem(p, byName, card, withNext) {

@@ -2307,7 +2307,7 @@ function handlers.describe(_,a)
   description.actions.inspect.returns=(description.actions.inspect.returns and description.actions.inspect.returns..'; ' or '')..'robot: for a logistic or construction robot (by position, unit_number or in an area): robot {unit_number, name, position, cargo {name, quality, count} (its one cargo slot; holds says it too), heading {x, y} (where it flies; none when it has no order), network (its logistic network id), line}; nothing records where a robot picked up what it carries'
   -- (d22 batch78 AN1, Astra #1809) items on the ground
   description.actions.inspect.returns=description.actions.inspect.returns..'; stack: items on the ground (item-on-ground): stack {name, quality, count, fresh (percent fresh, an item that spoils)} and holds, as hovering it shows; an area with types item-entity or name item-on-ground lists them (they belong to no force), each row with stack, and ground_items, all of them by item'
-  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; none when there are none'
+  description.actions.status.work='boolean, with brief: add watches, the agent\'s bounded watches (uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) running or needing it: id, kind, scope, state (running, done with its final not read, late, stalled, invalid), start_tick, end_tick, latest {tick, line}, reason, line; and the flight watches it set (kind flight_watch, id flight#N, scope its platform, state armed (waiting for the departure), running or done until read, end_tick its time limit); none when there are none'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
@@ -2757,7 +2757,7 @@ function handlers.status(p,a)
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
       alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),
-      watches=a.work==true and M.measures.card(p.index) or nil,
+      watches=a.work==true and M.work_watches(p) or nil,
       logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,
       supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
   end
@@ -18498,6 +18498,13 @@ M.delivwatch=require('delivwatch'){state=state,who=function(p) return M.board.wh
 function handlers.delivery_watch(p,a) return M.delivwatch.call(p,a) end
 -- (d21 batch72 AH1, Sol #1720) flight_watch: a platform's turrets' ammunition, damage, losses, repair packs and fuel
 -- once a second from now or its next departure to its next arrival (flightwatch.lua)
+-- (d22 batch99 BI5) status {brief, work}'s watches: the bounded ones (measures.lua) and the flight watches the agent set
+function M.work_watches(p)
+  local out=M.measures.card(p.index) or {}
+  local ok,f=pcall(function() return M.flightwatch and M.flightwatch.card(M.board.who(p)) end)
+  for _,r in ipairs(ok and f or {}) do out[#out+1]=r end
+  return #out>0 and out or nil
+end
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
   fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,

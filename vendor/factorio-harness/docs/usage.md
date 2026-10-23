@@ -11743,3 +11743,14 @@ best of three.
 - Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
   the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
 
+
+## d22 batch99 BI5: a project's owner's running test beside its progress check (viewer Aurora site:4333)
+
+- `status {brief: true, work: true}`'s `watches` also lists the flight watches the agent set (flightwatch.lua
+  `M.card`): `id` `flight#N`, `kind` `flight_watch`, `scope` its platform, `state` armed (waiting for its departure),
+  running, or done until its result is read, `start_tick`, `end_tick` (its time limit), `line`. The bounded watches
+  (measures.lua: uptime, turret_tally, belt_flow, collector_tally, asteroid_watch) come first, as before.
+- The stream service (model.py `owner_work`) puts the project owner's running or armed watches and current wait
+  beside the project's progress check on the board card. Each has its line and end tick, and says what it names: an
+  item's `#id` in its scope or reason, or this project when the project's title names the watch's scope or a platform
+  the scope names. The check's own state is unchanged.
