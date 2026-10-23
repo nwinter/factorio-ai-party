@@ -6822,6 +6822,16 @@ fh watch    # deploy on every change
     `feed.turrets_total`); `names` (1..16 prototype names) and `positions` (1..64 {x, y}, a turret within 1 tile) pick
     the rows (either); a page past the last is refused with how many there are. The lines and summaries read every
     turret; the feed rows on a page are its turrets' (by position).
+  - (d23 batch124b, Sol #2071: 16 lines of fire returned of Asterion's 23 railguns) `railguns_only: true` keeps, of
+    the turrets picked, those whose shots are a line. The lines of fire of the picked turrets whose shots are a line
+    come 16 a page: `line_page` 2, 3, ... (`lines_page {page, pages, per_page, total, returned, from, to, next, filter,
+    clear, hitting, hit, cut, unread}`; `lines_of_fire [{name, position, facing, engages, line, hit, ghosts, cut,
+    entities, destroyed_ours, unread}]`). A turret row whose line is on another line page carries `line_page`.
+    Every reply has two count lines, `turret rows: page 1 of 2, turrets 1-64 of the 120 picked (120 turrets read); 56
+    more on page 2..2` and `lines of fire: line_page 1 of 2, turrets 1-16 of the 23 picked whose shots are a line: 15
+    hit none of ours (every entity near the arc read), 1 hit 2 of ours; 7 more on line_page 2..2`; `clear` counts no line
+    whose find was cut. `turrets_page` adds `returned`, and `capped` when the
+    find reached its 256. A line of fire whose find reached fireline.lua's 2048 entities ends `(cut: ...)`.
   - `platform_endurance` projects only reachable ammunition: a row says `N more aboard can reach no turret
     (stranded: ...), not counted`, and `ammo_feed` gives both totals. preflight with a platform adds `ammo_feed`.
   - A team alert: `platform Kestrel: 11 turrets in (-14,-14)-(6.5,24.5) can reach under 20 rounds and nothing more
@@ -8224,8 +8234,8 @@ fh watch    # deploy on every change
     - Ghosts take no damage. They are named apart, as hit once built.
     - Any turret whose shots are a line and whose turn_range is under a full turn is read the same way.
   - Where it shows:
-    - `platform_defense` lines `line of fire: ...` for each such turret (up to 16), with what it engages, and
-      `line_of_fire` and `hits` on its turret row.
+    - `platform_defense` lines `line of fire: ...` for each such turret (16 a line page since d23 batch124b, #2071),
+      with what it engages, `lines_of_fire` rows, and `line_of_fire` and `hits` on its turret row.
     - `configure {priority_targets | ignore_unprioritised}` on one: `line_of_fire`.
     - `build` (item) and `place_ghosts` (name) entries of one, their dry runs too: `line_of_fire`, a line for each
       such entry (up to 8), from the entry's position and direction.
