@@ -54,14 +54,20 @@ return function(api)
     st.events[#st.events+1] = {id=st.eseq, to=w.setter, text=text}
     while #st.events > M.EVENTS do table.remove(st.events, 1) end
   end
+  -- (d22 batch110 BT1: on a copy of world n a watch's read a second made 76 KB of garbage, most of it the force's
+  -- platforms list, closures and each turret's inventory read anew) a watch's platform kept while it is valid and still
+  -- its force's platform of that index (what the force's list gives); module state, found again after a load
+  local function platform_at(f, index) return f.platforms[index] end
   local function platform_of(w)
     local pl = w.pl
     if pl and pl.valid then return pl end
     local f = game.forces[w.force]
-    pl = f and try(function() return f.platforms[w.index] end)
+    local ok
+    if f then ok, pl = pcall(platform_at, f, w.index); if not ok then pl = nil end else pl = nil end
     if pl and pl.valid then w.pl = pl; return pl end
   end
-  local function flying(pl) return try(function() return pl.state == defines.space_platform_state.on_the_path and pl.space_connection ~= nil end) or false end
+  local function flying_now(pl) return pl.state == defines.space_platform_state.on_the_path and pl.space_connection ~= nil end
+  local function flying(pl) local ok, f = pcall(flying_now, pl); return ok and f or false end
   -- Where it is: its location, else the leg it flies the way it flies it (freight.lua's leg: a connection flown back
   -- reads the same from and to).
   local function where(pl)
@@ -71,13 +77,40 @@ return function(api)
     if l then return l.from .. '->' .. l.to end
     return try(function() return pl.space_connection.from.name .. '->' .. pl.space_connection.to.name end) or '?'
   end
-  local function ammo_of(e)
-    local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
-    if not inv then return nil end
-    local n = try(function() return inv.get_item_count() end)
-    if not n then return nil end
+  -- (BT1) a watched turret's ammo inventory, its get_item_count and its first slot, kept with the turret's row while
+  -- the turret and they are valid (a method read and an inventory or stack read each make a new object); what they
+  -- hold read live at each sample. Module state, read again after a load.
+  local ammo_kept = setmetatable({}, {__mode='k'})
+  local function ammo_inv(e)
+    local inv = e.get_inventory(defines.inventory.turret_ammo)
+    return inv, inv and inv.get_item_count
+  end
+  local function first_slot(inv) return inv[1] end
+  local function slot_name(st) return st.valid_for_read and st.name end
+  local function ammo_of(e, t)
+    local kept = t and ammo_kept[t]
+    if not (kept and kept.e == e and kept.inv.valid) then
+      local ok, inv, count = pcall(ammo_inv, e)
+      if not (ok and inv) then return nil end
+      kept = {e=e, inv=inv, count=count}
+      if t then ammo_kept[t] = kept end
+    end
+    local okn, n = pcall(kept.count)
+    if not (okn and n) then return nil end
     local name
-    if n > 0 then name = try(function() return inv[1].valid_for_read and inv[1].name end) or nil end
+    if n > 0 then
+      local st = kept.slot
+      if not (st and st.valid) then
+        local oks
+        oks, st = pcall(first_slot, kept.inv)
+        st = oks and st or nil
+        kept.slot = st
+      end
+      if st then
+        local okm, m = pcall(slot_name, st)
+        name = okm and m or nil
+      end
+    end
     return n, name
   end
   -- The repair tool item names (prototypes do not change while the game runs).
@@ -148,13 +181,15 @@ return function(api)
     end
   end
   -- (BH1) the platform's accumulators, found at the start and each minute with the turrets
+  local function buffer_of(e) return e.electric_buffer_size end
   local function find_accumulators(w, pl)
     local list = try(function() return pl.surface.find_entities_filtered{type='accumulator', force=pl.force, limit=M.MAX_ACCUMULATORS + 1} end) or {}
     w.acc_capped = #list > M.MAX_ACCUMULATORS or nil
     local accs, cap = {}, 0
     for i = 1, math.min(#list, M.MAX_ACCUMULATORS) do
       local e = list[i]
-      local b = try(function() return e.electric_buffer_size end) or 0
+      local okb, b = pcall(buffer_of, e)  -- (BT1) no closure an accumulator
+      b = okb and b or 0
       if b > 0 then accs[#accs+1] = e; cap = cap + b end
     end
     w.accs, w.acc_cap = accs, cap
@@ -405,7 +440,7 @@ return function(api)
     local new_run = false
     for _, t in ipairs(w.turrets) do
       if t.e and t.e.valid then
-        local n, name = ammo_of(t.e)
+        local n, name = ammo_of(t.e, t)
         if n then
           t.now = n
           if name then t.ammo = name end

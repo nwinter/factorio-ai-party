@@ -151,6 +151,7 @@ force.platforms={}; pl.valid=false   -- (BS1) a deleted platform's object reads 
 run(game.tick+60)
 pl.valid=true
 local wg=st.flightwatch.list[#st.flightwatch.list]; eq(wg.why,'the platform is gone'); assert(F.call(p,{id=wg.id}).line:find('ended: the platform is gone'))
+pl.valid=true
 -- the alert lines: to the setter, once
 local h={}
 local lines=F.lines(p,h)

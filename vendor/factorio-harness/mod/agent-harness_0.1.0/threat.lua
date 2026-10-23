@@ -17,6 +17,44 @@ return function(api)
     return names[math.floor(angle/(math.pi/4)+0.5)%8+1]
   end
   local function chunk_centre(cx,cy) return {x=cx*32+16,y=cy*32+16} end
+  -- (d22 batch110 BT1: the background sweep made a chunk position and a centre table for each chunk, 16 to 2000 a
+  -- tick) one position each, filled in place for the game's reads (read, not kept)
+  local SWEEP_CHUNK,CHUNK_CENTRE={x=0,y=0},{x=0,y=0}
+  -- (BT1) the background steps' force by name and surface by index, kept while valid: the same object the game's
+  -- lookup gives (a force's name and a surface's index do not change); module state
+  local forces_kept,surfaces_kept={},{}
+  local function force_named(name)
+    local f=name~=nil and forces_kept[name]
+    if f and f.valid then return f end
+    f=game.forces[name]
+    if name~=nil then forces_kept[name]=f end
+    return f
+  end
+  local function surface_at(index)
+    local s=index~=nil and surfaces_kept[index]
+    if s and s.valid then return s end
+    s=game.get_surface(index)
+    if index~=nil then surfaces_kept[index]=s end
+    return s
+  end
+  -- (BT1) a table's keys sorted, the list kept while the keys are the same (a new list only when they change; a list
+  -- given out is never changed)
+  local sorted_kept={}
+  local NO_KEYS={}
+  local function sorted_keys(t,slot)
+    t=t or NO_KEYS
+    local kept=sorted_kept[slot]
+    if kept then
+      local n,same=0,true
+      for k in pairs(t) do n=n+1; if not kept.set[k] then same=false; break end end
+      if same and n==#kept.list then return kept.list end
+    end
+    local list,set={},{}
+    for k in pairs(t) do list[#list+1]=k; set[k]=true end
+    table.sort(list)
+    sorted_kept[slot]={list=list,set=set}
+    return list
+  end
 
   function M.evolution(p)
     local enemy,s=game.forces.enemy,p.surface
@@ -128,7 +166,7 @@ return function(api)
     st.spawn_index=st.spawn_index or {}
     local job,idx=st.spawn_jobs[key],st.spawn_index[key]
     local force_name,index=key:match('^(.*)/(%d+)$')
-    local force,s=game.forces[force_name],game.get_surface(tonumber(index))
+    local force,s=force_named(force_name),surface_at(tonumber(index))
     if not (force and s) then st.spawn_jobs[key],st.spawn_index[key],st.spawn_want[key]=nil,nil,nil; return end
     if not job then
       if idx and tick-idx.start<SPAWN_TICKS then return end
@@ -292,7 +330,8 @@ return function(api)
       t.charted=t.charted+1; grow(t.box,c.x,c.y)
       if force.is_chunk_visible(s,c) then t.visible=t.visible+1 end
     end
-    local amount=s.get_pollution(chunk_centre(c.x,c.y))
+    CHUNK_CENTRE.x,CHUNK_CENTRE.y=c.x*32+16,c.y*32+16
+    local amount=s.get_pollution(CHUNK_CENTRE)
     if amount>0 then
       if is_charted then
         t.polluted=t.polluted+1; grow(t.cloud,c.x,c.y)
@@ -413,9 +452,7 @@ return function(api)
     local st=api.state()
     st.chart_bg=true
     st.chart_jobs=st.chart_jobs or {}
-    local keys={}
-    for key in pairs(st.threat_shared or {}) do keys[#keys+1]=key end
-    table.sort(keys)
+    local keys=sorted_keys(st.threat_shared,'shared')
     for _,key in ipairs(keys) do
       -- A step that fails ends its sweep (noted in chart_errors and on the chart, snapfail.lua); the chart keeps the tick
       -- it was made at and the next sweep starts CHART_TICKS after the failure.
@@ -430,9 +467,7 @@ return function(api)
     -- A reply's nest watch (M.watch).
     M.watch_step(st,tick)
     -- The spawner index (spawners_near), per force and surface asked for.
-    local wanted={}
-    for key in pairs(st.spawn_want or {}) do wanted[#wanted+1]=key end
-    table.sort(wanted)
+    local wanted=sorted_keys(st.spawn_want,'want')
     for _,key in ipairs(wanted) do
       local ok,err=pcall(M.spawn_step,st,key,tick)
       if not ok then
@@ -444,8 +479,8 @@ return function(api)
   function M.sweep_step(st,key,e,tick)
     do
       local job=st.chart_jobs[key]
-      local force=e.force and game.forces[e.force]
-      local s=e.surface and game.get_surface(e.surface)
+      local force=e.force and force_named(e.force)
+      local s=e.surface and surface_at(e.surface)
       if not job then
         local g=e.chart and e.chart.gen
         if g and force and s and tick-math.max(snapfail.since(e.chart.tick,e.chart.refresh_failed),e.chart.idle_tick or e.chart.tick)>=CHART_TICKS then
@@ -464,8 +499,9 @@ return function(api)
       else
         job.t=job.t or chart_new(s,force)
         local n=0
+        local c=SWEEP_CHUNK
         while n<(job.per or SWEEP) and job.y<=job.bottom do
-          local c={x=job.x,y=job.y}
+          c.x,c.y=job.x,job.y
           if s.is_chunk_generated(c) then chart_chunk(job.t,s,force,c) end
           n=n+1; job.x=job.x+1
           if job.x>job.right then job.x=job.left; job.y=job.y+1 end

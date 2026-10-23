@@ -327,6 +327,12 @@ do
   a.pickup_target=chest2; b.pickup_target=chest2; furnace.valid=false; b.drop_target=nil
   g=lost(read())
   eq(g['lost_source.boiler'],nil,'a reads again')
+  -- (d22 batch110 BT1: each inserter's record is rewritten in place) what it lost is cleared, what it reads now kept
+  local ra=st6.push_inserters.player.units[701]
+  eq(ra.lost_p,nil); eq(ra.lost_d,nil); eq(ra.ldt,nil); eq(ra.p,'iron-chest (41.5,13.5)'); eq(ra.d,'boiler (60,16.5)'); eq(ra.dt,'boiler')
+  eq(ra.g,st6.push_inserters.player.gen)
+  local rb=st6.push_inserters.player.units[702]
+  eq(rb.d,nil); eq(rb.dt,nil); eq(rb.lost_d,'stone-furnace (44,16)'); eq(rb.ldt,'furnace'); eq(rb.lost_p,nil)
   eq(g['lost_target.furnace'].line,'1 inserter feeding furnace lost its drop target near (44.5,14.5): inserter (44.5,14.5) put into stone-furnace (44,16), reads iron-chest (41.5,13.5)')
   -- An inserter that is gone is forgotten.
   b.valid=false
@@ -588,11 +594,17 @@ do
     place=function() return {key='nauvis',position={x=50,y=40}} end,
     burnt_stuck=function(e) return stuck[e] end}
   ents.nauvis={}; ents.vulcanus={}
-  local a=ent('nauvis','biochamber','assembling-machine',45.5,72.5,{status=1})
-  local b=ent('nauvis','biochamber','assembling-machine',68.5,49.5,{status=1})
-  ent('nauvis','biochamber','assembling-machine',49.5,44.5,{status=1})
+  -- (biochambers burn nutrients: each has a burner; d22 batch110 BT1: only a burner is asked, as burnt.lua reads nil
+  -- for an entity with none, so the electric assembler below is never asked)
+  local a=ent('nauvis','biochamber','assembling-machine',45.5,72.5,{status=1,burner={}})
+  local b=ent('nauvis','biochamber','assembling-machine',68.5,49.5,{status=1,burner={}})
+  ent('nauvis','biochamber','assembling-machine',49.5,44.5,{status=1,burner={}})
+  local electric=ent('nauvis','assembling-machine-2','assembling-machine',30.5,30.5,{status=0})
   stuck[a]={burnt='spoilage*200',fuel='spoilage*3',foreign='spoilage',burns='nutrients'}
   stuck[b]={burnt='spoilage*200',fuel='',burns='nutrients'}
+  stuck[electric]={burnt='never asked',fuel='',burns=''}
+  local B=dofile('mod/agent-harness_0.1.0/burnt.lua'){}
+  eq(B.stuck(electric),nil,'burnt.lua: no burner, not stuck')
   local r=R.read(sol,{kind='burnt_full'}).groups
   eq(#r,1); eq(r[1].count,2)
   eq(r[1].line,'2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 '
@@ -847,5 +859,58 @@ do
   horizon=45
   eq(M5.mine_group({name='player'},ms[1]),nil,'half stop past 30 min: not told')
   game.surfaces=kept_surfaces
+end
+-- d22 batch110 BT1: a slice takes each entity's position as its band read it (walk.lua out_pos) and reads a vehicle's
+-- again (it moves between the band and the slice); with a walk that fills none, every position is read in the slice.
+do
+  local kept_game,kept_defines=game,defines
+  game={tick=100}
+  defines={entity_status={working=0,no_power=1,low_power=2,no_fuel=3},inventory={},alert_type={}}
+  local f={name='player',players={{}},is_chunk_visible=function() return true end}
+  local reads={}
+  local function counted(raw)
+    return setmetatable({},{__index=function(_,k) if k=='position' then reads[raw]=(reads[raw] or 0)+1; return {x=raw.p.x,y=raw.p.y} end return raw[k] end})
+  end
+  local sraw={name='nauvis',index=1}
+  local araw={valid=true,type='assembling-machine',name='assembling-machine-2',status=1,electric_network_id=false,unit_number=1,p={x=10.5,y=10.5}}
+  local craw={valid=true,type='car',name='car',status=0,unit_number=2,p={x=12,y=12}}
+  local asm,car=counted(araw),counted(craw)
+  sraw.find_entities_filtered=function() return {asm,car} end
+  game.surfaces={nauvis=sraw}; game.forces={player=f}
+  local W=dofile('mod/agent-harness_0.1.0/walk.lua'){state=function() return {} end}
+  local function run(fill)
+    local st={}
+    local walk={start=W.start,every=W.every,due=W.due,band=function(w,s,flt,out)
+      local list=W.band(w,s,flt)
+      if not (fill and list) then return list end
+      for i,e in ipairs(list) do local raw=e==asm and araw or craw; out[i]={x=raw.p.x,y=raw.p.y} end
+      return list,out
+    end}
+    local slice_reads={}
+    local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function() return 'opus' end,walk=walk,
+      timed=function(name,fn,...)
+        if name~='pushalerts.slice' then return fn(...) end
+        local a,c=reads[araw] or 0,reads[craw] or 0
+        fn(...)
+        slice_reads[#slice_reads+1]={(reads[araw] or 0)-a,(reads[craw] or 0)-c}
+      end}
+    craw.p={x=12,y=12}
+    A.tick(game.tick)
+    for _=1,3000 do
+      game.tick=game.tick+1
+      if st.push_jobs.player and st.push_jobs.player.list then craw.p={x=40,y=12} end   -- the car drove on after the band
+      A.tick(game.tick)
+      if not st.push_jobs.player then break end
+    end
+    eq(st.push_jobs.player,nil,'the pass ends')
+    return slice_reads,st.push_alerts.player.groups
+  end
+  local r,groups=run(true)
+  eq(#r,1); eq(r[1][1],0,'the assembler: its band position'); eq(r[1][2],1,'the car: read again')
+  eq(#groups,1); eq(groups[1].kind,'unconnected'); eq(groups[1].center.x,11)
+  r,groups=run(false)
+  eq(r[1][1],1,'no out_pos: read in the slice'); eq(r[1][2],1)
+  eq(#groups,1); eq(groups[1].kind,'unconnected')
+  game,defines=kept_game,kept_defines
 end
 print('pushalerts: ok')
