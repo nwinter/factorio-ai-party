@@ -860,4 +860,57 @@ do
   eq(M5.mine_group({name='player'},ms[1]),nil,'half stop past 30 min: not told')
   game.surfaces=kept_surfaces
 end
+-- d22 batch110 BT1: a slice takes each entity's position as its band read it (walk.lua out_pos) and reads a vehicle's
+-- again (it moves between the band and the slice); with a walk that fills none, every position is read in the slice.
+do
+  local kept_game,kept_defines=game,defines
+  game={tick=100}
+  defines={entity_status={working=0,no_power=1,low_power=2,no_fuel=3},inventory={},alert_type={}}
+  local f={name='player',players={{}},is_chunk_visible=function() return true end}
+  local reads={}
+  local function counted(raw)
+    return setmetatable({},{__index=function(_,k) if k=='position' then reads[raw]=(reads[raw] or 0)+1; return {x=raw.p.x,y=raw.p.y} end return raw[k] end})
+  end
+  local sraw={name='nauvis',index=1}
+  local araw={valid=true,type='assembling-machine',name='assembling-machine-2',status=1,electric_network_id=false,unit_number=1,p={x=10.5,y=10.5}}
+  local craw={valid=true,type='car',name='car',status=0,unit_number=2,p={x=12,y=12}}
+  local asm,car=counted(araw),counted(craw)
+  sraw.find_entities_filtered=function() return {asm,car} end
+  game.surfaces={nauvis=sraw}; game.forces={player=f}
+  local W=dofile('mod/agent-harness_0.1.0/walk.lua'){state=function() return {} end}
+  local function run(fill)
+    local st={}
+    local walk={start=W.start,every=W.every,due=W.due,band=function(w,s,flt,out)
+      local list=W.band(w,s,flt)
+      if not (fill and list) then return list end
+      for i,e in ipairs(list) do local raw=e==asm and araw or craw; out[i]={x=raw.p.x,y=raw.p.y} end
+      return list,out
+    end}
+    local slice_reads={}
+    local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function() return 'opus' end,walk=walk,
+      timed=function(name,fn,...)
+        if name~='pushalerts.slice' then return fn(...) end
+        local a,c=reads[araw] or 0,reads[craw] or 0
+        fn(...)
+        slice_reads[#slice_reads+1]={(reads[araw] or 0)-a,(reads[craw] or 0)-c}
+      end}
+    craw.p={x=12,y=12}
+    A.tick(game.tick)
+    for _=1,3000 do
+      game.tick=game.tick+1
+      if st.push_jobs.player and st.push_jobs.player.list then craw.p={x=40,y=12} end   -- the car drove on after the band
+      A.tick(game.tick)
+      if not st.push_jobs.player then break end
+    end
+    eq(st.push_jobs.player,nil,'the pass ends')
+    return slice_reads,st.push_alerts.player.groups
+  end
+  local r,groups=run(true)
+  eq(#r,1); eq(r[1][1],0,'the assembler: its band position'); eq(r[1][2],1,'the car: read again')
+  eq(#groups,1); eq(groups[1].kind,'unconnected'); eq(groups[1].center.x,11)
+  r,groups=run(false)
+  eq(r[1][1],1,'no out_pos: read in the slice'); eq(r[1][2],1)
+  eq(#groups,1); eq(groups[1].kind,'unconnected')
+  game,defines=kept_game,kept_defines
+end
 print('pushalerts: ok')
