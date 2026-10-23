@@ -331,15 +331,10 @@ h=luna('queue_status').history
 -- (d17 batch23 C2: a queue's transfer step walks, walk: true; positions that do not resolve refuse before a walk)
 eq(h[#h].ok,false); assert(tostring(h[#h].result.reason):find('none of the 2 positions resolves',1,true),tostring(h[#h].result.reason))
 luna('queue_cancel',{})
--- A walking tour whose every stop fails ends failed (a nonzero --wait exit), with the first reason.
+-- A walking tour to a target without the inventory named (d22 batch118 CA4): refused before the walk.
 body.position={x=-150,y=-100}
-r=luna('transfer',{position=jfarm.position,item='yumako-seed',count=1,direction='to_entity',inventory='fuel',walk=true})
-assert(r.until_tick,'a tour')
-body.position={x=-186,y=-100}
-advance(3)
-last=luna('status').last
-eq(last.outcome,'failed'); assert(tostring(last.first_error):find('^%(%-188.5,%-101.5%): inventory is not applicable'),tostring(last.first_error))
-eq(last.error,last.first_error)
+fails(function() luna('transfer',{position=jfarm.position,item='yumako-seed',count=1,direction='to_entity',inventory='fuel',walk=true}) end,
+  'wooden-chest at (-188.5,-101.5) on gleba has no inventory fuel: nothing walked; wooden-chest takes inventory chest')
 body.position={x=50,y=32}
 
 -- 11. round1650d: walking transfers.
