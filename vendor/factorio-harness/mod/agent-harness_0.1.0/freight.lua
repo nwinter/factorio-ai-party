@@ -26,6 +26,19 @@ return function(api)
   local function sigtext(s) local q = s.quality; if q and type(q) ~= 'string' then q = q.name end; return q and q ~= 'normal' and s.name .. '@' .. q or s.name end
   M.KEEP, M.SHOW, M.ITEMS, M.RECEIPTS = 8, 6, 6, 16
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d22 batch110 BT1) a property read or a method call under pcall with no closure made: try(function() return o.k end)
+  -- made one (and an upvalue) at every read in the background jobs. pget(o, k): o.k, nil when o is nil or the read
+  -- fails; pcall_method(o, k, ...): pcall of o.k(...), false when o.k is not there.
+  local function get(o, k) return o[k] end
+  local function pget(o, k) if o == nil then return nil end local ok, v = pcall(get, o, k); if ok then return v end end
+  local function pcall_method(o, k, ...)
+    if o == nil then return false end
+    local ok, f = pcall(get, o, k)
+    if not (ok and f) then return false end
+    return pcall(f, ...)
+  end
+  local function len(x) return #x end
+  local function same(a, b) return a == b end
   local function secs(ticks)
     local s = math.max(0, math.floor(ticks / 60 + 0.5))
     if s >= 60 then return string.format('%dm%02ds', math.floor(s / 60), s % 60) end
@@ -38,7 +51,19 @@ return function(api)
   -- Where a platform is ------------------------------------------------------
   local function on_path(pl)
     local s = defines.space_platform_state and defines.space_platform_state.on_the_path
-    return s ~= nil and try(function() return pl.state end) == s
+    return s ~= nil and pget(pl, 'state') == s
+  end
+  -- (BT1) a space connection's ends and length by its name (a prototype's facts; c.from and c.to made two prototype
+  -- objects at each read, every second for each platform in flight)
+  local CONN_ENDS = {}
+  local function conn_ends(c)
+    local name = pget(c, 'name')
+    local k = type(name) == 'string' and CONN_ENDS[name]
+    if k then return k[1], k[2], k[3] end
+    local from, to = pget(pget(c, 'from'), 'name') or '?', pget(pget(c, 'to'), 'name') or '?'
+    local length = pget(c, 'length') or 0
+    if type(name) == 'string' then CONN_ENDS[name] = {from, to, length} end
+    return from, to, length
   end
   -- The leg flown now, in the way it is flown: {from, to, flown (share of the
   -- leg behind it), left_km, eta_ticks, length}. A connection is measured from
@@ -46,21 +71,20 @@ return function(api)
   -- for is the schedule's stop when it is one of the two ends, else the end the
   -- platform did not come from (last visited).
   function M.leg(pl)
-    local c = try(function() return pl.space_connection end)
+    local c = pget(pl, 'space_connection')
     if not c then return nil end
-    local from, to = try(function() return c.from.name end) or '?', try(function() return c.to.name end) or '?'
-    local d = try(function() return pl.distance end) or 0
-    local sch = try(function() return pl.schedule end)
-    local records = sch and sch.records or {}
-    local rec = records[sch and sch.current or 1]
+    local from, to, length = conn_ends(c)
+    local d = pget(pl, 'distance') or 0
+    local sch = pget(pl, 'schedule')
+    local records = sch and sch.records
+    local rec = records and records[sch.current or 1]
     local stop = rec and rec.station
-    local last = try(function() return pl.last_visited_space_location.name end)
+    local last = pget(pget(pl, 'last_visited_space_location'), 'name')
     local back
     if stop == from or stop == to then back = stop == from else back = last == to end
     local flown = back and 1 - d or d
-    local length = try(function() return c.length end) or 0
     local left = (1 - flown) * length
-    local speed = try(function() return pl.speed end)
+    local speed = pget(pl, 'speed')
     -- Speeding up (well under its cruise): the rest at cruise speed (A4).
     local cruise = M.cruise and M.cruise(pl)
     local at_cruise = cruise and type(speed) == 'number' and speed < cruise * 0.9
@@ -86,7 +110,7 @@ return function(api)
   -- departed (d19 batch48 2): the last departure a platform_schedule call caused, {from, tick, by} (space.lua), for
   -- wait_until platform_left begun just after it
   local function where_row(pl)
-    local loc = try(function() return pl.space_location.name end)
+    local loc = pget(pget(pl, 'space_location'), 'name')
     if loc then
       if on_path(pl) then return {at=loc, stopped=false, text='at ' .. loc .. ', on its path (not stopped)'} end
       return {at=loc, stopped=true, text='at ' .. loc}
@@ -97,7 +121,8 @@ return function(api)
   end
   function M.where(pl)
     local w = where_row(pl)
-    local st = api.state and try(function() return api.state() end)
+    local st
+    if api.state then local ok, v = pcall(api.state); if ok then st = v end end
     w.departed = st and st.schedule_departures and st.schedule_departures[pl.name] or nil
     return w
   end
@@ -119,24 +144,128 @@ return function(api)
   end
   -- The hub's items, its main inventory and its trash, by name (every quality together); by_quality (d22 batch91 BA1):
   -- by "name@quality" instead.
-  function M.hub_counts(pl, by_quality)
-    local hub = try(function() return pl.hub end)
+  -- (d22 batch110 BT1: freight.tick made 502 KB a second on a copy of world n, most of it each hub's get_contents, a
+  -- table for every kind of item, every second for every platform; shipment.tick read it twice more) Per platform, kept
+  -- while its hub is the same entity: the hub's two inventories, each inventory's get_item_count and the kinds of item
+  -- (name and quality) its last full read found. A read counts those kinds one by one (get_item_count({name, quality}):
+  -- a number, no table) and takes them while they add up to the inventory's total (get_item_count(): every item of every
+  -- quality); then no other kind is in it and the counts are get_contents' own. Else (a new kind came in) it reads
+  -- get_contents again. An inventory whose full read and counts disagree once is always read in full. A kind gone to 0
+  -- stays among those counted (an item that comes and goes does not force a full read each time), up to HUB_KINDS
+  -- kinds; an inventory holding more is read in full (a count is a call scanning the inventory: about as much time as
+  -- get_contents makes for one kind, without its table). The platform's item production statistics and their two
+  -- counting methods are kept with it (ammo_counts). Module state: found again after a load.
+  M.HUB_KINDS = 64
+  local HUB_INVS = {'hub_main', 'hub_trash'}
+  local plats = {}  -- platform index -> {hub, invs = {[1]=slot, [2]=slot}, stats, made, used}
+  local QID = {name='', quality='normal'}
+  local SCRATCH = {}
+  local function plat(pl)
+    local hub = pget(pl, 'hub')
+    if not (hub and hub.valid) then return nil, hub end
+    local idx = pget(pl, 'index')
+    if idx == nil then return nil, hub end
+    local c = plats[idx]
+    if c then
+      local ok, is = pcall(same, c.hub, hub)
+      if not (ok and is) then c = nil end
+    end
+    if not c then c = {hub=hub, invs={}}; plats[idx] = c end
+    return c, hub
+  end
+  -- an inventory's slot: {inv, count (its get_item_count), names, quals, keys (name@quality), bad}; nil with none
+  local function inv_slot(c, hub, k)
+    local slot = c and c.invs[k]
+    if slot and pget(slot.inv, 'valid') ~= false then return slot end
+    local id = defines.inventory[HUB_INVS[k]]
+    local ok, inv = false, nil
+    if id then ok, inv = pcall_method(hub, 'get_inventory', id) end
+    if not (ok and inv) then return nil end
+    local count = pget(inv, 'get_item_count')
+    slot = {inv=inv, count=type(count) == 'function' and count or nil}
+    -- kept only with its own counting method (a test's table hub hands out new inventories)
+    if c and slot.count then c.invs[k] = slot end
+    return slot
+  end
+  -- The kinds' counts into SCRATCH; true when they add up to the inventory's total.
+  local function slot_known(slot)
+    local names, quals, count = slot.names, slot.quals, slot.count
+    if not names or slot.bad or not count or #names > M.HUB_KINDS then return false end
+    local ok, total = pcall(count)
+    if not ok or type(total) ~= 'number' then return false end
+    local sum = 0
+    for i = 1, #names do
+      QID.name, QID.quality = names[i], quals[i]
+      local ok2, n = pcall(count, QID)
+      if not ok2 or type(n) ~= 'number' then return false end
+      SCRATCH[i] = n
+      sum = sum + n
+    end
+    return sum == total
+  end
+  -- After a full read: its kinds (then the kinds counted before that it lacks now, at 0, up to HUB_KINDS), checked
+  -- against get_item_count (each kind and the total) before they are used.
+  local function slot_learn(slot, list)
+    if slot.bad or not slot.count then return end
+    local names, quals, keys = {}, {}, {}
+    local had = {}
+    for _, v in pairs(list or {}) do
+      local q = type(v) == 'table' and v.quality
+      if q == nil or q == false then q = 'normal' end
+      if type(v) ~= 'table' or type(v.name) ~= 'string' or type(q) ~= 'string' or type(v.count) ~= 'number' then slot.bad = true; slot.names = nil; return end
+      if v.count > 0 then
+        local key = v.name .. '@' .. q
+        names[#names+1], quals[#quals+1], keys[#keys+1] = v.name, q, key
+        had[key] = v.count
+      end
+    end
+    if #names > M.HUB_KINDS then slot.names = nil; return end
+    local old_names, old_quals = slot.names, slot.quals
+    for i, key in ipairs(old_names and slot.keys or {}) do
+      if #names >= M.HUB_KINDS then break end
+      if not had[key] then names[#names+1], quals[#quals+1], keys[#keys+1] = old_names[i], old_quals[i], key; had[key] = 0 end
+    end
+    slot.names, slot.quals, slot.keys = names, quals, keys
+    if not slot_known(slot) then slot.bad = true; slot.names = nil; return end
+    -- each kind as the full read counted it (0 for those it did not list)
+    for i = 1, #names do
+      if SCRATCH[i] ~= had[keys[i]] then slot.bad = true; slot.names = nil; return end
+    end
+  end
+  local function hub_counts_into(pl, by_quality, out)
+    local c, hub = plat(pl)
     if not (hub and hub.valid) then return nil end
-    local out = {}
-    for _, id in ipairs({'hub_main', 'hub_trash'}) do
-      local inv = defines.inventory[id] and try(function() return hub.get_inventory(defines.inventory[id]) end)
-      local list = inv and try(function() return inv.get_contents() end)
-      if by_quality then
-        for _, v in pairs(list or {}) do
-          local q = type(v) == 'table' and (type(v.quality) == 'string' and v.quality or type(v.quality) == 'table' and v.quality.name) or 'normal'
-          if type(v) == 'table' and type(v.name) == 'string' and (v.count or 0) > 0 then
-            local k = v.name .. '@' .. q
-            out[k] = (out[k] or 0) + v.count
+    for k = 1, #HUB_INVS do
+      local slot = inv_slot(c, hub, k)
+      if slot and slot_known(slot) then
+        local names, keys = slot.names, slot.keys
+        for i = 1, #names do
+          local n = SCRATCH[i]
+          if n > 0 then
+            local key = by_quality and keys[i] or names[i]
+            out[key] = (out[key] or 0) + n
           end
         end
-      elseif inv then add_contents(out, list) end
+      elseif slot then
+        local inv = slot.inv
+        local ok, list = pcall_method(inv, 'get_contents')
+        if not ok then list = nil end
+        if by_quality then
+          for _, v in pairs(list or {}) do
+            local q = type(v) == 'table' and (type(v.quality) == 'string' and v.quality or type(v.quality) == 'table' and v.quality.name) or 'normal'
+            if type(v) == 'table' and type(v.name) == 'string' and (v.count or 0) > 0 then
+              local key = v.name .. '@' .. q
+              out[key] = (out[key] or 0) + v.count
+            end
+          end
+        else add_contents(out, list) end
+        if c then slot_learn(slot, list) end
+      end
     end
     return out
+  end
+  function M.hub_counts(pl, by_quality)
+    return hub_counts_into(pl, by_quality, {})
   end
   -- Ammunition and repair packs aboard by place (Sol, Astra 06:21-09:37: Tern's endurance read 42 rockets in the hub
   -- and turrets while 344 more sat on about 310 belt tiles): the hub's main inventory, the turrets' ammo slots, belts
@@ -167,86 +296,146 @@ return function(api)
   local function walk() walker = walker or api.walk or require('walk'){state=api.state}; return walker end
   local READ_TYPES = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'lane-splitter', 'linked-belt', 'inserter',
     'ammo-turret', 'thruster', 'storage-tank'}
+  -- (d22 batch110 BT1: 53.5 KB a step on a copy of world n, every 3 ticks) the platform read now and its surface, kept
+  -- between steps while it is valid (module state: found again after a load); the band's filter, one table; each
+  -- transport belt prototype's line count (get_max_transport_line_index, a fact of the prototype) by its name, and an
+  -- underground's by its side too
+  local belt_pl, belt_s
+  local BAND_FILTER = {type=READ_TYPES}
+  local BELT_LINES = {}
+  -- One belt's items into `into`: each line's (an underground exit's buried lines 3 and 4 when they are its entrance's:
+  -- once), an empty line passed over (#line: its item count, no table made)
+  local function belt_items(e, t, into)
+    local name = e.name
+    local side = t == 'underground-belt' and pget(e, 'belt_to_ground_type') or nil
+    local by = BELT_LINES[side or '']
+    if not by then by = {}; BELT_LINES[side or ''] = by end
+    local lines = type(name) == 'string' and by[name]
+    if not lines then
+      local ok, n = pcall_method(e, 'get_max_transport_line_index')
+      lines = ok and n or 0
+      if type(name) == 'string' and ok and type(n) == 'number' then by[name] = n end
+    end
+    local gtl = lines > 0 and pget(e, 'get_transport_line')
+    local partner
+    for i = 1, gtl and lines or 0 do
+      local ok, line = pcall(gtl, i)
+      if ok and line then
+        local okn, n = pcall(len, line)
+        if not (okn and n == 0) then
+          local dup = false
+          if i > 2 and side == 'output' then
+            if partner == nil then
+              local nb = pget(e, 'neighbours')
+              partner = nb and nb.valid and nb or false
+            end
+            if partner then
+              local okp, pline = pcall_method(partner, 'get_transport_line', i)
+              local oke, is = false, nil
+              if okp then oke, is = pcall_method(line, 'line_equals', pline) end
+              dup = oke and is
+            end
+          end
+          if not dup then
+            local okc, list = pcall_method(line, 'get_contents')
+            for _, r in ipairs(okc and list or {}) do into[r.name] = (into[r.name] or 0) + r.count end
+          end
+        end
+      end
+    end
+  end
   function M.belt_tick(tick)
     if tick % M.BELT_STEP ~= 0 then return end
     local bt = belt_store()
     local active = bt.active
     local rec = active and bt[active]
-    local pl
+    local pl, s
     if rec and rec.job then
-      for _, f in pairs(game.forces) do
-        for _, p in pairs(try(function() return f.platforms end) or {}) do if p.index == active then pl = p end end
+      if belt_pl and belt_pl.valid and belt_pl.index == active and belt_s and belt_s.valid then pl, s = belt_pl, belt_s
+      else
+        for _, f in pairs(game.forces) do
+          for _, p in pairs(pget(f, 'platforms') or {}) do if p.index == active then pl = p end end
+        end
+        s = pl and pl.valid and pl.surface or nil
+        belt_pl, belt_s = pl, s
       end
     end
-    if not (pl and pl.valid and pl.surface) then
+    if not (pl and pl.valid and s) then
       bt.active = nil
+      belt_pl, belt_s = nil, nil
       if rec then rec.job = nil end
-      -- the next: a platform read within BELT_KEEP whose read is oldest and older than BELT_EVERY
+      -- the next: a platform read within BELT_KEEP whose read is oldest and older than BELT_EVERY (none such among
+      -- the reads kept: no platform looked at)
+      local any = false
+      for idx, r in pairs(bt) do
+        if type(idx) == 'number' and type(r) == 'table' and r.wanted and tick - r.wanted <= M.BELT_KEEP
+          and (r.done and tick - r.done.tick or math.huge) >= M.BELT_EVERY then any = true; break end
+      end
+      if not any then return end
       local best, best_age
       for _, f in pairs(game.forces) do
-        for _, p in pairs(try(function() return f.platforms end) or {}) do
+        for _, p in pairs(pget(f, 'platforms') or {}) do
           local r = bt[p.index]
-          if p.valid and p.surface and r and r.wanted and tick - r.wanted <= M.BELT_KEEP then
+          if r and r.wanted and tick - r.wanted <= M.BELT_KEEP then
             local age = r.done and tick - r.done.tick or math.huge
-            if age >= M.BELT_EVERY and (not best or age > best_age) then best, best_age = p, age end
+            if age >= M.BELT_EVERY and (not best or age > best_age) and p.valid and p.surface then best, best_age = p, age end
           end
         end
       end
       if not best then return end
       -- the walk's box: the platform's chunks (walk.lua's start grows it by 4 chunks round each, mostly empty space)
       local box
-      for c in best.surface.get_chunks() do
+      local bs = best.surface
+      for c in bs.get_chunks() do
         if not box then box = {left=c.x, right=c.x, top=c.y, bottom=c.y}
         else box.left, box.right = math.min(box.left, c.x), math.max(box.right, c.x); box.top, box.bottom = math.min(box.top, c.y), math.max(box.bottom, c.y) end
       end
       if not box then bt[best.index].done = {tick=tick, belts={}, hands={}, belt_entities=0}; return end
-      bt[best.index].job = {start=tick, walk={surface=best.surface.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=1, max=1},
+      bt[best.index].job = {start=tick, walk={surface=bs.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=1, max=1},
         belts={}, hands={}, n=0, turrets={}, tanks={}}
       bt.active = best.index
+      belt_pl, belt_s = best, bs
       return
     end
-    local job, s, f = rec.job, pl.surface, pl.force
+    local job = rec.job
     -- what the bands found waits in job.queue; a step reads at most BELT_BAND of it (a chunk may hold 600 belts), and
     -- with it empty finds bands (one chunk each, at most BELT_BANDS: empty space goes quickly) until it holds some
-    job.queue, job.qi = job.queue or {}, job.qi or 1
-    if job.qi > #job.queue then
-      job.queue, job.qi = {}, 1
+    -- (BT1: the first band holding some is the queue itself, not copied; the step reads it in place)
+    local queue = job.queue or {}
+    job.queue, job.qi = queue, job.qi or 1
+    if job.qi > #queue then
+      queue = nil
+      BAND_FILTER.force = pl.force
       for _ = 1, M.BELT_BANDS do
-        local band = walk().band(job.walk, s, {force=f, type=READ_TYPES})
+        local band = walk().band(job.walk, s, BAND_FILTER)
         if not band then job.walked = true; break end
-        for _, e in ipairs(band) do job.queue[#job.queue+1] = e end
-        if #job.queue > 0 then break end
+        queue = band
+        if #band > 0 then break end
       end
-      if job.walked and #job.queue == 0 then
+      BAND_FILTER.force = nil
+      queue = queue or {}
+      job.queue, job.qi = queue, 1
+      if job.walked and #queue == 0 then
         rec.done = {tick=job.start, belts=job.belts, hands=job.hands, belt_entities=job.n, capped=job.capped, turrets=job.turrets, tanks=job.tanks}
         rec.job, bt.active = nil, nil
         return
       end
     end
-    local list = {}
-    local last = math.min(#job.queue, job.qi + M.BELT_BAND - 1)
-    for i = job.qi, last do list[#list+1] = job.queue[i] end
+    local first, last = job.qi, math.min(#queue, job.qi + M.BELT_BAND - 1)
     job.qi = last + 1
-    for _, e in ipairs(list) do
+    for i = first, last do
+      local e = queue[i]
       if e.valid then
         -- (the platforms read's ammo and fuel: the turrets, thrusters and tanks the walk met, entity references)
-        if e.type == 'ammo-turret' then job.turrets[#job.turrets+1] = e
-        elseif e.type == 'thruster' or e.type == 'storage-tank' then job.tanks[#job.tanks+1] = e
-        elseif e.type == 'inserter' then
-          local h = try(function() return e.held_stack end)
-          if h and try(function() return h.valid_for_read end) then job.hands[h.name] = (job.hands[h.name] or 0) + h.count end
+        local t = e.type
+        if t == 'ammo-turret' then job.turrets[#job.turrets+1] = e
+        elseif t == 'thruster' or t == 'storage-tank' then job.tanks[#job.tanks+1] = e
+        elseif t == 'inserter' then
+          local h = pget(e, 'held_stack')
+          if h and pget(h, 'valid_for_read') then job.hands[h.name] = (job.hands[h.name] or 0) + h.count end
         elseif job.n < M.MAX_BELTS then
           job.n = job.n + 1
-          local lines = try(function() return e.get_max_transport_line_index() end) or 0
-          local partner = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output'
-            and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
-          for i = 1, lines do
-            local line = try(function() return e.get_transport_line(i) end)
-            local same = partner and i > 2 and try(function() return line.line_equals(partner.get_transport_line(i)) end)
-            if line and not same then
-              for _, r in ipairs(try(function() return line.get_contents() end) or {}) do job.belts[r.name] = (job.belts[r.name] or 0) + r.count end
-            end
-          end
+          belt_items(e, t, job.belts)
         else job.capped = M.MAX_BELTS end
       end
     end
@@ -442,22 +631,44 @@ return function(api)
   -- by hand every flight): the platform surface's item statistics, as the game's production screen counts them, for
   -- every ammo item, taken when a stop or leg opens and when it ends. 2.0.77 on a copy of world n: over 60 s Sunward's
   -- surface counted 51 firearm magazines made and 126 used (its turrets' shots) while its hub and turrets fell by 71.
-  local AMMO
+  local AMMO, AMMO_SET
   local function ammo_names()
     if not AMMO then
-      AMMO = {}
-      for name, item in pairs(prototypes.item) do if item.type == 'ammo' then AMMO[#AMMO+1] = name end end
+      AMMO, AMMO_SET = {}, {}
+      for name, item in pairs(prototypes.item) do if item.type == 'ammo' then AMMO[#AMMO+1] = name; AMMO_SET[name] = true end end
       table.sort(AMMO)
     end
     return AMMO
   end
-  local function ammo_counts(pl)
-    local stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
+  local function stats_of(pl, kind)
+    local ok, stats = pcall_method(pget(pl, 'force'), kind, pget(pl, 'surface'))
+    if ok then return stats end
+  end
+  -- (BT1: every ammunition's two counts read through a new closure and a new method object, about 5 KB a platform a
+  -- second) the platform's item statistics and their get_input_count and get_output_count, kept with its hub (plat)
+  -- while valid; read anew without a hub.
+  local function ammo_stats(pl)
+    local c = plat(pl)
+    local s = c and c.stats
+    if s and pget(s.stats, 'valid') ~= false then return s end
+    local stats = stats_of(pl, 'get_item_production_statistics')
     if not stats then return nil end
+    s = {stats=stats, made=pget(stats, 'get_input_count'), used=pget(stats, 'get_output_count')}
+    if c and type(s.made) == 'function' and type(s.used) == 'function' then c.stats = s end
+    return s
+  end
+  local function count_of(fn, name)
+    if not fn then return 0 end
+    local ok, v = pcall(fn, name)
+    return ok and v or 0
+  end
+  local function ammo_counts(pl)
+    local s = ammo_stats(pl)
+    if not s then return nil end
     local out = {}
     for _, name in ipairs(ammo_names()) do
-      local made = try(function() return stats.get_input_count(name) end) or 0
-      local used = try(function() return stats.get_output_count(name) end) or 0
+      local made = count_of(s.made, name)
+      local used = count_of(s.used, name)
       if made > 0 or used > 0 then out[name] = {made=made, used=used} end
     end
     return out
@@ -466,11 +677,12 @@ return function(api)
   -- (d18 batch39 C2) thruster fuel and oxidizer made and used on the platform (its fluid statistics, totals)
   M.FLUIDS = {'thruster-fuel', 'thruster-oxidizer'}
   local function fluid_counts(pl)
-    local stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
+    local stats = stats_of(pl, 'get_fluid_production_statistics')
     if not stats then return nil end
+    local made, used = pget(stats, 'get_input_count'), pget(stats, 'get_output_count')
     local out = {}
     for _, name in ipairs(M.FLUIDS) do
-      out[name] = {made=try(function() return stats.get_input_count(name) end) or 0, used=try(function() return stats.get_output_count(name) end) or 0}
+      out[name] = {made=count_of(made, name), used=count_of(used, name)}
     end
     return out
   end
@@ -509,13 +721,27 @@ return function(api)
     if w.leg then return 'leg:' .. w.leg.from .. '>' .. w.leg.to end
   end
   -- One second's change: spoilable items' falls matched to their results' rises.
+  -- (BT1) The rises, and the items that fell with a result that rose, in tables emptied at each step (new ones each
+  -- second for each platform made garbage). The items are matched in name order: two that spoil into one item (Gleba's
+  -- into spoilage) and fell in the same second share its rise in that order, not in the order the hub's counts were
+  -- listed (hub_counts' kept kinds list them in the order of their last full read).
+  local RISE, FALLS = {}, {}
   local function spoil_step(seg, before, now)
-    local rise = {}
+    local rise = RISE
+    for name in pairs(rise) do rise[name] = nil end
+    for i = #FALLS, 1, -1 do FALLS[i] = nil end
     for name, n in pairs(now) do local d = n - (before[name] or 0); if d > 0 then rise[name] = d end end
+    if next(rise) == nil then return end
     for name, n in pairs(before) do
       local fall = n - (now[name] or 0)
       local r = fall > 0 and M.spoil_result(name)
-      if r and (rise[r] or 0) > 0 then
+      if r and (rise[r] or 0) > 0 then FALLS[#FALLS+1] = name end
+    end
+    if #FALLS > 1 then table.sort(FALLS) end
+    for _, name in ipairs(FALLS) do
+      local fall = before[name] - (now[name] or 0)
+      local r = M.spoil_result(name)
+      if (rise[r] or 0) > 0 then
         local s = math.min(fall, rise[r])
         rise[r] = rise[r] - s
         seg.spoiled[name] = (seg.spoiled[name] or 0) + s
@@ -530,28 +756,44 @@ return function(api)
   -- (in space, paused or at speed 0) or stopped (at a location). Past PHASE_KEEP seconds in all, every sum is halved,
   -- so recent flight counts most.
   M.PHASE_KEEP = 7200
+  local ZERO = {made=0, used=0}  -- (read only)
   function M.phase_step(rec, pl, w)
-    local now = ammo_counts(pl)
-    if not now then return end
+    -- (BT1) the counts as ammo_counts gives them, written into the last second's table (rec.ammo_prev) once each
+    -- ammunition's change is added: a new table of them every second for each platform made garbage
+    local s = ammo_stats(pl)
+    if not s then return end
     local phase
     if w.stopped then phase = 'stopped'
     elseif w.leg then
-      local paused = try(function() return pl.paused end)
-      local v = try(function() return pl.speed end) or 0
+      local paused = pget(pl, 'paused')
+      local v = pget(pl, 'speed') or 0
       phase = (paused or v <= 0) and 'still' or 'moving'
     end
     local prev = rec.ammo_prev
-    rec.ammo_prev = now
-    if not (prev and phase) then return end
-    rec.phase = rec.phase or {moving={s=0, by={}}, still={s=0, by={}}, stopped={s=0, by={}}}
-    local ph = rec.phase[phase]
-    ph.s = ph.s + 1
-    for name, c in pairs(now) do
-      local p0 = prev[name] or {made=0, used=0}  -- ammo_counts leaves out an ammunition at 0 and 0
-      local d = ph.by[name] or {made=0, used=0}
-      d.made = d.made + math.max(0, c.made - p0.made); d.used = d.used + math.max(0, c.used - p0.used)
-      ph.by[name] = d
+    local ph
+    if prev and phase then
+      rec.phase = rec.phase or {moving={s=0, by={}}, still={s=0, by={}}, stopped={s=0, by={}}}
+      ph = rec.phase[phase]
+      ph.s = ph.s + 1
     end
+    local now = prev or {}
+    for _, name in ipairs(ammo_names()) do
+      local made, used = count_of(s.made, name), count_of(s.used, name)
+      if made > 0 or used > 0 then
+        local p0 = prev and prev[name]
+        if ph then
+          local b = p0 or ZERO  -- ammo_counts leaves out an ammunition at 0 and 0
+          local d = ph.by[name] or {made=0, used=0}
+          d.made = d.made + math.max(0, made - b.made); d.used = d.used + math.max(0, used - b.used)
+          ph.by[name] = d
+        end
+        if p0 then p0.made, p0.used = made, used else now[name] = {made=made, used=used} end
+      else now[name] = nil end
+    end
+    -- (an ammunition no longer among the items: left out, as a fresh read leaves it)
+    for name in pairs(now) do if not AMMO_SET[name] then now[name] = nil end end
+    rec.ammo_prev = now
+    if not ph then return end
     local total = rec.phase.moving.s + rec.phase.still.s + rec.phase.stopped.s
     if total > M.PHASE_KEEP then
       for _, x in pairs(rec.phase) do
@@ -592,7 +834,7 @@ return function(api)
       -- receipt were never recorded) a leg to X followed by a leg from X, the location last visited become X during the
       -- leg (a turn back in flight leaves it): a stop at X between two looks a second apart, recorded as a 0 s stop
       if was and was.kind == 'leg' and w.leg and w.leg.from == was.to and was.visited ~= was.to
-        and try(function() return pl.last_visited_space_location.name end) == was.to then
+        and pget(pget(pl, 'last_visited_space_location'), 'name') == was.to then
         local z = {start=tick, ['end']=tick, kind='stop', at=was.to, zero=true, first=copy(rec.prev or counts), last=copy(counts), spoiled={}}
         rec.segs[#rec.segs+1] = z
         M.event(pl, 'arrived', z.at, tick); M.event(pl, 'left', z.at, tick, w.leg.to)
@@ -610,7 +852,7 @@ return function(api)
     rec.prev, rec.tick = counts, tick
     M.phase_step(rec, pl, w)
     -- The last flying speed (the arrival estimate before a departure reads it).
-    local v = w.leg and try(function() return pl.speed end)
+    local v = w.leg and pget(pl, 'speed')
     if type(v) == 'number' and v > 0 then
       rec.speed, rec.speed_tick = v, tick
       -- Cruise: the top speed of each leg (A4, Grok 21:21: just after launch, at near-zero speed, every pack read as
@@ -874,12 +1116,14 @@ return function(api)
   function M.tick(tick)
     local seen = {}
     for _, f in pairs(game.forces) do
-      for _, pl in pairs(try(function() return f.platforms end) or {}) do
+      for _, pl in pairs(pget(f, 'platforms') or {}) do
         if pl.valid then seen[pl.index] = true; pcall(M.track, pl, tick) end
       end
     end
     local all = store()
     for index in pairs(all) do if not seen[index] then all[index] = nil end end
+    -- (BT1) the kept hubs and statistics of platforms gone
+    for index in pairs(plats) do if not seen[index] then plats[index] = nil end end
   end
   -- Built at once from the delivery (d17 batch16 A2, Grok/Wren: rocket-turret "came aboard 0" while the hull went from
   -- 9 turrets to 14: construction robots took each turret from the hub to a ghost within the second it arrived, so
@@ -1038,7 +1282,7 @@ return function(api)
   function M.up_settle(rec, tick, pl)
     local keep = {}
     for _, r in ipairs(rec.incoming or {}) do
-      if r.pod and try(function() return r.pod.valid end) then
+      if r.pod and pget(r.pod, 'valid') then
         if tick - r.tick < UP_MAX then keep[#keep+1] = r end
       else
         -- (BD1) a rocket's pod gone: it reached the platform's hub (api.delivered)
@@ -1084,10 +1328,11 @@ return function(api)
     pcall(M.up_settle, rec, tick, pl)
     -- The pods followed: where they are, and the ones gone.
     local keep = {}
-    local hub_dead = not try(function() return pl.hub.valid end)
+    local hub_dead = not pget(pget(pl, 'hub'), 'valid')
     for _, p in ipairs(rec.pods or {}) do
-      if try(function() return p.pod.valid end) then
-        local where = try(function() return {surface=p.pod.surface.name, position=xy(p.pod.position)} end)
+      if pget(p.pod, 'valid') then
+        local sn, pos = pget(pget(p.pod, 'surface'), 'name'), pget(p.pod, 'position')
+        local where = sn ~= nil and pos ~= nil and {surface=sn, position=xy(pos)} or nil
         if where then p.last = where end
         if where and where.surface == p.from then p.cargo = pod_cargo(p.pod) end
         p.dest = pod_dest(p.pod) or p.dest
@@ -1106,15 +1351,18 @@ return function(api)
       if x.kind == 'stop' then seg = x; break end
     end
     if not (seg and (not seg['end'] or tick - seg['end'] <= POD_AFTER)) then return end
-    local s, hub = try(function() return pl.surface end), try(function() return pl.hub end)
+    local s, hub = pget(pl, 'surface'), pget(pl, 'hub')
     if not (s and hub) then return end
     local found
     if api.pods and api.pods.from then found = try(function() return api.pods.from(pl.force.name, pl.name) end)
     else found = try(function() return s.find_entities_filtered{type='cargo-pod'} end) end
     for _, pod in ipairs(found or {}) do
       local known = false
-      for _, p in ipairs(rec.pods) do if try(function() return p.pod == pod end) then known = true; break end end
-      if not known and #rec.pods < POD_PENDING and try(function() return pod.valid end) and is_mine(pod, pl, hub) then
+      for _, p in ipairs(rec.pods) do
+        local ok, is = pcall(same, p.pod, pod)
+        if ok and is then known = true; break end
+      end
+      if not known and #rec.pods < POD_PENDING and pget(pod, 'valid') and is_mine(pod, pl, hub) then
         rec.pods[#rec.pods+1] = {pod=pod, unit=try(function() return pod.unit_number end), seg=seg.start, at=seg.at, tick=tick,
           from=s.name, cargo=pod_cargo(pod), dest=pod_dest(pod), last={surface=s.name, position=xy(pod.position)}}
       end
@@ -1124,8 +1372,10 @@ return function(api)
   function M.pod_tick(tick)
     if tick % POD_TICKS ~= 0 then return end
     local all = store()
+    -- (BT1) no platform followed: no platform looked at
+    if next(all) == nil then return end
     for _, f in pairs(game.forces) do
-      for _, pl in pairs(try(function() return f.platforms end) or {}) do
+      for _, pl in pairs(pget(f, 'platforms') or {}) do
         local rec = pl.valid and all[pl.index]
         if rec then pcall(M.pod_watch, pl, tick) end
       end
