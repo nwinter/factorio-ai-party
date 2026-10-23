@@ -327,6 +327,12 @@ do
   a.pickup_target=chest2; b.pickup_target=chest2; furnace.valid=false; b.drop_target=nil
   g=lost(read())
   eq(g['lost_source.boiler'],nil,'a reads again')
+  -- (d22 batch110 BT1: each inserter's record is rewritten in place) what it lost is cleared, what it reads now kept
+  local ra=st6.push_inserters.player.units[701]
+  eq(ra.lost_p,nil); eq(ra.lost_d,nil); eq(ra.ldt,nil); eq(ra.p,'iron-chest (41.5,13.5)'); eq(ra.d,'boiler (60,16.5)'); eq(ra.dt,'boiler')
+  eq(ra.g,st6.push_inserters.player.gen)
+  local rb=st6.push_inserters.player.units[702]
+  eq(rb.d,nil); eq(rb.dt,nil); eq(rb.lost_d,'stone-furnace (44,16)'); eq(rb.ldt,'furnace'); eq(rb.lost_p,nil)
   eq(g['lost_target.furnace'].line,'1 inserter feeding furnace lost its drop target near (44.5,14.5): inserter (44.5,14.5) put into stone-furnace (44,16), reads iron-chest (41.5,13.5)')
   -- An inserter that is gone is forgotten.
   b.valid=false
@@ -588,11 +594,17 @@ do
     place=function() return {key='nauvis',position={x=50,y=40}} end,
     burnt_stuck=function(e) return stuck[e] end}
   ents.nauvis={}; ents.vulcanus={}
-  local a=ent('nauvis','biochamber','assembling-machine',45.5,72.5,{status=1})
-  local b=ent('nauvis','biochamber','assembling-machine',68.5,49.5,{status=1})
-  ent('nauvis','biochamber','assembling-machine',49.5,44.5,{status=1})
+  -- (biochambers burn nutrients: each has a burner; d22 batch110 BT1: only a burner is asked, as burnt.lua reads nil
+  -- for an entity with none, so the electric assembler below is never asked)
+  local a=ent('nauvis','biochamber','assembling-machine',45.5,72.5,{status=1,burner={}})
+  local b=ent('nauvis','biochamber','assembling-machine',68.5,49.5,{status=1,burner={}})
+  ent('nauvis','biochamber','assembling-machine',49.5,44.5,{status=1,burner={}})
+  local electric=ent('nauvis','assembling-machine-2','assembling-machine',30.5,30.5,{status=0})
   stuck[a]={burnt='spoilage*200',fuel='spoilage*3',foreign='spoilage',burns='nutrients'}
   stuck[b]={burnt='spoilage*200',fuel='',burns='nutrients'}
+  stuck[electric]={burnt='never asked',fuel='',burns=''}
+  local B=dofile('mod/agent-harness_0.1.0/burnt.lua'){}
+  eq(B.stuck(electric),nil,'burnt.lua: no burner, not stuck')
   local r=R.read(sol,{kind='burnt_full'}).groups
   eq(#r,1); eq(r[1].count,2)
   eq(r[1].line,'2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 '
