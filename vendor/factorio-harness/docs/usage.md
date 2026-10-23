@@ -1367,6 +1367,10 @@ fh board events --since 40
   reply that succeeded whole (Muse, shift12: an OPERATOR line ahead of the JSON on every data call).
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
+  `unread` counts every chat line after your last chat read, to anyone, of the newest 200 the log keeps (`of_newest:
+  200` when the oldest kept is unread too: older lines are gone uncounted); `to_you` counts those naming you (each
+  also reached you as a mention in a team block). Only a chat read marks chat lines read: `chat_ack` closes unanswered
+  lines and marks tells read (d23 batch121 CD1, viewer Aurora: Opus's 158 were the team's lines since his last read).
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
@@ -4919,9 +4923,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `sleep` also ends early with `woke: board` (and `board: <line>`) when a board line about the sleeper's own items
   arrives (any of the `board` lines above except new unowned requests and the 2-minute nudge).
 - `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions` (tells
-  included), `at_mentions` (@name/@everyone, and tells), `tells`, `unread_board` (board lines about their items not yet
-  in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent that was
-  mentioned. It does not consume anything.
+  included), `at_mentions` (@name/@everyone, and tells), `tells` (pending: not yet shown in a team block),
+  `unacked_tells` and `unacked_oldest_tick` (shown in a team block and not yet marked read by `chat_ack`, `reply_to` or
+  a `tells` read; the newest 8 kept; fyi and operator tells are never owed one), `unread_board` (board lines about their
+  items not yet in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent
+  that was mentioned. It does not consume anything.
 - `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
   The operator answers with notes and a `server: harness vN: ...` chat line.
 - Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
@@ -5004,7 +5010,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
   they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
-  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
+  `unread_chat` (with `unread_chat_to_you`, those naming it, and `unread_chat_kept` 200 when the count reached the
+  log's oldest line), `unread_mentions` (tells included), `unread_tells` (pending delivery), `unacked_tells` and
+  `unacked_oldest_s` (delivered in a team block, not acknowledged), `unread_board`, `last_request_s`, `stand_ended
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
   messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
   game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,

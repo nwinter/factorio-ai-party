@@ -150,6 +150,13 @@ def main():
     # board lines show when there are any; no advice in the text
     t = N.nudge_text(row("opus", 11, unread_board=2))
     assert t.endswith("0 chat messages, 0 mentions, 0 tells, 2 board lines.") and "should" not in t and "please" not in t, t
+    # (d23 batch121 CD1, viewer Aurora site:4387, 4406) the unread chat lines naming it, and the tells shown in a team
+    # block but not acknowledged, apart from those pending delivery, with the oldest's age
+    t = N.nudge_text(row("opus", 11, unread_chat=158, unread_chat_to_you=3, unread_tells=1, unread_mentions=1,
+                         unacked_tells=4, unacked_oldest_s=1500))
+    assert t.endswith("Unread for you: 158 chat messages (3 naming you), 0 mentions, 1 tell, "
+                      "4 tells shown, not acknowledged (oldest 25 min)."), t
+    assert "naming you" not in N.nudge_text(row("opus", 11, unread_chat=0, unread_chat_to_you=0))
     # what is open for the agent (open.lua, d15 H3) ends the text; a harness before it sends none
     t = N.nudge_text(row("sonnet", 12, open="open for you: 1 board item of yours (#425 purple science [doing])"))
     assert t.endswith("0 tells. Open for you: 1 board item of yours (#425 purple science [doing])."), t

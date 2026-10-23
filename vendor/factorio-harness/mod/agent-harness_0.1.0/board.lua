@@ -1387,7 +1387,7 @@ return function(api)
       note='optional description', delete='true removes the saved plan', returns='name, steps, bytes'},
     plan_run = {name='saved plan name', mode='append|replace pending (default append)', start='default true', returns='as queue_submit'},
     plans = {name='optional: show one plan in full', returns='your saved plans (at most 50): name, steps, note, runs'},
-    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), last_request_tick (supervisors: wake idle mentioned agents)'},
+    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), tells (pending: not yet shown in a team block), unacked_tells and unacked_oldest_tick (shown in a team block, not yet marked read by chat_ack, reply_to or a tells read; the newest 8), last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
   -- Lessons (viewer Foobator's idea; the design Sol's and Astra's, 10:51-10:52): short rules someone tested, kept as
@@ -2144,8 +2144,13 @@ return function(api)
         end
       end
       local clock = s.clocks and s.clocks[a.index]
+      -- (d23 batch121 CD1, viewer Aurora site:4406) tells a team block already showed and no chat_ack, reply_to or tells
+      -- read has marked read (box.unread, the newest UNREAD_MAX), apart from the pending ones above (not yet delivered)
+      local unacked, oldest = 0, nil
+      for _, t in ipairs(box and box.unread or {}) do unacked = unacked + 1; oldest = math.min(oldest or t.tick, t.tick) end
       out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list - fyi + (box and box.dropped or 0), at_mentions=direct,
         tells=tells > 0 and tells or nil, fyi=fyi > 0 and fyi or nil, unread_board=M.unread_board(a),
+        unacked_tells=unacked > 0 and unacked or nil, unacked_oldest_tick=oldest,
         oldest_tick=first and first.tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
         last_request_tick=clock and math.max(clock.call_tick, clock.seen_tick or 0) or nil}
     end
