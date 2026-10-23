@@ -23,6 +23,25 @@ exec "/x/bin/fh" "$@" --bot gemini --journal "/x/runs/shift45/gemini/journal.jso
 '''
 
 
+def days():
+    """(d22 batch108 BR1) A rest ending on another date names its day for rests.lua; one later today does not."""
+    tz = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Los_Angeles"
+    time.tzset()
+    try:
+        hit = time.mktime((2026, 10, 22, 20, 4, 0, 0, 0, -1))      # Thursday 20:04 PDT: Grok's weekly limit
+        reset = time.mktime((2026, 10, 24, 15, 59, 0, 0, 0, -1))   # Sat 15:59
+        assert m.clock_args(reset, hit) == {"until_clock": "15:59", "until_day": "Sat"}, m.clock_args(reset, hit)
+        assert m.clock_args(hit + 3000, hit) == {"until_clock": "20:54"}
+        assert m.clock_args(hit + 4 * 3600, hit) == {"until_clock": "00:04", "until_day": "Fri"}  # past midnight
+    finally:
+        if tz is None:
+            os.environ.pop("TZ")
+        else:
+            os.environ["TZ"] = tz
+        time.tzset()
+
+
 def main():
     os.environ.pop("POG_REST_PUSH", None)
     sent = []
@@ -38,8 +57,8 @@ def main():
         (world, req), = sent
         a = req["args"]
         assert world == "n" and req["operator"] is True and req["action"] == "rest", req
-        assert a == {"agent": "gemini", "until_clock": time.strftime("%H:%M", time.localtime(row["until"])), "until_s": 300,
-                     "reason": "pace", "ticks_per_s": 48.46}, a
+        assert a == dict(m.clock_args(row["until"], row["since"]), agent="gemini", until_s=300, reason="pace",
+                         ticks_per_s=48.46), a
         # the next turn: done
         line = m.woke(d)
         assert line.startswith("You rested") and sent[-1][1]["args"] == {"agent": "gemini", "done": True}, sent[-1]
@@ -62,6 +81,7 @@ def main():
         m.rest(d, 300, "pace")
         assert len(sent) == n
         os.environ.pop("POG_REST_PUSH")
+    days()
     print("rest push: ok (the rest and its end go to the runtime as operator requests; none without ./fh or when off)")
 
 

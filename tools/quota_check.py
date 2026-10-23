@@ -2,12 +2,14 @@
 """Quota headroom per route before a run or shift (docs/studies/shake5.md, P1 item 6: Gemini started shake5 at 72% of
 its 5-hour window and ran dry 47 minutes in).
 
-  tools/quota_check.py TEAM_FILE MINUTES [--brief FILE] [--now EPOCH]
+  tools/quota_check.py TEAM_FILE MINUTES [--brief FILE] [--now EPOCH] [--save FILE]
 
 Reads `ai-usage agent --json` (read-only; falls back to its cached ~/.cache/ai-usage/agent-brief.json), maps each team
 member's route to an ai-usage profile, and projects each quota window over the run with the hourly burn in
 agent/quota-burn.tsv (or the file POG_QUOTA_BURN names; none: no burn rates) times the agents on that profile. Prints one line per profile and window; a line starting
 "WARNING" for a window likely to run dry before the run ends. Always exits 0: the warnings are for the operator.
+--save FILE keeps the brief it read (tools/start-team.sh: tools/quota_rest.py --at-limit reads it once the agents'
+workspaces exist, without a second ai-usage call). at_limit() names the members whose account is at its limit now.
 """
 import json
 import os
@@ -116,6 +118,42 @@ def check(brief, team_file, minutes, now=None):
     return lines
 
 
+# At its limit: a window at LIMIT_PCT or more. The windows read in whole percent, and at 20:09 on 2026-10-22 ai-usage
+# read Grok's weekly window at 99% five minutes after the grok CLI stopped on its weekly limit (d22 batch108 BR1). A
+# member marked resting who can play after all ends the rest with its first request (rests.lua, pacing.py).
+LIMIT_PCT = float(os.environ.get("POG_QUOTA_LIMIT_PCT", 99))
+
+
+def members(team_file):
+    """[(name, kind, route command, model)] of a team file."""
+    out = []
+    for line in open(team_file):
+        if not line.strip() or line.startswith("#"):
+            continue
+        name, kind, route, model = line.rstrip("\n").split("\t")[:4]
+        out.append((name, kind, route if route != "-" else KIND_COMMAND.get(kind, kind), model))
+    return out
+
+
+def at_limit(brief, team_file, now=None):
+    """{name: {"reset": epoch, "window": label, "percent": p, "profile": id}} for each team member whose account is at
+    its limit now: a window that counts for its model at LIMIT_PCT or more, with its reset ahead (the latest such reset
+    when several are). A profile ai-usage marks stale or unavailable is left out: its numbers are not now's."""
+    now = now or time.time()
+    by_command = {p.get("command"): p for p in brief.get("profiles", [])}
+    out = {}
+    for name, _, command, model in members(team_file):
+        p = by_command.get(command)
+        if p is None or p.get("stale") or not p.get("available", True):
+            continue
+        for w in p.get("windows", []):
+            pct, reset = float(w.get("percent") or 0), float(w.get("resets_at") or 0)
+            if relevant(w["label"], model) and pct >= LIMIT_PCT and reset > now:
+                if name not in out or reset > out[name]["reset"]:
+                    out[name] = {"reset": reset, "window": w["label"], "percent": pct, "profile": p.get("id")}
+    return out
+
+
 def main():
     args = sys.argv[1:]
     brief_path = now = None
@@ -123,10 +161,19 @@ def main():
         i = args.index("--brief"); brief_path = args[i + 1]; del args[i:i + 2]
     if "--now" in args:
         i = args.index("--now"); now = float(args[i + 1]); del args[i:i + 2]
+    save = None
+    if "--save" in args:
+        i = args.index("--save"); save = args[i + 1]; del args[i:i + 2]
     if len(args) != 2:
         sys.exit(__doc__)
     brief, note = load_brief(brief_path)
     print(f"quota data: {note}")
+    if save and brief is not None:
+        try:
+            with open(save, "w") as f:
+                json.dump(brief, f)
+        except OSError as e:
+            print(f"quota data: not saved to {save} ({e})")
     if brief is None:
         print("WARNING quota: no ai-usage data; check each route's headroom by hand")
         return

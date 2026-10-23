@@ -749,6 +749,13 @@ board) before acting.").
   tools/idle_nudge.py sends no tell ("resting until ..." as its reason).
 - Tests: tools/test_quota.py (the state file, the wake line, the loop's next prompt), tools/test_supervise.py,
   tools/stream/test_pacing.py.
+- (d22 batch108 BR1, Grok's weekly limit at 20:04 Thursday, reset Sat 15:59) Any agent can rest: tools/quota_rest.py
+  RUN AGENT --until "YYYY-MM-DD HH:MM" [--reason quota|pace] writes the same file (and --done ends it), and
+  start-team writes one for each agent whose account is at its limit. Those agents have no loop to call --woke, so
+  pacing.py also ends a rest once the agent's journal has a request of its own after `since` (describe, profiles,
+  cameras and peeks do not count, as in rests.lua). The card, the hosts' fact and the logs name the day when the rest
+  ends on another day: "waiting until Sat 15:59 for its quota to reset". supervise.sh reads the rest through
+  `python3 tools/stream/pacing.py until DIR`. Test: test_pacing.py grok().
 
 ### Each battle fact on its planet (2026-10-14, eng/planetmix)
 

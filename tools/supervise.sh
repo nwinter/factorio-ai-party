@@ -37,15 +37,16 @@ deliver() {
 
 # A rest the agy loop is in (tools/agy-quota.py: resting.json, until when; operator 17:17, Gemini pacing its weekly
 # quota): the pane looks idle while the loop sleeps, and a nudge typed into it would land in the sleeping shell.
-resting_until() {
-  python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["until"]))' "$dir/resting.json" 2>/dev/null
-}
+# (d22 batch108 BR1) Any agent's rest (tools/quota_rest.py, start-team's quota rests): "UNTIL CLOCK" from
+# tools/stream/pacing.py, which also ends a rest at the agent's own next request in its journal; the clock names the
+# day when the rest ends on another day ("Sat 15:59").
+resting_until() { python3 "$root/tools/stream/pacing.py" until "$dir" 2>/dev/null; }
 logged_rest=""
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  rest=$(resting_until)
+  read -r rest rest_clock <<<"$(resting_until)"
   if [ -n "$rest" ] && [ "$rest" -gt "$(date +%s)" ]; then
     if [ "$rest" != "$logged_rest" ]; then
-      log "skip nudges: resting until $(date -r "$rest" +%H:%M) (resting.json)"; logged_rest=$rest
+      log "skip nudges: resting until $rest_clock (resting.json)"; logged_rest=$rest
     fi
     sleep "$poll"; continue
   fi
