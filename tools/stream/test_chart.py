@@ -242,6 +242,18 @@ def main():
     clock[0] += 100
     live.LiveSource.observe_chart(Src, obs, errors)
     check("live.py: a runtime without the read (describe) is not asked", len(asked) == 1, asked)
+    check("the service log: a chart line at the first read", Src.chart.logged is not None)
+    line = Src.chart.log_line()
+    check("the log line: none again before LOG_EVERY", line is None, line)
+    clock[0] += chart.LOG_EVERY
+    line = Src.chart.log_line()
+    check("the log line: again after LOG_EVERY, with the reads and chunks", line and line.startswith("[chart] ")
+          and "1 reads" in line and "chunks stored 0, queued 0" in line, line)
+    Src.chart.error = "chunks: TimeoutError: x"
+    line = Src.chart.log_line()
+    check("the log line: a new read error at once", line and line.endswith("read failed: chunks: TimeoutError: x"), line)
+    check("the log line: the same error not again", Src.chart.log_line() is None)
+    Src.chart.error = None
     print("chart: ok (reads in order, cells drawn in map colours with footprints across edges, labels, index, store kept)")
 
 
