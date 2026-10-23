@@ -11832,3 +11832,38 @@ Each fails on the code before the fix.
   - Now the item is kept by its name, from a name, the prototype, or `target_item.name`. A record noted before the fix,
     holding the prototype, is read by its name.
   - Test tests/d22_batch100c.lua (userdata fakes; on the old code both calls raise at robotloss.lua:54).
+
+## d22 batch104 BN2: an inserter's wait for a full hand (luna #1931)
+
+- luna's request: `wait_for_full_hand` (boolean) in `configure` for inserters and their ghosts, read back by `inspect`;
+  a lab feed that gets science packs now and then needs it false.
+- 2.0.77 has no such setting on an inserter. Checked on a copy of world n's newest save (_autosave1, tick 48621075):
+  - LuaEntity (built and ghost), the inserter's control behavior and LuaEntityPrototype each refuse
+    `wait_for_full_hand` and `inserter_wait_for_full_hand` ("LuaEntity doesn't contain key ...").
+  - The game's English locale has no such control, and a stack inserter's blueprint entry holds only its name and
+    position.
+  - It is InserterPrototype's `wait_for_full_hand`, set at data stage only: Space Age's stack-inserter has true; the
+    default, false, holds for burner-inserter, inserter, fast-inserter, long-handed-inserter and bulk-inserter (the six
+    inserter prototypes in the world).
+- What it does, on the copy (a chest of 3 iron plates, the inserter, a chest; powered):
+  - bulk-inserter and fast-inserter moved the 3 plates;
+  - stack-inserter held them 5 s with status waiting_for_more_items (hand 16);
+  - after 5 more plates went into its source, it held 5 and still waited;
+  - with hand_size 3 (its stack size override), it dropped the 3;
+  - with a circuit's set stack size of 3, it dropped the 5 it held;
+  - feeding a lab from a chest with 1 automation pack: the bulk inserter put it in the lab; the stack inserter held it
+    4 s with the lab empty.
+- `configure {wait_for_full_hand}` (an inserter, built or ghost):
+  - The same as the inserter's own is read back: `wait_for_full_hand`, `wait_for_full_hand_before`, `unchanged: true`
+    and a `line`.
+  - The other is refused, with the facts above, and nothing in the call changes.
+  - With `filters`, `spoil_priority` or `hand_size` in the same call, those are set as without it, and the reply adds
+    `wait_for_full_hand` and `wait_for_full_hand_line`.
+  - Absent, configure is unchanged.
+- The reads:
+  - `inspect` has `wait_for_full_hand` on an inserter or its ghost.
+  - On a built inserter holding part of a hand with status waiting_for_more_items, `inspect` also has `hand_wait`
+    ("holds 3 iron-plate of a hand of 16 and waits for more items (stack-inserter waits for a full hand: ...)").
+  - The same appears as `hand_wait` in a feeder row (feeders), in the `labs` group line ("N idle: hold part of a hand
+    and wait for a full one (stack-inserter: ...)"), and in inspect's `inserter_line` ("holding 3 iron-plate of
+    a hand of 16, waiting for more items (stack-inserter waits for a full hand)").

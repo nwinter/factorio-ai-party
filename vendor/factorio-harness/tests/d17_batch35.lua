@@ -349,3 +349,61 @@ do
   surface.find_entities_filtered=function() return {} end
 end
 print('d17_batch35 C1 configure hand_size: ok')
+
+-- d22 batch104 BN2 (luna #1931): an inserter's wait for a full hand. 2.0.77 has no runtime key for it (the prototype's
+-- wait_for_full_hand, data stage only): configure reads back the same as the inserter's own and refuses the other;
+-- inspect reads it on built inserters and ghosts; one holding part of a hand and waiting says so (details, feeders).
+do
+  local force=game.forces.player
+  defines.entity_status=defines.entity_status or {waiting_for_more_items=33,waiting_for_source_items=32,working=1}
+  local held={valid_for_read=true,count=3,name='iron-plate'}
+  local stack={valid=true,name='stack-inserter',type='inserter',force=force,surface=surface,position={x=1.5,y=0.5},unit_number=911,
+    prototype={inserter_stack_size_bonus=4,uses_inserter_stack_size_bonus=true,bulk=true},inserter_stack_size_override=0,
+    status=defines.entity_status.waiting_for_more_items,held_stack=held,inserter_target_pickup_count=16,
+    bounding_box={left_top={x=1.2,y=0.2},right_bottom={x=1.8,y=0.8}},get_control_behavior=function() return nil end}
+  local bulk={valid=true,name='bulk-inserter',type='inserter',force=force,surface=surface,position={x=5.5,y=0.5},unit_number=912,
+    prototype={inserter_stack_size_bonus=0,uses_inserter_stack_size_bonus=true,bulk=true},inserter_stack_size_override=0,
+    status=defines.entity_status.waiting_for_source_items,held_stack={valid_for_read=false},inserter_target_pickup_count=12,
+    bounding_box={left_top={x=5.2,y=0.2},right_bottom={x=5.8,y=0.8}},get_control_behavior=function() return nil end}
+  local ghost={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='stack-inserter',ghost_type='inserter',force=force,surface=surface,
+    position={x=7.5,y=0.5},bounding_box={left_top={x=7.2,y=0.2},right_bottom={x=7.8,y=0.8}},
+    ghost_prototype={inserter_stack_size_bonus=4,uses_inserter_stack_size_bonus=true,bulk=true}}
+  local chest={valid=true,name='wooden-chest',type='container',force=force,surface=surface,position={x=3.5,y=0.5},unit_number=913,prototype={}}
+  surface.find_entities_filtered=function(f)
+    if f.type=='unit' or (type(f.type)=='table' and f.type[1]=='unit') then return {} end
+    local out={}
+    for _,e in ipairs({stack,bulk,ghost,chest}) do
+      local q=f.position
+      if (q and math.abs(q.x-e.position.x)<1 and math.abs(q.y-e.position.y)<1) or (f.area and not q) then out[#out+1]=e end
+    end
+    return out
+  end
+  local d=runtime.details
+  eq(d.wait_for_full_hand(stack),true); eq(d.wait_for_full_hand(bulk),false); eq(d.wait_for_full_hand(ghost),true); eq(d.wait_for_full_hand(chest),nil)
+  -- the same as its own: read back, unchanged
+  local r=grok('configure',{position={x=5.5,y=0.5},wait_for_full_hand=false})
+  eq(r.wait_for_full_hand,false); eq(r.wait_for_full_hand_before,false); eq(r.unchanged,true); eq(r.name,'bulk-inserter')
+  has(r.line,'bulk-inserter (5.5,0.5): wait for a full hand off, as its prototype has it')
+  r=grok('configure',{position={x=7.5,y=0.5},wait_for_full_hand=true})
+  eq(r.wait_for_full_hand,true); eq(r.ghost,true); has(r.line,'ghost of stack-inserter (7.5,0.5): wait for a full hand on')
+  -- the other: refused with what the game has, nothing changed
+  fails(function() grok('configure',{position={x=1.5,y=0.5},wait_for_full_hand=false}) end,
+    'stack-inserter (1.5,0.5) waits for a full hand: 2.0.77 has no per-inserter wait for a full hand')
+  fails(function() grok('configure',{position={x=1.5,y=0.5},wait_for_full_hand=false,hand_size=3}) end,'configure hand_size N')
+  eq(stack.inserter_stack_size_override,0)
+  fails(function() grok('configure',{position={x=5.5,y=0.5},wait_for_full_hand=true}) end,'bulk-inserter (5.5,0.5) does not wait for a full hand')
+  fails(function() grok('configure',{position={x=7.5,y=0.5},wait_for_full_hand=false}) end,'ghost of stack-inserter (7.5,0.5) waits for a full hand')
+  fails(function() grok('configure',{position={x=3.5,y=0.5},wait_for_full_hand=true}) end,'wait_for_full_hand applies to inserters (built or ghost); wooden-chest is a container')
+  fails(function() grok('configure',{position={x=5.5,y=0.5},wait_for_full_hand='no'}) end,'wait_for_full_hand must be true or false')
+  -- with hand_size in the same call: both
+  r=grok('configure',{position={x=1.5,y=0.5},wait_for_full_hand=true,hand_size=3})
+  eq(r.hand_size,3); eq(stack.inserter_stack_size_override,3); eq(r.wait_for_full_hand,true); has(r.wait_for_full_hand_line,'wait for a full hand on')
+  stack.inserter_stack_size_override=0
+  -- holding part of a hand and waiting
+  has(d.hand_wait(stack),'holds 3 iron-plate of a hand of 16 and waits for more items (stack-inserter waits for a full hand')
+  eq(d.hand_wait(bulk),nil)
+  local f=runtime.feeders.read(stack,{'iron-plate'})
+  has(f.hand_wait,'holds 3 iron-plate of a hand of 16')
+  surface.find_entities_filtered=function() return {} end
+end
+print('d17_batch35 BN2 wait_for_full_hand: ok')
