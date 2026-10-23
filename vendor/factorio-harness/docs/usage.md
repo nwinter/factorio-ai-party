@@ -11743,3 +11743,44 @@ best of three.
 - Measured on a copy of that save (about 60 UPS): spiderroute.tick 60 runs in 60 s, 4.38 ms in all (0.073 ms a run,
   the worst 2.82 ms: the run that found the stall and read the line ahead), one spidertron sampled.
 
+
+## d22 batch105 BO1 (eng/d20-batch105): the forecast over the part of a leg flown (Astra #1927)
+
+- Astra: Asterion flew only the first part of its outer legs, and `platform_endurance {forecast: true}` scaled them
+  `x1.00`, as if the legs flown were the whole connection.
+- Reproduced on a private copy of world n's _autosave1 (15:53, tick ~48621000), route aquilo -> solar-system-edge ->
+  aquilo, with the save's runtime:
+  - `scaled from the legs flown in the last 2 hours: aquilo->solar-system-edge, solar-system-edge->aquilo, ...`;
+  - every kind `(flown ...)` equal to the leg's own mean;
+  - each ammunition `x1.00`.
+- What freight.lua had recorded for Asterion: aquilo->solar-system-edge (100,000 km) flown 0-13% then turned back
+  (solar-system-edge->aquilo 87-100%), the same again to 15%, and out now at 13%.
+- Now (routeammo.lua):
+  - The legs flown are those finished in the last 2 hours and the leg flown now, so far. The moving rate they scale
+    counts it too.
+  - Each has the part of its connection flown, `km0 / length` to `km1 / length` the way it was flown (freight's distance
+    along the connection). A leg recorded before those were kept counts as flown whole (0-100%). One opened mid-flight
+    without them says `the part flown not recorded: the whole connection taken`.
+  - Its asteroids are the game's spawn chance over that part: `asteroid_spawn_definitions`' spawn points, by distance
+    from the connection's own `from` (a leg flown the other way reads them from 1), linear between points, averaged
+    over the part (`density_range`). The use is scaled by the route leg's whole mean over that.
+  - Each route leg's line adds how much of it the legs flown cover, the way it flies: `the legs flown cover 15% of it
+    (0-15%); the other 85% is the game's spawn definition, not measured`, or `cover all of it`, or `include none of
+    this connection: all of it is the game's spawn definition, scaled by the rate measured elsewhere`.
+  - `forecast_coverage [{leg, flown (the parts, joined), flights, covered (0..1)}]`.
+- On the copy with the branch:
+  - `scaled from the legs flown in the last 2 hours (each the part of its connection flown, and minutes):
+    aquilo->solar-system-edge 0-13% 15m00s, solar-system-edge->aquilo 87-100% 6m53s, aquilo->solar-system-edge 0-15%
+    17m03s, solar-system-edge->aquilo 85-100% 7m44s, aquilo->solar-system-edge 0-13% (flying now) 14m09s (1h00m)`;
+  - each outer leg `the legs flown cover 15% of it`;
+  - the flown spawn chance of the huge asteroids is 0.0000 against 0.0003-0.0004 over the leg (they spawn further
+    out);
+  - so the use scales x2.61 (magazines), x2.66 (railgun ammo) and x16.30 (rockets, 432 a huge asteroid) instead of
+    x1.00.
+  - The read took 60-83 ms on the copy (173 ms with the save's runtime, the first call).
+- Test tests/d22_batch105.lua:
+  - the mean over a part, either way flown, and at a point;
+  - the scale line with each part, and the leg flown now;
+  - a route leg covered 25%, its scale x4.96 worked out by hand, and one not flown;
+  - the coverage rows;
+  - a leg flown whole before km was kept, and one with no part recorded.

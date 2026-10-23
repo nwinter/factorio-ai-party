@@ -114,7 +114,9 @@
   (each ammunition over the route: used, aboard, made, short or spare, a rocket's lift of it); `solar` with low and no
   power counts; flying, each line's last 60 s. `forecast: true` adds per leg the asteroids its connection spawns by
   kind against the legs flown lately, the shots one of each takes of each ammunition aboard (`none hurt`: the
-  ammunition cannot), and the use scaled from the legs flown, made meanwhile and left at each arrival; `pessimistic:
+  ammunition cannot), and the use scaled from the legs flown, made meanwhile and left at each arrival. Each leg flown
+  counts only the part of its connection flown (`0-15%`), the leg flown now too; each route leg says how much of it the
+  legs flown cover and that the rest is the game's spawn definition, not measured (`forecast_coverage`); `pessimistic:
   {speed, dwell_s}` slows the legs and adds time at each stop.
   Example: `./fh call platform_endurance --args '{"platform":"Wayfarer","route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}'`
 - `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
