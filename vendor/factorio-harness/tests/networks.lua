@@ -741,3 +741,62 @@ do
   for _,e in ipairs(drills) do e.valid=false end
 end
 print('network no-power groups: ok')
+
+-- d22 batch110 BT1 (garbage in the background view): per-prototype figures kept by entity name and quality name give
+-- what a fresh read gives (a rare panel or engine its own; one whose quality reads nil read anew each time), and a
+-- network with no requester_points list still finds its shortfalls through its requesters, asking nothing.
+do
+  storage={}
+  game.tick=1000
+  local f={name='player',players={{}}}
+  local s={name='nauvis',index=1,solar_power_multiplier=1,get_property=function() return 100 end}
+  local ents={}
+  local function put(e) e.valid=true; e.force=f; e.surface=s; ents[#ents+1]=e; return e end
+  s.find_entities_filtered=function(q)
+    local out={}
+    for _,e in ipairs(ents) do
+      local types=type(q.type)=='table' and q.type or {q.type}
+      for _,t in ipairs(types) do if e.type==t and (not q.force or q.force==f) then out[#out+1]=e end end
+    end
+    return out
+  end
+  game.forces={player=f}; game.surfaces={s}; game.get_surface=function(i) if i==1 or i=='nauvis' then return s end end
+  local stats={output_counts={},get_flow_count=function() return 0 end}
+  for i=1,3 do put{type='electric-pole',name='medium-electric-pole',position={x=i*7,y=0},electric_network_id=1,electric_network_statistics=stats} end
+  local peak_calls,out_calls=0,0
+  local panel={get_max_energy_production=function(q) peak_calls=peak_calls+1; return 1000*((q and q.name=='rare') and 1.6 or 1) end}
+  local engine={get_max_power_output=function(q) out_calls=out_calls+1; return 15000*((q and q.name=='rare') and 1.6 or 1) end}
+  put{type='solar-panel',name='solar-panel',prototype=panel,quality={name='normal'},position={x=1,y=5},electric_network_id=1}
+  put{type='solar-panel',name='solar-panel',prototype=panel,quality={name='normal'},position={x=2,y=5},electric_network_id=1}
+  put{type='solar-panel',name='solar-panel',prototype=panel,quality={name='rare'},position={x=3,y=5},electric_network_id=1}
+  local plain=put{type='generator',name='steam-engine',prototype=engine,quality={name='normal'},position={x=1,y=9},electric_network_id=1,fluidbox={}}
+  local rare=put{type='generator',name='steam-engine',prototype=engine,quality={name='rare'},position={x=4,y=9},electric_network_id=1,fluidbox={}}
+  local noq=put{type='generator',name='steam-engine',prototype=engine,position={x=7,y=9},electric_network_id=1,fluidbox={}}
+  -- Logistic network 5 gives no requester_points: its requesters' points are read (one short 300 iron plates).
+  local pt={owner={unit_number=601,get_item_count=function(q) eq(q.name,'iron-plate'); eq(q.quality,'normal'); return 100 end},
+    filters={{name='iron-plate',quality='normal',count=400}},targeted_items_deliver={}}
+  local ln={network_id=5,all_logistic_robots=2,available_logistic_robots=1,all_construction_robots=0,available_construction_robots=0,cells={},
+    requesters={{get_logistic_point=function(i) eq(i,0); return pt end}},get_contents=function() return {} end,get_item_count=function() return 0 end}
+  f.logistic_networks={nauvis={ln}}
+  f.get_item_production_statistics=function() return {output_counts={}} end
+  local N2=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return storage end}
+  eq(N2.max_output_kw(plain),900); eq(N2.max_output_kw(rare),1440); eq(N2.max_output_kw(noq),900); eq(out_calls,3)
+  eq(N2.max_output_kw(plain),900); eq(N2.max_output_kw(rare),1440); eq(out_calls,3,'kept by name and quality')
+  eq(N2.max_output_kw(noq),900); eq(out_calls,4,'a quality that reads nil: read anew')
+  local lines=N2.lines(f,'nauvis',8)
+  has(lines[1],'nauvis electric #1 (3 poles near (14,0)): draw 0 kW avg over 5 s (now 0 kW) of 3.2 MW capacity (0%); solar 3 panels, 0 kW now, 216 kW peak')
+  eq(peak_calls,2,'one read a panel name and quality')
+  eq(out_calls,5,'the view: only the engine whose quality reads nil read again')
+  has(lines[2],'nauvis logistic #5:')
+  assert(not lines[2]:find('requesters ask',1,true),'no requester_points list: nothing asked, as before')
+  eq(storage.networks.unfilled['601|iron-plate|normal'],1000,'a shortfall through the requesters')
+  storage.networks.views={}
+  game.tick=game.tick+1
+  N2.lines(f,'nauvis',8)
+  eq(peak_calls,2,'a second view: none read again')
+  -- with the list: asked summed in the shortfalls pass
+  ln.requester_points={pt}
+  storage.networks.views={}
+  has(N2.lines(f,'nauvis',8)[2],'requesters ask iron-plate 400 (300 short)')
+end
+print('networks BT1 kept prototype figures and requester fallback: ok')
