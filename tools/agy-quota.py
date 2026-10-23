@@ -74,8 +74,21 @@ def rest(d, wait, reason, **extra):
     with open(tmp, "w") as f:
         json.dump(row, f)
     os.replace(tmp, os.path.join(d, REST))
-    push(d, {"until_clock": time.strftime("%H:%M", time.localtime(row["until"])), "until_s": max(1, int(wait)),
-             "reason": reason, "ticks_per_s": ticks_per_s(d)})
+    return push(d, dict(clock_args(row["until"], now), until_s=max(1, int(wait)), reason=reason,
+                        ticks_per_s=ticks_per_s(d)))
+
+
+DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def clock_args(until, now=None):
+    """The rest's end for rests.lua: until_clock HH:MM, and until_day (Mon..Sun) when it falls on another date than
+    `now` on this Mac's clock, the shift clock (d22 batch108 BR1: a weekly limit at 20:04 Thursday, reset Sat 15:59)."""
+    t, n = time.localtime(until), time.localtime(now or time.time())
+    a = {"until_clock": time.strftime("%H:%M", t)}
+    if t[:3] != n[:3]:
+        a["until_day"] = DAYS[t.tm_wday]
+    return a
 
 
 # (d20 batch50 B1, viewer Aurora: "Could quota rests appear in team status and tell replies, with a return time") The
@@ -123,33 +136,45 @@ def send_operator(world, req):
 
 
 def push(d, args):
+    """None when sent; else why not ("off", "no ./fh", or the failure, which is also a context.log line)."""
     if os.environ.get("POG_REST_PUSH", "").lower() == "off":
-        return
+        return "off (POG_REST_PUSH)"
     who = agent_of(d)
     if not who:
-        return
+        return f"no ./fh naming a world and bot in {d}"
     req = {"id": f"rest-{who[1]}-{time.time_ns()}", "operator": True, "action": "rest",
            "args": dict({k: v for k, v in args.items() if v is not None}, agent=who[1])}
     try:
         send_operator(who[0], req)
     except Exception as e:
+        err = f"{type(e).__name__}: {e}"[:200]
         with open(os.path.join(d, "context.log"), "a") as f:
             f.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M:%S"), "event": "rest-push-failed",
-                                "done": bool(args.get("done")), "error": f"{type(e).__name__}: {e}"[:200]}) + "\n")
+                                "done": bool(args.get("done")), "error": err}) + "\n")
+        return err
+    return None
+
+
+def end_rest(d):
+    """The rest is over: resting.json becomes resting-last.json and the runtime hears done. The row ended, or None."""
+    path = os.path.join(d, REST)
+    try:
+        row = json.load(open(path))
+    except (OSError, ValueError):
+        return None
+    os.replace(path, os.path.join(d, "resting-last.json"))
+    push(d, {"done": True})
+    return row
 
 
 def woke(d, now=None):
     """The sentence the turn after a rest starts with (the agent slept through the world going on), or "" with no rest
     on record. The rest ends here: resting.json becomes resting-last.json."""
-    path = os.path.join(d, REST)
-    try:
-        row = json.load(open(path))
-    except (OSError, ValueError):
+    row = end_rest(d)
+    if row is None:
         return ""
     now = now or time.time()
     mins = max(1, round((min(now, row.get("until") or now) - (row.get("since") or now)) / 60))
-    os.replace(path, os.path.join(d, "resting-last.json"))
-    push(d, {"done": True})
     if row.get("reason") == "quota":
         return (f"You waited {mins} min for your quota to reset; the game went on meanwhile: check what changed "
                 f"(./fh call status, chat, board) before acting.")

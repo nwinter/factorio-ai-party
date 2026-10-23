@@ -105,6 +105,11 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
     sha256.
 - The agy loop sleeps through a quota error (`tools/agy-quota.py` writes `agy-quota` to `context.log`) and stops
   when the reset falls after the deadline.
+- An agent whose account is at its limit (a quota window at 99% or more with its reset ahead, from the quota check
+  above, saved as `runs/RUN/quota-brief.json`) gets a quota rest until the reset once the agents launch
+  (`tools/quota_rest.py --at-limit`: `resting.json` and the runtime's `rest`); it is launched anyway, and its first
+  request ends the rest if it can play. By hand: `tools/quota_rest.py RUN AGENT --until "YYYY-MM-DD HH:MM"
+  [--reason quota|pace]`, `--done` to end it (d22 batch108 BR1).
 - The agy memory guard (`tools/agy_memguard.py`, d22 09:27: one agy turn grew to 21 GiB and filled the Mac's swap
   because agy loads every untracked file at a fresh session, and `runs/` was not ignored; `.gitignore` has `runs/`
   since then) kills a process under a run's `.agy-loop.sh` whose footprint passes 4 GiB (TERM, then KILL after 5 s).

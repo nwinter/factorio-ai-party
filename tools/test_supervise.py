@@ -6,6 +6,7 @@ anyway. After the deadline an agent whose turn has ended is asked once for its f
 python3 tools/test_supervise.py"""
 import datetime
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -85,6 +86,14 @@ def main():
     log, calls = run(300, resting_for=-30)
     assert "nudge 1 (status idle" in log, log
     print("a rest that has ended: nudged as before")
+    # (d22 batch108 BR1) a quota rest of two days (Grok's weekly limit): the log names the day it ends
+    log, calls = run(300, resting_for=2 * 86400)
+    assert "nudge 1" not in log and re.search(r"skip nudges: resting until (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d:\d\d ", log), log
+    print("a two-day rest: not nudged, its day in the log")
+    # the agent's own request after the rest began (it can play after all): the rest is over, nudged as before
+    log, calls = run(30, "claude", resting_for=3600)
+    assert "skip nudges" not in log and "nudge 1 (status idle" in log, log
+    print("a request after the rest began: the rest is over")
 
 
 if __name__ == "__main__":
