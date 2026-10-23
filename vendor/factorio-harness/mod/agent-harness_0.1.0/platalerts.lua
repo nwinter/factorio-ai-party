@@ -309,9 +309,12 @@ return function(api)
     return r and r.total
   end
   -- For the alerts: read at most every 10 s per platform.
-  local function scan(pl, r)
+  local function scan(pl, r, now)
     local sc = r.scan
     if sc and game.tick - sc.tick < SCAN_TICKS then return sc end
+    -- (BF1) a reply takes a scan up to twice as old while the background reads them (M.tick): it reaches this one soon
+    local bg = store().scan_bg
+    if sc and not now and bg and game.tick - bg < 60 and game.tick - sc.tick < 2 * SCAN_TICKS then return sc end
     sc = read(pl)
     do
       if sc.health then
@@ -338,6 +341,27 @@ return function(api)
     else r.fuel_trend = nil end
     r.scan = sc
     return sc
+  end
+  -- (d22 batch96 BF1: on world n a reply's team block read every platform's scan when they expired together, up to 51 ms
+  -- in one call) the expired scan of a platform whose lines were read in the last SCAN_WANTED ticks, the oldest, read in
+  -- the background, one every SCAN_STEP ticks: a scan is read as often as before (SCAN_TICKS); a reply takes one up to
+  -- twice as old while the background runs, and reads one itself only past that
+  M.SCAN_STEP, M.SCAN_WANTED = 20, 18000
+  function M.tick(tick)
+    if tick % M.SCAN_STEP ~= 0 then return end
+    store().scan_bg = tick
+    local by = store().by
+    local best, best_r, best_age
+    for _, f in pairs(game.forces) do
+      for _, pl in pairs(try(function() return f.platforms end) or {}) do
+        local r = pl.valid and by[pl.index]
+        if r and r.scan and r.scan_wanted and tick - r.scan_wanted < M.SCAN_WANTED and pl.surface then
+          local age = tick - r.scan.tick
+          if age >= SCAN_TICKS and (not best_age or age > best_age) then best, best_r, best_age = pl, r, age end
+        end
+      end
+    end
+    if best then scan(best, best_r, true) end
   end
   -- A scan's thruster fuel and oxidizer (held, of it in storage tanks, short or not) on r.fuel_trend, kept TREND_KEEP_S
   -- and started again on a new leg. s: seconds into the leg (from the departure the engine record has, else from the
@@ -488,6 +512,7 @@ return function(api)
         -- Every line names the platform and its surface (status alerts rows:
         -- platform, surface; ground alerts name a surface the same way).
         local name = pl.name .. ' (surface ' .. pl.surface.name .. ')'
+        r.scan_wanted = game.tick
         local sc = scan(pl, r)
         -- Hits since this reader was last told (first look: the last 10 minutes).
         if r.seq > (seen.seq or 0) and r.total and game.tick - (seen.hit_tick or -DAMAGE_GAP) >= DAMAGE_GAP then

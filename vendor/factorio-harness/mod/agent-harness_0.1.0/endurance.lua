@@ -90,7 +90,11 @@ return function(api)
   -- What the thrusters and storage tanks hold of each fluid in names; and of it, the storage tanks' (d20 batch60 V5).
   local function fluid_stock(pl, names)
     local out, tanks = {}, {}
-    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
+    -- (d22 batch96 BF1) the thrusters and tanks of the platform's background read when a count finds no other aboard
+    -- (freight.platform_lists), else found: the fuel outlook is read by the platform alerts' scans, flight watches and
+    -- this read
+    local lists = api.platform_lists and try(function() return api.platform_lists(pl) end)
+    for _, e in ipairs(lists and lists.tanks or try(function() return pl.surface.find_entities_filtered{type={'thruster', 'storage-tank'}, force=pl.force} end) or {}) do
       for i = 1, try(function() return #e.fluidbox end) or 0 do
         local f = try(function() return e.fluidbox[i] end)
         if f and names[f.name] then
@@ -279,7 +283,9 @@ return function(api)
     -- batch51 H1), what rockets bring, and what can reach no turret: the one model the departure, flight and forecast
     -- lines here and the ammo_rates of preflight and the platforms read use (ammomodel.lua).
     local places = api.stock_places and try(function() return api.stock_places(pl, setmetatable({}, {__index=function() return true end})) end)
-    local model = ammomodel().new(pl, {places=places or false, rate=function(name, cat, fluid) return rate(fluid and fluid_stats or items_stats, name, cat) end,
+    -- (d22 batch96 BF1: the trace of a platform of up to 400 belts ran in this call, 64 ms of Kestrel IVb's 201 belts on
+    -- a copy of world n) the trace's background read, its age said, as the platforms read and preflight take it
+    local model = ammomodel().new(pl, {background=true, places=places or false, rate=function(name, cat, fluid) return rate(fluid and fluid_stats or items_stats, name, cat) end,
       fluid_stock=function(names) return fluid_stock(pl, names) end})
     local held = model.held
     local rows = {}

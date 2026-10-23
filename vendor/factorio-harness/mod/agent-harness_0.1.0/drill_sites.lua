@@ -74,9 +74,12 @@ return function(api)
     assert(not proto.resource_categories or proto.resource_categories[ore.resource_category], 'drill cannot mine resource '..resource)
     local surface=p.surface
     local visibility={}
+    -- (d22 batch96 BF1) a chunk's key is a number: a text key (cx..','..cy) cost two number-to-text conversions a call,
+    -- and this is called for every ore tile found and every candidate centre (1,358 centres took 45-51 ms on a copy of
+    -- world n, the depleted-drill lookup the alerts' background read makes)
     local function seen(x,y)
       local cx,cy=math.floor(x/32),math.floor(y/32)
-      local key=cx..','..cy
+      local key=cx*65536+cy
       if visibility[key]==nil then visibility[key]=p.force.is_chunk_visible(surface,{x=cx,y=cy}) end
       return visibility[key]
     end
@@ -148,7 +151,11 @@ return function(api)
       local last,above=t[bottom] or {},t[top-1] or {}
       return (last[right] or 0)-(last[l-1] or 0)-(above[right] or 0)+(above[l-1] or 0)
     end
-    local candidates={}
+    -- (d22 batch96 BF1) the candidates in the same order (distance, then x, then y) without a table each: the centres at
+    -- one distance are kept in loop order (x, then y, ascending) and the distances sorted as numbers; a candidate's table
+    -- is made when it is examined (1,212 tables sorted with a Lua comparison were most of the lookup's time on a copy
+    -- of world n)
+    local by_d,ds,ncand={},{},0
     local fx,fy=w%2/2,h%2/2
     local visible_radius=math.max(r,w/2,h/2)
     for x=math.max(math.ceil(origin.x-search-fx),math.ceil(x0+.5-r-fx)),math.min(math.floor(origin.x+search-fx),math.floor(x1+.5+r-fx)) do
@@ -157,22 +164,59 @@ return function(api)
         local d=((px-origin.x)^2+(py-origin.y)^2)^0.5
         if d<=search then
           local amount=under(amounts,px,py)
-          if amount>0 and visible_box(px,py,visible_radius) then candidates[#candidates+1]={position={x=px,y=py},distance=d,amount=amount,tiles=under(counts,px,py)} end
+          if amount>0 and visible_box(px,py,visible_radius) then
+            local l=by_d[d]
+            if not l then l={}; by_d[d]=l; ds[#ds+1]=d end
+            l[#l+1]=px; l[#l+1]=py; l[#l+1]=amount
+            ncand=ncand+1
+          end
         end
       end
     end
-    table.sort(candidates,function(a,b)
-      if a.distance~=b.distance then return a.distance<b.distance end
-      if a.position.x~=b.position.x then return a.position.x<b.position.x end
-      return a.position.y<b.position.y
-    end)
+    table.sort(ds)
+    local di,li=1,1
+    local function next_candidate()
+      local l=ds[di] and by_d[ds[di]]
+      if not l then return nil end
+      local px,py=l[li],l[li+1]
+      local c={position={x=px,y=py},distance=ds[di],amount=l[li+2],tiles=under(counts,px,py)}
+      li=li+3
+      if li>#l then di,li=di+1,1 end
+      return c
+    end
     local checks,examined=0,0
     local blocked={}
     -- A drill (or a drill's ghost) already on the footprint (Astra, d15 15:11: on Fulgora the manual placement check
     -- passed three spots each covered by a working drill): the spot is skipped and named, before the engine check.
     local occupied={}
+    -- (d22 batch96 BF1) the drills and entity ghosts round all the candidates found once, the tiles their boxes touch
+    -- marked: a spot whose footprint touches no marked tile has nothing to find (up to 128 finds a lookup before); a
+    -- spot that does is found as before, so the one named is the same
+    local touched
+    do
+      local m=search+math.max(w,h)/2+2
+      local near=surface.find_entities_filtered{area={{origin.x-m,origin.y-m},{origin.x+m,origin.y+m}},type={'mining-drill','entity-ghost'},limit=2001}
+      if #near<=2000 then
+        touched={}
+        for _,o in ipairs(near) do
+          local b=o.valid and o.bounding_box
+          -- (one with no box read: each spot found as before)
+          if not b then touched=nil; break end
+          for tx=math.floor(b.left_top.x),math.floor(b.right_bottom.x) do
+            for ty=math.floor(b.left_top.y),math.floor(b.right_bottom.y) do touched[tx*4194304+ty]=true end
+          end
+        end
+      end
+    end
     local function occupant(c)
       local x,y=c.position.x,c.position.y
+      if touched then
+        local any=false
+        for tx=math.floor(x-w/2+0.05),math.floor(x+w/2-0.05) do
+          for ty=math.floor(y-h/2+0.05),math.floor(y+h/2-0.05) do if touched[tx*4194304+ty] then any=true end end
+        end
+        if not any then return nil end
+      end
       for _,o in ipairs(surface.find_entities_filtered{area={{x-w/2+0.05,y-h/2+0.05},{x+w/2-0.05,y+h/2-0.05}},type={'mining-drill','entity-ghost'},limit=8}) do
         -- Any ghost there takes the spot too (Astra, d15: sites suggested over belt and pole ghosts); named as a ghost.
         if o.valid and o~=e and (o.type=='mining-drill' or o.type=='entity-ghost') then return o end
@@ -180,8 +224,9 @@ return function(api)
     end
     local box=e.bounding_box
     local bw,bh=box and box.right_bottom.x-box.left_top.x,box and box.right_bottom.y-box.left_top.y
-    for _,c in ipairs(candidates) do
-      if checks>=MAX_CHECKS or #out.sites>=limit then break end
+    while checks<MAX_CHECKS and #out.sites<limit do
+      local c=next_candidate()
+      if not c then break end
       examined=examined+1
       -- Same drill and facing: translating its actual collision box into itself
       -- is already an occupied placement. Avoid repeated expensive engine checks
@@ -214,7 +259,7 @@ return function(api)
       for i=1,math.min(3,#occupied) do out.occupied_by[i]=occupied[i] end
     end
     if #blocked>0 then out.blocked=#blocked; out.blocked_by={} for i=1,math.min(6,#blocked) do out.blocked_by[i]=blocked[i] end end
-    out.truncated=examined<#candidates and #out.sites<limit or nil
+    out.truncated=examined<ncand and #out.sites<limit or nil
     out.line=string.format('%s (%g,%g): %d %s sites within %d tiles; amounts in the %.1f-tile mining radius; nearest first%s',
       e.name,origin.x,origin.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
       ..(#occupied>0 and string.format('; %d nearer spot%s left out: a drill stands there (%s)',#occupied,#occupied==1 and '' or 's',table.concat(out.occupied_by,'; ')) or '')

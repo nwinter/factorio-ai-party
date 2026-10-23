@@ -11692,6 +11692,72 @@ best of three.
   - The departure lines (agents' queues and orders that send a platform on) come from one walk for every platform,
     the jobs lines only for the rows the reply has, and a hub's request counts are written with string.format (in
     the game's Lua `..` with a number costs 8-22 us on the copy, string.format 0.3).
+- Part 3, the alerts' background read (world n: `pushalerts.drill_sites` 140.8 ms in a game second, `pushalerts.slice`
+  up to 164 ms). On the copy, main's runtime: drill_sites 394 ms in one second (29 steps), slices 147 ms (42 steps).
+  - `drill_sites` (the depleted-drill lookup, also the `drill_sites` read): its chunk keys were text (`cx..','..cy`)
+    for every ore tile and candidate centre, and its 1,200-odd candidates were tables sorted with a Lua comparison.
+    Now the keys are numbers, the distances are sorted as numbers (each distance's centres kept in x, then y order),
+    a candidate's table is made when it is examined, and the drills and entity ghosts round the candidates are found
+    once (a spot no box touches needs no find of its own). 44 lookups on the copy gave the same replies: 1,055 ms in
+    all before (the worst 58.6), 318 after (the worst 15.2, under load).
+  - The mine forecast (`ores {forecast}` and the alerts' mine_depleting) keyed each ore tile by text: a 34x32 stone
+    patch was 28 ms, now 2.6.
+  - The merge step keyed every cell and its 8 neighbours by text: 45-70 ms a step, now 12.5.
+  - The job is paced by its work: each step has a cost in units of about a microsecond on the copy (a slice's
+    entities by type, fitted to 838 slices: 8 a chest to 276 a silo; a depleted-drill lookup made now 10,000; a
+    forecast 500 and 80 a drill; the other steps by kind). A slice stops at 5,000 (and 150 entities), and after a step
+    the job waits its cost's share of 20,000 a second (`SECOND_COST`).
+  - profile_ticks on the copy, 60 s each, part 2's runtime against this one: pushalerts' worst second 467 ms against
+    67 (a garbage collection second; the next 58.7, then 33.8-35.8); seconds over 30 ms 16 against 13; drill_sites'
+    worst second 394 against 13.2; slices' 147 against 49.6 (that same second), then 35.5.
+  - The cost: a pass takes 42-47 s on the copy (2,539-2,829 ticks), where it started every 30 s; the alerts it finds
+    are that much older at most. `SECOND_COST` sets the trade.
+- Part 4, `platform_endurance` (world n: Kestrel IVb 66 ms) and `platform_supply` (about 20 ms). On the copy, main's
+  runtime and this one, each platform's best of three:
+
+  | | median | worst |
+  |---|---|---|
+  | platform_endurance, main | 17.7 ms | 64.9 (Asterion), 62.7 (Meridian-V) |
+  | platform_endurance, now | 7.4 ms | 15.0 (Asterion), 11.3 (Kestrel II) |
+  | with forecast, main | 19.7 ms | 71.2 (Asterion) |
+  | with forecast, now | 11.0 ms | 23.2 (Asterion) |
+  | platform_supply, main | 6.6 ms | 52.9 (Meridian-V), 17.5 (Asterion) |
+  | platform_supply, now | 5.6 ms | 17.3 (Asterion), 15.7 (Meridian-V) |
+
+  - platform_endurance takes the ammunition trace's background read, with its age (`read over 27 ticks in the
+    background (201 belts, 256 a tick), 9s ago`), as the platforms read and preflight do: a platform of up to 400 belts
+    was traced in the call (Kestrel IVb's 201 belts: 64 ms). Before the first background read, the reply says the
+    trace is under way and that stranded ammunition is not told apart until then.
+  - The hull's width (`freight.geometry`, which says whether a speed was measured on the same ship) comes from
+    counts of foundation in columns, 32 at a time and then one at a time from each side: every foundation tile read
+    was 14.6 ms of Asterion's read (18 platforms: 107 ms read, 11.7 counted, the same widths).
+  - platform_supply's chunk trace reads each belt's outputs, each inserter's filter and target, each machine's recipe
+    and each entity's type once a call, where each chunk type's walk read them again; the chunk names come from the
+    item prototypes once a load. The 18 platforms' replies compared equal on the copy.
+  - Over 10 ms still, on Asterion (8,000 entities) and Meridian-V: endurance's plan and forecast lines (3-4 ms each),
+    supply's thrust lines (up to 4.5 ms) and the trace's first walk of each belt (3.6 ms).
+- Part 5 (operator 17:26, world n after cp1 and cp2: `flight_watch` 10 calls, 36.4 ms average, a game second of 138
+  ms with 2; board.team up to 63 ms, with platalerts.lines 51). On a copy of world n's 17:39 autosave: Astra's
+  Asterion watch 595 (97 turrets, 23 railguns, 160 accumulators) and 3 of Sol's watching, read as the agents read them
+  (`{id}` and `{}`) every 2 s during a 60 s profile, cp4's runtime against this one:
+
+  | | cp4 | now |
+  |---|---|---|
+  | dispatch flight_watch | 20.7 ms average, worst 189.4 (a GC second) | 11.5, worst 32.8 |
+  | board.team | 6.3 ms average, worst 26.3 | 3.1, worst 11.5 |
+  | platalerts.lines | 4.3 ms average, worst 16.6 | 1.0, worst 6.7 |
+  | platalerts.scan (new, background) | - | 0.72 ms a step, worst second 10.5 |
+
+  - The read itself was not the cost. Every reply's team block read each platform's alert scan when they expired (600
+    ticks, read for all platforms in one reply). Now `platalerts.tick` reads the oldest expired scan of a platform
+    whose lines were read in the last 5 minutes, one every 20 ticks. A reply takes a scan up to 1,200 ticks old while
+    the background runs, and reads one itself only past that.
+  - The fuel outlook (in each running watch's totals, the alerts' scans in flight, platform_endurance) takes the
+    thrusters and tanks from the platform's background read when a count finds no other aboard, and its speed check
+    has part 4's hull width by counts (every foundation tile was read before).
+  - A full read of watch 595 does about 8 ms of work on the copy, against 15.3 on world n's runtime. Its 41 KB reply
+    took 20.7 ms to write as JSON there; on world n, 0.4 ms (`encode flight_watch` in your profile). The list of 8
+    watches does 11.6 against 17.9; its 4 running watches' fuel outlooks are 6.4 ms of that.
 
 ### d22 batch93 BC2: status brief's vehicle_fire
 

@@ -18578,7 +18578,7 @@ M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.i
 for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
-M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
+M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,ammofeed=M.ammofeed,ammorate=M.ammorate,ammo_damages=M.platdefense and M.platdefense.damages,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end,
@@ -19632,6 +19632,7 @@ function M.tick_body(event)
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
   -- (d22 batch96 BF1) the platforms read lately: their belts and inserter hands, a band every few ticks (freight.lua)
   if M.freight and M.freight.belt_tick and event.tick%M.freight.BELT_STEP==0 then pcall(M.timed,'freight.belts',M.freight.belt_tick,event.tick) end
+  if M.platalerts and M.platalerts.tick and event.tick%M.platalerts.SCAN_STEP==0 then pcall(M.timed,'platalerts.scan',M.platalerts.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
