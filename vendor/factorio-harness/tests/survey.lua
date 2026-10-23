@@ -285,4 +285,93 @@ local cached=storage.survey_cache['player/1']
 assert(cached.digest and cached.digest.tick==cached.tick,'the digest\'s tick is the survey\'s')
 eq(cached.digest.machines.lab.type,'lab')
 assert(cached.digest.fuel.boiler.empty>0 and cached.digest.fuel.boiler.low>0)
+-- (d22 batch110 BT1: the job's garbage) a machine with no burner counts under its engine status name, as
+-- api.status_name gives it (runtime machine_status), and a burner one under api.status_name's (burnt.lua's state); the
+-- job reads its force and surface from a cache of the objects, re-read once one is no longer valid; the band filter it
+-- hands walk.band holds force and type only, whatever a walk did to it.
+do
+  local st4={}
+  local calls,filters={},{}
+  local fake_walk={every=function() return 1 end,due=function() return true end,
+    start=function() return {n=0} end,
+    band=function(w,s,f)
+      local keys={}
+      for k in pairs(f) do keys[#keys+1]=k end
+      table.sort(keys); filters[#filters+1]=table.concat(keys,',')
+      f.area={{0,0},{32,32}}  -- a walk that leaves its area in the filter
+      w.n=w.n+1
+      if w.n>1 then return nil end
+      return s.find_entities_filtered{force=f.force,type=f.type}
+    end}
+  local S4=dofile('mod/agent-harness_0.1.0/survey.lua'){state=function() return st4 end,walk=fake_walk,
+    status_name=function(e) calls[#calls+1]=e.name; return e.burner and 'burnt_result_full' or 'wrong' end}
+  local f4={name='player',valid=true,current_research=nil,research_queue={},research_progress=0,get_item_production_statistics=function() return stats end}
+  local s4={index=4,valid=true,name='nauvis'}
+  local list={machine('assembling-machine-2','assembling-machine','item_ingredient_shortage',1,{electric_buffer_size=100}),
+    machine('stone-furnace','furnace','working',2,{burner={inventory=fuel_inv({coal}),remaining_burning_fuel=10}}),
+    machine('fast-inserter','inserter','working',3,{electric_buffer_size=100})}
+  s4.find_entities_filtered=function(f) if f.position then return {} end return list end
+  local force_reads,surface_reads=0,0
+  game.forces=setmetatable({},{__index=function(_,name) force_reads=force_reads+1; return name=='player' and f4 or nil end})
+  game.get_surface=function(i) surface_reads=surface_reads+1; return i==4 and s4 or nil end
+  game.tick=500000
+  st4.survey_cache={['player/4']={tick=0,warnings={},machines={}}}
+  st4.survey_read={['player/4']=game.tick}
+  for _=1,6 do game.tick=game.tick+1; S4.tick(game.tick) end
+  eq(st4.survey_jobs['player/4'],nil,'the job ended')
+  local entry=st4.survey_cache['player/4']
+  eq(entry.tick,500001,'the job made a survey')
+  eq(entry.machines['assembling-machine-2'],'0/1 working, 1 item_ingredient_shortage')
+  eq(entry.machines['stone-furnace'],'0/1 working, 1 burnt_result_full')
+  eq(table.concat(calls,','),'stone-furnace','api.status_name for the burner machine only')
+  eq(table.concat(filters,' | '),'force,type | force,type')
+  eq(force_reads,1); eq(surface_reads,1)
+  -- A force or surface no longer valid is read again (and a step with neither ends its job, as before).
+  st4.survey_cache['player/4'].tick=0; st4.survey_read['player/4']=game.tick
+  f4.valid=false
+  local f5={}; for k,v in pairs(f4) do f5[k]=v end; f5.valid=true
+  game.forces=setmetatable({},{__index=function(_,name) force_reads=force_reads+1; return name=='player' and f5 or nil end})
+  s4.valid=false
+  local s5={}; for k,v in pairs(s4) do s5[k]=v end; s5.valid=true
+  game.get_surface=function(i) surface_reads=surface_reads+1; return i==4 and s5 or nil end
+  for _=1,6 do game.tick=game.tick+1; S4.tick(game.tick) end
+  eq(force_reads,2); eq(surface_reads,2)
+  eq(st4.survey_cache['player/4'].tick,500007,'the second job made its survey')
+  game.forces=nil; game.get_surface=nil
+end
+-- (BT1) with runtime's api (status_name is machine_status over burnt.lua, burnt_stuck is burnt.stuck), each machine
+-- counts under the status machine_status gives it, burnt.stuck read once a burner: stopped by a full burnt-result
+-- slot, by unusable fuel, burning, no burner.
+do
+  local B=dofile('mod/agent-harness_0.1.0/burnt.lua'){}
+  local function machine_status(e)
+    local ok,f=pcall(B.stuck,e)
+    if ok and f then return f.unusable and B.UNUSABLE or B.STATE end
+    return status_names[e.status]
+  end
+  local ITEM={spoilage={stack_size=200,fuel_category='chemical',get_spoil_ticks=function() return 0 end},
+    nutrients={stack_size=50,fuel_category='nutrients',get_spoil_ticks=function() return 0 end}}
+  local function st(name,count) return {valid_for_read=true,name=name,count=count,quality={name='normal'},prototype=ITEM[name],spoil_tick=0} end
+  local function inv(list) return setmetatable({is_empty=function() return #list==0 end},{__len=function() return #list end,__index=function(_,i) return list[i] end}) end
+  local function chamber(x,fuel,burnt,remaining)
+    return machine('biochamber','assembling-machine','working',x,{burner={inventory=inv(fuel),burnt_result_inventory=inv(burnt),
+      remaining_burning_fuel=remaining,fuel_categories={nutrients=true}}})
+  end
+  local list={chamber(1,{st('spoilage',3)},{st('spoilage',200)},0),        -- full slot, nothing burning
+    chamber(2,{st('spoilage',3)},{},0),                                     -- only fuel it does not burn
+    chamber(3,{st('nutrients',4)},{st('spoilage',200)},1000),               -- full but burning
+    chamber(4,{st('nutrients',4)},{},0),                                    -- fine
+    machine('assembling-machine-2','assembling-machine','item_ingredient_shortage',5,{electric_buffer_size=100})}
+  local stucks=0
+  local S6=dofile('mod/agent-harness_0.1.0/survey.lua'){state=function() return {} end,status_name=machine_status,
+    burnt_stuck=function(e) stucks=stucks+1; return B.stuck(e) end}
+  local a={}
+  for _,e in ipairs(list) do local s=machine_status(e); a[e.name]=a[e.name] or {}; a[e.name][s]=(a[e.name][s] or 0)+1 end
+  eq(a.biochamber.burnt_result_full,1); eq(a.biochamber.fuel_unusable,1); eq(a.biochamber.working,2)
+  local s6={index=6,find_entities_filtered=function(f) if type(f.type)=='table' then return list end return {} end}
+  local r=S6.summary({index=1,force=force,surface=s6,get_main_inventory=function() return main end},true)
+  eq(r.machines.biochamber,'2/4 working, 1 burnt_result_full, 1 fuel_unusable')
+  eq(r.machines['assembling-machine-2'],'0/1 working, 1 item_ingredient_shortage')
+  eq(stucks,4,'burnt.stuck once a burner')
+end
 print('survey: ok')
