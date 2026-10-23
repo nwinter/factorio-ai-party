@@ -1454,7 +1454,7 @@ at 1 px a tile in the game's map colours, from the harness's `chart` operator re
 
 Nick: wrapped or cut status lines are useless on a stream nobody can scroll or hover. static/marquee.js (both pages):
 - Changing single-line text wider than its box rests at its start and now and then pans to its end (3.5 font sizes a
-  second: 49 px/s on a 14 px card line, 84 px/s on portrait's 24 px), holds 2.5 s and pans back (4x faster, 1-3 s).
+  second: 49 px/s on a 14 px card line, 84 px/s on portrait's 24 px), holds 2.5 s and cuts back to its start (d23 batch124 CG3, Nick: the pan back was "a little excessive": a 0.2 s fade out, a jump, a 0.2 s fade in; it was a pan 4x faster, 1-3 s).
   Lines take turns page-wide: at most two away from their start at once, starts 4 s apart, the longest rested first,
   each at its start at least 12 s between pans and at least as long as its pan takes. New words go back to the start;
   a change in numbers only (an age, a countdown) keeps the turn. A soft fade at the right edge replaces the ellipsis.
@@ -1472,6 +1472,52 @@ Nick: wrapped or cut status lines are useless on a stream nobody can scroll or h
   arrivals), the analyst desk's headline on an unused tile (2-3 lines, written short), segment and poll cards (timed),
   and the rotating board and Space widgets' rows (18 s on screen, less than a rest and a pan).
 - Tests: tools/stream/test_marquee.py (timing, turns over 15 minutes, the DOM half with a fake document).
+
+## Attack shots calibrated to how attacks go now (2026-10-23, d23 batch124 CG1)
+
+Nick 10:00: the camera locked on biters approaching Nauvis, "slightly less interesting these days now that the defenses
+are holding"; they "move for a little bit and then stopped"; following them, the camera "tended to lag their position".
+
+- The shot: 09:53:51, group 24507 ("18 biters heading for the base, 630 m SW of spawn"), score 2.089 = size 1.389 (18
+  against the last 30 groups) + outpost 0.7, bar 2.089 (38 candidates and 2 taken in the hour, budget 4). It panned
+  with the group from (-691, 395) to (-540, 329) in 21 s, then the group stood; the follow ended at 09:54:56 "stopped:
+  under 8 tiles in 44 s" (the rule was 8 tiles in 45 s, 80% of it read). Its stop was about 190 tiles west of the base
+  map's edge, with no turret of the map within 290 tiles.
+- This morning (director logs 03:46-10:06): 176 groups, 12 followed; every followed group ended "stopped" (11) or
+  "turned back" (1) before contact; 3 real losses on Nauvis (a pole and construction robots to behemoth spitters at
+  (-211, 170), a wall at (-213, -32)). Routine waves.
+- threats.py tracks every group to its end (gone from the read for 60 s): contact or not, and the real losses (not a few
+  walls, belts or chests) within 60 tiles of it or its target while it lived and 60 s after. routine = -1.2 x (1 - the
+  share of the last 20 ended groups that destroyed something), from 8 ended on: about -1.2 today, so the 09:53 group
+  scores 0.889, under the floor (1.5). no_cover (+1.0): its target (else our nearest building to it) inside the base
+  map with no turret of the map reaching it. A fight that destroys something is a battle (score_fight, unchanged), so
+  an attack doing damage still cuts in.
+- The cut away: a followed group that moves under 8 tiles in 12 s (at least 80% read; not while gathering) is over;
+  so is one gone from the read (disbanded or killed), one 40 tiles farther than its closest approach, or 240 s on.
+- Ahead of it: each pan aims at where the group will be 4 s on, from its velocity over the last 6 s (at most 48 tiles
+  ahead; as is under 0.5 tiles a second). The reads come about every 3 s and cameras.lua eases each move, so aiming at
+  the last position kept the view a read behind (09:53: 20-36 tiles a pan).
+- Tests: tools/stream/test_incoming.py (calibrated, the stop rule, the lead). Deploy: a stream service restart; the
+  calibration starts from the run's threat-history.json and needs 8 ended groups (about 20 minutes today).
+
+## Panning across spaceships (2026-10-23, d23 batch124 CG2)
+
+Nick 10:00: "I think the panning across spaceships could be a little better." From the director logs of d23 07:55-10:10
+(2637 reframes of ships; 84 platform cuts):
+
+- Stop-and-go (fixed). The director steps every 1.1-1.5 s (1090 steps at 1.1 s, 698 at 1.2, 448 at 1.3-1.5) and each
+  step moved the view about 6.7 tiles at a glide of 1.15x the pan's speed (6.77 tiles/s at zoom 0.3), so each glide
+  ended in about 1.0 s and the view stood 0.1-0.5 s before the next: a stutter about once a second. Each step now aims
+  where the pan will be 1.5 measured step intervals on and glides there over that time (onecam PAN_LEAD, the interval
+  an average of the last steps), so the next step comes while it still moves.
+- Hard starts and stops (fixed). A leg went from rest to full speed at the bow and stopped dead at the stern. Each leg
+  is eased now (smoothstep): slow off the bow, fastest mid-ship (1.5x the average), slow onto the stern.
+- Not changed, proposed: repeated shots of one ship start its pan from the bow each time (Sol's remote work on
+  Asterion cut to it at 08:00, 08:03, 08:06 and 08:15, Astra's at 08:08 and 08:12: six bow-to-stern starts in 15
+  minutes); a shot of a ship shown in the last 10 minutes could continue from where the last one left off, or the
+  "platform work" cut could wait longer between visits to the same ship. The pans run along the ship's north-south
+  axis, its long one (forward is north on a platform; thrusters aft), which suits the 16:9 frame's height.
+- Tests: tools/stream/test_platformpan.py, test_shipcard.py. Deploy: a stream service restart.
 
 ## Verified
 

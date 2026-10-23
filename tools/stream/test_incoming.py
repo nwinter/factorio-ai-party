@@ -12,6 +12,10 @@
    while a battle holds, the next group is logged and skipped; every score and decision goes to the director log.
 4. live.py reads attack_groups_live only from a runtime that lists it (describe operator_reads); model.py labels
    each group "37 biters and spitters heading for ...".
+5. (d23 batch124 CG1, Nick 10:00) calibrated to how attacks go now: each group tracked to its end with contact and
+   the real losses near it; routine waves the defenses hold (none destroyed anything) score about 1.2 lower, a run
+   of damaging ones lifts it; a target inside the base map that no turret reaches adds no_cover. The followed group's
+   view aims ahead of it (its velocity over the last 6 s, 4 s on) and the follow ends 12 s after it stops.
 """
 import json, os, sys, tempfile
 
@@ -132,6 +136,17 @@ def director():
     assert len(pans) >= 8, len(pans)  # smooth pans with the group
     xs = [b["position"]["x"] for b in pans]
     assert xs == sorted(xs, reverse=True), xs  # westward, as it goes
+    # (CG1) ahead of it: 3 and 3.5 tiles a second (4.6), 4 s on: about 18 tiles along its way, not behind it
+    by_t = {k: path[k] for k in range(40)}
+    late = [b for b in pans][-3:]
+    for b in late:
+        k = min(by_t, key=lambda k: abs(by_t[k][0] - b["position"]["x"] - 12))  # the read it was aimed from
+        assert b["position"]["x"] < path[min(k, 31)][0] and b["position"]["y"] < path[min(k, 31)][1], (b, path[k])
+    import onecam
+    aim = onecam.lead_point([(0, {"x": 140, "y": 114}), (3, {"x": 131, "y": 103.5}), (6, {"x": 122, "y": 93})], d.cfg)
+    assert abs(aim["x"] - (122 - 3 / 4.61 * 18.44)) < 0.2 and abs(aim["y"] - (93 - 3.5 / 4.61 * 18.44)) < 0.2, aim
+    assert onecam.lead_point([(0, {"x": 5, "y": 5}), (6, {"x": 6, "y": 5})], d.cfg) == {"x": 6, "y": 5}  # crawling: as is
+    assert onecam.lead_point([(0, {"x": 0, "y": 0}), (2, {"x": 60, "y": 0})], d.cfg)["x"] == 108  # capped 48 ahead
     # contact at k=32: the battle hold, same place, no cut
     assert d.battles and d.battles[-1][2].startswith("incoming (score"), d.battles
     assert len(d.cuts) == cuts0, d.cuts[cuts0:]
@@ -207,13 +222,55 @@ def turned_back_or_stopped():
                 ended = k
         if case == "back":  # closest 40 at k=20; 40 tiles farther at k=30
             assert ended is not None and 30 <= ended <= 34, ended
-        elif case == "still":  # still from k=10; 0.8 x 45 s later
-            assert ended is not None and 46 <= ended <= 58, ended
+        elif case == "still":  # still from k=10; 0.8 x 12 s later (CG1: it was 45 s, and the 09:53 group stood 44 s)
+            assert ended is not None and 19 <= ended <= 24, ended
         else:  # a gathering group is kept (until incoming_max, 240 s)
             assert ended is None, ended
         assert d.incoming is None or case == "gathering"
     print("turned back or stopped: ok (turned back: ends 40 tiles past its closest approach; stopped: ends after "
-          "about 36-45 s still; a gathering group is kept)")
+          "about 10-12 s still; a gathering group is kept)")
+
+
+def calibrated():
+    """(CG1) shift62-63: 176 groups in 6.3 h, every followed one stopped or turned back short, 3 real losses on Nauvis."""
+    th = Threats()
+    for g in RECORDED[:6]:
+        th.learn_group(g, centre=CENTRE)
+    g = dict(RECORDED[3], target={"x": -540, "y": 329})
+    base, parts = th.score_group(g, centre=CENTRE)
+    assert "routine" not in parts, parts  # under outcomes_min ended groups: no calibration yet
+    # groups tracked to their end: 10 that came and stood off (no contact, nothing lost)
+    t = 1000.0
+    for k in range(10):
+        th.observe([{"id": k, "surface": "nauvis", "position": {"x": -500, "y": 300}, "target": {"x": -540, "y": 329}, "contact": False}], [], t)
+        t += 30
+    th.observe([], [], t + 61)
+    assert len(th.h["outcomes"]) == 10 and th.harm_share() == 0, th.h["outcomes"]
+    s2, parts2 = th.score_group(g, centre=CENTRE)
+    assert parts2["routine"] == -1.2 and abs(s2 - (base - 1.2)) < 1e-9, parts2
+    # one that reached our buildings and destroyed 3 turrets near its target: counted once, harm share rises
+    t += 100
+    rows = [{"id": 50, "surface": "nauvis", "position": {"x": -530, "y": 320}, "target": {"x": -540, "y": 329}, "contact": True}]
+    loss = [{"key": "loss:nauvis:#9:1", "surface": "nauvis", "x": -545, "y": 331, "pieces": 3, "t": t + 5}]
+    th.observe(rows, [], t)
+    th.observe(rows, loss, t + 5)
+    th.observe([], loss, t + 10)  # the same loss again: not counted twice
+    th.observe([], [{"key": "far", "surface": "nauvis", "x": 400, "y": 400, "pieces": 9, "t": t + 12}], t + 12)
+    th.observe([], [], t + 80)
+    assert th.h["outcomes"][-1][1:] == [1, 3], th.h["outcomes"][-1]
+    assert abs(th.harm_share() - 1 / 11) < 1e-9
+    assert th.score_group(g, centre=CENTRE)[1]["routine"] == round(-1.2 * 10 / 11, 3)
+    # cover where it is aimed, inside the base map's box: no drawn turret reaching (-540, 329), one, several; outside the
+    # box (the 09:53 group stood about 190 tiles west of the map's edge) nothing is said
+    box = {"x0": -600, "y0": 0, "x1": 0, "y1": 600}
+    assert th.score_group(g, centre=CENTRE, turrets=[[-700, 0, 30]], box=box)[1]["no_cover"] == 1.0
+    assert "no_cover" not in th.score_group(g, centre=CENTRE, turrets=[[-560, 340, 24]], box=box)[1]
+    assert "no_cover" not in th.score_group(g, centre=CENTRE, turrets=[], box={"x0": -352, "y0": -608, "x1": 624, "y1": 592})[1]
+    assert "no_cover" not in th.score_group(g, centre=CENTRE, turrets=[], box=None)[1]
+    assert "no_cover" not in th.score_group(dict(g, target=None), centre=CENTRE, turrets=[], box=box)[1]  # nowhere to aim
+    assert th.score_group(dict(g, target=None, nearest={"x": -300, "y": 300}), centre=CENTRE, turrets=[], box=box)[1]["no_cover"] == 1.0
+    print(f"calibrated: ok (routine {parts2['routine']} after 10 groups held off; a damaging one counted once; "
+          "no turret reaching its target inside the map +1.0)")
 
 
 if __name__ == "__main__":
@@ -222,3 +279,4 @@ if __name__ == "__main__":
     director()
     turned_back_or_stopped()
     live_and_model()
+    calibrated()

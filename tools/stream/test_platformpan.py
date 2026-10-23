@@ -7,7 +7,8 @@ A1. With the view's guns read (harness.py platform_views: each turret's position
     A view without a guns read frames as before (32 tiles ahead).
 A2. In flight with turrets, the shot is a closer detail view (model.DETAIL_ZOOM) that rests on the bow (the top of the
     guns' reach) and pans slowly to the stern (`pan` with speed and bow_s); docked ships keep a still shot. OneCam moves
-    it in small steps with a glide speed (cameras.lua `speed`), no cut, the label kept.
+    it in small steps with a glide speed (cameras.lua `speed`), no cut, the label kept. (d23 batch124 CG2) Each leg
+    eased; each step glides to where the pan will be 1.5 step intervals on, so the view never stops between steps.
 """
 import os, sys
 
@@ -83,9 +84,13 @@ def pan_y(d):
     assert d.pan_y(t0, 7.9) == -20.0 and d.pan_y(t0, 13.0) == 0.0 and d.pan_y(t0, 18.0) == 20.0
     assert d.pan_y(t0, 18.0 + d.PAN_END_S) == 20.0 and d.pan_y(t0, 18.0 + d.PAN_END_S + 5) == 0.0
     assert d.pan_y(t0, 28.0 + d.PAN_END_S + 0.5) == -20.0  # back on the bow, then the cycle again
-    # a short visit: the bow and part of the hull, at the same pace
+    # a short visit: the bow and part of the hull, at the same pace (CG2: eased, 40% of the leg is 35% of the way)
     short = dict(t0, until=12.0)
-    assert d.pan_y(short, 12.0) == -4.0
+    assert d.pan_y(short, 12.0) == -5.9
+    # (CG2) eased legs: slow off the bow, fastest mid-ship, slow onto the stern
+    ys = [d.pan_y(t0, 8.0 + k) for k in range(11)]
+    moves = [b - a for a, b in zip(ys, ys[1:])]
+    assert moves[0] < moves[4] and moves[-1] < moves[5] and max(moves) <= 1.5 * 4.0 + 0.1, moves
 
 
 def onair():
@@ -111,9 +116,13 @@ def onair():
     assert ys[0] == p["y0"] and p["y1"] in ys, ys  # framed on the bow, on to the stern
     assert all(b["zoom"] == target["zoom"] for b in bodies), bodies  # the detail zoom all along
     moving = [b for b in sent[first:] if b.get("surface") == "platform-6" and b["position"]["y"] != p["y0"]]
-    assert moving and all(b.get("speed") == round(p["speed"] * 1.15, 2) and b.get("smooth") for b in moving), moving
+    assert moving and all(b.get("smooth") and b.get("speed") for b in moving), moving
+    # (CG2) each step glides to a point 1.5 step intervals (1 s here) on, at the speed that takes that long: the next
+    # step comes while it still moves (the 1.15x glide stopped about 0.1-0.5 s each step on world n)
+    glides = [(abs(b2["position"]["y"] - y1), b2["speed"]) for y1, b2 in zip(ys, bodies[1:]) if b2["position"]["y"] != y1]
+    assert glides and all(abs(g / 1.5 - v) <= 0.02 or v == 0.5 for g, v in glides), glides
     steps = [y2 - y1 for y1, y2 in zip(ys, ys[1:]) if y2 != y1]
-    assert steps and all(0 < abs(s) <= p["speed"] + 0.11 for s in steps), steps  # about one second's travel a step, there and back
+    assert steps and all(0 < abs(s) <= 1.5 * p["speed"] * 1.5 + 0.11 for s in steps), steps  # at most 1.5 s at the eased peak
     row = main_row(d, t + k2)
     assert row["platform"]["name"] == "Swiftlet" and "Swiftlet" in row["platform"]["label"], row  # the label kept
 
