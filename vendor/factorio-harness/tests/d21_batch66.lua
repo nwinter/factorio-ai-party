@@ -369,7 +369,7 @@ do
   eq(x.state,'late')
   lines=W.lines(sol,h)
   has(lines[1],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): deadline passed, not reached: last confirmed stage network (the pad (5,6) is in logistic network #12; the consumer in #7')
-  has(lines[1],'the consumer holds 0 (0 at the start); blocked: landed at the pad (5,6) in logistic network #12')
+  has(lines[1],'the consumer holds 0 (0 at the start); received 0 of 200 in 0 pods by landing pads in the consumer\'s logistic network since the watch was set; blocked: landed at the pad (5,6) in logistic network #12')
   -- the pad joined to the silo's network and the carbide brought: blocker gone, reached (late)
   nets[pad]=7; held.silo=200
   game.tick=game.tick+60; W.tick(game.tick)
@@ -546,7 +546,10 @@ do
   eq(a.stacks[1].spoil_percent,26); eq(a.read_tick,1041); eq(a.platform,'Petrel II'); eq(a.stop,'nauvis')
   eq(a.text,'pod 77 from Petrel II\'s hub at nauvis, sent 1s before, received by cargo-landing-pad (52,54) on nauvis at tick 1042: 300 agricultural-science-pack (200 at 25-50% spoiled, 100 at 50-75% spoiled; the pod\'s last read, 0s before); cargo-landing-pad (52,54) on nauvis held 340 of it on that tick (200 at 25-50% spoiled, 100 at 50-75% spoiled, 40 at 75-100% spoiled)')
   local lines=W.lines(sol,h)
-  eq(#lines,1); has(lines[1],'delivery watch #1: pod 77 from Petrel II\'s hub at nauvis')
+  eq(#lines,2); has(lines[1],'delivery watch #1: pod 77 from Petrel II\'s hub at nauvis')
+  -- (d22 batch107 BQ1) the pad consumer received its count: the stock test read on that tick (it holds 340, 40 at the start)
+  has(lines[1],'; received 300 of 300 in 1 pod by cargo-landing-pad (52,54) on nauvis since the watch was set, the last at tick 1042')
+  has(lines[2],'delivery watch #1: reached: cargo-landing-pad (52,54) holds 340 agricultural-science-pack (40 when the watch was set), in time')
   eq(W.row(st.delivwatch.list[2]).arrivals,nil)
   -- up: a rocket's pod to the hub; an item that does not spoil reads so; a gone pod in freight's list stops nothing
   local rinv=inv({stack('iron-plate',100,0)})
