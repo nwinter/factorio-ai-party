@@ -12340,3 +12340,22 @@ sources on their networks (an arithmetic combinator's +10000, two readers on one
   segment ends; `double_counts` compares segments.
 - Cost on the copy (emulated amd64): inspect's segment read of a 503-belt reader 4.2 ms (main 2.6); circuit_audit
   `{platform}` on Asterion 46.4 ms (main 41.3), one walk a reader.
+
+## d22 batch122 CE1 (eng/d20-batch122): a reply closes only what it answers, for teammates too
+
+Viewer Aurora (08:48): "can an unrelated reply to someone clear their other unanswered requests?" It could, for
+teammates. batch57 S1 had held a viewer's lines to closing by name only while one was open, but for a teammate:
+- a say or team tell naming the sender closed every open request of theirs, with or without `reply_to`;
+- any tell to them closed all of theirs, including a tell with `reply_to` to one of them.
+
+Case (tests/d22_batch122.lua, through the runtime): Sol asked Muse two things; Muse's `say {reply_to: <the second>,
+text: "@sol yes, sending 50 plates now."}` closed both.
+
+Now (owed.lua, board.lua, tells.lua), the same rule for viewers and teammates:
+- `reply_to` on a say or tell closes exactly the lines it names.
+- Without it, a say or team tell naming the sender, or a tell to them, closes their line only while it is their one
+  open line to you.
+- A say's or tell's `left_open` names the senders it left several open lines of: "sol has 2 open requests to you
+  (#11, #12): a say or tell naming them closes none; reply_to closes the one it names".
+- The unanswered line for a teammate reads "reply_to: 11 answers it (a say or tell naming sol, or a tell to them,
+  does while it is their only open request)".

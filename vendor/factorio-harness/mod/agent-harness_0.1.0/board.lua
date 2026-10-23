@@ -1978,10 +1978,11 @@ return function(api)
       if not t.fyi and tostring(t.text or ''):find('?', 1, true) then
         pcall(M.owed.add, index, {key='t' .. tostring(t.seq), seq=t.seq, tick=t.tick, from=t.from, text=t.text, tell=true})
       end
-      if t.team then pcall(M.owed.said, t.player, t.text)
+      -- (d22 batch122 CE1) a tell with reply_to closes by seq alone (tells.lua on_reply)
+      if t.team then pcall(M.owed.said, t.player, t.text, t.reply_to)
       else
         for _, a in ipairs(agents()) do
-          if a.index == index then pcall(M.owed.told, t.player, {a.name, a.display_name or a.name}) end
+          if a.index == index then pcall(M.owed.told, t.player, {a.name, a.display_name or a.name}, t.reply_to) end
         end
       end
     end

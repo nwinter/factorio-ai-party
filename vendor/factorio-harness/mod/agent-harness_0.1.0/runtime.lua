@@ -16496,6 +16496,7 @@ M.rests=require('rests'){state=state,resolve=M.board.resolve,
   end}
 M.tells=require('tells'){state=state,resolve=M.board.resolve,resting=function(name) return M.rests.tell_line(name) end,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
+  owed_left=function(index,names,text) if text then return M.owed.held(index,text) end return M.owed.held_for(index,names) end,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
   deaf=function(index,from)
