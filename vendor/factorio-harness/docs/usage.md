@@ -12130,3 +12130,29 @@ encoding is about 30x slower than world n's, so a read's time below leaves the e
 - Left over: a trace's end pass and its belt find each take one tick (Asterion 79 and 113 ms). A watch now begins one
   there every 13 minutes. Other readers (platform alerts under low ammo, the platform and endurance reads) ask on their
   own terms.
+## d22 batch107 BQ1 (eng/d20-batch107): a delivery watch complete by receipt (Sol #1950)
+
+Sol's watch #75 (10000 copper-plate from Spindle to the landing pad (74,208) on Fulgora, 20 minutes) read `late`
+although all ten pods of 1000 were received by that pad: `reached` was a stock test only (the consumer holding `count`
+more than at the start), and robots emptied the pad as the pods landed. On a headless copy of world n's 18:53 autosave
+the watch's arrivals show the pad holding 1000, 1976, 2448, ... 5602 on each pod's landing tick, never 10000.
+
+- delivery_watch keeps a running total of what the consumer received since the watch was set (delivwatch.lua; runtime
+  deploy needed), apart from the last 16 `arrivals`. What counts:
+  - a landing pad consumer: the pods that pad received;
+  - a consumer aboard a platform: the pods its hub received;
+  - a chest, silo or machine on a planet: the pods received by a landing pad in its logistic network on the tick each
+    landed (robots carry it on from there); a pad in another network, or a pod landed with no pad, does not count.
+  Only the pods the watch followed count (at most 32 followed at a time).
+- When the total reaches `count` the watch is complete by receipt: state `received`, stage `received`. The setter
+  hears "delivery watch #75 (...): received 10000 of 10000 in 10 pods by cargo-landing-pad (74,208) on fulgora since
+  the watch was set, the last at tick 49028166, in time, 18m43s before the deadline; the stock test not met: the
+  consumer holds 0 now (0 at the start), not seen holding 10000 more". The consumer's count is read on that pod's tick:
+  holding `count` more then, the watch is `reached`, and that line names the received total too.
+- Each pod line, the deadline line and the watch's `line` say "received N of count in P pods by ...", so `late`
+  always shows how much was received. Row field `received {count, pods, last_tick, by, from_arrivals}`.
+- A watch set before this deploy is counted once from its arrivals received by the pad or hub itself
+  (`from_arrivals: true`).
+- Headless copy, after a deploy: watch #75 read `received` (10000, 10 pods, by the pad, from its arrivals) within a
+  second, with the line above. Cost: nothing new per tick; at a landing, a chest/silo/machine consumer adds two
+  logistic network lookups (1.3 µs each on the copy).
