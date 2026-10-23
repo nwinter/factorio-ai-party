@@ -43,7 +43,10 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 - Space platforms (Nick: "Do we have the camera look at the space platform sometimes?"): the snapshot's
   space.platforms with a view (live.py PLATFORM_LUA: surface, hub, bounds). A standby shows one platform whole
   (model.platform_shot, a fixed view on its surface), labelled "Starling · in orbit of Nauvis" (or travelling to X);
-  framed out to its turrets' range, and in flight a closer view that pans bow to stern (d20 batch50; pan_step):
+  framed out to its turrets' range, and in flight a closer view that pans bow to stern (d20 batch50; pan_step); a ship
+  whose closer pan would take more than model.LONG_VIEWS view heights (Asterion, 275 tiles long) is framed whole at
+  the zoom that fits (at least 0.3), panned over the shot, and a visit or edge shot holds until that pan has gone bow
+  to stern at one view height in PAN_VIEW_S (d22 batch99 BI4, viewer Foobator):
   - a visit about every `platform_every` (12 min) for `platform_hold` (20 s), the platform shown longest ago first;
     like the base map, never during an urgent or segment shot, a replay, a trio, an inset, a fight, or near a cut;
   - a departure (a platform starts travelling; Sol for a viewer: "continuous view during departure"): on it for
@@ -2310,6 +2313,29 @@ class OneCam(Director):
     PAN_STEP = 2.0     # tiles: the camera is moved when the pan's place is this far from where it is
 
     DETAIL_STEP = 0.5  # tiles: a detail pan's step (d20 batch50 A2; cameras.lua glides between steps at its speed)
+    # (d22 batch99 BI4, viewer Foobator site:4332) a long ship's whole-frame pan (model.LONG_VIEWS): a visit or an edge
+    # shot holds until the pan has gone bow to stern at one view height in PAN_VIEW_S, at most PAN_HOLD_MAX; every
+    # tall-ship pan glides (cameras.lua speed) between its steps
+    PAN_VIEW_S = 10.0
+    PAN_HOLD_MAX = 50.0
+
+    def pan_hold(self, t):
+        """Seconds a whole-frame pan needs to go bow to stern at one view height in PAN_VIEW_S, with its rests (0 for
+        no pan or a detail pan)."""
+        p = (t or {}).get("pan")
+        if not p or p.get("speed") or not t.get("zoom"):
+            return 0.0
+        vh = 34.0 / t["zoom"]
+        return min(self.PAN_HOLD_MAX, 2 * self.PAN_END_S + abs(p["y1"] - p["y0"]) * self.PAN_VIEW_S / vh)
+
+    def pan_speed(self, t):
+        """Tiles a second a pan moves at: a detail pan's speed, else its length over its leg."""
+        p, since = t["pan"], t.get("since") if t.get("since") is not None else 0.0
+        if p.get("speed"):
+            return p["speed"]
+        span = max(1.0, (t.get("until") or since + 20) - since)
+        leg = max(4.0, min(self.PAN_LEG_S, span - 2 * self.PAN_END_S))
+        return abs(p["y1"] - p["y0"]) / leg
 
     def pan_y(self, t, now):
         """Where a tall ship's view is along its pan (model.platform_shot `pan`) at `now`: at the bow for PAN_END_S, to
@@ -2340,8 +2366,8 @@ class OneCam(Director):
             if abs(y - t["position"]["y"]) >= step or (y in (t["pan"]["y0"], t["pan"]["y1"]) and y != t["position"]["y"]):
                 target = {k: v for k, v in t.items() if k != "jump"}
                 target["position"] = dict(t["position"], y=y)
-                if t["pan"].get("speed"):  # cameras.lua moves at about this speed between the 1 s steps: no stutter
-                    target["glide"] = round(t["pan"]["speed"] * 1.15, 2)
+                # cameras.lua moves at about this speed between the 1 s steps: no stutter (BI4: every pan)
+                target["glide"] = round(self.pan_speed(t) * 1.15, 2)
                 self.apply(slot, target, "reframe", {}, now, quiet=True)
 
     @staticmethod
@@ -2479,6 +2505,8 @@ class OneCam(Director):
         name = sorted(due)[0]
         label = f"{name} · dense asteroids near the solar system edge"
         t = self.platform_target(name, "edge", now + cfg["ready_s"] + cfg["platform_hold"], label=label)
+        if t and self.pan_hold(t) > cfg["platform_hold"]:  # (BI4) a long ship: bow to stern within the shot
+            t["until"] = now + cfg["ready_s"] + self.pan_hold(t)
         if not t:
             return
         t["platform"]["kind"] = "edge"
@@ -2602,6 +2630,8 @@ class OneCam(Director):
             return
         name = min(plats, key=lambda n: (self.plat_shown.get(n, -1e9), n))
         t = self.platform_target(name, "visit", now + cfg["ready_s"] + cfg["platform_hold"])
+        if t and self.pan_hold(t) > cfg["platform_hold"]:  # (BI4) a long ship: bow to stern within the shot
+            t["until"] = now + cfg["ready_s"] + self.pan_hold(t)
         if t:
             self.last_platform = now
             self.show_platform(t, scores, now)
