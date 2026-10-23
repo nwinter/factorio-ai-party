@@ -53,7 +53,10 @@ redaction (`clean()` in `site/build.py`: e-mail addresses, local paths, key-like
 with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TOKEN` or the gitignored
 `site/worker/.secrets.json`; it is the Worker secret `PUBLISH_TOKEN` (see `site/README.md` to rotate it).
 
-`POST /v1/state` accepts any JSON object up to 256 KB and replaces the stored state; a typical push is 12 KB.
+`POST /v1/state` accepts any JSON object up to 256 KB and replaces the stored state. A push is about 230 KB in d22
+(world n at 17:00: 232 KB read back from `/v1/state`; the largest parts clouds 36 KB, basemap 32 KB (its turrets 20 KB
+and core 19 KB), board 23 KB, agents 23 KB, reminders 23 KB, viewer_replies 23 KB, chat 16 KB, net_map 14 KB,
+planet_maps 13 KB).
 `GET /v1/state` (public) returns:
 
 ```jsonc
@@ -213,6 +216,13 @@ It draws `fights` as rings the size of their `extent` (solid while `age_s` is un
 faded after, a cross where `losses` happened), tags each agent a camera follows with its slot, lists what each camera
 shows (`cameras`: its agents, or the `attack`, `work` or `segment` shot), shows the research in progress over the
 map, and `space` as an inset under it. `space`, `fights` and the camera labels add a few hundred bytes to a push.
+(d22 batch97 BG3) `threats` {incoming, big} draws the "Attacks" layer (on by default, under Combat) on the surface shown:
+`incoming` the enemy groups on their way (harness `attack_groups_live`, read every 2 s while any, else 10 s)
+`[{id, surface, position, target, size, kinds, state, target_distance, visible, age_s (since first seen), label}]`, a
+diamond with a dashed line to its target; `big` the demolishers near our buildings or agents (`big_enemies_live`)
+`[{id, name, surface, position, nearest {x, y, name}, speed, closing, nearest_distance, eta_s, label}]`, a ringed dot
+with a dashed line to our nearest building while it closes; at most 12 of each, absent when there are none (about
+300 bytes a row). The stream service read both before; they never reached the page.
 (d22 batch75 AK2, viewer Foobator, site:4034: "the ship overview only has a progress bar for the first 2 that are in
 transit? can in transit be listed first and the rest have their planetary waiting time displayed?") Every platform's
 `state`, `route` and `speed_kms` come from the stream's views read (`PLATFORM_LUA`, every platform in one call every
@@ -228,11 +238,15 @@ binned into `cell`-tile cells (4, doubled until the grid fits 128 cells a side),
 building: `D` defence (turrets), `W` walls and gates (d22 batch75 AK4, viewer Foobator: "can walls be a separate
 item?"; under `D` where both share a cell, so the turret sweep's defence cells still hold every turret; grids read before
 it have walls in `D`), `R` labs, `O` oil and chemistry (refineries, chemical plants,
-pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drills, offshore pumps), `E` power,
-`K` storage, `B` belts and inserters, `P` pipes, `.` nothing. Cell (c, r) covers tiles `x0 + c*cell` to
+pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drills, offshore pumps, agricultural
+towers), `E` power (boilers, generators, solar, accumulators, reactors, fusion, lightning attractors and, d22 batch97 BG3,
+heat pipes), `L` logistics and storage (chests, roboports, train stops, the cargo landing pad), `I` inserters, `B` belts
+(undergrounds, splitters, loaders), `T` rails and signals, `P` pipes, pumps and tanks, `.` nothing; most telling first in
+that order (census.lua RANK). (BG3) The legend's `K` storage was never emitted (storage is in `L`) and is gone. Cell (c, r) covers tiles `x0 + c*cell` to
 `x0 + (c+1)*cell` and the same for y. Trailing empty cells are left off each row. It is absent until the first read.
 `basemap.ore` (read every 5 minutes, the last one kept between reads) is a second grid with its own `cell`, `x0`,
-`y0`, `w` and `rows`, covering the base plus 64 tiles: one letter per cell for its commonest resource, `i` iron ore,
+`y0`, `w`, `rows` and (BG3) `tick`, the start of the census pass that read it (the census served a grid only within
+19,800 ticks of that start while a pass takes 35-41k on world n, so the map had no ore; it serves its last one now), covering the base plus 64 tiles: one letter per cell for its commonest resource, `i` iron ore,
 `c` copper ore, `k` coal, `s` stone, `o` crude oil, `u` uranium ore, `x` anything else. The page draws it faintly
 under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
 map's edge (dashed, its distance in the tooltip).

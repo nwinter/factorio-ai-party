@@ -50,7 +50,8 @@ return function(api)
     ['curved-rail-b']='T', ['half-diagonal-rail']='T', ['rail-signal']='T', ['rail-chain-signal']='T',
     ['lane-splitter']='B', ['cargo-landing-pad']='L', ['agricultural-tower']='M', ['fusion-reactor']='E',
     ['fusion-generator']='E', ['lightning-attractor']='E', ['rail-ramp']='T', ['rail-support']='T',
-    ['elevated-straight-rail']='T', ['elevated-curved-rail-a']='T', ['elevated-curved-rail-b']='T', ['elevated-half-diagonal-rail']='T'}
+    ['elevated-straight-rail']='T', ['elevated-curved-rail-a']='T', ['elevated-curved-rail-b']='T', ['elevated-half-diagonal-rail']='T',
+    ['heat-pipe']='E'}
   local OIL = {['oil-refinery']=true, ['chemical-plant']=true, pumpjack=true}
   local RANK = {D=13, W=12, R=11, O=10, A=9, S=8, M=7, E=6, L=5, I=4, B=3, T=2, P=1}
   local LINE = {P=true, B=true, I=true, T=true}
@@ -826,8 +827,9 @@ return function(api)
   end
 
   -- The operator read: {part = extras | snapshot | machines | basemap, ore = true (basemap)}. Nothing yet: {ready=false}.
-  -- basemap with ore: the last ore grid when one was made in the last ORE_EVERY ticks and on the same cell size, else
-  -- none (ore_pending: the next pass reads it).
+  -- basemap with ore: the last finished ore grid on the same cell size, its pass's start as ore.tick, else none
+  -- (ore_pending: the next pass reads it). (d22 batch97 BG3) It was served only within ORE_EVERY + PERIOD (19,800
+  -- ticks) of its pass's start, and a pass takes 35-41k on world n, so the map never had ore.
   local SNAP_NAMES
   function M.read(args)
     args = type(args) == 'table' and args or {}
@@ -871,7 +873,11 @@ return function(api)
       local map = {}
       for k, v in pairs(d.basemap) do map[k] = v end
       if args.ore then
-        if st.ore and game.tick - st.ore.start < ORE_EVERY + PERIOD and st.ore.ore.cell == map.cell then map.ore = st.ore.ore
+        if st.ore and st.ore.ore.cell == map.cell then
+          local o = {}
+          for k, v in pairs(st.ore.ore) do o[k] = v end
+          o.tick = st.ore.start
+          map.ore = o
         else out.ore_pending = true end
       end
       out.basemap = map

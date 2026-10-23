@@ -4953,8 +4953,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (assembling machines, labs, drills, furnaces and inserters with an electric source; low or no power), `snapshot`
   `entities {name: count}` (the force's engine counts of the analyst's building types) and `surfaces_with_buildings`,
   `machines {name|recipe: {status: count}}`, `basemap` (the site's live map as tools/stream/harness.py BASEMAP_LUA draws
-  it at cell 4, 128 cells, core 160: rows, core, nests, turrets, buildings; with `ore: true` its ore grid when one was
-  read in the last 5 minutes, else `ore_pending` and the next pass reads it). Each reply has `ready`, `part`, `as_of`
+  it at cell 4, 128 cells, core 160: rows, core, nests, turrets, buildings, heat pipes as power since d22 batch97 BG3;
+  with `ore: true` the last ore grid a pass read on the same cell size, its `tick` that pass's start, else
+  `ore_pending` and the next pass reads it; BG3: it was served only within 19,800 ticks of that start, shorter than a
+  pass on world n, so it never was). Each reply has `ready`, `part`, `as_of`
   (the tick its pass started) and `pass_ticks`; before the first pass `ready: false`. Robots and vehicles move during a
   pass, so a surface's count may hold one twice or not at all. tools/pog.py CENSUS_FN asks it first in the stream's
   extras and live map reads and the analyst's snapshot and machines reads, and counts as before when it has no pass.

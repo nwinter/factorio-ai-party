@@ -90,6 +90,48 @@ def public_fights(fights, now):
     return out[-12:]
 
 
+GROUP_KEYS = ("id", "surface", "size", "kinds", "state", "target_distance", "visible", "age_s", "label")
+BIG_KEYS = ("id", "name", "surface", "speed", "closing", "nearest_distance", "eta_s", "label")
+THREATS_MAX = 12  # groups and demolishers each (threat.lua keeps at most 12 demolishers)
+
+
+def _xy(p):
+    return {"x": round(p["x"]), "y": round(p["y"])} if isinstance(p, dict) and all(isinstance(p.get(k), (int, float)) for k in "xy") else None
+
+
+def public_threats(incoming, big):
+    """(d22 batch97 BG3) the enemy groups on their way (harness attack_groups_live via model.py `incoming`) and the
+    demolishers near our buildings or agents (big_enemies_live, `big_enemies`), read every 2-10 s, for the live map's
+    attacks layer: {incoming: [{id, surface, position, target, size, kinds, state, target_distance, visible, age_s,
+    label}], big: [{id, name, surface, position, nearest {x, y, name}, speed, closing, nearest_distance, eta_s,
+    label}]}, at most THREATS_MAX of each; None when there are none."""
+    out = {}
+    rows = []
+    for g in incoming or []:
+        if not isinstance(g, dict) or not _xy(g.get("position")):
+            continue
+        row = {k: g[k] for k in GROUP_KEYS if g.get(k) is not None}
+        row["position"] = _xy(g["position"])
+        if _xy(g.get("target")):
+            row["target"] = _xy(g["target"])
+        rows.append(row)
+    if rows:
+        out["incoming"] = rows[:THREATS_MAX]
+    rows = []
+    for e in big or []:
+        if not isinstance(e, dict) or not _xy(e.get("position")):
+            continue
+        row = {k: e[k] for k in BIG_KEYS if e.get(k) is not None}
+        row["position"] = _xy(e["position"])
+        n = e.get("nearest")
+        if _xy(n):
+            row["nearest"] = dict(_xy(n), name=str(n.get("name") or ""))
+        rows.append(row)
+    if rows:
+        out["big"] = rows[:THREATS_MAX]
+    return out or None
+
+
 CLOUD_KEYS = ("surface", "label", "pollutant", "chunks", "max", "total", "age_s")
 CLOUD_CELLS = 6000  # cells across all surfaces (about 14 bytes each; the state is at most 256 KB), most polluted kept
 
@@ -658,6 +700,9 @@ def public_state(s):
         out["fights"] = public_fights(s["fights"], s.get("now") or time.time())
     if s.get("clouds"):
         out["clouds"] = public_clouds(s["clouds"])
+    threats = public_threats(s.get("incoming"), s.get("big_enemies"))
+    if threats:
+        out["threats"] = threats
     yt = public_youtube(s.get("viewers"), hidden_now())
     if yt:
         out["youtube_chat"] = yt

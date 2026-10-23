@@ -156,7 +156,7 @@ local CAT = {["ammo-turret"]="D",["electric-turret"]="D",["fluid-turret"]="D",["
   ["container"]="L",["logistic-container"]="L",["roboport"]="L",["train-stop"]="L",["transport-belt"]="B",
   ["underground-belt"]="B",["splitter"]="B",["loader"]="B",["loader-1x1"]="B",["inserter"]="I",["pipe"]="P",
   ["pipe-to-ground"]="P",["pump"]="P",["storage-tank"]="P",["straight-rail"]="T",["curved-rail-a"]="T",
-  ["curved-rail-b"]="T",["half-diagonal-rail"]="T",["rail-signal"]="T",["rail-chain-signal"]="T"}
+  ["curved-rail-b"]="T",["half-diagonal-rail"]="T",["rail-signal"]="T",["rail-chain-signal"]="T",["heat-pipe"]="E"}
 local EXTRA = {["lane-splitter"]="B",["cargo-landing-pad"]="L",["agricultural-tower"]="M",["fusion-reactor"]="E",
   ["fusion-generator"]="E",["lightning-attractor"]="E",["rail-ramp"]="T",["rail-support"]="T",
   ["elevated-straight-rail"]="T",["elevated-curved-rail-a"]="T",["elevated-curved-rail-b"]="T",["elevated-half-diagonal-rail"]="T"}

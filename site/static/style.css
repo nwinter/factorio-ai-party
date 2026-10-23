@@ -646,7 +646,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .b-D { fill: #c8553d; background: #c8553d; } .b-W { fill: #e9dcc0; background: #e9dcc0; } .b-R { fill: #a983f0; background: #a983f0; }
 .b-O { fill: #3fa8a3; background: #3fa8a3; } .b-A { fill: #5c8fd6; background: #5c8fd6; }
 .b-S { fill: #e08a3c; background: #e08a3c; } .b-M { fill: #a6875a; background: #a6875a; }
-.b-E { fill: #f2d34b; background: #f2d34b; } .b-K { fill: #8f8f8f; background: #8f8f8f; }
+.b-E { fill: #f2d34b; background: #f2d34b; }
 .b-L { fill: #b9b9b9; background: #b9b9b9; } .b-I { fill: #9fcf6a; background: #9fcf6a; }
 .b-B { fill: #8a7d45; background: #8a7d45; } .b-T { fill: #6e6a8e; background: #6e6a8e; }
 .b-P { fill: #4a6a8a; background: #4a6a8a; }
@@ -666,6 +666,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mm-legend i.mv-ready-e { background: linear-gradient(90deg, #ff3b30 0 50%, #f2c94c 50%); border-radius: 50%; }
 .mm-legend i.mv-ready-u { background: transparent; border-radius: 50%; box-shadow: 0 0 0 1.5px #9a9a9a; }
 .mm-legend i.mv-fight { background: rgba(224, 78, 58, .25); border-radius: 50%; box-shadow: 0 0 0 1.5px #ff5a44; }
+.mm-legend i.mv-group { background: #ff5a44; transform: rotate(45deg) scale(.8); }
+.mm-legend i.mv-big { background: #ff7a1a; border-radius: 50%; box-shadow: 0 0 0 2px #1b1f1a, 0 0 0 3.5px #ff7a1a; }
 .map-research { margin: 0 0 6px; color: var(--fx-text); }
 .map-research strong { color: var(--fx-heading); }
 .cam-lines, ul.platforms { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .88rem; }
