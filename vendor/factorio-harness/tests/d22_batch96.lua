@@ -308,3 +308,230 @@ do
   eq(r.platforms[1].defense,'def')
 end
 print('d22_batch96 BF1 a row makes only the fields asked: ok')
+
+-- BF1 part 3: the alerts' background read (on world n a game second held 164 ms of pushalerts.slice, another 141 ms of
+-- pushalerts.drill_sites: depleted-drill lookups of 40-60 ms each on the copy, and mine forecasts up to 28 ms)
+
+-- 12. a slice reads up to 150 entities and as many as its estimated cost (5,000) covers; after each step the job waits
+-- its cost's share of 20,000 a second, so no 60 ticks hold more than that and one step
+do
+  game={tick=100}
+  defines={entity_status={working=0,no_power=1,low_power=2,no_fuel=3,no_minable_resources=9},inventory={},alert_type={}}
+  local force={name='player',players={{}},is_chunk_visible=function() return true end}
+  local surface={name='nauvis',index=1}
+  game.surfaces={nauvis=surface};game.forces={player=force}
+  local ents={}
+  for i=1,400 do ents[i]={valid=true,type='assembling-machine',name='assembling-machine-2',status=0,force=force,surface=surface,unit_number=i,
+    position={x=(i%20)+.5,y=math.floor(i/20)+.5}} end
+  for i=401,700 do ents[i]={valid=true,type='container',name='iron-chest',status=0,force=force,surface=surface,unit_number=i,
+    position={x=(i%20)+.5,y=math.floor(i/20)+.5}} end
+  surface.find_entities_filtered=function(f)
+    if not f.area then return ents end
+    local out={}
+    for _,e in ipairs(ents) do local q=e.position; if q.x>=f.area[1][1] and q.x<f.area[2][1] and q.y>=f.area[1][2] and q.y<f.area[2][2] then out[#out+1]=e end end
+    return out
+  end
+  local st,steps={},{}
+  local A=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function() return 'opus' end,
+    timed=function(name,f,...)
+      local j=st.push_jobs.player; local list,at=j.list,j.at
+      f(...)
+      local n=list and at and ((j.list==list and j.at or #list+1)-at) or 0
+      local cost=0
+      if name=='pushalerts.slice' then for i=at,at+n-1 do cost=cost+(list[i].type=='assembling-machine' and 75 or 10) end
+      else cost=({['pushalerts.merge']=10000,['pushalerts.alerts']=5000,['pushalerts.networks']=1000})[name] or 500 end
+      steps[#steps+1]={name=name,tick=game.tick,n=n,cost=cost}
+    end}
+  A.tick(game.tick)
+  for _=1,6000 do game.tick=game.tick+1; A.tick(game.tick); if not st.push_jobs.player then break end end
+  eq(st.push_jobs.player,nil,'the pass ends')
+  local read,most=0,0
+  for _,s in ipairs(steps) do
+    if s.name=='pushalerts.slice' then
+      read=read+s.n; most=math.max(most,s.n); assert(s.cost<5000+75,'a slice stops at its cost: '..s.cost)
+    end
+  end
+  eq(read,700,'every entity read'); eq(most,150,'chests: 150 a slice')
+  for i,s in ipairs(steps) do
+    local sum=0
+    for j=i,#steps do if steps[j].tick<s.tick+60 then sum=sum+steps[j].cost end end
+    assert(sum<=20000+5075,'60 ticks from '..s.tick..' hold '..sum)
+  end
+  local first,last=steps[1].tick,steps[#steps].tick
+  assert(last-first>=60*(400*75+300*10)/20000-60,'spread: '..(last-first)..' ticks')
+end
+print('d22_batch96 BF1 alerts read paced by its cost: ok')
+
+-- 13. drill_sites: chunk keys and candidate order without text or a table each, and the drills and ghosts round the
+-- candidates found once (a spot no box touches needs no find); the same sites, checks and names as before
+do
+  local D=dofile('mod/agent-harness_0.1.0/drill_sites.lua'){state=function() return {} end,integer=function(v,d) return v or d end,
+    entity=function() error('no entity') end,position=function(q) return {x=q.x or q[1],y=q.y or q[2]} end,on_surface=function(p) return p end}
+  game={tick=10}
+  defines={entity_status={no_minable_resources=9},build_check_type={manual=1}}
+  local proto={type='mining-drill',name='electric-mining-drill',mining_drill_radius=2.49,tile_width=3,tile_height=3,resource_categories={basic=true}}
+  prototypes={entity={['electric-mining-drill']=proto,coal={type='resource',resource_category='basic'}}}
+  local function run(with_boxes)
+    local finds,places={},0
+    local ore={}
+    for x=-12,12 do for y=-12,12 do ore[#ore+1]={valid=true,position={x=x+.5,y=y+.5},amount=100,name='coal'} end end
+    local drills={{valid=true,type='mining-drill',name='electric-mining-drill',position={x=4.5,y=.5}},
+      {valid=true,type='entity-ghost',ghost_name='transport-belt',name='entity-ghost',position={x=-3.5,y=2.5}}}
+    for _,d in ipairs(drills) do
+      local h=d.type=='mining-drill' and 1.4 or 0.4
+      if with_boxes then d.bounding_box={left_top={x=d.position.x-h,y=d.position.y-h},right_bottom={x=d.position.x+h,y=d.position.y+h}} end
+      d.h=h
+    end
+    local surface={name='nauvis',find_entities_filtered=function(f)
+      finds[#finds+1]=f
+      if f.type=='resource' and not f.invert then
+        local out={}
+        for _,o in ipairs(ore) do local q=o.position; if q.x>=f.area[1][1] and q.x<f.area[2][1] and q.y>=f.area[1][2] and q.y<f.area[2][2] then out[#out+1]=o end end
+        return out
+      end
+      if type(f.type)=='table' then
+        local out={}
+        for _,d in ipairs(drills) do
+          local q=d.position
+          if q.x+d.h>f.area[1][1] and q.x-d.h<f.area[2][1] and q.y+d.h>f.area[1][2] and q.y-d.h<f.area[2][2] then out[#out+1]=d end
+        end
+        return out
+      end
+      return {}
+    end,can_place_entity=function(a) places=places+1; return math.abs(a.position.x)+math.abs(a.position.y)>3 end}
+    local force={name='player',is_chunk_visible=function() return true end}
+    local p={force=force,surface=surface,position={x=.5,y=.5}}
+    local r=D.read(p,{position={x=.5,y=.5},resource='coal',drill='electric-mining-drill',radius=6,limit=5})
+    local occupant_finds=0
+    for _,f in ipairs(finds) do if type(f.type)=='table' and f.limit==8 then occupant_finds=occupant_finds+1 end end
+    return r,occupant_finds,places
+  end
+  local a,fa,pa=run(false)
+  local b,fb,pb=run(true)
+  eq(#a.sites,5); eq(#b.sites,5)
+  for i=1,5 do eq(a.sites[i].position.x,b.sites[i].position.x); eq(a.sites[i].position.y,b.sites[i].position.y); eq(a.sites[i].amount,b.sites[i].amount); eq(a.sites[i].distance,b.sites[i].distance) end
+  eq(a.checks,b.checks); eq(a.line,b.line); eq(a.occupied,b.occupied); eq(pa,pb)
+  for i=2,5 do
+    local x,y=a.sites[i-1],a.sites[i]
+    assert(x.distance<y.distance or x.distance==y.distance and (x.position.x<y.position.x or x.position.x==y.position.x and x.position.y<y.position.y),'nearest first, then x, then y')
+  end
+  assert(a.occupied and a.occupied>=1,'a drill there is named'); assert(fb<fa,'fewer finds with boxes: '..fb..' of '..fa)
+  prototypes=nil
+end
+print('d22_batch96 BF1 drill sites: ok')
+
+-- BF1 part 4: platform_endurance (Kestrel IVb 66 ms on world n) and platform_supply (about 20 ms)
+
+-- 14. the hull's width from foundation counts in columns, no tile read; the same as the first and last column holding one
+do
+  local cols={}
+  for x=-7,12 do cols[x]=true end
+  cols[3]=nil  -- a gap inside does not matter
+  local counts=0
+  local s={count_entities_filtered=function(f) eq(f.type,'thruster'); return 6 end,
+    find_tiles_filtered=function() error('no tile read') end,
+    count_tiles_filtered=function(f)
+      counts=counts+1
+      eq(f.name,'space-platform-foundation'); eq(f.area[1][2],-128); eq(f.area[2][2],128); eq(f.limit,1)
+      for x=f.area[1][1],f.area[2][1]-1 do if cols[x] then return 1 end end
+      return 0
+    end}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
+  local g=F.geometry({surface=s,force={name='player'}})
+  eq(g.width,20); eq(g.thrusters,6)
+  assert(counts<=2*(8+32),'counted by strips: '..counts)
+  cols={}
+  eq(F.geometry({surface=s,force={name='player'}}).width,nil,'no foundation')
+  cols={[-128]=true,[127]=true}
+  eq(F.geometry({surface=s,force={name='player'}}).width,256,'the edges of the area')
+end
+print('d22_batch96 BF1 hull width by counts: ok')
+
+-- 15. platform_supply's chunk trace: each chunk type's walk takes a belt's outputs, an inserter's filter and target and a
+-- machine's recipe from what the first walk read (the same rows)
+do
+  game={tick=0}
+  defines={inventory={hub_main=1},entity_status={working=1,full_output=2}}
+  prototypes={item={['metallic-asteroid-chunk']={},['oxide-asteroid-chunk']={},['carbonic-asteroid-chunk']={}}}
+  local n,reads=0,{}
+  local function ent(t)
+    n=n+1; t.valid=true; t.unit_number=n; t.position=t.position or {x=n,y=0}
+    local raw={}
+    for k,v in pairs(t) do if k=='belt_neighbours' or k=='drop_target' then raw[k]=v; t[k]=nil end end
+    return setmetatable(t,{__index=function(_,k) if raw[k]~=nil then reads[k]=(reads[k] or 0)+1; return raw[k] end end})
+  end
+  local hub=ent{name='space-platform-hub',type='space-platform-hub',get_inventory=function() return {count_empty_stacks=function() return 3 end} end}
+  local cm=ent{name='crusher',type='assembling-machine',status=1,prototype={crafting_categories={crushing=true}},
+    get_recipe=function() reads.recipe=(reads.recipe or 0)+1; return {name='metallic-asteroid-crushing',ingredients={{name='metallic-asteroid-chunk',amount=1}}} end}
+  local b3=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={}}}
+  local b2=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={b3}}}
+  local b1=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={b2}}}
+  local col=ent{name='asteroid-collector',type='asteroid-collector',filter_slot_count=0}
+  local function ins(from,to) return ent{name='inserter',type='inserter',pickup_target=from,drop_target=to,use_filters=false} end
+  local list={ins(col,b1),ins(b3,cm),ins(b3,hub)}
+  local s={find_entities_filtered=function(f)
+    if f.type=='inserter' then return list elseif f.type=='asteroid-collector' then return {col} elseif f.type=='assembling-machine' then return {cm} end
+    return {} end}
+  local P=dofile('mod/agent-harness_0.1.0/platsupply.lua'){}
+  local rows=P.trace(s,{},hub)
+  eq(#rows,3)
+  eq(rows[2],'metallic-asteroid-chunk: 1 collector; goes to crusher (2,0) metallic-asteroid-crushing, the hub (over 3 belt tiles)')
+  eq(rows[1],'carbonic-asteroid-chunk: 1 collector; goes to the hub (over 3 belt tiles)')
+  eq(reads.belt_neighbours,3,'each belt\'s outputs once for 3 chunk types')
+  eq(reads.drop_target,3,'each inserter\'s target once')
+  defines,prototypes=nil,nil
+end
+print('d22_batch96 BF1 chunk trace reads once: ok')
+
+-- BF1 part 5 (operator 17:26: flight_watch reads 36 ms on world n, board.team up to 63 ms with platalerts.lines 51)
+
+-- 16. the platform alerts' expired scans read in the background, the oldest of those read lately, one a step; a reply
+-- takes a scan up to twice as old while the background runs
+do
+  game={tick=100000}
+  defines={space_platform_state={on_the_path=4,waiting_at_station=6},inventory={turret_ammo=3,hub_main=1}}
+  prototypes={item={}}
+  local st={}
+  local finds={}
+  local function plat(i)
+    return {valid=true,index=i,name='P'..i,state=6,surface={name='platform-'..i,find_entities_filtered=function() finds[#finds+1]=i; return {} end},force={name='player'}}
+  end
+  local p1,p2,p3=plat(1),plat(2),plat(3)
+  game.forces={player={platforms={p1,p2,p3}}}
+  local A=dofile('mod/agent-harness_0.1.0/platalerts.lua'){state=function() return st end,who=function() return 'sol' end}
+  st.platform_alerts={by={[1]={scan={tick=game.tick-700},scan_wanted=game.tick-100,seq=0,minutes={},workers={}},
+    [2]={scan={tick=game.tick-650},scan_wanted=game.tick-100,seq=0,minutes={},workers={}},
+    [3]={scan={tick=game.tick-900},scan_wanted=game.tick-20000,seq=0,minutes={},workers={}}}}
+  A.tick(game.tick+1)
+  eq(#finds,0,'only every SCAN_STEP ticks')
+  game.tick=game.tick+20-(game.tick%20)
+  A.tick(game.tick)
+  eq(#finds,1); eq(finds[1],1,'the oldest of those read lately (3 was not read in 5 minutes)')
+  eq(st.platform_alerts.by[1].scan.tick,game.tick)
+  A.tick(game.tick+20)
+  eq(finds[2],2)
+  A.tick(game.tick+40)
+  eq(#finds,2,'none expired')
+  eq(st.platform_alerts.scan_bg,game.tick+40)
+  defines,prototypes=nil,nil
+end
+print('d22_batch96 BF1 platform scans in the background: ok')
+
+-- 17. the fuel outlook's thrusters and tanks from the platform's background read when it has them
+do
+  game={tick=600}
+  defines={flow_precision_index={one_minute=1}}
+  local tank={valid=true,type='storage-tank',fluidbox=setmetatable({},{__len=function() return 1 end,__index=function() return {name='thruster-fuel',amount=700} end})}
+  local thr={valid=true,type='thruster',fluidbox=setmetatable({},{__len=function() return 2 end,__index=function(_,i) return {name=i==1 and 'thruster-fuel' or 'thruster-oxidizer',amount=100} end})}
+  local found=0
+  local pl={name='K',index=2,force={get_fluid_production_statistics=function() return nil end},
+    surface={find_entities_filtered=function() found=found+1; return {tank,thr} end},space_location={name='nauvis'}}
+  local lists
+  local E=dofile('mod/agent-harness_0.1.0/endurance.lua'){platform_lists=function() return lists end,leg=function() return nil end}
+  local o=E.fuel_outlook(pl)
+  eq(found,1,'no lists: found'); eq(o.rows[1].held,800); eq(o.rows[1].in_tanks,700); eq(o.rows[2].held,100)
+  lists={turrets={},tanks={tank,thr}}
+  local o2=E.fuel_outlook(pl)
+  eq(found,1,'the lists, no find'); eq(o2.line,o.line)
+end
+print('d22_batch96 BF1 fuel outlook from the background lists: ok')
