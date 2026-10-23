@@ -47,14 +47,48 @@ return function(api)
   -- Each belt's previous item observation survives an empty sample. Missing
   -- tiles become alerts only after a later visible chunk snapshot confirms it.
   local function item_count(e) return e.get_item_count() end
-  function M.remember(c,e,tiles,p,pos)
+  -- (d22 batch110 BT1: beltgaps.tick made 84 KB of garbage a call on a copy of world n, a new row, position and
+  -- bounding box for each belt of the chunk read) whether an entity of this name stands on one tile only: its
+  -- prototype's collision box inside its tile whichever way it faces (left and top in [-0.5, 0.5), right and bottom in
+  -- (-0.5, 0.5]); one placed on a tile's centre then covers that tile alone, the tile its bounding box gives. By name,
+  -- once (prototypes do not change while the game runs).
+  local one_tile_names={}
+  local function collision_box(name) return prototypes.entity[name].collision_box end
+  local function one_tile(name)
+    local v=one_tile_names[name]
+    if v==nil then
+      local ok,b=pcall(collision_box,name)
+      v=false
+      if ok and b then
+        local lt,rb=b.left_top or b[1],b.right_bottom or b[2]
+        local x0,y0,x1,y1=lt and (lt.x or lt[1]),lt and (lt.y or lt[2]),rb and (rb.x or rb[1]),rb and (rb.y or rb[2])
+        v=type(x0)=='number' and type(y0)=='number' and type(x1)=='number' and type(y1)=='number'
+          and x0>=-0.5 and x0<0.5 and y0>=-0.5 and y0<0.5 and x1>-0.5 and x1<=0.5 and y1>-0.5 and y1<=0.5
+      end
+      one_tile_names[name]=v
+    end
+    return v
+  end
+  -- reuse (a refresh read in one step, BT1): a built one-tile belt that stands as its row says (the same type, name,
+  -- place and direction) has that row brought up to date in place, with the same fields a new row would get (as
+  -- observe_seen does), instead of a new row and position.
+  function M.remember(c,e,tiles,p,pos,reuse)
     local et=e.type
     local ghost=et=='entity-ghost';local t=ghost and e.ghost_type or et
     pos=pos or e.position
     local user=e.last_user
-    local row={name=ghost and e.ghost_name or e.name,position={x=pos.x,y=pos.y},direction=e.direction,
-      ghost=ghost or nil,type=t,tick=game.tick,by=user and user.name or nil}
-    local old=c.tiles and c.tiles[key(math.floor(pos.x),math.floor(pos.y))]
+    local name,dir=ghost and e.ghost_name or e.name,e.direction
+    local tx,ty=math.floor(pos.x),math.floor(pos.y)
+    local old=c.tiles and c.tiles[key(tx,ty)]
+    local single=not ghost and t~='splitter' and pos.x-tx==0.5 and pos.y-ty==0.5 and one_tile(name)
+    local row
+    if reuse and single and old and not old.ghost and old.type==t and old.name==name and old.direction==dir
+      and old.position.x==pos.x and old.position.y==pos.y then
+      row=old
+      row.tick,row.by=game.tick,user and user.name or nil
+    else
+      row={name=name,position={x=pos.x,y=pos.y},direction=dir,ghost=ghost or nil,type=t,tick=game.tick,by=user and user.name or nil}
+    end
     if not ghost then
       local ok,n=pcall(item_count,e)
       row.carried_tick=ok and n>0 and game.tick or old and old.carried_tick
@@ -64,12 +98,23 @@ return function(api)
       row.belt_to_ground_type=e.belt_to_ground_type
       local other=e.neighbours
       local op=other and other.valid and other.position
+      local paired=nil
       if op and (e.force.is_chunk_visible(e.surface,{x=math.floor(op.x/32),y=math.floor(op.y/32)})
         or p and p.position and (op.x-p.position.x)^2+(op.y-p.position.y)^2<=32^2) then
-        row.paired_with={x=op.x,y=op.y}
+        paired={x=op.x,y=op.y}
       end
+      row.paired_with=paired
     end
     c.tiles=c.tiles or {};tiles=tiles or c.tiles
+    if single then
+      -- (BT1) the one tile its bounding box covers, without reading the box
+      if math.floor(tx/32)==c.x and math.floor(ty/32)==c.y then
+        local k=key(tx,ty)
+        tiles[k]=row
+        if c.cuts then c.cuts[k]=nil end
+      end
+      return
+    end
     local b=e.bounding_box
     for x=math.floor(b.left_top.x),math.ceil(b.right_bottom.x)-1 do
       for y=math.floor(b.left_top.y),math.ceil(b.right_bottom.y)-1 do
@@ -130,17 +175,22 @@ return function(api)
   local function refresh(c,f,s,p,budget)
     if not visible(c,f,s,p) then c.pending=nil;return false,0 end
     local job=c.pending
+    -- (BT1) a refresh read whole in this one call: its rows brought up to date in place (M.remember reuse); no reader
+    -- sees the memory between its find and its end, and no sighting comes after its find
+    local reuse=false
     if not job then
       local list=s.find_entities_filtered{area={{c.x*32,c.y*32},{(c.x+1)*32,(c.y+1)*32}},type=TYPES,force=f,limit=1025}
       if #list>1024 then c.capped=true;return false,0 end
       job={list=list,next=1,tiles={},tick=game.tick};c.pending=job
+      reuse=#list<=(budget or 128)
     end
     local used=0
     while job.next<=#job.list and used<(budget or 128) do
       local e=job.list[job.next];job.next=job.next+1;used=used+1
       if e.valid then
-        local t=e.type=='entity-ghost' and e.ghost_type or e.type
-        if BELT[t] then M.remember(c,e,job.tiles,p) end
+        local et=e.type
+        local t=et=='entity-ghost' and e.ghost_type or et
+        if BELT[t] then M.remember(c,e,job.tiles,p,nil,reuse) end
       end
     end
     if job.next<=#job.list then return false,used end

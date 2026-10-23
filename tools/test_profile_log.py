@@ -44,6 +44,23 @@ class ProfileLogTest(unittest.TestCase):
         self.assertIn('  tick 600: 9.70 ms over 63 calls; dispatch observe/sleep_check 1.50 ms (n=2), event 97 0.20 ms (n=1)', out)
         self.assertEqual(out[-1], 'Lua heap: 20.0-40.0 MB, grew 2.00 MB a second; it fell in 1 of 2 seconds: tick 660 (21.0 MB)')
 
+    def test_alloc_lines_ranked_by_heap_grown(self):
+        # (d22 batch110 BT1) profile_ticks {alloc: true}: KB grown inside each key over the run, MB a second
+        log = '\n'.join([
+            P + 'total ticks=1200 n=1200 key=tick time=Duration: 900.000000ms',
+            P + 'alloc ticks=1200 n=1200 key=tick kb=204800 gc_inside=0',
+            P + 'alloc ticks=1200 n=1200 key=part scheduler.tick kb=40960 gc_inside=0',
+            P + 'alloc ticks=1200 n=20 key=dispatch status kb=2048 gc_inside=1',
+            P + 'done from_tick=0 to_tick=1200 (elapsed) keys=3 second_lines=0 dropped=0',
+        ])
+        out = profile_log.report(profile_log.runs(log)[0], 20).splitlines()
+        i = out.index('Lua heap grown inside each key (alloc run; parts are inside their tick or dispatch), 20 s:')
+        self.assertTrue(out[i + 2].startswith('tick '), out)
+        self.assertIn('200.00', out[i + 2]); self.assertIn('10.000', out[i + 2])
+        self.assertTrue(out[i + 3].startswith('part scheduler.tick'))
+        self.assertTrue(out[i + 4].startswith('dispatch status'))
+        self.assertIn('102.40', out[i + 4])
+
     def test_unfinished_run_sums_its_seconds(self):
         out = profile_log.report(profile_log.runs(LOG)[-1], 5)
         self.assertIn('not finished', out)

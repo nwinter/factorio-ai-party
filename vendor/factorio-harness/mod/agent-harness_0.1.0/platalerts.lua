@@ -52,12 +52,15 @@ return function(api)
     s.platform_alerts = s.platform_alerts or {by={}}
     return s.platform_alerts
   end
+  local function surface_name(pl) return pl.surface.name end
   local function rec(pl)
     local by = store().by
     local r = by[pl.index]
     if not r then r = {minutes={}, workers={}, seq=0}; by[pl.index] = r end
     r.name = pl.name
-    r.surface = try(function() return pl.surface.name end) or r.surface
+    -- (d22 batch110 BT1) no closure a call: rec runs at every hit
+    local ok, sn = pcall(surface_name, pl)
+    r.surface = ok and sn or r.surface
     return r
   end
   local function counts(t, limit)
@@ -92,6 +95,12 @@ return function(api)
     local r = rec(pl)
     for _, u in ipairs(units) do if r.damaged and r.damaged[u] ~= nil then r.damaged[u] = nil; r.damaged_n = math.max(0, (r.damaged_n or 1) - 1) end end
   end
+  local function count_hit(t, name, d, cause)
+    t.hits = t.hits + 1; t.damage = t.damage + d
+    t.entities[name] = (t.entities[name] or 0) + d
+    if cause then t.by[cause] = (t.by[cause] or 0) + 1 end
+  end
+  local function damage_type_name(event) return event.damage_type.name end
   function M.on_damaged(event)
     local e = event.entity
     if not (e and e.valid) then return false end
@@ -119,11 +128,9 @@ return function(api)
     -- Per minute (rates, a reader's first look) and running totals (what is
     -- new since a reader was told: the difference from its snapshot).
     r.total = r.total or {hits=0, damage=0, entities={}, by={}}
-    for _, t in ipairs{b, r.total} do
-      t.hits = t.hits + 1; t.damage = t.damage + d
-      t.entities[e.name] = (t.entities[e.name] or 0) + d
-      if cause then t.by[cause] = (t.by[cause] or 0) + 1 end
-    end
+    -- (BT1) the minute's and the totals' counts, without a list of the two made at each hit
+    local name = e.name
+    count_hit(b, name, d, cause); count_hit(r.total, name, d, cause)
     r.seq = r.seq + 1; r.last_hit = event.tick
     -- (d22 batch92 BB1, BB2) the last HIT_RING hits, one row each (hit number, tick, entity, where, damage, the
     -- platform's damage total after it, by what), for platform_hit (conditions.lua); with no cause, the damage type.
@@ -135,7 +142,9 @@ return function(api)
     if not row then row = {}; ring[i] = row end
     local pos = e.position
     row.s, row.t, row.n, row.x, row.y, row.d, row.D = r.seq, event.tick, e.name, pos.x, pos.y, d, r.total.damage
-    row.c, row.k = cause or nil, not cause and try(function() return event.damage_type.name end) or nil
+    local okk, k = false, nil
+    if not cause then okk, k = pcall(damage_type_name, event) end
+    row.c, row.k = cause or nil, okk and k or nil
     return e.type ~= 'character'
   end
   M.HIT_RING = 64
@@ -190,11 +199,66 @@ return function(api)
 
   -- A platform's defence as the GUI shows it: its ammo turrets (empty, low,
   -- rounds loaded), the ammo and repair packs in the hub, the hub's health.
+  -- (d22 batch110 BT1: on a copy of world n the background scans made 40 KB of garbage a call) a platform's ammo turrets
+  -- kept with each one's ammo inventory and get_item_count while their count (count_entities_filtered: no entity
+  -- objects) is the same and each is valid, as conditions.lua keeps a guard's; what each holds read live at each scan.
+  -- Module state, found again after a load.
+  local TURRET_FIND = {type='ammo-turret', force=nil}
+  local turrets_kept = {}
+  local function ammo_inv(t)
+    local inv = t.get_inventory(defines.inventory.turret_ammo)
+    return inv, inv and inv.get_item_count
+  end
+  local function kept_ok(kept)
+    for i = 1, #kept.list do
+      local inv = kept.inv[i]
+      if not kept.list[i].valid or (inv and not inv.valid) then return false end
+    end
+    return true
+  end
+  local function platform_turrets(pl)
+    local s, f = pl.surface, pl.force
+    TURRET_FIND.force = f
+    local key, si, fi = pl.index, s.index, f.index
+    local okn, n = pcall(s.count_entities_filtered, TURRET_FIND)
+    local kept = turrets_kept[key]
+    if okn and kept and kept.n == n and kept.s == si and kept.f == fi and kept_ok(kept) then return kept end
+    local list = s.find_entities_filtered{type='ammo-turret', force=f}
+    local inv, cnt = {}, {}
+    for i, t in ipairs(list) do
+      local ok, v, c = pcall(ammo_inv, t)
+      inv[i], cnt[i] = ok and v or false, ok and c or false
+    end
+    kept = {n=#list, s=si, f=fi, list=list, inv=inv, cnt=cnt}
+    turrets_kept[key] = okn and key and kept or nil
+    return kept
+  end
+  local NONE = {list={}, inv={}, cnt={}}
+  -- an item's type by name (prototypes do not change while the game runs)
+  local item_types = {}
+  local function proto_type(name) return prototypes.item[name].type end
+  local function item_type(name)
+    local k = item_types[name]
+    if k == nil then
+      local ok, v = pcall(proto_type, name)
+      k = ok and v or false
+      item_types[name] = k
+    end
+    return k or nil
+  end
+  local function hub_read(hub, what)
+    if what == 'health' then return hub.health elseif what == 'max' then return hub.max_health end
+    return hub.get_inventory(defines.inventory.hub_main)
+  end
+  local function contents_of(inv) return inv.get_contents() end
   local function read(pl)
     local sc = {tick=game.tick, turrets=0, empty=0, low=0, rounds=0, packs=0, hub_ammo={}}
-    for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
-      local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
-      local n = inv and try(function() return inv.get_item_count() end) or 0
+    local okt, kept = pcall(platform_turrets, pl)
+    if not okt then kept = NONE end
+    local cnt = kept.cnt
+    for i, t in ipairs(kept.list) do
+      local n = 0
+      if cnt[i] then local okc, c = pcall(cnt[i]); n = okc and c or 0 end
       sc.turrets = sc.turrets + 1; sc.rounds = sc.rounds + n
       if n == 0 then sc.empty = sc.empty + 1; sc.empty_list = sc.empty_list or {}; if #sc.empty_list < 8 then sc.empty_list[#sc.empty_list+1] = t end
       elseif n < LOW_AMMO then sc.low = sc.low + 1 end
@@ -203,10 +267,14 @@ return function(api)
     end
     local hub = pl.hub
     if hub and hub.valid then
-      sc.health = try(function() return hub.health end); sc.max = try(function() return hub.max_health end)
-      local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
-      for _, st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-        local kind = try(function() return prototypes.item[st.name].type end)
+      local ok, v = pcall(hub_read, hub, 'health'); sc.health = ok and v or nil
+      ok, v = pcall(hub_read, hub, 'max'); sc.max = ok and v or nil
+      local inv
+      ok, inv = pcall(hub_read, hub, 'inventory'); if not ok then inv = nil end
+      local list
+      if inv then ok, list = pcall(contents_of, inv); if not ok then list = nil end end
+      for _, st in ipairs(list or {}) do
+        local kind = item_type(st.name)
         if kind == 'repair-tool' then sc.packs = sc.packs + st.count
         elseif kind == 'ammo' then sc.hub_ammo[st.name] = (sc.hub_ammo[st.name] or 0) + st.count end
       end
@@ -347,17 +415,26 @@ return function(api)
   -- the background, one every SCAN_STEP ticks: a scan is read as often as before (SCAN_TICKS); a reply takes one up to
   -- twice as old while the background runs, and reads one itself only past that
   M.SCAN_STEP, M.SCAN_WANTED = 20, 18000
+  local function platforms_of(f) return f.platforms end
   function M.tick(tick)
     if tick % M.SCAN_STEP ~= 0 then return end
     store().scan_bg = tick
     local by = store().by
+    -- (d22 batch110 BT1: every forces' platforms read every 20 ticks, a new list and object each) the platforms are read
+    -- only when a record says a scan is due (the same test as below: none due, none picked)
+    local due = false
+    for _, r in pairs(by) do
+      if r.scan and r.scan_wanted and tick - r.scan_wanted < M.SCAN_WANTED and tick - r.scan.tick >= SCAN_TICKS then due = true; break end
+    end
+    if not due then return end
     local best, best_r, best_age
     for _, f in pairs(game.forces) do
-      for _, pl in pairs(try(function() return f.platforms end) or {}) do
+      local okp, list = pcall(platforms_of, f)
+      for _, pl in pairs(okp and list or {}) do
         local r = pl.valid and by[pl.index]
-        if r and r.scan and r.scan_wanted and tick - r.scan_wanted < M.SCAN_WANTED and pl.surface then
+        if r and r.scan and r.scan_wanted and tick - r.scan_wanted < M.SCAN_WANTED then
           local age = tick - r.scan.tick
-          if age >= SCAN_TICKS and (not best_age or age > best_age) then best, best_r, best_age = pl, r, age end
+          if age >= SCAN_TICKS and (not best_age or age > best_age) and pl.surface then best, best_r, best_age = pl, r, age end
         end
       end
     end

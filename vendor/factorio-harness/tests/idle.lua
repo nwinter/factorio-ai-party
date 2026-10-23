@@ -261,7 +261,8 @@ local pstats={output_counts={['steam-engine']=1},get_flow_count=function() retur
 local poles={}
 for i=1,3 do poles[i]={valid=true,name='small-electric-pole',type='electric-pole',position={x=i*5,y=0},electric_network_id=4,electric_network_statistics=pstats} end
 force.players={nick}; game.surfaces={surface}
-surface.find_entities_filtered=function(f) return f.type=='electric-pole' and poles or {} end
+-- (a new table each find, as the game's: walk.lua takes the entities outside a band out of the find's own table)
+surface.find_entities_filtered=function(f) return f.type=='electric-pole' and {table.unpack(poles)} or {} end
 advance(3*3700)  -- past the 60 s the networks view is kept; the pole map, then the view, each spread over a minute (walk.lua)
 runtime.operator.shift_start()
 local sh=sol('status').team.shift

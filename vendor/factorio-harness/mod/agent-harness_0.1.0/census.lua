@@ -158,10 +158,17 @@ return function(api)
     return f
   end
   local function behavior(e) local ok, v = pcall(e.get_control_behavior) return ok and v end
+  -- (d22 batch110 BT1: census.walk made 15.4 KB of garbage a call on the private copy, every method read a new function
+  -- and every closure a new object) an assembler's or furnace's recipe read once an entity, for the fuel list and the
+  -- machines' counts both; the reads that may fail go through pcall with the entity as argument, no closure a call
+  local function recipe_of(e) local ok, r = pcall(e.get_recipe) if ok then return r end end
+  local function previous_recipe(e) return e.previous_recipe end
+  local function pump_fluid(e) local f = e.fluidbox[1]; return f and f.name end
+  local function pump_filter(e) local f = e.fluidbox.get_filter(1); return f and f.name end
+  local function same_line(line, partner, i) return line.line_equals(partner.get_transport_line(i)) end
   local fuel_recipe = {}
-  local function takes_fuel(e)
-    local ok, r = pcall(e.get_recipe)
-    if not (ok and r) then return false end
+  local function takes_fuel(r)
+    if not r then return false end
     local v = fuel_recipe[r.name]
     if v == nil then
       v = false
@@ -214,15 +221,21 @@ return function(api)
     if not k then k = name .. '|' .. r; a[r] = k end
     return k
   end
+  -- Types whose entities move: their position is read when the entity is read, never the one its band's find read.
+  local MOVES = set{'car', 'locomotive', 'cargo-wagon', 'fluid-wagon', 'artillery-wagon', 'spider-vehicle', 'construction-robot',
+    'logistic-robot', 'combat-robot', 'capture-robot', 'character', 'unit', 'spider-unit', 'segmented-unit'}
   -- ctx: the step's lookups for one surface (observe_seen; never in storage)
-  local function read_entity(job, s, e, ctx)
+  -- band_pos: the entity's position as its band's find read it this session, or nil (BT1: one position table an
+  -- entity, not two; a building does not move between its band's find and its read)
+  local function read_entity(job, s, e, ctx, band_pos)
     if not e.valid then return end
     local t, name = e.type, e.name
-    local pos = e.position
+    local pos = band_pos and not MOVES[t] and band_pos or e.position
     local si, sn = ctx.si, ctx.surface_name
+    local rec = (t == 'assembling-machine' or t == 'furnace' or t == 'rocket-silo') and recipe_of(e) or nil
     if job.fuel and t ~= 'car' and t ~= 'locomotive' and t ~= 'spider-vehicle' and t ~= 'character' then
       local list = job.fuel[si]
-      if (not list or #list < FUEL_MAX) and (has_burner(name) or ((t == 'assembling-machine' or t == 'furnace') and takes_fuel(e))) then
+      if (not list or #list < FUEL_MAX) and (has_burner(name) or ((t == 'assembling-machine' or t == 'furnace') and takes_fuel(rec))) then
         if not list then list = {}; job.fuel[si] = list end
         list[#list+1] = e
       end
@@ -243,7 +256,8 @@ return function(api)
       end
     end
     if t == 'offshore-pump' and job.makers then
-      local fl = try(function() local f = e.fluidbox[1]; return f and f.name end) or try(function() local f = e.fluidbox.get_filter(1); return f and f.name end)
+      local ok, fl = pcall(pump_fluid, e)
+      if not (ok and fl) then ok, fl = pcall(pump_filter, e); if not ok then fl = nil end end
       if fl then add_maker(job, s, 'pump', fl, e) end
     end
     if t == 'rocket-silo' and job.silos then
@@ -290,9 +304,11 @@ return function(api)
       -- freight.lua stock_places counts them
       local partner = t == 'underground-belt' and e.belt_to_ground_type == 'output' and e.neighbours
       if partner and not partner.valid then partner = nil end
-      for i = 1, ok and lines or 0 do
-        local ok2, line = pcall(e.get_transport_line, i)
-        local same = ok2 and line and partner and i > 2 and select(2, pcall(function() return line.line_equals(partner.get_transport_line(i)) end)) == true
+      local n = ok and lines or 0
+      local get_line = n >= 1 and e.get_transport_line or nil  -- (BT1) the method read once a belt, not once a line
+      for i = 1, n do
+        local ok2, line = pcall(get_line, i)
+        local same = ok2 and line and partner and i > 2 and select(2, pcall(same_line, line, partner, i)) == true
         if ok2 and line and not same then
           for _, c in ipairs(line.get_contents()) do tot[c.name] = (tot[c.name] or 0) + c.count end
         end
@@ -315,10 +331,9 @@ return function(api)
     if MACH[t] then
       local r
       if t == 'assembling-machine' or t == 'furnace' or t == 'rocket-silo' then
-        local ok, rec = pcall(e.get_recipe)
-        if ok and rec then r = rec.name
+        if rec then r = rec.name
         elseif t == 'furnace' then
-          local ok2, pr = pcall(function() return e.previous_recipe end)
+          local ok2, pr = pcall(previous_recipe, e)
           if ok2 and pr then r = type(pr.name) == 'string' and pr.name or pr.name.name end
         end
       elseif t == 'mining-drill' then
@@ -520,6 +535,38 @@ return function(api)
     crows='census.crows', nests='census.nests', ore='census.ore', done='census.done'}
   local stage
   M.read_entity = read_entity  -- (tests: one entity into a pass's job)
+  -- (d22 batch110 BT1: census.step made 14.8 KB of garbage a tick on the private copy) what a step made anew each tick,
+  -- kept between steps: the player force and each surface (read again once not valid), the step's ctx (its fields set
+  -- each step; each lookup a new table only when the last step put something in it, so each step starts with none),
+  -- the band's filter, and the positions the band's find read (band_pos[i] for band_list[i]; never in storage, so after
+  -- a load each entity's position is read again)
+  local FORCE, SURFACE = nil, {}
+  local function player_force()
+    if FORCE and FORCE.valid then return FORCE end
+    FORCE = game.forces.player
+    return FORCE
+  end
+  local function surface_at(i)
+    local s = SURFACE[i]
+    if s and s.valid then return s end
+    s = game.get_surface(i)
+    SURFACE[i] = s
+    return s
+  end
+  local CTX = {p={}, vis={}, fog={}, belt={}}
+  local function ctx_of(f, s)
+    local fname, sname = f.name, s.name
+    CTX.p.force, CTX.p.surface = f, s
+    CTX.force, CTX.surface, CTX.si = f, s, s.index
+    if CTX.force_name ~= fname or CTX.surface_name ~= sname then
+      CTX.force_name, CTX.surface_name, CTX.fog_prefix = fname, sname, fname .. '|' .. sname .. '|'
+    end
+    if next(CTX.vis) then CTX.vis = {} end
+    if next(CTX.fog) then CTX.fog = {} end
+    if next(CTX.belt) then CTX.belt = {} end
+    return CTX
+  end
+  local BANDF, band_pos, band_list = {}, {}, nil
   function M.step(st, tick)
     local job = st.job
     if not job then
@@ -533,7 +580,7 @@ return function(api)
     job.paced = tick
     if job.credit <= 0 then return end
     job.steps = job.steps + 1
-    local f = game.forces.player
+    local f = player_force()
     if not f then st.job = nil return end
     -- each stage a part of its own in the operator profiler (census.walk, census.fine, census.planets, ...)
     local label = job.stage == 'done' and job.planets and next(job.planets) and not job.planets_done and 'census.planets' or STAGE[job.stage] or 'census.other'
@@ -542,25 +589,28 @@ return function(api)
   function stage(st, job, f)
     if job.stage == 'walk' then
       if job.si > #job.surfaces then job.stage = 'cells' return end
-      local s = game.get_surface(job.surfaces[job.si])
+      local s = surface_at(job.surfaces[job.si])
       if not s then job.si = job.si + 1; job.walk, job.list = nil, nil return end
-      if job.building_counts and not s.platform and not job.building_counts[s.index] then
+      if job.building_counts and not job.building_counts[s.index] and not s.platform then
         job.building_counts[s.index]={surface=s.name,entities={}}
       end
       if job.list then
         local last = math.min(#job.list, job.at + math.min(SLICE, math.max(1, math.floor(job.credit))) - 1)
-        local ctx = {p={force=f, surface=s}, force=f, surface=s, force_name=f.name, surface_name=s.name, si=s.index,
-          fog_prefix=f.name .. '|' .. s.name .. '|', vis={}, fog={}, belt={}}
-        for i = job.at, last do read_entity(job, s, job.list[i], ctx) end
+        local ctx = ctx_of(f, s)
+        local list = job.list
+        local known = band_list == list
+        for i = job.at, last do read_entity(job, s, list[i], ctx, known and band_pos[i] or nil) end
         job.credit = job.credit - (last - job.at + 1)
         job.at = last + 1
-        if job.at > #job.list then job.list = nil end
+        if job.at > #list then job.list = nil; band_list = nil end
         return
       end
       -- (d21 batch73 AI) one chunk a band: a band grown over sparse chunks to 32 found about 30,000 entities in one tick
       -- on the private copy of world n (460 ms of census.step in that second)
       job.walk = job.walk or walk.start(s, bot_spots(s), {max_chunks=1})
-      local list = walk.band(job.walk, s, {force=f, type=types()})
+      BANDF.force, BANDF.type = f, types()
+      local list, pos = walk.band(job.walk, s, BANDF, band_pos)
+      band_list = pos == band_pos and list or nil
       if list then job.list, job.at = list, 1; job.credit = job.credit - 1 - #list * FIND_COST
       else job.walk = nil; if job.walked then job.walked[s.index] = true end; job.si = job.si + 1 end
       return
@@ -608,8 +658,9 @@ return function(api)
         local found = s.find_entities_filtered{force='enemy', type={'unit-spawner', 'turret'}, area={{band[1], band[2]}, {band[3], band[4]}}}
         job.credit = job.credit - BAND_COST - #found * FIND_COST
         for _, e in pairs(found) do
-          if #b.nests < 200 and in_band(e.position, band) then
-            b.nests[#b.nests+1] = {math.floor(e.position.x), math.floor(e.position.y), e.type == 'unit-spawner' and 's' or 'w'}
+          if #b.nests < 200 then
+            local p = e.position  -- (BT1) one position read an entity, not three
+            if in_band(p, band) then b.nests[#b.nests+1] = {math.floor(p.x), math.floor(p.y), e.type == 'unit-spawner' and 's' or 'w'} end
           end
         end
         b.ni = b.ni + 1
@@ -631,8 +682,9 @@ return function(api)
         local found = s.find_entities_filtered{area={{band[1], band[2]}, {band[3], band[4]}}, type='resource'}
         job.credit = job.credit - BAND_COST - #found * ORE_COST
         for _, e in pairs(found) do
-          if in_band(e.position, band) then
-            local cx, cy = math.floor(e.position.x / C), math.floor(e.position.y / C)
+          local p = e.position  -- (BT1) one position read a resource, not three
+          if in_band(p, band) then
+            local cx, cy = math.floor(p.x / C), math.floor(p.y / C)
             local row = cnt[cy]
             if not row then row = {} cnt[cy] = row end
             local cell = row[cx]

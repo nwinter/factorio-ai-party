@@ -12175,6 +12175,35 @@ Each fails on the code before the fix.
   it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
   the same.
 
+## d22 batch110 BT1: the harness's garbage (Lua heap churn)
+
+- The operator's profile of world n (20:24-20:25): the harness 3.95 ms a tick, the Lua heap growing 17.47 MB a second
+  and falling in 5 of 61 seconds, those 5 the worst seconds (359-872 ms of harness work).
+- Measuring who allocates (operator): `profile_ticks {seconds=N, alloc=true}` adds, per key at the end of the run,
+  `agent-harness profile alloc ticks=T n=N key=K kb=KB gc_inside=G`: the heap grown inside each timed call
+  (`collectgarbage("count")` before and after; a key's parts are inside it, and a call the heap fell in is counted in
+  `gc_inside`, its growth not). `gc="stop"` stops the collector for the run and restarts it at the end, so nothing is
+  freed inside a call and each count is what it allocated; the heap then grows by all of it for the run's seconds
+  (keep runs short). The start reply's `collector` says the heap then, whether the collector ran and whether the stop
+  was taken. `tools/profile_log.py` ranks the keys by MB, MB a second and KB a call. The timing wrapper itself makes
+  about 1 KB a call.
+- In 2.0.77 the harness's Lua state (Lua 5.2) takes `collectgarbage("count")`, `"isrunning"`, `"stop"` and `"restart"`
+  (read on a copy of world n through the profiler).
+- On a copy of world n's _autosave12 (d22 19:23), with shift60's usual calls replayed (per second 5 sleep_check
+  observes over the 9 agents, 1.7 artillery_live operator reads, and status, platform, inspect, observe power and
+  big_enemies_live at their journal rates), collector stopped for 20 s: the harness tick allocated 16.5 MB a second,
+  scheduler.tick 5.3 MB of it.
+  - Most of scheduler.tick was in the platform lanes' guards: Astra's Asterion lane (7 guards, among them two
+    fluid_count) and Meridian-V and Anvil, checked every 10 ticks. fluid_count on a platform found every tank, pipe,
+    thruster and machine aboard at each check (thousands of entity objects) and made a closure for each one; and
+    reading an entity's method (`e.get_fluid_count`) makes a new function each time. 111 KB a check.
+  - fluid_count now keeps a platform's holders and each one's `get_fluid_count` while their count
+    (`count_entities_filtered`, no entity objects) is the same and each one kept is valid, and finds them again
+    otherwise: the same entities and amounts as before, read live at each check. 4.5 KB a check (1 KB of it the
+    profiler's).
+  - With the same replay: the heap grew 15.60 MB a second before (main 88ba0901) and 11.98 after; the tick allocated
+    16.5 and 11.2 MB a second, scheduler.tick 5.3 and 1.6.
+
 
 ### d22 batch109 BS1: flight watches, one per platform (#1952)
 
@@ -12432,3 +12461,37 @@ Now (spoilflow.lua):
   supply measured it; otherwise the last line names it as not counted. The crafts run: made over what the statistics
   count a craft (products past a returned catalyst, with the makers' average productivity bonus from the census).
 Regression: tests/d22_batch122b.lua.
+- cp2: the background jobs' per-entity garbage, module by module (the same facts; each module's tests, and new
+  tests/d22_batch110_misc.lua and tests/d22_batch110_freight.lua comparing kept and fresh reads):
+  - walk.lua: one filter and area table for every band; the band is the find's own list with the entities outside it
+    taken out; an optional out_pos hands each entity's position (as the band read it) to the caller, so survey,
+    pushalerts and census read no position again.
+  - survey.lua: the status name read only for the machine counts (a machine with no burner reads its engine status
+    name, as machine_status gives it; a burner one burnt.stuck once, not twice); each read once an entity; no
+    closures.
+  - pushalerts.lua: guarded reads through shared getters (no closure a read; 5-10 an entity before); an entity's type,
+    position, status and burner read once; burnt.stuck asked of burners only; a working machine's seed check ends
+    before its recipe is read; output_chest_full and catalyst_gone ran a second time untimed when they found nothing:
+    once now; inserter records rewritten in place; prototype facts cached by name. lightning.lua: a building's
+    position read once.
+  - census.lua: positions from the band; a recipe read once; no closures; the step's lookups kept between steps.
+  - networks.lua: the view walk and samples read each entity once and make no closures (see its commit).
+  - conditions.lua: ammo_below and platform_energy_below on a platform keep their turret and accumulator lists as
+    fluid_count does (counts and energy read live); platform_hit and platform_loss make no closures.
+  - beltgaps.lua: a one-tile belt's tile from its prototype's collision box (cached by name) when the box stays inside
+    the tile, else read as before; a belt row refreshed in the same call updated in place (the same fields).
+  - threat.lua, spoil.lua, platalerts.lua, flightwatch.lua: scratch tables reused, force, surface and platform kept
+    while valid, no closures; spoil.tick returns before reading the force between sweeps.
+  - freight.lua: each hub's inventories and the kinds they held kept per platform; a read counts those kinds
+    (get_item_count, no table) and takes them while they add up to the inventory's total, else reads get_contents;
+    the item statistics and their counting methods kept; a space connection's ends by name; the belt read keeps its
+    platform and surface, skips empty lines (#line), reads a prototype's line count once. A tie in spoil matching is
+    now in name order (before: the order of the hub's listing). shipment.lua: a silo's cargo, deliveries and
+    request_rows read only when a row needs them.
+  - Caches are module state, found again after a load: a peer that joins starts with none and reads in full. The
+    counts and lines are the same; the hub counts' key order can differ on such a peer (it does not change a count).
+  - On the copy (fresh load of _autosave12 each run, the same replay, 180 s): the heap grew 15.45 MB a second on main
+    (88ba0901) and 9.46 after; the harness tick 4.34 ms a tick on average and 3.20 after; the worst game second
+    1884 ms and 637 after (the ten worst 744-1884 ms and 389-637); collections finished in 22 and 17 of 181 seconds.
+    Collector stopped, 20 s: the tick allocated 16.2 MB a second on main and 9.6 after.
+

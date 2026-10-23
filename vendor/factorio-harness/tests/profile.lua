@@ -101,4 +101,35 @@ ok,err=pcall(profile.part,'pushalerts.merge',function() error('merge broke',0) e
 eq(ok,false); eq(err,'merge broke')
 profile.start({stop=true})
 eq(find('agent-harness profile total','key=part pushalerts.band'),'agent-harness profile total ticks=0 n=2 key=part pushalerts.band time=6ms')
+-- (d22 batch110 BT1) alloc: the heap grown inside each key (KB, a key's parts inside it); gc "stop" stops the collector
+-- for the run and restarts it at the end; a call the heap fell in is counted as gc_inside, its growth not.
+do
+  local kb,calls=1000,{}
+  local real=collectgarbage
+  collectgarbage=function(what) calls[#calls+1]=what; if what=='count' then return kb elseif what=='isrunning' then return true end return 0 end
+  local R2={}
+  local P2={grow=function(n) kb=kb+n end}
+  R2.dispatch=function(request) kb=kb+(request.action=='status' and 30 or 2); P2.grow(5); return {} end
+  R2.tick=function() kb=kb+1 end
+  local prof=require('profile')
+  local pr=prof()
+  pr.wrap(R2,{{P2,'grow','grow'}})
+  local r=pr.start({seconds=1,alloc=true,gc='stop'})
+  eq(r.collector.stop,'stopped for the run'); eq(r.collector.count_kb,1000); eq(r.collector.isrunning,true)
+  R2.dispatch{action='status'}
+  R2.dispatch{action='observe',args={scope='sleep_check'}}
+  P2.grow(-50)  -- a collection step inside a part: its growth not counted
+  for _=1,60 do game.tick=game.tick+1; R2.tick{tick=game.tick} end
+  eq(find('agent-harness profile alloc','key=dispatch status '),'agent-harness profile alloc ticks=60 n=1 key=dispatch status kb=35 gc_inside=0')
+  eq(find('agent-harness profile alloc','key=dispatch observe/sleep_check'),'agent-harness profile alloc ticks=60 n=1 key=dispatch observe/sleep_check kb=7 gc_inside=0')
+  eq(find('agent-harness profile alloc','key=part grow'),'agent-harness profile alloc ticks=60 n=3 key=part grow kb=10 gc_inside=1')
+  eq(find('agent-harness profile alloc','key=tick '),'agent-harness profile alloc ticks=60 n=60 key=tick kb=60 gc_inside=0')
+  eq(calls[#calls],'restart','the collector restarted at the end')
+  -- without alloc: no alloc lines, the collector untouched
+  local before_calls=#calls
+  pr.start({seconds=1}); for _=1,60 do game.tick=game.tick+1; R2.tick{tick=game.tick} end
+  for i=before_calls+1,#calls do assert(calls[i]=='count',calls[i]) end
+  assert(not pcall(pr.start,{seconds=1,gc='step'}))
+  collectgarbage=real
+end
 print('profile: ok')
