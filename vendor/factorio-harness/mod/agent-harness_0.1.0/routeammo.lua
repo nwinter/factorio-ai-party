@@ -43,6 +43,73 @@ return function(api)
     end
     return out
   end
+  -- (d22 batch105 BO1, Astra #1927: Asterion flew the first 15% and 25% of its outer legs, and the forecast took each as
+  -- the whole connection, "x1.00") the mean spawn chance of each asteroid entity over a part of the leg a->b, f0..f1
+  -- (0..1, the way it is flown). The connection's spawn points are by distance from its own `from` (0..1): a leg flown
+  -- the other way reads them from 1. The curve between points is linear, as M.density takes it; outside them, none.
+  local function curve_mean(pts, x0, x1)
+    if x1 - x0 < 1e-9 then
+      for i = 2, #pts do
+        local d0, d1 = pts[i - 1].distance or 0, pts[i].distance or 0
+        if x0 >= d0 and x0 <= d1 and d1 > d0 then
+          local p0, p1 = pts[i - 1].probability or 0, pts[i].probability or 0
+          return p0 + (p1 - p0) * (x0 - d0) / (d1 - d0)
+        end
+      end
+      return 0
+    end
+    local sum = 0
+    for i = 2, #pts do
+      local d0, d1 = pts[i - 1].distance or 0, pts[i].distance or 0
+      local a, b = math.max(d0, x0), math.min(d1, x1)
+      if b > a and d1 > d0 then
+        local p0, p1 = pts[i - 1].probability or 0, pts[i].probability or 0
+        local pa, pb = p0 + (p1 - p0) * (a - d0) / (d1 - d0), p0 + (p1 - p0) * (b - d0) / (d1 - d0)
+        sum = sum + (b - a) * (pa + pb) / 2
+      end
+    end
+    return sum / (x1 - x0)
+  end
+  function M.density_range(a, b, f0, f1)
+    local c = connection(a, b)
+    if not c then return nil end
+    local x0, x1 = math.max(0, math.min(1, f0)), math.max(0, math.min(1, f1))
+    if try(function() return c.from.name end) ~= a then x0, x1 = 1 - x1, 1 - x0 end
+    if x1 < x0 then x0, x1 = x1, x0 end
+    local out = {}
+    for _, d in ipairs(try(function() return c.asteroid_spawn_definitions end) or {}) do
+      if d.type == 'entity' or d.type == nil then
+        local v = curve_mean(d.spawn_points or {}, x0, x1)
+        local name = type(d.asteroid) == 'string' and d.asteroid or try(function() return d.asteroid.name end)
+        if name and v > 0 then out[name] = (out[name] or 0) + v end
+      end
+    end
+    return out
+  end
+  -- The parts of a leg as text: {{f0, f1}, ...} -> '0-15%, 0-25%'.
+  local function share_pct(x) return math.floor(x * 100 + 0.5) end
+  local function ranges_text(list)
+    local parts = {}
+    for _, r in ipairs(list) do parts[#parts+1] = string.format('%d-%d%%', share_pct(r[1]), share_pct(r[2])) end
+    return table.concat(parts, ', ')
+  end
+  -- The parts joined where they meet or overlap, in order, and the share of 0..1 they cover together.
+  local function merged(list)
+    local sorted = {}
+    for _, r in ipairs(list) do sorted[#sorted+1] = {math.min(r[1], r[2]), math.max(r[1], r[2])} end
+    table.sort(sorted, function(x, y) return x[1] < y[1] end)
+    local out = {}
+    for _, r in ipairs(sorted) do
+      local last = out[#out]
+      if last and r[1] <= last[2] then last[2] = math.max(last[2], r[2]) else out[#out+1] = {r[1], r[2]} end
+    end
+    return out
+  end
+  local function covered(list)
+    local total = 0
+    for _, r in ipairs(merged(list)) do total = total + (r[2] - r[1]) end
+    return total
+  end
   -- The damage entries anywhere in a trigger (nested deliveries and area actions too).
   local function damages_in(t, parts, depth)
     if type(t) ~= 'table' or depth > 12 then return end
@@ -252,12 +319,22 @@ return function(api)
     table.sort(cant)
     return w, cant
   end
-  -- The legs flown lately (finished, within the last 2 hours), with their minutes.
+  -- The legs flown lately (finished within the last 2 hours, and the leg flown now so far: the moving rate counts it),
+  -- with their minutes and (BO1) the part of the connection flown, f0..f1 the way it was flown, from freight.lua's km0
+  -- and km1 over the connection's length; a leg recorded before those were kept, flown whole: 0..1; unknown: nil.
   local function flown(pl)
     local out = {}
     for _, s in ipairs(api.segments and api.segments(pl) or {}) do
-      if s.kind == 'leg' and s['end'] and s.start and s.from and s.to and game.tick - s['end'] <= 7200 * 60 then
-        out[#out+1] = {from=s.from, to=s.to, minutes=(s['end'] - s.start) / 3600}
+      if s.kind == 'leg' and s.start and s.from and s.to and (not s['end'] or game.tick - s['end'] <= 7200 * 60) then
+        local stop = s['end'] or game.tick
+        if stop > s.start then
+          local c = connection(s.from, s.to)
+          local len = c and try(function() return c.length end)
+          local f0, f1
+          if s.km0 and s.km1 and len and len > 0 then f0, f1 = math.max(0, math.min(1, s.km0 / len)), math.max(0, math.min(1, s.km1 / len))
+          elseif s['end'] and not s.partial and not s.km0 then f0, f1 = 0, 1 end
+          out[#out+1] = {from=s.from, to=s.to, minutes=(stop - s.start) / 3600, f0=f0, f1=f1, now=not s['end'] or nil}
+        end
       end
     end
     return out
@@ -271,7 +348,8 @@ return function(api)
     local fl = flown(pl)
     local fd, fmin = {}, 0
     for _, l in ipairs(fl) do
-      local d = M.density(l.from, l.to)
+      -- (BO1) the asteroids of the part flown, not the whole connection's
+      local d = l.f0 and M.density_range(l.from, l.to, l.f0, l.f1) or M.density(l.from, l.to)
       for k, p in pairs(d or {}) do fd[k] = (fd[k] or 0) + p * l.minutes end
       fmin = fmin + l.minutes
     end
@@ -285,9 +363,23 @@ return function(api)
     end
     local seen_kinds, kind_list = {}, {}
     local flown_names = {}
-    for _, l in ipairs(fl) do flown_names[#flown_names+1] = l.from .. '->' .. l.to end
-    lines[#lines+1] = #fl > 0 and string.format('scaled from the legs flown in the last 2 hours: %s (%s)', table.concat(flown_names, ', ', 1, math.min(#flown_names, 6)), mins(fmin))
+    for _, l in ipairs(fl) do
+      flown_names[#flown_names+1] = l.from .. '->' .. l.to .. (l.f0 and string.format(' %d-%d%%', share_pct(l.f0), share_pct(l.f1)) or ' (the part flown not recorded: the whole connection taken)')
+        .. (l.now and ' (flying now)' or '') .. ' ' .. mins(l.minutes)
+    end
+    lines[#lines+1] = #fl > 0 and string.format('scaled from the legs flown in the last 2 hours (each the part of its connection flown, and minutes): %s (%s); their asteroids are the game\'s spawn chance over the part flown',
+        table.concat(flown_names, ', ', 1, math.min(#flown_names, 6)), mins(fmin))
       or 'no leg flown in the last 2 hours on record: shots per asteroid only, no use estimate'
+    -- (BO1) the parts of a route leg's connection the legs flown cover, the way the route leg flies it
+    local coverage = {}
+    local function cover(from, to)
+      local parts = {}
+      for _, l in ipairs(fl) do
+        if l.f0 and l.from == from and l.to == to then parts[#parts+1] = {l.f0, l.f1}
+        elseif l.f0 and l.from == to and l.to == from then parts[#parts+1] = {1 - l.f1, 1 - l.f0} end
+      end
+      return parts
+    end
     lines[#lines+1] = 'fragments counted: an asteroid destroyed breaks into smaller ones by its prototype (huge into 3 big, big into 3 medium, medium into 3 small), and shots per asteroid add those of its fragments each ammunition can hurt'
     local left, t_cum, made_cum = {}, {}, {}
     for _, r in ipairs(rows) do left[r.name] = (r.stock or 0) + (r.received or 0) end
@@ -302,8 +394,14 @@ return function(api)
         table.sort(kinds, function(x, y) return x.p > y.p end)
         local kt = {}
         for j = 1, math.min(6, #kinds) do kt[j] = string.format('%s %.4f%s', kinds[j].k, kinds[j].p, fd[kinds[j].k] and string.format(' (flown %.4f)', fd[kinds[j].k]) or (#fl > 0 and ' (flown 0)' or '')) end
-        lines[#lines+1] = string.format('%s->%s %d km, %s%s: asteroids (spawn chance, mean over the leg): %s', l.from, l.to, l.km or 0, mins(l.minutes),
-          sp < 1 and ' (' .. mins(m) .. ' at ' .. round(sp * 100) .. '% speed)' or '', table.concat(kt, ', '))
+        local parts = cover(l.from, l.to)
+        local share = covered(parts)
+        local cov = #fl == 0 and '' or #parts == 0 and '; the legs flown include none of this connection: all of it is the game\'s spawn definition, scaled by the rate measured elsewhere'
+          or share >= 0.995 and string.format('; the legs flown cover all of it (%s)', ranges_text(merged(parts)))
+          or string.format('; the legs flown cover %d%% of it (%s); the other %d%% is the game\'s spawn definition, not measured', share_pct(share), ranges_text(merged(parts)), 100 - share_pct(share))
+        coverage[#coverage+1] = {leg=l.from .. '->' .. l.to, flown=#parts > 0 and ranges_text(merged(parts)) or nil, flights=#parts, covered=math.floor(share * 1000 + 0.5) / 1000}
+        lines[#lines+1] = string.format('%s->%s %d km, %s%s: asteroids (spawn chance, mean over the leg): %s%s', l.from, l.to, l.km or 0, mins(l.minutes),
+          sp < 1 and ' (' .. mins(m) .. ' at ' .. round(sp * 100) .. '% speed)' or '', table.concat(kt, ', '), cov)
         for _, kd in ipairs(kinds) do
           for k in pairs(M.breakup(kd.k)) do if not seen_kinds[k] then seen_kinds[k] = true; kind_list[#kind_list+1] = k end end
         end
@@ -409,7 +507,7 @@ return function(api)
           (r.received or 0) > 0 and string.format(', %d on rockets on their way up counted at the start', r.received) or '', model.binds(r.name, mv.made_per_min, t_cum[r.name]).line)
       end
     end
-    return lines, damage_rows
+    return lines, damage_rows, coverage
   end
   return M
 end
