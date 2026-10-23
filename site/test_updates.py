@@ -123,6 +123,17 @@ def page(asks, replies):
     notices = body.split('<h2 id="notices">', 1)[1]
     assert notices.index("Operator offline.") < notices.index("Runtime deployed.") and "upd-list" not in notices, notices
     assert "Operator offline." not in body.split('<h2 id="notices">', 1)[0]
+    # every in-page link has its anchor; a status with no rows is a plain chip, not a link to a section left out
+    # (the 09:18 site refresh failed check.py on #planned once every planned row had moved to in progress)
+    for d in ({"updates": [u for u in data["updates"] if u["status"] != "planned"], "notices": []},
+              {"updates": [u for u in data["updates"] if u["status"] == "verified"], "notices": []},
+              {"updates": [], "notices": []}):
+        b, _ = updates.build_page(d, asks, replies, esc)
+        ids = set(re.findall(r'id="([^"]+)"', b))
+        missing = [h for h in re.findall(r'href="#([^"]+)"', b) if h not in ids]
+        assert not missing, (missing, b)
+    b, _ = updates.build_page({"updates": [u for u in data["updates"] if u["status"] != "planned"], "notices": []}, asks, replies, esc)
+    assert '<span class="fx-chip fx-chip--grey upd-count">planned: 0</span>' in b and 'id="planned"' not in b, b
 
 
 def tool():

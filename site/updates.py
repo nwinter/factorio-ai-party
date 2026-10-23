@@ -198,7 +198,10 @@ def build_page(data, asks, replies, esc):
     """(body, extra_head) of /updates/."""
     rows = data["updates"]
     counts = {s: sum(1 for u in rows if u["status"] == s) for s in STATUSES}
-    chips = " ".join(f'<a class="fx-chip {CHIP[s]} upd-count" href="#{s.replace(" ", "-")}">{esc(s)}: {counts[s]}</a>' for s in STATUSES)
+    # a status with rows links to its section; one with none is a plain chip (its section is not rendered: site/check.py
+    # failed the 09:18 refresh on a broken #planned once every planned row had moved on)
+    chips = " ".join(f'<a class="fx-chip {CHIP[s]} upd-count" href="#{s.replace(" ", "-")}">{esc(s)}: {counts[s]}</a>' if counts[s]
+                     else f'<span class="fx-chip {CHIP[s]} upd-count">{esc(s)}: 0</span>' for s in STATUSES)
     legend = "".join(f'<li><span class="fx-chip {CHIP[s]} upd-status">{esc(s)}</span> {esc(WHAT[s])}</li>' for s in STATUSES)
     open_parts = []
     for s in OPEN_ORDER:
