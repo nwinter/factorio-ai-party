@@ -1450,6 +1450,29 @@ at 1 px a tile in the game's map colours, from the harness's `chart` operator re
 - On the d22 copy of world n the first pass of Nauvis (3,251 chunks), Vulcanus (916) and Asterion (91) took 1,178
   reads; its cells: Nauvis 30 (568 KB), Vulcanus 12 (388 KB), Asterion 4 (24 KB). A cell draws in about 70 ms.
 
+## Clipped lines: a marquee, and fixed text that fits (2026-10-22, d22 batch115 BX1)
+
+Nick: wrapped or cut status lines are useless on a stream nobody can scroll or hover. static/marquee.js (both pages):
+- Changing single-line text wider than its box rests at its start and now and then pans to its end (3.5 font sizes a
+  second: 49 px/s on a 14 px card line, 84 px/s on portrait's 24 px), holds 2.5 s and pans back (4x faster, 1-3 s).
+  Lines take turns page-wide: at most two away from their start at once, starts 4 s apart, the longest rested first,
+  each at its start at least 12 s between pans and at least as long as its pan takes. New words go back to the start;
+  a change in numbers only (an age, a countdown) keeps the turn. A soft fade at the right edge replaces the ellipsis.
+- In marquees: the agent cards' line two (model and job), the action line, the wait condition and the location, the
+  camera label's doing (the on-air bar and the trio's tiles), the research card's name and its line under the bar
+  (done, latest and now the infinite levels, which had a second line no card cell had room for).
+- Cost: a Web Animation of one transform per moving line (the compositor runs it); widths are measured when the text
+  changes and on ResizeObserver; a 1 s timer picks turns. No per-frame script.
+- Text we control is shortened instead: pacing.py's rest labels ("resting until 22:14 · pacing quota", "out of quota
+  until Sat 15:59"), spark item names that do not fit about 80 px ("Low density", "EM sci.", "Prom. sci.", "Agri.
+  sci."), the header subtitle (the first of three wordings that fits beside the title: "Factorio:" goes first), and
+  five planet chips in the Space head (three letters each, in their colours, when the names do not fit). On portrait a
+  squeezed name ("Muse S…") hides the token count.
+- Left as they are: chat messages (3 lines, the newest 9: a moving feed already, and a vertical pan would fight new
+  arrivals), the analyst desk's headline on an unused tile (2-3 lines, written short), segment and poll cards (timed),
+  and the rotating board and Space widgets' rows (18 s on screen, less than a rest and a pan).
+- Tests: tools/stream/test_marquee.py (timing, turns over 15 minutes, the DOM half with a fake document).
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

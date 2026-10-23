@@ -142,11 +142,14 @@ function el(tag, cls='', text='') {
   const flags = new Set(cls.split(' '));
   return {tag, children: [], textContent: text, dataset: {}, style: {}, clientWidth: 80, scrollWidth: 90,
     classList: {toggle(k,v) {v ? flags.add(k) : flags.delete(k);}, add(k) {flags.add(k);}, remove(k) {flags.delete(k);}, contains(k) {return flags.has(k);}},
-    append(...xs) {this.children.push(...xs);}, appendChild(x) {this.children.push(x);}, remove() {}};
+    append(...xs) {this.children.push(...xs);}, appendChild(x) {this.children.push(x);}, remove() {},
+    get firstChild() {return this.children[0];}, get lastChild() {return this.children[this.children.length - 1];},
+    replaceChildren(...xs) {this.children = xs;}};
 }
 const box=el('div'), $=()=>box, cards=new Map(); let researchCard=null;
 const avatar=()=>el('img'), fillAvatar=()=>{}, applyPalette=()=>{}, clean=x=>x, humanItem=x=>x, shortNum=String;
 const setText=(node,text)=>node.textContent=text, SLOT_LABEL={main:'main'};
+const MQ=null, mqEl=(tag,cls)=>el(tag,cls), mqText=setText, mqBox=(e)=>e;  // marquee.js absent: plain boxes
 const document={body:{dataset:{}}, createTextNode:x=>x};
 eval(code.slice(code.indexOf('  function renderCards(s)'), code.indexOf('  function sparkPath')));
 const a={name:'astra', display_name:'Astra Long Name', harness:'Codex', activity:'thinking',
