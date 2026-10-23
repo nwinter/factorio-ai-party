@@ -76,34 +76,56 @@ return function(api)
       max=max ~= MAX_CHUNKS and max or nil}
   end
 
+  -- (d22 batch110 BT1: census.walk made 15.4 KB of garbage a call on the private copy) a band's find filter and area,
+  -- one pair for every band (the find keeps neither): the caller's fields copied in, a field it no longer gives cleared
+  local F, AREA = {}, {{0, 0}, {0, 0}}
+  local function filter_of(filter)
+    for k in pairs(F) do if filter[k] == nil then F[k] = nil end end
+    for k, v in pairs(filter) do F[k] = v end
+    return F
+  end
   -- The next band's entities (a table, maybe empty), or nil when the walk is
   -- done. filter: find_entities_filtered's filter without area or position.
-  function W.band(w, s, filter)
+  -- out_pos (optional): a table this fills with each entity's position as the band read it (out_pos[i] for list[i],
+  -- i = 1..#list; nothing past that is cleared), returned second, so a caller reads no position again.
+  -- The list is the find's own table with the entities outside the band taken out, in the find's order.
+  function W.band(w, s, filter, out_pos)
     if w.done then return nil end
-    local built = boxes()[s.index] or {}
-    boxes()[s.index] = built
-    local f = {}
-    for k, v in pairs(filter) do f[k] = v end
+    local all = boxes()
+    local built = all[s.index] or {}
+    all[s.index] = built
+    local f = filter_of(filter)
     if w.whole then
       w.done = true
       local list = s.find_entities_filtered(f)
-      for _, e in ipairs(list) do grow(built, chunk(e.position.x), chunk(e.position.y)) end
-      return list
+      for i, e in ipairs(list) do
+        local p = e.position
+        if out_pos then out_pos[i] = p end
+        grow(built, chunk(p.x), chunk(p.y))
+      end
+      return list, out_pos
     end
     local b = w.box
     if w.y > b.bottom then w.done = true; return nil end
     if w.x == b.left then w.band_rows = w.rows end
     local x1, y1 = math.min(w.x + w.cols - 1, b.right), math.min(w.y + w.band_rows - 1, b.bottom)
     local X0, Y0, X1, Y1 = w.x * 32, w.y * 32, (x1 + 1) * 32, (y1 + 1) * 32
-    f.area = {{X0, Y0}, {X1, Y1}}
-    local list = {}
-    for _, e in ipairs(s.find_entities_filtered(f)) do
+    local a1, a2 = AREA[1], AREA[2]
+    a1[1], a1[2], a2[1], a2[2] = X0, Y0, X1, Y1
+    f.area = AREA
+    local list = s.find_entities_filtered(f)
+    local found, n = #list, 0
+    for i = 1, found do
+      local e = list[i]
       local p = e.position
       if p.x >= X0 and p.x < X1 and p.y >= Y0 and p.y < Y1 then
-        list[#list+1] = e
+        n = n + 1
+        list[n] = e
+        if out_pos then out_pos[n] = p end
         grow(built, chunk(p.x), chunk(p.y))
       end
     end
+    for i = found, n + 1, -1 do list[i] = nil end
     -- The next band: smaller after a full one, larger after a near-empty one.
     local width = b.right - b.left + 1
     local maxc = w.max or MAX_CHUNKS
@@ -116,7 +138,7 @@ return function(api)
     w.x = x1 + 1
     if w.x > b.right then w.x = b.left; w.y = y1 + 1 end
     w.bands = (w.bands or 0) + 1
-    return list
+    return list, out_pos
   end
 
   -- One step every this many ticks for a job of `period` ticks whose last

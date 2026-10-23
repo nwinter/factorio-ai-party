@@ -271,3 +271,85 @@ do
   game.tick,game.surfaces=saved_tick,saved_surfaces
 end
 print('census failed pass: ok')
+
+-- (d22 batch110 BT1: census.step made 14.8 KB of garbage a tick on the private copy) a pass over the real walk: a
+-- building's position is the one its band's find read (one read), a car's is read again when it is read (it moved
+-- since); an assembler's or furnace's recipe read once; each step's ctx starts with empty lookups; the player force and
+-- the surface are read again once not valid. The facts are the ones the pass gave before.
+do
+  local saved={game.tick,game.surfaces,game.get_surface,game.forces,prototypes,defines.entity_status}
+  local reads={}
+  local function ent(id,fields,x,y)
+    reads[id]={}
+    local e=setmetatable({},{__index=function(_,k)
+      reads[id][k]=(reads[id][k] or 0)+1
+      if k=='position' then return {x=x,y=y} end
+      if k=='raw' then return {x=x,y=y} end
+      return fields[k]
+    end})
+    return e,function(nx,ny) x,y=nx,ny end
+  end
+  local gear={name='iron-gear-wheel',ingredients={{type='item',name='iron-plate',amount=2}}}
+  local asm=ent('asm',{valid=true,type='assembling-machine',name='assembling-machine-1',status=1,direction=0,get_recipe=function() return gear end},10.5,10.5)
+  local furnace=ent('furnace',{valid=true,type='furnace',name='electric-furnace',status=1,direction=0,get_recipe=function() return nil end,
+    previous_recipe={name='iron-plate'}},20.5,20.5)
+  local wall=ent('wall',{valid=true,type='wall',name='stone-wall',status=1,direction=0},3.5,3.5)
+  local car,move_car=ent('car',{valid=true,type='car',name='car',status=1,direction=0},25.5,4.5)
+  local all={asm,furnace,wall,car}
+  local filters={}
+  local sf={name='nauvis',index=1,valid=true}
+  sf.find_entities_filtered=function(f)
+    filters[#filters+1]={force=f.force,area=f.area and true}
+    local out,a={},f.area
+    for _,e in ipairs(all) do
+      local p=e.raw
+      if not a or (p.x+1.5>a[1][1] and p.x-1.5<a[2][1] and p.y+1.5>a[1][2] and p.y-1.5<a[2][2]) then out[#out+1]=e end
+    end
+    return out
+  end
+  local f1={name='player',valid=true}
+  game.surfaces={sf}; game.get_surface=function() return sf end; game.forces={player=f1}
+  prototypes={entity={},item={},get_entity_filtered=function() return {} end}
+  defines.entity_status={working=1,low_power=2,no_power=3}
+  local seen,fresh,dirty={},0,0
+  local st={walk_box={[1]={left=0,right=0,top=0,bottom=0}}}
+  local C=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return st end,observe_seen=function(e,t,pos,ctx)
+    if not seen.tick or seen.tick~=game.tick then
+      seen.tick=game.tick
+      if next(ctx.vis)==nil and next(ctx.fog)==nil and next(ctx.belt)==nil then fresh=fresh+1 else dirty=dirty+1 end
+      eq(ctx.p.force,game.forces.player); eq(ctx.p.surface,sf); eq(ctx.fog_prefix,'player|nauvis|'); eq(ctx.si,1)
+    end
+    ctx.vis[1],ctx.fog[1],ctx.belt[1]=true,true,true
+    seen[t]={x=pos.x,y=pos.y}
+  end}
+  local t=20000
+  game.tick=t; C.tick(t)
+  local moved=false
+  while not st.census.done and t<40000 do
+    t=t+1; game.tick=t; C.tick(t)
+    if not moved and st.census.job and st.census.job.list then move_car(26.5,8.5); moved=true end
+  end
+  assert(st.census.done,'the pass ended')
+  local d=st.census.done
+  eq(seen.wall.x,3.5); eq(seen.car.x,26.5,'the car read where it is now'); eq(seen.car.y,8.5)
+  eq(reads.wall.position,1,'the wall: its band read its position, the census did not again')
+  eq(reads.car.position,2,'the car: read by its band and again by the census')
+  eq(reads.asm.get_recipe,1,'one recipe read an assembler'); eq(reads.furnace.get_recipe,1,'one recipe read a furnace')
+  eq(reads.furnace.previous_recipe,1)
+  eq(d.machines['assembling-machine-1|iron-gear-wheel'].working,1); eq(d.machines['electric-furnace|iron-plate'].working,1)
+  eq(d.basemap.buildings,3,'assembler, furnace and wall on the map')
+  eq(d.where.nauvis,4,'assembler, furnace, wall and car'); eq(d.building_counts[1].entities['assembling-machine-1'],1)
+  assert(fresh>0); eq(dirty,0,'each step starts with empty lookups')
+  for _,f in ipairs(filters) do eq(f.force,f1) end
+  -- the next pass: the force read again once the one kept is not valid
+  f1.valid=false
+  local f2={name='player',valid=true}
+  game.forces={player=f2}
+  local n0=#filters
+  t=t+2000
+  while (not st.census.done or st.census.done.start<t-2000+1) and t<80000 do t=t+1; game.tick=t; C.tick(t) end
+  assert(#filters>n0)
+  for i=n0+1,#filters do eq(filters[i].force,f2,'the valid force') end
+  game.tick,game.surfaces,game.get_surface,game.forces,prototypes,defines.entity_status=table.unpack(saved)
+end
+print('census BT1 one position and one recipe read, ctx fresh each step: ok')

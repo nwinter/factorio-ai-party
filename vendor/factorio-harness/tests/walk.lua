@@ -87,3 +87,119 @@ eq(n,#ents,'every entity once')
 assert(most_chunks<=32,'a band of '..most_chunks..' chunks')
 s.find_entities_filtered=s_find
 print('walk: ok')
+
+-- 7. (d22 batch110 BT1: census.walk made 15.4 KB of garbage a call on the private copy) a band reuses one filter and
+-- one area table and returns the find's own table with the entities outside the band taken out. Every band gives the
+-- same list in the same order, the same built box and the same next band as OLD (W.band before BT1: a new filter,
+-- area and list each band); a field one caller's filter gave is not in the next caller's find; out_pos holds each
+-- entity's position as the band read it, and each entity a find returns has its position read once.
+do
+  local function grow(b,x,y)
+    if b.left==nil then b.left,b.right,b.top,b.bottom=x,x,y,y; return end
+    if x<b.left then b.left=x elseif x>b.right then b.right=x end
+    if y<b.top then b.top=y elseif y>b.bottom then b.bottom=y end
+  end
+  local function chunk(v) return math.floor(v/32) end
+  local OLD_BOX={}
+  local function OLD(w,sf,filter)
+    if w.done then return nil end
+    local built=OLD_BOX[sf.index] or {}; OLD_BOX[sf.index]=built
+    local f={}; for k,v in pairs(filter) do f[k]=v end
+    if w.whole then
+      w.done=true
+      local list=sf.find_entities_filtered(f)
+      for _,e in ipairs(list) do grow(built,chunk(e.position.x),chunk(e.position.y)) end
+      return list
+    end
+    local b=w.box
+    if w.y>b.bottom then w.done=true; return nil end
+    if w.x==b.left then w.band_rows=w.rows end
+    local x1,y1=math.min(w.x+w.cols-1,b.right),math.min(w.y+w.band_rows-1,b.bottom)
+    local X0,Y0,X1,Y1=w.x*32,w.y*32,(x1+1)*32,(y1+1)*32
+    f.area={{X0,Y0},{X1,Y1}}
+    local list={}
+    for _,e in ipairs(sf.find_entities_filtered(f)) do
+      local p=e.position
+      if p.x>=X0 and p.x<X1 and p.y>=Y0 and p.y<Y1 then list[#list+1]=e; grow(built,chunk(p.x),chunk(p.y)) end
+    end
+    local width,maxc=b.right-b.left+1,w.max or 32
+    if #list>250 then w.rows,w.cols=1,math.max(1,math.floor(w.cols/2))
+    elseif #list*4<250 then
+      if w.cols<width then w.cols=math.min(width,w.cols*2,math.max(1,math.floor(maxc/w.rows)))
+      elseif w.rows<8 and w.rows*2*w.cols<=maxc then w.rows=w.rows*2 end
+    end
+    w.x=x1+1
+    if w.x>b.right then w.x=b.left; w.y=y1+1 end
+    w.bands=(w.bands or 0)+1
+    return list
+  end
+  -- Entities that count their position reads (a new table each read, as the game's); a find returns a new table each
+  -- call, the entities whose 3x3 box overlaps the area, of the filter's type, at most limit, and keeps a copy of each
+  -- filter it was given.
+  local reads,filters,world=0,{},{}
+  local seed=7
+  local function rnd(n) seed=(seed*1103515245+12345)%2147483648; return seed%n end
+  for i=1,3000 do
+    local x,y=rnd(640)-160+0.5,rnd(480)-96+0.5
+    world[i]=setmetatable({id=i,type=(i%3==0) and 'inserter' or 'assembling-machine',x=x,y=y},
+      {__index=function(_,k) if k=='position' then reads=reads+1; return {x=x,y=y} end end})
+  end
+  local sf={index=5}
+  sf.find_entities_filtered=function(f)
+    local copy={}; for k,v in pairs(f) do copy[k]=v end; filters[#filters+1]=copy
+    local out,a={},f.area
+    for _,e in ipairs(world) do
+      local inside=not a or (e.x+1.5>a[1][1] and e.x-1.5<a[2][1] and e.y+1.5>a[1][2] and e.y-1.5<a[2][2])
+      if inside and (not f.type or f.type==e.type) and (not f.limit or #out<f.limit) then out[#out+1]=e end
+    end
+    return out
+  end
+  local function same_box()
+    local nb,ob=storage.walk_box[5],OLD_BOX[5]
+    eq(nb.left,ob.left,'box left'); eq(nb.right,ob.right,'box right'); eq(nb.top,ob.top,'box top'); eq(nb.bottom,ob.bottom,'box bottom')
+  end
+  -- Walks w_new (this W.band) and w_old (OLD) side by side, from start(), with filter; out_pos given when with_pos.
+  local function both(start,filter,with_pos)
+    local w_new,w_old,bands=start(),start(),0
+    while true do
+      local pos=with_pos and {} or nil
+      local n0=#filters
+      reads=0
+      local a,apos=W.band(w_new,sf,filter,pos)
+      local b=OLD(w_old,sf,filter)
+      eq(a==nil,b==nil,'both walks end together')
+      if not a then break end
+      bands=bands+1
+      eq(#a,#b,'band '..bands..': as many entities')
+      for i=1,#b do eq(a[i],b[i],'band '..bands..': entity '..i) end
+      if with_pos then
+        eq(apos,pos,'out_pos returned')
+        for i=1,#a do eq(pos[i].x,a[i].x); eq(pos[i].y,a[i].y) end
+      else eq(apos,nil,'no out_pos') end
+      for k,v in pairs(w_old) do if type(v)~='table' then eq(w_new[k],v,'walk field '..k) end end
+      local fn,fo=filters[n0+1],filters[#filters]
+      for k,v in pairs(fo) do if k~='area' then eq(fn[k],v,'filter '..k) end end
+      for k in pairs(fn) do assert(fo[k]~=nil,'a filter field the caller did not give: '..k) end
+      if fo.area then for i=1,2 do for j=1,2 do eq(fn.area[i][j],fo.area[i][j],'area') end end end
+    end
+    same_box()
+    return bands
+  end
+  storage.walk_box={}
+  -- no box yet: one whole-surface find, the same list and box, no area
+  eq(both(function() return {surface=5,whole=true} end,{type='assembling-machine'},true),1)
+  eq(filters[#filters].area,nil,'a whole-surface find has no area')
+  -- bands over the box: a filter with a limit, then one without (the limit does not stay), then one chunk a band
+  assert(both(function() return W.start(sf) end,{type='assembling-machine',limit=40},true)>1)
+  assert(both(function() return W.start(sf) end,{type='inserter'},false)>1)
+  assert(both(function() return W.start(sf,nil,{max_chunks=1}) end,{type='assembling-machine'},true)>1)
+  -- one position read an entity a find returned
+  local w,returned=W.start(sf),0
+  local kept=sf.find_entities_filtered
+  sf.find_entities_filtered=function(f) local out=kept(f); returned=returned+#out; return out end
+  reads=0
+  while W.band(w,sf,{type='inserter'},{}) do end
+  sf.find_entities_filtered=kept
+  eq(reads,returned,'one position read an entity the finds returned')
+end
+print('walk BT1 the same bands with one filter: ok')
