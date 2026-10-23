@@ -105,6 +105,13 @@ return function(api)
     end
     return out, tanks
   end
+  -- (d22 batch109 BS1) thruster fuel and oxidizer held and in tanks alone, for a flight watch's rows: {name={held, in_tanks}}
+  function M.fuel_held(pl)
+    local stock, in_tanks = fluid_stock(pl, {['thruster-fuel']=true, ['thruster-oxidizer']=true})
+    local out = {}
+    for _, name in ipairs({'thruster-fuel', 'thruster-oxidizer'}) do out[name] = {held=math.floor((stock[name] or 0) + 0.5), in_tanks=math.floor((in_tanks[name] or 0) + 0.5)} end
+    return out
+  end
   -- The fuel outlook (batch27 B1, Luna, on each flight): thruster fuel and oxidizer held (thrusters and tanks), made and
   -- used a minute now (the platform's fluid production statistics, the last minute), and, flying, whether each lasts the
   -- rest of the leg at the speed now; stopped, the thrusters burn nothing. {line, short (fluids that run out before the

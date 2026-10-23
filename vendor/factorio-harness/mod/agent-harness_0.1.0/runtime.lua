@@ -18549,9 +18549,9 @@ function M.work_watches(p)
   return #out>0 and out or nil
 end
 M.flightwatch=require('flightwatch'){state=state,who=function(p) return M.board.who(p) end,platform=function(p,name) return space.platform(p,name) end,
-  fuel_outlook=function(pl) return M.endurance.fuel_outlook(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
+  fuel_held=function(pl) return M.endurance.fuel_held(pl) end,hits=function(pl) return M.platalerts.hits(pl) end,
   losses=function(f,s,since) return M.lostlog.since(f,s,since,nil,8) end,trace=function(pl,age) return M.ammofeed.get(pl,age,true) end,
-  supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end}
+  trace_done=function(pl) return M.ammofeed.done_tick(pl) end,supply_kind=function(row) return M.ammofeed.supply_kind(row) end,leg=function(pl) return M.freight.leg(pl) end}
 function handlers.flight_watch(p,a) return M.flightwatch.call(p,a) end
 -- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
 M.fleet=require('fleet'){state=state,condition=function(p,c) return conditions.check(p,c) end,gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
@@ -19646,7 +19646,7 @@ function M.tick_body(event)
   if M.floorcheck then pcall(M.timed,'floorcheck.tick',M.floorcheck.tick) end  -- foundation checks across ticks (floorcheck.lua)
   if M.ghosttally then pcall(M.timed,'ghosttally.tick',M.ghosttally.tick) end  -- platform ghost tallies across ticks (ghosttally.lua)
   pcall(M.platwait.tick,event.tick)  -- stop waits the harness keeps for platforms, every second (platwait.lua)
-  if M.ammofeed then pcall(M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
+  if M.ammofeed then pcall(M.timed,'ammofeed.step',M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)
   -- (d19 batch45: 8-14 ms in the first call after a load) the argument sets check_args builds from describe
   if not allowed_args then pcall(check_args,'describe',{}) end
   -- the kept belt alert groups of each force a reply asked for (after a load, the player force's), read again every 120
@@ -19676,7 +19676,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end
   if event.tick%60==37 and M.spiderroute then pcall(M.timed,'spiderroute.tick',M.spiderroute.tick) end  -- spidertrons sent by go_to (spiderroute.lua)
   if event.tick%60==23 and M.delivwatch then pcall(M.timed,'delivwatch.tick',M.delivwatch.tick,event.tick-23) end  -- delivery watches (delivwatch.lua)  -- shipment fact lines (shipment.lua)
-  if event.tick%60==51 and state().flightwatch then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second
+  if state().flightwatch and M.flightwatch.due(event.tick) then pcall(M.timed,'flightwatch.tick',M.flightwatch.tick,event.tick) end  -- flight watches (flightwatch.lua): a read a second each, on its own tick of the second (BS1)
   if M.delivwatch then pcall(M.delivwatch.pod_tick,event.tick) end  -- (AB7) watched pods read each tick near landing; none followed: one lookup
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
