@@ -253,6 +253,6 @@ do
   eq(select(2,qc({['until']='item_count',platform='Petrel',item='quality-module-3',quality='any',at_least=1})):match('(%d+) in Petrel'),'17')
   assert(not pcall(C.validate,{['until']='item_count',platform='Petrel',item='quality-module-3',quality='shiny',at_least=1}),'unknown quality refused')
   local ok,err=pcall(C.validate,{['until']='ammo_below',count=5,quality='rare'})
-  assert(not ok and tostring(err):find('quality applies to item_count only',1,true),tostring(err))
+  assert(not ok and tostring(err):find('quality applies to item_count and platform_ammo_below only',1,true),tostring(err))
 end
 print('conditions: ok')
