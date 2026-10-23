@@ -15,6 +15,17 @@
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d22 batch110 BT1) a property read or a method call under pcall with no closure made (shipment.tick read each
+  -- platform's requests, silos and rockets through a new closure at every read)
+  local function get(o, k) return o[k] end
+  local function pget(o, k) if o == nil then return nil end local ok, v = pcall(get, o, k); if ok then return v end end
+  local function pcall_method(o, k, ...)
+    if o == nil then return false end
+    local ok, f = pcall(get, o, k)
+    if not (ok and f) then return false end
+    return pcall(f, ...)
+  end
+  local function call(f, ...) local ok, v = pcall(f, ...); if ok then return v end end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x + 0.5), math.floor(q.y + 0.5)) end
   local function ago(t) local s = math.floor(t / 60); return s < 120 and s .. 's' or string.format('%dm%02ds', math.floor(s / 60), s % 60) end
   local function items_text(t)
@@ -29,10 +40,11 @@ return function(api)
   local function qname(x) return type(x) == 'string' and x or type(x) == 'table' and x.name or 'normal' end
   local function takes(q, cmp)
     if cmp == '=' then return {q} end
-    local lv = try(function() return prototypes.quality[q].level end)
+    local qs = pget(prototypes, 'quality')
+    local lv = pget(pget(qs, q), 'level')
     local out = {}
-    for name, pq in pairs(try(function() return prototypes.quality end) or {}) do
-      local l = try(function() return pq.level end)
+    for name, pq in pairs(qs or {}) do
+      local l = pget(pq, 'level')
       if lv and l and name ~= 'quality-unknown' and ((cmp == '>' and l > lv) or (cmp == '<' and l < lv) or (cmp == '>=' and l >= lv)
           or (cmp == '<=' and l <= lv) or (cmp == '!=' and l ~= lv)) then out[#out+1] = name end
     end
@@ -44,6 +56,7 @@ return function(api)
   end
   -- t by "name@quality": the sum over the qualities a request takes
   local function of(t, name, q, cmp)
+    if cmp == '=' then return t[name .. '@' .. q] or 0 end  -- (BT1: takes' one-quality list, a table each call)
     local n = 0
     for _, qn in ipairs(takes(q, cmp)) do n = n + (t[name .. '@' .. qn] or 0) end
     return n
@@ -52,14 +65,18 @@ return function(api)
   -- ('any' when none is set); key "name@quality" (a comparator other than "=" added).
   local function requests(pl)
     local out = {}
-    local secs = try(function() return pl.hub.get_logistic_sections() end)
+    local oks, secs = pcall_method(pget(pl, 'hub'), 'get_logistic_sections')
+    if not oks then secs = nil end
+    local get_section = secs and pget(secs, 'get_section')
     for i = 1, secs and secs.sections_count or 0 do
-      local sec = try(function() return secs.get_section(i) end)
+      local ok, sec = false, nil
+      if get_section then ok, sec = pcall(get_section, i) end
+      if not ok then sec = nil end
       if sec and sec.active ~= false then
-        for _, f in ipairs(try(function() return sec.filters end) or {}) do
+        for _, f in ipairs(pget(sec, 'filters') or {}) do
           local v = f.value
           local name = type(v) == 'table' and v.name or v
-          local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end)) or 'any'
+          local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or pget(f.import_from, 'name')) or 'any'
           if type(name) == 'string' and (f.min or 0) > 0 then
             local q = type(v) == 'table' and qname(v.quality) or 'normal'
             local cmp = CMP[type(v) == 'table' and type(v.comparator) == 'string' and v.comparator or '='] or '='
@@ -76,26 +93,36 @@ return function(api)
   end
   -- what a silo's rocket holds and what robots bring it, by "name@quality"
   local function rocket_cargo(e)
-    local inv = defines.inventory.rocket_silo_rocket and try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
+    local ok, inv = false, nil
+    if defines.inventory.rocket_silo_rocket then ok, inv = pcall_method(e, 'get_inventory', defines.inventory.rocket_silo_rocket) end
+    local okc, list = false, nil
+    if ok and inv then okc, list = pcall_method(inv, 'get_contents') end
     local out = {}
-    for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do local k = r.name .. '@' .. qname(r.quality); out[k] = (out[k] or 0) + r.count end
+    for _, r in ipairs(okc and list or {}) do local k = r.name .. '@' .. qname(r.quality); out[k] = (out[k] or 0) + r.count end
     return out
   end
   local function bringing(e)
     local out = {}
-    local pts = try(function() return e.get_logistic_point() end)
+    local ok, pts = pcall_method(e, 'get_logistic_point')
+    if not ok then pts = nil end
     if pts and pts.object_name then pts = {pts} end
     for _, pt in pairs(pts or {}) do
-      for _, it in ipairs(try(function() return pt.targeted_items_deliver end) or {}) do local k = it.name .. '@' .. qname(it.quality); out[k] = (out[k] or 0) + (it.count or 0) end
+      for _, it in ipairs(pget(pt, 'targeted_items_deliver') or {}) do local k = it.name .. '@' .. qname(it.quality); out[k] = (out[k] or 0) + (it.count or 0) end
     end
     return out
   end
-  -- A planet's silos for a platform, read once a call: {list = [{e, auto, target, cargo, coming}], flags = {item = row}}.
+  -- A planet's silos for a platform, read once a call: {list = [{e, auto, target, cargo, coming, rows}], flags = {item =
+  -- row}, pads}. (d22 batch110 BT1: shipment.tick read every silo of every planet in the platform's schedule, each
+  -- auto silo's request_rows (every platform of the force, the networks' stock), 438 KB a call on a copy of world n)
+  -- Each part is read when a row first needs it and kept for the call: the silos when a request from that planet is
+  -- looked at, a silo's rocket cargo and robots' deliveries (cargo_of, coming_of) when a request is not delivered or in
+  -- flight, the request flags (flags_of: each auto silo's request_rows) when a request waits at the planet the platform
+  -- is stopped at, the pads (pads_of) for the ready read. The same reads as before, of the same entities.
   local function silos_at(cache, force, planet, platform)
     local key = planet .. '|' .. platform
     if cache[key] then return cache[key] end
-    local s = try(function() return game.planets[planet].surface end)
-    local out = {list={}, flags={}}
+    local s = pget(pget(game.planets, planet), 'surface')
+    local out = {list={}, force=force, platform=platform}
     -- the surface's silos, found once a minute (a whole-surface search: 5-8 ms on the copy of world n), kept in storage
     local sc = api.state(); sc.shipment_silos = sc.shipment_silos or {}
     local c = s and sc.shipment_silos[s.index]
@@ -110,24 +137,58 @@ return function(api)
       end
       sc.shipment_silos[s.index] = c
     end
-    out.pads = {}
-    for _, e in ipairs(c and c.pads or {}) do if e.valid and e.force == force then out.pads[#out.pads+1] = e end end
+    out.found = c
     for _, e in ipairs(c and c.list or {}) do
       if e.valid and e.force == force then
-      local x = {e=e, auto=try(function() return e.use_transitional_requests end) == true,
-        target=try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end), cargo=rocket_cargo(e), coming=bringing(e)}
-      out.list[#out.list+1] = x
-      if x.auto and api.request_rows then
-        x.rows = try(function() return api.request_rows(e, force, platform) end) or {}
-        for _, r in ipairs(x.rows) do
-          local k = r.item .. '@' .. (r.quality or 'normal') .. ((r.comparator or '=') ~= '=' and r.comparator or '')
-          if r.platform == platform and not out.flags[k] then out.flags[k] = r end
-        end
-      end
+        local t = pget(e, 'transitional_request_target')
+        out.list[#out.list+1] = {e=e, auto=pget(e, 'use_transitional_requests') == true, target=t and pget(t, 'valid') and pget(t, 'name') or nil}
       end
     end
     cache[key] = out
     return out
+  end
+  local function cargo_of(x)
+    if not x.cargo then x.cargo = rocket_cargo(x.e) end
+    return x.cargo
+  end
+  local function coming_of(x)
+    if not x.coming then x.coming = bringing(x.e) end
+    return x.coming
+  end
+  -- an auto silo's request_rows for the platform (nil for a silo without automatic requests)
+  local function rows_of(sil, x)
+    if x.rows == nil and x.auto and api.request_rows then
+      x.rows = try(function() return api.request_rows(x.e, sil.force, sil.platform) end) or {}
+    end
+    return x.rows
+  end
+  local function flags_of(sil)
+    if not sil.flags then
+      sil.flags = {}
+      for _, x in ipairs(sil.list) do
+        for _, r in ipairs(rows_of(sil, x) or {}) do
+          local k = r.item .. '@' .. (r.quality or 'normal') .. ((r.comparator or '=') ~= '=' and r.comparator or '')
+          if r.platform == sil.platform and not sil.flags[k] then sil.flags[k] = r end
+        end
+      end
+    end
+    return sil.flags
+  end
+  local function pads_of(sil)
+    if not sil.pads then
+      sil.pads = {}
+      for _, e in ipairs(sil.found and sil.found.pads or {}) do if e.valid and e.force == sil.force then sil.pads[#sil.pads+1] = e end end
+    end
+    return sil.pads
+  end
+  -- the silo the game picked for the platform (false with none), and its position, read once a call
+  local function picked_of(sil, name)
+    if sil.picked == nil then
+      sil.picked = false
+      for _, x in ipairs(sil.list) do if x.auto and x.target == name then sil.picked = x; break end end
+      if sil.picked then sil.picked_pos = sil.picked.e.position end
+    end
+    return sil.picked or nil, sil.picked_pos
   end
   -- One up request's state and line. q: the request {item, quality, comparator, custom_minimum}; counts: the hub's by
   -- "name@quality". (BA1) The silo the game picked: a silo there whose automatic requests fill a rocket for this
@@ -137,9 +198,8 @@ return function(api)
     local held = of(counts, item, qa, cmp)
     local name = label(item, qa, cmp)
     local row = {platform=pl.name, planet=planet, item=item, quality=qa, comparator=cmp, custom_minimum=q.custom_minimum, direction='up', min=min, hub=held}
-    local picked
-    for _, x in ipairs(sil.list) do if x.auto and x.target == pl.name then picked = x; break end end
-    if picked then row.picked_silo = {name=picked.e.name, position={x=picked.e.position.x, y=picked.e.position.y}} end
+    local picked, ppos = picked_of(sil, pl.name)
+    if picked then row.picked_silo = {name=picked.e.name, position={x=ppos.x, y=ppos.y}} end
     if held >= min then
       row.state = 'delivered'
       row.line = string.format('%s %d from %s: delivered (the hub holds %d)', name, min, planet, held)
@@ -147,7 +207,7 @@ return function(api)
     end
     for _, r in ipairs(incoming or {}) do
       -- (a rocket's cargo is kept by name: its quality is not told apart)
-      if (r.cargo[item] or 0) > 0 and (r.from == nil or r.from == planet or try(function() return game.planets[planet].surface.name end) == r.from) then
+      if (r.cargo[item] or 0) > 0 and (r.from == nil or r.from == planet or pget(pget(pget(game.planets, planet), 'surface'), 'name') == r.from) then
         row.state = r.down and 'in flight' or 'launched'
         row.line = string.format('%s %d from %s: %s (a rocket launched %s ago (%stick %d) carries %d%s; %s; the hub holds %d)', name, min, planet, row.state,
           ago(game.tick - r.tick), r.up and 'up #' .. r.up .. ', ' or '', r.tick, r.cargo[item], name ~= item and ' of any quality' or '',
@@ -156,7 +216,7 @@ return function(api)
       end
     end
     for _, x in ipairs(sil.list) do
-      local inr, com = of(x.cargo, item, qa, cmp), of(x.coming, item, qa, cmp)
+      local inr, com = of(cargo_of(x), item, qa, cmp), of(coming_of(x), item, qa, cmp)
       if (inr > 0 or com > 0) and (x.target == pl.name or not x.auto) then
         row.state = 'loading'
         row.line = string.format('%s %d from %s: loading (%s at %s: %d in its rocket%s%s; the hub holds %d)', name, min, planet, x.e.name, at(x.e.position), inr,
@@ -170,7 +230,8 @@ return function(api)
     else
       local auto = false
       for _, x in ipairs(sil.list) do if x.auto then auto = true end end
-      local f = sil.flags[item .. '@' .. qa .. (cmp ~= '=' and cmp or '')]
+      -- (BT1) the flags read here alone: a request waiting at the planet the platform is stopped at, with auto silos
+      local f = #sil.list > 0 and auto and flags_of(sil)[item .. '@' .. qa .. (cmp ~= '=' and cmp or '')]
       if #sil.list == 0 then gate = 'no rocket silo of ours on ' .. planet
       elseif not auto then gate = 'no silo on ' .. planet .. ' has automatic requests on (a load_silo or launch by hand sends it)'
       elseif f then gate = f.line
@@ -186,22 +247,26 @@ return function(api)
   end
   -- Every row and line of one platform: {lines, rows}.
   -- fast (the tick): the states alone, no stop texts or pad asks. at: that planet's stop alone.
+  -- (d22 batch110 BT1) fast makes no lines (its two callers, the tick and the ready read, take the rows alone): no
+  -- planet's line, drops or receipt texts.
+  local function key_order(a, b) return a < b end
   function M.platform(pl, cache, only, fast, at_planet)
     local lines, rows = {}, {}
-    local sch = try(function() return pl.schedule end)
+    local sch = pget(pl, 'schedule')
     local records = sch and sch.records or {}
-    local stops = not fast and api.stops and try(function() return api.stops(pl) end) or {}
+    local force = pl.force
+    local stops = not fast and api.stops and call(api.stops, pl) or {}
     local reqs = requests(pl)
-    local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
-    local counts_q = api.hub_counts and try(function() return api.hub_counts(pl, true) end) or {}
+    local counts = api.hub_counts and call(api.hub_counts, pl) or {}
+    local counts_q = api.hub_counts and call(api.hub_counts, pl, true) or {}
     -- (counts by name alone, from a reader without qualities: normal)
     if not next(counts_q) or not tostring(next(counts_q)):find('@', 1, true) then
       counts_q = {}
       for k, v in pairs(counts) do counts_q[k .. '@normal'] = v end
     end
-    local inc = api.incoming and try(function() return api.incoming(pl) end)
-    local w = api.where and try(function() return api.where(pl) end) or {}
-    local segs = api.segments and try(function() return api.segments(pl) end) or {}
+    local inc = api.incoming and call(api.incoming, pl)
+    local w = api.where and call(api.where, pl) or {}
+    local segs = api.segments and call(api.segments, pl) or {}
     local planets, seen = {}, {}
     for i, r in ipairs(records) do if i <= 8 and r.station and not seen[r.station] then seen[r.station] = true; planets[#planets+1] = {i=i, name=r.station} end end
     for name in pairs(reqs) do if name ~= 'any' and not seen[name] then seen[name] = true; planets[#planets+1] = {name=name} end end
@@ -209,30 +274,33 @@ return function(api)
       local planet = st.name
       if at_planet and planet ~= at_planet then goto next_planet end
       local here = w.stopped and w.at == planet
-      local head = st.i and (stops[st.i] or (st.i .. ' ' .. planet)) or (planet .. ' (not in the schedule)')
-      local parts = {}
-      local sil = silos_at(cache, pl.force, planet, pl.name)
+      local parts = not fast and {} or nil
+      -- (BT1) the planet's silos read when its first request is looked at (a stop no request imports from reads none)
+      local sil
       local n = 0
-      local list = {}
-      for key, r in pairs(reqs[planet] or {}) do list[#list+1] = {key=key, item=r.item, min=r.min, req=r} end
-      table.sort(list, function(a, b) return a.key < b.key end)
-      for _, q in ipairs(list) do
+      local keys = {}
+      local mine = reqs[planet] or {}
+      for key in pairs(mine) do keys[#keys+1] = key end
+      table.sort(keys, key_order)
+      for _, key in ipairs(keys) do
+        local q = mine[key]
         if not only or q.item == only then
           n = n + 1
-          local row = up_row(pl, planet, q.req, q.min, counts_q, here, sil, inc and inc.rows)
+          sil = sil or silos_at(cache, force, planet, pl.name)
+          local row = up_row(pl, planet, q, q.min, counts_q, here, sil, inc and inc.rows)
           rows[#rows+1] = row
-          if n <= 24 then parts[#parts+1] = row.line end
+          if parts and n <= 24 then parts[#parts+1] = row.line end
         end
       end
-      if n > 24 then parts[#parts+1] = string.format('+%d more requests', n - 24) end
+      if parts and n > 24 then parts[#parts+1] = string.format('+%d more requests', n - 24) end
       -- down: what the planet's landing pads ask of the hub now, and the last visit's receipts and spills
       local ask, hold = {}, {}
-      if api.pads and not fast then local a1, h1 = api.pads(planet, pl.force); ask, hold = a1 or {}, h1 or {} end
+      if api.pads and not fast then local a1, h1 = api.pads(planet, force); ask, hold = a1 or {}, h1 or {} end
       local down = {}
       -- (batch31 B6) the hub keeps at a stop what its requests from that planet ask, and no more (by item: BA1's keys
       -- summed over qualities)
       local keep_here = {}
-      for _, r in pairs(reqs[planet] or {}) do keep_here[r.item] = (keep_here[r.item] or 0) + r.min end
+      if next(ask) then for _, r in pairs(mine) do keep_here[r.item] = (keep_here[r.item] or 0) + r.min end end
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
         local carry = (counts[item] or 0) - (keep_here[item] or 0)
@@ -242,10 +310,22 @@ return function(api)
         end
       end
       table.sort(down)
-      if #down > 0 then parts[#parts+1] = (here and 'the hub sends down to ' or 'aboard for the landing pads at ') .. planet .. ': ' .. table.concat(down, ', ') end
+      if parts and #down > 0 then parts[#parts+1] = (here and 'the hub sends down to ' or 'aboard for the landing pads at ') .. planet .. ': ' .. table.concat(down, ', ') end
       for k = #segs, 1, -1 do
         local seg = segs[k]
-        if seg.kind == 'stop' and seg.at == planet and seg.pods then
+        if seg.kind == 'stop' and seg.at == planet and seg.pods and not parts then
+          -- (fast) the spills' rows alone
+          local landed = seg.pods.landed
+          if landed and not only then
+            for name, c in pairs(landed.cargo or {}) do
+              if c and c > 0 then rows[#rows+1] = {platform=pl.name, planet=planet, item=name, direction='down', state='spilled', count=c, at=landed.at} end
+            end
+          elseif landed then
+            local c = landed.cargo and landed.cargo[only]
+            if c and c > 0 then rows[#rows+1] = {platform=pl.name, planet=planet, item=only, direction='down', state='spilled', count=c, at=landed.at} end
+          end
+          break
+        elseif seg.kind == 'stop' and seg.at == planet and seg.pods then
           local function pick(t) if not only then return t end; local o = {}; o[only] = t and t[only]; return o end
           local rc = seg.pods.received and items_text(pick(seg.pods.received.cargo))
           local sp = seg.pods.landed and items_text(pick(seg.pods.landed.cargo))
@@ -261,11 +341,14 @@ return function(api)
         end
       end
       -- (d17 batch34 A2, Astra, Luna) the platform's recent drops into a pad there, with what the pad showed after
-      for _, d in ipairs(api.drops_taken and api.drops_taken({platform=pl.name, surface=planet, item=only, limit=2}) or {}) do
-        parts[#parts+1] = d.verdict and d.verdict .. ': ' .. d.line or d.line
-      end
-      if #parts > 0 or not only then
-        lines[#lines+1] = string.format('%s: %s%s', pl.name, head, #parts > 0 and '; ' .. table.concat(parts, '; ') or '; no request imports from ' .. planet)
+      if parts then
+        for _, d in ipairs(api.drops_taken and api.drops_taken({platform=pl.name, surface=planet, item=only, limit=2}) or {}) do
+          parts[#parts+1] = d.verdict and d.verdict .. ': ' .. d.line or d.line
+        end
+        if #parts > 0 or not only then
+          local head = st.i and (stops[st.i] or (st.i .. ' ' .. planet)) or (planet .. ' (not in the schedule)')
+          lines[#lines+1] = string.format('%s: %s%s', pl.name, head, #parts > 0 and '; ' .. table.concat(parts, '; ') or '; no request imports from ' .. planet)
+        end
       end
       ::next_planet::
     end
@@ -373,16 +456,16 @@ return function(api)
       if x.auto then
         -- why it waits, this platform's requests alone: each with what the rocket holds of it
         local why = {}
-        for _, r in ipairs(x.rows or {}) do
-          if r.platform == pl.name and #why < 8 then why[#why+1] = string.format('%s; its rocket holds %d of it', r.line or r.item, of(x.cargo, r.item, r.quality or 'normal', r.comparator or '=')) end
+        for _, r in ipairs(rows_of(sil, x) or {}) do
+          if r.platform == pl.name and #why < 8 then why[#why+1] = string.format('%s; its rocket holds %d of it', r.line or r.item, of(cargo_of(x), r.item, r.quality or 'normal', r.comparator or '=')) end
         end
-        local held = items_text(x.cargo)
+        local held = items_text(cargo_of(x))
         parts[#parts+1] = 'automatic requests on' .. (x.target and ', filling a rocket for ' .. x.target or ', no platform taken up now')
           .. (held and '; its rocket holds ' .. held or '')
           .. (#why > 0 and '; ' .. pl.name .. ' asks ' .. planet .. ' for what it lacks: ' .. table.concat(why, '; ')
             or (here and '; ' .. pl.name .. ' lacks nothing it asks ' .. planet .. ' for' or ''))
       else
-        local held = items_text(x.cargo)
+        local held = items_text(cargo_of(x))
         parts[#parts+1] = 'automatic requests off (a load_silo or a launch by hand sends a rocket)' .. (held and '; its rocket holds ' .. held or '')
       end
       local gl, found = {}, {}
@@ -402,7 +485,7 @@ return function(api)
     end
     if #sil.list == 0 then lines[#lines+1] = 'no rocket silo of ours on ' .. planet end
     -- down: the landing pads there
-    local pads = sil.pads
+    local pads = pads_of(sil)
     local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
     -- the hub keeps there what its requests from that planet ask (space.lua KEEP_RULE), by item
     local keep = {}
@@ -523,8 +606,9 @@ return function(api)
     local st = store()
     local all = {}
     for _, f in pairs(game.forces) do
-      for _, pl in pairs(try(function() return f.platforms end) or {}) do
-        if pl.valid and pl.hub and pl.hub.valid then all[#all+1] = pl end
+      for _, pl in pairs(pget(f, 'platforms') or {}) do
+        local hub = pl.valid and pl.hub
+        if hub and hub.valid then all[#all+1] = pl end
       end
     end
     if #all == 0 then return end
