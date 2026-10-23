@@ -492,6 +492,41 @@ do
   eq(by.nauvis.to[1],'luna (claim)'); eq(by.vulcanus.to[1],'luna (nearest)')
   ents.nauvis={}; ents.vulcanus={}
 end
+-- 8b. (d22 batch113 BW1, viewer Aurora: Gleba's alerts went to Grok on quota rest while Sonnet covered Gleba) a
+-- teammate covering a claim (board_update cover) hears its groups with its owner; the coverer's line names the claim and
+-- the owner's rest; game_alerts' to names the rest; the teammates line's note says what goes to a resting agent.
+do
+  local rests={grok='resting until Sat 16:00 (quota)'}
+  local st={board={items={{kind='claim',status='claimed',owner='grok',id=1130,surface='nauvis',area={left_top={x=-50,y=-50},right_bottom={x=50,y=50}}}}}}
+  local pl8={[1]={key='nauvis',position={x=5,y=5}},[4]={key='gleba',position={x=0,y=0}},[5]={key='vulcanus',position={x=0,y=0}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st end,
+    agents=function() return {{index=1,name='astra'},{index=4,name='grok'},{index=5,name='sonnet'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return pl8[index] end,
+    rest_label=function(name) return rests[name] end}
+  ents.nauvis={}; ents.vulcanus={}
+  for i=1,3 do ent('nauvis','stone-furnace','furnace',i*2,2,{status=3}) end
+  game.tick=game.tick+1800
+  local g=R.read(astra,{}).groups[1]
+  eq(#g.to,1); eq(g.to[1],'grok (claim; resting until Sat 16:00 (quota))')
+  eq(R.resting_note('grok',force),'1 alert group goes to it (claim #1130 1), heard by no one else')
+  local so=agent('sonnet',nauvis)
+  eq(#R.lines(so,{}),0,'not covered: sonnet hears nothing of the claim')
+  st.board.items[1].covers={{name='sonnet',tick=game.tick}}
+  game.tick=game.tick+1800
+  g=R.read(astra,{}).groups[1]
+  eq(#g.to,2); eq(g.to[1],'grok (claim; resting until Sat 16:00 (quota))'); eq(g.to[2],'sonnet (covers claim #1130 by grok)')
+  local l=R.lines(so,{}); eq(#l,1)
+  assert(l[1]:find(' %(claim #1130 by grok, resting until Sat 16:00 %(quota%); you cover it%)$'),l[1])
+  eq(R.resting_note('grok',force),'1 alert group goes to it (claim #1130 1); also heard by sonnet (covers) 1')
+  -- the owner back: the cover holds as set, the line names no rest
+  rests.grok=nil
+  game.tick=game.tick+1800
+  l=R.lines(so,{}); eq(#l,1); assert(l[1]:find(' %(claim #1130 by grok; you cover it%)$'),l[1])
+  eq(R.read(astra,{}).groups[1].to[1],'grok (claim)')
+  ents.nauvis={}
+end
 -- 9. A turret group is read again when it is about to be shown (Haiku, shift12 15:20: two empty-ammo alerts sent it to
 -- guns that were already full): only turrets still empty count; refilled, the group is not shown, in the team block or
 -- the read, and when they run dry again it is news. The background job keeps its read until the next one is done.
