@@ -12523,3 +12523,11 @@ turned adds `; rotate {position, direction} turns the one standing there`. An en
 (`already`). A `normal` or `forced` paste's dry run reads it blocked too, adding `; a superforced paste marks it for
 deconstruction and places the ghost`; a `superforced` one reads `ok` and names the belt it marks. Regression:
 tests/dryrun.lua (the d20 batch122 block), failing on the old dryrun.lua and construction.lua.
+
+Astra #2066 (14:54), taken with it: `place_ghosts {check_inserters: true, dry_run: false}` refused with `dry_run must be
+true or false`. check_inserters runs the call's own dry run first and passed every argument on, `dry_run: false` among
+them, and the `dry_run` action took only true or nothing in its args. The check no longer passes the call's `dry_run`
+on, and the `dry_run` action takes its args' `dry_run` true, false or left out (anything else is still refused). On the
+copy, Astra's belt and filtered inserter with `check_inserters` and `dry_run: false` placed 2 with the inserter's row ok;
+`dry_run: true` checked them and placed nothing. Regression: mod/tests/runtime_test.lua (the check_inserters block),
+failing on the old runtime.lua with Astra's error.

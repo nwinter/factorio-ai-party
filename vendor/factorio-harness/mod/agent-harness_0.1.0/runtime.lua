@@ -15782,7 +15782,8 @@ function handlers.dry_run(p,a)
   local action,args=a.action,a.args
   assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place, build, rail_route or belt_route) and args (that call\'s arguments)')
   assert(type(args)=='table','args must be the call\'s arguments')
-  assert(args.dry_run==nil or args.dry_run==true,'dry_run must be true or false')
+  -- (d20 batch122, Astra #2066) a call's own dry_run in its args: true, false or left out alike here (this is the dry run)
+  assert(args.dry_run==nil or type(args.dry_run)=='boolean','dry_run must be true or false')
   local inner={}
   for k,v in pairs(args) do if k~='dry_run' then inner[k]=v end end
   -- details (every entry with its footprint) is the paste's own argument; the others take it here.
@@ -16166,8 +16167,10 @@ do
   -- any inserter with a problem refuses the whole call before anything is placed, with every inserter's row; all
   -- good, the call runs and the reply carries the rows (inserter_check).
   function M.inserter_check(p,action,a)
+    -- (d20 batch122, Astra #2066: check_inserters with dry_run: false refused "dry_run must be true or false") the
+    -- call's dry_run is not passed on: this is its dry run
     local args={}
-    for k,v in pairs(a) do if k~='check_inserters' then args[k]=v end end
+    for k,v in pairs(a) do if k~='check_inserters' and k~='dry_run' then args[k]=v end end
     local dry_out=handlers.dry_run(p,{action=action,args=args})
     local entries=action=='build' and (a.builds or {a}) or a.entities or {}
     local unpowered={}

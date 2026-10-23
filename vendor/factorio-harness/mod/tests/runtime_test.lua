@@ -4480,6 +4480,19 @@ end)()
   eq(rc.placed,1); eq(rc.inserter_check[1].ok,true); eq(rc.inserter_check[1].name,'inserter')
   assert(rc.inserter_check[1].line:find('^#1 inserter %(6.5,0.5%): picks from .+, drops into .+: ok$'),rc.inserter_check[1].line)
   for i=#made,1,-1 do made[i]=nil end
+  -- (d20 batch122, Astra #2066: check_inserters with dry_run: false refused "dry_run must be true or false") false places,
+  -- true checks; the dry_run action takes its args' dry_run true, false or left out
+  local rf=call('place_ghosts',{check_inserters=true,dry_run=false,entities={{name='inserter',position={x=6.5,y=0.5}}}})
+  eq(rf.placed,1); eq(rf.inserter_check[1].ok,true); eq(#made,1)
+  for i=#made,1,-1 do made[i]=nil end
+  local rt=call('place_ghosts',{check_inserters=true,dry_run=true,entities={{name='inserter',position={x=6.5,y=0.5}}}})
+  eq(rt.dry_run,true); eq(#made,0)
+  for _,v in ipairs({false,true}) do
+    local rd=call('dry_run',{action='place_ghosts',args={dry_run=v,entities={{name='inserter',position={x=6.5,y=0.5}}}}})
+    eq(rd.dry_run,true); eq(#made,0)
+  end
+  local okn,errn=pcall(call,'dry_run',{action='place_ghosts',args={dry_run='no',entities={{name='inserter',position={x=6.5,y=0.5}}}}})
+  assert(not okn and tostring(errn):find('dry_run must be true or false',1,true),tostring(errn))
   local r=call('place_ghosts',{entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
   eq(r.placed,2); eq(#r.inserters_without_target,1); eq(r.inserters_without_target[1].position.x,2.5)
   eq(r.inserters_without_target[1].missing,'no pickup target, no drop target'); eq(r.inserters_without_target[1].drop,'none: the ground at (2.5,1.5)')
