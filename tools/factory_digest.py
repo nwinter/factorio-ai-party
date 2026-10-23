@@ -122,14 +122,19 @@ def inside(pos, area):
     return lt and rb and lt["x"] <= pos["x"] <= rb["x"] and lt["y"] <= pos["y"] <= rb["y"]
 
 
+def claim_names(c):
+    """A claim's owner and its coverers (d22 batch113 BW1: board_update cover; the board read's covers [{name, since}])."""
+    return [c["owner"]] + [x["name"] for x in c.get("covers") or [] if isinstance(x, dict) and x.get("name")]
+
+
 def owners(surface, positions, claims, held=()):
-    """Whom a fact goes to: the owners of the claims holding its positions, else of every claim on its surface, else of
-    the items agents hold (claimed, doing, blocked) whose title names the surface (at most 3), else the team. Claims:
-    the board's claim items (area, surface, owner)."""
+    """Whom a fact goes to: the owners (and coverers) of the claims holding its positions, else of every claim on its
+    surface, else of the items agents hold (claimed, doing, blocked) whose title names the surface (at most 3), else the
+    team. Claims: the board's claim items (area, surface, owner, covers)."""
     on = [c for c in claims if c.get("owner") and c.get("surface") == surface and c.get("status") in ("open", "claimed", "doing")]
-    hit = sorted({c["owner"] for c in on for p in positions or [] if inside(p, c.get("area"))})
+    hit = sorted({n for c in on for p in positions or [] if inside(p, c.get("area")) for n in claim_names(c)})
     if hit or on:
-        return hit or sorted({c["owner"] for c in on})
+        return hit or sorted({n for c in on for n in claim_names(c)})
     rx = re.compile(r"(?<![\w-])" + re.escape(str(surface).casefold()) + r"(?![\w-])")
     named = sorted({it["owner"] for it in held if it.get("owner") and it.get("status") in ("claimed", "doing", "blocked")
                     and rx.search(str(it.get("title") or "").casefold())})
@@ -207,7 +212,42 @@ def delta(prev, cur):
     return rows
 
 
-HEAD = {"blocker": "blockers", "check": "failed checks", "decision": "decisions needed", "haul": "your hauls"}
+HEAD = {"blocker": "blockers", "check": "failed checks", "decision": "decisions needed", "haul": "your hauls",
+        "resting": "to agents resting"}
+
+
+def rest_rows(rows, labels):
+    """(d22 batch113 BW1) [("team", "resting", text)]: for each recipient resting now (labels: {name: "resting until Sat
+    16:00 (quota)"}), how many of this digest's facts went to it and who else got the same ones."""
+    facts = {}
+    for to, kind, text in rows:
+        facts.setdefault(to, set()).add((kind, text))
+    out = []
+    for name in sorted(labels):
+        mine = facts.get(name)
+        if not mine:
+            continue
+        also = sorted((other, len(mine & got)) for other, got in facts.items() if other not in (name, "team") and mine & got)
+        line = f"{name} ({labels[name]}): {len(mine)} fact{'s' if len(mine) != 1 else ''} went to it"
+        line += "; " + ", ".join(f"{o} got {n}" for o, n in also) if also else ", to no one else"
+        out.append(("team", "resting", line))
+    return out
+
+
+def rest_labels(run_dir, names, now):
+    """{name: "resting until Sat 16:00 (quota)"} for those of `names` resting now (runs/RUN/AGENT/resting.json, as
+    tools/stream/pacing.py reads it)."""
+    import sys
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stream')
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import pacing  # tools/stream/pacing.py
+    out = {}
+    for name in names:
+        r = name != "team" and pacing.resting(os.path.join(run_dir, name), now)
+        if r:
+            out[name] = f"resting until {pacing.clock(r['until'], now)} ({r.get('reason') or 'rest'})"
+    return out
 
 
 def delta_messages(rows, since, extra=None):
@@ -222,7 +262,7 @@ def delta_messages(rows, since, extra=None):
     out = {}
     for to in sorted(by):
         prefix = f"{DELTA_PREFIX} ({since}): "
-        parts = [f"{HEAD[k]}: " + "; ".join(by[to][k]) + "." for k in ("blocker", "check", "decision", "haul") if by[to].get(k)]
+        parts = [f"{HEAD[k]}: " + "; ".join(by[to][k]) + "." for k in ("blocker", "check", "decision", "haul", "resting") if by[to].get(k)]
         msgs, text = [], prefix
         for word in " ".join(parts).split():
             word = word if len((prefix + word).encode()) <= LIMIT else word.encode()[:LIMIT - len(prefix.encode()) - 1].decode("utf-8", "ignore")
@@ -317,7 +357,9 @@ class Digest:
                 extra = self.extra(report) or {}
             except Exception:  # noqa: BLE001
                 extra = {}
-        packed = delta_messages(delta((last or {}).get('facts'), cur), since, extra)
+        rows = delta((last or {}).get('facts'), cur)
+        rows += rest_rows(rows, rest_labels(self.run_dir, {to for to, _, _ in rows}, now))
+        packed = delta_messages(rows, since, extra)
         msgs = [{'to': to, 'text': t} for to, texts in packed.items() for t in texts]
         return msgs, {'tick': report.get('tick'), 't': now, 'facts': cur}
 

@@ -18,6 +18,10 @@
 -- unless its area holds none of our buildings there and exactly one other
 -- planet's does (world n, 08:05: Luna on Gleba, her claim #111 built only on
 -- Nauvis). Positions on other surfaces are never in it.
+-- (d22 batch113 BW1, viewer Aurora: Sonnet covered Gleba while Grok rested, and Gleba's alerts went to Grok) a teammate
+-- may mark itself as covering a claim (board_update {id, cover: true}; covers: their names). A coverer hears the
+-- claim's alerts with its owner for as long as it is set, its labels show it as allowed, and its requests in the area
+-- and board updates on the claim keep the claim active as the owner's do.
 local namematch = require('namematch')
 return function(api)
   local M = {}
@@ -75,8 +79,14 @@ return function(api)
   end
   local function on(i, surface, pos) return i.area ~= nil and surface ~= nil and M.surface_of(i) == surface and inside(i.area, pos) end
   local function surface_name(p) local ok, v = pcall(function() return p.surface.name end); return ok and v or nil end
+  -- Whether `name` covers claim i (board_update cover).
+  function M.covers(i, name)
+    for _, c in ipairs(i.covers or {}) do if c.name == name then return true end end
+    return false
+  end
   function M.allows(i, name)
     for _, n in ipairs(i.allow or {}) do if n == name or n == 'everyone' then return true end end
+    if M.covers(i, name) then return true end
     return false
   end
   -- Whether agent `name`'s stock sweeps skip claim i (fresh, someone else's, not allowing `name`).
@@ -131,7 +141,7 @@ return function(api)
     local surface = surface_name(p)
     for _, i in pairs(board.items) do
       if i.kind == 'claim' and ACTIVE[i.status] and i.area then
-        if i.owner == me and ((at and on(i, at_surface, at)) or (pos and on(i, surface, pos))) then i.active_tick = game.tick end
+        if (i.owner == me or M.covers(i, me)) and ((at and on(i, at_surface, at)) or (pos and on(i, surface, pos))) then i.active_tick = game.tick end
         if read and pos and on(i, surface, pos) then i.inspected = {tick=game.tick, by=me, action=action} end
       end
     end
@@ -287,7 +297,12 @@ return function(api)
     local st = api.owner_state and api.owner_state(i.owner)
     if st then parts[#parts+1] = i.owner .. ' ' .. st end
     if #(i.allow or {}) > 0 then parts[#parts+1] = 'allows ' .. table.concat(i.allow, ', ') end
-    if M.stale(i) then parts[#parts+1] = 'stale: stock sweeps include it; closes ' .. ago(M.EXPIRE - (game.tick - M.activity(i))) .. ' from now unless its owner works on it'
+    if #(i.covers or {}) > 0 then
+      local names = {}
+      for _, c in ipairs(i.covers) do names[#names+1] = c.name end
+      parts[#parts+1] = 'covered by ' .. table.concat(names, ', ')
+    end
+    if M.stale(i) then parts[#parts+1] = 'stale: stock sweeps include it; closes ' .. ago(M.EXPIRE - (game.tick - M.activity(i))) .. ' from now unless its owner' .. (#(i.covers or {}) > 0 and ' or a coverer' or '') .. ' works on it'
     elseif p and M.allows(i, p.name) then parts[#parts+1] = 'you are allowed' end
     return table.concat(parts, ', ')
   end
