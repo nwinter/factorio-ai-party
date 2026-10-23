@@ -54,16 +54,24 @@ return function()
   end
   local function slot(t, key)
     local b = t[key]
-    if not b then b = {n=0, p=helpers.create_profiler(true)}; t[key] = b end
+    if not b then b = {n=0, p=helpers.create_profiler(true), kb=0, gc=0}; t[key] = b end
     return b
   end
-  local function add(key, timer, top)
+  -- kb (alloc runs): the heap grown inside the call (KB), or a negative number when it fell inside it (a collection
+  -- step freed more than the call allocated: not counted, said as gc).
+  local function add(key, timer, top, kb)
     local second = math.floor(game.tick / 60)
     if second ~= run.second then flush(); run.second = second end
     for _, k in ipairs(top and {key, '*'} or {key}) do
       local b = slot(run.bucket, k); b.n = b.n + 1; b.p.add(timer)
       b = slot(run.total, k); b.n = b.n + 1; b.p.add(timer)
+      if kb then if kb >= 0 then b.kb = b.kb + kb else b.gc = b.gc + 1 end end
     end
+  end
+  local function heap_kb()
+    if type(collectgarbage) ~= 'function' then return nil end
+    local ok, kb = pcall(collectgarbage, 'count')
+    return ok and type(kb) == 'number' and kb or nil
   end
   local function finish(why)
     flush()
@@ -73,7 +81,12 @@ return function()
     for _, key in ipairs(keys) do
       local b = run.total[key]
       log({'', 'agent-harness profile total ticks=', game.tick - run.start_tick, ' n=', b.n, ' key=', key, ' time=', b.p})
+      if run.alloc then
+        log({'', 'agent-harness profile alloc ticks=', game.tick - run.start_tick, ' n=', b.n, ' key=', key, ' kb=', math.floor(b.kb), ' gc_inside=', b.gc})
+      end
     end
+    -- the collector as it was (a stop for the run is undone)
+    if run.gc_stopped then pcall(collectgarbage, 'restart') end
     log({'', 'agent-harness profile done from_tick=', run.start_tick, ' to_tick=', game.tick, ' (', why, ') keys=', #keys,
       ' second_lines=', run.lines, ' dropped=', run.dropped})
     run = nil
@@ -90,15 +103,32 @@ return function()
     seconds = math.floor(seconds)
     if run then finish('restarted') end
     run = {start_tick=game.tick, until_tick=game.tick + seconds * 60, second=math.floor(game.tick / 60), bucket={}, total={}, lines=0, dropped=0, grew=0, fell=0}
-    return {ok=true, tick=game.tick, until_tick=run.until_tick,
+    -- (d22 batch110 BT1) alloc: the heap grown inside each timed key (collectgarbage("count") before and after; a key's
+    -- parts are inside it). gc = "stop": the collector stopped for the run (restarted when it ends), so nothing is freed
+    -- inside a call and each count is what it allocated; the heap then grows by all of it for the run's seconds.
+    local collector
+    if args.alloc or args.gc ~= nil then
+      assert(args.gc == nil or args.gc == 'stop', 'gc: "stop" (the collector stopped for the run) or absent')
+      run.alloc = true
+      local okr, running = pcall(collectgarbage, 'isrunning')
+      collector = {count_kb=heap_kb(), isrunning=okr and running or ('refused: ' .. tostring(running))}
+      if args.gc == 'stop' then
+        local ok, err = pcall(collectgarbage, 'stop')
+        run.gc_stopped = ok
+        collector.stop = ok and 'stopped for the run' or ('refused: ' .. tostring(err))
+      end
+    end
+    return {ok=true, tick=game.tick, until_tick=run.until_tick, collector=collector,
       note='lines "agent-harness profile ..." land in the server log (factorio-current.log); rank them with tools/profile_log.py'}
   end
   function M.running() return run ~= nil end
   local function timed(key, top, fn, ...)
+    local kb0 = run.alloc and heap_kb()
     local timer = helpers.create_profiler()
     local out = table.pack(pcall(fn, ...))
     timer.stop()
-    if run then add(key, timer, top) end
+    local kb1 = kb0 and heap_kb()
+    if run then add(key, timer, top, kb1 and kb1 - kb0) end
     if not out[1] then error(out[2], 0) end
     return table.unpack(out, 2, out.n)
   end

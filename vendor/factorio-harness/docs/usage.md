@@ -12075,3 +12075,32 @@ Each fails on the code before the fix.
   it (a new belt_flow {position} replaces it); fh wait waits for it when nothing else runs". Its help (returns) says
   the same.
 
+## d22 batch110 BT1: the harness's garbage (Lua heap churn)
+
+- The operator's profile of world n (20:24-20:25): the harness 3.95 ms a tick, the Lua heap growing 17.47 MB a second
+  and falling in 5 of 61 seconds, those 5 the worst seconds (359-872 ms of harness work).
+- Measuring who allocates (operator): `profile_ticks {seconds=N, alloc=true}` adds, per key at the end of the run,
+  `agent-harness profile alloc ticks=T n=N key=K kb=KB gc_inside=G`: the heap grown inside each timed call
+  (`collectgarbage("count")` before and after; a key's parts are inside it, and a call the heap fell in is counted in
+  `gc_inside`, its growth not). `gc="stop"` stops the collector for the run and restarts it at the end, so nothing is
+  freed inside a call and each count is what it allocated; the heap then grows by all of it for the run's seconds
+  (keep runs short). The start reply's `collector` says the heap then, whether the collector ran and whether the stop
+  was taken. `tools/profile_log.py` ranks the keys by MB, MB a second and KB a call. The timing wrapper itself makes
+  about 1 KB a call.
+- In 2.0.77 the harness's Lua state (Lua 5.2) takes `collectgarbage("count")`, `"isrunning"`, `"stop"` and `"restart"`
+  (read on a copy of world n through the profiler).
+- On a copy of world n's _autosave12 (d22 19:23), with shift60's usual calls replayed (per second 5 sleep_check
+  observes over the 9 agents, 1.7 artillery_live operator reads, and status, platform, inspect, observe power and
+  big_enemies_live at their journal rates), collector stopped for 20 s: the harness tick allocated 16.5 MB a second,
+  scheduler.tick 5.3 MB of it.
+  - Most of scheduler.tick was in the platform lanes' guards: Astra's Asterion lane (7 guards, among them two
+    fluid_count) and Meridian-V and Anvil, checked every 10 ticks. fluid_count on a platform found every tank, pipe,
+    thruster and machine aboard at each check (thousands of entity objects) and made a closure for each one; and
+    reading an entity's method (`e.get_fluid_count`) makes a new function each time. 111 KB a check.
+  - fluid_count now keeps a platform's holders and each one's `get_fluid_count` while their count
+    (`count_entities_filtered`, no entity objects) is the same and each one kept is valid, and finds them again
+    otherwise: the same entities and amounts as before, read live at each check. 4.5 KB a check (1 KB of it the
+    profiler's).
+  - With the same replay: the heap grew 15.60 MB a second before (main 88ba0901) and 11.98 after; the tick allocated
+    16.5 and 11.2 MB a second, scheduler.tick 5.3 and 1.6.
+

@@ -136,6 +136,38 @@ return function(api)
     end
     return out
   end
+  -- fluid_count's holders by kind (module level: built once, not at each check; d22 batch110 BT1)
+  local FLUID_KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
+    ['assembling-machine']='machines',furnace='machines',['mining-drill']='machines',['fusion-reactor']='fusion',
+    ['fusion-generator']='fusion',boiler='power',generator='power'}
+  local FLUID_TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace','mining-drill',
+    'fusion-reactor','fusion-generator','boiler','generator'}
+  local FLUID_ORDER={'tanks','pipes','thrusters','machines','fusion','power'}
+  local FLUID_SAID={fusion='fusion reactors and generators',power='boilers and generators'}
+  -- (d22 batch110 BT1: on a copy of world n, Asterion's guards read two fluids every 10 ticks, finding each of its
+  -- thousands of pipes, tanks and machines anew: 4 MB of garbage a second) a platform's holders found once and kept
+  -- while their count (count_entities_filtered, no entity objects made) is the same and every one kept is still valid;
+  -- else found again. The same entities as a find at each check. Module state: rebuilt after a load.
+  local fluid_cache={}
+  local FLUID_FIND={type=FLUID_TYPES,force=nil,limit=4096}
+  local function fluid_holders(surface,force)
+    FLUID_FIND.force=force
+    local key=surface.index
+    local okn,n=pcall(surface.count_entities_filtered,FLUID_FIND)
+    if not (okn and key) then return surface.find_entities_filtered(FLUID_FIND) end
+    local kept=fluid_cache[key]
+    if kept and kept.n==n and kept.force==force.index then
+      local all=true
+      for i=1,#kept.list do if not kept.list[i].valid then all=false; break end end
+      if all then return kept.list,kept.read end
+    end
+    local list=surface.find_entities_filtered(FLUID_FIND)
+    -- each one's get_fluid_count, read once with the list (a method read makes a new function each time)
+    local read={}
+    for i,e in ipairs(list) do read[i]=e.get_fluid_count end
+    fluid_cache[key]={n=#list,list=list,read=read,force=force.index}
+    return list,read
+  end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -308,15 +340,12 @@ return function(api)
     -- the pipes alone) fusion reactors and fusion generators, boilers and heat exchangers, steam engines and turbines,
     -- and mining drills too, each kind said.
     fluid_count=function(p,c,estimate)
-      local KIND={['storage-tank']='tanks',pipe='pipes',['pipe-to-ground']='pipes',pump='pipes',thruster='thrusters',
-        ['assembling-machine']='machines',furnace='machines',['mining-drill']='machines',['fusion-reactor']='fusion',
-        ['fusion-generator']='fusion',boiler='power',generator='power'}
-      local TYPES={'storage-tank','pipe','pipe-to-ground','pump','thruster','assembling-machine','furnace','mining-drill',
-        'fusion-reactor','fusion-generator','boiler','generator'}
-      local list,on
+      local KIND,TYPES=FLUID_KIND,FLUID_TYPES
+      local list,on,read
       if c.platform then
         local pl=M.platform_named(p,c.platform)
-        list,on=pl.surface.find_entities_filtered{type=TYPES,force=p.force,limit=4096},c.platform
+        list,read=fluid_holders(pl.surface,p.force)
+        on=c.platform
       else
         local s=surface_of(p,c)
         list,on={},s.name
@@ -336,17 +365,17 @@ return function(api)
           for _,e in ipairs(found) do if charted(p,s,e.position) then add(e) end end
         end
       end
-      local n,by,count={},{},{}
+      local by,count={},{}
       local total=0
-      for _,e in pairs(list) do
-        local ok,k=pcall(function() return e.get_fluid_count(c.fluid) end)
-        local kind=KIND[e.type] or 'other'
-        if ok and k and k>0 then by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
+      for i,e in pairs(list) do
+        -- (BT1) the method itself under pcall, kept with the list: a closure per entity was most of a check's garbage
+        local ok,k=false,nil
+        if e.valid~=false then ok,k=pcall(read and read[i] or e.get_fluid_count,c.fluid) end
+        if ok and k and k>0 then local kind=KIND[e.type] or 'other'; by[kind]=(by[kind] or 0)+k; count[kind]=(count[kind] or 0)+1; total=total+k end
       end
       local parts={}
-      local SAID={fusion='fusion reactors and generators',power='boilers and generators'}
-      for _,kind in ipairs({'tanks','pipes','thrusters','machines','fusion','power'}) do
-        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',SAID[kind] or kind,math.floor(by[kind]+0.5),count[kind]) end
+      for _,kind in ipairs(FLUID_ORDER) do
+        if by[kind] then parts[#parts+1]=string.format('%s %d (%d)',FLUID_SAID[kind] or kind,math.floor(by[kind]+0.5),count[kind]) end
       end
       local met=(c.at_least==nil or total>=c.at_least) and (c.below==nil or total<c.below)
       return met,string.format('%s %d on %s: %s',c.fluid,math.floor(total+0.5),on,#parts>0 and table.concat(parts,', ')
