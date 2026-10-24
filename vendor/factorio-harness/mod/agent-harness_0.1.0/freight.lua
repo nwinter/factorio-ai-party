@@ -654,11 +654,37 @@ return function(api)
   end
   -- What the hub gives up of an item it holds (held) at that stop by those rules, the pads wanting want (their ask less
   -- what they hold): the count, and the keep row ({max, parts}) or nil when no section names it.
-  function M.hub_gives(keep, item, held, want)
+  -- (d24 batch142 PN1) off: the stop does not unload (M.unloads), and the pads there take nothing; a finite max still
+  -- sends down all above it.
+  function M.hub_gives(keep, item, held, want, off)
+    if off then want = 0 end
     local k = keep and keep[item]
     if not k then return math.max(0, math.min(held or 0, want or 0)), nil end
     if k.max == math.huge then return 0, k end
     return math.max(0, (held or 0) - k.max), k
+  end
+  -- (d24 batch142 PN1, Sol #2135, Luna #2136) a schedule stop's allow unloading: the schedule GUI's checkbox, the
+  -- record's allows_unloading (LuaSchedule.set_allow_unloading). Off, as 2.0.77 did on a copy of world n (d24, Petrel
+  -- II waiting at Nauvis): the landing pad asking carbon took none of the hub's 179 (on again, 83 went down in 20 s);
+  -- all above a finite max still went down (49 transport belts under 0..10: 39 went down; under 0..4, 6 more); a drop's
+  -- cargo pod landed in the pad.
+  M.NO_UNLOAD_RULE = 'with unloading off at a stop the landing pads there take nothing from the hub; all the hub holds above a finite max of its sections for that planet still goes down, and drop still sends pods'
+  -- The record of pl's schedule for planet whose unloading is off: index (that record), else the current record when it
+  -- is at planet, else the first at planet from the current one on. Returns the record's index and a line, or nil when
+  -- that record unloads (or no record is at planet).
+  function M.no_unload(pl, planet, index)
+    local sch = try(function() return pl.schedule end)
+    local recs = sch and sch.records or {}
+    local n, cur = #recs, sch and sch.current or 1
+    if not index then
+      for k = 0, n - 1 do
+        local i = (cur - 1 + k) % n + 1
+        if recs[i].station == planet then index = i; break end
+      end
+    end
+    local r = index and recs[index]
+    if not (r and r.station == planet and r.allows_unloading == false) then return nil end
+    return index, string.format('stop %d (%s) has unloading off: its landing pads take nothing from the hub there; all above a finite max still goes down', index, planet)
   end
   -- "hub section 1 keeps calcite 200..inf at nauvis" (and the others naming it)
   function M.keep_text(k) return k and table.concat(k.parts, '; ') or nil end
@@ -814,13 +840,16 @@ return function(api)
       local ask, hold = pads(w.at, pl.force)
       -- (PI1) less what the hub's sections for that planet keep; a finite max sends the rest down asked or not
       local keep = M.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), w.at)
+      -- (PN1) a stop with unloading off: the pads take nothing, a finite max still sends down
+      local off, off_line = M.no_unload(pl, w.at)
       local down = {}
       for name, n in pairs(counts) do
         local want = (ask[name] or 0) - (hold[name] or 0)
-        local go, k = M.hub_gives(keep, name, n, want)
-        if go > 0 or (k and want > 0) then down[name] = {expected=go, ask=ask[name] or 0, hold=hold[name] or 0, keep=M.keep_text(k)} end
+        local go, k = M.hub_gives(keep, name, n, want, off)
+        if go > 0 or ((k or off) and want > 0) then down[name] = {expected=go, ask=ask[name] or 0, hold=hold[name] or 0, keep=M.keep_text(k)} end
       end
       seg.down = next(down) and down or nil
+      seg.no_unload = off_line
       local up = hub_asks(pl, w.at, counts)
       seg.up = next(up) and up or nil
     else
@@ -1694,7 +1723,7 @@ return function(api)
       end
       local shown = {}
       for i = 1, math.min(M.ITEMS, #parts) do shown[i] = parts[i] end
-      local text = string.format('stop at %s (%s)', seg.at, when(seg, game.tick))
+      local text = string.format('stop at %s (%s)', seg.at, when(seg, game.tick)) .. (seg.no_unload and ' [' .. seg.no_unload .. ' (at arrival)]' or '')
       if #shown > 0 then text = text .. ': ' .. table.concat(shown, '; ') .. (#parts > M.ITEMS and string.format(' (+%d more items)', #parts - M.ITEMS) or '') end
       if seg.rockets then text = text .. string.format('; rockets launched to it: %d, cargo %s', seg.rockets.n, items_text(seg.rockets.cargo) or 'none') end
       local ptext, pods = pods_text(seg, flying, now)

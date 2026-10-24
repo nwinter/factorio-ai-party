@@ -16160,7 +16160,18 @@ M.pumpcheck=require('pumpcheck'){read=function(e) return M.circuits.read(e) end}
 M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,
   call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason,
   dry=function(p,entry,kind,args) return M.settings_dry(p,entry,kind,args) end,
-  fix=function(action,args) return M.aliases.fix(action,args,M.takes) end}
+  fix=function(action,args) return M.aliases.fix(action,args,M.takes) end,seen=function(p,ctx,pos) return M.settings_seen(p,ctx,pos) end}
+-- (d24 batch142 PN2, Astra #2134) whether the live call can set an entry's settings at pos: they go by remote view
+-- (configure_target, circuits' target, requests and wire), which needs our own platform or a chunk our force sees now
+-- on the call's surface (ctx: platform, surface). true, or the refusal.
+function M.settings_seen(p,ctx,pos)
+  if ctx.platform~=nil then return true end
+  local q=ctx.surface~=nil and M.on_surface(p,ctx.surface) or p
+  if own_platform(q) or p.force.is_chunk_visible(q.surface,chunk_of(pos)) then return true end
+  local c=chunk_of(pos)
+  return string.format('(%g,%g) on %s is in chunk (%d,%d), which our force does not see now (no radar coverage or character there): the live call refuses settings there',
+    pos.x,pos.y,q.surface.name,c.x,c.y)
+end
 -- A place_ghosts dry run's settings (d17 batch18 A3, Sol: requests written with name instead of item passed the dry run
 -- and were refused live), checked by the code the real call runs on the ghost it places, given a stand-in of that ghost:
 -- requests (space.lua check_requests, on a chest that takes requests), configure's recipe (configure_check), modules
@@ -16247,7 +16258,7 @@ function M.dry_verdict(out,a)
   local refused=out.settings_refused or 0
   local parts={}
   if blocked>0 then parts[#parts+1]=blocked..' entr'..(blocked==1 and 'y' or 'ies')..' blocked' end
-  if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused' end
+  if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused'..((out.settings_unseen or 0)>0 and string.format(' (%d in chunks our force does not see now)',out.settings_unseen) or '') end
   -- (batch28 A1, Astra ~4 times: ok while an unavailable recipe, floor the hub never builds or inserters with no
   -- target were listed) what the real call refuses or leaves undone fails the verdict too, each named
   -- (batch29 A2, Opus: a drill spot held one of our drills) an entry where the same entity of ours stands already
@@ -16316,14 +16327,23 @@ do
     if type(out)=='table' and #fixed>0 then out.settings_corrected=fixed end
     if a.dry_run==true then
       if type(out)=='table' then
-        local rows,line,n=M.entryset.dry(p,a.entities,ctx)
-        out.settings,out.settings_line,out.settings_refused=rows,line,n>0 and n or nil
+        local rows,line,n,unseen=M.entryset.dry(p,a.entities,ctx)
+        out.settings,out.settings_line,out.settings_refused,out.settings_unseen=rows,line,n>0 and n or nil,unseen and unseen>0 and unseen or nil
       end
       return M.dry_verdict(out,a)
     end
     local skip={}
     for _,f in ipairs(out.failed or {}) do if f.index then skip[f.index]=true end end
-    out.settings,out.settings_line=M.entryset.apply(p,a.entities,ctx,skip)
+    local stats
+    out.settings,out.settings_line,stats=M.entryset.apply(p,a.entities,ctx,skip)
+    -- (d24 batch142 PN2, Astra #2134: 31 ghosts placed, all 17 settings refused, and the reply read as a success) the
+    -- verdict and summary say how many settings were refused
+    local nref=stats and #stats.failed or 0
+    if nref>0 then
+      out.settings_refused=nref
+      out.summary=string.format('%s ghost%s placed; %d of %d settings refused',tostring(out.placed or 0),out.placed==1 and '' or 's',nref,nref+stats.set)
+      out.verdict='partial: '..out.summary..': '..stats.failed[1]..(nref>1 and string.format(' (and %d more: settings_line, settings)',nref-1) or '')
+    end
     if aliased>0 then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
     -- (AA8) an entry setting what acts on a signal with no red or green wire planned or standing
     local placed={}
@@ -16420,8 +16440,8 @@ do
     if #fixed>0 then out.settings_corrected=fixed end
     out.settings_planned=M.entryset.plan(entries)
     -- each checked as the real call checks it (A3)
-    local rows,line,n=M.entryset.dry(p,entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
-    out.settings_check,out.settings_line,out.settings_refused=rows,line,n>0 and n or nil
+    local rows,line,n,unseen=M.entryset.dry(p,entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
+    out.settings_check,out.settings_line,out.settings_refused,out.settings_unseen=rows,line,n>0 and n or nil,unseen and unseen>0 and unseen or nil
     return M.dry_verdict(out,judged)
   end
 end

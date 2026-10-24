@@ -25,7 +25,11 @@
   setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
   (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already
   (`exists`) or an inserter with no target reads
-  `dry_run_ok: false` and `verdict: fails: ...` naming the first of each, and `fh` exits 1. Settings are read as their own call reads them (`settings_corrected`: a
+  `dry_run_ok: false` and `verdict: fails: ...` naming the first of each, and `fh` exits 1. Ghost settings go by
+  remote view: an entry (or a wire's other end) in a chunk our force does not see now (no radar coverage or character
+  there) has its settings refused in the dry run as in the live call (`settings_unseen` counts them). A live call that
+  places its ghosts with settings refused gives `settings_refused`, `summary` and `verdict: partial: ...`, and `fh`
+  exits 1. Settings are read as their own call reads them (`settings_corrected`: a
   requests `set` map, ...). An entry's `settings: {...}` is read as those keys (`settings_alias`); a setting key such as
   `modules` at the entry's top level is refused with the shape. `"check_inserters": true` checks every planned
   inserter's pickup, drop, power and filters first and places nothing if one would not work; each row's `line` (and

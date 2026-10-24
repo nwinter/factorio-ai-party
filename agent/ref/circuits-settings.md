@@ -196,9 +196,10 @@
     `section: N, group: "name"`: a group that exists replaces the section's requests with the group's (`dropped` names
     what goes); a new name makes the group from the section's requests; `group: false` leaves it keeping a copy. An
     edit in a section of a group changes every member: `group_edit` names each other one, a dry run too. `groups: true`
-    lists our groups with their requests and members. There is no setting that stops a hub unloading: at each stop it
-    keeps only what its requests from that planet ask, so a reserve kept at every port is one section per port, each
-    requesting the item `from` that port.
+    lists our groups with their requests and members. A hub keeps at each stop what its requests from that planet
+    allow, so a reserve kept at every port is one section per port, each requesting the item `from` that port. A
+    stop's own unloading setting is `platform_schedule`'s `unloading` (ref/space-age.md): off, the pads there take
+    nothing from the hub, and all above a finite max still goes down.
   - Sections the game writes are `controlled: true` in every row, with `controlled_by`: a hub's construction requests,
     a silo's automatic requests, or the circuit network. The game refuses a write to one; the refusal names the same
     call with `add_section: true`, a new manual section that keeps the requests.

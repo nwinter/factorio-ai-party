@@ -30,7 +30,8 @@ return function()
   local TRAIN_STOP = {label='train stop record', fields={'station', 'wait?'}, hint={name='station', stop='station', waits='wait'},
     nested={wait={list=TRAIN_WAIT, groups=true, example='[{"type":"time","ticks":1800}]'}}}
   local DELIVER_ITEM = {label='item', fields={'name', 'count?', 'item?'}, hint={amount='count'}}
-  local STOP = {label='stop', fields={'station', 'wait?', 'save_as?', 'wait_from?'}, hint={planet='station', name='station', waits='wait', conditions='wait'}}
+  local STOP = {label='stop', fields={'station', 'wait?', 'save_as?', 'wait_from?', 'unloading?'}, hint={planet='station', name='station', waits='wait', conditions='wait',
+    allows_unloading='unloading', allow_unloading='unloading', unload='unloading'}}
   -- list: the record; map: an object of name = number also taken (the form the docs give); how many entries each
   -- handler takes is its own check
   M.SHAPES = {

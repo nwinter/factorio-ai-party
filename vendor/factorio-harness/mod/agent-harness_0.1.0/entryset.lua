@@ -145,14 +145,21 @@ return function(api)
   -- ('ok' or the refusal), a line, and how many were refused. Each wire's ends by the live wire's rules (d20 batch122,
   -- Astra #2087: from_side on a belt read ok, the live call refused it): the entry, and at to an entry of this call
   -- (entries) or what stands there (ctx: platform, surface).
+  -- (d24 batch142 PN2, Astra #2134: a dry run passed 17 settings at Nauvis (970,622) and the live call placed 31
+  -- ghosts and refused all 17, the chunk not visible) the live call's sight rule first, per entry and each wire's other
+  -- end (api.seen: true, or the refusal): the settings there are refused, counted in unseen (the 4th value).
   function M.dry(p, entries, ctx)
-    local rows, ok_n, failed = {}, 0, {}
+    local rows, ok_n, failed, unseen = {}, 0, {}, 0
+    local function seen(pos) if not api.seen then return true end local ok, r = pcall(api.seen, p, ctx or {}, pos); return not ok or r end
     for i, e in ipairs(entries) do
       if has(e) then
         local pos = api.position(e.position)
         local row = {index=i, name=e.name or e.item, position=pos}
+        local sight = seen(pos)
         for _, k in ipairs(KINDS) do
-          if e[k[1]] then
+          if e[k[1]] and sight ~= true then
+            row[k[1]] = sight; unseen = unseen + 1; failed[#failed+1] = string.format('entry %d %s: %s', i, k[1], sight)
+          elseif e[k[1]] then
             local args = {}
             for key, v in pairs(e[k[1]]) do args[key] = v end
             args.position = pos
@@ -164,8 +171,11 @@ return function(api)
         for j, w in ipairs(type(e.wires) == 'table' and e.wires or {}) do
           local to = api.position(w.to)
           local label = string.format('%s to %s', w.color or 'copper', at(to))
-          local ok, res = pcall(api.dry, p, e, 'wire', {to=to, color=w.color, from_side=w.from_side, to_side=w.to_side,
-            entries=entries, ctx=ctx or {}})
+          local far = sight ~= true and sight or seen(to)
+          local ok, res
+          if far ~= true then ok, res = false, far; unseen = unseen + 1
+          else ok, res = pcall(api.dry, p, e, 'wire', {to=to, color=w.color, from_side=w.from_side, to_side=w.to_side,
+            entries=entries, ctx=ctx or {}}) end
           row.wires = row.wires or {}
           if ok then row.wires[j] = label .. ': ok'; ok_n = ok_n + 1
           else row.wires[j] = label .. ': ' .. api.reason(res); failed[#failed+1] = string.format('entry %d wire %d: %s', i, j, api.reason(res)) end
@@ -173,9 +183,10 @@ return function(api)
         rows[#rows+1] = row
       end
     end
-    local line = string.format('settings (dry run): %d would be set', ok_n) .. (#failed > 0 and string.format(', %d refused: %s', #failed,
+    local line = string.format('settings (dry run): %d would be set', ok_n) .. (#failed > 0 and string.format(', %d refused%s: %s', #failed,
+      unseen > 0 and string.format(' (%d in chunks our force does not see now)', unseen) or '',
       table.concat(failed, '; ', 1, math.min(4, #failed)) .. (#failed > 4 and '; ...' or '')) or '')
-    return rows, line, #failed
+    return rows, line, #failed, unseen
   end
   -- After placing: the entries not skipped (failed, or still to be built) set in order, then the wires.
   -- Returns rows [{index, name, position, configure, requests, circuit, wires}] ('set' or the refusal) and a line.
@@ -258,6 +269,6 @@ return function(api)
   end
   M.schema_text = 'configure {recipe, filters, filter_mode, modules, ...} as configure takes them; requests {set, clear, ...} '
     .. 'as requests takes them; circuit {enable, read, settings, decider, arithmetic, signals, ...} as circuit_set takes them; '
-    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line); unwired (a warning, dry runs too): an entry whose circuit sets what acts on a signal (an enable condition, set filters, stack size, recipe, requests ...) with no red or green wire in the call (its own wires or another entry\'s to it) and none on what stands there, and what the game does then (2.0.77: an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'
+    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line; a live call with any refused: settings_refused, summary, verdict partial); ghost settings go by remote view: an entry or wire end in a chunk our force does not see now is refused, in the dry run too (settings_unseen); unwired (a warning, dry runs too): an entry whose circuit sets what acts on a signal (an enable condition, set filters, stack size, recipe, requests ...) with no red or green wire in the call (its own wires or another entry\'s to it) and none on what stands there, and what the game does then (2.0.77: an enable condition is ignored and the entity runs; set filters, stack size, recipe and requests keep the entity\'s own)'
   return M
 end
