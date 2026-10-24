@@ -8,7 +8,8 @@ score, why). With --cut N, the best N with footage are cut from the master as H.
 1080p x264 veryfast at --crf, AAC 128k, at nice 19), each with its captions as a .vtt beside it.
 
 A moment's score: weight(kind) x novelty x on-air factor + chat bonus + host bonus + edge bonus.
-- weight: the kind's base (WEIGHTS), a battle's adds the director's battle score, a loss its building count.
+- weight: the kind's base (WEIGHTS), a battle's adds 8 x the director's battle score (up to 6), a loss its building
+  count; a battle line for a wave still heading for the base (no loss yet) weighs 20 + 4 x its score.
 - novelty: x1.25 for the first of its kind in the shift (a death: the agent's first), x0.8 for a repeat.
 - on air: the share of the clip the program spent on a subject that fits the kind (an attack shot for a battle, the
   agent or an attack shot for a death, a segment shot for an arrival; any subject for kinds the overlay itself shows,
@@ -47,6 +48,8 @@ FITS = {"battle": {"@attack", "@incoming"}, "loss": {"@attack", "@incoming"}, "d
         "platform_lost": {"@platform", "@attack", "@replay", "@fallback"}, "platform_created": {"@segment", "@platform"},
         "replay": {"@replay"}, "segment": {"@segment"}}
 HOST_EVENTS = {"death", "loss", "attack", "headline"}
+BATTLE_CAP = 6   # the director's battle score counts up to this (its 90th percentile over the run)
+INCOMING = 20    # a battle line for a wave still heading for the base
 NMS_S = 90
 SNAP_IN, SNAP_OUT = 8, 16
 
@@ -113,8 +116,11 @@ def candidates(index):
             continue
         why = []
         w = WEIGHTS[kind]
-        if kind == "battle":
-            w += 15 * (e.get("score") or 0)
+        if kind == "battle" and "heading for" in (e.get("title") or ""):
+            w = INCOMING + 4 * min(BATTLE_CAP, e.get("score") or 0)  # a wave on its way: the fight may come later
+            why.append(f"an incoming wave (threat score {e.get('score')})")
+        elif kind == "battle":
+            w += 8 * min(BATTLE_CAP, e.get("score") or 0)
             why.append(f"battle score {e.get('score')}")
         if kind == "loss":
             n = e.get("lost") or 0
@@ -150,7 +156,7 @@ def candidates(index):
                 (r.get("event") in HOST_EVENTS or r.get("label") == "reaction")]
         host_bonus = min(16, 8 * sum(1 for r in host if r.get("event")) + 5 * sum(1 for r in host if r.get("label")))
         if host_bonus:
-            why.append(f"hosts or agents reacted ({len(host)} lines)")
+            why.append(f"hosts or agents reacted ({len(host)} line{'s' if len(host) > 1 else ''})")
         edge = 30 if "solar-system-edge" in (e.get("title") or "") else 0
         if edge:
             why.append("at the solar system's edge")

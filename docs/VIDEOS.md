@@ -162,3 +162,27 @@ review.md, the cut MP4s). Its parts, each a CLI of its own:
   `SHIFT/clips/CLIP-ID.{mp4,vtt}`, `SHIFT/captions.vtt`, `SHIFT/index.json`, `player/index.html`.
 
 `python3 tools/test_video_archive.py` runs it all on a made-up shift (no ffmpeg, no clock).
+
+## The clip library (batch129: old moments for the tour and the director)
+
+    python3 tools/archive/catalogue.py build                     # every ended shift with a master on the SSD
+    python3 tools/archive/catalogue.py search --kind death --agent opus --planet nauvis --text "artillery"
+    python3 tools/archive/catalogue.py best --md FILE             # the run's best 50, for the tour writer
+    python3 tools/archive/clipmaker.py s48-platform_lost-001      # cut, upload, print {url, seconds, ...}
+    python3 tools/archive/clipmaker.py --range "2026-10-20 18:25:20" "2026-10-20 18:26:10"
+
+- The catalogue (`runs/archive/catalogue.json` in the main checkout, gitignored) holds each shift's row, each
+  recording with its fitted offset, and one entry per candidate clip: id `s48-platform_lost-001` (shift, event id),
+  kind, title, times, the shift's score and the run's `rank` (a bonus for the first of its kind in the run), why,
+  agents, planet, platform, the voiced lines inside it, and `flags` (no footage, no fitted offset, a hidden viewer's
+  chat on the full frame). Per-shift indexes go to `runs/archive/shifts/`, offsets to `runs/archive/calibration.json`.
+  Shifts 1-13 (and 14 to 23:37) have no audio-played.jsonl: their voiced lines are the caster rows pushed to the page.
+- A clip is H.264 CRF 23 with the program's sound, cropped by default to the program's camera column (x 24, y 24,
+  1208x1032: the overlay's main camera, which is today's camera hole; no sidebar or chat), `--frame full` for the whole
+  frame. One encode at a time (a lock file), nice 19; cached by id in `runs/archive/clips/made.json`.
+- On R2: `clips/ID.mp4` (`clips/ID-full.mp4`), `clips/ID.vtt`, `clips/ID.json` (title, caption "from shift 48,
+  Oct 20", when, seconds, size), public at https://pub-107dd9c2d81e4ef687f434b9c598414b.r2.dev/clips/ID.mp4. The
+  maker refuses a clip that would take the bucket over 19 GB.
+
+`python3 tools/test_clip_library.py` checks the catalogue and the maker on the same made-up shift (no ffmpeg, no
+network).

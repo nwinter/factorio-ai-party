@@ -21,7 +21,9 @@ shift12's game hours, and the game pauses, so a tick does not name a moment). Th
            platform_created, platform_deleted, maiden, arrival, battle, loss, segment, replay, viewer_answer, note
   milestones  the ids of the events that mark progress (research, rockets, platforms, maiden flights, arrivals)
   lines    {t, dur, who, channel, text, event|label}: every voiced line (hosts, agents aloud, operator), t its play
-           start on the log clock (audio-played.jsonl joined to the caster jsonl's text)
+           start on the log clock (audio-played.jsonl joined to the caster jsonl's text); a shift with no
+           audio-played.jsonl (1-13, and 14 before 23:37) has the caster rows pushed to the page instead, at push
+           time (`pushed`)
   chat     {t, who, kind: agent|viewer, text}: agents' chat lines and viewers' lines (site/moderation.py deletions out)
   stats    rows of `stats_cols`, from scores.jsonl
 
@@ -366,8 +368,12 @@ def chronicle_events(rows, clock, start, end):
                             agents=[who], surface=r.get("surface"), by=r.get("by"),
                             x=(r.get("position") or {}).get("x"), y=(r.get("position") or {}).get("y")))
         elif kind == "platform_lost":
-            out.append(dict(base, kind="platform_lost", surface=r.get("surface"), title=f"Platform {r.get('platform')} lost "
-                            f"({r.get('from')} to {r.get('to')}, {r.get('flown')}% flown)", platform=r.get("platform"),
+            if r.get("from") and r.get("to"):
+                where = f"({r['from']} to {r['to']}" + (f", {r['flown']}% flown)" if r.get("flown") is not None else ")")
+            else:
+                where = f"(at {r.get('at') or r.get('where', '?').replace('at ', '')})"
+            out.append(dict(base, kind="platform_lost", surface=r.get("surface"),
+                            title=f"Platform {r.get('platform')} lost {where}", platform=r.get("platform"),
                             by=r.get("by"), cargo_items=r.get("cargo_items"), agents=[r["creator"]] if r.get("creator") else []))
         elif kind in ("platform_created", "platform_deleted"):
             verb = "built" if kind == "platform_created" else "deleted"
@@ -485,12 +491,15 @@ def merge_deaths(events):
 def viewer_answer_events(rows, start, end, hidden):
     out = []
     for r in rows:
-        ans = (r.get("reply") or {}).get("answer")
+        reply = r.get("reply") or {}
+        if isinstance(reply, str):  # the first days' rows: the answer as a string
+            reply = {"answer": reply}
+        ans = reply.get("answer") if isinstance(reply, dict) else None
         if not ans or not r.get("t") or not start <= r["t"] <= end:
             continue
         if hidden and hidden.hides(r.get("viewer") or "", r.get("text") or ""):
             continue
-        q = (r.get("reply") or {}).get("question") or r.get("text") or ""
+        q = reply.get("question") or r.get("text") or ""
         out.append({"t": round(r["t"], 1), "kind": "viewer_answer", "title": f"{r.get('viewer')} asks: {sv.short(q, 60)}",
                     "viewer": r.get("viewer"), "question": r.get("text"), "answer": ans, "src": "viewer-answers"})
     return out
@@ -535,6 +544,33 @@ def voiced_lines(played, caster_rows, start, end):
             if r.get("label"):
                 row["label"] = r["label"]
         out.append(row)
+    return out
+
+
+HOST_NAMES = {"pbp": "Rook", "color": "Vale"}
+
+
+def pushed_lines(caster_rows, start, end):
+    """Voiced lines where audio-played.jsonl has none (shifts 1-13, 14 to 23:37): each caster row pushed to the page,
+    at its push time. The page plays them in turn, so a line can start later than this when one is playing
+    (`pushed`: True)."""
+    out = []
+    for r in caster_rows:
+        if not (r.get("pushed") and r.get("line") and r.get("t") and r.get("seconds")):
+            continue
+        if not start - 60 <= r["t"] <= end + 60:
+            continue
+        agent = r.get("agent")
+        who = HOST_NAMES.get(r.get("who")) or agent or r.get("who")
+        channel = "agent" if agent else r.get("type")
+        row = {"t": round(r["t"], 2), "dur": round(r["seconds"], 2), "who": who, "channel": channel,
+               "agent": agent, "text": r["line"], "pushed": True}
+        if r.get("event"):
+            row["event"] = r["event"]
+        if r.get("label"):
+            row["label"] = r["label"]
+        out.append(row)
+    out.sort(key=lambda r: r["t"])
     return out
 
 
@@ -621,6 +657,8 @@ def build(run, runs_dir, logs_dir, rec_dirs, calibration=None, probe=ffprobe_dur
         x["on_air"] = sub[3] if sub else None
     caster = [r for p in log_files(logs_dir, "caster", start, end) for r in jsonl(p)]
     lines = voiced_lines(jsonl(d / "audio-played.jsonl"), caster, start, end)
+    began = min((r["t"] for r in lines), default=end + 60)  # audio-played.jsonl began mid-shift 14
+    lines = [r for r in pushed_lines(caster, start, end) if r["t"] < began - 30] + lines
     viewers = [r for p in log_files(logs_dir, "viewers", start, end) for r in jsonl(p)]
     chat = chat_rows(jsonl(d / "chat.jsonl"), viewers, start, end, hidden)
     return {
