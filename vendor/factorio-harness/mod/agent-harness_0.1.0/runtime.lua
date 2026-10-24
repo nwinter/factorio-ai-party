@@ -155,7 +155,7 @@ M.belt=require('belt')()
 -- A background job's step timed as its own part while the operator profile runs (profile.lua part); else just the call.
 M.timed=function(label,fn,...) if M.profile then return M.profile.part(label,fn,...) end return fn(...) end
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
-M.carry=require('carry'){state=state,restart=function(index,call,until_tick) return M.restart_call(index,call,until_tick) end,
+M.carry=require('carry'){state=state,update_pause=function(tick) return string.format(M.UPDATE_PAUSE,tick) end,restart=function(index,call,until_tick) return M.restart_call(index,call,until_tick) end,
   resume=function(index,action) return M.resume_carried(index,action) end}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,timed=M.timed,
   -- aboard a platform every read works (bots.lua check_action; Astra, 18:16)
@@ -1043,8 +1043,10 @@ function M.stop_player(index,outcome,why)
   finish(index,outcome or 'interrupted')
   stop_combat(index,outcome or 'interrupted')
 end
+-- (d24 batch153) the queues' pause names the harness update; the incoming runtime carries on what was running
+M.UPDATE_PAUSE='paused by a harness update at tick %d (a runtime deploy or restart stops every action and pauses every queue; the incoming runtime carries on the steps that were running)'
 function M.stop_all()
-  if scheduler then scheduler.pause_all() end
+  if scheduler then scheduler.pause_all(string.format(M.UPDATE_PAUSE,game.tick)) end
   for index in pairs(state().active) do finish(index,'interrupted') end
   for index in pairs(state().combat or {}) do stop_combat(index,'interrupted') end
 end
@@ -16602,7 +16604,8 @@ M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(
   end
 }
 scheduler=scheduler_module(M.scheduler_api)
-scheduler=require('queue_lanes'){scheduler=scheduler,factory=scheduler_module,base=M.scheduler_api,is_read=function(action) return M.is_read(action) end}
+scheduler=require('queue_lanes'){scheduler=scheduler,factory=scheduler_module,base=M.scheduler_api,is_read=function(action) return M.is_read(action) end,
+  deliver=function(index,t) return M.board.deliver(index,t) end}
 -- (d17 batch21 D1) a queue call for a platform's own lane: as the remote lane, no body
 function M.platform_lane(a) return type(a)=='table' and type(a.lane)=='string' and a.lane:match('^platform:.+$')~=nil end
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end

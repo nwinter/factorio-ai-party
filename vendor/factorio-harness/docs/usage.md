@@ -13511,3 +13511,52 @@ Fixed besides gates:
   add "N laser turrets: ...; K kills, D damage dealt"; the start line names them. The railguns, ammo turrets and every
   other field are unchanged; a watch begun before the deploy has no laser list and adds none at its minute's refind.
 - Test: tests/d24_batch151.lua (fails on main: no laser turrets in the start line).
+
+## d24 batch153 (eng/d20-batch153): the harness review's bugs 1, 2 and 6
+- Bug 1, platform_schedule on a paused platform:
+  - Before (a copy of world n's 09:13 autosave, Kestrel IVa paused at Nauvis): `{platform, stop: 2, wait: [time
+    7200]}` set the wait and answered ok:false, "Kestrel IVa reads paused: it goes nowhere until unpaused (paused:
+    false); it was paused before this call after this call, so the call failed".
+  - Now: a platform paused before the call and left paused (no `paused` given) takes the change and the call answers
+    ok, with `still_paused` ("X was paused before this call and still is: the change is made, and it goes nowhere until
+    unpaused (paused: false)") beside what it changed (`edited`, `schedule`, `sent_to`) and the paused state_note.
+  - Only `paused: false` that leaves it paused fails ("X still reads paused after this call (paused: false was given)").
+  - A stop's waits or unloading changed with the stops kept is marked for the change-made reply (made.lua):
+    "X stop 2: gleba: time 60s (was gleba: time 2m00s)".
+- Bug 2, the stop a paused platform stands at:
+  - Before: shipment read "Kestrel IVa: 1 nauvis (flying to it)" (space.stops: waiting_now is nil for a paused
+    platform).
+  - Now, in space.stops (shipment, platform_gate, platforms):
+    - paused at its current stop: "(stopped here, paused: it goes nowhere until unpaused (paused: false))", the next
+      stop "next";
+    - paused at another location: "the current stop; paused at X";
+    - paused on a route: "(flying to it, paused on the route ...)".
+  - The paused stop's waits are listed without their progress. The other waiting_now users (platform_schedule's
+    branches, gate's state, recheck) already read paused first; shipment's ready and conflicts read freight.where,
+    which reads it stopped.
+- Bug 6, platform lanes and pause reasons:
+  - Before: Sol's queue_status listed 24 platform lanes, 7 of them for platforms gone (26 lane names on the copy, 9
+    gone). Paused lanes read "paused (a direct call that drives your character, stop, or a harness update)", the text
+    of a pause with no reason: runtime stop_all (a deploy or restart) paused every queue with none.
+  - Now:
+    - queue_lanes.close_gone (every 600 ticks): a lane queue whose platform is no platform of ours, with no step
+      running, for 3600 ticks in a row (a lane staged before its platform is made keeps that long) is closed, and its
+      owner gets one fyi tell: "your platform lane platform:X is closed: no platform of ours is named X (read since
+      tick T). It held ..." (pending steps, a repeating plan, guards, paused and why, its last step). The lane's name
+      goes when no queue is left in it.
+    - Every pause names its reason: stop_all's "paused by a harness update at tick T (a runtime deploy or restart
+      stops every action and pauses every queue; the incoming runtime carries on the steps that were running)", the
+      standing order stepped aside, queue_submit mode=replace/ahead, queue_repeat, queue_cancel, a queue that could not
+      act. A queue paused already keeps its own reason. A pause still with none reads "paused with no reason recorded".
+    - carry.lua names the outgoing runtime's reasonless pause in the deploy tick as the harness update (the first
+      deploy of this runtime comes from one without the reason).
+- Checked on the copy:
+  - Bugs 1 and 2: the before replies above; after the deploy, shipment "1 nauvis (stopped here, paused ...)" and
+    platform_gate the same; platform_schedule stop 2 wait 3600 answered ok with edited "stop 2 (gleba): 1 wait
+    condition set in place ...; state paused (kept)" and still_paused, and the game held the wait.
+  - Bug 6: the deploy from main: 21 queues paused in the deploy tick read "paused by a harness update at tick
+    57041658" and were carried on; the older pauses kept their reasons ("a guard fired: ...", "job-886 wait_until
+    failed: ..."). After 5600 ticks: 17 lane names left; Sol's queue_status lists only platforms that exist; Astra's
+    inbox had the four tells (Bastion, Limestone-spare-unbuilt, Prospect, Crucible).
+- Tests: tests/d24_batch153.lua (fails on main at each of the three: "before: flying to it", the ok:false text, the
+  reasonless pause); d22_batch112 takes "paused with no reason recorded".
