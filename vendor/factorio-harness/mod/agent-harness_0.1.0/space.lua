@@ -2464,8 +2464,13 @@ return function(api)
     return out1
   end
   function M.platform_schedule_call(p,a)
-    local pl=api.editlog and (a.stops~=nil or a.stop~=nil or a.paused~=nil or a.current~=nil) and select(2,pcall(M.platform,p,a.platform)) or nil
-    if type(pl)~='table' then pl=nil end
+    -- (d24 batch141 PM1 cp2) a failed lookup leaves nil: a type check for a table dropped every real platform (userdata,
+    -- as batch100 BJ1 found in platform_schedule), so no schedule edit was recorded on the game
+    local pl
+    if api.editlog and (a.stops~=nil or a.stop~=nil or a.paused~=nil or a.current~=nil) then
+      local found,x=pcall(M.platform,p,a.platform)
+      if found then pl=x end
+    end
     local before=pl and api.editlog and gate_texts(pl)
     local stops_before,paused_before=pl and stop_list(pl),pl and (pl.paused and 'paused' or 'not paused')
     -- (d24 batch141 PM1) the schedule's change, marked (made.lua) whether the call goes on to fail or not

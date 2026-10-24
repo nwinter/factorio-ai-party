@@ -13159,14 +13159,17 @@ Fixed besides gates:
     switches, platform_schedule's stops/current/paused before and after, each minimum payload set, and each cargo pod
     a drop sent.
   - Checked and left alone: launch, land and platform_create build their replies from reads made before the change.
-  - Also found: platform_schedule_call's edit-log lookup checks `type(pl)=='table'`, which drops every real platform
-    (userdata), the same bug batch100 BJ1 fixed in platform_schedule. So schedule edits are not recorded in the edit
-    log on the game. Left as it is and reported.
+  - Also found, and fixed in cp2: platform_schedule_call's edit-log lookup checked `type(pl)=='table'`, which dropped
+    every real platform (userdata), the same bug batch100 BJ1 fixed in platform_schedule. So no schedule edit (stops,
+    paused, the departure gate) was recorded in the edit log on the game, and nobody was told of another agent's
+    edit. The lookup now keeps whatever M.platform finds. The platform reads' last-edit lines and the tells to the last
+    editor now work on the game as in the tests.
 - On a headless copy of world n's 03:41 autosave (paused at tick 55693680, Meridian-V flying gleba->nauvis, hub 180):
   - before (world n's runtime): `bad argument #5 of 8 to 'format' (number expected, got nil)`, slot set to 20..30.
   - after: ok, with stored, sends_down as above, and over_max `150 over the max 30`.
   - With string.format made to fail on chosen texts: requests answered ok with `reply_failed: ["sends_down: forced test
     failure"]`, and platform_schedule answered ok with `change_made: ["Meridian-V schedule: 1 nauvis, 2 gleba, current 2
     (was ... current 1)"]`.
-- Tests: tests/d24_batch141.lua (fails on main with Sol's error); tests/d17_batch31.lua's finite-max line now reads the
-  trash wording, with the same counts.
+- Tests: tests/d24_batch141.lua (fails on main with Sol's error; its cp2 block, a userdata platform's schedule edit
+  recorded and told, fails on main with `the edit log records the stops`); tests/d17_batch31.lua's finite-max line now
+  reads the trash wording, with the same counts.
