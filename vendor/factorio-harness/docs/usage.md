@@ -13936,3 +13936,29 @@ Fixed besides gates:
   idle_nudge.py gives the 23 notices recorded in nudges.jsonl at the same seconds, this one 1 (Grok's, at 14:30).
   `--module PATH` replays another idle_nudge.py. It fails on main. tools/test_idle_nudge.py and
   tools/test_idle_nudge_answer.py take the repeat rule and the cover text.
+
+## d24 batch171
+
+- QN1 (Sol 15:09: "Asterion three explosive plants (-5.5,48.5/56.5/64.5) inspect rate 39/min each ... total 117. ...
+  But platform_production explosives at 58041177 says 290 made/min 1m, 186.2/min 10m. ... Does inspect rate omit
+  beacon/force effects, or platform production read broader surface?"). World n 15:20, reads only, one at a time:
+  - Asterion's item statistics for explosives: normal 224 in the last minute, 2722.85 in ten, 305950 in all; uncommon,
+    rare, epic and legendary 0; the plain read and input_counts equal (0.24 ms). No double count in qflow.lua.
+  - The three chemical plants: crafting_speed 1.3 (one speed module 2), effects speed +0.3 and consumption -0.2, no
+    productivity, get_beacons 0; inspect's 39/min each is right (4 s a craft, 2 explosives).
+  - Asterion's 55 crafting machines (1.9 ms to count, 1.6 ms to list): a fourth with the explosives recipe, a
+    cryogenic-plant at (-14.5,56.5): 8 productivity module 3s, both beacons (-13.5,50.5/62.5, two speed module 3s
+    each) in reach, crafting_speed 3.84, productivity +80% (0.1 ms). At full speed 207.4/min; the four together
+    324.4/min. Totals agree: (34784 + 40658 + 47087) crafts x 2 + 17474 x 2 x 1.8 = 307,940 against 305,950 made.
+  - So both reads are right: inspect is one machine at full speed, platform_production every machine on the surface.
+- platform_production {platform, item} now gives `makers` [{entity, quality, position, recipe, speed, productivity,
+  per_min (full speed, craftrate.lua as inspect), status, crafts (products_finished)}], the most first, and
+  `makers_full_per_min`, with a line: "makers: 4 crafting machines on Asterion with a recipe that makes explosives,
+  324.4/min together at full speed (made 224 in the last minute): cryogenic-plant (-14.5,56.5) explosives 207.4/min
+  (speed 3.84, productivity +80%, working); chemical-plant (-5.5,48.5) ...". 12 are named, then "+N more". Without
+  item nothing changes and no machine is read. Its note says made counts every machine on the platform, productivity
+  included. inspect's rate line now reads "(this machine alone, at full speed all the time; ...)".
+- Cost, on a copy of world n's 15:15 autosave (tick 58067412; the copy runs slower than world n), as Sol, 5 calls
+  each: platform_production {Asterion, explosives} main 2.0-2.7 ms, this branch 4.8-6.2 ms (the find of 55 crafting
+  machines, each recipe's products, craftrate for the 4 that make it); {Asterion} without item 10.9-11.6 ms on both.
+- Test: tests/d24_batch171.lua (fails on main: inspect's line, no makers); tests/craftrate.lua takes the new line.
