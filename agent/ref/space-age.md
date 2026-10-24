@@ -178,7 +178,9 @@
   never builds the last ghost round a hole; a hole built floor alone encloses stays open), played through the hub's
   build rules (`stalls`: kept ghosts it never builds; `net_saved`), and the foundation tile ghosts outside it as `remove_areas`,
   64 a page, each a `deconstruct {platform, area, tiles: ["space-platform-foundation"]}`; `strands` names entity ghosts
-  not chosen that stand on a tile that would go. Read only.
+  not chosen that stand on a tile that would go. The chosen are what stands on the floor: never a rocket or other
+  projectile, laser beam, cargo pod or robot passing; `add_for` (beside `place_ghosts_entries`) and `for_entities` name
+  the entity (name, unit number, position) each planned tile is for, and how (footprint, tunnel, link). Read only.
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
   (`solar-panel@epic`; a ghost is built only from items of its quality, so the hub's normal stock never covers a quality
