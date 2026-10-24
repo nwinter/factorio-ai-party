@@ -13113,6 +13113,59 @@ Fixed besides gates:
   platform_digest's chunk line reads `made (collectors' catch and crushers' returns): ...`.
 - Tests: tests/d24_batch143.lua (fails on main: `not called collected`); tests/d22_batch78.lua, d22_batch81.lua,
   d16_batch6.lua and platdigest.lua use the new names.
+## d24 batch142 PN1 (eng/d20-batch142): a platform stop's unloading setting (Sol #2135, Luna #2136)
+- 2.0.77 has it: each schedule record reads `allows_unloading` (true unless set), `LuaSchedule.set_allow_unloading(
+  {schedule_index = N}, bool)` sets it in place (an integer index is refused), and both `platform.schedule = {...}` and
+  `add_record` take the field. It is the schedule window's per-stop allow unloading checkbox. No platform in world n's
+  save of d24 03:27 had it off.
+- What it does, measured on a copy of that save with Petrel II waiting at Nauvis:
+  - off, with the Nauvis pad asking carbon 50 and then 400, none of the hub's 179 carbon went down (another platform's
+    pod brought the pad 50); on again, 83 went down within 20 s;
+  - off, a hub section transport-belt 0..10 from nauvis sent 39 of the hub's 49 belts down to the pad, and 0..4 then 6
+    more: all above a finite max still goes down, a pad asking or not;
+  - off, `drop` (the hub's scripted cargo pod) still sent its pod, and it landed in the pad (drop 1910).
+- `platform_schedule`:
+  - a stops entry takes `unloading: true|false`. One without it keeps what the schedule's first stop at that station
+    had before the call, else on. The reply's `unloading` lists each stop with it off, and whether it was kept from
+    before; `unloading_rule` says what off does.
+  - `{platform, stop: N, unloading}` sets that stop's in place, alone or with `wait`. The records, their waits, the
+    current stop and the state are kept: `edited: "stop 1 (nauvis): unloading off (was on); its waits, the records and
+    the current stop kept"`. `unloading` without `stop` is refused.
+  - the record-by-record rebuild (`rebuilt`) carries it; argshapes names `unloading` for `allows_unloading`,
+    `allow_unloading` and `unload`.
+- Reads: `schedule` marks the stop `nauvis [unloading off]`; `stops` lines (platforms, platform_gate, shipment's gate)
+  say `1 nauvis (waiting here; unloading off: the landing pads take nothing from the hub here, all above a finite max
+  still goes down): ...`; the edit log's stop text ends `; unloading off`, so a change is recorded and told like a
+  wait edit.
+- Drop forecasts (freight.lua `no_unload`, and `hub_gives(keep, item, held, want, off)` with the pads' want taken as 0):
+  freight's stop segments (`expected down`, the line marked at arrival), delivery_watch (at the destination and at the
+  stops before it), shipment's ready read (`no_unload`, `kept aboard: carbon: none of 179 (unloading off; ...)`) and
+  its cargo lines and conflicts, and the requests' `sends_down`.
+- agent/ref/circuits-settings.md no longer says there is no such setting; agent/ref/space-age.md documents it.
+- Test: tests/d24_batch142.lua (PN1).
+## d24 batch142 PN2 (eng/d20-batch142): a ghost dry run applies the live call's sight rule to settings (Astra #2134)
+- Astra's dry run at Nauvis (970,622) passed 17 settings; the live call placed 31 ghosts and refused all 17, and `fh`
+  exited 0. On Vulcanus (shift67 11:36) the live reply read `settings: 0 set, 24 refused: entry 1 configure: target is
+  outside local visible area ...; entry 1 circuit: target: (250.5,240.5) on vulcanus is out of reach and not in a
+  visible chunk ...`.
+- The live call sets ghost settings by remote view (configure_target, circuits' target, requests, wire), which takes
+  our own platform or a chunk our force sees now on the call's surface. The dry run checked the settings' arguments on
+  a stand-in ghost and never the sight.
+- Now the dry run (place_ghosts `dry_run: true`, and the `dry_run` action's `settings_check`) applies that rule per
+  entry and to each wire's other end first (runtime.lua `M.settings_seen`, entryset.lua `dry`). A setting there is
+  refused with `(970.5,622.5) on nauvis is in chunk (30,19), which our force does not see now (no radar coverage or
+  character there): the live call refuses settings there`. `settings_unseen` counts them, and the verdict fails:
+  `fails: 2 settings refused (2 in chunks our force does not see now); ...`.
+- A live call that places ghosts and has settings refused: `settings_refused` (the count), `summary: "2 ghosts placed;
+  2 of 2 settings refused"` and `verdict: "partial: ...: <the first refusal> (and 1 more: settings_line, settings)"`.
+  `fh` exits 1 on a live reply whose verdict starts `partial:` (host/cli.ts exitCode).
+- On the private copy of world n's save (chunk (30,19) charted, not visible), as Astra: the dry run of an assembler
+  with a circuit enable and a pole wired to it failed as above (36 ms with the dry run's other checks); the live call
+  placed both ghosts and gave `partial: 2 ghosts placed; 2 of 2 settings refused: entry 1 circuit: target: (970.5,622.5)
+  on nauvis is out of reach and not in a visible chunk ...` (16.5 ms); the ghosts were removed after. The same dry run
+  at (40.5,40.5), a chunk the copy sees, read `settings (dry run): 2 would be set`.
+- Tests: tests/d24_batch142.lua (PN2), mod/tests/runtime_test.lua (live verdict, dry run sight), tests/d17batch18.test.ts
+  (exit 1).
 ## d24 batch141 PM1 (eng/d20-batch141): requests failed after its change; a reply that fails after a change (Sol #2125)
 - Sol's `requests {platform: "Meridian-V", section: 23, set: [{item: "bioflux", min: 20, max: 30, from: "gleba",
   min_payload: 10}]}` (tick 55693611) set the slot, then answered `bad argument #5 of 9 to 'format' (number expected,

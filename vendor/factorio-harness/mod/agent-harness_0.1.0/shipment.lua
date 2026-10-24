@@ -296,6 +296,12 @@ return function(api)
       -- down: what the planet's landing pads ask of the hub now, and the last visit's receipts and spills
       local ask, hold = {}, {}
       if api.pads and not fast then local a1, h1 = api.pads(planet, force); ask, hold = a1 or {}, h1 or {} end
+      -- (d24 batch142 PN1) its stop there with unloading off: the pads take nothing from the hub
+      local F = api.freight and api.freight()
+      local off, off_line
+      if F and F.no_unload then off, off_line = F.no_unload(pl, planet) end
+      if off then ask = {} end
+      if parts and off_line then parts[#parts+1] = off_line end
       local down = {}
       -- (batch31 B6) the hub keeps at a stop what its requests from that planet ask, and no more (by item: BA1's keys
       -- summed over qualities)
@@ -382,6 +388,8 @@ return function(api)
       -- keeps it all, a finite one sends down all above it
       local F = api.freight and api.freight()
       local keeps = F and F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), o.planet) or {}
+      -- (d24 batch142 PN1) a stop with unloading off: its pads take nothing from the hub
+      if F and F.no_unload and F.no_unload(pl, o.planet, o.i) then ask = {} end
       for item, a in pairs(ask) do
         local want = a - (hold[item] or 0)
         local k = keeps[item]
@@ -494,6 +502,10 @@ return function(api)
     -- hub gives up there by its sections for that planet (freight.lua hub_keeps_at, hub_gives)
     local F = api.freight and api.freight()
     local keeps = F and F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), planet) or {}
+    -- (d24 batch142 PN1) its stop there with unloading off: the pads take nothing, a finite max still sends down
+    local off, off_line
+    if F and F.no_unload then off, off_line = F.no_unload(pl, planet) end
+    out.no_unload = off_line
     -- what the pads ask (their active sections' minimums) and hold, as freight's pads reads them
     local ask, hold, invs = {}, {}, {}
     for i, pad in ipairs(pads) do
@@ -530,9 +542,9 @@ return function(api)
       for _, item in ipairs(names) do
         local want = (ask[item] or 0) - (hold[item] or 0)
         local n, k = 0, nil
-        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, want) else n = math.max(0, math.min(want, counts[item] or 0)) end
-        if n == 0 and k and want > 0 and (counts[item] or 0) > 0 then
-          kept[#kept+1] = string.format('%s: none of %d (%s; the pads ask %d, hold %d)', item, counts[item], F.keep_text(k), ask[item] or 0, hold[item] or 0)
+        if F then n, k = F.hub_gives(keeps, item, counts[item] or 0, want, off) else n = math.max(0, math.min(want, counts[item] or 0)) end
+        if n == 0 and (k or off) and want > 0 and (counts[item] or 0) > 0 then
+          kept[#kept+1] = string.format('%s: none of %d (%s; the pads ask %d, hold %d)', item, counts[item], k and F.keep_text(k) or 'unloading off', ask[item] or 0, hold[item] or 0)
         end
         if n > 0 then
           local stack = try(function() return prototypes.item[item].stack_size end) or 1
@@ -548,8 +560,8 @@ return function(api)
       end
       lines[#lines+1] = string.format('landing pads on %s: %s%s; %s', planet, table.concat(pl_parts, ', '), #pads > PADS and ', ...' or '',
         #down > 0 and string.format('the hub would send down %s: %d slots in all, %d free%s', table.concat(down, ', '), slots, free, slots > free and ' (fewer)' or '')
-        or 'the hub holds nothing the pads ask for beyond what its requests from ' .. planet .. ' keep')
-        .. (#kept > 0 and '; kept aboard: ' .. table.concat(kept, '; ') or '')
+        or off_line and 'the hub sends nothing down there' or 'the hub holds nothing the pads ask for beyond what its requests from ' .. planet .. ' keep')
+        .. (#kept > 0 and '; kept aboard: ' .. table.concat(kept, '; ') or '') .. (off_line and '; ' .. off_line or '')
       out.pad_free_slots = free
     end
     out.lines = lines

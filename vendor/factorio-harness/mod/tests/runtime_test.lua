@@ -3455,6 +3455,18 @@ end)()
   eq(r.placed,3); eq(made[1].recipe,'iron-gear-wheel'); eq(made[2].recipe,nil); eq(#r.settings,2)
   eq(r.settings[1].configure,'set'); eq(r.settings[2].index,2); eq(r.settings[2].configure,'recipe incompatible with machine')
   eq(r.settings_line,'settings: 1 set, 1 refused: entry 2 configure: recipe incompatible with machine')
+  -- (d24 batch142 PN2, Astra #2134) ghosts placed with settings refused: the verdict and summary count them
+  eq(r.settings_refused,1); eq(r.summary,'3 ghosts placed; 1 of 2 settings refused')
+  eq(r.verdict,'partial: 3 ghosts placed; 1 of 2 settings refused: entry 2 configure: recipe incompatible with machine')
+  -- a dry run applies the live call's sight rule per entry: a chunk our force does not see now refuses the settings
+  local vis=p.force.is_chunk_visible
+  p.force.is_chunk_visible=function(_,c) return c.x<1 end
+  local dry2=call('place_ghosts',{dry_run=true,entities={{name='assembling-machine-2',position={x=20.5,y=8.5},configure={recipe='iron-gear-wheel'}},
+    {name='assembling-machine-2',position={x=40.5,y=8.5},configure={recipe='iron-gear-wheel'}}}})
+  p.force.is_chunk_visible=vis
+  eq(dry2.settings_refused,1); eq(dry2.settings_unseen,1); eq(dry2.dry_run_ok,false); eq(dry2.settings_check[1].configure,'ok')
+  assert(dry2.settings_check[2].configure:find('(40.5,8.5) on '..p.surface.name..' is in chunk (1,0), which our force does not see now',1,true),dry2.settings_check[2].configure)
+  assert(dry2.verdict:find('1 setting refused (1 in chunks our force does not see now)',1,true),dry2.verdict)
   -- build: a single build's own settings and a batch's entries, checked before anything is built.
   fails(function() call('build',{item='assembling-machine-2',position={x=30.5,y=4.5},circuit={bogus=1}}) end,'unknown argument bogus for circuit_set')
   fails(function() call('build',{builds={{item='assembling-machine-2',position={x=30.5,y=4.5}},{item='assembling-machine-2',position={x=34.5,y=4.5},

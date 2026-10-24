@@ -36,14 +36,19 @@
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
 - `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
   waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
-- `platform_schedule {platform, stops, current?, keep_leg?, paused?}`, `{platform, next: true}` or `{platform, stop, wait, go?}`: each stop `{station, wait: [...]}` (the reply's `launch_needs`: a silo at an item-waiting stop whose rocket parts lack
+- `platform_schedule {platform, stops, current?, keep_leg?, paused?}`, `{platform, next: true}` or `{platform, stop, wait?, unloading?, go?}`: each stop `{station, wait: [...], unloading?}` (the reply's `launch_needs`: a silo at an item-waiting stop whose rocket parts lack
   what the hub holds); a wait is `{type,
   ticks?, condition?, compare: "and"|"or"}` (kinds mixed need compare on each wait past the first; or `wait:
   {any_of: [...]}` / `{all_of: [...]}`; a stop's `save_as`/`wait_from` reuses a wait list by name). Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
   `any_request_not_satisfied`, `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a
   fluid), `circuit` (any signal on the hub's red and green wires: wire a tank or a combinator to the hub;
   `circuit_note` when the hub has no wire). A condition is `"thruster-fuel >= 10000"` or `{signal, comparator, value |
-  signal2}`. `stops: []` clears the schedule; `current` is the 1-based stop to head for; `paused` pauses thrust and
+  signal2}`. `unloading: false` is the schedule GUI's allow unloading off for that stop (in a stops entry, or with
+  `stop` alone, set in place: `edited` says was and now; a stops entry without it keeps what that station's first stop
+  had, else on). With it off (2.0.77 on a copy of world n), the landing pads there take nothing from the hub; all the
+  hub holds above a finite max of its sections for that planet still goes down, and `drop` still sends pods. Schedule
+  reads mark the stop `[unloading off]`, and the drop forecasts (`shipment`, `delivery_watch`, freight stop lines,
+  requests' `sends_down`) count it. `stops: []` clears the schedule; `current` is the 1-based stop to head for; `paused` pauses thrust and
   the schedule. With stops it then calls the GUI's go to station for `current` (`sent_to`). If the state still reads
   `no_schedule`, it writes the schedule again record by record, as the GUI does, and sends it again (`rebuilt` says
   what came of it). `state` is read after; `state_note` says when it is `no_schedule`, `no_path` or `paused` (the
