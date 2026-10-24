@@ -13887,3 +13887,19 @@ Fixed besides gates:
   0.036 ms; spidertron items in our logistic networks, characters and vehicle trunks: 0 (0.11 ms). where_is itself was
   not called on world n (it reads every holder of the surface).
 - Test: tests/d24_batch164.lua (fails on main: where_is spidertron with none stored and two placed gives no `placed`).
+- d24 batch166 cp2: the plain read, `floor: true` and `salvage: N` are jobs too (one runner, platplan.lua KINDS; the
+  reply while one runs is `plain_job`, `floor_job` or `salvage_job`, then the result once with `read`).
+  - On the copy, Asterion, main: the plain read 188-278 ms, `floor` 660-1081 ms (with the scenario's ghosts), `salvage`
+    60 301-308 ms, 2000 768-1003 ms (take-up rounds 438, holes 213, the tile reads 37, the removal play 26).
+  - Same results: main's runtime then the branch's at the same state; 40 of 40 replies field for field (support in
+    every form, floor and its page 2, salvage 60 and 2000 on 3 platforms, the plain read on all 18 platforms).
+  - Factorio's `pairs` gives a table's hash keys in the order they were put in (checked on the copy), and main's floor
+    links, plain-read islands and head-on pairs depend on that order. The jobs keep it in lists: the floor tiles come
+    chunk by chunk, each chunk by column, the order a whole-surface find gives them; the entity ghosts of floor, the
+    tile ghosts and the belts of the plain read are one find each, as before.
+  - salvage's rounds sort the edge tiles across ticks (a merge sort on a number key: farthest first, then row, column);
+    tilecheck.lua's removal play is resumable (removals_start, removals_run; plan_removals runs one to the end).
+  - Asterion on the copy: the plain read 182 ticks, floor 221, salvage 2000 310, support true 480 (2000 units a tick).
+    Slices over 3936 ticks: median 1.8 ms, p95 3.7 ms, p99 12.4 ms. The slices over 10 ms (47) came in runs of
+    consecutive slices, the plain floor reads among them at 20-50 times their usual time.
+  - Test: tests/d24_batch166.lua reads floor, salvage and the plain read 40 units a tick and in one go, the same.

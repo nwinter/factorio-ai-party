@@ -23,8 +23,9 @@ return function()
   M.key = key
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- Whether a tile is empty space (out of the map counts as empty); cache[key] = true/false, kept per check.
-  -- (d24 batch166) cache.grid {x0, y0, w, h, cell, keep} (platplan.lua's support job: arrays by (y - y0) * w + (x - x0) +
-  -- 1) answers before a tile read: built floor (cell 1) is not empty, a foundation tile ghost (cell 2) or a kept tile is.
+  -- (d24 batch166) cache.grid {x0, y0, w, h, cell, keep} (platplan.lua's jobs: arrays by (y - y0) * w + (x - x0) + 1)
+  -- answers after the cache and before a tile read, and is not copied into the cache: built floor (cell 1) is not empty,
+  -- a tile ghost (cell 2) or a kept tile is.
   local function is_empty(s, x, y, cache)
     local k = key(x, y)
     local v = cache[k]
@@ -32,12 +33,10 @@ return function()
       local g = cache.grid
       local dx, dy = g and x - g[1], g and y - g[2]
       local i = g and dx >= 0 and dy >= 0 and dx < g[3] and dy < g[4] and dy * g[3] + dx + 1
-      if i and g[5][i] == 1 then v = false
-      elseif i and (g[5][i] == 2 or g[6][i]) then v = true
-      else
-        local ok, name = pcall(function() return s.get_tile(x, y).name end)
-        v = not ok or name == 'empty-space' or name == 'out-of-map'
-      end
+      if i and g[5][i] == 1 then return false
+      elseif i and (g[5][i] == 2 or g[6][i]) then return true end
+      local ok, name = pcall(function() return s.get_tile(x, y).name end)
+      v = not ok or name == 'empty-space' or name == 'out-of-map'
       cache[k] = v
     end
     return v
@@ -117,66 +116,97 @@ return function()
   end
   -- The marked tiles played out: which go (in the order the rule lets them, each once a tile beside it has gone)
   -- and which wait, with why. tiles: {x, y} each; hub: the platform's hub (its room for each tile's product).
-  -- Returns {go = {{x, y}...}, waiting = {{x, y, why}...}, room = what the hub still takes after}.
-  function M.plan_removals(s, tiles, hub, cache)
-    cache = cache or {}
-    local mark, order, gone = {}, {}, {}
-    for _, t in ipairs(tiles) do mark[key(t[1], t[2])] = t end
-    local rooms = {}
-    local function room_for(item)
-      if not item then return math.huge end
-      if rooms[item] == nil then rooms[item] = room(hub, item) or math.huge end
-      return rooms[item]
-    end
-    local under = {}
-    for _, t in ipairs(tiles) do
-      local e = standing(s, t[1], t[2])
-      if e then under[key(t[1], t[2])] = e end
-    end
-    local work, steps = {}, 0
-    for i = #tiles, 1, -1 do work[#work+1] = tiles[i] end
-    while #work > 0 and steps < STEPS do
-      local t = table.remove(work)
-      local k = key(t[1], t[2])
-      steps = steps + 1
-      if not gone[k] and not under[k] and not is_empty(s, t[1], t[2], cache) and #M.runs(s, t[1], t[2], cache) == 1 then
-        local item = product(s, t[1], t[2])
-        if room_for(item) > 0 then
-          gone[k] = true; order[#order+1] = t; cache[k] = true
-          if item and rooms[item] then rooms[item] = rooms[item] - 1 end
-          -- The marked tiles round it may go next.
-          for _, d in ipairs(RING) do
-            local n = mark[key(t[1] + d[1], t[2] + d[2])]
-            if n and not gone[key(n[1], n[2])] then work[#work+1] = n end
-          end
+  -- Returns {go = {{x, y}...}, waiting = {{x, y, why}...}, unchecked = tiles still queued after STEPS}.
+  -- (d24 batch166) a slice at a time: removals_start, then removals_run(s, st, cache, units) until it returns true;
+  -- st.out is the reply. Plain data (platplan.lua's salvage job keeps it in storage); a room of -1 is no limit.
+  local RU = {under=15, step=12, wait=15}
+  function M.removals_start(tiles, hub)
+    local st = {tiles=tiles, hub=hub, mark={}, order={}, gone={}, rooms={}, under={}, work={}, steps=0, stage='under', i=1, waiting={}}
+    for _, t in ipairs(tiles) do st.mark[key(t[1], t[2])] = t end
+    return st
+  end
+  local function room_for(st, item)
+    if not item then return math.huge end
+    if st.rooms[item] == nil then st.rooms[item] = room(st.hub, item) or -1 end
+    local r = st.rooms[item]
+    return r == -1 and math.huge or r
+  end
+  function M.removals_run(s, st, cache, units)
+    local used = 0
+    local tiles, mark, gone = st.tiles, st.mark, st.gone
+    while used < units do
+      if st.stage == 'under' then
+        while st.i <= #tiles and used < units do
+          local t = tiles[st.i]
+          st.i = st.i + 1
+          local e = standing(s, t[1], t[2])
+          if e then st.under[key(t[1], t[2])] = e end
+          used = used + RU.under
         end
-      end
-    end
-    local waiting = {}
-    for _, t in ipairs(tiles) do
-      local k = key(t[1], t[2])
-      if not gone[k] and not is_empty(s, t[1], t[2], cache) then
-        local why
-        local e = under[k]
-        if e then why = string.format('%s %s stands on it', e.name, at(e.position.x - 0.5, e.position.y - 0.5))
-        else
-          why = M.removal_rule(s, t[1], t[2], cache)
-          -- A marked tile beside it that waits holds it too.
-          if why and #M.runs(s, t[1], t[2], cache) == 0 then
-            for _, d in ipairs(DIRS) do
-              local n = mark[key(t[1] + d[1], t[2] + d[2])]
-              if n and not gone[key(n[1], n[2])] then why = why .. string.format('; the marked tile beside it at %s waits too', at(n[1], n[2])); break end
+        if st.i > #tiles then
+          for i = #tiles, 1, -1 do st.work[#st.work+1] = tiles[i] end
+          st.stage = 'work'
+        end
+      elseif st.stage == 'work' then
+        local work = st.work
+        while #work > 0 and st.steps < STEPS and used < units do
+          local t = table.remove(work)
+          local k = key(t[1], t[2])
+          st.steps = st.steps + 1
+          used = used + RU.step
+          if not gone[k] and not st.under[k] and not is_empty(s, t[1], t[2], cache) and #M.runs(s, t[1], t[2], cache) == 1 then
+            local item = product(s, t[1], t[2])
+            if room_for(st, item) > 0 then
+              gone[k] = true; st.order[#st.order+1] = t; cache[k] = true
+              if item and st.rooms[item] and st.rooms[item] ~= -1 then st.rooms[item] = st.rooms[item] - 1 end
+              -- The marked tiles round it may go next.
+              for _, d in ipairs(RING) do
+                local n = mark[key(t[1] + d[1], t[2] + d[2])]
+                if n and not gone[key(n[1], n[2])] then work[#work+1] = n end
+              end
             end
           end
         end
-        if not why then
-          local item = product(s, t[1], t[2])
-          why = string.format('the hub has no room for %s', tostring(item))
+        if #work == 0 or st.steps >= STEPS then st.stage, st.i = 'waiting', 1 end
+      elseif st.stage == 'waiting' then
+        while st.i <= #tiles and used < units do
+          local t = tiles[st.i]
+          st.i = st.i + 1
+          used = used + RU.wait
+          local k = key(t[1], t[2])
+          if not gone[k] and not is_empty(s, t[1], t[2], cache) then
+            local why
+            local e = st.under[k]
+            if e then why = string.format('%s %s stands on it', e.name, at(e.position.x - 0.5, e.position.y - 0.5))
+            else
+              why = M.removal_rule(s, t[1], t[2], cache)
+              -- A marked tile beside it that waits holds it too.
+              if why and #M.runs(s, t[1], t[2], cache) == 0 then
+                for _, d in ipairs(DIRS) do
+                  local n = mark[key(t[1] + d[1], t[2] + d[2])]
+                  if n and not gone[key(n[1], n[2])] then why = why .. string.format('; the marked tile beside it at %s waits too', at(n[1], n[2])); break end
+                end
+              end
+            end
+            if not why then
+              local item = product(s, t[1], t[2])
+              why = string.format('the hub has no room for %s', tostring(item))
+            end
+            st.waiting[#st.waiting+1] = {t[1], t[2], why}
+          end
         end
-        waiting[#waiting+1] = {t[1], t[2], why}
+        if st.i > #tiles then
+          st.out = {go=st.order, waiting=st.waiting, unchecked=#st.work > 0 and #st.work or nil}
+          return true, used
+        end
       end
     end
-    return {go=order, waiting=waiting, unchecked=#work > 0 and #work or nil}
+    return false, used
+  end
+  function M.plan_removals(s, tiles, hub, cache)
+    local st = M.removals_start(tiles, hub)
+    M.removals_run(s, st, cache or {}, math.huge)
+    return st.out
   end
   -- Lines for a plan: go ('5 marked tiles on the platform go, one at a time, ...: (x,y), ...') and one per waiting
   -- tile (the first 8). adj, where: words round 'tile(s)' ('marked', 'on the platform').

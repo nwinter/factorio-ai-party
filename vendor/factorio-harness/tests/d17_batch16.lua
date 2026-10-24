@@ -100,6 +100,7 @@ do
   end
   s.get_tile=function(x,y) return {name=floor[x..','..y] and 'space-platform-foundation' or 'empty-space'} end
   local PP2=dofile('mod/agent-harness_0.1.0/platplan.lua'){platform=function() return {name='Wren',surface=s,force={},hub={valid=true,position={x=0.5,y=-15.5}}} end}
+  PP2.SLICE=math.huge  -- (d24 batch166) the plan in its call
   local r=PP2.read({},{platform='Wren',floor=true})
   eq(#r.tile_ghosts_held,1)
   has(r.line,'1 tile ghost counted as floor the hub does not build (foundation rules): tile ghost (10.5,-30.5) space-platform-foundation: no foundation among the 8 tiles round it')
