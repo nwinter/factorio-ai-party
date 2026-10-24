@@ -4,6 +4,9 @@
 -- call does not also give, is renamed; the reply's `corrected` shows the call
 -- as it ran, so the agent can use it next time. Anything else still fails
 -- with the list of valid arguments.
+-- argforms.lua (d24 batch154) on first use: a loader of this file alone (tests) needs no module path
+local Forms
+local function forms() Forms = Forms or require('argforms'); return Forms end
 return function(api)
   local M = {}
   -- action -> {wrong name = real name}; counts are shift05-07 journal errors.
@@ -15,7 +18,8 @@ return function(api)
     scan = {names='name', entity_names='name', entity='name', entities='name', types='type', range='radius', field='fields', center='position', centre='position'},
     nearest = {entity='name', names='name', entity_names='name', types='type', center='position', centre='position', count='limit'},
     chat = {count='limit', n='limit'},
-    tells = {count='limit', n='limit'},
+    -- (d24 batch154: tells {after} refused in s68-69) after is since; unread, seq and from are refused naming since
+    tells = {count='limit', n='limit', after='since'},
     build = {placements='builds', entities='builds', items='builds', dryrun='dry_run', ['dry-run']='dry_run'},
     place_ghosts = {dryrun='dry_run', ['dry-run']='dry_run'},
     paste = {dryrun='dry_run', ['dry-run']='dry_run'},
@@ -307,6 +311,17 @@ return function(api)
         if LISTED[right] and type(v) == 'string' then v = {v} end
         out[right], out[wrong] = v, nil
         notes[#notes+1] = wrong .. ' is ' .. right
+      end
+    end
+    -- (d24 batch154, the batch149 review's improvement 4: 27 refusals in 24 h) platform given to an action that takes
+    -- the platform under another argument (min_payload platforms, a queue's lane, supply's surface ...): that one
+    -- (argforms.lua); where nothing takes it, the refusal names what does.
+    if out.platform ~= nil and not takes(view, 'platform') then
+      local rule = forms().platform_as(view, takes)
+      local v = rule and out[rule.as] == nil and forms().platform_value(rule, out.platform, api.platform_surface or function() return nil end)
+      if v then
+        out[rule.as], out.platform = v, nil
+        notes[#notes+1] = 'platform is ' .. rule.as .. '=' .. encode(v)
       end
     end
     -- build entries name what to place by name (round1820a, Opus 00:42: a 12-drill batch refused "item is required";

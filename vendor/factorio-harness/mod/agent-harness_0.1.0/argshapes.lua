@@ -4,6 +4,7 @@
 -- defaulted to nauvis, and circuit_set signals as an object for an array was read as no signals). A field a record
 -- does not take is refused, naming the fields it takes; an object where a list goes, or a list entry that is not a
 -- record, is refused with the shape expected. The fields are those each action's own parser reads.
+local Forms = require('argforms')
 return function()
   local M = {}
   -- {label, fields (in order; '?' optional), hint (for a field it does not take: what it may have meant)}
@@ -69,6 +70,8 @@ return function()
       error(string.format('%s: %s %s not a %s field: %s%s', where, table.concat(bad, ', '), #bad == 1 and 'is' or 'are',
         rec.label, names(rec), #hints > 0 and ' (' .. table.concat(hints, '; ') .. ')' or ''), 0)
     end
+    -- (d24 batch154) a record's item "name@quality": item and quality (argforms.lua, the one reading of it)
+    if type(r.item) == 'string' and takes(rec, 'item') then Forms.item_quality(rec.label, r, takes(rec, 'quality'), where) end
     for k, sub in pairs(rec.nested or {}) do
       if r[k] ~= nil then check_list(where .. '.' .. k, r[k], sub) end
     end

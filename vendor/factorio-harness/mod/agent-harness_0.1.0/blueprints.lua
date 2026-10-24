@@ -18,7 +18,14 @@ return function(api)
   end
   local function slot_name(a)
     local name = a.slot or 'clipboard'
-    assert(type(name)=='string' and #name>=1 and #name<=64 and name:match('^[%w_-]+$'), 'invalid blueprint slot')
+    -- (d24 batch154, the batch149 review's bug 7: "Sol test slot" read "invalid blueprint slot") the rule, and what broke it
+    if not (type(name)=='string' and #name>=1 and #name<=64 and name:match('^[%w_-]+$')) then
+      local why = type(name) ~= 'string' and 'a ' .. type(name)
+        or #name == 0 and 'empty' or #name > 64 and #name .. ' characters'
+        or string.format('"%s" at character %d', name:match('[^%w_-]'), name:find('[^%w_-]'))
+      error(string.format('slot %s: a blueprint slot is 1..64 letters, digits, _ and - (no spaces); this one: %s',
+        type(name) == 'string' and string.format('%q', name) or tostring(name), why), 0)
+    end
     return name
   end
   local function slots(p)
