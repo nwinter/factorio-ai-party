@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://factorio.nickwinter.net", "https://blog.nickwinter.net", "http://127.0.0.1:8799", "http://localhost:8799"],
+        "methods": ["GET", "HEAD"],
+        "headers": ["Range"]
+      },
+      "exposeHeaders": ["Content-Length", "Content-Range", "Content-Type", "ETag"],
+      "maxAgeSeconds": 86400
+    }
+  ]
+}
