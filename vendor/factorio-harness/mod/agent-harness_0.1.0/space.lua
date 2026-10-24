@@ -1139,7 +1139,7 @@ return function(api)
   -- Hub storage use: free slots of all.
   function M.hub_slots(hub)
     local inv=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
-    local free=inv and try(function() return inv.count_empty_stacks() end)
+    local free=inv and try(function() return inv.count_empty_stacks(true, false) end)
     return free and string.format('%d of %d free',free,#inv) or nil
   end
   -- Hub slots asteroid chunks take, one a slot (Astra, shift14 22:50: a chunk backlog hid in raw stock; 2.0.77: a chunk
@@ -1218,7 +1218,7 @@ return function(api)
     local inv=hub.get_inventory(defines.inventory.hub_main)
     local s=pl.surface
     local out={}
-    local free=try(function() return inv.count_empty_stacks() end)
+    local free=try(function() return inv.count_empty_stacks(true, false) end)
     if free==0 then
       -- Ours only, by name; items on the ground marked for pickup apart (Sol, d15: "198 marked" read as the ship being
       -- taken apart, while 12 entities had been marked; the count was every marked entity of every force).

@@ -356,7 +356,8 @@
   every charging slot taken, or not sent yet); `robots`: idle, on orders, holding cargo with no order, charging,
   queued to charge, charging slots. `storage: true` reads its storage room instead (the `no_storage` alert): storage chests, free slots, full and
   filtered ones, robots holding cargo with no order to put it anywhere and their items, each with whether a storage
-  chest can take it now. Otherwise:
+  chest can take it now. Free slots are those under each chest's bar (`physical_free_slots` counts every empty slot,
+  the bar's red ones too); every read of a chest's, pad's, wagon's or hub's free slots counts under its bar. Otherwise:
   every requester of that logistic network, worst first: `full_unrequested` (every slot taken while a short item has
   no room, by items it does not request, spoilage named), `full` (the same by its own items), `spoiled` (spoilage it
   does not request, 4 or fewer slots left), `waiting` (deliveries on the way 5+ min while under its count), `not_sent`

@@ -93,7 +93,7 @@ return function(api)
       if not pad.valid then st.pads[name][k] = nil
       else
         local inv = try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
-        r.pads[#r.pads+1] = {position={x=pad.position.x, y=pad.position.y}, free=inv and try(function() return inv.count_empty_stacks() end), slots=inv and #inv}
+        r.pads[#r.pads+1] = {position={x=pad.position.x, y=pad.position.y}, free=inv and try(function() return inv.count_empty_stacks(true, false) end), slots=inv and #inv}
       end
     end
     table.sort(r.at, function(a, b) if a.y ~= b.y then return a.y < b.y end return a.x < b.x end)

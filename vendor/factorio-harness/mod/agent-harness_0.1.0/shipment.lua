@@ -528,9 +528,11 @@ return function(api)
       for i, pad in ipairs(pads) do
         if i > PADS then break end
         local inv = invs[i]
-        local f = inv and try(function() return inv.count_empty_stacks() end) or 0
+        local f = inv and try(function() return inv.count_empty_stacks(true, false) end) or 0
         free = free + f
-        pl_parts[#pl_parts+1] = string.format('%s %s %d free slots of %d', pad.name, at(pad.position), f, inv and #inv or 0)
+        local bar = inv and try(function() return inv.get_bar() end)
+        pl_parts[#pl_parts+1] = string.format('%s %s %d free slots of %d%s', pad.name, at(pad.position), f, inv and #inv or 0,
+          bar and inv and bar <= #inv and string.format(' (bar: %d usable)', bar - 1) or '')
       end
       local down, slots, kept = {}, 0, {}
       local names, named = {}, {}

@@ -408,7 +408,9 @@ return function(api)
         local total, free = #inv, try(function() return inv.count_empty_stacks() end)
         local bar = try(function() return inv.get_bar() end)
         local slots = free and string.format('; %d of %d slots', total - free, total) or ''
-        if free and bar and bar <= total then slots = slots .. string.format(' (limited to %d)', bar - 1) end
+        -- (d24 batch157) and the free slots under it (count_empty_stacks(true, false)): nothing goes past it
+        local under = bar and bar <= total and try(function() return inv.count_empty_stacks(true, false) end)
+        if free and bar and bar <= total then slots = slots .. string.format(' (limited to %d%s)', bar - 1, under and string.format(', %d free under it', under) or '') end
         -- (d21 batch64 Z2, Luna #1576) the bar as configure {bar} sets it: usable slots
         if bar and bar <= total then out.bar = bar - 1 end
         out.holds = (#parts > 0 and table.concat(parts, ' ') or 'empty') .. slots

@@ -101,7 +101,7 @@ return function(api)
     local near_pads = {}
     for _, pad in pairs(surface.find_entities_filtered{type='cargo-landing-pad', force=force}) do
       local inv = pad.valid and pad_inventory(pad)
-      if inv and inv.count_empty_stacks() == 0 then
+      if inv and inv.count_empty_stacks(true, false) == 0 then
         local stacks = surface.count_entities_filtered{position=pad.position, radius=PAD_RADIUS, type='item-entity'}
         if stacks > 0 then
           local sum = M.summary(surface.find_entities_filtered{position=pad.position, radius=PAD_RADIUS, type='item-entity', limit=SAMPLE}, 8)
@@ -181,7 +181,7 @@ return function(api)
       if surface and x.kind == 'pad' then
         local pad = x.pad
         local inv = pad.valid and pad_inventory(pad)
-        if inv and inv.count_empty_stacks() == 0 then
+        if inv and inv.count_empty_stacks(true, false) == 0 then
           local stacks = surface.count_entities_filtered{position=pad.position, radius=PAD_RADIUS, type='item-entity'}
           if stacks > 0 then
             local sum = M.summary(surface.find_entities_filtered{position=pad.position, radius=PAD_RADIUS, type='item-entity', limit=SAMPLE}, 8)
@@ -486,7 +486,7 @@ return function(api)
           local fname = okf and flt and (type(flt) == 'table' and (type(flt.name) == 'table' and flt.name.name or flt.name) or flt) or nil
           if not fname or names[fname] then
             local oki, inv = pcall(function() return st.get_inventory(defines.inventory.chest) end)
-            if oki and inv then free = free + (inv.count_empty_stacks() or 0) end
+            if oki and inv then free = free + (inv.count_empty_stacks(true, false) or 0) end
           end
         end
         out.storage_free_slots = free
