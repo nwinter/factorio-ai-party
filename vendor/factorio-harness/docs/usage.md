@@ -13426,3 +13426,23 @@ Fixed besides gates:
 - Tests: tests/blueprints.lua (status block: fails on main at the first status check), site/test_blueprints.py
   (marks, kinds, places, search text, controls; the filter script in a stub DOM under node: waits for
   DOMContentLoaded, the URL's view on load, search words, status filter, the three sorts, the count, the URL).
+## d24 batch151 PW1 (eng/d20-batch151): flight_watch counts laser turrets as their own category (Astra #2178)
+- Astra: Asterion's 20 rare lasers had 25 kills and 4211 damage by turret_tally, and flight watch 1190 read only its 23
+  railguns.
+- flightwatch.lua: each laser turret (an electric turret whose ammo category is laser, up to 128 a watch) is kept apart
+  from the ammo turrets and the railguns. Each sample reads its energy: least, at the start, now; the samples below one
+  shot's energy, the runs, the longest run in samples and ticks. Its kills and damage dealt over the watch are
+  LuaEntity.kills and damage_dealt (turret_tally's reads), each sample's less the start's; a laser destroyed keeps its
+  change to its last sample.
+- The shot's energy: 2.0.77 gives laser-turret's as attack_parameters.ammo_type.energy_consumption (800000 J), the
+  buffer 801 kJ (electric_buffer_size, 801000 at rare too), and no getter by quality. On a copy of world n (07:20 save),
+  a rare laser on Asterion stepped one tick at a time went from 801 kJ to 256.6 kJ in the tick it fired and gained 255.6
+  kJ a tick after (rare's input limit, 160 kJ a tick at normal): 800 kJ a shot at rare. kills and damage_dealt rose
+  75.2 a hit.
+- The read: `lasers` [{unit_number, name, quality, position, shot_energy, buffer, least_energy, least_tick,
+  energy_at_start, energy_now, below_samples, below_ticks, below_runs, longest_below_samples, longest_below_ticks,
+  longest_below_from_tick, below_now, kills, damage, kills_start, kills_end, gone_tick, added_tick}] (up to 64, the
+  longest run below a shot's energy first), `laser_lines`, `lasers_more`, `lasers_capped`; the line and the end alert
+  add "N laser turrets: ...; K kills, D damage dealt"; the start line names them. The railguns, ammo turrets and every
+  other field are unchanged; a watch begun before the deploy has no laser list and adds none at its minute's refind.
+- Test: tests/d24_batch151.lua (fails on main: no laser turrets in the start line).

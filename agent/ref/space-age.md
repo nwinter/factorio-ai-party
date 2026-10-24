@@ -343,6 +343,10 @@
   `now`) and each railgun (`railguns`): energy least, at the start and now; samples, runs and the longest run below a
   shot's energy (its full 10 MJ buffer; refilled at 10 MW, 60 ticks from empty); `hits`, `shots_hit` (ticks it hit
   something), `damage` and `kills` from the game's events.
+  Each laser turret (`lasers`, apart from the ammo turrets and railguns): `quality`, `shot_energy` (800 kJ for
+  laser-turret at every quality; a rare one refills 255.6 kJ a tick, 3 ticks after a shot), energy least, at the start
+  and now; samples, runs and `longest_below_samples` below a shot's energy; `kills` and `damage` dealt over the watch
+  (its tooltip's counts, as `turret_tally` reads). A watch begun before the harness read lasers has no `lasers`.
 - `fleet {platform?, leg?}`: one line a platform: where it is and its current stop with each departure condition against the
   hub (as `platform_gate`), the hub's 6 largest stacks, its requests by state (delivered, in flight, launched, loading,
   waiting) with the ones on their way, what is aboard for which stop's landing pads, the rockets on the way now and
