@@ -525,6 +525,7 @@ return function(api)
     if PASSING[e.type] then return false end
     if e.type == 'entity-ghost' then return true end
     local name = e.name
+    if name == nil then return true end
     if selectable[name] == nil then
       local ok, v = pcall(function() return e.prototype.selectable_in_game end)
       selectable[name] = not (ok and v == false)
