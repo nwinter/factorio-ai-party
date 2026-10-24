@@ -164,6 +164,106 @@ class AttackGate:
                 f"with nothing lost (latest: {recent[-1]}); a word at most, never its own line")
 
 
+LONG_LEG = 60          # game minutes: an arrival that ends a leg this long is a beat
+TRAFFIC_WINDOW = 600   # routine arrivals this recent are counted for a word in another line
+
+
+class ArrivalGate:
+    """(d23 batch130 CM1, hosts-proposal idea A) An arrival is a host beat only when it is the route's first this
+    shift (any platform), brings science or eggs (a platform's first delivery of that kind on that route this shift:
+    Meridian-V's agricultural packs from Gleba came 35 times in shift63), belongs to a ship named in the team's goals,
+    or ends a leg of an hour or more; the rest become a traffic count (traffic_note). On d23 46% of host beats were
+    dockings, one every 50 s or so. What was seen is kept in the run folder (one per shift), so a restart keeps it."""
+
+    def __init__(self, path=None):
+        self.path = path
+        self.seen = set()  # "route:From>To" and "cargo:Name:From>To:item", planet labels
+        self.traffic = deque(maxlen=200)  # (t, text) arrivals that were no beat
+        if path and os.path.exists(path):
+            try:
+                with open(path) as f:
+                    self.seen = set(json.load(f).get("seen") or [])
+            except (OSError, ValueError, AttributeError):
+                pass
+
+    @staticmethod
+    def route(facts):
+        f = facts or {}
+        if f.get("came_from") and f.get("planet"):
+            return f"{f['came_from']}>{f['planet']}"
+        return None
+
+    @staticmethod
+    def kinds(carrying):
+        """'1200 agricultural science pack, 20 biter egg' -> ['agricultural science pack', 'biter egg']"""
+        return [re.sub(r"^\d+\s+", "", x.strip()) for x in str(carrying or "").split(",") if x.strip()]
+
+    @staticmethod
+    def in_goals(name, s):
+        goals = str((((s or {}).get("board") or {}).get("plan") or {}).get("goals") or "")
+        return bool(name and re.search(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", goals, re.I))
+
+    def keys(self, f):
+        route = self.route(f)
+        return ([f"route:{route}"] if route else []) + [f"cargo:{f.get('platform')}:{route}:{k}"
+                                                        for k in self.kinds(f.get("carrying")) if route]
+
+    def why(self, e, s):
+        """Why this arrival is worth a beat, or None."""
+        f = e.get("facts") or {}
+        route = self.route(f)
+        why = []
+        if route and f"route:{route}" not in self.seen:
+            why.append(f"the first platform from {f['came_from']} to {f['planet']} this shift")
+        new = [k for k in self.kinds(f.get("carrying")) if f"cargo:{f.get('platform')}:{route}:{k}" not in self.seen]
+        if route and new:
+            why.append(f"it brings {f['carrying']}")
+        if self.in_goals(f.get("platform"), s):
+            why.append("the team's goals name this ship")
+        if (f.get("leg_minutes") or 0) >= LONG_LEG:
+            why.append(f"it ends a {f['leg_minutes']}-minute leg")
+        return "; ".join(why) or None
+
+    def admit(self, e, s, now):
+        """An event from the snapshot diff -> the events to queue now. A platform's first arrival at a planet (a space
+        headline) is let through and noted; a later arrival waits for a reason, else it is traffic."""
+        if e.get("kind") not in ("arrival", "space"):
+            return [e]
+        keys = self.keys(e.get("facts"))
+        if e["kind"] == "space":
+            self.note(keys)
+            return [e]
+        why = self.why(e, s)
+        self.note(keys)
+        if why:
+            return [dict(e, why_it_matters=why)]
+        self.traffic.append((now, e.get("text") or "a platform arrived"))
+        return []
+
+    def note(self, keys):
+        new = set(keys) - self.seen
+        if not new:
+            return
+        self.seen |= new
+        if not self.path:
+            return
+        try:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"seen": sorted(self.seen)}, f, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+    def traffic_note(self, now):
+        """Routine arrivals of the last few minutes, for a word in another line; None when there are none."""
+        recent = [text for t, text in self.traffic if now - t <= TRAFFIC_WINDOW]
+        if not recent:
+            return None
+        return (f"{len(recent)} routine platform arrival{'s' if len(recent) > 1 else ''} in the last "
+                f"{TRAFFIC_WINDOW // 60} minutes (latest: {recent[-1]}); a word at most, never its own line")
+
+
 class StoryMemo:
     def __init__(self, path=None, moments_path=MOMENTS):
         self.path, self.moments_path = path, moments_path

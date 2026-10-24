@@ -223,6 +223,14 @@ def main():
     assert not again.moments, list(again.moments)
     assert [a["kind"] for a in alerts(again, "arrive:")] == ["arrival", "arrival"], alerts(again, "arrive:")
     assert not alerts(again, "space:orbit"), "no second 'Sunward reaches Vulcanus'"
+    # (d23 batch130 CM1) a new shift (its own file not written yet) knows where each platform has been from the
+    # shifts before it: d23's shift changes aired about 20 "X reaches Fulgora" firsts each for ferries
+    nxt = model()
+    nxt.set_space_memory(os.path.join(tempfile.mkdtemp(), "space-memory.json"), earlier=(path,))
+    read(nxt, t + 75, "nauvis", to="vulcanus")  # docked when the shift's service starts
+    read(nxt, t + 80, "nauvis->vulcanus 50%", to="vulcanus")
+    read(nxt, t + 90, "vulcanus", to="vulcanus")
+    assert not nxt.moments and [a["kind"] for a in alerts(nxt, "arrive:")] == ["arrival"], (list(nxt.moments), nxt.alerts)
 
     # no memory (the first start with it, or a platform made while the service was down), first seen mid-trip:
     # headed for a planet the team has reached, a ferry; headed somewhere new, still the moment
