@@ -148,7 +148,8 @@ return function(api)
     return out
   end
   -- (AB6) Where the platform stops from now until the destination's stop: {{index (its schedule record; nil when it
-  -- is stopped at a planet that is not its current stop), station, now (stopped there now)}}.
+  -- is stopped at a planet that is not its current stop), station, now (stopped there now), off (d24 batch142 PN1: the
+  -- record's unloading is off)}}.
   local function stops_before(pl, dest)
     local recs = try(function() return pl.schedule.records end) or {}
     local cur = try(function() return pl.schedule.current end) or 1
@@ -160,7 +161,7 @@ return function(api)
       local i = (cur - 1 + k) % #recs + 1
       local st = recs[i].station
       if st == dest then break end
-      out[#out+1] = {index=i, station=st, now=(k == 0 and here == st)}
+      out[#out+1] = {index=i, station=st, now=(k == 0 and here == st), off=recs[i].allows_unloading == false}
     end
     return out
   end
@@ -262,7 +263,8 @@ return function(api)
             parts[#parts+1] = string.format('the landing pad %s asks %d, holds %d', at(a.pad.position), a.min, a.held)
           end
           -- (d24 batch142 PN1) its stop there with unloading off: the pads take nothing, a finite max still sends down
-          local off, off_line = F.no_unload and F.no_unload(pl, w.to.where)
+          local off, off_line
+          if F.no_unload then off, off_line = F.no_unload(pl, w.to.where) end
           local go, k = F.hub_gives(keeps, w.item, n, want, off)
           local why = off and (k and k.max ~= math.huge and string.format('%s; %s: all above %d goes down', off_line, F.keep_text(k), k.max) or off_line)
             or k and (k.max == math.huge and F.keep_text(k) .. ': an infinite max keeps it all'
@@ -291,7 +293,7 @@ return function(api)
           for _, stop in ipairs(stops_before(pl, w.to.where)) do
             local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
             local keeps = F.hub_keeps_at(secs_, stop.station)
-            local off = F.no_unload and F.no_unload(pl, stop.station, stop.index or 0)
+            local off = stop.off
             local asks = pad_asks(force, stop.station, w.item)
             local k = keeps[w.item]
             if #asks == 0 and k and k.max ~= math.huge and n > k.max then

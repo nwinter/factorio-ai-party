@@ -110,3 +110,54 @@ do
   has(line,'settings (dry run): 1 would be set, 3 refused (3 in chunks our force does not see now): entry 1 configure:')
 end
 print('d24_batch142 PN2 settings sight: ok')
+
+-- PN1 in delivery_watch (batch139's fixture): at the destination's stop with unloading off, none goes down and the
+-- blocker says why; a stop before the destination with it off sends nothing to the pad asking there.
+do
+  game={tick=1000}
+  defines={inventory={hub_main=1,cargo_unit=3,cargo_landing_pad_main=4,chest=5}}
+  prototypes={item={calcite={stack_size=50}}}
+  local function inv(n) return {get_item_count=function(x) return x=='calcite' and n or 0 end,can_insert=function() return true end} end
+  local nauvis={name='nauvis',find_logistic_network_by_position=function() return {network_id=1} end}
+  local function sections(list) return {sections_count=#list,get_section=function(i) return list[i] end} end
+  local pad={valid=true,name='cargo-landing-pad',type='cargo-landing-pad',position={x=-12,y=40},surface=nauvis,unit_number=77,
+    get_inventory=function() return inv(0) end,get_item_count=function() return 0 end,
+    get_logistic_sections=function() return sections({{active=true,filters={{value={name='calcite'},min=2000}}}}) end}
+  nauvis.find_entities_filtered=function(f) if f.position and f.position.x==-12 then return {pad} end return {} end
+  local force={name='player',is_chunk_charted=function() return true end}
+  local recs={{station='nauvis',allows_unloading=false},{station='gleba'}}
+  local petrel={valid=true,name='Petrel',index=5,surface={name='platform-5'},paused=false,space_location={name='nauvis'},
+    schedule={current=1,records=recs},
+    hub={valid=true,type='space-platform-hub',get_inventory=function() return {get_item_count=function() return 1980 end,[1]={valid_for_read=true,name='calcite',count=1980,quality={name='normal'}}} end,
+      get_logistic_sections=function() return sections({}) end}}
+  force.platforms={petrel}
+  game.forces={player=force}; game.planets={nauvis={surface=nauvis},gleba={surface={name='gleba'}}}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
+  local st={}
+  local W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,census_typed=function() return {pad} end,
+    freight={where=function() return {} end,receipts_since=function() return {} end,followed=function() return {down={},up={}} end,spoils=function() return false end,
+      hub_keeps_at=F.hub_keeps_at,hub_gives=F.hub_gives,keep_text=F.keep_text,no_unload=F.no_unload}}
+  local sol={name='sol',index=1,force=force,surface=nauvis}
+  W.call(sol,{item='calcite',count=5000,to={position={x=-12,y=40},surface='nauvis'},deadline_min=60,from='Petrel'})
+  local id=st.delivwatch.list[1].id
+  game.tick=game.tick+60; W.tick(game.tick-game.tick%60)
+  local row=W.call(sol,{id=id}).watches[1]
+  eq(row.at_destination.sends,0); eq(row.at_destination.asked,2000)
+  has(table.concat(row.blockers or {},' | '),'Petrel is stopped at nauvis with 1980 calcite in its hub: none of it goes down now (stop 1 (nauvis) has unloading off: its landing pads take nothing from the hub there')
+  -- the same pad asking, Petrel bound for Gleba's pad and stopped at Nauvis first: no risk from the pad there while it is off
+  local gpad={valid=true,name='cargo-landing-pad',type='cargo-landing-pad',position={x=5,y=5},surface=game.planets.gleba.surface,unit_number=78,
+    get_inventory=function() return inv(0) end,get_item_count=function() return 0 end,get_logistic_sections=function() return sections({}) end}
+  game.planets.gleba.surface.find_entities_filtered=function(f) if f.position and f.position.x==5 then return {gpad} end return {} end
+  game.planets.gleba.surface.find_logistic_network_by_position=function() return {network_id=2} end
+  W.call(sol,{item='calcite',count=100,to={position={x=5,y=5},surface='gleba'},deadline_min=60,from='Petrel'})
+  local id2=st.delivwatch.list[2].id
+  game.tick=game.tick+60; W.tick(game.tick-game.tick%60)
+  row=W.call(sol,{id=id2}).watches[1]
+  local said=table.concat(row.blockers or {},' | ')..table.concat(row.risks or {},' | ')
+  assert(not said:find('asks 2000 calcite',1,true),said)
+  recs[1].allows_unloading=nil
+  game.tick=game.tick+60; W.tick(game.tick-game.tick%60)
+  row=W.call(sol,{id=id2}).watches[1]
+  has(table.concat(row.blockers or {},' | '),'the landing pad (-12,40) there asks 2000 calcite (holds 0): while it is stopped there its hub sends 1980 of it down to that pad')
+end
+print('d24_batch142 PN1 delivery_watch: ok')
