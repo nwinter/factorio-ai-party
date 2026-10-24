@@ -951,3 +951,15 @@ html { scroll-padding-top: 76px; }
 .upd-msgs blockquote p { margin: 2px 0; }
 .upd-notices li { padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .upd-notices li:first-child { border-top: 0; }
+/* (d24 batch159 QB1, viewer Aurora 11:27-11:28) search, filters and sort (static/updates.js), the recheck's marks */
+.upd-tools { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; margin: 1rem 0 .5rem; }
+.upd-tools label { display: flex; flex-direction: column; gap: .15rem; font-size: .85rem; color: var(--muted); min-width: 0; }
+.upd-tools input, .upd-tools select { font: inherit; padding: .3rem .45rem; min-width: 9rem; max-width: 100%; }
+.upd-tools .upd-search { flex: 1 1 16rem; max-width: 26rem; }
+.upd-tools input[type=search] { width: 100%; min-width: 0; }
+.upd-list:empty, .upd-list[hidden] { margin: 0; }
+.upd-checked { margin: 0 0 .5rem; }
+.upd-shown { margin: .25rem 0 .75rem; }
+.upd-tools[hidden], .upd-shown[hidden] { display: none; }
+.upd .fx-chip.upd-new { margin-left: 2px; }
+.upd-cadence { margin-top: 2px; }

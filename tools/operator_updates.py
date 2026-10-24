@@ -6,7 +6,10 @@ Aurora site:4349, site:4350): add a change, move it to its next status, add a st
                                 [--status planned] [--area harness|stream|site] [--work "batch119 CB1"] [--note N]
                                 [--reply site:4407] [--at "YYYY-MM-DD HH:MM"]
   tools/operator_updates.py set ID [--status in\\ progress|live|verified] [--note N] [--work W] [--reply REF] [--at ...]
-  tools/operator_updates.py notice --kind deploy|restart|rest|outage|shift --text T [--at ...]
+  tools/operator_updates.py notice --kind deploy|restart|rest|outage|shift --text T [--at ...] [--affected WHAT]
+                                   [--recovered [TIME]] [--open]
+  tools/operator_updates.py recover [--affected WHAT] [--kind K] [--at ...]
+  tools/operator_updates.py checked [--at ...]
   tools/operator_updates.py list [--all]
 
 --at is Pacific time (the default: now). add records the status's date, and "asked" when --asked is given; set
@@ -16,8 +19,17 @@ that history folded under the current note (viewer Aurora 18:46: live rows still
 A status past planned needs the work (batch) that did it: add and set refuse one without --work when the row has none,
 and list marks such rows ("no work") as the build does. The page is rebuilt with the site (site/build.py), which
 quotes each site:NNNN message and the operator's replies to it from the run folders. --file names another JSON (tests).
+
+Status notices from the operator's scripts, one command each (d24 batch159 QB1, viewer Aurora 11:27: "Status notices
+still end Oct23. Could deploy/restart/outage and recovery events update them, with event times and a checked-through
+timestamp separate from page-build time?"): notice posts the event at its time (--at, default now) with what it
+affected (--affected "stream", "harness runtime", ...); --recovered [TIME] says it is over (no TIME: now), --open says
+it is still on (the page reads "Not recovered yet") until recover closes the newest open notice (of that --affected
+and --kind when given). checked records that the operator's checks looked at the notices through now (or --at), and
+every notice and recover records it too; the page shows it apart from when the page was built. One writer at a time
+(a lock beside the file): two scripts posting at once both land.
 """
-import argparse, datetime, json, os, sys
+import argparse, datetime, fcntl, json, os, sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -114,9 +126,27 @@ def main(argv=None):
     n.add_argument("--kind", required=True, choices=updates.NOTICE_KINDS)
     n.add_argument("--text", required=True)
     n.add_argument("--at")
+    n.add_argument("--affected", help="what it affected: stream, harness runtime, site, an agent, ...")
+    when = n.add_mutually_exclusive_group()
+    when.add_argument("--recovered", nargs="?", const="now", help="over at TIME (YYYY-MM-DD HH:MM; no TIME: now)")
+    when.add_argument("--open", action="store_true", help="still on: recover closes it")
+    r = sub.add_parser("recover")
+    r.add_argument("--affected")
+    r.add_argument("--kind", choices=updates.NOTICE_KINDS)
+    r.add_argument("--at")
+    c = sub.add_parser("checked")
+    c.add_argument("--at")
     ls = sub.add_parser("list")
     ls.add_argument("--all", action="store_true")
     args = ap.parse_args(argv)
+    if args.cmd == "list":
+        return run(args)
+    with open(str(args.file) + ".lock", "a") as lock:  # one writer at a time: read, change and write under the lock
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return run(args)
+
+
+def run(args):
     data = read(args.file)
     data.setdefault("updates", [])
     data.setdefault("notices", [])
@@ -169,9 +199,38 @@ def main(argv=None):
         write(args.file, data)
         print(f"{args.id}: " + ("; ".join(said) or "updated"))
     elif args.cmd == "notice":
-        data["notices"].append({"t": stamp(args.at), "kind": args.kind, "text": args.text})
+        row = {"t": stamp(args.at), "kind": args.kind, "text": args.text}
+        if args.affected:
+            row["affected"] = args.affected
+        if args.recovered:
+            row["recovered"] = stamp(None if args.recovered == "now" else args.recovered)
+            if updates.when(row["recovered"]) < updates.when(row["t"]):
+                raise SystemExit(f"--recovered {row['recovered']} is before the event ({row['t']})")
+        elif args.open:
+            row["recovered"] = None
+        data["notices"].append(row)
+        data["notices_checked"] = now_text()
         write(args.file, data)
-        print(f"notice: {args.kind}")
+        print(f"notice: {args.kind} {row['t']}" + (f" ({args.affected})" if args.affected else "")
+              + ("; open until recover" if args.open else f"; recovered {row['recovered']}" if row.get("recovered") else ""))
+    elif args.cmd == "recover":
+        t = stamp(args.at)
+        open_ = [x for x in data["notices"] if "recovered" in x and x["recovered"] is None
+                 and (not args.affected or x.get("affected") == args.affected) and (not args.kind or x["kind"] == args.kind)]
+        if not open_:
+            raise SystemExit("recover: no open notice" + (f" for {args.affected}" if args.affected else "")
+                             + " (notice --open makes one)")
+        x = max(open_, key=lambda x: updates.when(x["t"]))
+        if updates.when(t) < updates.when(x["t"]):
+            raise SystemExit(f"recover: {t} is before the event ({x['t']})")
+        x["recovered"] = t
+        data["notices_checked"] = now_text()
+        write(args.file, data)
+        print(f"recovered: {x['kind']} {x['t']} -> {t}")
+    elif args.cmd == "checked":
+        data["notices_checked"] = stamp(args.at)
+        write(args.file, data)
+        print(f"notices checked through {data['notices_checked']}")
     else:
         for u in data["updates"]:
             if args.all or u.get("status") != "verified":
