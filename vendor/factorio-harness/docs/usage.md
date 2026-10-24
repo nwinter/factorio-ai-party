@@ -13798,6 +13798,35 @@ Fixed besides gates:
     (out of quota until Sun 17:00). Waiting on it: 1 request or tell to you unanswered (tell from haiku ...)", only
     when something waits on it (unanswered requests and tells, its board items, claims #N); none: logged.
   - Tests: tools/test_idle_nudge_answer.py; tools/test_idle_nudge.py takes the new order.
+- d24 batch166 QI1 (operator 13:56: `platform_plan {platform: "Asterion", support: true}` held world n 388 ms in one
+  tick, 8271 entities chosen, 0 tiles planned; Sol called it repeatedly): support is a job across ticks.
+  - Where the time went (a copy of world n's shift70 save, Asterion, main's runtime 4da9bbeb): choosing 19 ms (the
+    whole-surface find 8.5), the floor and tile ghost reads 30, footprints 45, tunnels 5, the links search 74, holes 81,
+    the play 19, the rest of the reply 80. With 491 tile ghosts and 29 entity ghosts off the floor (a scenario made on the
+    copy) the same call took 1.2-1.7 s; `{names: ["thruster"]}` 0.27-0.52 s, `{positions}` 0.73-0.79 s, `{area}`
+    1.1-1.6 s: every form plans over the whole platform.
+  - A Lua table that grows its hash part rehashes at once: on the copy one insert cost 6 ms at 16384 keys, 11 at
+    32768, 23 at 65536, 49 at 131072; an array growing in order 0.01 ms. The job keeps its tile sets as arrays over the
+    box of what it read (cell, keep, seen), filled a slice at a time.
+  - The job (platplan.lua): steps floor, choose, grid, foot, tunnels, links, holes, play, remove, strands, each resumable;
+    at most SLICE (2000) units a call or tick, one job a tick (the oldest), kept in storage (`platplan_jobs`, at most
+    4, a peer joining mid-job loads it). The surface is read a chunk at a time (an entity is taken in the chunk its
+    position is in). A call starts a job and runs its first slice (a small platform's plan is the reply at once,
+    `read: "in this call"`); while it runs the reply is `support_job` and the same call reads it; the plan comes once
+    (`read: "as job N across ticks A..B (n ticks)"`); an unread plan older than 5 min is dropped; page reads the last
+    plan; a job of another runtime version (JOB_V) is dropped. The play reads tiles through the job's arrays first
+    (tilecheck.lua's cache.grid), a tile read after.
+  - On the copy (game advanced 60 ticks between reads, the hub's foundation supply stopped so the state held): every
+    platform's `support: true` and Asterion's names, area, positions and page forms gave main's reply field for field
+    (8 of 8 with the state held; differences only where the hub built or lost tile ghosts during a job). Asterion
+    `support: true` with the scenario: 308 ticks at 3000 units, about 480 at 2000; a job start 4-6 ms, a running read
+    3 ms (with the reply's other parts).
+  - Slice times on the copy (log line per tick, 2000-3000 units): median 1.8-2.6 ms, p95 4.5-5.1 ms; bursts of
+    consecutive 35-110 ms slices when the Mac was loaded (the plain floor reads among them at 20-30x their usual time).
+  - Not changed here: the first reply after the game advanced 60 ticks costs 75-122 ms on the copy for any read (a
+    platform_plan ready read too, with no job running); the reply's own parts.
+  - Test: tests/d24_batch166.lua (fails on main: no job); tests/platsupport.lua and tests/d24_batch162.lua set
+    `PP.SLICE=math.huge` to plan in one call.
 ## d24 batch165 QH1 (eng/d20-batch165): platform_plan {phases}, an ordered floor plan played read only (Sol #2223)
 - Sol: Asterion's narrow hull 2210 took failed drafts: each floor check saw the marks of the moment, not the floor the
   steps before would leave. What worked (Astra, runs/shift69/team-tools/astra-shift69-narrow-report.md): the live
