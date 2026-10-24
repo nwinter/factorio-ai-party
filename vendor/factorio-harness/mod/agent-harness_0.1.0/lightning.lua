@@ -12,6 +12,7 @@
 -- scan (every 30 s at most): the attractors and accumulators on the lightning
 -- planets, and one pole's network statistics per attractor network.
 -- The factory is pure so the same module can be bundled into a hot reload.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local PLANETS = {fulgora=true}   -- the API has no lightning property; Space Age's lightning is Fulgora's
@@ -46,10 +47,10 @@ return function(api)
     local stats = try(function() return pole.electric_network_statistics end)
     if not stats then return nil end
     local out = {}
-    for name in pairs(try(function() return stats.input_counts end) or {}) do
+    for name, all in pairs(try(function() return stats.input_counts end) or {}) do
       local proto = prototypes.entity[name]
       if not (proto and proto.type == 'accumulator') then
-        local v = try(function() return stats.get_flow_count{name=name, category='input', precision_index=defines.flow_precision_index.one_minute} end)
+        local v = try(function() return qflow.flow(stats, name, 'input', defines.flow_precision_index.one_minute, nil, all) end)
         if v and v > 0 then out[#out+1] = name end
       end
     end

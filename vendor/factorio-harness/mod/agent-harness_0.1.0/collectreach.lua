@@ -38,6 +38,7 @@
 -- Read on a private copy of world n's shift57 save (05:16 PDT, Asterion over Nauvis: 89 chunks, 12 collectors on two
 -- sides facing out): one collector facing east took chunks placed at rest 12 and 12.4 tiles in front of it and not
 -- 12.7; with the others switched off, 2 tiles in front and not 1.2 (docs/usage.md has the rest).
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   M.MARGIN, M.GROUP, M.NEAREST, M.SAMPLE = 32, 16, 12, 10
@@ -110,8 +111,8 @@ return function(api)
     local out = {}
     for _, n in ipairs(chunk_items()) do
       if prototypes.item[n] then
-        local function flow(i) return try(function() return st.get_flow_count{name=n, category='input', precision_index=i, count=true} end) or 0 end
-        out[#out+1] = {name=n, total=try(function() return st.get_input_count(n) end) or 0,
+        local function flow(i) return try(function() return qflow.flow(st, n, 'input', i, true) end) or 0 end
+        out[#out+1] = {name=n, total=try(function() return qflow.count(st, n, 'input') end) or 0,
           last_1m=math.floor(flow(defines.flow_precision_index.one_minute) + 0.5), last_10m=math.floor(flow(defines.flow_precision_index.ten_minutes) + 0.5)}
       end
     end

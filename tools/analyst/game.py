@@ -28,7 +28,10 @@ PACKS = ["automation-science-pack", "logistic-science-pack", "military-science-p
 
 # The building counts and the surfaces with buildings come from the harness census when the read is for every surface
 # and it has a pass (pog.CENSUS_FN; the find over every surface was ~75 ms of this read's 96 ms on world n, 2026-10-14
-# 22:00, every 90 s), else from that find.
+# 22:00, every 90 s), else from that find. (d24 batch152 PX1) A flow read by name counts normal quality only and
+# {name, quality} that quality; input_counts and output_counts give every quality's total. Item and kill statistics are
+# kept by quality, fluid ones by name only (plain); a name whose every-quality total is normal's own is read once, and
+# else the qualities it has a count at.
 SNAPSHOT_LUA = pog.CENSUS_FN + r"""
 local f = game.forces.player
 local want = SURFACE
@@ -37,21 +40,40 @@ if want == "all" then for _, x in pairs(game.surfaces) do surfaces[#surfaces+1] 
 else surfaces[1] = game.surfaces[want] or game.surfaces.nauvis end
 local s = game.surfaces.nauvis or surfaces[1]
 local P = defines.flow_precision_index
-local function flows(out, st)
+local QS = {}
+for name, q in pairs(prototypes.quality) do if name ~= "normal" and not q.hidden then QS[#QS+1] = name end end
+local NONE = {}
+local function present(st, name, cat)
+  local ids = {}
+  for _, q in ipairs(QS) do
+    local id = {name=name, quality=q}
+    if (cat == "input" and st.get_input_count(id) or st.get_output_count(id)) > 0 then ids[#ids+1] = id end
+  end
+  return ids
+end
+local function qflow(st, name, cat, pi, ids)
+  local n = st.get_flow_count{name=name, category=cat, precision_index=pi, count=true}
+  for _, id in ipairs(ids or NONE) do n = n + st.get_flow_count{name=id, category=cat, precision_index=pi, count=true} end
+  return n
+end
+local function flows(out, st, plain)
+  local used = st.output_counts
   for name, total in pairs(st.input_counts) do
     local o = out[name] or {total=0, m1=0, m10=0, h1=0, used10=0}
+    local mi = not plain and st.get_input_count(name) < total and present(st, name, "input") or nil
+    local mo = not plain and used[name] ~= nil and st.get_output_count(name) < used[name] and present(st, name, "output") or nil
     o.total = o.total + total
-    o.m1 = o.m1 + st.get_flow_count{name=name, category="input", precision_index=P.one_minute, count=true}
-    o.m10 = o.m10 + st.get_flow_count{name=name, category="input", precision_index=P.ten_minutes, count=true}
-    o.h1 = o.h1 + st.get_flow_count{name=name, category="input", precision_index=P.one_hour, count=true}
-    o.used10 = o.used10 + st.get_flow_count{name=name, category="output", precision_index=P.ten_minutes, count=true}
+    o.m1 = o.m1 + qflow(st, name, "input", P.one_minute, mi)
+    o.m10 = o.m10 + qflow(st, name, "input", P.ten_minutes, mi)
+    o.h1 = o.h1 + qflow(st, name, "input", P.one_hour, mi)
+    o.used10 = o.used10 + qflow(st, name, "output", P.ten_minutes, mo)
     out[name] = o
   end
 end
 local items, fluids = {}, {}
 for _, x in ipairs(surfaces) do
   flows(items, f.get_item_production_statistics(x))
-  flows(fluids, f.get_fluid_production_statistics(x))
+  flows(fluids, f.get_fluid_production_statistics(x), true)
 end
 local cur = f.current_research
 local queue = {}
@@ -88,7 +110,7 @@ for _, x in ipairs(surfaces) do
   for k, c in pairs(kst.input_counts) do killed[k] = (killed[k] or 0) + c end
   for k, c in pairs(kst.output_counts) do
     lost[k] = (lost[k] or 0) + c
-    local c10 = kst.get_flow_count{name=k, category="output", precision_index=P.ten_minutes, count=true}
+    local c10 = qflow(kst, k, "output", P.ten_minutes, kst.get_output_count(k) < c and present(kst, k, "output") or nil)
     if c10 > 0 then lost10[k] = (lost10[k] or 0) + c10 end
   end
 end

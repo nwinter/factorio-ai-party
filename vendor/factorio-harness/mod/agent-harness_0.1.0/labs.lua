@@ -2,6 +2,7 @@
 -- ETA) and one line per group of adjacent labs: working count, packs the
 -- labs lack, and why their feeders (inserters and the belts or chests they
 -- take from) are not delivering. Bounded: 256 labs, 8 groups, read on demand.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
@@ -265,7 +266,7 @@ return function(api)
     local scan = api.supply.scan(surface, force, names, {packs=needed, science_value=true})
     local stats = force.get_item_production_statistics(surface)
     local function flow(name, category)
-      local ok, n = pcall(stats.get_flow_count, {name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true})
+      local ok, n = pcall(qflow.flow, stats, name, category, defines.flow_precision_index.ten_minutes, true)
       return ok and math.floor(n + 0.5) or 0
     end
     -- Agents carrying it, wherever they are.

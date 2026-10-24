@@ -43,7 +43,7 @@ local panel_proto={get_max_energy_production=function() return 60000/60 end}
 local panels={}
 for i=1,20 do panels[i]=add{type='solar-panel',name='solar-panel',prototype=panel_proto,position={x=i*3-30,y=-12},electric_network_id=280} end
 local acc=add{type='accumulator',name='accumulator',position={x=0,y=12},electric_network_id=280,energy=2.5e6,electric_buffer_size=5e6,
-  prototype={electric_energy_source_prototype={input_flow_limit=300000/60,output_flow_limit=300000/60}}}
+  prototype={electric_energy_source_prototype={get_input_flow_limit=function() return 300000/60 end,get_output_flow_limit=function() return 300000/60 end}}}   -- (d24 batch152: 2.0.77 has the methods, not the fields)
 local am_proto={get_max_energy_usage=function() return 150000/60 end,electric_energy_source_prototype={drain=5000/60}}
 local machines={}
 for i=1,8 do machines[i]=add{type='assembling-machine',name='assembling-machine-2',prototype=am_proto,position={x=i*4-16,y=6},electric_network_id=280,status=i<=2 and 2 or 0} end
@@ -95,11 +95,11 @@ has(N.lines(force,'platform-3',8)[1],'solar 20 panels, 2.4 MW now, 3.1 MW at thi
 -- accumulator; and now from the network (by prototype).
 local p1=N.entity_power(panels[1])
 eq(p1.max_kw,60); eq(p1.at_solar_power_kw,156); has(p1.solar_power,'solar power 260%')
-eq(p1.now,'all solar-panel on electric network #280 make 2.4 MW now (5 s average); the game counts power by prototype, not per entity')
+eq(p1.now,'all solar-panel on electric network #280 make 2.4 MW now (5 s average); the game counts power by prototype and quality, not per entity')
 eq(p1.now_kw_all_of_name,2400)
 local m1=N.entity_power(machines[1])
 eq(m1.max_kw,60); eq(m1.consumption_bonus,'-60%'); eq(m1.drain_kw,5)
-eq(m1.now,'all assembling-machine-2 on electric network #280 draw 1.2 MW now (5 s average); the game counts power by prototype, not per entity')
+eq(m1.now,'all assembling-machine-2 on electric network #280 draw 1.2 MW now (5 s average); the game counts power by prototype and quality, not per entity')
 eq(N.entity_power(machines[2]).max_kw,150); eq(N.entity_power(machines[2]).consumption_bonus,nil)
 local a1=N.entity_power(acc)
 eq(a1.stored_mj,2.5); eq(a1.capacity_mj,5); eq(a1.charge_kw,300); eq(a1.discharge_kw,300)

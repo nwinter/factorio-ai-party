@@ -11,6 +11,7 @@
 -- The first ingredient not satisfied is named (none there and none made or coming: missing; used faster than made with
 -- under 10 minutes of stock: short). "feasible": every ingredient is there, made or coming; "sustained": none is used
 -- faster than it is made. Read only; facts only.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -72,7 +73,7 @@ return function(api)
   local function row_of(force, surface, item)
     local stats = try(function() return force.get_item_production_statistics(surface) end)
     local function flow(cat)
-      local n = stats and try(function() return stats.get_flow_count{name=item, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
+      local n = stats and try(function() return qflow.flow(stats, item, cat, defines.flow_precision_index.ten_minutes, true) end) or 0
       return n / 10
     end
     local made, used = flow('input'), flow('output')

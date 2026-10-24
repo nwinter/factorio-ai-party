@@ -11,6 +11,7 @@
 -- A finished read is kept 10 s (supply.lua reuse). A landing pad in a logistic network is in the network's count and
 -- is not added again; plain chests (machine output chests) and landed pods are read (Sol 01:59: Aquilo's cryogenic
 -- packs 763 + 763 + 1000, the pad twice and the output chests left out).
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local CHESTS, LABS, SILOS, PADS, PLAIN = 400, 1024, 16, 16, 4000
@@ -55,7 +56,7 @@ return function(api)
   local function per_min(force, surface, item, category)
     local stats = try(function() return force.get_item_production_statistics(surface) end)
     local n = stats and try(function()
-      return stats.get_flow_count{name=item, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true}
+      return qflow.flow(stats, item, category, defines.flow_precision_index.ten_minutes, true)
     end)
     return n and math.floor(n / 10 + 0.5) or 0
   end

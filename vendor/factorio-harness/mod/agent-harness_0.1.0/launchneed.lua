@@ -4,6 +4,7 @@
 -- the planet it is stopped at (else the stop it flies to): each rocket silo of ours there whose input holds less than
 -- one rocket part's worth of an ingredient while it has parts left to make, and what of that ingredient the platform's
 -- own hub holds. Facts only; read only. At most SILOS silos a planet.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   M.SILOS = 8
@@ -161,7 +162,7 @@ return function(api)
             for _, ln in ipairs(try(function() return pl.force.logistic_networks[s.name] end) or {}) do net = net + math.max(0, try(function() return ln.get_item_count(f) end) or 0) end
             local outside = api.elsewhere and select(2, api.elsewhere(pl.force, s, f, nil, nil)) or 0
             local stats = try(function() return pl.force.get_item_production_statistics(s) end)
-            local made = stats and try(function() return stats.get_flow_count{name=f, category='input', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
+            local made = stats and try(function() return qflow.flow(stats, f, 'input', defines.flow_precision_index.ten_minutes, true) end) or 0
             local per_min = math.floor(made / 10 + 0.5)
             local stock = string.format('%s holds %d (%d in its logistic networks, %d outside them) and made %d a minute over the last 10 min', planet, net + (outside or 0), net, outside or 0, per_min)
             if src == false then src = sources(pl, hub) end
@@ -175,7 +176,7 @@ return function(api)
                 or asks and string.format('the hub asks for it from %s only, not from %s', planets_text(asks), planet)
                 or 'the hub has no request for it'
               local aboard_stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
-              local aboard = aboard_stats and try(function() return aboard_stats.get_flow_count{name=f, category='input', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
+              local aboard = aboard_stats and try(function() return qflow.flow(aboard_stats, f, 'input', defines.flow_precision_index.ten_minutes, true) end) or 0
               local makers = src.makers[f] or 0
               local onboard = aboard > 0 and string.format('made aboard %d a minute over the last 10 min', math.floor(aboard / 10 + 0.5))
                 or 'nothing aboard made it over the last 10 min'

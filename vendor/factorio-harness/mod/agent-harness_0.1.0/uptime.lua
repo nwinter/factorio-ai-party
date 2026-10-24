@@ -29,6 +29,7 @@
 -- rate); otherwise that interval is unknown, and so is one where a spoilable pack spoiled (spoil results counted
 -- apart). The force's research progress on its current technology and the surface's science packs used up (the
 -- production statistics, whole packs, every lab there) are given beside, for all labs.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   -- (d20 batch58 T2, Astra #1461: a 20-furnace bank took two 16-machine windows) up to 64 machines, or the crafting
@@ -431,7 +432,7 @@ return function(api)
     local surface = game.surfaces[job.pack_stats.surface]
     local stats = surface and try(function() return game.forces[rs.force].get_item_production_statistics(surface) end)
     for _, name in ipairs(job.pack_stats.names) do
-      local n = stats and try(function() return stats.get_output_count(name) end)
+      local n = stats and job.pack_stats.q and try(function() return qflow.count(stats, name, 'output') end)
       local d = n and n - (job.pack_stats.counts[name] or 0)
       if d and d > 0 then used[name] = d; words[#words+1] = string.format('%s %d', name, d) end
     end
@@ -711,8 +712,9 @@ return function(api)
     if labs then
       job.research = {force=labs.force.name, last=research_now(labs.force), units=0, finished={}, changes={}}
       local stats = try(function() return labs.force.get_item_production_statistics(game.surfaces[labs.surface]) end)
-      job.pack_stats = {surface=labs.surface, names=labs.names, counts={}}
-      for _, n in ipairs(labs.names) do job.pack_stats.counts[n] = stats and try(function() return stats.get_output_count(n) end) or 0 end
+      -- (PX1) every quality (q: counted so; a watch begun before has no packs used figure)
+      job.pack_stats = {surface=labs.surface, names=labs.names, counts={}, q=true}
+      for _, n in ipairs(labs.names) do job.pack_stats.counts[n] = stats and try(function() return qflow.count(stats, n, 'output') end) or 0 end
     end
     store()[p.index] = job
     timed('uptime.sample', M.sample, job)

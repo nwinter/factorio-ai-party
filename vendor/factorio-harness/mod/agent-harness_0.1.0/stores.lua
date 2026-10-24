@@ -4,6 +4,7 @@
 -- showed stock only at each lab's feeders). Read only. Chests, labs, machines,
 -- vehicles, landing pads and platform hubs by entity; belts and inserter hands
 -- as totals; the team's characters by name.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX_LIMIT = 50
@@ -153,7 +154,7 @@ return function(api)
     table.sort(rows, function(x, y) return x.count > y.count end)
     local stats = select(2, pcall(function() return p.force.get_item_production_statistics(surface) end))
     local function per_min(cat)
-      local ok, n = pcall(function() return stats.get_flow_count{name=item, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
+      local ok, n = pcall(function() return qflow.flow(stats, item, cat, defines.flow_precision_index.ten_minutes, true) end)
       return ok and type(n) == 'number' and math.floor(n / 10 + 0.5) or nil
     end
     return {rows=rows, lines=lines, research_units=ru > 0 and math.floor(ru * 100 + 0.5) / 100 or nil,

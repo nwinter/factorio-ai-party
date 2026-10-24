@@ -1,4 +1,5 @@
 -- Run with lua tests/rocketload.lua: a silo's rocket cargo in one call each (rocketload.lua; shift12 15:20).
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- load_silo (Sonnet: about 40 transfer and launch round trips a shift), preflight (Gemini), launch's min_cargo and
 -- arrived guard and a queue dry run's silo cargo (Luna: a rocket_ready wait ran before an agricultural science
 -- top-up and the queued launch went with the old cargo).

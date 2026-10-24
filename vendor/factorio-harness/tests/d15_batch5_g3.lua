@@ -166,7 +166,7 @@ do
   r=astra('rates',{item='copper-cable'})
   eq(r.machines,1); eq(r.scope,'1 crafter on nauvis set to a recipe making copper-cable')
   eq(#r.rows,1,'the copper-plate row is left out'); eq(r.rows[1].item,'copper-cable'); eq(r.rows[1].produced,240); eq(r.rows_other,1)
-  eq(r.statistics,'copper-cable on nauvis, the game\'s statistics over 10 min: made 120/min, used 30/min')
+  eq(r.statistics,'copper-cable on nauvis, the game\'s statistics over 10 min (every quality): made 120/min, used 30/min')
   runtime.RATES_SURFACE=1
   r=astra('rates',{recipe='iron-gear-wheel'})
   eq(r.machines,2); eq(r.machines_read,1); eq(r.scope,'2 crafters on nauvis set to iron-gear-wheel (the first 1 read)')

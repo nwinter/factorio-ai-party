@@ -4,6 +4,7 @@
 -- (the harness's research actions, and the game's on_research_queued for
 -- players); the queue view gives each entry's progress and time to finish at
 -- the lab throughput measured over the last minute (longer when it had no progress).
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX_DONE, FIRST_LOOK, MAX_LINES, MAX_UNLOCKS = 50, 36000, 4, 8
@@ -401,8 +402,7 @@ return function(api)
       made[name] = 0
       for _, surface in pairs(game.surfaces or {}) do
         local ok, n = pcall(function()
-          return force.get_item_production_statistics(surface).get_flow_count{name=name, category='input',
-            precision_index=defines.flow_precision_index.ten_minutes, count=true}
+          return qflow.flow(force.get_item_production_statistics(surface), name, 'input', defines.flow_precision_index.ten_minutes, true)
         end)
         if ok and type(n) == 'number' then made[name] = made[name] + n end
       end
@@ -431,8 +431,7 @@ return function(api)
       for _, name in ipairs(names) do
         local s = out[name]
         if stats then
-          local ok, n = pcall(function() return stats.get_flow_count{name=name, category='output',
-            precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
+          local ok, n = pcall(function() return qflow.flow(stats, name, 'output', defines.flow_precision_index.ten_minutes, true) end)
           if ok and type(n) == 'number' then s.used = s.used + n end
         end
         local in_labs, in_nets = 0, 0

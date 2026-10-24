@@ -1,6 +1,7 @@
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
 -- turrets, ghosts, buildings and burners, the character's health and inventory.
+local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M={}
   local function try(fn) local ok,v=pcall(fn); if ok then return v end end
@@ -507,8 +508,8 @@ return function(api)
         for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
         if not pl then error('no platform of ours named '..tostring(c.platform),0) end
         if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
-        local now=p.force.get_item_production_statistics(pl.surface).get_input_count(c.item)
-        if base.platform==nil then base.platform=now end
+        local now=qflow.count(p.force.get_item_production_statistics(pl.surface),c.item,'input')   -- (PX1) every quality
+        if base.platform==nil or not base.platform_q then base.platform,base.platform_q=now,true end   -- (PX1) a base kept before every quality was summed is taken again
         local made=now-base.platform
         return made>=c.at_least,string.format('made %d %s on platform %s since the wait began (at least %d; the platform\'s production statistics)',made,c.item,c.platform,c.at_least),
           estimate and {value=made,scope='produced:platform:'..c.platform..':'..c.item} or nil

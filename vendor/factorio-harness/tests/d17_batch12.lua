@@ -1,4 +1,5 @@
 -- d17 batch12 contracts.
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 _G.defines={inventory={turret_ammo=1}}
 
 -- A3: stay_in_turret_coverage routes round an L of turrets, and refuses where coverage ends.

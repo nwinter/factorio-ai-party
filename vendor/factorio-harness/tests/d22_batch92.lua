@@ -1,4 +1,5 @@
 -- Run from repository root: lua tests/d22_batch92.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- d22 batch92 BB1 (Sol #1884: platform_loss guards react only once something is destroyed; medium asteroid impacts can
 -- cascade before the next flight_watch read; damaged reads no platform): platform_hit, a wait_until condition and queue
 -- guard met on the first hit (or at_least hits, on entity_names) on our entities on a platform since the wait or guard

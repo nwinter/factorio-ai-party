@@ -25,6 +25,7 @@
 -- keeps the watch it replaces readable by id: a done one as it ended, a watching one ended there (replaced by #N); it
 -- no longer counts and is kept WAIT unless read (then KEEP_READ after the read). An armed one, nothing read yet, is
 -- dropped.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   M.EVERY, M.MAX_TURRETS, M.KEEP_READ, M.WAIT, M.REFIND = 60, 128, 216000, 5184000, 3600
@@ -126,7 +127,7 @@ return function(api)
     local stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
     if not stats then return nil end
     local n = 0
-    for _, name in ipairs(repair_names()) do n = n + (try(function() return stats.get_output_count(name) end) or 0) end
+    for _, name in ipairs(repair_names()) do n = n + (try(function() return qflow.count(stats, name, 'output') end) or 0) end
     return n
   end
   local function hub_packs(pl)
@@ -253,6 +254,7 @@ return function(api)
     w.acc = {first=f, min=f, min_tick=tick, now=f}
     w.acc_n = #(w.accs or {})
     w.hits0, w.fuel0, w.repair0, w.packs0 = hits(pl), fuel(pl), repair_used(pl), hub_packs(pl)
+    w.repair_q = true   -- (PX1) repair0 over every quality
     w.samples, w.last_sample = 0, tick - M.EVERY
     w.asked = nil
     take_feed(w, pl, tick, false)
@@ -286,7 +288,7 @@ return function(api)
     local r1 = pl and repair_used(pl) or w.repair1
     local p1 = pl and hub_packs(pl) or w.packs1
     local f1 = pl and fuel(pl) or w.fuel1
-    return {damage=dmg, lost=lost, lost_n=n or 0, repair_used=w.repair0 and r1 and r1 - w.repair0 or nil, packs_start=w.packs0, packs_end=p1,
+    return {damage=dmg, lost=lost, lost_n=n or 0, repair_used=w.repair0 and w.repair_q and r1 and r1 - w.repair0 or nil, packs_start=w.packs0, packs_end=p1,
       fuel_start=w.fuel0, fuel_end=f1, h1=h1, r1=r1}
   end
   local function finish(w, pl, tick, why)

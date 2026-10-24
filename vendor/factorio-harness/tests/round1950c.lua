@@ -1,4 +1,5 @@
 -- Run from repository root: lua tests/round1950c.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- Cargo pods still in the air when a platform stops (pods.lua; Grok, shift13: 519 production packs were in the air
 -- while the pad and where_is showed none) in where_is and the arrival line; the construction robot read (robots.lua;
 -- Astra, shift13: Fulgora's only construction robot stalled 3 times holding removed modules with nowhere to put them).

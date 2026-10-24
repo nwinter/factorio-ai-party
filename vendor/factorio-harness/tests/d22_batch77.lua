@@ -1,4 +1,5 @@
 -- Run from the harness root: lua tests/d22_batch77.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- d22 batch77: AM1 (Sol #1805) assembler_batch at the recipe's quality; AM2 (Astra #1769) fluid_count counts fusion
 -- reactors and generators.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end

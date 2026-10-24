@@ -140,7 +140,7 @@ eq(pp.solar.count,3); eq(pp.solar.kw,540); eq(pp.capacity_kw,540); eq(pp.accumul
 eq(pp.satisfaction.machines,2); eq(pp.satisfaction.low_power,2); eq(pp.satisfaction.power_bars_pct,30); eq(pp.satisfaction.low_power_bars_pct,30)
 eq(pp.poles,3); eq(pp.separate_pole_networks[1],1460)
 has(pp.line,'Prospect electric #1456, the platform\'s own network (every machine, panel and accumulator of ours on it; no pole needed), at tick 43217816')
-has(pp.line,'draw 180 kW now, production 180 kW (the last 5 s)')
+has(pp.line,'draw 180 kW now, production 180 kW (the last 5 s, every quality)')
 has(pp.line,'capacity 540 kW: 3 solar panels giving up to 540 kW at solar power 300% at nauvis')
 has(pp.line,'machines 2: 2 low power, 0 no power; their power bars 30% full on average, those on low power 30%')
 has(pp.line,'3 poles of ours (network #1457: no machine, panel or accumulator on them; a pole\'s statistics there are this network\'s); electrically apart with machines or panels on them: #1460 (their own rows)')

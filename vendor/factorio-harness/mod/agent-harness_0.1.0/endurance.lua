@@ -7,6 +7,7 @@
 -- oxidizer). Speed: the platform's now while it flies, else the average of its last finished leg (freight.lua's
 -- record), else none (times unknown, said). Route: the stops given, else the schedule's from the current one round to
 -- it again; a leg with no space connection between its ends is named.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -271,8 +272,13 @@ return function(api)
           or string.format('last 1 min, flying %s: the window holds the stop it left too', mins(leg_min))
       end
     end
-    local function rate1(stats, name, cat) return stats and P.one_minute and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=P.one_minute, count=true} end) or 0) or 0 end
-    local function rate(stats, name, cat) return stats and win_p and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=win_p, count=true} end) or 0) / win_min or 0 end
+    -- (PX1) items at every quality; fluids by name (a pair fails there)
+    local function flow(stats, name, cat, pi)
+      if stats == fluid_stats then return stats.get_flow_count{name=name, category=cat, precision_index=pi, count=true} end
+      return qflow.flow(stats, name, cat, pi, true)
+    end
+    local function rate1(stats, name, cat) return stats and P.one_minute and (try(function() return flow(stats, name, cat, P.one_minute) end) or 0) or 0 end
+    local function rate(stats, name, cat) return stats and win_p and (try(function() return flow(stats, name, cat, win_p) end) or 0) / win_min or 0 end
     local function leg_now_rate(name)
       if not (open_leg and open_leg.ammo0 and api.ammo_counts) then return nil end
       local m = (game.tick - open_leg.start) / 3600
@@ -499,14 +505,16 @@ return function(api)
     -- Hub space: free slots now.
     local slots = hub and #hub or 0
     local free = hub and try(function() return hub.count_empty_stacks() end) or 0
-    -- Power: what the platform's network makes and draws now (a pole on it), and the solar power at each stop.
+    -- Power: what the platform's network makes and draws now (a pole on it, else the surface's own network: PX1,
+    -- Asterion has no pole), every quality (PX1), and the solar power at each stop.
     local power
     local pole = try(function() return pl.surface.find_entities_filtered{type='electric-pole', force=pl.force, limit=1}[1] end)
     local st = pole and try(function() return pole.electric_network_statistics end)
+      or try(function() return pl.surface.has_global_electric_network and pl.surface.global_electric_network_statistics end) or nil
     if st and P.five_seconds then
       local function sum(cat, counts)
         local n = 0
-        for name in pairs(counts or {}) do n = n + (try(function() return st.get_flow_count{name=name, category=cat, precision_index=P.five_seconds} end) or 0) end
+        for name, all in pairs(counts or {}) do n = n + (try(function() return qflow.flow(st, name, cat, P.five_seconds, nil, all) end) or 0) end
         return n * 60 / 1000
       end
       power = string.format('makes %d kW, draws %d kW now', math.floor(sum('output', st.output_counts) + 0.5), math.floor(sum('input', st.input_counts) + 0.5))

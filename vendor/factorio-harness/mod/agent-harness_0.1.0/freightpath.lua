@@ -9,6 +9,7 @@
 -- set that link last before this call (the edit log: a section's or the schedule's last editor; none recorded: said
 -- so), what the planet used of it in the last 10 minutes and what its pads hold. That editor, when another agent, is
 -- told once. Facts only; nothing is changed back.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -118,7 +119,7 @@ return function(api)
   local function used(force, surface, item)
     local stats = surface and try(function() return force.get_item_production_statistics(surface) end)
     return stats and try(function()
-      return stats.get_flow_count{name=item, category='output', precision_index=defines.flow_precision_index.ten_minutes, count=true}
+      return qflow.flow(stats, item, 'output', defines.flow_precision_index.ten_minutes, true)
     end) or nil
   end
   -- The lines for the paths lost between before and after (snapshots of force), by the caller `by`, and the owners

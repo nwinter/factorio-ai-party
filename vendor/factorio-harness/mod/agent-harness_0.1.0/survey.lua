@@ -3,6 +3,7 @@
 -- of the factory still runs through the character's hands. Numbers only: what
 -- the production GUI, the machines' status icons and the inventory show.
 -- The entity survey is cached because status is polled several times a second.
+local qflow=require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 local flameroil=require('flameroil')
 local snapfail=require('snapfail')
 return function(api)
@@ -127,7 +128,7 @@ return function(api)
   end
 
   local function flow(stats,name,category,precision)
-    return stats.get_flow_count{name=name,category=category,precision_index=precision}
+    return qflow.flow(stats,name,category,precision)   -- (PX1) every quality
   end
   -- Share of the last 10 minutes' factory flow that went through the hands:
   -- fed against consumed, collected and crafted against produced.

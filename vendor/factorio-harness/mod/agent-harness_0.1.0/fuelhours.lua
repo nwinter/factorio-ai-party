@@ -9,6 +9,7 @@
 -- - the balance (supply less burn) and, when the burn is more, the hours the fuel in reach of them lasts.
 -- And the surface's fuel item made and used a minute (production statistics, last 10 minutes) and what its logistic
 -- networks hold. Read only; bounded: 512 boilers, 64 inserters a group, BELT_TILES belt tiles a group, 256 drills.
+local qflow = require('qflow')   -- (d24 batch152 PX1) statistics read at every quality
 return function(api)
   local M = {}
   local MAX_BOILERS, GAP, BELT_TILES, MAX_DRILLS = 512, 8, 3000, 256
@@ -273,7 +274,7 @@ return function(api)
     local surface_lines = {}
     local stats = try(function() return force.get_item_production_statistics(surface) end)
     for f in pairs(fuels) do
-      local function per(cat) return stats and try(function() return stats.get_flow_count{name=f, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0 end
+      local function per(cat) return stats and try(function() return qflow.flow(stats, f, cat, defines.flow_precision_index.ten_minutes, true) end) or 0 end
       local net = 0
       for _, ln in pairs(try(function() return force.logistic_networks[surface.name] end) or {}) do net = net + math.max(0, try(function() return ln.get_item_count(f) end) or 0) end
       surface_lines[#surface_lines+1] = string.format('%s on %s: made %g/min, used %g/min (last 10 min); logistic networks hold %d', f, surface.name, round(per('input') / 10), round(per('output') / 10), net)

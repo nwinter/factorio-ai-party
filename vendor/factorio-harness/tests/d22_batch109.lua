@@ -1,4 +1,5 @@
 -- Run from repository root: lua tests/d22_batch109.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path   -- (d24 batch152) modules require qflow
 -- d22 batch109 BS1 (Sol #1952: 8 flight watches a force kept Cinder's watch out while 18 platforms flew). A force may
 -- hold one counting watch per platform it has (armed, watching, or done and not read); a done one read stops counting
 -- and is kept KEEP_READ, at most KEEP_DONE a force. {} lists the limit, how many count and which; a start at the limit
