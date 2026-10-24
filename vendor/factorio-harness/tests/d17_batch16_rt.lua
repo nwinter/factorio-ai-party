@@ -128,7 +128,17 @@ do
   eq(q.paused,false); eq(q.held,nil)
   -- without queue_pause, a requeued load still resumes after a direct call ends (unchanged)
   sol('queue_cancel',{})
-  sol('queue_submit',{steps={{action='wait_ticks',args={ticks=600}}},start=false})
+  -- (d24 batch138 PJ1) a submit with start:false is staged, held as queue_pause holds it: a direct call does not resume it
+  local staged=sol('queue_submit',{steps={{action='wait_ticks',args={ticks=600}}},start=false})
+  eq(staged.state,'paused, held until queue_resume'); assert(tostring(staged.staged):find('start: false: the lane is paused and held',1,true),tostring(staged.staged))
+  q.requeued_load={id=q.pending[1].id,tick=game.tick}
+  out={}
+  runtime.resume_requeued_load({index=index},'transfer',out)
+  eq(q.paused,true,'a staged queue stays paused'); eq(out.queue_resumed,nil)
+  sol('queue_cancel',{})
+  -- paused by a direct call (not held), a requeued load still resumes after it ends (unchanged)
+  eq(sol('queue_submit',{steps={{action='wait_ticks',args={ticks=600}}}}).state,'running')
+  q.paused=true; q.held=nil
   q.requeued_load={id=q.pending[1].id,tick=game.tick}
   out={}
   runtime.resume_requeued_load({index=index},'transfer',out)

@@ -12997,3 +12997,25 @@ Fixed besides gates:
   - `signals`, `more`, `signals_total` and the lines' `(+N more)` are unchanged.
 - Test: tests/d24_batch136.lua (242 signals: the lists stay cut, picked reads past them; quality; refusals), and
   tests/circuits.lua (inspect through the runtime).
+
+## d24 batch138 PJ1 (eng/d20-batch138): queue_submit start:false stages the steps (Sol #2111)
+- Petrel's lane (`platform:Petrel`, revision 452) was empty and not paused. `queue_submit {mode: replace, start: false}`
+  queued revision 453, and its first step, `platform_schedule {paused: false}`, ran, then the arrival wait, without
+  `queue_resume`. start:false only skipped the unpause, so on a lane that was not paused the steps ran at once.
+- Now `start: false` pauses and holds the lane in the same call, as `queue_pause` holds it, whatever its state was. This
+  holds on every lane (body, remote, platform:NAME) and in every mode (append, replace, ahead, next, pending). An active
+  step is stopped and requeued at the head, as queue_pause does. Nothing the call submitted runs until `queue_resume`.
+  Direct calls ending do not resume it (resume_direct, resume_after and the requeued-load resume skip a held queue).
+  - The reply adds `staged`, e.g. `start: false: the lane is paused and held until queue_resume (it was not paused);
+    2 steps pending`, and every queue_submit reply adds `state`: `running`, `paused`, or
+    `paused, held until queue_resume`. queue_status's `paused_by` says `staged by queue_submit start: false`.
+  - `start` must be true or false. A submit with start omitted or true runs as before.
+- Other ways steps could start unasked, checked in the code:
+  - A direct call ending: scheduler.resume_direct, runtime.resume_after and resume_requeued_load all skip a held queue.
+  - A finished wait: the scheduler's tick advances only lanes not paused, and the pause clears the active step.
+  - A runtime deploy: carry.lua snapshots only lanes not paused before it, so a held lane is not resumed.
+  - Standing orders: run_order needs a free queue (no active step, nothing pending, no loop).
+  - Shift start: research.lua's shift_start does not touch queues.
+  - The tools: idle_nudge.py and idle_report.py only read; no tool sends queue_resume.
+- Test: tests/d24_batch138.lua (fails on main: platform_schedule ran without queue_resume).
+
