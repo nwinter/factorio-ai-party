@@ -169,8 +169,65 @@ return function(api)
   M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|platform_built|researched or item_count with platform, ammo_below, platform_loss, platform_hit (platform_damage), platform_energy_below, platform_progress, platform_ammo_below or ghosts_waiting with platform, rocket_ready, rocket_parts, item_count, produced, ammo_below, fuel_below or fluid_count with surface, all or any of those (guards\' when too); drop, platform_schedule, flush and platform_rearm with explicit platform; configure, circuit_set, circuit, wire, requests, place_ghosts and deconstruct with platform or surface (a planet, by remote view as the direct call); rotate with platform or surface; min_payload; flight_watch (in a platform lane a start without platform or id watches the lane\'s platform); body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote, platforms {NAME: ...}}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
-  function M.tick() base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end) end
-  function M.pause_all() base.pause_all(); remote.pause_all(); each_platform(function(_,e) e.pause_all() end) end
+  -- (d24 batch153, harness review bug 6: Sol's status listed 7 platform lanes for platforms gone) a lane queue whose
+  -- platform is no platform of ours, with no step running, for CLOSE_TICKS in a row (a lane staged before its platform
+  -- is made keeps that long), is closed: its queue dropped, and its owner told once what it held. Read every
+  -- CLOSE_EVERY ticks.
+  M.CLOSE_EVERY,M.CLOSE_TICKS=600,3600
+  local function step_text(st)
+    return tostring(st.id or '?')..' '..tostring(st.action)..(st.label and ' ('..tostring(st.label)..')' or '')
+  end
+  local function held_text(q)
+    local parts={}
+    if #q.pending>0 then
+      local list={}
+      for i=1,math.min(6,#q.pending) do list[i]=step_text(q.pending[i]) end
+      parts[#parts+1]=string.format('%d pending step%s: %s%s',#q.pending,#q.pending==1 and '' or 's',table.concat(list,', '),#q.pending>6 and ', +'..(#q.pending-6)..' more' or '')
+    end
+    if q.loop then parts[#parts+1]=string.format('a repeating plan%s of %d step%s',q.name and ' "'..tostring(q.name)..'"' or '',#q.loop,#q.loop==1 and '' or 's') end
+    if q.guards and #q.guards>0 then parts[#parts+1]=string.format('%d guard%s',#q.guards,#q.guards==1 and '' or 's') end
+    if q.paused then parts[#parts+1]='paused'..(q.held and ', held' or '')..(q.paused_why and ': '..tostring(q.paused_why.line) or '') end
+    local last=q.history and q.history[#q.history]
+    if last then parts[#parts+1]='its last step '..step_text(last)..(last.ok==false and ' failed' or '') end
+    return #parts>0 and table.concat(parts,'; ') or 'nothing (no step, plan or guard)'
+  end
+  function M.close_gone()
+    local s=api.base.state()
+    if not next(s.platform_lanes or {}) then return end
+    local names={}
+    for _,f in pairs(game.forces) do
+      for _,pl in pairs(f.platforms or {}) do if pl.valid then names[pl.name]=true end end
+    end
+    s.lane_missing=s.lane_missing or {}
+    local closed={}
+    for name in pairs(s.platform_lanes) do
+      local key=M_key(name)
+      local t=s[key] or {}
+      if names[name] then s.lane_missing[name]=nil
+      else
+        local miss=s.lane_missing[name] or {}
+        s.lane_missing[name]=miss
+        for index,q in pairs(t) do
+          if q.current then miss[index]=nil
+          elseif not miss[index] then miss[index]=game.tick
+          elseif game.tick-miss[index]>=M.CLOSE_TICKS then
+            local text=string.format('your platform lane platform:%s is closed: no platform of ours is named %s (read since tick %d). It held %s.',name,name,miss[index],held_text(q))
+            t[index]=nil; miss[index]=nil
+            if api.deliver then pcall(api.deliver,index,{seq='lane',tick=game.tick,from='harness',text=text,fyi=true}) end
+            closed[#closed+1]={lane=name,index=index,text=text}
+          end
+        end
+        if not next(t) then s[key]=nil; s.platform_lanes[name]=nil; s.lane_missing[name]=nil; engines[name]=nil end
+      end
+    end
+    for name in pairs(s.lane_missing) do if not s.platform_lanes[name] then s.lane_missing[name]=nil end end
+    return closed
+  end
+  function M.tick()
+    base.tick(); remote.tick(); each_platform(function(_,e) e.tick() end)
+    if game.tick%M.CLOSE_EVERY==0 then pcall(M.close_gone) end
+  end
+  function M.pause_all(why) base.pause_all(why); remote.pause_all(why); each_platform(function(_,e) e.pause_all(why) end) end
   function M.round_news(index)
     local out=base.round_news(index) or {}
     for _,line in ipairs(remote.round_news(index) or {}) do out[#out+1]='remote '..line end

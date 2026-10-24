@@ -48,7 +48,7 @@ has(r.active_step,'still the active step, its action running')
 S.pause(1)
 local last=state.queues[1].history[#state.queues[1].history]
 eq(last.id,'job-1'); eq(last.result.reason,'interrupted')
-eq(last.result.paused_by,'paused (a direct call that drives your character, stop, or a harness update)')
+eq(last.result.paused_by,'paused with no reason recorded')   -- (d24 batch153) a pause with no reason says so
 eq(last.result.left_undone.count,2)
 eq(last.result.not_requeued,'not run again: 2 entries left unbuilt (ice-platform (-136.5,-394.5))')
 S.pause(1,'your action ended died')

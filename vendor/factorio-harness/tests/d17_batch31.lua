@@ -527,9 +527,10 @@ do
   eq(space.platform_schedule(p,{platform='Kestrel II'}).state,'no_schedule')
   -- clearing the schedule (stops []) is not failed
   space.platform_schedule(p,{platform='Kestrel II',stops={}})
-  -- paused before, not asked: fails; asked: not
+  -- paused before, not asked: (d24 batch153, harness review bug 1) the change is made and said, not failed; asked: no line
   pl.state,leaves,pl.paused=4,true,true
-  fails({platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2},'paused: it goes nowhere until unpaused (paused: false); it was paused before this call')
+  r=space.platform_schedule(p,{platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2})
+  has(r.still_paused,'Kestrel II was paused before this call and still is: the change is made')
   r=space.platform_schedule(p,{platform='Kestrel II',stops={{station='fulgora'},{station='nauvis'}},current=2,paused=true})
   eq(r.paused,true)
   -- no_path after: fails

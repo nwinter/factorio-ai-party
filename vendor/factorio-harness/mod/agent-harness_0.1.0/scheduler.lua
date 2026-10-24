@@ -617,7 +617,8 @@ return function(api)
   end
   function M.pause_inner(index,why)
     local q=queue(index)
-    if not q.paused or why then q.paused_why={tick=game.tick,line=why or 'paused (a direct call that drives your character, stop, or a harness update)'} end
+    -- (d24 batch153, harness review bug 6) every caller names why; a pause with none says so
+    if not q.paused or why then q.paused_why={tick=game.tick,line=why or 'paused with no reason recorded'} end
     if q.current then
       local step=q.current
       local again=RESTARTABLE[step.action]==true
@@ -766,14 +767,16 @@ return function(api)
   end
   -- The agent's own queue calls come first: a running order steps aside.
   local function preempt(p,q)
-    if q.order then api.stop(p); M.pause(p.index) end
+    if q.order then api.stop(p); M.pause(p.index,'your queue call stopped the standing order running in your queue') end
   end
   -- A repeating plan resting between cycles runs nothing, so a runtime
   -- replacement leaves it scheduled instead of pausing the loop.
-  function M.pause_all()
+  -- why (d24 batch153): what paused them all (runtime.lua stop_all: a harness update), recorded on each it pauses; a
+  -- queue paused already keeps its own reason
+  function M.pause_all(why)
     for index,q in pairs(api.state()[QUEUES] or {}) do
       local resting=q.loop and not q.current and #q.pending==0 and not (api.state().active or {})[index]
-      if not resting then M.pause(index) end
+      if not resting then M.pause(index,not q.paused and why or nil) end
     end
   end
   -- queue_status is compact (Sol 10:50: a repeating courier plan's long done history hid its stalled step): the
@@ -917,7 +920,7 @@ return function(api)
     assert((replacing and 0 or total(q.pending))+total(items)+(extra>0 and bytes(q.current,0) or 0)<=MAX_BYTES,'queue argument byte budget exceeded')
     assert((replacing and 0 or #(q.guards or {}))+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     preempt(p,q)
-    if (replacing and loop) or a.mode=='ahead' then api.stop(p); M.pause(p.index)
+    if (replacing and loop) or a.mode=='ahead' then api.stop(p); M.pause(p.index,'queue_submit mode='..tostring(a.mode))
     elseif replacing and q.current then
       -- replace stops the plan's active step too (Sonnet 07:50: a running load_silo went on after mode replace and
       -- took a queue_cancel first, about 5 times); its history entry says so, and it is not run again.
@@ -972,7 +975,7 @@ return function(api)
     assert(orders==nil or orders=='triggers' or orders=='all' or orders=='none','orders must be triggers, all or none')
     preempt(p,q)
     api.stop(p)
-    M.pause(p.index)
+    M.pause(p.index,'queue_repeat replaced the plan')
     new_plan(q,items,'repeat',a.name)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
     q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil; q.empty_rounds=nil
@@ -1114,7 +1117,7 @@ return function(api)
       dropped=string.format('%s wait_ticks cancelled %d s before its end tick %d',tostring(step.id),math.max(0,math.ceil(((step.until_tick or game.tick)-game.tick)/60)),step.until_tick or game.tick)
     end
     api.stop(p)
-    M.pause(p.index)
+    M.pause(p.index,'queue_cancel'..(a.clear==false and ' (clear: false: the steps kept)' or ''))
     if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil; q.condition=nil; q.condition_error=nil end
     local out=snapshot(q,RECENT)
     if dropped and #q.pending>0 then out.cancelled_wait=dropped..'; the steps after it are held: your queue is paused, and queue_resume runs them now'
@@ -1156,7 +1159,7 @@ return function(api)
         local nxt=q.current or (not q.current and q.pending[1]) or nil
         local valid,p=pcall(api.player,index,nxt and nxt.action=='vehicle' or nil)
         if not valid then
-          api.stop_index(index); M.pause(index)
+          api.stop_index(index); M.pause(index,'the queue could not act for you: '..(api.reason and api.reason(p) or tostring(p)))
         else
           -- The agent's guards watch its own plans, not a standing order's run.
           if q.guards and #q.guards>0 and not q.order and game.tick%CHECK_TICKS==0 then check_guards(q,p) end

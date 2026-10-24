@@ -104,12 +104,29 @@ return function(api)
     s.last=s.last or {}
     s.last[index]=was or nil
   end
+  -- (d24 batch153, harness review bug 6: 12 of Sol's platform lanes read "paused (a direct call that drives your
+  -- character, stop, or a harness update)") the outgoing runtime's stop paused every queue with no reason of its own
+  -- before batch153: each queue it paused in that tick names the harness update, carried on or not
+  local OLD_PAUSE='paused (a direct call that drives your character, stop, or a harness update)'
+  local function name_pause(s,tick)
+    if not api.update_pause then return end
+    local keys={'queues','remote_queues'}
+    for name in pairs(s.platform_lanes or {}) do keys[#keys+1]='lane_queues|'..name end
+    for _,key in ipairs(keys) do
+      for _,q in pairs(s[key] or {}) do
+        local w=q.paused and q.paused_why
+        if w and w.tick==tick and w.line==OLD_PAUSE then w.line=api.update_pause(tick) end
+      end
+    end
+  end
+  M.name_pause=name_pause
   function M.carry()
     local snap=seen
     if not snap then return end
     seen=nil
-    if game.tick-snap.tick>1 then return end
     local s=api.state()
+    name_pause(s,snap.tick)
+    if game.tick-snap.tick>1 then return end
     local at='harness updated at tick '..snap.tick
     local carried,lines,owned={},{},{}
     local function line(index,text) lines[index]=lines[index] or {}; table.insert(lines[index],text) end

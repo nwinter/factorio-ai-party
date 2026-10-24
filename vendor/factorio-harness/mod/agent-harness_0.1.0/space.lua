@@ -1526,10 +1526,16 @@ return function(api)
     local cur=sch.current or 1
     local here=try(function() return pl.space_location.name end)
     local waiting=M.waiting_now(pl)~=nil
+    -- (d24 batch153, harness review bug 2: shipment read Petrel, paused at Nauvis with current 1 nauvis, "flying to it")
+    -- paused, waiting_now is nil: stopped at a location it stands at that stop (as delivery_watch reads it), on a route
+    -- it is paused on the way to its current stop
+    local paused=try(function() return pl.paused end) and true or false
+    local flying=try(function() return pl.space_connection end) and true or false
+    local paused_at=paused and not flying and here and records[cur] and records[cur].station==here
     local st=api.state and api.state()
     local arrived=st and st.platform_stops and st.platform_stops[pl.index] or {}
     if arrived.at~=here then arrived={} end
-    local nxt=waiting and cur%#records+1 or cur
+    local nxt=(waiting or paused_at) and cur%#records+1 or cur
     local out={}
     for i,rec in ipairs(records) do
       local ws={}
@@ -1537,7 +1543,11 @@ return function(api)
         local text=wait_text(pl,w,waiting and i==cur,arrived)
         ws[#ws+1]=(k>1 and (w.compare_type=='or' and 'or ' or 'and ') or '')..text
       end
-      local tag=waiting and i==cur and 'waiting here' or (i==nxt and (waiting and 'next' or 'flying to it')) or nil
+      local tag=waiting and i==cur and 'waiting here'
+        or paused_at and i==cur and 'stopped here, paused: it goes nowhere until unpaused (paused: false)'
+        or paused and i==cur and (flying and 'flying to it, paused on the route: it goes nowhere until unpaused (paused: false)'
+          or 'the current stop; paused at '..tostring(here or '?')..': it goes nowhere until unpaused (paused: false)')
+        or (i==nxt and ((waiting or paused_at) and 'next' or 'flying to it')) or nil
       -- (d24 batch142 PN1) unloading off: its landing pads take nothing from the hub there
       local off=rec.allows_unloading==false and 'unloading off: the landing pads take nothing from the hub here, all above a finite max still goes down' or nil
       if off and tag then tag=tag..'; '..off elseif off then tag=off end
@@ -2016,10 +2026,19 @@ return function(api)
         line=string.format('%s read %s in the tick of this call (the game updates a platform in a later tick); read again every %d ticks for up to %d: a queue step waits for that read and fails only when it still reads no_schedule or no_path; a direct call gets the second read in a tell%s',
           pl.name,st,M.RECHECK_EVERY,ends-game.tick,hold and '; '..hold.line or '')}
     end
-    if pl.paused and a.paused~=true then
-      error(string.format('%s reads paused: it goes nowhere until unpaused (paused: false)%s after this call, so the call failed; the schedule stays as set: %s%s',pl.name,
-        a.paused==nil and '; it was paused before this call' or '',schedule_text(pl),rebuilt and '; '..rebuilt or ''),0)
+    -- (d24 batch153, harness review bug 1: Petrel, paused at Nauvis, took stop 2's new wait and the call answered
+    -- ok:false, "it was paused before this call after this call, so the call failed") a platform paused before the call
+    -- and not unpaused by it has the change made: the reply says it is still paused (still_paused). Only paused: false
+    -- that leaves it paused fails.
+    if pl.paused and a.paused==false then
+      error(string.format('%s still reads paused after this call (paused: false was given), so the call failed; the schedule stays as set: %s%s',pl.name,
+        schedule_text(pl),rebuilt and '; '..rebuilt or ''),0)
     end
+  end
+  -- The line for a call that changed a platform paused before it and left paused (no paused given).
+  local function still_paused(pl,a)
+    if a.paused~=nil or not try(function() return pl.paused end) then return nil end
+    return string.format('%s was paused before this call and still is: the change is made, and it goes nowhere until unpaused (paused: false)',pl.name)
   end
   -- The second read of a recheck: nil while it reads no_schedule or no_path and time is left; else {ok, line, error?}.
   function M.recheck_read(rc)
@@ -2102,7 +2121,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),schedule=schedule_text(pl),recheck=rc,
         sent_to=string.format('from stop %d (%s) to stop %d (%s): go to station called (it was %s)%s',cur,name(cur),nxt,name(nxt),where,
           n==1 and '; its schedule has one stop, so the next stop is the same one' or ''),
-        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state)}
+        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state),still_paused=still_paused(pl,a)}
     end
     -- (d19 batch48 1, Sol 17:29: `current: 4` alone left Kestrel IV at Aquilo, no effect, no error) current alone: the
     -- GUI's go to station on that record, the records and their waits kept; current on the stop it is at or already
@@ -2132,7 +2151,7 @@ return function(api)
       return {name=pl.name,state=state,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),recheck=rc,
         sent_to=string.format('from stop %d (%s) to stop %d (%s): go to station called (it was %s), the records and their waits kept',cur,name(cur),new,name(new),
           before=='waiting_at_station' and 'waiting at '..tostring(here) or tostring(before)),
-        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state)}
+        waiting=M.waiting_line(pl),state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state),still_paused=still_paused(pl,a)}
     end
     -- stop: N, wait: [...] (d17 batch31 B8, Luna 07:18: to make Spindle wait at Nauvis, stop 1, for fuel and oxidizer
     -- >= 24000 she set current 2, since current = the stop it waits at had read no_schedule, and it left at once with
@@ -2166,7 +2185,8 @@ return function(api)
         local line=set_unloading()
         local state=platform_states[pl.state]
         return {name=pl.name,state=state,at=location(pl),schedule=schedule_text(pl),
-          edited=line..'; its waits, the records and the current stop kept',unloading_rule=freight.NO_UNLOAD_RULE,waiting=M.waiting_line(pl)}
+          edited=line..'; its waits, the records and the current stop kept',unloading_rule=freight.NO_UNLOAD_RULE,waiting=M.waiting_line(pl),
+          state_note=state=='paused' and M.paused_note(pl) or nil,still_paused=still_paused(pl,a)}
       end
       runs,read_as={},{}
       local waits,entry=stop_waits(idx,{station=station,wait=a.wait},runs,read_as)
@@ -2263,7 +2283,8 @@ return function(api)
         edited=string.format('stop %d (%s): %d wait condition%s set in place; the records and the current stop (%d) %s; state %s%s',idx,station,#waits,#waits==1 and '' or 's',
           new_cur,new_cur~=cur and string.format('changed from %d (current)',cur) or 'kept',state,state~=before and ' (was '..tostring(before)..')' or ' (kept)'),
         unloading=unloading_line,unloading_rule=unloading_line and freight.NO_UNLOAD_RULE or nil,
-        leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,recheck=rc,waiting=M.waiting_line(pl),state_note=rc and rc.line or M.waiting_note(pl,state),
+        leaves=leave,may_leave=unknown,read_as=#read_as>0 and read_as or nil,waits_run=#runs>0 and runs or nil,fluid_count_note=fluid_note,recheck=rc,waiting=M.waiting_line(pl),
+        state_note=rc and rc.line or state=='paused' and M.paused_note(pl) or M.waiting_note(pl,state),still_paused=still_paused(pl,a),
         launch_needs=api.launch_need and try(function() return api.launch_need(pl) end) or nil,
       wait_facts=api.wait_need and try(function() return api.wait_need(pl) end) or nil,
         harness_waits=W and W.line(pl.name) or nil}
@@ -2409,6 +2430,7 @@ return function(api)
     if a.stops~=nil or a.paused~=nil then rc=stuck(pl,a,rebuilt,a.stops~=nil and #a.stops==0); M.recheck_start(p,rc) end
     if rc then state_note=state_note..'; '..rc.line end
     return {name=pl.name,state=state,state_note=state_note,waiting=wnow and wnow.line or nil,recheck=rc,at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl),one_stop=one_stop_note,
+      still_paused=(a.stops~=nil or a.current~=nil) and still_paused(pl,a) or nil,
       sent_to=sent and string.format('stop %d (%s): go to station called',sent.index,sent.station) or nil,go_error=go_error,rebuilt=rebuilt,note=note,circuit_note=circuit_note,
       current_note=current_note,leg=leg_note,read_as=read_as and #read_as>0 and read_as or nil,waits_run=runs and #runs>0 and runs or nil,fluid_count_note=fluid_note,
       unloading=unloading,unloading_rule=unloading and freight.NO_UNLOAD_RULE or nil,
@@ -2478,9 +2500,15 @@ return function(api)
     local okm,mpl=pcall(M.platform,p,a.platform)
     local function sched(x) return stop_list(x)..', current '..tostring(try(function() return x.schedule.current end) or 'none')..(x.paused and ', paused' or '') end
     local was=okm and mpl and not a.dry_run and sched(mpl)
+    local gates_was=was and gate_texts(mpl)
     local ok,out=pcall(M.schedule_call,p,a)
     local now=was and mpl.valid and sched(mpl)
     if now and now~=was and api.made then api.made(mpl.name..' schedule: '..now..' (was '..was..')') end
+    -- (d24 batch153) a stop's waits or unloading changed with the stops kept: each such stop marked too
+    if now and api.made then
+      local g=gate_texts(mpl)
+      if #g==#gates_was then for i,t in ipairs(g) do if t~=gates_was[i] then api.made(string.format('%s stop %d: %s (was %s)',mpl.name,i,t,gates_was[i])) end end end
+    end
     if not ok then error(out,0) end
     if pl and pl.valid and not a.dry_run then
       local told={}
