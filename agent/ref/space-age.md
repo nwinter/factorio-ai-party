@@ -183,8 +183,8 @@
   the entity (name, unit number, position) each planned tile is for, and how (footprint, tunnel, link). Read only.
   `phases: [{cancel?, remove?, fill?, name?}, ...]` (1..16; tiles as `{x,y}`, an area, `"x0..x1,y0..y1"` or `"x,y"`):
   each phase applied in order to a model of the floor (its tiles, marks and tile ghosts now) and played to stability
-  by the hub's rules; per phase `went`, `built`, `waiting` and `unbuilt` (`"(x,y): why"`), `cut` (floor no longer joined
-  to the hub by sides, what stands on it); `end` (areas taken up and added) and `rollback` (areas to fill back and take
+  by the hub's rules; per phase `went`, `built`, `waiting` and `unbuilt` (`"(x,y): why"`), and floor cut off (no longer
+  joined to the hub by sides, what stands on it); `end` (areas taken up and added) and `rollback` (areas to fill back and take
   up, played back: `restores`, or coordinates only). Read only; a large plan goes on across ticks (`phases_check: N`).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
