@@ -68,14 +68,14 @@ eq(lines[6]:find('received 5000',1,true),nil,'pad B\'s pod: no total')
 game.tick=1000+40*3600+20; W.tick(game.tick)
 eq(w.state,'late')
 lines=W.lines(sol,h)
-has(lines[1],'deadline passed, not reached: ')
+has(lines[1],'deadline passed, not received from Spindle: ')
 has(lines[1],'the consumer holds 0 (0 at the start); received 5000 of 10000 in 5 pods by cargo-landing-pad (74,208) on fulgora since the watch was set, the last at tick 4000')
 -- the other 5 land late: complete by receipt (received), the stock test named apart
 for i=6,10 do land(1000,padA,game.tick+600) end
 eq(w.state,'received'); eq(w.received,10000); eq(w.received_pods,10)
 eq(w.stages.reached,nil,'the pad never held 10000 more')
 lines=W.lines(sol,h)
-has(lines[#lines],'delivery watch #1 (10000 copper-plate to cargo-landing-pad (74,208) on fulgora): received 10000 of 10000 in 10 pods by cargo-landing-pad (74,208) on fulgora since the watch was set, the last at tick '..w.received_tick..', late, 50s after the deadline; the stock test not met: the consumer holds 0 now (0 at the start), not seen holding 10000 more')
+has(lines[#lines],'delivery watch #1 (10000 copper-plate to cargo-landing-pad (74,208) on fulgora): received 10000 of 10000 in 10 pods by cargo-landing-pad (74,208) on fulgora since the watch was set, the last at tick '..w.received_tick..', late, 50s after the deadline; the stock test: the consumer holds 0 now (0 at the start), not seen holding 10000 more; reached at tick '..w.received_tick)
 local row=W.row(w)
 eq(row.state,'received'); eq(row.received.count,10000); eq(row.received.pods,10); eq(row.received.by,'cargo-landing-pad (74,208) on fulgora')
 eq(row.held,0); eq(row.at_start,0)
@@ -100,10 +100,11 @@ w=st.delivwatch.list[3]; W.lines(sol,h)
 eq(W.row(w).received.by,'landing pads in the consumer\'s logistic network')
 land(1000,padB,game.tick+600); eq(w.received,0,'another network')
 land(1000,padA,game.tick+600); eq(w.received,1000)
-land(1000,padA,game.tick+600,function() held.chest=2000 end); eq(w.received,2000); eq(w.state,'reached')
+-- (d24 batch146 PR1) from given: ended by the received total, the stock test said apart
+land(1000,padA,game.tick+600,function() held.chest=2000 end); eq(w.received,2000); eq(w.state,'received'); eq(w.ended_by,'received')
 lines=W.lines(sol,h)
-has(lines[#lines],'delivery watch #3: reached: steel-chest (80,200) holds 2000 copper-plate (0 when the watch was set), in time, ')
-has(lines[#lines],'; received 2000 of 2000 in 2 pods by landing pads in the consumer\'s logistic network since the watch was set')
+has(lines[#lines],'received 2000 of 2000 in 2 pods by landing pads in the consumer\'s logistic network since the watch was set')
+has(lines[#lines],'; the stock test: the consumer holds 2000 now (0 at the start), seen holding 2000 more; reached at tick')
 
 -- a watch set before the total was kept: its arrivals received by the pad itself count, on its next read
 w={id=9,setter='sol',index=1,force='player',item='copper-plate',count=3000,from='Spindle',to={name='cargo-landing-pad',position={x=74,y=208},where='fulgora'},

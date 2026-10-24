@@ -78,6 +78,8 @@ land(iva,150,3400)
 eq(w2.received,150)
 game.tick=3420; W.tick(3420); W.tick(3480)
 local r3=W.call(sol,{id=w2.id}).watches[1]
-eq(r3.stock.reached,true,'the stock test, its own fact: 515 held'); eq(r3.received.count,150); eq(r3.state,'reached')
+eq(r3.stock.reached,true,'the stock test, its own fact: 515 held'); eq(r3.received.count,150)
+-- (d24 batch146 PR1) with from, the stock test does not end the watch: 150 of 400 received from Kestrel IVa
+eq(r3.state,'open'); eq(r3.stock.ends_watch,false)
 eq(W.call(sol,{id=w2.id}).watches[1].line:find('(from ',1,true),nil,'from given: the received line names no platforms')
 print('d23_batch134 PF1 delivery watch from any platform: ok')

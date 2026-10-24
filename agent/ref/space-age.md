@@ -310,7 +310,12 @@
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
   no pad), network (the pad's logistic network and the consumer's), received (the pods it received since the watch
   was set total `count`: a pad's own, a platform's hub's, or a pad's in the consumer's network; `received` {count,
-  pods}), reached (the consumer holds `count` more than at the start). `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
+  pods}), reached (the consumer holds `count` more than at the start). With `from`, the watch ends only when
+  `count` is received from that source; `stock` {held, at_start, reached, ends_watch: false, line} is the stock test
+  apart (on a copy of world n, Petrel III's pod of 60 met it for a watch from Petrel II, which stayed open until
+  Petrel II's pod of 4). With no `from`, either test ends it (`ended_by`: stock or received). After it ends it counts
+  on until its deadline (`counting`, `reached_tick`: "reached at tick T; still counting"): later pods add to
+  `received` and `by_platform`. `last_confirmed` and `blockers`: the pad's network not the consumer's or the consumer in none, no pad
   with room there, a pod landed with no pad, the platform paused away from the destination or not stopping there, a
   requester chest asking none of it. Stopped at the destination, paused or not (its hub sends pods down while paused),
   `at_destination` says what goes down now by the hub's sections for that planet and the pads' ask; none is a blocker. The setter hears each blocker, its end, the deadline passed and the arrival in team.alerts. `{}` lists the
