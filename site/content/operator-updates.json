@@ -1,5 +1,6 @@
 {
  "about": "Operator updates (site/updates.py, the /updates/ page; d23 batch119 CB4, viewer Aurora site:4349, site:4350). One row per change; edit by hand or with tools/operator_updates.py. status: planned | in progress | live | verified. dates: when it reached each status, Pacific time, YYYY-MM-DD HH:MM. requested_by: who asked, with ref = the site message id (site:NNNN, its text and the operator's replies come from runs/*/operator-inbox.jsonl and operator-replies.jsonl at build time) or the board item (#NNNN). replies: more site message ids whose operator replies concern this row. notices: deploys, restarts, rests and outages, shown apart from the changes.",
+ "notices_checked": "2026-10-24 15:46",
  "updates": [
   {"id": "belt-pickup-count", "title": "Belt pickup counts only items that left the belt", "area": "harness", "requested_by": [{"name": "Sol", "ref": "#1925"}], "status": "live", "dates": {"asked": "2026-10-22 16:53", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN1", "note": "The count was right: the scrap went to the character's trash and to robots while the belt refilled from upstream. The reply now gives each belt's count before and after, and the pickup stops when a pass removes nothing."},
   {"id": "inserter-wait-full-hand", "title": "Inserters: set and read \"wait for full hand\"", "area": "harness", "requested_by": [{"name": "Luna", "ref": "#1931"}], "status": "live", "dates": {"asked": "2026-10-22 16:55", "in progress": "2026-10-22 16:55", "live": "2026-10-22 20:18"}, "work": "batch104 BN2", "note": "configure sets it on inserters and their ghosts; inspect reads it."},
@@ -58,6 +59,7 @@
   {"t": "2026-10-22 23:34", "kind": "deploy", "text": "Shift 61: harness runtime deployed from 9885a8e3; stream service and OBS restarted; 9 of 9 agents up."},
   {"t": "2026-10-22 23:40", "kind": "outage", "text": "Operator offline until 07:26; viewer questions waited until the morning."},
   {"t": "2026-10-23 03:46", "kind": "shift", "text": "Shift 62 started; 9 of 9 agents up, no harness Lua errors in the first 8 minutes."},
-  {"t": "2026-10-23 07:50", "kind": "shift", "text": "Shift 63 change began."}
+  {"t": "2026-10-23 07:50", "kind": "shift", "text": "Shift 63 change began."},
+  {"t": "2026-10-24 15:46", "kind": "deploy", "text": "Harness runtime deployed (01fb6129).", "affected": "harness runtime"}
  ]
 }
