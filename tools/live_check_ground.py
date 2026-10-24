@@ -9,8 +9,8 @@ client connected so the game runs at full speed (the check stops at once otherwi
 tools/live_check_coverage.py: a test bot acts through bin/fh, operator Lua stages and reads back, ok/FAIL per step,
 cleanup at the end. Refuses a, b, c, n.
 
-Steps: the bot builds a chest; operator Lua lays 160 stacks of 10 iron plates beside it. After the next watch pass
-(30 s of game time): status alerts.ground_items names the pile; scan and observe summarize it (no rows); deconstruct
+Steps: the bot builds a chest; operator Lua lays 160 stacks of 10 iron plates beside it. After a whole watch pass
+(up to 60 s of game time): status alerts.ground_items names the pile; scan and observe summarize it (no rows); deconstruct
 items_on_ground marks all 160 (read back from the game) and cancel_deconstruction unmarks them; pickup over the area
 takes them all (picked_up; the area is empty and the bot holds the plates); pickup over an empty area is refused.
 Then a cargo landing pad (operator Lua; skipped when the game refuses one here) with every slot filled and 30 coal
@@ -25,7 +25,7 @@ import live_check_coverage as L  # noqa: E402
 
 ITEMS = {"iron-chest": 1}
 PILE_STACKS, PILE_COUNT = 160, 10   # 20 x 8 stacks, 0.4 tiles apart
-WATCH_TICKS = 1800                   # ground.lua's pass interval
+WATCH_TICKS = 1800                   # ground.lua's pass interval (a background pass spreads over it)
 
 
 def widest(lo, hi, cell=64):
@@ -39,9 +39,10 @@ def tick(c):
 
 
 def wait_pass(c, since, sleep=time.sleep):
-    """Wait until a watch pass is due: WATCH_TICKS of game time after `since` (at most 120 s of wall time)."""
-    for _ in range(60):
-        if tick(c) >= since + WATCH_TICKS + 30:
+    """Wait until a whole watch pass ran after `since`: the background pass spreads over WATCH_TICKS, so one begun
+    before `since` may not see what was staged; the next one does (2 x WATCH_TICKS; at most 150 s of wall time)."""
+    for _ in range(75):
+        if tick(c) >= since + 2 * WATCH_TICKS + 30:
             return True
         sleep(2)
     return False
@@ -57,6 +58,7 @@ def main():
     ap.add_argument("--bot", default="lg1")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--out", default=os.path.join(L.ROOT, "runs", "live-check-ground"))
+    L.add_site_arg(ap)
     a = ap.parse_args()
     world = os.environ.get("POG_WORLD", "live")
     if world in ("a", "b", "c", "n"):
@@ -78,7 +80,7 @@ def main():
     pos = (st.get("result") or {}).get("position")
     if not c.record("bot status", ok and pos is not None, pos):
         sys.exit(1)
-    stage = c.lua(L.stage_lua(pos, ITEMS))
+    stage = c.lua(L.stage_lua(pos, ITEMS, L.parse_site(a.site)))
     if not c.record("stage: site and items", "site" in stage, stage):
         sys.exit(1)
     ox, oy = stage["site"]["x"], stage["site"]["y"]
@@ -119,8 +121,10 @@ def main():
         sys.exit(1)
     ok, st = c.fh("status")
     res = st.get("result") or {}
-    want = f"{PILE_STACKS} item stacks on the ground at"
-    found = lines_with(res, want, f"{PILE_STACKS * PILE_COUNT} iron-plate", "near our buildings")
+    # (d24 batch158, harness review bug 8) ground.lua's line: "items on the ground at (x,y)-(x,y) on nauvis, near our
+    # buildings: entities 160 (each an item stack on the ground); items 1600: 1600 iron-plate; ..."
+    want = f"entities {PILE_STACKS} (each an item stack on the ground)"
+    found = lines_with(res, "items on the ground at", want, f"{PILE_STACKS * PILE_COUNT} iron-plate", "near our buildings")
     c.record("status alerts.ground_items names the pile", bool(found), found or (res.get("alerts") or {}).get("ground_items"))
     team = [l for l in ((res.get("team") or {}).get("alerts") or []) if want in l]
     c.record("the reply's team.alerts carries it once", bool(team), team or res.get("team"))
@@ -156,7 +160,7 @@ def main():
         c.record("game: our chest is not marked", alive.get("marked") is False, alive)
     unmarked = c.step("cancel_deconstruction items_on_ground", "cancel_deconstruction", {"area": area, "items_on_ground": True}) or {}
     got = ground_lua()
-    c.record("game: no stack marked after cancel", unmarked.get("item_stacks") == PILE_STACKS and got.get("marked") == 0,
+    c.record("game: no stack marked after cancel", unmarked.get("item_stacks_cancelled") == PILE_STACKS and got.get("marked") == 0,
              {"reply": unmarked, "game": got})
 
     # pickup over the area: all of it, then an empty area is refused.

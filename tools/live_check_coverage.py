@@ -136,41 +136,67 @@ class Check:
         return ent if res else None
 
 
-def stage_lua(pos, items):
-    """Operator Lua that stages a check: the bot's character, a clear site near it (trees and rocks removed, no water,
-    nothing else built there), the bot moved beside the site and given the items. Prints {site, given} or {error}."""
+RINGS = 24   # 16-tile rings searched round the start for a clear site (d24 batch158: up to 384 tiles; 12 rings on four
+             # lines found none near spawn on a copy of world n, whose base stands round it)
+
+
+def parse_site(text):
+    """--site X,Y: where the search for a clear site starts (default the bot, at spawn); None for none."""
+    if not text:
+        return None
+    try:
+        x, y = (float(v) for v in text.split(","))
+    except ValueError:
+        raise SystemExit(f"--site takes X,Y (got {text!r})")
+    return {"x": x, "y": y}
+
+
+def add_site_arg(ap):
+    ap.add_argument("--site", help="X,Y: search for the clear site from there (default the bot's position, spawn); "
+                    "a built world has no clear site near spawn")
+
+
+def stage_lua(pos, items, site=None, rings=RINGS):
+    """Operator Lua that stages a check: the bot's character, a clear site near it, or near `site` when given (trees and
+    rocks removed, no water, nothing else built there; every 16-tile cell ring by ring out to `rings`), the bot moved
+    beside the site and given the items. Prints {site, given, searched} or {error}."""
     items = ",".join(f'["{k}"]={v}' for k, v in items.items())
+    start = site or pos
     return f"""
       local s = game.surfaces.nauvis
       local bx, by = {pos['x']}, {pos['y']}
+      local sx, sy = {start['x']}, {start['y']}
       local body
       for _, e in pairs(s.find_entities_filtered{{type="character", position={{bx, by}}, radius=2}}) do
         if not e.player then body = e end
       end
       if not body then rcon.print(helpers.table_to_json{{error="no bot character near the bot's position"}}) return end
-      local site
-      for r = 0, 12 do
-        for _, d in ipairs{{{{1,0}},{{0,1}},{{-1,0}},{{0,-1}}}} do
-          if not site then
-            local ox = math.floor(bx / 2) * 2 + d[1] * r * 16
-            local oy = math.floor(by / 2) * 2 + 4 + d[2] * r * 16
-            local area = {{{{ox, oy}}, {{ox + {SITE_W}, oy + {SITE_H}}}}}
-            local water = s.count_tiles_filtered{{area=area, collision_mask="water_tile"}}
-            local other = 0
-            for _, e in pairs(s.find_entities_filtered{{area=area}}) do
-              if e.type ~= "tree" and e.type ~= "simple-entity" and e.type ~= "resource" and e.type ~= "character"
-                and e.type ~= "corpse" and e.type ~= "item-entity" then other = other + 1 end
-            end
-            if water == 0 and other == 0 then site = {{x=ox, y=oy, area=area}} end
+      local site, searched = nil, 0
+      local function try_at(ox, oy)
+        searched = searched + 1
+        local area = {{{{ox, oy}}, {{ox + {SITE_W}, oy + {SITE_H}}}}}
+        if s.count_tiles_filtered{{area=area, collision_mask="water_tile"}} > 0 then return end
+        for _, e in pairs(s.find_entities_filtered{{area=area}}) do
+          if e.type ~= "tree" and e.type ~= "simple-entity" and e.type ~= "resource" and e.type ~= "character"
+            and e.type ~= "corpse" and e.type ~= "item-entity" then return end
+        end
+        site = {{x=ox, y=oy, area=area}}
+      end
+      local x0, y0 = math.floor(sx / 2) * 2, math.floor(sy / 2) * 2 + 4
+      for r = 0, {rings} do
+        for i = -r, r do
+          for _, d in ipairs{{{{i, -r}}, {{i, r}}, {{-r, i}}, {{r, i}}}} do
+            if not site and (math.abs(d[1]) == r or math.abs(d[2]) == r) then try_at(x0 + d[1] * 16, y0 + d[2] * 16) end
           end
         end
+        if site then break end
       end
-      if not site then rcon.print(helpers.table_to_json{{error="no clear site near the bot"}}) return end
+      if not site then rcon.print(helpers.table_to_json{{error=string.format("no clear site within {rings} rings of 16 tiles round (%g,%g) (%d places checked); --site X,Y starts the search elsewhere", sx, sy, searched)}}) return end
       for _, e in pairs(s.find_entities_filtered{{area=site.area, type={{"tree","simple-entity"}}}}) do e.destroy() end
       body.teleport({{site.x + 4, site.y - 2}})
       local given = {{}}
       for name, n in pairs({{{items}}}) do given[name] = body.insert{{name=name, count=n}} end
-      rcon.print(helpers.table_to_json{{site={{x=site.x, y=site.y}}, given=given}})
+      rcon.print(helpers.table_to_json{{site={{x=site.x, y=site.y}}, given=given, searched=searched}})
     """
 
 
@@ -196,6 +222,7 @@ def main():
     ap.add_argument("--bot", default="lc1")
     ap.add_argument("--keep", action="store_true", help="leave what the check built and the bot")
     ap.add_argument("--out", default=os.path.join(ROOT, "runs", "live-check-coverage"))
+    add_site_arg(ap)
     a = ap.parse_args()
     world = os.environ.get("POG_WORLD", "live")
     if world in ("a", "b", "c", "n"):
@@ -219,7 +246,7 @@ def main():
     pos = (st.get("result") or {}).get("position")
     if not c.record("bot status", ok and pos is not None, pos):
         sys.exit(1)
-    stage = c.lua(stage_lua(pos, ITEMS))
+    stage = c.lua(stage_lua(pos, ITEMS, parse_site(a.site)))
     if not c.record("stage: site and items", "site" in stage, stage):
         sys.exit(1)
     ox, oy = stage["site"]["x"], stage["site"]["y"]

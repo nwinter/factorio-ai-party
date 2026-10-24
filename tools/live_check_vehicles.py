@@ -26,6 +26,7 @@ def main():
     ap.add_argument("--bot", default="lv1")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--out", default=os.path.join(L.ROOT, "runs", "live-check-vehicles"))
+    L.add_site_arg(ap)
     a = ap.parse_args()
     world = os.environ.get("POG_WORLD", "live")
     if world in ("a", "b", "c", "n"):
@@ -44,7 +45,7 @@ def main():
     pos = (st.get("result") or {}).get("position")
     if not c.record("bot status", ok and pos is not None, pos):
         sys.exit(1)
-    stage = c.lua(L.stage_lua(pos, ITEMS))
+    stage = c.lua(L.stage_lua(pos, ITEMS, L.parse_site(a.site)))
     if not c.record("stage: site and items", "site" in stage, stage):
         sys.exit(1)
     ox, oy = stage["site"]["x"], stage["site"]["y"]

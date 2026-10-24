@@ -13580,3 +13580,53 @@ Fixed besides gates:
     inbox had the four tells (Bastion, Limestone-spare-unbuilt, Prospect, Crucible).
 - Tests: tests/d24_batch153.lua (fails on main at each of the three: "before: flying to it", the ok:false text, the
   reasonless pause); d22_batch112 takes "paused with no reason recorded".
+
+## d24 batch158 (eng/d20-batch158): the harness review's bug 5, bug 8 and improvement 2
+- Bug 5, a drive's arrival:
+  - Cause: a drive asks the engine for a path with a goal radius of tolerance 3 + 1 (+ the plan's); the path may end
+    anywhere within it, and arrived counted at 1.5 tiles from the path's end.
+  - Before (a copy of world n's shift69 save, a car at (714.5,698.5) facing east on cleared ground, drive to
+    (734.5,698.5)): arrived at x 729.2, path_length 16, plan "turning room", no distance said.
+  - Now: a path that is not a stop near the target and ends farther than the tolerance from it gets the target as its
+    last waypoint (the braking for ours and the stuck rules hold there). arrived: stopped within 3 tiles of the
+    target, or at the end of a stop-short plan's path (last.stopped_short). last.distance_left, last.arrive_rule and
+    last.path_extended ("the engine's path ended 4.0 tiles from the target (its goal radius); driven on straight to
+    it") say it.
+  - After (the same save): arrived at x 732.7, distance_left 1.8, path_length 20.
+- Bug 8, the live checks and sa_smoke:
+  - live_check_coverage, ground, shore and vehicles take --site X,Y (where the clear-site search starts), and the
+    search covers every 16-tile cell ring by ring out to 24 rings (it was 4 lines out to 12 rings).
+  - live_check_ground: the pile line is "items on the ground at ... near our buildings: entities 160 (each an item
+    stack on the ground); items 1600: 1600 iron-plate ..."; the cancel reply's key item_stacks_cancelled; it waits
+    for a whole watch pass (2 x 1800 ticks: a background pass spreads over 1800).
+  - live_check_shore: the placements read asks limit as many as the refusal lists (the read's default is 10) and the
+    two lists compare by distance, equally near spots in either order.
+  - sa_smoke: charts 128 tiles round spawn and waits for the 25 chunks round it; each early-game step that finds
+    nothing (nearest reads charted chunks) is a failed step with why. On a fresh 2.0.77 world in a headless server
+    with no client, force.chart and chart_all left 0 of 25 chunks charted: the chart step fails there and says to
+    connect a client.
+  - Runs on the copy (POG_WORLD=copy158 through a scratch HOME): vehicles 15 ok 0 failed (no --site: a site at
+    (-238,240) after 902 places checked); ground 23 ok 0 failed (the full pad and its spill too); shore 20 ok 0
+    failed (the read listed (370.5, 371.5, 369.5) and the refusal (371.5, 370.5, 372.5): equal distances); coverage
+    21 ok 0 failed.
+  - sa_smoke on a fresh peaceful Space Age world: main's 0 failed steps with nearest finding no stone, coal or iron
+    and the early game skipped; this branch's 4 failed (chunks round spawn charted 0/25; gather stone, gather coal,
+    and the drill, furnace and smelting on iron, each skipped: no ... within 64 tiles in charted chunks).
+- Improvement 2, alerts that reach no one:
+  - An agent plays when its place (where.lua) is neither offline (a bot with no request or sleep poll for 15 min)
+    nor resting.
+  - A group with no claim or builder goes to the nearest agent on its surface that plays; nearer ones that do not are
+    named: "luna (nearest playing; muse: offline nearer)", and that agent's team.alerts line ends "(you are the
+    nearest playing; ...)".
+  - A group no playing agent hears comes to every playing agent's team.alerts with "(to the team: why)" and game_alerts
+    `to` "the team (every playing agent): why": every agent it goes to not playing ("no agent it goes to plays now
+    (haiku offline)"), or ammo_low with no builder record and no agent within 64 tiles. A group on a surface with no
+    agent (a platform's power_high) goes to no one, as before.
+  - On the copy (158 groups): before, 5 to "muse (nearest)" (offline 7.8 h), 12 to "grok (nearest; resting until
+    15:59 (quota))", 5 ammo_low groups to null; after, those went to "luna (nearest playing; muse: offline nearer)",
+    "sonnet (nearest playing; grok: resting nearer)" and "the team (every playing agent): no builder record for these
+    turrets and no agent within 64 tiles of them"; Opus's next reply carried two of them "(to the team: ...)". The 13
+    platform power_high groups stay with no one.
+- Tests: tests/vehicles.lua's new case (fails on main: "arrived 5.4 tiles short with no distance_left");
+  tests/d24_batch158.lua (fails on main: the routing it tests is not there); tools/test_live_check_site.py;
+  test_live_check_ground and test_live_check_shore take the harness's texts.

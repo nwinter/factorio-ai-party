@@ -111,6 +111,9 @@
   alerts with its owner (and a sleep wakes for losses in it), until you stop. Your requests in its area keep it fresh,
   as the owner's do, and you count as allowed. The claim shows `covers`. A teammate resting (`resting until ...` in
   `teammates`) shows which alert groups go to it and who else hears them; `game_alerts` `to` names rests and covers.
+  A group with no claim or builder goes to the nearest agent on its surface that plays (not offline, not resting;
+  `nearest playing; haiku: offline nearer`). One that no playing agent hears comes to every playing agent's
+  `team.alerts` with `(to the team: why)`.
 - Board reads and edits: `./fh board` takes `{"status":"done"}` (finished items), `{"status":"active"}` or
   `{"mine":true}`. `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's
   title and what it asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the
