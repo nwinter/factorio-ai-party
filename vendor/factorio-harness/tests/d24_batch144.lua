@@ -52,12 +52,15 @@ local far=ghost('transport-belt',100.5,0.5); G.placed('Luna',far)
 eq(G.owner(tile),'Luna'); eq(select(2,G.owner(tile)),'record'); eq(S.ghost_log.tmap['nauvis|landfill|3.5,2.5'].a,'Luna')
 eq(G.owner(player_ghost),'Luna'); eq(select(2,G.owner(player_ghost)),'last_user'); eq(G.owner(unknown),nil)
 local R=dofile('mod/agent-harness_0.1.0/removeghosts.lua'){position=function(v) return {x=v.x or v[1],y=v.y or v[2]} end,
-  charted=function(p,pos) return pos.x<64 or pos.y>=20 end,who=function(p) return p.name end,owner_at=G.owner_at,placed_by=G.short,forget=G.forget}
+  charted=function(p,pos) return pos.x<64 or pos.y>=20 end,who=function(p) return p.name end,owner_at=G.owner_at,index_state=G.index_state,placed_by=G.short,forget=G.forget}
 local luna={name='Luna',surface=surface,force='player'}
--- a record from before the position index (no s, n): read into it on the first lookup
+-- an old save's record log (no position index; a record with no s, n): the index is built in slices of ring slots,
+-- and remove_ghosts refuses meanwhile
 local legacy=ghost('pipe',11.5,3.5)
+S.ghost_log.ring[8000]='nauvis|pipe|11.5,3.5'
 S.ghost_log.map['nauvis|pipe|11.5,3.5']={a='Luna',t=1,i=8000}
-eq(S.ghost_log.pidx,nil,'no index before the first lookup')
+for _,map in ipairs({S.ghost_log.map,S.ghost_log.tmap}) do for _,rec in pairs(map) do rec.x=nil end end
+S.ghost_log.pidx,S.ghost_log.pidx_done,S.ghost_log.pidx_slot=nil,nil,nil
 -- the index matches the records: each position's count is the records there
 local function consistent()
   local want={}
@@ -66,6 +69,15 @@ local function consistent()
   for sn,t in pairs(S.ghost_log.pidx) do for nk,c in pairs(t) do eq(c,want[k(sn,nk)],'index count at '..k(sn,nk)); want[k(sn,nk)]=nil end end
   assert(next(want)==nil,'a record missing from the index')
 end
+fails(function() R.handler(luna,{area={{0,0},{200,10}},dry_run=true}) end,'nothing removed: the ghost placement records are being indexed after a harness update (0 of 16384 record slots read, 512 a tick, about 0.5 s left)')
+eq(G.index_tick(512),512)
+-- a placement while it is built is counted once (when placed; its slot is skipped)
+local mid=ghost('pipe',12.5,30.5); G.placed('Luna',mid)
+eq(G.owner_at('nauvis','pipe',{x=11.5,y=3.5},false,legacy),'Luna','meanwhile a lookup reads the record by its text key')
+fails(function() R.handler(luna,{area={{0,0},{200,10}},dry_run=true}) end,'(512 of 16384 record slots read')
+local slices=1
+while G.index_tick(512)>0 do slices=slices+1 end
+eq(slices,32,'16384 slots, 512 a slice'); eq(G.index_state(),nil); eq(G.index_tick(512),0)
 -- refusals
 fails(function() R.handler(luna,{}) end,'remove_ghosts takes area or positions (one of them)')
 fails(function() R.handler(luna,{area={{0,0},{10,10}},positions={{1,1}}}) end,'one of them')

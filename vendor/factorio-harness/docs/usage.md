@@ -13142,7 +13142,12 @@ Fixed besides gates:
   ring of their own (8192, so a platform's foundation does not push out the entities' records); the key uses the tile
   name. Each record keeps its surface and a numeric position key, and a per-surface count of records at each position
   (`pidx`) lets a lookup skip ghosts with no record without turning their position into text (2.0.77 container: 8 us
-  a number, 632 ghosts 10 ms). Records from before it are read into the index on the first remove_ghosts call.
+  a number, 632 ghosts 10 ms). A counted record carries `x`.
+- (cp2, operator: no step over 10 ms on world n) Records from before the index are counted in slices from the harness
+  tick (`ghostlog.index` part), 512 ring slots a tick, the entities' ring then the tiles' (16384 slots, 32 ticks); a
+  record placed meanwhile is counted when placed and skipped at its slot. Until it is whole a lookup reads the text key,
+  and remove_ghosts refuses: `nothing removed: the ghost placement records are being indexed after a harness update
+  (3072 of 16384 record slots read, 512 a tick, about 0.4 s left); remove_ghosts answers once that is done`.
 - Measured:
   - world n (tick 55927300, d24 04:46): the search remove_ghosts makes over Luna's staging area, as a
     /silent-command read: 24 entity ghosts (8 fast-transport-belt, 6 pipe, 4 medium-electric-pole, 2 bulk-inserter,
@@ -13157,12 +13162,16 @@ Fixed besides gates:
     stayed. On platform Chalk, 2 script ghosts (no record) stayed under luna's default call (`left_unknown 2`) and went
     with `owner: "any"`.
   - cost on the copy (handler alone, mean of 10): Vulcanus's densest 256x256 square (632 ghosts, none recorded,
-    tiles: true) 1.8 ms own, 1.9 ms any, from 25 ms before the position index; Luna's staging area 0.04 ms. The
-    one-time index build over the copy's 7896 records: 27 ms (kept in storage after). Whole dispatches in the
-    emulated container varied 3-25 ms for `clock` alone.
+    tiles: true) 1.8 ms own, 1.9 ms any, from 25 ms before the position index; Luna's staging area 0.04 ms. Whole
+    dispatches in the emulated container varied 3-25 ms for `clock` alone.
+  - (cp2) the index build on a fresh copy of world n's 05:13 autosave (tick 56016264: 7927 entity records, none with
+    a position key, 0 tile records): after the deploy it was whole 32 ticks later (index sum 7927 = records); each
+    512-slot slice timed alone, 3 runs: worst 3.0 ms (2.6, 3.0, 3.0), median 1.3 ms, 28-32 ms in all; the tiles' ring
+    slices (empty) under 0.1 ms. In the harness tick under profile_ticks: 32 ticks, 27.5 ms in all (0.86 ms a tick).
+    A ring holds at most 8192 records, so no slice reads more than 512 whatever the log's size.
 - Test: tests/d24_batch144.lua (refusals, dry run and live by owner, unknown, uncharted, names, positions, tile ghosts,
-  owner "sol" and "any", the 256 cap, a record from before the index, the index against the records after removals
-  and after the ring wraps).
+  owner "sol" and "any", the 256 cap, an old log indexed in 32 slices with the refusal meanwhile and a placement
+  during it counted once, the index against the records after removals and after the ring wraps).
 - Tests: tests/d24_batch141.lua (fails on main with Sol's error; its cp2 block, a userdata platform's schedule edit
   recorded and told, fails on main with `the edit log records the stops`); tests/d17_batch31.lua's finite-max line now
   reads the trash wording, with the same counts.

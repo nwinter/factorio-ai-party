@@ -45,6 +45,13 @@ return function(api)
     assert(a.owner == nil or (type(a.owner) == 'string' and a.owner ~= ''), 'owner: "any", or an agent\'s name (default: yours)')
     assert((a.area ~= nil) ~= (a.positions ~= nil), 'remove_ghosts takes area or positions (one of them)')
     local dry = a.dry_run == true
+    -- (cp2) while the placement records' position index is built after a harness update (a few hundred ring slots a
+    -- tick), whose ghost is whose is not read
+    local ix = api.index_state and api.index_state()
+    if ix then
+      error(string.format('nothing removed: the ghost placement records are being indexed after a harness update (%d of %d record slots read, %d a tick, about %.1f s left); remove_ghosts answers once that is done',
+        ix.read, ix.of, ix.slice or 512, (ix.of - ix.read) / (ix.slice or 512) / 60), 0)
+    end
     local s, f = p.surface, p.force
     local who = api.who(p)
     local names = names_of(a.names)

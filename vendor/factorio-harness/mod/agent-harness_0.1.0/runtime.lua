@@ -15775,7 +15775,7 @@ function handlers.signal_watch(p,a) return M.signalwatch.handler(p,a) end
 -- remove_ghosts (removeghosts.lua, d24 batch144 PP1, Luna #2137): one's own entity ghosts (tile ghosts with tiles) in an
 -- area or at positions, taken away by remote view as the deconstruction planner takes ghosts.
 M.removeghosts=require('removeghosts'){position=position,charted=charted,who=function(p) return M.board.who(p) end,
-  owner_at=function(...) return M.ghostlog.owner_at(...) end,placed_by=function(g) return M.ghostlog.short(g) end,forget=function(g) return M.ghostlog.forget(g) end}
+  owner_at=function(...) return M.ghostlog.owner_at(...) end,index_state=function() return M.ghostlog.index_state() end,placed_by=function(g) return M.ghostlog.short(g) end,forget=function(g) return M.ghostlog.forget(g) end}
 function handlers.remove_ghosts(p,a) return M.removeghosts.handler(p,a) end
 -- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
 M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
@@ -19990,6 +19990,8 @@ function M.tick_body(event)
   if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if state().turret_tally then pcall(M.timed,'turret_tally.tick',M.turrettally.tick,event.tick) end
   if state().signal_watch then pcall(M.timed,'signal_watch.tick',M.signalwatch.tick,event.tick) end  -- (PL1) signal_watch: a get_signal per signal every 60 ticks
+  -- (d24 batch144 cp2) a ghost record log from before the position index: 512 ring slots a tick until it is whole
+  if state().ghost_log and not state().ghost_log.pidx_done then pcall(M.timed,'ghostlog.index',M.ghostlog.index_tick,M.ghostlog.INDEX_SLICE) end
   if state().asteroid_watch then pcall(M.timed,'asteroid_watch.tick',M.asteroidwatch.tick,event.tick) end  -- (AR1) asteroid_watch: a read every 15 ticks
   if state().collector_tally then pcall(M.timed,'collector_tally.tick',M.collectreach.tick,event.tick) end  -- (AN2) collector_tally watches: a read every 10 ticks  -- turret_tally watches (turrettally.lua): a read a second
   if state().uptime then pcall(M.timed,'uptime.tick',M.uptime.tick,event.tick) end  -- uptime watches (uptime.lua): each job's samples at a moving phase
