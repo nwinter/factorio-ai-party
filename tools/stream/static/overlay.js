@@ -1276,17 +1276,20 @@
       ctx.lineCap = "square";
       ctx.strokeStyle = "rgba(0, 0, 0, 0.85)"; ctx.lineWidth = 5; ctx.stroke();
       ctx.strokeStyle = `rgb(${bright})`; ctx.lineWidth = 2; ctx.stroke();
+      // (d24 batch163, viewer Aurora) a nest the cloud has left (reaches false, the harness's nest book) is faded
       for (const n of cloud.reached || []) {
         const x = W / 2 + (n.x - pos.x) * k, y = H / 2 + (n.y - pos.y) * k;
+        ctx.globalAlpha = n.reaches === false ? 0.45 : 1;
         ctx.strokeStyle = "#000"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = "#ff5a44"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
       }
     }
     cv.classList.add("on");
     const name = cloud.pollutant === "spores" ? "spores" : "pollution";
-    const n = (cloud.reached || []).length;
+    const n = (cloud.reached || []).length, before = (cloud.reached || []).filter((r) => r.reaches === false).length;
     return { rgb, bright, text: `up to ${fmtAmount(cloud.max)} ${name} per chunk · ${cloud.chunks} chunk${cloud.chunks === 1 ? "" : "s"}`
-      + (n ? ` · ${n} nest${n === 1 ? "" : "s"} reached` : "") };
+      + (n ? ` · ${n} nest${n === 1 ? "" : "s"} reached` + (before ? ` (${before} not now)` : "") : "") };
   }
   function fmtAmount(v) { return v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10); }
 

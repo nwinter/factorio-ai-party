@@ -323,6 +323,19 @@ return function(api)
   -- The cloud layer for the stream map (viewer Joonazan, operator 13:02: Gleba's spore cloud): each charted chunk's
   -- amount as the game's map pollution layer shows it, {cx, cy, amount}, at most MAX_CELLS (the sweep reads it anyway).
   local MAX_CELLS=6000
+  -- (d24 batch163) the confirmed nests' chunks of the surface swept now, [cx][cy] (the nest book, below) and its
+  -- pollution memory (M.polluted's): a sweep finding pollution on one remembers the tick, as a read there would
+  local nest_cols,nest_mem
+  local function nest_hook(s,force)
+    local st=api.state()
+    local b=st.nest_book and st.nest_book[force.name..'/'..s.index]
+    nest_cols=b and b.chunks
+    if nest_cols then
+      st.nest_reach=st.nest_reach or {}
+      nest_mem=st.nest_reach[s.index] or {}
+      st.nest_reach[s.index]=nest_mem
+    end
+  end
   local function chart_chunk(t,s,force,c)
     grow(t.gen,c.x,c.y)
     local is_charted=force.is_chunk_charted(s,c)
@@ -337,6 +350,8 @@ return function(api)
         t.polluted=t.polluted+1; grow(t.cloud,c.x,c.y)
         t.cells=t.cells or {}
         if #t.cells<MAX_CELLS then t.cells[#t.cells+1]={c.x,c.y,math.floor(amount*10+0.5)/10} end
+        local col=nest_cols and nest_cols[c.x]
+        if col and col[c.y] then nest_mem[c.x..','..c.y]=game.tick end
       else t.beyond[compass(t.centre,chunk_centre(c.x,c.y))]=true end
     end
   end
@@ -361,6 +376,7 @@ return function(api)
   local function chart(p)
     local s,force=p.surface,p.force
     local t=chart_new(s,force)
+    nest_hook(s,force)
     for c in s.get_chunks() do chart_chunk(t,s,force,c) end
     return chart_done(t,s,force)
   end
@@ -447,6 +463,158 @@ return function(api)
   -- the surface, SWEEP chunk positions a tick; its state is in storage.
   -- Operator 18:12 (threat.tick 83 ms in one game second at 17:53): SWEEP a tick finished a big surface's sweep in a
   -- few ticks; now the box's chunk positions spread over SWEEP_TICKS, at least SWEEP_MIN and at most SWEEP a tick.
+  -- The nest book (Luna #2222, viewer Aurora d24 13:16: confirmed nests with their pollution and whether they still
+  -- stand): per force and surface, every spawner and worm of the enemy force on our charted chunks (the map draws
+  -- them there), with where it stood, the tick it was found, the last tick its chunk was in view with it there (seen)
+  -- and the first tick its chunk was in view without it (gone). Found in the background over the box of generated
+  -- chunks the chart sweep saw, a band of NEST_BAND chunks of one row a step, the steps spread over NEST_SPREAD ticks,
+  -- a pass NEST_TICKS after the last (a find over a whole surface: 12 ms on the private copy of world n's Nauvis, d24).
+  -- One gone for NEST_FORGET is dropped.
+  local NEST_TICKS,NEST_SPREAD,NEST_BAND,NEST_FORGET,NEST_GROUP=18000,3600,32,216000,64
+  local NEST_TYPES,NEST_AREA,NEST_CHUNK={'unit-spawner','turret'},{{0,0},{0,0}},{x=0,y=0}
+  M.NEST_TICKS=NEST_TICKS
+  function M.nest_step(st,key,e,tick)
+    st.nest_book=st.nest_book or {}
+    local b=st.nest_book[key]
+    local force=e.force and force_named(e.force)
+    local s=e.surface and surface_at(e.surface)
+    if not (force and s) then st.nest_book[key]=nil; return end
+    if not b then b={list={},by={},chunks={}}; st.nest_book[key]=b end
+    local job=b.job
+    if not job then
+      local g=e.chart and e.chart.gen
+      if not (g and g.left) or (b.start and tick-b.start<NEST_TICKS) then return end
+      local steps=(g.bottom-g.top+1)*math.ceil((g.right-g.left+1)/NEST_BAND)
+      b.start=tick
+      b.job={start=tick,left=g.left,right=g.right,top=g.top,bottom=g.bottom,x=g.left,y=g.top,last=tick,rows=g.bottom-g.top+1,
+        every=math.max(1,math.min(600,math.floor(NEST_SPREAD/steps)))}
+      return
+    end
+    if tick-job.last<job.every then return end
+    job.last=tick
+    local x1=math.min(job.x+NEST_BAND-1,job.right)
+    local X0,Y0,X1,Y1=job.x*32,job.y*32,(x1+1)*32,(job.y+1)*32
+    NEST_AREA[1][1],NEST_AREA[1][2],NEST_AREA[2][1],NEST_AREA[2][2]=X0,Y0,X1,Y1
+    for _,en in ipairs(s.find_entities_filtered{area=NEST_AREA,type=NEST_TYPES,force='enemy'}) do
+      local q=en.position
+      if q.x>=X0 and q.x<X1 and q.y>=Y0 and q.y<Y1 then
+        local cx,cy=math.floor(q.x/32),math.floor(q.y/32)
+        NEST_CHUNK.x,NEST_CHUNK.y=cx,cy
+        if force.is_chunk_charted(s,NEST_CHUNK) then
+          local id=en.unit_number or (q.x..','..q.y)
+          local r=b.by[id]
+          if not r then
+            r={e=en,id=id,x=q.x,y=q.y,worm=en.type=='turret' or nil,first=tick}
+            b.list[#b.list+1]=r; b.by[id]=r
+            local col=b.chunks[cx] or {}; b.chunks[cx]=col; col[cy]=true
+          end
+          if force.is_chunk_visible(s,NEST_CHUNK) then r.seen=tick end
+        end
+      end
+    end
+    job.x=x1+1
+    if job.x>job.right then job.x=job.left; job.y=job.y+1 end
+    if job.y>job.bottom then b.swept=job.start; b.job=nil end
+  end
+  local function since(t)
+    local sec=math.floor((game.tick-t)/60)
+    if sec<60 then return sec..'s ago' end
+    local m=math.floor(sec/60)
+    return m<60 and m..'m ago' or string.format('%dh%02dm ago',math.floor(m/60),m%60)
+  end
+  -- The book's nests now, grouped (members within NEST_GROUP tiles of a group's first), by distance from the base
+  -- centre: what the map and a look show. A member alive is in a chunk in view now; gone, seen missing from its chunk
+  -- in view; else unknown (its chunk not in view since `seen`). A nest is alive with a member alive, destroyed with
+  -- every member gone, else unknown. Pollution: the amount on its members' chunks now (the map's pollution layer) and
+  -- the last tick pollution was there (M.polluted's memory, kept by reads and the chart sweep); it reaches the nest
+  -- while that is within REACH_WINDOW. nil: no book for the surface yet.
+  function M.nest_groups(force,s)
+    local st=api.state()
+    local b=st.nest_book and st.nest_book[force.name..'/'..s.index]
+    if not b then return nil end
+    local keep,groups={},{}
+    for _,r in ipairs(b.list) do
+      NEST_CHUNK.x,NEST_CHUNK.y=math.floor(r.x/32),math.floor(r.y/32)
+      local vis=force.is_chunk_visible(s,NEST_CHUNK)
+      local alive=r.e.valid
+      if alive and vis then r.seen=game.tick
+      elseif not alive and vis and not r.gone then r.gone=game.tick end
+      if r.gone and game.tick-r.gone>NEST_FORGET then b.by[r.id]=nil
+      else
+        keep[#keep+1]=r
+        local g
+        for _,x in ipairs(groups) do local dx,dy=x.fx-r.x,x.fy-r.y; if dx*dx+dy*dy<=NEST_GROUP*NEST_GROUP then g=x; break end end
+        if not g then g={fx=r.x,fy=r.y,spawners=0,worms=0,alive=0,gone=0,members=0,sx=0,sy=0,n=0,ax=0,ay=0,chunks={}}; groups[#groups+1]=g end
+        g.members=g.members+1; g.ax=g.ax+r.x; g.ay=g.ay+r.y
+        if r.worm then g.worms=g.worms+1 else g.spawners=g.spawners+1; g.sx=g.sx+r.x; g.sy=g.sy+r.y end
+        if r.gone then g.gone=g.gone+1; g.gone_tick=math.max(g.gone_tick or 0,r.gone)
+        else
+          if alive and vis then g.alive=g.alive+1 end
+          if r.seen then g.seen=math.max(g.seen or 0,r.seen) end
+          local key=NEST_CHUNK.x..','..NEST_CHUNK.y
+          if not g.chunks[key] then g.chunks[key]=true; g.n=g.n+1; g[g.n]={x=r.x,y=r.y} end
+        end
+      end
+    end
+    b.list=keep
+    local ok,spawn=pcall(function() return force.get_spawn_position(s) end)
+    local centre=ok and spawn or {x=0,y=0}
+    local out={}
+    for _,g in ipairs(groups) do
+      local pos=g.spawners>0 and {x=round(g.sx/g.spawners),y=round(g.sy/g.spawners)} or {x=round(g.ax/g.members),y=round(g.ay/g.members)}
+      local row={position=pos,spawners=g.spawners,worms=g.worms,from_centre=round(api.distance(centre,pos)),bearing=compass(centre,pos),
+        status=g.alive>0 and 'alive' or g.gone==g.members and 'destroyed' or 'unknown',seen=g.seen,members_gone=g.gone>0 and g.gone or nil}
+      if row.status=='destroyed' then row.gone_tick=g.gone_tick
+      else
+        local now,last=0,nil
+        for i=1,g.n do
+          local amount,l=M.polluted(s,g[i])
+          if amount>now then now=amount end
+          if l and (not last or l>last) then last=l end
+        end
+        row.pollution_now=round(now,1); row.pollution_last=last; row.pollution_reaches=M.reached(last)
+      end
+      out[#out+1]=row
+    end
+    table.sort(out,function(x,y) return x.from_centre<y.from_centre or x.from_centre==y.from_centre and x.position.x<y.position.x end)
+    return out,b
+  end
+  local function nest_line(n)
+    local kinds=string.format('%d spawner%s, %d worm%s',n.spawners,n.spawners==1 and '' or 's',n.worms,n.worms==1 and '' or 's')
+    if n.members_gone and n.status~='destroyed' then kinds=kinds..string.format(' (%d seen destroyed)',n.members_gone) end
+    local status
+    if n.status=='alive' then status='alive (in view now)'
+    elseif n.status=='destroyed' then status='destroyed (seen gone '..since(n.gone_tick)..')'
+    else status=n.seen and 'unknown (last in view '..since(n.seen)..')' or 'unknown (not in view since charted)' end
+    local pol=''
+    if n.status~='destroyed' then
+      if n.pollution_now>0 then pol='; pollution '..n.pollution_now..' on its chunks now: reaches it'
+      elseif n.pollution_reaches then pol='; no pollution on its chunks now, last there '..since(n.pollution_last)..': reaches it'
+      elseif n.pollution_last then pol='; no pollution on its chunks now, last there '..since(n.pollution_last)..': does not reach it'
+      else pol='; no pollution on its chunks now or remembered: does not reach it' end
+    end
+    return string.format('nest (%d,%d) %s, %d tiles %s of base centre: %s%s',n.position.x,n.position.y,kinds,n.from_centre,n.bearing,status,pol)
+  end
+  M.nest_line=nest_line
+  -- The `defense {nests: true}` read: every confirmed nest on the surface (limit, default and max 40), nearest the base
+  -- centre first.
+  function M.nest_read(p,limit)
+    local list,b=M.nest_groups(p.force,p.surface)
+    if not list then
+      return {surface=p.surface.name,tick=game.tick,nests=nil,
+        line='no nest book for '..p.surface.name..' yet: it is made after the chart sweep there (an agent on the surface)'}
+    end
+    local counts={alive=0,unknown=0,destroyed=0,reached=0}
+    for _,n in ipairs(list) do counts[n.status]=counts[n.status]+1; if n.pollution_reaches then counts.reached=counts.reached+1 end end
+    local shown={}
+    for i,n in ipairs(list) do if i<=limit then n.line=nest_line(n); shown[#shown+1]=n end end
+    local sweep=b.job and string.format('a pass over the chart is running (row %d of %d)',b.job.y-b.job.top+1,b.job.rows) or nil
+    return {surface=p.surface.name,tick=game.tick,count=#list,alive=counts.alive,unknown=counts.unknown,destroyed=counts.destroyed,
+      reached=counts.reached,nests=shown[1] and shown or nil,more=#list>#shown and (#list-#shown)..' more: limit raises the count' or nil,
+      book_tick=b.swept,sweep=sweep,
+      line=string.format('%d confirmed nests on %s (%d alive, %d unknown, %d destroyed); pollution reaches %d%s',#list,p.surface.name,
+        counts.alive,counts.unknown,counts.destroyed,counts.reached,b.swept and ', from the pass at tick '..b.swept or ', first pass running')}
+  end
   local SWEEP,SWEEP_MARGIN,SWEEP_TICKS,SWEEP_MIN=2000,4,1800,16
   function M.tick(tick)
     local st=api.state()
@@ -462,6 +630,14 @@ return function(api)
         st.chart_jobs[key]=nil
         st.chart_errors={count=((st.chart_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
         if e.chart then e.chart.refresh_failed=snapfail.failed(err,tick) end
+      end
+    end
+    -- The nest book, per surface the chart sweeps.
+    for _,key in ipairs(keys) do
+      local ok,err=pcall(M.nest_step,st,key,st.threat_shared[key],tick)
+      if not ok then
+        if st.nest_book and st.nest_book[key] then st.nest_book[key].job=nil end
+        st.nest_errors={count=((st.nest_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
       end
     end
     -- A reply's nest watch (M.watch).
@@ -498,6 +674,7 @@ return function(api)
       elseif not (force and s) then st.chart_jobs[key]=nil
       else
         job.t=job.t or chart_new(s,force)
+        nest_hook(s,force)
         local n=0
         local c=SWEEP_CHUNK
         while n<(job.per or SWEEP) and job.y<=job.bottom do
@@ -721,8 +898,8 @@ return function(api)
   end
   -- The cloud layer (viewer Joonazan, operator 13:02): per surface an agent is on (the background chart's last
   -- sweep, about once a minute), every charted chunk's pollution or spores {cx, cy, amount} as the game's map
-  -- pollution layer shows them, the pollutant's name and map colour, and the nests the cloud reached lately (the
-  -- pollution_reached_nest news). a.surface: one surface by name.
+  -- pollution layer shows them, the pollutant's name and map colour, and the nests the cloud reached (the nest book's,
+  -- below). a.surface: one surface by name.
   function M.operator.clouds(a)
     local st=api.state()
     local out={}
@@ -736,9 +913,24 @@ return function(api)
       if s and c and c.cells and (not a or a.surface==nil or a.surface==s.name) then
         local mx,total=0,0
         for _,cell in ipairs(c.cells) do total=total+cell[3]; if cell[3]>mx then mx=cell[3] end end
+        -- (d24 batch163, viewer Aurora 13:16: old hits looked like current nests) from the nest book: each nest pollution
+        -- was on that is not seen destroyed, with the last tick it was there, whether it reaches it now, and its status
+        -- and last tick in view; before the book's first pass, the reached-nest news
         local reached={}
-        for _,n in ipairs(st.enemy_news or {}) do
-          if n.kind=='pollution_reached_nest' and n.surface==s.name then reached[#reached+1]={tick=n.tick,position=n.position,spawners=n.spawners} end
+        local force=e.force and force_named(e.force)
+        local groups=force and M.nest_groups(force,s)
+        if groups then
+          for _,n in ipairs(groups) do
+            if n.status~='destroyed' and n.pollution_last then
+              reached[#reached+1]={tick=n.pollution_last,ago_s=round((game.tick-n.pollution_last)/60),position=n.position,
+                spawners=n.spawners,worms=n.worms,status=n.status,reaches=n.pollution_reaches,seen=n.seen,
+                seen_ago_s=n.seen and round((game.tick-n.seen)/60) or nil}
+            end
+          end
+        else
+          for _,n in ipairs(st.enemy_news or {}) do
+            if n.kind=='pollution_reached_nest' and n.surface==s.name then reached[#reached+1]={tick=n.tick,position=n.position,spawners=n.spawners} end
+          end
         end
         out[#out+1]={surface=s.name,force=e.force,tick=c.tick,pollutant=c.pollutant,cells=c.cells,chunks=#c.cells,max=mx,total=math.floor(total),
           reached=#reached>0 and reached or nil}
