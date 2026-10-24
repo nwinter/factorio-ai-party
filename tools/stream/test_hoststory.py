@@ -280,8 +280,15 @@ def analyst_tests():
     e = caster.analyst_event(s, set(), {}, now)
     assert e["kind"] == "analyst" and e["point"]["id"] == "tp9" and e["prio"] == caster.PRIORITY["analyst"] == 5
     assert caster.analyst_event(s, {"tp9"}, {}, now)["point"]["id"] == "tp8", "a used id: the next"
-    assert caster.analyst_event(s, set(), {"spm-steady": now - 600}, now)["point"]["id"] == "tp8", "a topic aired lately"
-    assert caster.analyst_event(s, set(), {"spm-steady": now - caster.ANALYST_TOPIC_GAP}, now)["point"]["id"] == "tp9"
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "steady-spm", "text": "Nothing alike."}, now - 600)
+    assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp8", "a topic aired lately, its words in any order"
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "steady-spm", "text": "Nothing alike."}, now - caster.ANALYST_TOPIC_GAP)
+    assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp9", "half an hour later"
+    aired = {}
+    caster.analyst_aired(aired, {"topic": "lab-rate", "text": "The labs hold 112.6 science per minute."}, now - 60)
+    assert caster.analyst_event(s, set(), aired, now)["point"]["id"] == "tp8", "much the same text under another topic"
     assert caster.analyst_event(s, {"tp9", "tp8"}, {}, now) is None, "priority 1 never"
     assert caster.analyst_event({"analyst": {"talking_points": [dict(pts[0], expires=now - 1)]}}, set(), {}, now) is None
     assert caster.PRIORITY["arrival"] > caster.PRIORITY["analyst"] > caster.PRIORITY["chat"]

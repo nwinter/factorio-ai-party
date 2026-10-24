@@ -235,18 +235,20 @@ def main():
     # CM2: analyst points as beats at priority 5, one per ANALYST_EVERY seconds
     an = analyst_points(sorted(glob.glob(os.path.join(a.logs, f"analyst-{a.day}-*.jsonl"))))
     if an:
-        aired_t, last, aired, topics = {}, -1e9, 0, Counter()
+        aired_t, last, aired, topics = {}, -1e9, 0, Counter()  # aired_t: caster.analyst_aired's {key: t}
         for t, kind in sorted(slots):
             if kind is not None and caster.PRIORITY.get(kind, 2) >= caster.PRIORITY["analyst"]:
                 continue
             if t - last < caster.ANALYST_EVERY:
                 continue
-            fresh = [p for p in an if p[0] <= t < p[0] + p[3] and p[2] >= caster.ANALYST_MIN_PRIORITY
-                     and t - aired_t.get(p[4], -1e9) >= caster.ANALYST_TOPIC_GAP]
-            if not fresh:
+            snap = {"analyst": {"talking_points": [
+                {"id": f"{p[0]}:{p[4]}", "topic": p[4], "text": p[5], "priority": p[2], "expires": p[0] + p[3]}
+                for p in sorted((p for p in an if p[0] <= t < p[0] + p[3]), key=lambda p: (-p[2], -p[0]))]}}
+            e = caster.analyst_event(snap, set(), aired_t, t)
+            if not e:
                 continue
-            p = max(fresh, key=lambda p: (p[2], p[0]))
-            aired_t[p[4]] = t
+            caster.analyst_aired(aired_t, e["point"], t)
+            p = (None, None, e["point"]["priority"])
             last, aired = t, aired + 1
             topics[p[2]] += 1
         print(f"analyst: {len(an)} points logged; {aired} analyst beats would have aired (by priority: "

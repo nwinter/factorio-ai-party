@@ -800,13 +800,26 @@ ANALYST_CALL = ("the analyst desk's point (analyst_point), in the hosts' own wor
 ANALYST_CHECK = ("event", "game_time", "analyst_point", "how_to_call_it", "agent", "on_camera", "shift")
 
 
+def topic_key(p):
+    """A point's topic for the topic gap: its words in order ("steady-spm" and "spm-steady" are one topic)."""
+    return "topic:" + "-".join(sorted(str(p.get("topic") or p.get("id") or "").lower().split("-")))
+
+
+def analyst_aired(topics, p, now):
+    """Note a point on air for analyst_event: its topic and its text."""
+    topics[topic_key(p)] = now
+    topics["text:" + str(p.get("text") or "")] = now
+
+
 def analyst_event(s, used, topics, now):
     """An analyst beat for this snapshot, or None: the best fresh point of ANALYST_MIN_PRIORITY or more whose id is
-    unused and whose topic has not aired in the last ANALYST_TOPIC_GAP seconds."""
+    unused and whose topic (or much the same text) has not aired in the last ANALYST_TOPIC_GAP seconds."""
     an = (s or {}).get("analyst") or {}
+    lately = [k[5:] for k, t in topics.items() if k.startswith("text:") and now - t < ANALYST_TOPIC_GAP]
     pts = [p for p in an.get("talking_points") or [] if isinstance(p, dict)
            and int(p.get("priority") or 2) >= ANALYST_MIN_PRIORITY and p.get("id") not in used
-           and now - topics.get(p.get("topic") or p.get("id"), -1e9) >= ANALYST_TOPIC_GAP
+           and now - topics.get(topic_key(p), -1e9) >= ANALYST_TOPIC_GAP
+           and not any(near_same(str(p.get("text") or ""), x, 0.5) for x in lately)
            and (p.get("expires") or now + 1) > now and p.get("text")]
     if not pts:
         return None
@@ -2880,7 +2893,7 @@ class Caster:
         if e.get("point") and backend != "template":  # the writer built on the point: never offer it again
             self.point_used(e["point"].get("id"))
             # (CM2) nor its topic for a while: the analyst posts the same topic again each cycle under a new id
-            self.__dict__.setdefault("analyst_topics", {})[e["point"].get("topic") or e["point"].get("id")] = time.time()
+            analyst_aired(self.__dict__.setdefault("analyst_topics", {}), e["point"], time.time())
         # (BI2) the writer's deliveries ride on the event (stand-ins for speak_lines take the old arguments)
         self.speak_lines(lines, dict(e, directions=directions) if any(directions) else e, facts, backend, err, lat, t_start)
 
