@@ -12853,3 +12853,35 @@ hub built its 4 tiles; one at (-27,-52), a tile away from any foundation, read `
 builds ((-27.5,-52.5): no foundation among the 8 tiles round it)`, and its 4 tile ghosts were still unbuilt about 4770
 ticks after the live call. Regression: tests/dryrun.lua (the #2089 block: corner contact, a square one tile apart, and
 the verdict over a floor not played), failing on the old dryrun.lua and runtime.lua.
+
+## d23 batch132 PD1: what a pad asked when a pod left the hub, and its on-the-way count (Sol #2093)
+
+Sol's case: Kestrel IVc stopped at Gleba with 1500 processing units, Gleba's landing pad (54,8) had section 12 asking
+`processing-unit 300..300`, and two pods came down, 1000 and 300. When Sol read the pad, section 1 (set by the circuit
+network) asked only `foundry 3..inf`.
+
+On a 2.0.77 copy of world n (its 20:45 save, 12 minutes before Sol's drop) with Sol's steps replayed:
+
+- The pad's section 1 is set by a decider combinator at (65,24.5): for each item, it outputs the target on its green
+  input when its red input (target less the stock of the logistic network the arithmetic combinator reads) is above
+  0. The targets include `processing-unit=1000`. From tick 54474024 the network held under 1000 processing units,
+  and section 1 asked `processing-unit 1000..inf`.
+- Section 12 went on at 54478890. Kestrel IVc reached Gleba at 54488819 and in that tick sent two pods to the pad:
+  1000 and 300 processing units, the pad's 1300 asked less the 0 it held (its trash, 16 then, does not count).
+  The pad's requester point counted 1300 on the way from then to the landing.
+- The 300 landed first (54489991); section 12 went off; three ticks later the network held over 1000 again and
+  section 1 dropped processing units. The 1000 landed at 54490008 with no section asking for it, and most of it went
+  to the pad's trash.
+
+What is new in the reads:
+
+- Each landed receipt (platforms `landed`, and the receipts the delivery watches read) says what the planet's landing
+  pad asked of the pod's cargo when the pod left the hub, as the pad's window showed it then: each active section
+  asking it with min..max and whether the circuit network sets it, what the pad held, what the other pods followed to
+  that planet carried of it, and the pad's own on-the-way count. On the copy: `processing-unit*300 received by
+  cargo-landing-pad (54,8) on gleba, ...; when it left the hub the pad asked processing-unit 1300 (section 1, set by
+  the circuit network: 1000..inf; section 12: 300..300), held 0, 1000 on the way in pods followed`.
+- `requests` on a landing pad returns `on_the_way`: what the pad counts as coming down to it (item*count), or
+  `nothing`. On the copy it read `iron-plate*100 (cargo pods coming down to it)` for the 1150 ticks a pod flew.
+
+Read only: nothing changes what the hub sends.
