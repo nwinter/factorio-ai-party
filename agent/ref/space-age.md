@@ -178,7 +178,9 @@
   never builds the last ghost round a hole; a hole built floor alone encloses stays open), played through the hub's
   build rules (`stalls`: kept ghosts it never builds; `net_saved`), and the foundation tile ghosts outside it as `remove_areas`,
   64 a page, each a `deconstruct {platform, area, tiles: ["space-platform-foundation"]}`; `strands` names entity ghosts
-  not chosen that stand on a tile that would go. Read only.
+  not chosen that stand on a tile that would go. The chosen are what stands on the floor: never a rocket or other
+  projectile, laser beam, cargo pod or robot passing; `add_for` (beside `place_ghosts_entries`) and `for_entities` name
+  the entity (name, unit number, position) each planned tile is for, and how (footprint, tunnel, link). Read only.
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?, tail?}`: per item and quality
   (`solar-panel@epic`; a ghost is built only from items of its quality, so the hub's normal stock never covers a quality
@@ -212,7 +214,12 @@
   hull's foundation; clear: it never enters it), a straight-line projection of whether it crosses foundation (a
   projection, not what happened), and its outcome from the game's events (destroyed and by what, hit an entity of
   ours, left the view, still in view); `class_lines`, `platform_hit_lines`. Each turret: hits, kills and damage on
-  asteroids by those classes, ammo used; `turret_group_lines` by name and hull region; `trajectories` for 24 asteroids.
+  asteroids by those classes, ammo used; `turret_group_lines` by name and hull region. `trajectories`: every tracked
+  asteroid (the first 3000 seen), 24 a page, the rarest names first by the watch's `by_name` counts: first and last
+  tick and position, outcome, `by` (the turret that destroyed it), `hit_by` (the turrets that hit it), and `points`
+  (one a second) for the first 24 tracked only. Reading it: `asteroid_names: ["*promethium*"]` (1..16 names or
+  patterns with *), `trajectory_page`, `trajectory_limit` (1..100); `trajectory_untracked` counts a picked name's
+  asteroids past the 3000, which have no record.
 - `platform_defense {platform, feed?, route?, ammo_use?, planned?}`: each asteroid collector's front and each hull side against turret ranges: the
   turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
   runs. A railgun turret reaches only within its 72-degree arc centred on its facing (`facing`, `arc_degrees`); one in

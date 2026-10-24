@@ -23,6 +23,7 @@ return function(api)
   -- CELL-tile cells with no foundation (counted once a watch) are crossed without reading their tiles
   M.MAX_ASTEROIDS, M.TRACK, M.POINTS, M.WALK_STEPS, M.WALK_BUDGET, M.CELL = 3000, 24, 16, 1200, 600, 8
   M.MAX_TURRETS, M.TURRET_ROWS, M.HIT_ROWS = 400, 64, 16
+  M.PAGE, M.PAGE_MAX, M.NAMES_MAX, M.HIT_BY = 24, 100, 16, 3
   local FOUNDATION = 'space-platform-foundation'
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -317,14 +318,14 @@ return function(api)
     local a, c = k:match('^(%a+)/(%a+)$')
     return string.format('%s, %s foundation', a, c == 'crosses' and 'crosses' or 'misses')
   end
-  function M.result(job, done)
+  function M.result(job, done, unpaged)
     local now = done and job.until_tick or game.tick
     local secs = math.max(0, now - job.start) / 60
     local function sec(t) return r1((t - job.start) / 60) end
     -- asteroids by approach and projection, and what became of them
     local by = {}
     for _, k in ipairs(CLASSES) do by[k] = {seen=0, destroyed=0, hit=0, left_view=0, in_view=0} end
-    local hits, tracks = {}, {}
+    local hits = {}
     -- (PE1) totals by asteroid name: the tracked from their records, the untracked from their counts
     local names = {}
     local function nrow(n)
@@ -347,14 +348,7 @@ return function(api)
         b.destroyed_by[who] = (b.destroyed_by[who] or 0) + 1
       elseif out == 'hit' then b.hit = b.hit + 1
       elseif out == 'left_view' then b.left_view = b.left_view + 1 else b.in_view = b.in_view + 1 end
-      if r.traj then
-        local pj = r.prj
-        tracks[#tracks+1] = {name=r.n, first_s=sec(r.s0), approach=pj and pj.approach or 'unknown', projected=pj and (pj.crosses and string.format('crosses foundation at %s in %gs', at(pj.at.x, pj.at.y), pj.eta_s) or 'crosses no foundation') or 'not projected',
-          assumed_drift=pj and pj.assumed or nil, outcome=out, by=r.by, hit=r.hit and r.hit.name or nil, velocity=r.v and {x=r3(r.v.x * 60), y=r3(r.v.y * 60)} or nil,
-          points=r.traj}
-      end
     end
-    table.sort(tracks, function(a, b) return a.first_s < b.first_s end)
     for n, c in pairs(job.useen or {}) do
       local nt = nrow(n)
       local died, hit, view = (job.udied or {})[n] or 0, (job.uhit or {})[n] or 0, (job.uview or {})[n] or 0
@@ -446,7 +440,7 @@ return function(api)
     local line = string.format('%s %s for %gs%s: %d asteroids seen in view%s (%d in view now), %d destroyed, %d hit the platform; turrets %d fired, %d did not',
       done and 'watched' or 'watching', job.platform, r1(secs), done and '' or string.format(' of %ds', job.seconds), job.nast + job.untracked,
       job.untracked > 0 and string.format(', %d of them past the %d tracked', job.untracked, M.MAX_ASTEROIDS) or '', job.in_view or 0, nd, nh, fired, idle)
-    return {watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=r1(secs), start_tick=job.start, end_tick=done and job.until_tick or nil,
+    local out = {watching=not done or nil, done=done or nil, platform=job.platform, seconds=job.seconds, seconds_watched=r1(secs), start_tick=job.start, end_tick=done and job.until_tick or nil,
       samples=job.samples, every_ticks=M.SAMPLE, view=job.view, hull={left_top={x=job.hull.x0, y=job.hull.y0}, right_bottom={x=job.hull.x1, y=job.hull.y1}},
       drift_tiles_per_s=drift(job) and {x=r3(drift(job).x * 60), y=r3(drift(job).y * 60)} or nil,
       asteroids=job.nast + job.untracked, tracked=job.nast, tracked_cap=M.MAX_ASTEROIDS, untracked=job.untracked,
@@ -454,13 +448,190 @@ return function(api)
         job.nast + job.untracked, M.MAX_ASTEROIDS, job.nast, job.untracked, M.CHUNKS),
       classes=classes, class_lines=class_lines,
       platform_hits=#job.hits, platform_hit_lines=#hits > 0 and hits or nil,
-      turret_groups=grows, turret_group_lines=glines, turrets=rows, turret_rows_more=turret_rows_more, trajectories=tracks, line=line, note=M.NOTE}
+      turret_groups=grows, turret_group_lines=glines, turrets=rows, turret_rows_more=turret_rows_more, line=line, note=M.NOTE}
+    if unpaged then return out end
+    return M.page(out, job, {})  -- the default page (the rarest names first) for every reader
   end
   M.CHUNKS = '; asteroid chunks are not entities: this watch does not see them, and nothing it reads is collected (platform_supply {collection: true} and its collector_tally watch read chunks and what collectors take)'
   M.NOTE = 'heading: a platform faces north; approach is where the asteroid\'s straight line enters the box round the hull\'s foundation (front the north edge, side west or east, rear south; clear: it never enters it); '
     .. 'crosses/misses: a straight-line projection from its last two sampled positions (one seen once takes the drift common to the others: assumed_drift), as wide as the asteroid, until it leaves the view: '
     .. 'whether it would cross a foundation tile if no turret fired and the platform kept its speed; a projection, not what happened; outcome is what happened (the game\'s events: destroyed and by what, hit an entity of ours, left the view, still in view); '
     .. 'turret hits are its damage events on asteroids, kills the asteroids it destroyed; ammo used is its ammo slot\'s drops read once a second (a refill in the same second offsets a drop)'
+
+  -- (d24 batch161 QD1, Astra #2212: a watch counted 1 huge-promethium destroyed and 3 big-promethium leaving the view,
+  -- and its trajectories showed only the first 24 asteroids, all common) the read's trajectories: every tracked
+  -- asteroid's record, a page at a time (trajectory_page, trajectory_limit), filtered by name (asteroid_names: names,
+  -- or patterns with *); without a filter the rarest names first by the watch's own by_name counts. Points are kept for
+  -- the first TRACK tracked (the sampling is as it was); the rest have their first and last tick and position.
+  local function name_pattern(n)
+    return '^' .. n:gsub('[%^%$%(%)%%%.%[%]%+%-%?]', '%%%0'):gsub('%*', '.*') .. '$'
+  end
+  local function asteroid_names()
+    local out = {}
+    local ok = pcall(function()
+      for n in pairs(prototypes.get_entity_filtered({{filter='type', type='asteroid'}})) do out[#out+1] = n end
+    end)
+    if not ok or #out == 0 then for n in pairs(prototypes and prototypes.entity or {}) do if n:find('asteroid', 1, true) then out[#out+1] = n end end end
+    table.sort(out)
+    return out
+  end
+  function M.pick_args(a)
+    local pick = {}
+    if a.asteroid_names ~= nil then
+      local v = a.asteroid_names
+      if type(v) == 'string' then v = {v} end
+      assert(type(v) == 'table' and #v >= 1 and #v <= M.NAMES_MAX, 'asteroid_names: 1..' .. M.NAMES_MAX .. ' asteroid names, or patterns with * ("*promethium*")')
+      local known, set = asteroid_names(), {}
+      for _, n in ipairs(known) do set[n] = true end
+      pick.names, pick.patterns = {}, {}
+      for _, n in ipairs(v) do
+        assert(type(n) == 'string' and #n >= 1 and #n <= 100, 'asteroid_names: each a name or a pattern, 1..100 characters')
+        if n:find('*', 1, true) then
+          local pat, any = name_pattern(n), false
+          for _, k in ipairs(known) do if k:find(pat) then any = true end end
+          assert(any, 'asteroid_names: ' .. n .. ' matches no asteroid name (' .. table.concat(known, ', ') .. ')')
+          pick.patterns[#pick.patterns+1] = pat
+        else
+          assert(set[n], 'asteroid_names: unknown asteroid ' .. n .. ' (' .. table.concat(known, ', ') .. ')')
+          pick.names[n] = true
+        end
+        pick.text = (pick.text and pick.text .. ', ' or '') .. n
+      end
+    end
+    if a.trajectory_page ~= nil then
+      assert(type(a.trajectory_page) == 'number' and a.trajectory_page >= 1 and a.trajectory_page == math.floor(a.trajectory_page), 'trajectory_page: 1..')
+      pick.page = a.trajectory_page
+    end
+    if a.trajectory_limit ~= nil then
+      local l = a.trajectory_limit
+      assert(type(l) == 'number' and l >= 1 and l <= M.PAGE_MAX and l == math.floor(l), 'trajectory_limit: 1..' .. M.PAGE_MAX)
+      pick.limit = l
+    end
+    return pick
+  end
+  local function matches(pick, n)
+    if not pick.names then return true end
+    if pick.names[n] then return true end
+    for _, pat in ipairs(pick.patterns) do if n:find(pat) then return true end end
+    return false
+  end
+  -- The turrets that hit each asteroid of set (their damage events), the most hits first, at most HIT_BY: from the
+  -- running watch's turrets, or the map a done watch kept (hit_map).
+  local function hits_on(job, set)
+    local out = {}
+    if job.turrets then
+      for _, t in pairs(job.turrets) do
+        for u, h in pairs(t.ah) do
+          if set[u] then
+            local l = out[u]
+            if not l then l = {}; out[u] = l end
+            l[#l+1] = {turret=t.name .. ' ' .. at(t.position.x, t.position.y), hits=h[1], damage=r1(h[2]), killed=h[3] > 0 or nil}
+          end
+        end
+      end
+    else
+      for u in pairs(set) do
+        local l = job.hitmap and job.hitmap[u]
+        if l then
+          local c = {}
+          for i, h in ipairs(l) do c[i] = {turret=h[1], hits=h[2], damage=r1(h[3]), killed=h[4] or nil} end
+          out[u] = c
+        end
+      end
+    end
+    for _, l in pairs(out) do
+      table.sort(l, function(a, b) if a.hits ~= b.hits then return a.hits > b.hits end return a.turret < b.turret end)
+      while #l > M.HIT_BY do table.remove(l) end
+    end
+    return out
+  end
+  -- a done watch keeps every tracked asteroid's record (job.asts) and, from its turrets, who hit which (job.hitmap:
+  -- unit -> {{turret, hits, damage, killed}}): the turret loop the result already makes
+  function M.keep(job)
+    local map = {}
+    for _, t in pairs(job.turrets or {}) do
+      local label
+      for u, h in pairs(t.ah) do
+        if job.asts[u] then
+          label = label or t.name .. ' ' .. at(t.position.x, t.position.y)
+          local l = map[u]
+          if not l then l = {}; map[u] = l end
+          l[#l+1] = {label, h[1], h[2], h[3] > 0 or nil}
+        end
+      end
+    end
+    job.hitmap = map
+    for _, r in pairs(job.asts) do r.queued = nil end
+  end
+  -- out: the result (a copy); the rows come from job.asts (running, or kept when done); a watch done before they were
+  -- kept has its old trajectories (old)
+  function M.page(out, job, pick, old)
+    local seen = {}
+    for _, t in ipairs(out.by_name or {}) do seen[t.name] = t.seen end
+    local per, page = pick.limit or M.PAGE, pick.page or 1
+    out.trajectory_note = string.format('every tracked asteroid has a row: its first and last tick and position, its outcome, the turret that destroyed it (by), what it hit, the turrets that hit it (hit_by, the %d with most hits); points (one a second, up to %d) only for the first %d tracked: the sampling keeps no more', M.HIT_BY, M.POINTS, M.TRACK)
+    if not job.asts then
+      out.trajectories = old
+      out.trajectory_note = 'this watch ended before every tracked asteroid\'s record was kept (d24 batch161): its trajectories are its first ' .. M.TRACK .. ' asteroids; a new watch keeps them all'
+      return out
+    end
+    -- one pass: the picked records by name; the names rarest first; only the groups the page reaches are sorted
+    local groups, names, total = {}, {}, 0
+    for u, r in pairs(job.asts) do
+      if matches(pick, r.n) then
+        local g = groups[r.n]
+        if not g then g = {}; groups[r.n] = g; names[#names+1] = r.n end
+        g[#g+1] = u
+        total = total + 1
+      end
+    end
+    table.sort(names, function(a, b) local sa, sb = seen[a] or 0, seen[b] or 0; if sa ~= sb then return sa < sb end return a < b end)
+    local pages = math.max(1, math.ceil(total / per))
+    local from, to = (page - 1) * per + 1, page * per
+    local picked, i = {}, 0
+    for _, n in ipairs(names) do
+      local g = groups[n]
+      if i + #g >= from and i < to then
+        table.sort(g, function(a, b) local ra, rb = job.asts[a], job.asts[b]; if ra.s0 ~= rb.s0 then return ra.s0 < rb.s0 end return a < b end)
+        for k = math.max(1, from - i), math.min(#g, to - i) do picked[#picked+1] = g[k] end
+      end
+      i = i + #g
+      if i >= to then break end
+    end
+    local set = {}
+    for _, u in ipairs(picked) do set[u] = true end
+    local hb = hits_on(job, set)
+    local sampled = job.sampled or 0
+    local function sec(t) return r1((t - job.start) / 60) end
+    local rows = {}
+    for _, u in ipairs(picked) do
+      local r = job.asts[u]
+      local pj, last = r.prj, r.out_t or r.t
+      rows[#rows+1] = {name=r.n, unit=u, first_tick=r.s0, first_s=sec(r.s0), first_position={x=r1(r.p0.x), y=r1(r.p0.y)}, last_tick=last, last_s=sec(last),
+        last_position={x=r1(r.p.x), y=r1(r.p.y)}, approach=pj and pj.approach or 'unknown',
+        projected=pj and (pj.crosses and string.format('crosses foundation at %s in %gs', at(pj.at.x, pj.at.y), pj.eta_s) or 'crosses no foundation') or 'not projected',
+        assumed_drift=pj and pj.assumed or nil, outcome=r.out or ((r.t >= sampled) and 'in_view' or 'left_view'), by=r.by, hit=r.hit and r.hit.name or nil,
+        hit_at=r.hit and {x=r1(r.hit.x), y=r1(r.hit.y)} or nil, hit_by=hb[u], velocity=r.v and {x=r3(r.v.x * 60), y=r3(r.v.y * 60)} or nil, points=r.traj}
+    end
+    out.trajectories = rows
+    out.trajectory_page = {page=page, pages=pages, per_page=per, total=total, returned=#rows, from=#rows > 0 and from or nil, to=#rows > 0 and from + #rows - 1 or nil,
+      next=page < pages and page + 1 or nil, filter=pick.text,
+      order='the rarest names first by this watch\'s by_name seen counts, then by name, then first seen'}
+    if pick.names then
+      local un, lines = {}, {}
+      for _, t in ipairs(out.by_name or {}) do
+        if matches(pick, t.name) and t.untracked then
+          un[#un+1] = {name=t.name, untracked=t.untracked}
+          lines[#lines+1] = string.format('%s: %d past the %d tracked: in by_name (seen, destroyed, hit, left the view), no record or trajectory', t.name, t.untracked, out.tracked_cap or M.MAX_ASTEROIDS)
+        end
+      end
+      if #un > 0 then out.trajectory_untracked, out.trajectory_untracked_lines = un, lines end
+      if total == 0 then
+        out.trajectory_page.line = 'no tracked asteroid matches ' .. pick.text .. (#un > 0 and '' or ' in this watch (by_name lists every name seen)')
+      end
+    end
+    return out
+  end
 
   function M.tick(tick)
     local all = api.state().asteroid_watch
@@ -470,7 +641,8 @@ return function(api)
         M.sample(job, tick)
         if tick >= job.until_tick or job.gone then
           job.result = M.result(job, true)
-          job.asts, job.turrets, job.queue, job.tlist, job.cells, job.untr = nil, nil, nil, nil, nil, nil
+          M.keep(job)  -- (d24 batch161 QD1) the records stay for filtered reads
+          job.turrets, job.queue, job.tlist, job.cells, job.untr = nil, nil, nil, nil, nil
         else
           job.next_tick = math.min(tick + M.SAMPLE, job.until_tick)
         end
@@ -484,8 +656,17 @@ return function(api)
     if a.seconds == nil then
       local job = store()[p.index]
       assert(job, 'no asteroid watch of yours yet: platform_defense {platform, asteroids: true, seconds: 10..1800} starts one')
-      if job.result then job.read_tick = game.tick end
-      return job.result or M.result(job, false)
+      local pick = M.pick_args(a)
+      if job.result then
+        job.read_tick = game.tick
+        local out = {}
+        for k, v in pairs(job.result) do out[k] = v end
+        return M.page(out, job, pick, job.result.trajectories)
+      end
+      return M.page(M.result(job, false, true), job, pick)
+    end
+    for _, k in ipairs({'asteroid_names', 'trajectory_page', 'trajectory_limit'}) do
+      assert(a[k] == nil, k .. ' is for the read (platform_defense {platform, asteroids: true} without seconds)')
     end
     local seconds = a.seconds
     assert(type(seconds) == 'number' and seconds >= 10 and seconds <= 1800 and seconds == math.floor(seconds), 'seconds: 10..1800')
@@ -515,9 +696,12 @@ return function(api)
       note=M.NOTE}
   end
   M.ARGS = {asteroids='optional true: an asteroid watch on that platform instead (d22 batch82 AR1): with seconds it starts one, without it reads yours: the asteroids in view of the platform (its foundation\'s chunks, 32 tiles out) and its turrets, a read every 15 ticks; one watch an agent, a new one replaces it',
-    seconds='with asteroids: 10..1800, how long to watch', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
+    seconds='with asteroids: 10..1800, how long to watch',
+    asteroid_names='optional, reading the watch (no seconds): 1..16 asteroid names, or patterns with * ("*promethium*"): only the tracked asteroids of those names in trajectories, and the untracked ones of them counted (trajectory_untracked)',
+    trajectory_page='optional, reading the watch: 1.. the page of trajectories (trajectory_page {page, pages, per_page, total, returned, from, to, next, filter, order})',
+    trajectory_limit='optional, reading the watch: 1..100 trajectories a page (default 24)', reason='optional text, up to 200 characters: your own reason to wait for it, shown with the watch in your sleep line, sleep_check and the operator\'s idle check',
     asteroids_returns='the start: hull (the box round its foundation), view, turrets, line; without seconds it reads it so far (watching) or done: asteroids (seen in view, every one), tracked (those followed one by one: the first tracked_cap seen), untracked (seen past the cap, each counted once), by_name [{name, seen, destroyed, hit, left_view, in_view, untracked}] (every asteroid, by name, the most seen first) and by_name_lines, scope (which totals cover which asteroids; asteroid chunks are not entities and not seen here), classes (the tracked ones) [{class (front|side|rear by where its straight line enters the hull\'s box, the platform facing north; /crosses or /misses: whether that line crosses foundation; clear: it never enters the box; unknown), seen, destroyed, hit, left_view, in_view}] and class_lines; '
       .. 'platform_hits and platform_hit_lines (what each asteroid that hit us hit, where, its damage, its approach and projection); turret_groups [{name, region (front|middle|rear third of the hull, west|east half), turrets, hits, kills (by class), damage, ammo_used}] and turret_group_lines (hits and kills on clear asteroids and on ones crossing no foundation); '
-      .. 'turrets (those that fired: name, position, region, hits, kills by class, damage, ammo_used, ammo_loaded; up to 64, turret_rows_more past that); trajectories (the first 24 asteroids: name, first_s, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by, hit, velocity (tiles a second), points [[tick, x, y]], one a second); drift_tiles_per_s; line; note. Read only'}
+      .. 'turrets (those that fired: name, position, region, hits, kills by class, damage, ammo_used, ammo_loaded; up to 64, turret_rows_more past that); trajectories (every tracked asteroid, 24 a page (trajectory_page, trajectory_limit), the rarest names first by by_name\'s seen counts, or those asteroid_names picks: name, unit (its unit number), first_tick, first_s, first_position, last_tick, last_s, last_position, approach, projected, assumed_drift, outcome (destroyed, hit, left_view, in_view), by (the turret that destroyed it), hit and hit_at (what of ours it hit), hit_by [{turret, hits, damage, killed}], velocity (tiles a second), points [[tick, x, y]] one a second for the first 24 tracked only), trajectory_page, trajectory_untracked (asteroid_names: those names\' untracked counts: no record), trajectory_note; drift_tiles_per_s; line; note. Read only'}
   return M
 end

@@ -95,8 +95,8 @@ eq(t.hits.clear,2); eq(t.kills.clear,1); eq(t.hits['front/crosses'],1); eq(t.kil
 has(r.turret_group_lines[1],'gun-turret x1 (front west of the hull): 3 hits, 2 kills, 500 damage, 2 ammo used; on asteroids clear of the hull\'s box 2 hits and 1 kills')
 eq(#r.trajectories,3); eq(r.trajectories[1].outcome,'destroyed')
 eq(r.drift_tiles_per_s.y,30)
--- the end: the result is kept, the asteroids and turrets let go
+-- the end: the result is kept, the turrets let go; (d24 batch161) the asteroids' records stay for filtered reads
 game.tick=1000+600; A.tick(1600)
 local done=A.handler({index=1},{platform='Asterion',asteroids=true})
-eq(done.done,true); eq(st.asteroid_watch[1].asts,nil)
+eq(done.done,true); eq(st.asteroid_watch[1].turrets,nil); assert(st.asteroid_watch[1].asts and st.asteroid_watch[1].hitmap)
 print('d22_batch82 AR1 asteroid_watch: ok')
