@@ -15,7 +15,7 @@ again. Sunward's holds are loaded, so ammo comes first"). Two parts, used by cas
   spoken line, research now, and the analyst's open storylines (what is stuck). Every host prompt carries it, for
   understanding; the beat's own facts stay about the beat.
 """
-import json, math, os, re, time
+import json, math, os, re, threading, time
 from collections import deque
 
 FLOOR = 1.5          # onecam's threat_floor: a battle hold or a followed group needs this much
@@ -264,9 +264,39 @@ class ArrivalGate:
                 f"{TRAFFIC_WINDOW // 60} minutes (latest: {recent[-1]}); a word at most, never its own line")
 
 
+RUN_BLOCK_SEED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "host-run-so-far.md")
+RUN_BLOCK_MAX = 3000  # characters: about 400 words
+
+
+def run_block_path(run_dir, seed=RUN_BLOCK_SEED):
+    """(d23 batch130 CM3) The "run so far" file the operator edits: runs/host-run-so-far.md beside the shift folders,
+    started from the repo's seed (written from the d23 synthesis report) when it is missing."""
+    if not run_dir:
+        return seed
+    path = os.path.join(os.path.dirname(os.path.abspath(run_dir)), "host-run-so-far.md")
+    if not os.path.exists(path) and os.path.exists(seed):
+        try:
+            with open(seed) as f, open(path, "w") as g:
+                g.write(f.read())
+        except OSError:
+            return seed
+    return path
+
+
+def read_run_block(path):
+    """The run block's text in one paragraph per line, cut at RUN_BLOCK_MAX; None without the file."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except (OSError, TypeError):
+        return None
+    paras = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", text)]
+    return short(" ".join(p for p in paras if p and not p.startswith("#")), RUN_BLOCK_MAX) or None
+
+
 class StoryMemo:
-    def __init__(self, path=None, moments_path=MOMENTS):
-        self.path, self.moments_path = path, moments_path
+    def __init__(self, path=None, moments_path=MOMENTS, run_block=None):
+        self.path, self.moments_path, self.run_block = path, moments_path, run_block
         self.headlines = []   # {"t", "text"}, oldest first
         self.memo, self.built = None, 0.0
         if path and os.path.exists(path):
@@ -323,6 +353,8 @@ class StoryMemo:
         stuck = [short(x.get("text"), 160) for x in an.get("storylines") or []
                  if isinstance(x, dict) and x.get("status") in ("new", "developing") and x.get("text")][:3]
         memo = {
+            # (CM3) the run in plain English, read again at each rebuild so an edit lands within MEMO_EVERY
+            "run_so_far": read_run_block(self.run_block) if self.run_block else None,
             "goals": short(plan.get("goals"), 260) or None,
             "headlines": [f"{clock(h['t'])} {h['text']}" for h in self.headlines[-HEADLINES:]] or None,
             "agents": agents or None,
@@ -353,6 +385,164 @@ class StoryMemo:
             os.replace(tmp, self.path)
         except OSError:
             pass
+
+
+PLAIN_EVERY = 600     # seconds between rewrite calls (one small model call)
+PLAIN_HOLD = 900      # a plan change waits this long at most for its rewrite
+PLAIN_KEEP = 200      # rewrites kept (raw text -> English)
+PLAIN_SYSTEM = (
+    "You rewrite an AI team's planning notes from a Factorio Space Age game into plain English for two livestream "
+    "hosts. The notes are the agents' own shorthand: run-together words, task and plan ids, game ticks. Rewrite only: "
+    "add nothing, judge nothing, advise nothing. Write for a viewer who has never seen these notes: say what the team "
+    "or the agent is doing and why, if the note says why. Spell out an abbreviation only when you are sure what it "
+    "means (AG is agricultural science), else leave it out, and leave out internal mechanics (mods, gates, watches, "
+    "cohorts, proof windows). Drop every id, tick or task number and what you cannot read with confidence. Keep ship "
+    "and planet names, and a number only when you can tell what it counts. Each text becomes one or two short "
+    "sentences in the present tense.")
+PLAIN_WORDS = {"goals": 50, "line": 30}  # words kept at most (whole sentences)
+
+
+class PlainPlan:
+    """(d23 batch130 CM3, hosts-proposal idea D) The team plan's goals and each agent's plan line in plain English, by
+    one small model call at most every PLAIN_EVERY seconds when the plan has text it has not rewritten. The hosts'
+    snapshot carries the rewrite (view) and never the shorthand: d23's memo goals read "First clean edge
+    roundtrip52397160 achieved; later collector loss53020384". A plan change waits for its rewrite (admit, poll).
+    The rewrites are kept in the run folder."""
+
+    def __init__(self, writer=None, path=None, every=PLAIN_EVERY):
+        self.writer, self.path, self.every = writer, path, every
+        self.english = {}  # raw -> plain English ("" for a text the rewrite dropped)
+        self.last_call, self.busy, self.calls = 0.0, False, 0
+        self.held = []  # plan events waiting for their rewrite
+        if path and os.path.exists(path):
+            try:
+                with open(path) as f:
+                    self.english = dict(json.load(f).get("english") or {})
+            except (OSError, ValueError, AttributeError, TypeError):
+                pass
+
+    @staticmethod
+    def texts(s):
+        """{key: raw}: 'goals' and each agent's plan line ('line:NAME')."""
+        plan = (((s or {}).get("board") or {}).get("plan") or {})
+        out = {"goals": plan["goals"]} if plan.get("goals") else {}
+        for d in plan.get("doing") or []:
+            who = d.get("name") or d.get("agent")
+            if who and d.get("text"):
+                out[f"line:{who}"] = d["text"]
+        return out
+
+    def missing(self, s):
+        return {k: v for k, v in self.texts(s).items() if v not in self.english}
+
+    def tick(self, s, now, run=None):
+        """Start a rewrite of the texts not yet rewritten, at most every `every` seconds, in a thread (or `run`)."""
+        if not self.writer or self.busy or now - self.last_call < self.every:
+            return False
+        todo = self.missing(s)
+        if not todo:
+            return False
+        self.busy, self.last_call = True, now
+        names = self.names(s)
+        (run or (lambda f: threading.Thread(target=f, daemon=True).start()))(lambda: self.rewrite(todo, names))
+        return True
+
+    @staticmethod
+    def names(s):
+        """What the notes' names are: the agents and the space platforms (ships) in the snapshot."""
+        s = s or {}
+        agents = [a.get("display_name") or a.get("name") for a in s.get("agents") or [] if a.get("name")]
+        ships = [p.get("name") for p in (s.get("space") or {}).get("platforms") or [] if p.get("name")]
+        out = []
+        if agents:
+            out.append("Agents (the AI players; 'line:NAME' is that agent's own line): " + ", ".join(agents) + ".")
+        if ships:
+            out.append("Space platforms (ships): " + ", ".join(ships) + ".")
+        return " ".join(out + ["Planets: Nauvis, Vulcanus, Fulgora, Gleba, Aquilo; AQ is Aquilo; the solar system "
+                               "edge. A spider is a spidertron, a walking vehicle an agent drives."])
+
+    def rewrite(self, todo, names=""):
+        try:
+            user = ("Rewrite each value in plain English. Reply with JSON only, the same keys: at most 40 words for "
+                    "goals and 20 for each line.\n" + (names + "\n" if names else "")
+                    + json.dumps(todo, ensure_ascii=False))
+            text = self.writer.complete(PLAIN_SYSTEM, user, max_tokens=500)
+            self.calls += 1
+            m = re.search(r"\{.*\}", text or "", re.S)
+            got = json.loads(m.group(0)) if m else {}
+            english = dict(self.english)
+            for k, raw in todo.items():
+                english[raw] = plain_checked(got.get(k), raw, PLAIN_WORDS["goals" if k == "goals" else "line"])
+            self.english = dict(list(english.items())[-PLAIN_KEEP:])
+            self.save()
+        except Exception as x:  # a failed call leaves the shorthand out and tries again after `every`
+            print(f"[plain] rewrite failed: {type(x).__name__}: {x}", flush=True)
+        finally:
+            self.busy = False
+
+    def view(self, s):
+        """The snapshot as the hosts see it: the plan's texts in plain English, or left out until rewritten. Without a
+        writer, as it is."""
+        plan = (((s or {}).get("board") or {}).get("plan") or {})
+        if not self.writer or not plan:
+            return s
+        doing = []
+        for d in plan.get("doing") or []:
+            en = self.english.get(d.get("text"))
+            if en:
+                doing.append(dict(d, text=en))
+        plain = dict(plan, goals=self.english.get(plan.get("goals")) or None, doing=doing)
+        return dict(s, board=dict(s["board"], plan=plain))
+
+    def admit(self, e, now):
+        """A plan change -> the events to queue now: in plain English once each text has its rewrite, else held."""
+        if e.get("kind") != "plan" or not self.writer:
+            return [e]
+        self.held = [h for h in self.held if now - h["held"] < PLAIN_HOLD] + [dict(e, held=now)]
+        return self.poll(now)
+
+    def poll(self, now):
+        out, keep = [], []
+        for h in self.held:
+            raws = h.get("raw") or []
+            if any(text not in self.english for _, text in raws):
+                if now - h["held"] < PLAIN_HOLD:
+                    keep.append(h)
+                continue
+            changes = [(f"new goals: {self.english[text]}" if who == "goals" else f"{who} is now on: {self.english[text]}")
+                       for who, text in raws if self.english.get(text)]
+            if changes:
+                e = {k: v for k, v in h.items() if k not in ("held", "raw")}
+                out.append(dict(e, changes=changes[:4], t=now))
+        self.held = keep
+        return out
+
+    def save(self):
+        if not self.path:
+            return
+        try:
+            tmp = self.path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"english": self.english}, f, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+
+def plain_checked(text, raw, words=50):
+    """A rewrite as the hosts may get it: one line, a sentence kept only when its numbers are all in the raw text and
+    none has 7 digits or more (a game tick), whole sentences up to `words` words; "" for none."""
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    nums = set(re.findall(r"\d+(?:\.\d+)?", str(raw or "").replace(",", "")))
+    keep = [x for x in re.split(r"(?<=[.!?])\s+", text)
+            if x and all(n in nums and len(n.split(".")[0]) < 7 for n in re.findall(r"\d+(?:\.\d+)?", x.replace(",", "")))]
+    out, n = [], 0
+    for x in keep:
+        n += len(x.split())
+        if out and n > words:
+            break
+        out.append(x)
+    return " ".join(out)
 
 
 def short(text, n):

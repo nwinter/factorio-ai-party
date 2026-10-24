@@ -1582,6 +1582,28 @@ a host prompt.
   analyst beats would have aired.
 - Tests: tools/stream/test_hoststory.py (arrival_tests, analyst_tests), test_route_direction.py.
 
+### The run in plain English (CM3)
+- Every host prompt's `story` memo carries `run_so_far`, a block of about 340 words written from the d23 synthesis
+  report. It lives in `runs/host-run-so-far.md`, beside the shift folders, and the caster creates it from
+  `tools/stream/host-run-so-far.md` when it is missing. The memo reads it again at each rebuild (every 3 minutes),
+  so an edit airs without a restart. `--run-block PATH` points the caster at another file.
+- The plan's goals and each agent's plan line go through hoststory.PlainPlan, which rewrites them in plain English.
+  It makes one call at most every 10 minutes, and only when there is text it has not rewritten yet. The model is
+  `--plain-model`, else `--low-model` (live: Haiku 5.5, with reasoning off; with reasoning on it spent its 2,000
+  tokens thinking and returned nothing).
+  - The prompt carries the agents' and ships' names. It says to rewrite only (add, judge and advise nothing), and to
+    drop ids, ticks and anything the model cannot read.
+  - plain_checked drops a sentence that has a number missing from the note or a number of 7 digits or more (a tick),
+    and keeps whole sentences up to 50 words for goals and 30 for a line.
+  - The hosts' snapshot (`Caster.snap`, so the memo, team_plan and agent facts) has the rewrite only. A text not yet
+    rewritten is left out. The Differ still compares the raw plan.
+  - A plan change waits for its rewrite and then airs in plain English. It is dropped after 15 minutes. Rewrites are
+    kept in `runs/RUN/host-plain.json`.
+- Cost: the rewrite measured $0.00046-0.00057 a call (1,100 tokens in, 400-900 out), at most 6 calls an hour, so
+  under $0.004 an hour. The run block adds about 450 input tokens to each host exchange, while CM1 removes about
+  half the exchanges.
+- Tests: tools/stream/test_hoststory.py (plain_tests).
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

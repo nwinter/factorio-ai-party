@@ -15,6 +15,9 @@ python3 tools/stream/test_hoststory.py
    shift knows where each platform has been. d23's replay: python3 tools/stream/hosts_replay.py
 5. (CM2) An analyst point is a beat of its own at priority 5, one per four minutes, a topic once per half hour, shaped
    as one number and a reason, its lines held to the point's facts.
+6. (CM3) The memo carries "the run so far" from a file the operator edits (read again at each rebuild), and the
+   plan's goals and lines in plain English by one small model call at most every ten minutes; the hosts' snapshot
+   never carries the agents' shorthand, and a plan change waits for its rewrite.
 The shift07 16:20-16:38 replay: python3 tools/stream/hostguide_replay.py --story [--writer or:MODEL].
 """
 import json, os, sys, tempfile, threading, time
@@ -316,9 +319,125 @@ def analyst_tests():
           "cargo; analyst beats: priority 5, one per four minutes, topics, held to the point)")
 
 
+class FakeWriter:
+    def __init__(self, reply):
+        self.reply, self.prompts, self.spent = reply, [], 0.0
+
+    def complete(self, system, user, max_tokens=80):
+        self.prompts.append((system, user))
+        return self.reply(user) if callable(self.reply) else self.reply
+
+
+def plain_tests():
+    now = 1_000_000.0
+    d = tempfile.mkdtemp()
+    # the run block: a file beside the shift folders, started from the repo's seed, read again at each rebuild
+    run_dir = os.path.join(d, "shift66")
+    os.makedirs(run_dir)
+    path = hoststory.run_block_path(run_dir)
+    assert path == os.path.join(d, "host-run-so-far.md") and os.path.exists(path)
+    seed = open(hoststory.RUN_BLOCK_SEED).read()
+    assert open(path).read() == seed and 250 <= len(seed.split()) <= 400, len(seed.split())
+    assert "Asterion" in seed and "Shattered Planet" in seed and "should" not in seed.lower()
+    m = hoststory.StoryMemo(None, moments_path=os.path.join(d, "none.json"), run_block=path)
+    memo = m.update({"board": {}}, now)
+    assert memo["run_so_far"].startswith("Nine AI models began") and "\n" not in memo["run_so_far"]
+    with open(path, "w") as f:
+        f.write("# heading\n\nThe operator's own words.\n\nA second paragraph.\n")
+    assert m.update({"board": {}}, now + 10)["run_so_far"].startswith("Nine AI"), "until the next rebuild"
+    assert m.update({"board": {}}, now + hoststory.MEMO_EVERY)["run_so_far"] == "The operator's own words. A second paragraph."
+    assert hoststory.run_block_path(run_dir) == path and open(path).read().startswith("# heading"), "an edit is kept"
+    assert hoststory.read_run_block(os.path.join(d, "missing.md")) is None
+
+    # plain_checked: numbers from the note only, no ticks, whole sentences up to the cap
+    raw = "Asterion probe launched53840310: legendary pair; all23 healthy"
+    assert hoststory.plain_checked("Asterion is out on a probe. It left at tick 53840310. All 23 guns are fed. "
+                                   "It has 40 rockets.", raw) == "Asterion is out on a probe. All 23 guns are fed."
+    assert hoststory.plain_checked("One two three four. Five six seven eight.", "x", words=5) == "One two three four."
+    assert hoststory.plain_checked(None, raw) == ""
+
+    # the rewrite: one call for the texts not yet rewritten, at most every PLAIN_EVERY seconds
+    goals = "Reach Shattered Planet. Asterion full clean edge roundtrip home53825571."
+    lines = {"astra": "Asterion probe launched53840310: legendary pair; all23 healthy", "sol": "Weaver9933actualAG/10coho"}
+    s = {"board": {"plan": {"goals": goals, "doing": [{"name": n, "text": t} for n, t in lines.items()]}},
+         "agents": [{"name": "astra", "display_name": "Astra"}, {"name": "sol", "display_name": "Sol"}],
+         "space": {"platforms": [{"name": "Asterion"}, {"name": "Weaver"}]}}
+    w = FakeWriter(lambda user: json.dumps({"goals": "The team aims for the Shattered Planet after Asterion's clean "
+                                                     "round trip to the edge.",
+                                            "line:astra": "Astra has Asterion out on a probe. All 23 guns are fed."}))
+    pp = hoststory.PlainPlan(w, os.path.join(d, "host-plain.json"))
+    view = pp.view(s)["board"]["plan"]
+    assert view["goals"] is None and view["doing"] == [], "no shorthand before its rewrite"
+    sync = lambda f: f()  # noqa: E731
+    assert pp.tick(s, now, run=sync) and len(w.prompts) == 1
+    system, user = w.prompts[0]
+    assert "add nothing, judge nothing, advise nothing" in system and "Space platforms (ships): Asterion, Weaver" in user
+    assert "line:astra" in user and "goals" in user
+    view = pp.view(s)["board"]["plan"]
+    assert view["goals"].startswith("The team aims") and view["doing"] == [
+        {"name": "astra", "text": "Astra has Asterion out on a probe. All 23 guns are fed."}], view
+    assert pp.english[lines["sol"]] == "", "a line the rewrite left out is left out"
+    s2 = {"board": {"plan": dict(s["board"]["plan"], goals="Reach Shattered Planet; new probe140.")}}
+    assert not pp.tick(s2, now + 60, run=sync), "inside ten minutes"
+    assert pp.tick(s2, now + hoststory.PLAIN_EVERY, run=sync) and len(w.prompts) == 2
+    assert json.loads(w.prompts[1][1].split("\n")[-1]) == {"goals": "Reach Shattered Planet; new probe140."}
+    assert not pp.tick(s2, now + 3 * hoststory.PLAIN_EVERY, run=sync), "nothing new: no call"
+    # kept in the run folder
+    again = hoststory.PlainPlan(w, os.path.join(d, "host-plain.json"))
+    assert again.view(s)["board"]["plan"]["goals"].startswith("The team aims")
+    # no writer (the template writer): the plan as it is, plan changes as they are
+    assert hoststory.PlainPlan(None).view(s) is s
+    assert hoststory.PlainPlan(None).admit({"kind": "plan", "changes": ["x"]}, now) == [{"kind": "plan", "changes": ["x"]}]
+    # a failed call leaves the shorthand out
+    bad = hoststory.PlainPlan(FakeWriter("not json"))
+    bad.tick(s, now, run=sync)
+    assert bad.view(s)["board"]["plan"]["goals"] is None and not bad.busy
+
+    # a plan change waits for its rewrite, then airs in plain English; one never rewritten is dropped
+    w3 = FakeWriter(json.dumps({"line:sol": "Sol runs the Weaver freighter to Gleba."}))
+    p3 = hoststory.PlainPlan(w3)
+    ev = {"kind": "plan", "changes": ["sol is now on: Weaver9933actualAG"], "raw": [("sol", "Weaver9933actualAG")],
+          "agent": None, "t": now, "prio": 5}
+    assert p3.admit(ev, now) == [] and p3.poll(now + 5) == []
+    p3.tick({"board": {"plan": {"doing": [{"name": "sol", "text": "Weaver9933actualAG"}]}}}, now + 10, run=sync)
+    out = p3.poll(now + 20)
+    assert len(out) == 1 and out[0]["changes"] == ["sol is now on: Sol runs the Weaver freighter to Gleba."] \
+        and out[0]["t"] == now + 20 and "raw" not in out[0] and "held" not in out[0], out
+    assert p3.poll(now + 30) == []
+    p4 = hoststory.PlainPlan(FakeWriter("{}"))
+    assert p4.admit(dict(ev, raw=[("sol", "unread")]), now) == []
+    assert p4.poll(now + hoststory.PLAIN_HOLD) == [] and p4.held == [], "dropped after PLAIN_HOLD"
+
+    # caster.py: the Differ keeps the raw texts; the hosts' snapshot and memo hold the rewrite only
+    dif = caster.Differ()
+    dif.diff({"board": {"plan": {"goals": "a", "doing": []}}})
+    e = [x for x in dif.diff({"board": {"plan": {"goals": "b1234", "doing": [{"name": "sol", "text": "x9"}]}}})
+         if x["kind"] == "plan"][0]
+    assert e["raw"] == [("goals", "b1234"), ("sol", "x9")] and e["changes"][0] == "new goals: b1234"
+    c = caster.Caster.__new__(caster.Caster)
+    c.lock, c.differ, c.events, c.chat_q = threading.Lock(), caster.Differ(), deque(maxlen=50), deque(maxlen=50)
+    c.story, c.plain = hoststory.StoryMemo(None, moments_path=os.path.join(d, "none.json")), pp
+    c.on_snapshot(s)
+    assert c.snap["board"]["plan"]["goals"].startswith("The team aims"), c.snap["board"]["plan"]
+    assert "53825571" not in json.dumps(c.story.memo) and c.story.memo["goals"].startswith("The team aims")
+    assert c.story.memo["agents"][0].startswith("Astra: Astra has Asterion out on a probe")
+    f = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, c.snap)
+    assert "53840310" not in json.dumps(f) and "Weaver9933" not in json.dumps(f), f.get("team_plan")
+    a = caster.parser().parse_args(["--writer", "or", "--model", "anthropic/claude-opus-5.5", "--low-model",
+                                    "anthropic/claude-haiku-5.5"])
+    c.a = a
+    pw = c.plain_writer()
+    assert pw.model == "anthropic/claude-haiku-5.5" and pw.reasoning == {"enabled": False}
+    c.a = caster.parser().parse_args(["--writer", "template"])
+    assert c.plain_writer() is None
+    print("hoststory: ok (run block from an editable file; plain plan: one call per ten minutes, no shorthand, no "
+          "ticks, plan changes wait, kept; caster wiring)")
+
+
 if __name__ == "__main__":
     gate_tests()
     memo_tests()
     caster_tests()
     arrival_tests()
     analyst_tests()
+    plain_tests()

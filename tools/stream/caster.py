@@ -460,15 +460,17 @@ class Differ:
             ev.append({"kind": "segment", "segment": seg})
         plan, pplan = (s.get("board") or {}).get("plan") or {}, (p.get("board") or {}).get("plan") or {}
         if not first and plan and pplan and plan != pplan:  # HOSTS5 item 2: a change to the team plan is news
-            changes = []
+            changes, raw = [], []  # raw: (who, text) for hoststory.PlainPlan's rewrite
             if (plan.get("goals") or "") != (pplan.get("goals") or "") and plan.get("goals"):
                 changes.append(f"new goals: {plan['goals']}")
+                raw.append(("goals", plan["goals"]))
             before = {d.get("name"): d.get("text") for d in pplan.get("doing") or []}
             for d in plan.get("doing") or []:
                 if d.get("text") and before.get(d.get("name")) != d.get("text"):
                     changes.append(f"{d.get('name')} is now on: {d.get('text')}")
+                    raw.append((d.get("name"), d["text"]))
             if changes:
-                ev.append({"kind": "plan", "changes": changes[:4], "agent": None})
+                ev.append({"kind": "plan", "changes": changes[:4], "raw": raw[:4], "agent": None})
         res, pres = s.get("research") or {}, p.get("research") or {}
         if not first and res.get("current") and res.get("current") != pres.get("current"):
             ev.append({"kind": "research_start", "tech": res.get("label")})
@@ -1861,6 +1863,9 @@ class LLMWriter:
                     "max_tokens": max(max_tokens * 4, 1200), "temperature": 0.9, "usage": {"include": True}}
             if getattr(self, "route_by_latency", False):  # urgent beats: the fastest provider, not the cheapest
                 body["provider"] = {"sort": "latency"}
+            if getattr(self, "reasoning", None) is not None:
+                # (CM3) Haiku 5.5 on OpenRouter spent all 2,000 tokens of a plan rewrite reasoning and returned nothing
+                body["reasoning"] = self.reasoning
             req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                          data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
@@ -2297,9 +2302,30 @@ class Caster:
         import hoststory
         run_dir = getattr(a, "run_dir", None)
         self.gate = hoststory.AttackGate(os.path.join(run_dir, "threat-history.json") if run_dir else None)
-        self.story = hoststory.StoryMemo(os.path.join(run_dir, "host-memo.json") if run_dir else None)
+        run_block = getattr(a, "run_block", "") or hoststory.run_block_path(run_dir)
+        self.story = hoststory.StoryMemo(os.path.join(run_dir, "host-memo.json") if run_dir else None,
+                                         run_block=run_block)
+        # (CM3) the plan's goals and lines in plain English: one small model call at most every ten minutes
+        self.plain = hoststory.PlainPlan(self.plain_writer(ai), os.path.join(run_dir, "host-plain.json") if run_dir else None)
         # (d23 batch130 CM1) a routine docking is a traffic count; the routes flown this shift kept in the run folder
         self.arrivals = hoststory.ArrivalGate(os.path.join(run_dir, "host-arrivals.json") if run_dir else None)
+
+    def plain_writer(self, ai=None):
+        """(CM3) The writer of hoststory.PlainPlan's rewrite: --plain-model, else the low model, else the main one, on
+        the main writer's service; None for the template writer."""
+        a = self.a
+        model = getattr(a, "plain_model", "") or getattr(a, "low_model", "") or a.model
+        if a.writer == "or" and model:
+            w = LLMWriter("or", model, timeout=a.writer_timeout)
+            w.reasoning = {"enabled": False}
+            return w
+        if a.writer == "claude":
+            return LLMWriter("claude", getattr(a, "plain_model", "") or "haiku", bin=a.claude_bin,
+                             timeout=a.writer_timeout)
+        if a.writer == "cf":
+            return LLMWriter("cf", getattr(a, "plain_model", "") or a.model or DEFAULT_MODEL, ai=ai,
+                             timeout=a.writer_timeout)
+        return None
 
     # -- plumbing
     def on_snapshot(self, s):
@@ -2311,6 +2337,10 @@ class Caster:
                 reads.append((yt["watching_t"], yt.get("watching")))
             now = time.time()
             gate, story, arrivals = self.__dict__.get("gate"), self.__dict__.get("story"), self.__dict__.get("arrivals")
+            plain = self.__dict__.get("plain")
+            if plain:  # (CM3) the hosts see the plan in plain English, never the agents' shorthand
+                plain.tick(s, now)
+                self.snap = plain.view(s)
             for e in self.differ.diff(s):
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
@@ -2326,12 +2356,16 @@ class Caster:
                 elif e["kind"] == "chat":
                     # the hosts hear a chat line only once it aired in the agent's voice (yield_to), not as it is typed
                     self.chat_q.append(e)
+                elif e["kind"] == "plan" and plain:  # (CM3) a plan change waits for its rewrite
+                    self.events.extend(plain.admit(e, now))
                 else:
                     # an attack or an arrival is a beat only when it matters (hoststory.AttackGate, ArrivalGate)
                     for x in arrivals.admit(e, s, now) if arrivals else [e]:
                         self.events.extend(gate.admit(x, s, now) if gate else [x])
             if gate:
                 self.events.extend(gate.poll(s, now))
+            if plain:
+                self.events.extend(plain.poll(now))
             # (CM2) an analyst point as a beat of its own, one per ANALYST_EVERY seconds
             if "events" in self.__dict__ and now - self.__dict__.get("analyst_t", 0.0) >= ANALYST_EVERY and not any(
                     e["kind"] == "analyst" for e in self.events):
@@ -2340,7 +2374,7 @@ class Caster:
                 if ae:
                     self.events.append(ae)
             if story:
-                story.update(s, now)
+                story.update(self.snap, now)
 
     def status(self):
         try:
@@ -3053,7 +3087,8 @@ class Caster:
 
     def cost(self):
         hrs =max(1e-6, (time.time() - self.t0) / 3600)
-        w = sum(x.spent for x in (self.writer, self.fast, getattr(self, "low", None)) if x)
+        w = sum(x.spent for x in (self.writer, self.fast, getattr(self, "low", None),
+                                   getattr(getattr(self, "plain", None), "writer", None)) if x)
         t = sum(x.spent for x in (self.tts, self.tts_fallback) if x)
         c = self.classifier.spent
         return {"minutes": round(hrs * 60, 1), "writer_usd": round(w, 4), "tts_usd": round(t, 4),
@@ -3218,6 +3253,12 @@ def parser():
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
                     help="fast writer for urgent events: a Workers AI model id, or or:<OpenRouter model> (e.g. "
                          "or:anthropic/claude-haiku-5.5); '' to use the main writer for everything")
+    ap.add_argument("--plain-model", default="",
+                    help="(d23 batch130 CM3) the model that rewrites the team plan in plain English for the hosts, at "
+                         "most one call per 10 minutes; default --low-model, else --model")
+    ap.add_argument("--run-block", default="",
+                    help="(CM3) the 'run so far' text in every host prompt, read again every 3 minutes (default "
+                         "runs/host-run-so-far.md beside --run-dir, started from tools/stream/host-run-so-far.md)")
     ap.add_argument("--low-model", default="",
                     help="--writer or: a cheaper OpenRouter model for non-urgent lines while YouTube's \"watching now\" "
                          "is 0, or 1 for over 10 minutes (e.g. anthropic/claude-haiku-5.5); --model with 2+ watching, a "
