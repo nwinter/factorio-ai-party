@@ -48,6 +48,49 @@ return function(api)
     'space-platform-hub', 'ammo-turret', 'artillery-turret', 'reactor', 'boiler', 'burner-generator', 'cargo-wagon', 'car', 'spider-vehicle',
     'agricultural-tower', 'mining-drill', 'inserter'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- (d24 batch167 QJ1, Sol #2224: watch 331, a pod of 2 legendary thrusters landed at Aquilo's pad; the landed stage said
+  -- 2 while received, pods and arrivals read 0) In 2.0.77 get_item_count(name) counts normal quality only, and freight's
+  -- cargo by name counts every quality together, so the pod was never followed while freight's receipt landed it. A
+  -- watch's quality (quality, or item "name@quality") counts that one; with none, every quality, said in its line.
+  -- Every count of the watch goes through count_q (an entity or inventory) and amount (a pod's or rocket's cargo).
+  local QS
+  local function qualities()
+    if QS then return QS end
+    local list = {}
+    for name, q in pairs(try(function() return prototypes.quality end) or {}) do
+      if name ~= 'quality-unknown' and not try(function() return q.hidden end) then list[#list+1] = {name=name, level=try(function() return q.level end) or 0} end
+    end
+    table.sort(list, function(x, y) if x.level ~= y.level then return x.level < y.level end return x.name < y.name end)
+    QS = {}
+    for i, x in ipairs(list) do QS[i] = x.name end
+    return QS
+  end
+  function M.reset_qualities() QS = nil end
+  local function count_q(obj, item, q)
+    if not obj then return 0 end
+    local qs = qualities()
+    -- no quality but normal in the game: the name alone is every quality
+    if not q and (#qs == 0 or (#qs == 1 and qs[1] == 'normal')) then return try(function() return obj.get_item_count(item) end) or 0 end
+    if q then return try(function() return obj.get_item_count({name=item, quality=q}) end) or 0 end
+    -- an inventory counts every quality in one call (a copy of world n: 0.7 us, the 5 counts 5.6 us); an entity has no
+    -- filtered count
+    local filtered = try(function() return obj.get_item_count_filtered end)
+    local all = filtered and try(function() return filtered({name=item}) end)
+    if all then return all end
+    local n = 0
+    for _, x in ipairs(qs) do n = n + (try(function() return obj.get_item_count({name=item, quality=x}) end) or 0) end
+    return n
+  end
+  -- a pod's or rocket's cargo record (freight.lua: cargo by name, every quality together; cargo_q by name@quality)
+  local function amount(r, item, q)
+    if not q then return r.cargo and r.cargo[item] end
+    if r.cargo_q then return r.cargo_q[item .. '@' .. q] or 0 end
+    return nil
+  end
+  local function label(w) return w.quality and w.item .. '@' .. w.quality or w.item end
+  local function rule(w) return w.quality and string.format('%s quality only', w.quality) or 'every quality (no quality given)' end
+  -- a stack's quality name, a filter's quality name (normal when none)
+  local function qname(x) return type(x) == 'table' and x.name or x or 'normal' end
   local function at(q) return string.format('(%g,%g)', q.x, q.y) end
   local function secs(t)
     local s = math.max(0, math.floor(t / 60 + 0.5))
@@ -65,7 +108,7 @@ return function(api)
   local function gone(w, why, tick, by)
     local st = store()
     st.gone = st.gone or {}
-    st.gone[#st.gone+1] = {id=w.id, item=w.item, setter=w.setter, state=w.state, why=why, by=by,
+    st.gone[#st.gone+1] = {id=w.id, item=label(w), setter=w.setter, state=w.state, why=why, by=by,
       ended=w.ended or (w.state == 'late' and w.deadline) or nil, tick=tick}
     while #st.gone > GONE_KEPT do table.remove(st.gone, 1) end
   end
@@ -92,9 +135,9 @@ return function(api)
   local function platform_named(force, name)
     for _, pl in pairs(try(function() return force.platforms end) or {}) do if pl.valid and pl.name == name then return pl end end
   end
-  local function hub_count(pl, item)
+  local function hub_count(pl, item, q)
     local inv = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
-    return inv and (try(function() return inv.get_item_count(item) end) or 0) or 0
+    return inv and count_q(inv, item, q) or 0
   end
   local function stops_at(pl, planet)
     for _, r in ipairs(try(function() return pl.schedule.records end) or {}) do if r.station == planet then return true end end
@@ -135,7 +178,7 @@ return function(api)
       from and ' (from ' .. from .. ')' or '', w.received_tick and ', the last at tick ' .. w.received_tick or '')
   end
   -- A requester or buffer chest asking none of the item: the text, else nil.
-  local function asks_none(e, item)
+  local function asks_none(e, item, q)
     if e.type ~= 'logistic-container' then return nil end
     local mode = try(function() return e.prototype.logistic_mode end)
     if mode ~= 'requester' and mode ~= 'buffer' then return nil end
@@ -145,17 +188,17 @@ return function(api)
       if sec.active ~= false then
         for _, f in ipairs(sec.filters or {}) do
           local v = f.value
-          if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 then return nil end
+          if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 and (not q or qname(type(v) == 'table' and v.quality) == q) then return nil end
         end
       end
     end
-    return string.format('the consumer, %s chest %s, asks none of %s: robots bring it nothing', mode, at(e.position), item)
+    return string.format('the consumer, %s chest %s, asks none of %s: robots bring it nothing', mode, at(e.position), q and item .. '@' .. q or item)
   end
   -- (AB6) A planet's landing pads of ours asking the item: {{pad, min, held}}, by their active sections as the pad shows
   -- them. 2.0.77 on the private copy: a platform paused at Fulgora with gears, cable and pipe in its hub sent pods of
   -- 20 to the pad's requests of 20 imported from nauvis, nauvis and fulgora alike, and again each time robots emptied
   -- the pad (its request counts what the pad holds): a pad request's import planet does not stop it.
-  local function pad_asks(force, planet, item)
+  local function pad_asks(force, planet, item, q)
     local s = try(function() return game.planets[planet].surface end)
     local out = {}
     if not s then return out end
@@ -169,11 +212,11 @@ return function(api)
         if sec and sec.active ~= false then
           for _, f in ipairs(sec.filters or {}) do
             local v = f.value
-            if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 then min = min + f.min end
+            if (type(v) == 'table' and v.name or v) == item and (f.min or 0) > 0 and (not q or qname(type(v) == 'table' and v.quality) == q) then min = min + f.min end
           end
         end
       end
-      if min > 0 then out[#out+1] = {pad=pad, min=min, held=try(function() return pad.get_item_count(item) end) or 0} end
+      if min > 0 then out[#out+1] = {pad=pad, min=min, held=count_q(pad, item, q)} end
     end
     return out
   end
@@ -214,7 +257,7 @@ return function(api)
   function M.held(w, held, tick)
     w.held = held
     if held - w.base >= w.count then
-      seen(w, 'reached', string.format('%s %s holds %d %s (%d when the watch was set)', w.to.name, at(w.to.position), held, w.item, w.base), tick)
+      seen(w, 'reached', string.format('%s %s holds %d %s (%d when the watch was set)', w.to.name, at(w.to.position), held, label(w), w.base), tick)
     end
   end
   -- (PR1) the stock test in words, apart from received
@@ -241,13 +284,13 @@ return function(api)
     if not (e and e.valid) then
       block(w, 'gone', string.format('the consumer %s %s on %s is gone', w.to.name, at(w.to.position), w.to.where))
     else
-      M.held(w, try(function() return e.get_item_count(w.item) end) or 0, tick)
+      M.held(w, count_q(e, w.item, w.quality), tick)
       if w.from and w.stages.reached and not w.stock_told then
         w.stock_told = true
         push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): %s; with from given this does not end the watch: it ends when %d is received from %s (%s)',
-          w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, stock_text(w), w.count, w.from, received_text(w)))
+          w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where, stock_text(w), w.count, w.from, received_text(w)))
       end
-      local ask = asks_none(e, w.item)
+      local ask = asks_none(e, w.item, w.quality)
       if ask then block(w, 'asks', ask) end
     end
     if w.direction == 'down' then
@@ -257,12 +300,12 @@ return function(api)
         local cands = {}
         if w.from then cands = {platform_named(force, w.from)} else for _, x in pairs(force.platforms) do cands[#cands+1] = x end end
         for _, x in ipairs(cands) do
-          if x and x.valid and (w.from or stops_at(x, w.to.where)) and hub_count(x, w.item) > 0 then pl = x; w.carrier = x.name; break end
+          if x and x.valid and (w.from or stops_at(x, w.to.where)) and hub_count(x, w.item, w.quality) > 0 then pl = x; w.carrier = x.name; break end
         end
       end
       if pl and pl.valid then
-        local n = hub_count(pl, w.item)
-        if n > 0 then seen(w, 'loaded', string.format('%s\'s hub holds %d %s', pl.name, n, w.item), tick) end
+        local n = hub_count(pl, w.item, w.quality)
+        if n > 0 then seen(w, 'loaded', string.format('%s\'s hub holds %d %s', pl.name, n, label(w)), tick) end
         local where = api.freight and try(function() return api.freight.where(pl) end) or {}
         if try(function() return pl.space_connection end) then
           local leg = where.leg
@@ -279,11 +322,11 @@ return function(api)
             local room, names = false, {}
             for _, pad in ipairs(pads) do
               local inv = try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
-              if inv and try(function() return inv.can_insert({name=w.item, count=1}) end) then room = true end
+              if inv and try(function() return inv.can_insert({name=w.item, quality=w.quality, count=1}) end) then room = true end
               if #names < 3 then names[#names+1] = at(pad.position) end
             end
             if #pads == 0 then block(w, 'pad', string.format('no landing pad of ours on %s: a pod sent down lands on the ground', w.to.where))
-            elseif not room then block(w, 'pad', string.format('no landing pad of ours on %s has room for %s (cargo-landing-pad %s): the hub sends no pod of it down', w.to.where, w.item, table.concat(names, ', '))) end
+            elseif not room then block(w, 'pad', string.format('no landing pad of ours on %s has room for %s (cargo-landing-pad %s): the hub sends no pod of it down', w.to.where, label(w), table.concat(names, ', '))) end
           end
         end
         -- (d24 batch139 PK1, Sol #2115: watch 284 said Petrel, paused while docked at Nauvis, goes nowhere until
@@ -296,7 +339,7 @@ return function(api)
         elseif here == w.to.where and n > 0 and api.freight and api.freight.hub_keeps_at then
           local F = api.freight
           local keeps = F.hub_keeps_at(try(function() return pl.hub.get_logistic_sections() end), w.to.where)
-          local asks = pad_asks(force, w.to.where, w.item)
+          local asks = pad_asks(force, w.to.where, w.item, w.quality)
           local want, parts = 0, {}
           for _, a in ipairs(asks) do
             want = want + math.max(0, a.min - a.held)
@@ -309,10 +352,10 @@ return function(api)
           local why = off and (k and k.max ~= math.huge and string.format('%s; %s: all above %d goes down', off_line, F.keep_text(k), k.max) or off_line)
             or k and (k.max == math.huge and F.keep_text(k) .. ': an infinite max keeps it all'
               or string.format('%s: all above %d goes down, asked or not', F.keep_text(k), k.max))
-            or #asks == 0 and string.format('no hub section keeps %s at %s and no landing pad of ours there asks it: it goes down as far as the pads ask', w.item, w.to.where)
-            or string.format('no hub section keeps %s at %s: it goes down as far as the pads ask (%s)', w.item, w.to.where, table.concat(parts, '; '))
+            or #asks == 0 and string.format('no hub section keeps %s at %s and no landing pad of ours there asks it: it goes down as far as the pads ask', label(w), w.to.where)
+            or string.format('no hub section keeps %s at %s: it goes down as far as the pads ask (%s)', label(w), w.to.where, table.concat(parts, '; '))
           local head = string.format('%s is stopped at %s%s with %d %s in its hub', pl.name, w.to.where,
-            pl.paused and ' (paused: its hub sends pods down at the planet it is stopped at all the same)' or '', n, w.item)
+            pl.paused and ' (paused: its hub sends pods down at the planet it is stopped at all the same)' or '', n, label(w))
           w.at_destination = {sends=go, held=n, asked=want, keep=k and F.keep_text(k) or nil,
             line=string.format('%s: its hub sends %d down now (%s)', head, go, why)}
           if go == 0 then
@@ -334,12 +377,12 @@ return function(api)
             local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
             local keeps = F.hub_keeps_at(secs_, stop.station)
             local off = stop.off
-            local asks = pad_asks(force, stop.station, w.item)
+            local asks = pad_asks(force, stop.station, w.item, w.quality)
             local k = keeps[w.item]
             if #asks == 0 and k and k.max ~= math.huge and n > k.max then
               local key = 'demand ' .. stop.station .. ' max'
               local text = string.format('%s %s %s (%s) with %d %s in its hub, before %s: %s, so all above %d goes down there, a landing pad asking or not',
-                pl.name, stop.now and 'is stopped at' or 'stops at', stop.station, which, n, w.item, w.to.where, F.keep_text(k), k.max)
+                pl.name, stop.now and 'is stopped at' or 'stops at', stop.station, which, n, label(w), w.to.where, F.keep_text(k), k.max)
               if stop.now then block(w, key, text, key .. ' ' .. k.max) else risk(w, key, text, key .. ' ' .. k.max) end
             end
             for _, a in ipairs(asks) do
@@ -349,48 +392,44 @@ return function(api)
                 local kept = k and '; ' .. F.keep_text(k) or ''
                 if stop.now then
                   block(w, key, string.format('%s is stopped at %s (%s) with %d %s in its hub, before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends %d of it down to that pad%s',
-                    pl.name, stop.station, which, n, w.item, w.to.where, at(a.pad.position), a.min, w.item, a.held, go, kept), key .. ' ' .. a.min)
+                    pl.name, stop.station, which, n, label(w), w.to.where, at(a.pad.position), a.min, label(w), a.held, go, kept), key .. ' ' .. a.min)
                 else
                   risk(w, key, string.format('%s stops at %s (%s) before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends %d of it down to that pad (the hub holds %d now%s)',
-                    pl.name, stop.station, which, w.to.where, at(a.pad.position), a.min, w.item, a.held, go, n, kept), key .. ' ' .. a.min)
+                    pl.name, stop.station, which, w.to.where, at(a.pad.position), a.min, label(w), a.held, go, n, kept), key .. ' ' .. a.min)
                 end
               end
             end
           end
         end
-        -- its cargo pods with the item since the watch was set: received by a pad, or landed with no pad; (AB6) on
-        -- another planet, a diversion
+        -- (AB6) its cargo pods with the item since the watch was set received by a pad, or landed, on another planet: a
+        -- diversion. (QJ1) At the destination the landed stage comes from the pods the watch followed (landed below), the
+        -- same arrivals received counts, so the two always agree.
         local seen_div = {}
         for _, r in ipairs(api.freight and try(function() return api.freight.receipts_since(pl, w.start) end) or {}) do
-          local n2 = r.cargo and r.cargo[w.item]
+          local n2 = amount(r, w.item, w.quality)
           local onto = r.dest and r.dest.surface or r.stop
           if n2 and n2 > 0 and onto and onto ~= w.to.where and (r.kind == 'received' or r.kind == 'landed') then
             local key = r.tick .. ' ' .. tostring(r.where)
             seen_div[key] = true
             if not (w.div_seen or {})[key] then
               local ask = ''
-              for _, a in ipairs(r.dest and r.dest.position and pad_asks(force, onto, w.item) or {}) do
+              for _, a in ipairs(r.dest and r.dest.position and pad_asks(force, onto, w.item, w.quality) or {}) do
                 if a.pad.position.x == r.dest.position.x and a.pad.position.y == r.dest.position.y then ask = string.format(', which asks %d of it (holds %d now)', a.min, a.held) end
               end
               local d = {tick=r.tick, count=n2, planet=onto, where=r.where,
-                text=string.format('%d %s %s %s%s, before %s', n2, w.item, r.kind == 'received' and 'received by' or 'landed with no pad:', r.where, ask, w.to.where)}
+                text=string.format('%d %s %s %s%s, before %s', n2, label(w), r.kind == 'received' and 'received by' or 'landed with no pad:', r.where, ask, w.to.where)}
               w.diversions = w.diversions or {}
               w.diversions[#w.diversions+1] = d
               if #w.diversions > 8 then table.remove(w.diversions, 1) end
               w.diverted = (w.diverted or 0) + n2
               -- the running total keeps each line new to the board's repeat filter (alerts_seen: the same text once in REPEAT_SHOWN)
-              push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): diverted: %s; %d of it diverted since the watch was set', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, d.text, w.diverted))
+              push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): diverted: %s; %d of it diverted since the watch was set', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where, d.text, w.diverted))
             end
-          elseif n2 and n2 > 0 and r.dest and r.dest.surface == w.to.where and r.kind == 'received' then
-            seen(w, 'landed', string.format('%d %s received by %s', n2, w.item, r.where), r.tick)
-            w.pad = w.pad or {position=r.dest.position, name=r.dest.pad}
-          elseif n2 and n2 > 0 and r.kind == 'landed' and (not onto or onto == w.to.where) then
-            seen(w, 'landed', string.format('%d %s landed with no pad: %s', n2, w.item, r.where), r.tick)
-            block(w, 'nopad', string.format('a pod with %d %s landed with no pad, %s: robots do not take from it', n2, w.item, r.where))
           end
         end
         w.div_seen = seen_div
       end
+      if w.nopad then block(w, 'nopad', w.nopad) end
       -- the pad's network against the consumer's
       if w.pad and e and e.valid then
         local s = e.surface
@@ -410,8 +449,8 @@ return function(api)
           local s = try(function() return game.planets[w.from].surface end)
           for _, silo in ipairs(s and api.census_typed and try(function() return api.census_typed(game.forces[w.force], s, 'rocket-silo') end) or {}) do
             local inv = try(function() return silo.get_inventory(defines.inventory.rocket_silo_rocket) end)
-            local n = inv and (try(function() return inv.get_item_count(w.item) end) or 0) or 0
-            if n > 0 then seen(w, 'loaded', string.format('rocket-silo %s on %s has %d %s in its rocket', at(silo.position), w.from, n, w.item), tick); break end
+            local n = inv and count_q(inv, w.item, w.quality) or 0
+            if n > 0 then seen(w, 'loaded', string.format('rocket-silo %s on %s has %d %s in its rocket', at(silo.position), w.from, n, label(w)), tick); break end
           end
           if not w.stages.launched and try(function() return pl.space_location.name end) ~= w.from then
             block(w, 'orbit', string.format('%s is not stopped at %s: a silo there launches to it only while it is', pl.name, w.from))
@@ -419,27 +458,25 @@ return function(api)
         end
         local inc = api.freight and try(function() return api.freight.incoming(pl) end)
         for _, r in ipairs(inc and inc.rows or {}) do
-          local n = r.cargo and r.cargo[w.item]
+          local n = amount(r, w.item, w.quality)
           if n and n > 0 and (not w.from or r.from == w.from) then
-            seen(w, 'launched', string.format('a rocket from %s with %d %s launched to %s', tostring(r.from), n, w.item, pl.name), r.tick or tick)
+            seen(w, 'launched', string.format('a rocket from %s with %d %s launched to %s', tostring(r.from), n, label(w), pl.name), r.tick or tick)
             seen(w, 'in_transit', string.format('its pod %s', r.down and 'coming down onto the platform' or 'rising over ' .. tostring(r.from)), tick)
           end
         end
-        local h = hub_count(pl, w.item)
-        if h > (w.hub_base or 0) then seen(w, 'landed', string.format('%s\'s hub holds %d %s (%d when the watch was set)', pl.name, h, w.item, w.hub_base or 0), tick) end
         if pl.paused then block(w, 'paused', string.format('%s is paused', pl.name)) end
       end
     end
     -- events: a blocker new, a blocker gone, the arrival, the deadline
     w.blocks, w.sigs, w.rsigs = w.blocks or {}, w.sigs or {}, w.rsigs or {}
     for k, text in pairs(w.now_blocks) do
-      if (w.sigs[k] or w.blocks[k]) ~= w.now_sigs[k] then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): blocked: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, text)) end
+      if (w.sigs[k] or w.blocks[k]) ~= w.now_sigs[k] then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): blocked: %s', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where, text)) end
     end
     for k, text in pairs(w.blocks) do
       if not w.now_blocks[k] then push(w, string.format('delivery watch #%d: no longer blocked: %s', w.id, text)) end
     end
     for k, text in pairs(w.now_risks) do
-      if w.rsigs[k] ~= w.now_rsigs[k] then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): at risk: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, text)) end
+      if w.rsigs[k] ~= w.now_rsigs[k] then push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): at risk: %s', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where, text)) end
     end
     w.blocks, w.sigs, w.risks, w.rsigs = w.now_blocks, w.now_sigs, w.now_risks, w.now_rsigs
     w.now_blocks, w.now_sigs, w.now_risks, w.now_rsigs = nil, nil, nil, nil
@@ -469,23 +506,23 @@ return function(api)
       local t = w.stages.received.tick
       w.state = 'received'
       reach(w, tick, 'received')
-      push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): %s, %s; %s; %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where,
+      push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): %s, %s; %s; %s', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where,
         received_text(w), when(w, t), stock_text(w), counting_text(w, tick)))
     elseif w.state == 'open' and tick >= w.deadline then
       w.state = 'late'
-      push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): deadline passed, %s: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where,
+      push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): deadline passed, %s: %s', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where,
         w.from and 'not received from ' .. w.from or 'not reached', M.status(w)))
     end
   end
   -- A watch counting after it ended: the consumer's count, and at its deadline the count ends (the setter told the total).
   function M.count_on(w, tick)
     local e = w.consumer
-    local held = e and e.valid and try(function() return e.get_item_count(w.item) end)
+    local held = e and e.valid and count_q(e, w.item, w.quality)
     if held then M.held(w, held, tick) end
     if (w.received or 0) >= w.count then seen(w, 'received', received_text(w), w.received_tick or tick) end
     if tick >= w.deadline then
       w.counting, w.ended = nil, tick
-      push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): the deadline ended its count: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where, received_text(w)))
+      push(w, string.format('delivery watch #%d (%d %s to %s %s on %s): the deadline ended its count: %s', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where, received_text(w)))
     end
   end
   -- The last confirmed stage, the consumer's count and the blockers in words.
@@ -519,20 +556,20 @@ return function(api)
     for _, text in pairs(w.risks or {}) do rk[#rk+1] = text end
     table.sort(rk)
     local dl = w.deadline - game.tick
-    return {id=w.id, item=w.item, count=w.count, to=w.to, from=w.from, direction=w.direction, setter=w.setter, state=w.state, deadline_tick=w.deadline,
+    return {id=w.id, item=w.item, quality=w.quality, counts=rule(w), count=w.count, to=w.to, from=w.from, direction=w.direction, setter=w.setter, state=w.state, deadline_tick=w.deadline,
       stages=stages, last_confirmed=w.last, blockers=#b > 0 and b or nil, risks=#rk > 0 and rk or nil, at_destination=w.at_destination,
       diversions=w.diversions and #w.diversions > 0 and w.diversions or nil, diverted=w.diverted, arrivals=w.arrivals, held=w.held or w.base, at_start=w.base, carrier=w.carrier,
       carrier_guessed=(w.direction == 'down' and not w.from and w.carrier ~= nil) or nil, carrier_note=w.direction == 'down' and not w.from and w.carrier and string.format('a guess (no from given): the first platform of ours seen holding %s whose schedule stops at %s; its stages and blockers are that platform\'s; received counts the pods from any platform of ours landing here (received.by_platform)',
-        w.item, w.to.where) or nil,
+        label(w), w.to.where) or nil,
       stock={held=w.held or w.base, at_start=w.base, reached=w.stages.reached ~= nil, ends_watch=not w.from, line=string.format('the stock test: the consumer holds %d, %d at the start: %s%s', w.held or w.base, w.base,
         w.stages.reached and string.format('%d more reached', w.count) or string.format('%d more not reached', w.count),
         w.from and string.format('; with from given it does not end the watch (it ends when %d is received from %s)', w.count, w.from) or '')},
       ended_by=w.ended_by, reached_tick=w.reached_tick, counting=w.counting,
       received={count=w.received or 0, pods=w.received_pods or 0, last_tick=w.received_tick, by=w.recv_by, by_platform=w.received_by, from_arrivals=w.received_from and true or nil},
-      line=string.format('delivery watch #%d: %d %s to %s %s on %s, %s; deadline %s%s; %s; stages: %s', w.id, w.count, w.item, w.to.name, at(w.to.position), w.to.where,
+      line=string.format('delivery watch #%d: %d %s to %s %s on %s, %s; deadline %s%s; %s; stages: %s; counts %s', w.id, w.count, label(w), w.to.name, at(w.to.position), w.to.where,
         w.state, dl >= 0 and 'in ' .. secs(dl) or secs(-dl) .. ' ago',
         w.reached_tick and string.format('; ended by %s, %s', w.ended_by == 'stock' and 'the stock test' or 'the received total', counting_text(w, game.tick)) or '',
-        M.status(w), #parts > 0 and table.concat(parts, ', ') or 'none yet')}
+        M.status(w), #parts > 0 and table.concat(parts, ', ') or 'none yet', rule(w))}
   end
   -- delivery_watch: set one (item, count, to, deadline_min, from?), end one (id, clear: true), or read them (none).
   function M.call(p, a)
@@ -556,6 +593,8 @@ return function(api)
       return {watches=rows, lines=lines, note=#rows == 0 and 'no delivery watch; set one with item, count, to {position, surface | platform}, deadline_min' or nil}
     end
     assert(type(a.item) == 'string' and prototypes.item[a.item], 'unknown item: ' .. tostring(a.item))
+    assert(a.quality == nil or (type(a.quality) == 'string' and (not prototypes.quality or prototypes.quality[a.quality])),
+      'quality: a quality name (normal, uncommon, rare, epic, legendary), or item as name@quality; none counts every quality')
     assert(type(a.count) == 'number' and a.count >= 1 and a.count <= 1000000 and a.count == math.floor(a.count), 'count: a whole number 1..1000000')
     assert(type(a.deadline_min) == 'number' and a.deadline_min > 0 and a.deadline_min <= 1440, 'deadline_min: minutes from now, up to 1440')
     assert(type(a.to) == 'table' and type(a.to.position) == 'table', 'to: {position {x, y}, surface (a planet) or platform (a name)}: the consumer, a silo, chest or machine of ours')
@@ -587,12 +626,12 @@ return function(api)
     end
     local where = to_platform or s.name
     st.seq = st.seq + 1
-    local w = {id=st.seq, setter=who, index=p.index, force=p.force.name, item=a.item, count=a.count, from=a.from,
+    local w = {id=st.seq, setter=who, index=p.index, force=p.force.name, item=a.item, quality=a.quality, count=a.count, from=a.from,
       to={name=best.name, position=best.position, where=where, platform=to_platform}, to_platform=to_platform,
       direction=to_platform and 'up' or 'down', consumer=best, start=game.tick, deadline=game.tick + math.floor(a.deadline_min * 3600),
-      base=try(function() return best.get_item_count(a.item) end) or 0, stages={}, state='open', blocks={}, received=0, received_pods=0}
+      base=count_q(best, a.item, a.quality), stages={}, state='open', blocks={}, received=0, received_pods=0}
     recv_info(w)
-    if to_platform then w.hub_base = hub_count(platform_named(p.force, to_platform), a.item) end
+    if to_platform then w.hub_base = hub_count(platform_named(p.force, to_platform), a.item, a.quality) end
     if a.from and platform_named(p.force, a.from) then w.carrier = a.from end
     st.list[#st.list+1] = w
     pcall(M.check, w, game.tick)
@@ -669,8 +708,9 @@ return function(api)
     end
     if not f.watches[w.id] then f.watches[w.id] = w.item; snap(f, game.tick) end
   end
-  local function pod_has(pod, item)
-    return try(function() return pod.valid and pod.get_inventory(defines.inventory.cargo_unit).get_item_count(item) or 0 end) or 0
+  local function pod_has(pod, item, q)
+    local inv = try(function() return pod.valid and pod.get_inventory(defines.inventory.cargo_unit) end)
+    return inv and count_q(inv, item, q) or 0
   end
   -- The pods to follow: down, those freight follows from the carrier's hub; up, the rockets launched to the platform.
   local function register_one(st, w)
@@ -684,16 +724,16 @@ return function(api)
       for _, x in pairs(try(function() return force.platforms end) or {}) do
         local fx = x.valid and api.freight and api.freight.followed and try(function() return api.freight.followed(x) end)
         for _, p in ipairs(fx and fx.down or {}) do
-          if (p.at == w.to.where or x.name == w.carrier) and pod_has(p.pod, w.item) > 0 then follow(st, p.pod, p.unit, w, {platform=x.name, stop=p.at, sent=p.tick}) end
+          if (p.at == w.to.where or x.name == w.carrier) and pod_has(p.pod, w.item, w.quality) > 0 then follow(st, p.pod, p.unit, w, {platform=x.name, stop=p.at, sent=p.tick}) end
         end
       end
     elseif fol and w.direction == 'down' then
       for _, p in ipairs(fol.down) do
-        if pod_has(p.pod, w.item) > 0 then follow(st, p.pod, p.unit, w, {platform=pl.name, stop=p.at, sent=p.tick}) end
+        if pod_has(p.pod, w.item, w.quality) > 0 then follow(st, p.pod, p.unit, w, {platform=pl.name, stop=p.at, sent=p.tick}) end
       end
     elseif fol then
       for _, p in ipairs(fol.up) do
-        if pod_has(p.pod, w.item) > 0 and (not w.from or p.from == w.from) then
+        if pod_has(p.pod, w.item, w.quality) > 0 and (not w.from or p.from == w.from) then
           follow(st, p.pod, try(function() return p.pod.unit_number end), w, {rocket=true, planet=p.from, silo=p.silo, launched=p.tick, up=p.up, platform=pl.name})
         end
       end
@@ -741,16 +781,32 @@ return function(api)
       local item = f.watches[w.id]
       if item then
         local sp = spoils(item)
-        local stacks = last.items and last.items[item] or {}
+        -- (QJ1) the pod's stacks by quality (every one listed); the watch counts its quality, or every quality
+        local all = last.items and last.items[item] or {}
+        local stacks, by_q, other = {}, {}, 0
+        for _, x in ipairs(all) do
+          local q = qname(x.quality)
+          by_q[q] = (by_q[q] or 0) + x.count
+          if not w.quality or q == w.quality then stacks[#stacks+1] = x else other = other + x.count end
+        end
         local n, b = buckets(stacks, sp)
         if n > 0 then
-          local dn, db = buckets(item_stacks(inv, item), sp)
+          local dest_stacks = {}
+          for _, x in ipairs(item_stacks(inv, item)) do if not w.quality or qname(x.quality) == w.quality then dest_stacks[#dest_stacks+1] = x end end
+          local dn, db = buckets(dest_stacks, sp)
           local per = {}
-          for i, x in ipairs(stacks) do per[i] = {count=x.count, quality=x.quality, spoil_percent=sp and math.floor(x.spoil * 1000 + 0.5) / 10 or nil} end
+          for i, x in ipairs(all) do per[i] = {count=x.count, quality=x.quality, spoil_percent=sp and math.floor(x.spoil * 1000 + 0.5) / 10 or nil} end
+          local qparts = {}
+          for _, q in ipairs(qualities()) do if by_q[q] then qparts[#qparts+1] = q .. ' ' .. by_q[q] end end
+          for q, c in pairs(by_q) do local listed = false for _, x in ipairs(qualities()) do if x == q then listed = true end end if not listed then qparts[#qparts+1] = q .. ' ' .. c end end
           local a = {tick=tick, pod=f.unit, from=from, platform=src.platform, stop=src.stop, rocket=src.rocket and {planet=src.planet, silo=src.silo, launched=src.launched, up=src.up} or nil,
-            where=where, count=n, spoil=b, stacks=per, read_tick=last.tick, dest_count=dn, dest_spoil=db}
-          a.text = string.format('pod %s from %s, received by %s at tick %d: %d %s (%s; the pod\'s last read, %s before); %s held %d of it on that tick (%s)',
-            tostring(f.unit), from, where, tick, n, item, btext(b), secs(tick - (last.tick or tick)), where, dn, btext(db))
+            where=where, count=n, by_quality=by_q, counted_quality=w.quality or 'every quality', spoil=b, stacks=per, read_tick=last.tick, dest_count=dn, dest_spoil=db}
+          -- the qualities in words when the watch names one or the pod holds any but normal (by_quality always)
+          local plain = not w.quality and #qparts == 1 and by_q.normal ~= nil
+          a.text = string.format('pod %s from %s, received by %s at tick %d: %d %s (%s%s; the pod\'s last read, %s before); %s held %d of it on that tick (%s)',
+            tostring(f.unit), from, where, tick, n, label(w),
+            plain and '' or table.concat(qparts, ', ') .. (other > 0 and string.format(', %d of other qualities not counted', other) or '') .. '; ',
+            btext(b), secs(tick - (last.tick or tick)), where, dn, btext(db))
           w.arrivals = w.arrivals or {}
           w.arrivals[#w.arrivals+1] = a
           if #w.arrivals > ARRIVALS then table.remove(w.arrivals, 1) end
@@ -772,12 +828,27 @@ return function(api)
             local from_pl = src.platform or (src.rocket and src.planet) or '?'
             w.received_by = w.received_by or {}
             w.received_by[from_pl] = (w.received_by[from_pl] or 0) + n
-            if w.direction == 'down' and not w.from then seen(w, 'landed', string.format('%d %s received by %s (from %s)', n, item, where, from_pl), tick) end
+          end
+          -- (QJ1) the landed stage from this arrival: the same pod, count and quality rule as received
+          local dest_s = station and try(function() return station.surface.name end) or last.surface
+          -- the source named only with no from given, as received's line names platforms
+          local from_txt = not w.from and ' (from ' .. (src.platform or (src.rocket and src.planet) or '?') .. ')' or ''
+          if w.direction == 'up' and counted then
+            seen(w, 'landed', string.format('%d %s received by %s%s', n, label(w), where, from_txt), tick)
+          elseif w.direction == 'down' and dest_s == w.to.where then
+            if station then
+              seen(w, 'landed', string.format('%d %s received by %s%s%s', n, label(w), where, from_txt,
+                counted and '' or ': not counted as received (not ' .. tostring(w.recv_by) .. ')'), tick)
+              w.pad = w.pad or {position={x=station.position.x, y=station.position.y}, name=station.name}
+            else
+              seen(w, 'landed', string.format('%d %s landed with no pad: %s%s', n, label(w), where, from_txt), tick)
+              w.nopad = string.format('a pod with %d %s landed with no pad, %s: robots do not take from it', n, label(w), where)
+            end
           end
           push(w, string.format('delivery watch #%d: %s%s', w.id, a.text, counted and '; ' .. received_text(w) or ''))
           if counted and w.received >= w.count and (w.state == 'open' or w.state == 'late') then
             local e = w.consumer
-            local held = e and e.valid and try(function() return e.get_item_count(item) end)
+            local held = e and e.valid and count_q(e, item, w.quality)
             if held then M.held(w, held, tick) end
             seen(w, 'received', received_text(w), tick)
             M.finish(w, tick)
@@ -841,10 +912,11 @@ return function(api)
     h.delivwatch_seen = st.eseq
     return #out > 0 and out or nil
   end
-  M.schema = {delivery_watch = {item='an item name: set a watch (with count, to, deadline_min)', count='how many the consumer must receive (1..1000000)',
+  M.schema = {delivery_watch = {item='an item name: set a watch (with count, to, deadline_min); or name@quality (thruster@legendary)',
+    quality='optional quality name: count that quality only; none: every quality (the row\'s counts says which). Received, by_platform, arrivals, the landed stage, the stock test, the hub and silo reads all count by it; each arrival lists its pod\'s stacks by quality (by_quality)', count='how many the consumer must receive (1..1000000)',
     to='{position {x, y}, surface (a planet; default yours) | platform (a name)}: the consumer, a silo, chest or machine of ours within 2 tiles of position, in a chunk our force has charted',
     deadline_min='minutes from now (up to 1440)', from='optional: the platform that carries it down (only its pods count), or the planet whose silos launch it up; none, down: the pods of any platform of ours sent down at the consumer\'s planet count',
     id='with clear: true, the watch to end; alone, read that watch', clear='true, with id: end it',
-    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, received: the received total reached count (with from, the only end: the pods from that source), reached: no from, and the consumer was seen holding count more than at the start first), ended_by (stock or received), reached_tick, counting (true: ended before its deadline and still counting pods until it: later pods add to received and by_platform), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (its cargo pod received by a landing pad, which, or landed with no pad; up: the hub holds more of it), network (the pad\'s logistic network and the consumer\'s), received (the received total reached count), reached (the consumer holds count more than at the start)), last_confirmed, at_destination (down, the carrier stopped at the planet of the destination with the item, paused or not: {sends (what its hub sends down now by its sections for that planet and the pads\' ask less what they hold), held, asked, keep, line}; sends 0 is a blocker naming why), blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused away from the destination (stopped there paused, its hub sends pods down all the same: at_destination) or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), arrivals [{tick, pod, from, platform, stop, rocket {planet, silo, launched}, where, count, spoil {\'0-25%\'=n, ...} (for an item that spoils: the count by how spoiled each stack is), stacks [{count, quality, spoil_percent}], read_tick, dest_count, dest_spoil, text}] (each pod with the item from the carrier\'s hub, or each rocket with it launched to the platform, on the tick it was gone: what it held at its last read, read every tick over its destination, and what the pad, hub or container held of it on that tick, before robots take from it; the last 16), held, at_start (the stock test: held now and at the start), received {count, pods, last_tick, by, from_arrivals} (a running total since the watch was set of the pods the consumer received: a landing pad, the pods it received; a platform\'s consumer, the pods its hub received; a chest, silo or machine on a planet, the pods received by a landing pad in its logistic network on the tick each landed, which robots carry on; only the pods the watch followed: with from, that platform\'s; with none, every platform\'s sent down at the consumer\'s planet; by_platform: the count from each platform; from_arrivals: a watch set before the total was kept, counted from its arrivals), stock {held, at_start, reached, ends_watch (false with from: the stock test never ends such a watch), line} (the stock test, apart from received), carrier (from, or with none a guess: carrier_guessed, carrier_note; its stages and blockers are that platform\'s), line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, each pod received (with the received total), a blocker gone, the deadline passed while not reached (with the last confirmed stage, the received total and the blocker) and the end: received (the total, pods, the last pod\'s tick, and the stock test apart) or reached; a watch is kept 10 minutes after it ends'}}
+    returns='set: watch, line; none: watches (yours and the team\'s) and lines. A watch row: {id, item, quality, counts (the quality rule: that quality only, or every quality), count, to {name, position, where}, from, direction (down: the consumer on a planet; up: aboard a platform), setter, state (open, late: past its deadline, received: the received total reached count (with from, the only end: the pods from that source), reached: no from, and the consumer was seen holding count more than at the start first), ended_by (stock or received), reached_tick, counting (true: ended before its deadline and still counting pods until it: later pods add to received and by_platform), deadline_tick, stages [{stage, tick, text}] (each first seen, in order: loaded (a platform\'s hub holds it; up: a silo of from with it in its rocket), launched (up: a rocket with it launched to the platform), departed (down: that platform flying), in_transit (flying to the consumer\'s planet; up: its pod on the way), arrived (stopped there), landed (a pod the watch followed received by a landing pad on that planet, which, or landed with no pad; up: received by the hub; the same arrivals received counts), network (the pad\'s logistic network and the consumer\'s), received (the received total reached count), reached (the consumer holds count more than at the start)), last_confirmed, at_destination (down, the carrier stopped at the planet of the destination with the item, paused or not: {sends (what its hub sends down now by its sections for that planet and the pads\' ask less what they hold), held, asked, keep, line}; sends 0 is a blocker naming why), blockers (stopped before the destination at a planet whose landing pad asks the item: the pad, its request and count, which stop; the pad\'s network not the consumer\'s or the consumer in none, a pod landed with no pad, stopped there with it while no landing pad there has room for it or there is none, the platform paused away from the destination (stopped there paused, its hub sends pods down all the same: at_destination) or its schedule not stopping there, up: not stopped at from, a requester or buffer chest asking none of it, the consumer gone), risks (down: a landing pad asking the item on a planet the platform stops at before the destination, while the hub holds it and its own request does not keep it all), diversions [{tick, count, planet, where, text}] (pods of it received by a pad or landed on another planet) and diverted (their sum), arrivals [{tick, pod, from, platform, stop, rocket {planet, silo, launched}, where, count, spoil {\'0-25%\'=n, ...} (for an item that spoils: the count by how spoiled each stack is), by_quality {quality=count} (every stack of the pod), counted_quality, stacks [{count, quality, spoil_percent}] (every quality; count: the watch\'s quality rule), read_tick, dest_count, dest_spoil, text}] (each pod with the item from the carrier\'s hub, or each rocket with it launched to the platform, on the tick it was gone: what it held at its last read, read every tick over its destination, and what the pad, hub or container held of it on that tick, before robots take from it; the last 16), held, at_start (the stock test: held now and at the start), received {count, pods, last_tick, by, from_arrivals} (a running total since the watch was set of the pods the consumer received: a landing pad, the pods it received; a platform\'s consumer, the pods its hub received; a chest, silo or machine on a planet, the pods received by a landing pad in its logistic network on the tick each landed, which robots carry on; only the pods the watch followed: with from, that platform\'s; with none, every platform\'s sent down at the consumer\'s planet; by_platform: the count from each platform; from_arrivals: a watch set before the total was kept, counted from its arrivals), stock {held, at_start, reached, ends_watch (false with from: the stock test never ends such a watch), line} (the stock test, apart from received), carrier (from, or with none a guess: carrier_guessed, carrier_note; its stages and blockers are that platform\'s), line}. Read once a second, 4 watches a pass; at most 16 open a force. The setter hears in team.alerts each blocker and risk once, each diversion, each pod received (with the received total), a blocker gone, the deadline passed while not reached (with the last confirmed stage, the received total and the blocker) and the end: received (the total, pods, the last pod\'s tick, and the stock test apart) or reached; a watch is kept 10 minutes after it ends'}}
   return M
 end
