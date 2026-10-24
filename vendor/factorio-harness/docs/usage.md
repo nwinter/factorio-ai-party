@@ -13638,3 +13638,26 @@ Fixed besides gates:
   platform as surface (...): no platform of ours is named X". freight_audit, pods, delivery_watch and build refuse it
   with what reads a platform there. tells: `after` is `since`; `unread`, `seq` and `from` are refused naming since.
 - Test: tests/d24_batch154.lua (each part fails on main).
+## d24 batch161 QD1 (eng/d20-batch161): the asteroid watch's trajectories by name, the rarest first (Astra #2212)
+- Astra: Probe6's watch counted 1 huge-promethium destroyed and 3 big-promethium leaving the view, and its
+  trajectories showed only the first 24 asteroids seen, all common, so the rare encounter could not be found.
+- `platform_defense {platform, asteroids: true}` (the read, running or done): `trajectories` now covers every tracked
+  asteroid (the first `tracked_cap`, 3000, seen), a page at a time, each row: `name`, `unit`, `first_tick`, `first_s`,
+  `first_position`, `last_tick` (its outcome's tick when destroyed or it hit us, else its last sample), `last_s`,
+  `last_position`, `approach`, `projected`, `assumed_drift`, `outcome`, `by` (the turret that destroyed it), `hit` and
+  `hit_at` (what of ours it hit), `hit_by` [{turret, hits, damage, killed}] (the 3 turrets with most hits on it, from
+  their damage events), `velocity`, and `points` [[tick, x, y]] for the first 24 tracked only: the sampling is as it
+  was (no new tick work), so the rest have their first and last position.
+- Order without a filter: the rarest names first by the watch's own `by_name` seen counts (promethium leads when the
+  watch saw any), then by name, then first seen (then unit). `trajectory_page` {page, pages, per_page, total, returned,
+  from, to, next, filter, order} says it.
+- Read arguments: `asteroid_names` (1..16 names or patterns with `*`, such as `"*promethium*"`; an unknown name or a
+  pattern matching no asteroid prototype is refused with the asteroid names), `trajectory_page` (1..),
+  `trajectory_limit` (1..100, default 24). They are refused with `seconds` (the start). A picked name's asteroids past
+  the cap: `trajectory_untracked` [{name, untracked}] and `trajectory_untracked_lines` ("big-promethium-asteroid: 2 past
+  the 3000 tracked: in by_name (seen, destroyed, hit, left the view), no record or trajectory"); a pick with no tracked
+  asteroid says so in `trajectory_page.line`.
+- A done watch keeps every tracked asteroid's row (`recs` in its job; the per-asteroid working state is dropped as
+  before), so a filter reads a done watch too. A watch that ended before this deploy has only its first 24: its read
+  says so in `trajectory_note`.
+- Test: tests/d24_batch161.lua (fails on main: no trajectory_page).
