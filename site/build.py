@@ -1976,6 +1976,8 @@ def main():
     write("polls/index.html", build_polls())
     if updates_nav():  # the operator's changes, what each asking message said and the operator's replies (CB4)
         data = op_updates.load(UPDATES)
+        for line in op_updates.problems(data):  # built anyway: the operator's live data
+            print("updates:", line, file=sys.stderr)
         hidden = moderation.load(args.runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")
         asks, replies = op_updates.messages(args.runs_dir, op_updates.refs(data["updates"]), clean, keep_line, hidden)
         built = datetime.datetime.now(op_updates.PACIFIC).replace(tzinfo=None)
