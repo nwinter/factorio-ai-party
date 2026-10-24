@@ -13887,6 +13887,22 @@ Fixed besides gates:
   0.036 ms; spidertron items in our logistic networks, characters and vehicle trunks: 0 (0.11 ms). where_is itself was
   not called on world n (it reads every holder of the surface).
 - Test: tests/d24_batch164.lua (fails on main: where_is spidertron with none stored and two placed gives no `placed`).
+- d24 batch166 cp2: the plain read, `floor: true` and `salvage: N` are jobs too (one runner, platplan.lua KINDS; the
+  reply while one runs is `plain_job`, `floor_job` or `salvage_job`, then the result once with `read`).
+  - On the copy, Asterion, main: the plain read 188-278 ms, `floor` 660-1081 ms (with the scenario's ghosts), `salvage`
+    60 301-308 ms, 2000 768-1003 ms (take-up rounds 438, holes 213, the tile reads 37, the removal play 26).
+  - Same results: main's runtime then the branch's at the same state; 40 of 40 replies field for field (support in
+    every form, floor and its page 2, salvage 60 and 2000 on 3 platforms, the plain read on all 18 platforms).
+  - Factorio's `pairs` gives a table's hash keys in the order they were put in (checked on the copy), and main's floor
+    links, plain-read islands and head-on pairs depend on that order. The jobs keep it in lists: the floor tiles come
+    chunk by chunk, each chunk by column, the order a whole-surface find gives them; the entity ghosts of floor, the
+    tile ghosts and the belts of the plain read are one find each, as before.
+  - salvage's rounds sort the edge tiles across ticks (a merge sort on a number key: farthest first, then row, column);
+    tilecheck.lua's removal play is resumable (removals_start, removals_run; plan_removals runs one to the end).
+  - Asterion on the copy: the plain read 182 ticks, floor 221, salvage 2000 310, support true 480 (2000 units a tick).
+    Slices over 3936 ticks: median 1.8 ms, p95 3.7 ms, p99 12.4 ms. The slices over 10 ms (47) came in runs of
+    consecutive slices, the plain floor reads among them at 20-50 times their usual time.
+  - Test: tests/d24_batch166.lua reads floor, salvage and the plain read 40 units a tick and in one go, the same.
 
 ## d24 batch168
 
@@ -13959,3 +13975,28 @@ Fixed besides gates:
   - The check a guard samples while a queue waits reads only the kept reading: a whole wait_until dispatch as Astra
     (validation, start, one check, reply) 2.4-2.8 ms with a loop, 1.8-2.7 ms without.
 - Test: tests/d24_batch173.lua (fails on main: area refused for platform_ammo_below). tests/d22_batch117.lua unchanged.
+## d24 batch171
+
+- QN1 (Sol 15:09: "Asterion three explosive plants (-5.5,48.5/56.5/64.5) inspect rate 39/min each ... total 117. ...
+  But platform_production explosives at 58041177 says 290 made/min 1m, 186.2/min 10m. ... Does inspect rate omit
+  beacon/force effects, or platform production read broader surface?"). World n 15:20, reads only, one at a time:
+  - Asterion's item statistics for explosives: normal 224 in the last minute, 2722.85 in ten, 305950 in all; uncommon,
+    rare, epic and legendary 0; the plain read and input_counts equal (0.24 ms). No double count in qflow.lua.
+  - The three chemical plants: crafting_speed 1.3 (one speed module 2), effects speed +0.3 and consumption -0.2, no
+    productivity, get_beacons 0; inspect's 39/min each is right (4 s a craft, 2 explosives).
+  - Asterion's 55 crafting machines (1.9 ms to count, 1.6 ms to list): a fourth with the explosives recipe, a
+    cryogenic-plant at (-14.5,56.5): 8 productivity module 3s, both beacons (-13.5,50.5/62.5, two speed module 3s
+    each) in reach, crafting_speed 3.84, productivity +80% (0.1 ms). At full speed 207.4/min; the four together
+    324.4/min. Totals agree: (34784 + 40658 + 47087) crafts x 2 + 17474 x 2 x 1.8 = 307,940 against 305,950 made.
+  - So both reads are right: inspect is one machine at full speed, platform_production every machine on the surface.
+- platform_production {platform, item} now gives `makers` [{entity, quality, position, recipe, speed, productivity,
+  per_min (full speed, craftrate.lua as inspect), status, crafts (products_finished)}], the most first, and
+  `makers_full_per_min`, with a line: "makers: 4 crafting machines on Asterion with a recipe that makes explosives,
+  324.4/min together at full speed (made 224 in the last minute): cryogenic-plant (-14.5,56.5) explosives 207.4/min
+  (speed 3.84, productivity +80%, working); chemical-plant (-5.5,48.5) ...". 12 are named, then "+N more". Without
+  item nothing changes and no machine is read. Its note says made counts every machine on the platform, productivity
+  included. inspect's rate line now reads "(this machine alone, at full speed all the time; ...)".
+- Cost, on a copy of world n's 15:15 autosave (tick 58067412; the copy runs slower than world n), as Sol, 5 calls
+  each: platform_production {Asterion, explosives} main 2.0-2.7 ms, this branch 4.8-6.2 ms (the find of 55 crafting
+  machines, each recipe's products, craftrate for the 4 that make it); {Asterion} without item 10.9-11.6 ms on both.
+- Test: tests/d24_batch171.lua (fails on main: inspect's line, no makers); tests/craftrate.lua takes the new line.

@@ -181,9 +181,10 @@
   not chosen that stand on a tile that would go. The chosen are what stands on the floor: never a rocket or other
   projectile, laser beam, cargo pod or robot passing; `add_for` (beside `place_ghosts_entries`) and `for_entities` name
   the entity (name, unit number, position) each planned tile is for, and how (footprint, tunnel, link). Read only.
-  Support is read as a job across ticks (about 2 ms a tick): while it runs the reply is `support_job` (job, step of
-  steps); the same call reads it, and the plan comes once (`read`: in this call, or the job and its ticks); the same
-  call after that starts a new job; `page` reads the last plan.
+  The plain read, `floor`, `salvage` and `support` are read as jobs across ticks (about 2 ms a tick): while one runs the
+  reply is `plain_job`, `floor_job`, `salvage_job` or `support_job` (job, step of steps); the same call reads it, and
+  the result comes once (`read`: in this call, or the job and its ticks); the same call after that starts a new job;
+  `page` reads the last plan.
   `phases: [{cancel?, remove?, fill?, name?}, ...]` (1..16; tiles as `{x,y}`, an area, `"x0..x1,y0..y1"` or `"x,y"`):
   each phase applied in order to a model of the floor (its tiles, marks and tile ghosts now) and played to stability
   by the hub's rules; per phase `went`, `built`, `waiting` and `unbuilt` (`"(x,y): why"`), and floor cut off (no longer
@@ -211,7 +212,9 @@
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `./shot NAME platform=NAME [at=X,Y]`: a screenshot of a platform by remote view (its hub without `at=`). Its second
   line, as every shot's, says where it was rendered: surface, centre, frame and what of ours stands in it.
-- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
+- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h):
+  what every machine on it made, productivity included. With `item`, `makers`: each crafting machine there whose recipe
+  makes it, at full speed as `inspect` gives it (one machine alone), and their sum.
   `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
