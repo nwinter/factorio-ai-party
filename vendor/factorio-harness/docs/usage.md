@@ -13920,3 +13920,42 @@ Fixed besides gates:
   idle_nudge.py gives the 23 notices recorded in nudges.jsonl at the same seconds, this one 1 (Grok's, at 14:30).
   `--module PATH` replays another idle_nudge.py. It fails on main. tools/test_idle_nudge.py and
   tools/test_idle_nudge_answer.py take the repeat rule and the cover text.
+
+## d24 batch173
+
+- QP1 (#2241, Astra: "Asterion has disconnected left/right rocket loops. platform_ammo_below sums all belts, so a full
+  left reserve can mask right depletion."): wait_until and guards' `platform_ammo_below` take an optional scope; with
+  none the count is the whole platform's, as before.
+  - `area`: one {left_top, right_bottom} (or [[x,y],[x,y]]) aboard, up to 1024x1024: what each place in it holds
+    (turret slots, belts, inserter hands, machine outputs, chests, and the hub when it stands in it).
+  - `loop`: a belt's {x,y}: the belts joined to it end to end, through splitters, undergrounds and linked belts, and
+    through inserters that move items from one belt to another (Asterion's turrets are fed by short belts that
+    inserters fill from a main loop), either way along them; the inserters taking from those belts (their hands)
+    and the ammo turrets those inserters fill.
+  - area or loop, not both; no position or radius. loop on another condition is refused.
+  - The same background pass (ammoreserve.lua, one every 30 s while a check asks) counts each scope beside the whole
+    platform; no second pass. A loop's belts are found before the pass that first needs it: the belt-to-belt inserters a
+    chunk band at a time (as the pass walks), then 200 belts a step, at most 20000; found again when 5 min old at a
+    pass's start. A turret is the loop's when an inserter taking from one of its belts fills it.
+  - saw: "platform Asterion, loop from (16.5,-35.5): 2772 rocket (turrets 132, belts 2638, hands 2) as read 31s ago
+    (ticks ...: 932 belts joined to fast-transport-belt (16.5,-35.5), found 1m49s ago; 37 ammo turrets, 932 belts, 45
+    inserters, 0 machines, 0 chests in it); +0 since the reading before (30s earlier): +0.0/min net (made or brought in
+    less what left); met below N". The change between the newest reading and the one before is a net figure (what
+    was made or brought in less what left), for the whole platform too; a consumption rate apart from refills would
+    need the turrets' shots, not read here.
+  - No belt at a loop's position: "no belt of ours at that position", 0 counted.
+- A copy of world n's 16:19 autosave (tick 58283468), Astra waiting on all three (whole, left, right), count 1:
+  - Whole: 5968 rocket aboard (hub 32, turrets 264, belts 5654, hands 9, machines 9).
+  - Left loop from the turbo belt (-37.5,-17.5): 3149 (turrets 132, belts 3016, hands 1): 966 belts, 41 inserters,
+    34 ammo turrets (13 rocket turrets). Right loop from the turret feed belt (16.5,-35.5): 2772 (turrets 132, belts
+    2638, hands 2): 932 belts, 45 inserters, 37 ammo turrets. Astra's audit: right 2570 belt + 132 turret.
+  - Without the inserter hops a loop from a turret feed belt stopped at its stub (8 and 39 belts, 1 and 3 turrets).
+- Cost on that copy (profile_ticks; the copy runs slower than world n):
+  - ammoreserve.tick over 90 s with both loops: 294.9 ms, 0.055 ms a tick; over 60 s with the whole platform alone:
+    120.6 ms, 0.033 ms a tick.
+  - A pass (about 134 ticks, every 30 s): with both loops 39-50 ms in each of its game seconds (0.7-0.8 ms a tick
+    while it runs); the whole platform alone 25-28 ms a second (0.45 ms a tick).
+  - A loop's find (once per loop every 5 min): 2-9 ms a game second over about 6 s.
+  - The check a guard samples while a queue waits reads only the kept reading: a whole wait_until dispatch as Astra
+    (validation, start, one check, reply) 2.4-2.8 ms with a loop, 1.8-2.7 ms without.
+- Test: tests/d24_batch173.lua (fails on main: area refused for platform_ammo_below). tests/d22_batch117.lua unchanged.
