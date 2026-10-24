@@ -28,6 +28,7 @@ shot each, with one narrator reading each stop's narration. Check a script with
 | `seconds` | no | the length of a stop **without** narration (default 8). Not used when there is a narration |
 | `move` | no | the camera moving within the stop: pan, zoom, a path (below) |
 | `marks` | no | arrows, circles, boxes and labels drawn at map positions over the shot (below) |
+| `subtitles` | no | `true` (default): the narration as captions; `false`; `"top"` (below) |
 
 ### target
 
@@ -94,6 +95,17 @@ number counts from the end), `color` (`orange` default, `yellow`, `red`, `green`
   director frames it at run time).
 - Text is kept inside the camera; long text near an edge is moved in.
 - An urgent event (an attack) can still put a small inset window over the top right of the camera.
+
+## Subtitles
+
+The narration is shown as captions in the camera while the narrator reads it, a phrase at a time (one or two
+lines), timed to the clip: `prepare` cuts the narration at its punctuation and puts each break on the narrator's
+pause there. Write punctuation where the narrator should breathe; a clause longer than about 84 characters is cut at
+words. The stop's caption stays as the shot's label in the bar under the camera.
+
+`"subtitles": false` turns them off for a stop (the narrator's caption box shows instead), `"top"` puts them at the
+top of the camera (a stop playing an old clip, whose own speech bubbles sit low). `tour.py run --no-subtitles` turns
+them off for the whole tour.
 
 ## Timing
 

@@ -3,7 +3,9 @@ narration subtitles on the screen as we go"): marks at map positions, the narrat
 posts one entry a stop ahead of its cut; the page (static/tourlay.js) draws the entry whose time it is, in the camera
 hole, from the snapshot's `tour`.
 
-POST /tour/overlay {id, cut, until, length, view {surface, position {x, y}, zoom, move?}, marks?, subs?, clip?}:
+POST /tour/overlay {id, cut, until, length, view {surface, position {x, y}, zoom, move?}, marks?, subs?, subs_at?,
+subs_pos?, clip?} (subs: the narration's captions [{t0, t1, text}], seconds from subs_at, the narration's moment;
+subs_pos bottom or top):
 times are epoch seconds (until: the entry's last moment; the next stop's entry takes over at its own cut), length the
 stop's seconds ("end" in a mark's times); marks' and subs' from_s/to_s are seconds from the cut (the page takes the look's `aired` for the cut
 when the look on air has this id). DELETE /tour/overlay ends them all. At most KEEP entries, each gone at its until.
@@ -79,6 +81,24 @@ def check_marks(marks):
     return [check_mark(m, i) for i, m in enumerate(marks)]
 
 
+def check_subs(subs, at, pos, cut):
+    """(CK4) The narration's captions: [{t0, t1, text}] in seconds from `at` (the narration's moment, epoch)."""
+    if not isinstance(subs, list) or len(subs) > 300:
+        raise ValueError("subs is a list of at most 300 {t0, t1, text}")
+    out = []
+    for i, c in enumerate(subs):
+        if not isinstance(c, dict) or not str(c.get("text") or "").strip():
+            raise ValueError(f"subs {i + 1}: {{t0, t1, text}}")
+        t0, t1 = _num(c.get("t0"), f"subs {i + 1} t0", 0, 900), _num(c.get("t1"), f"subs {i + 1} t1", 0, 900)
+        out.append({"t0": round(t0, 2), "t1": round(max(t0, t1), 2), "text": " ".join(str(c["text"]).split())[:200]})
+    at = _num(at, "subs_at")
+    if not cut - 5 <= at <= cut + 60:
+        raise ValueError("subs_at is the narration's moment, epoch seconds near the cut")
+    if pos not in ("bottom", "top"):
+        raise ValueError("subs_pos is bottom or top")
+    return {"subs": out, "subs_at": round(at, 3), "subs_pos": pos}
+
+
 def mark_times(m, length):
     """(from, to) in seconds from the cut over a stop of `length` s ("end" and negatives count from its end)."""
     def when(v, default):
@@ -110,9 +130,10 @@ class TourOverlay:
             length = _num(body.get("length", until - cut), "length", 0, 900)
             entry = {"id": str(body["id"])[:80], "cut": round(cut, 3), "until": round(until, 3),
                      "length": round(length, 3), "view": view, "marks": check_marks(body.get("marks"))}
-            for k in ("subs", "clip"):  # (CK4, CK5: tour.py checks them)
-                if body.get(k) is not None:
-                    entry[k] = body[k]
+            if body.get("subs"):
+                entry.update(check_subs(body["subs"], body.get("subs_at"), body.get("subs_pos", "bottom"), cut))
+            if body.get("clip") is not None:  # (CK5: tour.py checks it)
+                entry["clip"] = body["clip"]
         except ValueError as x:
             return 400, {"error": str(x)}
         self.entries = [e for e in self.entries if e["id"] != entry["id"] and e["until"] > now][-(KEEP - 1):] + [entry]

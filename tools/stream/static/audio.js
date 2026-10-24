@@ -214,7 +214,7 @@
   }
 
   function caption(clip) {
-    if (!CAPTIONS) return null;
+    if (!CAPTIONS || clip.caption === false) return null;  // (CK4) the tour's own captions show it
     const cap = document.createElement("div");
     cap.className = "cap " + clip.channel;
     // portraits: hosts from casters.js (eng/art), agents from their profile avatar (avatar.js); none without them

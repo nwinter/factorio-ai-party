@@ -10,7 +10,9 @@
    look extended (no new chart read) on a long stop; a ship by platform; an agent line waiting holds a stop its length;
    a refused stop is skipped and the next takes its cut; stop takes back a narration not played and clears the look;
    the hosts are hushed all the while; the log says what aired when.
-5. (CK2) moves: to, zoom, path and lists become camera moves over the stop (times from the cut, "end" and negative
+5. (CK3, CK4) the overlay: marks with the view the look gave; captions timed from the narration's moment (the
+   narrator's own caption box left out then), off by stop or by run.
+6. (CK2) moves: to, zoom, path and lists become camera moves over the stop (times from the cut, "end" and negative
    counted from the end, holds share the time); a whole ship pans on its own and refuses a move with no spot to start
    from; a bad move makes the stop invalid; the look carries it (dry-run prints it).
 6. caster.py: the hush file keeps the hosts quiet (no lines, no reactions, the gap starts again after it).
@@ -80,6 +82,12 @@ def prepare_clips():
         fake = FakeTTS()
         clips, err = tour.render_all(rows, d, "el-brian", None, None, speak=fake)
         assert err is None and set(clips) == {"a", "b"} and len(fake.said) == 2
+        assert clips["a"]["subs_v"] == tour.SUBS_V and clips["a"]["subs"][0]["text"] == "Where it began."  # (CK4)
+        # a kept clip made before captions gets them, with nothing rendered
+        old = {k: {kk: vv for kk, vv in v.items() if kk not in ("subs", "subs_v")} for k, v in clips.items()}
+        fake0 = FakeTTS()
+        again, _ = tour.render_all(rows, d, "el-brian", None, {"voice": "el-brian", "clips": old}, speak=fake0)
+        assert not fake0.said and again["b"]["subs"][0]["text"] == "A ship."
         m = {"voice": "el-brian", "clips": clips}
         assert tour.clip_for(m, d, rows[0][1])["duration"] == 1.5
         # unchanged: nothing rendered again; one narration edited: that clip alone
@@ -349,7 +357,8 @@ def overlays():
         ship = dict(SHIP, marks=[{"type": "arrow", "at": {"x": 0, "y": 10}, "from": "e"}])
         t, svc, clock, rows = tour_with(d, [dict(LOOK, marks=marks, move={"zoom": 1}), LONG, ship], clip_s=6.0)
         t.run(rows)
-        a, s = [o for o in svc.overlays if o]
+        by = {o["id"]: o for o in svc.overlays if o}
+        a, c, s = by["a"], by["c"], by["b"]
         log = [json.loads(x) for x in open(t.log_path)]
         cut_a = next(r["cut"] for r in log if r.get("id") == "a")
         assert a["id"] == "a" and a["cut"] == cut_a and a["length"] == tour.LEAD_S + 6 + tour.TAIL_S
@@ -358,7 +367,20 @@ def overlays():
         assert a["until"] == cut_a + a["length"] + tour.LOOK_SPARE_S
         assert s["view"] == {"surface": "platform-1", "position": {"x": 0, "y": -3}, "zoom": 0.6}, "a ship: the frame given"
         assert svc.overlays[-1] is None, "the end clears the overlay"
-        assert len([o for o in svc.overlays if o]) == 2, "a stop with no marks posts none"
+        # (CK4) captions: every narrated stop's, timed from its narration's moment; the narrator's own box left out
+        assert c["marks"] == [] and c["subs"] and c["subs"][0]["text"] == "Slow." and c["subs_pos"] == "bottom"
+        narr = {x["tour"]: x for x in svc.clips}
+        assert all(o["subs_at"] == narr[i]["at"] for i, o in by.items())
+        assert all(x["caption"] is False for x in svc.clips)
+    with tempfile.TemporaryDirectory() as d:  # subtitles false (a stop) or off (the run): no captions, the box back
+        t, svc, clock, rows = tour_with(d, [dict(LOOK, subtitles=False), dict(LONG, subtitles="top")], clip_s=6.0)
+        t.run(rows)
+        assert [o["id"] for o in svc.overlays if o] == ["c"] and svc.overlays[0]["subs_pos"] == "top"
+        assert [x["caption"] for x in svc.clips] == [True, False]
+        t, svc, clock, rows = tour_with(d, [LOOK], clip_s=6.0)
+        t.subtitles = False
+        t.run(rows)
+        assert not [o for o in svc.overlays if o] and svc.clips[0]["caption"] is True
     why = [w for _, x, w in tour.checked([dict(LOOK, marks=[{"type": "star", "at": {"x": 0, "y": 0}}])])]
     assert why == ["mark 1: type must be one of arrow, circle, box, label"], why
 

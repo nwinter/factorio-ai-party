@@ -63,6 +63,15 @@ def store():
     assert o.post({"id": "x"}, 1000)[0] == 400 and o.post(body("x", 2000, 2010), 1000)[0] == 400
     assert o.post(dict(body("x", 1000, 1030), marks=[{"type": "nope"}]), 1000)[1]["error"].startswith("mark 1:")
     assert o.post(dict(body("x", 1000, 1030), view=dict(view, move={"segments": []})), 1000)[0] == 400
+    # (CK4) captions: kept with their moment and place; bad ones refused
+    subs = [{"t0": 0, "t1": 2.5, "text": " Where  it began. "}, {"t0": 2.5, "t1": 4, "text": "Shift one."}]
+    code, r = o.post(dict(body("s", 1000, 1030), subs=subs, subs_at=1000.8), 1000)
+    e = o.public(1000)[-1]
+    assert code == 200 and e["subs"][0] == {"t0": 0.0, "t1": 2.5, "text": "Where it began."} and e["subs_at"] == 1000.8
+    assert e["subs_pos"] == "bottom"
+    assert o.post(dict(body("s", 1000, 1030), subs=subs, subs_at=1000.8, subs_pos="side"), 1000)[0] == 400
+    assert o.post(dict(body("s", 1000, 1030), subs=subs, subs_at=2000), 1000)[0] == 400
+    assert o.post(dict(body("s", 1000, 1030), subs=[{"t0": 0, "t1": 1}], subs_at=1000.8), 1000)[0] == 400
     o.post(body("x", 1000, 1030), 1000)
     assert o.clear() == (200, {"tour": None}) and o.public(1001) is None
 

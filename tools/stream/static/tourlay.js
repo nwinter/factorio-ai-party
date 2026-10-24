@@ -5,6 +5,8 @@
 // (1 tile = 32 * zoom px at 1080 lines; mapframes.py), cropped to the hole's shape about its centre, so a tile is
 // 32 * zoom * (hole height / 1080) px (a hole wider than 16:9: width / 1920); the camera's centre and zoom are the
 // view's, or where its move is now (camerapath.py's math, as cameras.lua plays it). ?tourlay=0 turns it off.
+// (CK4) The narration's captions (subs: {t0, t1, text} from subs_at, the narration's moment on the page's audio
+// clock) in a band at the hole's bottom (above the bar) or top (subs_pos top: an old clip has its own bubbles low).
 (() => {
   const params = new URLSearchParams(location.search);
   const NS = "http://www.w3.org/2000/svg";
@@ -110,13 +112,26 @@
     }
     return g;
   }
-  window.PogTourLay = { moveAt, along, ease, active, viewAt, toScreen, pxPerTile, markGeom, markTimes };
+  // (CK4) the caption on now: the one whose [t0, t1) holds now - subs_at, or null
+  function captionAt(e, now) {
+    if (!e || !e.subs || e.subs_at == null) return null;
+    const t = now - e.subs_at;
+    return e.subs.find((c) => c.t0 <= t && t < c.t1) || null;
+  }
+  window.PogTourLay = { moveAt, along, ease, active, viewAt, toScreen, pxPerTile, markGeom, markTimes, captionAt };
   if (params.get("tourlay") === "0" || typeof document === "undefined" || !document.createElementNS) return;
 
   // ---- drawing
   const style = document.createElement("style");
   style.textContent = `
     svg.tour-marks { position: absolute; pointer-events: none; overflow: hidden; z-index: 3; }
+    .tour-subs { position: absolute; left: 6%; right: 6%; display: flex; justify-content: center; pointer-events: none;
+      z-index: 4; transition: opacity 150ms ease; opacity: 0; }
+    .tour-subs.on { opacity: 1; }
+    .tour-subs.bottom { bottom: 72px; } .tour-subs.top { top: 64px; }
+    .tour-subs span { max-width: 100%; padding: 6px 16px 8px; border-radius: 3px; background: rgba(20, 20, 20, 0.78);
+      color: #f4f4f4; text-align: center; font: 600 31px/1.25 "Titillium Web", "Segoe UI", system-ui, sans-serif;
+      text-shadow: 0 1px 2px #000; box-shadow: 0 4px 18px rgba(0,0,0,0.5); }
     svg.tour-marks text { font: 600 22px "Titillium Web", "Segoe UI", system-ui, sans-serif; fill: #f2f2f2;
       paint-order: stroke; stroke: rgba(0,0,0,0.85); stroke-width: 4px; stroke-linejoin: round; }`;
   document.head.appendChild(style);
@@ -180,6 +195,24 @@
     }
     return out;
   }
+  let subsBox = null, subsKey = "";
+  function drawSubs(on, live, now) {
+    if (!host) return;
+    if (!subsBox || subsBox.parentNode !== host) {
+      subsBox = document.createElement("div");
+      subsBox.className = "tour-subs bottom";
+      subsBox.append(document.createElement("span"));
+      host.appendChild(subsBox);
+    }
+    const c = live ? captionAt(on.e, now) : null;
+    const key = c ? on.e.id + "|" + c.t0 + "|" + (on.e.subs_pos || "bottom") : "";
+    if (key === subsKey) return;
+    subsKey = key;
+    if (c) {
+      subsBox.className = "tour-subs on " + (on.e.subs_pos === "top" ? "top" : "bottom");
+      subsBox.firstChild.textContent = c.text;
+    } else subsBox.classList.remove("on");
+  }
   // the stop's length (for "end" and negative times): from its cut to its until less the look's spare
   const lengthOf = (e) => (e.length != null ? e.length : e.until - e.cut);
   let shown = "";
@@ -200,6 +233,7 @@
         shown = on.e.id;
       }
     }
+    drawSubs(on, live, now);
     if (window.PogTourLay.onFrame) window.PogTourLay.onFrame(s, now, on);
     // animate while an entry is on (moves and fades); otherwise look again four times a second
     if (on) requestAnimationFrame(frame); else setTimeout(frame, 250);

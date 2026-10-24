@@ -36,6 +36,10 @@ const checks = {
     && T.markGeom({ type: "label", at: { x: 0, y: 0 }, text: "x", from_s: 2 }, 1.9, 20, W, H, v) === null,
   "the entry on now: the newer one from its aired": T.active(s, 120.1).e.id === "a" && T.active(s, 120.3).e.id === "b"
     && near(T.active(s, 121).start, 120.2) && T.active(s, 151) === null,
+  "a caption shows from its t0 to its t1 after the narration's moment": (() => {
+    const e = { subs: [{ t0: 0, t1: 2.5, text: "one" }, { t0: 2.5, t1: 4, text: "two" }], subs_at: 100.8 };
+    return T.captionAt(e, 100.7) === null && T.captionAt(e, 100.8).text === "one" && T.captionAt(e, 103.4).text === "two"
+      && T.captionAt(e, 104.9) === null && T.captionAt({}, 101) === null; })(),
   "a moving view follows its move": (() => { const p = T.viewAt({ view: { move: MOVE } }, 100, 106); return near(p.x, 34.765184); })(),
 };
 let ok = true;

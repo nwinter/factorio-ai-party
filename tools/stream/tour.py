@@ -39,6 +39,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 import tourlay  # noqa: E402
+import subtitles  # noqa: E402
+SUBS_V = 1  # subtitles.py's captions as kept in the manifest; another version is computed again
 
 LOG_DIR = os.path.join(HERE, "logs")
 HUSH_FILE = os.path.join(LOG_DIR, "hosts-hush.json")  # caster.py HUSH_FILE
@@ -112,6 +114,7 @@ def check_stop(stop):
         return None, f"target, seconds, min_seconds or hold_s: {x}"
     return {"id": sid, "target": target, "seconds": max(0.0, secs) if secs is not None else None,
             "move": stop.get("move"),  # (CK2) checked by move_for in checked()
+            "subtitles": stop.get("subtitles", True),  # (CK4) true, false or "top"
             "min_seconds": max(0.0, least), "hold_s": max(0.0, min(30.0, hold)),
             "caption": " ".join(str(stop.get("caption") or "").split())[:80],
             "narration": " ".join(str(stop.get("narration") or "").split())}, None
@@ -184,6 +187,8 @@ def checked(stops):
         s, why = check_stop(raw)
         if s and s["id"] in seen:
             s, why = None, f"id {s['id']!r} repeated"
+        if s and s["subtitles"] not in (True, False, "top", "bottom"):
+            s, why = None, "subtitles is true, false, \"top\" or \"bottom\""
         if s:
             try:
                 move_for(s, 60.0)
@@ -274,6 +279,8 @@ def render_all(rows, out, voice, tts, manifest, speak=None):
         prev = old.get(s["id"])
         if prev and prev.get("hash") == h and os.path.exists(path):
             clips[s["id"]] = prev
+            if prev.get("subs_v") != SUBS_V:  # (CK4) a clip made before its captions: timed now, nothing rendered
+                prev.update(subs=subtitles.for_clip(path, s["narration"], prev["duration"]), subs_v=SUBS_V)
             continue
         try:
             if speak:
@@ -290,6 +297,7 @@ def render_all(rows, out, voice, tts, manifest, speak=None):
         os.replace(path + ".tmp", path)
         clips[s["id"]] = {"file": name, "hash": h, "duration": round(float(dur or V.duration(audio)), 2),
                           "chars": len(s["narration"]), "provider": prov}
+        clips[s["id"]].update(subs=subtitles.for_clip(path, s["narration"], clips[s["id"]]["duration"]), subs_v=SUBS_V)
         log(f"[prepare] {s['id']}: {clips[s['id']]['duration']:.1f} s ({len(s['narration'].split())} words, {prov})")
     return clips, None
 
@@ -470,11 +478,11 @@ def platforms(feed):
 
 class Tour:
     def __init__(self, svc, rows, manifest, out, log_path, hush_file=HUSH_FILE, stop_file=STOP_FILE,
-                 clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True):
+                 clock=time.time, sleep=time.sleep, lead=LEAD_S, tail=TAIL_S, agent_gaps=True, subtitles=True):
         self.svc, self.rows, self.manifest, self.out = svc, rows, manifest, out
         self.log_path, self.hush_file, self.stop_file = log_path, hush_file, stop_file
         self.now, self.sleep = clock, sleep
-        self.lead, self.tail, self.agent_gaps = lead, tail, agent_gaps
+        self.lead, self.tail, self.agent_gaps, self.subtitles = lead, tail, agent_gaps, subtitles
         self.stopped = False
         self.drift = 0.0  # aired - cut_at asked, smoothed: later cuts are asked this much sooner
         self.cur = None  # the stop holding the camera: {id, look_until, need_until}
@@ -543,30 +551,46 @@ class Tour:
             self.sleep(min(0.5, max(0.01, t - self.now())))
         return not self.want_stop()
 
-    def overlay(self, s, look, cut, end, length):
-        """(CK3) The stop's marks (and CK4 captions, CK5 clip) for the page, with the view the look reply gave."""
-        body = self.overlay_body(s, look, cut, end, length)
+    def overlay(self, s, look, cut, end, length, clip=None, narr_at=None):
+        """(CK3) The stop's marks, (CK4) captions and (CK5) clip for the page, with the view the look reply gave.
+        -> whether the page has captions for it (the narrator's own caption box is left out then)."""
+        body = self.overlay_body(s, look, cut, end, length, clip, narr_at)
         if not body:
-            return
+            return False
         code, r = self.svc.call("POST", "/tour/overlay", body)
         if code != 200:
             log(f"[tour] {s['id']}: the overlay was refused (HTTP {code}: {(r or {}).get('error')})")
+            return False
+        return bool(body.get("subs"))
 
-    def overlay_body(self, s, look, cut, end, length):
-        if not s.get("marks"):
+    def captions(self, s, clip):
+        """(CK4) The clip's captions [{t0, t1, text}] (the manifest's, or timed now for an older one); [] when off."""
+        if not clip or not self.subtitles or s.get("subtitles") is False:
+            return []
+        if clip.get("subs_v") != SUBS_V:
+            clip["subs"], clip["subs_v"] = subtitles.for_clip(clip["path"], s["narration"], clip["duration"]), SUBS_V
+        return clip.get("subs") or []
+
+    def overlay_body(self, s, look, cut, end, length, clip=None, narr_at=None):
+        subs = self.captions(s, clip)
+        if not s.get("marks") and not subs:
             return None
         view = {"surface": look.get("surface") or s["target"].get("surface"),
                 "position": look.get("position") or {"x": s["target"].get("x"), "y": s["target"].get("y")},
                 "zoom": look.get("zoom") or s["target"].get("zoom") or 0.75}
         if isinstance(look.get("move"), dict):
             view["move"] = look["move"]
-        return {"id": s["id"], "cut": round(cut, 3), "until": round(end + LOOK_SPARE_S, 3), "length": round(length, 3),
-                "view": view, "marks": s["marks"]}
+        body = {"id": s["id"], "cut": round(cut, 3), "until": round(end + LOOK_SPARE_S, 3), "length": round(length, 3),
+                "view": view, "marks": s.get("marks") or []}
+        if subs:
+            body.update(subs=subs, subs_at=round(narr_at, 3), subs_pos="top" if s.get("subtitles") == "top" else "bottom")
+        return body
 
-    def narrate(self, s, clip, at):
+    def narrate(self, s, clip, at, caption=True):
         with open(clip["path"], "rb") as f:
             audio = f.read()
         meta = {"channel": "narrator", "speaker": "Narrator", "text": s["caption"] or "", "rank": "urgent",
+                "caption": caption,  # (CK4) false: the page shows the narration's own captions instead
                 "duration": clip["duration"], "at": round(at, 3), "expires_in": 30, "tour": s["id"],
                 "voice": self.manifest.get("voice"), "audio_b64": base64.b64encode(audio).decode(),
                 "ctype": "audio/mpeg"}
@@ -662,8 +686,8 @@ class Tour:
                     skipped += 1
                     left -= length
                     continue  # the next stop takes this cut
-                self.overlay(s, r, cut, end, length)
-                cid = self.narrate(s, clip, narr_at) if clip else None
+                subbed = self.overlay(s, r, cut, end, length, clip, narr_at)
+                cid = self.narrate(s, clip, narr_at, caption=not subbed) if clip else None
                 if clip and not cid:
                     log(f"[tour] {s['id']}: the service refused the narration clip")
                 if not self.wait_until(cut):
@@ -777,7 +801,7 @@ def run(a):
     log_path = os.path.join(LOG_DIR, time.strftime("tour-%Y%m%d-%H%M%S.jsonl"))
     with open(RUN_FILE, "w") as f:
         json.dump({"pid": os.getpid(), "script": os.path.abspath(a.script), "started": time.time(), "log": log_path}, f)
-    tour = Tour(svc, rows, m, out, log_path, lead=a.lead, tail=a.tail, agent_gaps=a.agent_gaps)
+    tour = Tour(svc, rows, m, out, log_path, lead=a.lead, tail=a.tail, agent_gaps=a.agent_gaps, subtitles=a.subtitles)
     signal.signal(signal.SIGTERM, lambda *_: setattr(tour, "stopped", True))
     log(f"[tour] {len([r for r in rows if r[1]])} stops in {m.get('voice')}; log {log_path}")
     try:
@@ -834,6 +858,8 @@ def parser():
         if name == "run":
             p.add_argument("--no-agent-gaps", dest="agent_gaps", action="store_false",
                            help="never hold a stop for an agent's line waiting in the queue")
+            p.add_argument("--no-subtitles", dest="subtitles", action="store_false",
+                           help="no narration captions on the camera (the narrator's caption box instead)")
         if name == "prepare":
             p.add_argument("--voice", default=",".join(VOICES),
                            help="narrator voices in order of preference (voices.CATALOG ids); the first that renders "

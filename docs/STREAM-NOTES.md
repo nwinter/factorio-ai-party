@@ -1610,6 +1610,23 @@ Nick (17:30): "get the timing really tight between the shot durations and the me
 - Tests: test_tourlay.py (marks, the store, off the frame, HTTP, the page's geometry in node), test_tour.py
   `overlays`. Deploy: the stream service restart and page refresh (cp1) cover it.
 
+## The tour, version 2: subtitles (2026-10-23, d20 batch128 CK4)
+
+- The narration as timed captions in the camera hole. tools/stream/subtitles.py times them from the text and the
+  clip alone: pieces at punctuation weighed by syllables, the clip's pauses from ffmpeg silencedetect (-35 dB, 0.18
+  s), each piece boundary on the nearest pause in order (within 1.2 s), else its estimate; captions of at most 84
+  characters, a sentence's end (16+ characters) closing one. On the el-brian clips the narrator pauses 0.25-0.45 s
+  at every comma and full stop; a writer's 39 s clip (nauvis-launch) came out as ten captions, each ending on a
+  pause.
+- `prepare` keeps them in the manifest (subs, subs_v; a kept clip gets them with no TTS call); `run` times older
+  manifests' on the spot (ffmpeg, ~0.1 s a clip). The overlay entry carries subs with subs_at, the narration's
+  moment, so they run on the same clock as the page's audio; the narrator clip goes with `caption: false` (audio.js
+  leaves its caption box out; the stop's caption is still the look's label in the bar). static/tourlay.js shows the
+  one on now in a band above the bar (`"top"`: under the hole's top edge, for old clips). `subtitles: false` per stop,
+  `run --no-subtitles` for the tour: the caption box comes back.
+- Tests: test_subtitles.py (pieces, timing, pauses on an ffmpeg-made clip), test_tourlay.py (captions in the store,
+  captionAt in node), test_tour.py (prepare keeps them; run posts them; off). Seen on the mock (overlay_shot.sh).
+
 ## Camera crops after a shift change (2026-10-23, d23 batch124b)
 - Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
 - After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene
