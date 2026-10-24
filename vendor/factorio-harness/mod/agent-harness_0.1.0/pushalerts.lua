@@ -452,7 +452,7 @@ return function(api)
     for _, i in ipairs(takers(e, s, force)) do
       local d = get(i, 'drop_target')
       local inv = d and d.valid and (d.type == 'container' or d.type == 'logistic-container') and invoke(d, 'get_inventory', defines.inventory.chest)
-      if inv and invoke0(inv, 'count_empty_stacks') == 0 then
+      if inv and try(function() return inv.count_empty_stacks(true, false) end) == 0 then
         local list = invoke0(inv, 'get_contents') or {}
         table.sort(list, function(a, b) return a.count > b.count end)
         local parts = {}

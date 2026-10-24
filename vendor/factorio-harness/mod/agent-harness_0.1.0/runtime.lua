@@ -8474,7 +8474,7 @@ function M.recipe_to_hub(e)
   -- What is mid-craft comes back too: one more stack per ingredient.
   local okr,r=pcall(function() return e.get_recipe() end)
   if okr and r and (e.crafting_progress or 0)>0 then for _,ing in ipairs(r.ingredients or {}) do if ing.type~='fluid' then stacks=stacks+1 end end end
-  if inv.count_empty_stacks()<stacks then return nil end
+  if inv.count_empty_stacks(true,false)<stacks then return nil end
   return inv,stacks
 end
 function M.recipe_hub_why(e)
@@ -8482,7 +8482,7 @@ function M.recipe_hub_why(e)
   local hub=pl and pl.hub
   if not (hub and hub.valid) then return nil end
   local okh,inv=pcall(function() return hub.get_inventory(defines.inventory.hub_main) end)
-  return okh and inv and string.format('the hub has %d empty slots, too few for the machine\'s stacks',inv.count_empty_stacks()) or nil
+  return okh and inv and string.format('the hub has %d empty slots under its bar, too few for the machine\'s stacks',inv.count_empty_stacks(true,false)) or nil
 end
 -- The modules a recipe change takes out, as the game does (checked on a private 2.0.77 server, d15: a crusher's two
 -- efficiency modules stay through metallic -> oxide crushing; productivity modules come out for wooden-chest, which

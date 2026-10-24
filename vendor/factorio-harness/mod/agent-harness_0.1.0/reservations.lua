@@ -39,7 +39,7 @@ return function(api)
   local function room(e, item)
     local inv = try(function() return e.get_inventory(defines.inventory.chest) end)
     if not inv then return nil end
-    if (try(function() return inv.count_empty_stacks() end) or 0) > 0 then return true end
+    if (try(function() return inv.count_empty_stacks(true, false) end) or 0) > 0 then return true end
     return (try(function() return inv.can_insert({name=item, count=1}) end)) == true
   end
   function M.read(p, a)
@@ -90,7 +90,7 @@ return function(api)
             parts[#parts+1] = string.format('%s asks %d, holds %d, %d on the way%s', r.name, r.ask, r.held, r.coming, r.full and ' (no room for it: every slot taken)' or '')
             short = short + r.short; full = full or (r.full and r.coming > 0)
           end
-          local free = inv and try(function() return inv.count_empty_stacks() end)
+          local free = inv and try(function() return inv.count_empty_stacks(true, false) end)
           targets[#targets+1] = {short=short, full=full, line=string.format('%s: %s; %s free slot%s', at(e), table.concat(parts, '; '),
             tostring(free or '?'), free == 1 and '' or 's')}
         end

@@ -13630,6 +13630,25 @@ Fixed besides gates:
 - Tests: tests/vehicles.lua's new case (fails on main: "arrived 5.4 tiles short with no distance_left");
   tests/d24_batch158.lua (fails on main: the routing it tests is not there); tools/test_live_check_site.py;
   test_live_check_ground and test_live_check_shore take the harness's texts.
+## d24 batch157 QA1 (eng/d20-batch157): free slots stop at an inventory's bar (Astra #2205)
+- Astra: a 48-slot storage chest in Aquilo's network 348 with bar 10 and one slot used raised logistics_audit storage's
+  free slots by 47 (109 to 156); 9 of them take items.
+- 2.0.77 (read on a copy of world n): `LuaInventory.count_empty_stacks()` counts every empty slot, those past the bar
+  too; `count_empty_stacks(true, false)` (include_filtered, include_bar) counts the empty slots under the bar (32 slots,
+  bar 11, one used: 31 and 9). Chests, logistic chests, cargo wagons, landing pads and a platform hub's main inventory
+  support a bar; robots, inserters and script inserts put nothing past it.
+- logistics_audit storage: `free_slots` (and `usable_free_slots`) under each chest's bar, `physical_free_slots` every
+  empty slot, `chests_with_bar`; a chest with no free slot under its bar counts full; the line says how many slots lie
+  past the bars. Filtered availability as before (a chest takes its filter's item while it has a free slot under the bar).
+- The other reads of a container's free slots count under the bar: requester rows in logistics_audit, deconstruct's
+  storage_free_slots, a full landing pad by the ground-items watch and alerts, inspect's holds (", 1 free under it"
+  after "limited to N"), fullchest's rows in supply (", 9 of 10 usable slots free (bar; 48 slots)"), reservations,
+  shipment's pad free slots (and the pad's bar), pods' pads, trace's chest ends, a full chest by slots and reqchest, the
+  hub's free slots in platform status, endurance, platform supply, silo and rocket_load reads, and the hub check for a
+  machine's stacks. Used-slot counts stay every slot holding items.
+- World n (11:40, main's runtime): chest 34902499 at (20.5,4.5): 48 slots, bar 11, 46 empty, 8 under the bar; network
+  348: 41 storage chests, 154 empty, 116 under the bars (one chest with a bar), 0.19 ms the read.
+- Test: tests/d24_batch157.lua (fails on main: 156 ~= 118).
 ## d24 batch154 (eng/d20-batch154): the batch149 review's bugs 3, 4, 7 and improvements 4-6
 - Bug 3, build blockers (Sonnet 14:44Z: "placement blocked by logistic-robot ..., logistic-robot ..., boompuff"): a
   refused placement lists what in its footprint the game's collision test meets: an entity whose prototype's collision

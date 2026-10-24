@@ -186,7 +186,7 @@ return function(api)
       end
     end
     -- A crusher stopped with its output full while what takes its output drops into a full hub.
-    local free = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main).count_empty_stacks() end)
+    local free = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main).count_empty_stacks(true, false) end)
     for _, e in ipairs(try(function() return s.find_entities_filtered{type='assembling-machine', force=force} end) or {}) do
       if (try(function() return e.prototype.crafting_categories end) or {}).crushing and status(e) == 'full_output' then
         local into_hub = false

@@ -97,7 +97,8 @@ return function(api)
     local holds, other, spoil, slots, empty = {}, 0, 0, nil, nil
     if inv then
       slots = #inv
-      empty = try(function() return inv.count_empty_stacks() end)
+      -- (d24 batch157) free slots under the chest's bar: robots fill no slot past it
+      empty = try(function() return inv.count_empty_stacks(true, false) end)
       for _, c in ipairs(try(function() return inv.get_contents() end) or {}) do
         local nm, q = name_of(c.name), name_of(c.quality) or 'normal'
         holds[#holds+1] = {item=nm, quality=q ~= 'normal' and q or nil, count=c.count, requested=named[nm] or nil}
@@ -159,15 +160,21 @@ return function(api)
   -- filter of that item). Read only; at most ROBOTS robots read.
   -- (world n, 11:15: building a network's robot list costs about 3 ms, then about 3 us a robot here: 2048 read 8.9 ms)
   local ROBOTS = 2048
+  -- (d24 batch157, Astra #2205: a chest with bar 10 counted its 47 empty slots) free slots are those under each
+  -- chest's bar (LuaInventory.count_empty_stacks(true, false): robots and inserters put nothing past it);
+  -- physical_free_slots counts every empty slot, the bar's red slots too.
   function M.storage(p, a, surface, ln)
-    local chests, free, filtered, full = 0, 0, {}, 0
+    local chests, free, filtered, full, physical, barred = 0, 0, {}, 0, 0, 0
     local takers = {any=0, by={}}
     for _, c in ipairs(try(function() return ln.storages end) or {}) do
       if c.valid and c.type == 'logistic-container' then
         chests = chests + 1
         local inv = try(function() return c.get_inventory(defines.inventory.chest) end)
-        local empty = inv and (try(function() return inv.count_empty_stacks() end) or 0) or 0
+        local empty = inv and (try(function() return inv.count_empty_stacks(true, false) end) or 0) or 0
+        local all = inv and (try(function() return inv.count_empty_stacks() end) or empty) or 0
         free = free + empty
+        physical = physical + all
+        if all > empty then barred = barred + 1 end
         if empty == 0 then full = full + 1 end
         local f = try(function() return c.storage_filter end)
         local fname = f and name_of(f.name or f)
@@ -199,11 +206,14 @@ return function(api)
     local fl = {}
     for name, n in pairs(filtered) do fl[#fl+1] = name .. ' ' .. n end
     table.sort(fl)
-    local line = string.format('logistic network #%d on %s: %d storage chest%s, %d free slots%s%s; %d robot%s hold cargo with nowhere to put it%s',
-      ln.network_id, surface.name, chests, chests == 1 and '' or 's', free, full > 0 and string.format(' (%d full)', full) or '',
+    local line = string.format('logistic network #%d on %s: %d storage chest%s, %d free slots%s%s%s; %d robot%s hold cargo with nowhere to put it%s',
+      ln.network_id, surface.name, chests, chests == 1 and '' or 's', free,
+      physical > free and string.format(' under their bars (%d empty slots in all: %d past the bars of %d chest%s, which robots do not fill)', physical, physical - free, barred, barred == 1 and '' or 's') or '',
+      full > 0 and string.format(' (%d full)', full) or '',
       #fl > 0 and ', filtered: ' .. table.concat(fl, ', ') or '', stuck, stuck == 1 and '' or 's',
       #item_lines > 0 and ': ' .. table.concat(item_lines, '; ') or '')
-    return {network=ln.network_id, surface=surface.name, storage_chests=chests, free_slots=free, full_chests=full, filtered=#fl > 0 and fl or nil,
+    return {network=ln.network_id, surface=surface.name, storage_chests=chests, free_slots=free, usable_free_slots=free, physical_free_slots=physical,
+      chests_with_bar=barred > 0 and barred or nil, full_chests=full, filtered=#fl > 0 and fl or nil,
       robots_stuck=stuck, stuck_items=#item_lines > 0 and item_lines or nil, robots_read=read, line=line}
   end
   -- backlog (d18 batch36 A1, Luna and Grok, all of shift35: Gleba's science requester at (15.5,28.5) lacked 10

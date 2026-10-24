@@ -55,7 +55,7 @@ return function(api)
     local inv = main(e)
     if not inv then return nil end
     local size = try(function() return #inv end) or 0
-    if size == 0 or (try(function() return inv.count_empty_stacks() end) or 1) > 0 then return nil end
+    if size == 0 or (try(function() return inv.count_empty_stacks(true, false) end) or 1) > 0 then return nil end
     local list = try(function() return inv.get_contents() end) or {}
     if #list ~= 1 then return nil end
     local only, n = name_of(list[1].name), list[1].count or 0

@@ -988,8 +988,10 @@ return function(api)
         local full = CONTAINER[t.type] and container_full(t, name)
         -- (Luna 00:20: the jelly maker's output: which inserter, the exact chest and its free slots)
         local inv = CONTAINER[t.type] and try(function() return t.get_inventory(defines.inventory.chest) end)
-        local free = inv and try(function() return inv.count_empty_stacks() end)
-        text = text .. ' -> ' .. place(t) .. (full and ' (full)' or '') .. (free and string.format(' (%d of %d slots free)', free, #inv) or '')
+        local free = inv and try(function() return inv.count_empty_stacks(true, false) end)
+        local bar = inv and try(function() return inv.get_bar() end)
+        text = text .. ' -> ' .. place(t) .. (full and ' (full)' or '') .. (free and (bar and bar <= #inv and string.format(' (%d of %d usable slots free: bar; %d slots)', free, bar - 1, #inv)
+          or string.format(' (%d of %d slots free)', free, #inv)) or '')
         ends[#ends+1] = place(t)
       end
       if FULL[st] and name then text = text .. ' (holding what it cannot drop)' end
