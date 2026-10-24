@@ -327,9 +327,12 @@ do
   local receipts={}
   local where={}
   local st={}
+  -- (d24 batch167 QJ1) the pods freight follows from the hub: the landed stage comes from the one the watch followed
+  local fol={down={},up={}}
   local W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,
     census_typed=function(_,s,t) eq(t,'cargo-landing-pad'); return {pad} end,
-    freight={where=function() return where end,receipts_since=function(_,since) local o={} for _,r in ipairs(receipts) do if r.tick>since then o[#o+1]=r end end return o end}}
+    freight={where=function() return where end,receipts_since=function(_,since) local o={} for _,r in ipairs(receipts) do if r.tick>since then o[#o+1]=r end end return o end,
+      followed=function() return fol end}}
   local sol={name='sol',index=1,force=force,surface=aquilo}
   local function fails(a,text) local ok,err=pcall(W.call,sol,a); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
   fails({item='tungsten-carbide',count=200,to={position={x=0,y=0},surface='aquilo'},deadline_min=20},'no silo, chest or machine of ours within 2 tiles of (0,0) on aquilo')
@@ -352,17 +355,26 @@ do
   eq(W.lines(sol,h)[1],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): blocked: no landing pad of ours on aquilo has room for tungsten-carbide (cargo-landing-pad (5,6)): the hub sends no pod of it down')
   padroom=true; game.tick=9000
   -- its pod lands at the pad (5,6), in network #12; the silo is in #7: blocked, the setter told once
+  local cargo={{valid_for_read=true,name='tungsten-carbide',count=200,quality={name='normal'}}}
+  cargo.get_item_count=function(n) return n=='tungsten-carbide' and 200 or 0 end
+  local pod={valid=true,unit_number=501,surface=aquilo,position={x=5,y=6},cargo_pod_destination={station=pad},get_inventory=function() return cargo end}
+  fol.down={{pod=pod,unit=501,at='aquilo',tick=8950}}
   receipts[#receipts+1]={tick=8990,kind='received',where='cargo-landing-pad (5,6) on aquilo',cargo={['tungsten-carbide']=200},dest={pad='cargo-landing-pad',position={x=5,y=6},surface='aquilo'}}
   held.hub=0
   W.tick(9000)
+  eq(x.stages.landed,nil,'freight\'s receipt alone lands nothing: the watch\'s arrivals are the landed stage\'s source')
+  W.pod_tick(9010); pod.valid=false; W.pod_tick(9020); fol.down={}
+  W.tick(9060)
   eq(x.last,'network'); eq(x.stages.arrived.text,'Kestrel II stopped at aquilo')
-  eq(x.stages.landed.text,'200 tungsten-carbide received by cargo-landing-pad (5,6) on aquilo'); eq(x.stages.landed.tick,8990)
+  eq(x.stages.landed.text,'200 tungsten-carbide received by cargo-landing-pad (5,6) on aquilo (from Kestrel II): not counted as received (not landing pads in the consumer\'s logistic network)'); eq(x.stages.landed.tick,9020)
+  eq(x.received,0,'landed and received agree: the pad is not in the silo\'s network')
   eq(x.stages.network.text,'the pad (5,6) is in logistic network #12; the consumer in #7')
   local lines=W.lines(sol,h)
-  eq(#lines,2)
-  eq(lines[2],'delivery watch #1: no longer blocked: no landing pad of ours on aquilo has room for tungsten-carbide (cargo-landing-pad (5,6)): the hub sends no pod of it down')
-  eq(lines[1],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): blocked: landed at the pad (5,6) in logistic network #12; the consumer rocket-silo (12.5,-30.5) is in network #7: robots of one do not carry to the other')
-  W.tick(9060); eq(W.lines(sol,h),nil,'told once')
+  eq(#lines,3)
+  eq(lines[1],'delivery watch #1: no longer blocked: no landing pad of ours on aquilo has room for tungsten-carbide (cargo-landing-pad (5,6)): the hub sends no pod of it down')
+  has(lines[2],'delivery watch #1: pod 501 from Kestrel II\'s hub at aquilo')
+  eq(lines[3],'delivery watch #1 (200 tungsten-carbide to rocket-silo (12.5,-30.5) on aquilo): blocked: landed at the pad (5,6) in logistic network #12; the consumer rocket-silo (12.5,-30.5) is in network #7: robots of one do not carry to the other')
+  W.tick(9120); eq(W.lines(sol,h),nil,'told once')
   eq(W.lines({name='astra',force=force},{}),nil,'the setter only')
   -- the deadline passes: late, with the last confirmed stage and the blocker
   game.tick=1000+20*3600+20; W.tick(game.tick)
@@ -386,27 +398,35 @@ do
   eq(#W.call(sol,{}).watches,1)
   -- up: a machine aboard Kestrel II, the carbide launched from nauvis
   local mach={valid=true,name='assembling-machine-3',type='assembling-machine',position={x=3.5,y=-4.5},get_item_count=function() return held.mach or 0 end}
-  local deck={name='platform-3',find_entities_filtered=function() return {mach} end}
+  local deck={name='platform-3',find_entities_filtered=function() return {mach} end,platform={name='Kestrel II'}}
   mach.surface=deck; pl.surface=deck; pl.space_location={name='aquilo'}
+  hub.type='space-platform-hub'; hub.surface=deck
   held.hub=0
   local rows={}
   W=dofile('mod/agent-harness_0.1.0/delivwatch.lua'){state=function() return st end,who=function(p) return p.name end,
-    freight={where=function() return where end,receipts_since=function() return {} end,incoming=function() return {rows=rows} end}}
+    freight={where=function() return where end,receipts_since=function() return {} end,incoming=function() return {rows=rows} end,followed=function() return fol end}}
   r=W.call(sol,{item='tungsten-carbide',count=20,to={position={x=3.5,y=-4.5},platform='Kestrel II'},deadline_min=10,from='nauvis'})
   eq(r.watch.direction,'up'); eq(r.watch.blockers[1],'Kestrel II is not stopped at nauvis: a silo there launches to it only while it is')
   pl.space_location={name='nauvis'}
   rows[1]={cargo={['tungsten-carbide']=20},from='nauvis',tick=game.tick,down=false}
+  -- (QJ1) the rocket's pod the watch follows: 12 of the 20 in it, landed in the hub
+  local rcargo={{valid_for_read=true,name='tungsten-carbide',count=12,quality={name='normal'}}}
+  rcargo.get_item_count=function(n) return n=='tungsten-carbide' and 12 or 0 end
+  local rpod={valid=true,unit_number=601,surface=deck,position={x=0,y=0},cargo_pod_destination={space_platform={hub=hub,surface=deck}},get_inventory=function() return rcargo end}
+  fol.up={{pod=rpod,tick=game.tick,from='nauvis',silo={x=1,y=2},up=1}}
   game.tick=game.tick+60; W.tick(game.tick)
   x=st.delivwatch.list[#st.delivwatch.list]
   eq(x.stages.launched.text,'a rocket from nauvis with 20 tungsten-carbide launched to Kestrel II'); eq(x.stages.in_transit.text,'its pod rising over nauvis')
   rows={}; held.hub=20
   game.tick=game.tick+60; W.tick(game.tick)
-  eq(x.stages.landed.text,'Kestrel II\'s hub holds 20 tungsten-carbide (0 when the watch was set)')
+  eq(x.stages.landed,nil,'the hub holding more lands nothing: the pod the watch followed does')
+  W.pod_tick(game.tick+1); rpod.valid=false; W.pod_tick(game.tick+2); fol.up={}
+  eq(x.stages.landed.text,'12 tungsten-carbide received by Kestrel II\'s hub'); eq(x.received,12)
   held.mach=20
   game.tick=game.tick+60; W.tick(game.tick)
-  -- (d24 batch146 PR1) from given (nauvis): the stock test is the last stage seen and does not end the watch; no rocket's
-  -- pod from nauvis has been received
-  eq(x.state,'open'); eq(x.last,'reached'); eq(x.received,0)
+  -- (d24 batch146 PR1) from given (nauvis): the stock test is the last stage seen and does not end the watch; 12 of the
+  -- 20 received from nauvis
+  eq(x.state,'open'); eq(x.last,'reached'); eq(x.received,12)
   game,defines,prototypes=nil,nil,nil
   print('d21_batch66 AB5 delivery_watch: ok')
 end
