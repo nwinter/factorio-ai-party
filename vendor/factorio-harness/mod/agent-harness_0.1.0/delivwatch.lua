@@ -147,23 +147,6 @@ return function(api)
     end
     return out
   end
-  -- (AB6) What the hub keeps of the item by its own requests: each slot's max, all of it with no max; 0 with none.
-  -- On the copy the hub asking pipe 10 (no max) or 200 kept all 60 it held from the pad's request; asking 10..20 it
-  -- sent 40 down and kept 20.
-  local function hub_keeps(pl, item)
-    local keep = 0
-    local secs_ = try(function() return pl.hub.get_logistic_sections() end)
-    for i = 1, secs_ and secs_.sections_count or 0 do
-      local sec = secs_.get_section(i)
-      if sec and sec.active ~= false then
-        for _, f in ipairs(sec.filters or {}) do
-          local v = f.value
-          if (type(v) == 'table' and v.name or v) == item and ((f.min or 0) > 0 or f.max) then keep = keep + (f.max or math.huge) end
-        end
-      end
-    end
-    return keep
-  end
   -- (AB6) Where the platform stops from now until the destination's stop: {{index (its schedule record; nil when it
   -- is stopped at a planet that is not its current stop), station, now (stopped there now)}}.
   local function stops_before(pl, dest)
@@ -267,20 +250,34 @@ return function(api)
         -- (AB6, Aurora 16:02: "Nauvis's obsolete CF500 request diverted K2 cargo intended for Aquilo") a landing pad
         -- asking the item on a planet it stops at before the destination: a blocker while it is stopped there, a risk
         -- before; none when the hub's own request keeps all it holds
-        if n > 0 and stops_at(pl, w.to.where) then
-          local keep = hub_keeps(pl, w.item)
-          if keep < n then
-            local kept = keep > 0 and string.format('; its hub\'s own request keeps %d of it aboard', keep) or ''
-            for _, stop in ipairs(stops_before(pl, w.to.where)) do
-              local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
-              for _, a in ipairs(pad_asks(force, stop.station, w.item)) do
+        -- (d24 batch137 PI1) what the hub gives up at each stop before the destination by its sections for that planet
+        -- (freight.lua hub_keeps_at, hub_gives): a finite max sends down all above it there, a pad asking or not; an
+        -- infinite max keeps it all
+        if n > 0 and stops_at(pl, w.to.where) and api.freight and api.freight.hub_keeps_at then
+          local F = api.freight
+          local secs_ = try(function() return pl.hub.get_logistic_sections() end)
+          for _, stop in ipairs(stops_before(pl, w.to.where)) do
+            local which = stop.index and 'stop ' .. stop.index .. ' of its schedule' or 'not a stop of its schedule'
+            local keeps = F.hub_keeps_at(secs_, stop.station)
+            local asks = pad_asks(force, stop.station, w.item)
+            local k = keeps[w.item]
+            if #asks == 0 and k and k.max ~= math.huge and n > k.max then
+              local key = 'demand ' .. stop.station .. ' max'
+              local text = string.format('%s %s %s (%s) with %d %s in its hub, before %s: %s, so all above %d goes down there, a landing pad asking or not',
+                pl.name, stop.now and 'is stopped at' or 'stops at', stop.station, which, n, w.item, w.to.where, F.keep_text(k), k.max)
+              if stop.now then block(w, key, text, key .. ' ' .. k.max) else risk(w, key, text, key .. ' ' .. k.max) end
+            end
+            for _, a in ipairs(asks) do
+              local go = F.hub_gives(keeps, w.item, n, a.min - a.held)
+              if go > 0 then
                 local key = 'demand ' .. stop.station .. ' ' .. at(a.pad.position)
+                local kept = k and '; ' .. F.keep_text(k) or ''
                 if stop.now then
-                  block(w, key, string.format('%s is stopped at %s (%s) with %d %s in its hub, before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends pods of it down to that pad%s',
-                    pl.name, stop.station, which, n, w.item, w.to.where, at(a.pad.position), a.min, w.item, a.held, kept), key .. ' ' .. a.min)
+                  block(w, key, string.format('%s is stopped at %s (%s) with %d %s in its hub, before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends %d of it down to that pad%s',
+                    pl.name, stop.station, which, n, w.item, w.to.where, at(a.pad.position), a.min, w.item, a.held, go, kept), key .. ' ' .. a.min)
                 else
-                  risk(w, key, string.format('%s stops at %s (%s) before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends pods of it down to that pad (the hub holds %d now%s)',
-                    pl.name, stop.station, which, w.to.where, at(a.pad.position), a.min, w.item, a.held, n, kept), key .. ' ' .. a.min)
+                  risk(w, key, string.format('%s stops at %s (%s) before %s; the landing pad %s there asks %d %s (holds %d): while it is stopped there its hub sends %d of it down to that pad (the hub holds %d now%s)',
+                    pl.name, stop.station, which, w.to.where, at(a.pad.position), a.min, w.item, a.held, go, n, kept), key .. ' ' .. a.min)
                 end
               end
             end

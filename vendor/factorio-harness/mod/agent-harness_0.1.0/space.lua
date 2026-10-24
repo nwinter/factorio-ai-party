@@ -365,7 +365,9 @@ return function(api)
           local v=f.value
           local n=v and (type(v.name)=='string' and v.name or try(function() return v.name.name end))
           local from=f.import_from and (type(f.import_from)=='string' and f.import_from or try(function() return f.import_from.name end)) or '?'
-          if n and (f.min or 0)>0 then keep[from]=keep[from] or {}; keep[from][n]=(keep[from][n] or 0)+f.min end
+          -- (d24 batch137 PI1) what a section keeps at that planet is its max (freight.lua hub_keeps_at): the maxes add up,
+          -- none (infinite) keeps it all
+          if n then keep[from]=keep[from] or {}; keep[from][n]=(keep[from][n] or 0)+(f.max or math.huge) end
         end
       end
     end
@@ -376,7 +378,7 @@ return function(api)
   -- planet ask; a request from another planet keeps nothing there. Swift at Nauvis kept its 501 magazines under
   -- firearm-magazine 500..2000 from nauvis (pads asking 1461, the copy of world n, 2026-10-17); Cinder at Nauvis sent
   -- all 85 of its foundation down under space-platform-foundation 50..inf from fulgora (shift33, about tick 27162800).
-  M.KEEP_RULE='at a stop the hub sends down to the landing pads there (their ask less what they hold) what it holds beyond what its requests importing from that planet ask; a request from another planet keeps nothing there (Cinder at Nauvis sent all 85 foundation down under 50..inf from fulgora; Swift at Nauvis kept 501 magazines under 500..2000 from nauvis)'
+  M.KEEP_RULE='at a stop the hub keeps what its active requests importing from that planet allow, their maxes added up: no max keeps all of it; with a max it sends down all it holds above it to the landing pad there, whether the pad asks or not; an item no such request names goes down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing there (2.0.77, d24: Petrel at Nauvis kept all 1980 calcite under 200..inf from nauvis with the pad asking 2000, and sent all above 200 under 200..200)'
   -- Per item whose kept stock a change alters: what goes down at each stop after it. The stops: where it waits now,
   -- then its schedule's in order. before, after: hub_keep_at.
   function M.sends_down(hub,pl,before,after)
@@ -408,7 +410,7 @@ return function(api)
       local planets={}
       for planet,list in pairs(t) do if (list[n] or 0)>0 then planets[#planets+1]=planet end end
       table.sort(planets)
-      for _,planet in ipairs(planets) do parts[#parts+1]=string.format('%d at %s',math.min(held,t[planet][n]),planet); total=total+t[planet][n] end
+      for _,planet in ipairs(planets) do parts[#parts+1]=string.format('%s at %s',t[planet][n]==math.huge and 'all' or tostring(math.min(held,t[planet][n])),planet); total=total+t[planet][n] end
       return #parts>0 and table.concat(parts,', ') or 'none',total
     end
     local lines={}
@@ -426,11 +428,12 @@ return function(api)
           local pd=pad(st.planet)
           local want=(pd.ask[n] or 0)-(pd.hold[n] or 0)
           local keep=(after[st.planet] or {})[n] or 0
-          local go=math.max(0,math.min(left-keep,want))
+          -- (PI1) all above a finite max goes down, asked or not; an infinite max keeps it all
+          local go=keep==math.huge and 0 or keep>0 and math.max(0,left-keep) or math.max(0,math.min(left,want))
           if go>0 then
             left=left-go
             parts[#parts+1]=string.format('%d down to %s%s (its landing pads ask %d, hold %d%s)',go,st.planet,st.here and ' (here)' or '',pd.ask[n],pd.hold[n] or 0,
-              keep>0 and string.format('; its requests from %s keep %d',st.planet,keep) or '')
+              keep>0 and string.format('; its requests from %s keep %s',st.planet,keep==math.huge and 'all of it' or tostring(keep)) or '')
           end
         end
         local now_text=kept(after,n,held)
