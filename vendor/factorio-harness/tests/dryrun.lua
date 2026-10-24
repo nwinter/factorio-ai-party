@@ -1318,4 +1318,29 @@ do
   -- rails are the game's to judge: a crossing rail ghost goes in over a built rail
   eq(#construction.ghost_replaces(surface, force, {name='straight-rail', type='straight-rail', fast_replaceable_group='straight-rail', collision_box=box(1)}, {x=23, y=-39}, 0), 0)
 end
+-- d20 batch122 (Astra #2087, 18:18: a collector line's dry run counted 32 foundation, 15 of them holes; the live call
+-- laid the 17 under its ghosts and two ghosts stayed unbuilt until the 15 were placed by hand). The live call's flood
+-- (live_holes, from the tile ghosts it laid) is the dry run's (enclosed): the same 9 tiles in the ring east of the deck.
+do
+  local function deck(x, y) return (x >= -5 and x <= 5 and y >= -5 and y <= 5) and 'space-platform-foundation' or 'empty-space' end
+  local hub = {name='space-platform-hub', type='space-platform-hub', position={x=0, y=0}, valid=true}
+  local cells, ghosts, ring = {}, {}, {}
+  for x = 6, 10 do for y = -2, 2 do if not (x >= 7 and x <= 9 and y >= -1 and y <= 1) then
+    ring[#ring+1] = {name='space-platform-foundation', position={x=x+0.5, y=y+0.5}}
+    cells[#cells+1] = {x, y}
+    ghosts[#ghosts+1] = {name='tile-ghost', type='tile-ghost', ghost_name='space-platform-foundation', position={x=x+0.5, y=y+0.5}}
+  end end end
+  local pp = {surface=world(deck, {}, {platform={hub=hub}}), force=force, position={x=0, y=0}}
+  pp.surface.platform.hub.get_inventory = function() return {get_item_count=function() return 0 end} end
+  local lw = world(deck, ghosts, {platform={hub=hub}})
+  local holes, other, unchecked = dryrun.live_holes(lw, force, cells)
+  eq(#holes, 9); eq(other, 0); eq(unchecked, false)
+  eq(holes[1][1], 7); eq(holes[1][2], -1); eq(holes[9][1], 9); eq(holes[9][2], 1)
+  -- the dry run of the same tiles counts the same 9
+  local same = dryrun.check(pp, {kind='ghosts', entities={}, tiles=ring})
+  eq(same.tiles.holes, #holes)
+  -- laid, they are ghosts: nothing more is enclosed
+  for _, c in ipairs(holes) do ghosts[#ghosts+1] = {name='tile-ghost', type='tile-ghost', ghost_name='space-platform-foundation', position={x=c[1]+0.5, y=c[2]+0.5}} end
+  eq(#dryrun.live_holes(world(deck, ghosts, {platform={hub=hub}}), force, cells), 0)
+end
 print('dryrun: ok')
