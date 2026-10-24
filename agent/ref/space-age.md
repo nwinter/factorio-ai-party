@@ -63,7 +63,8 @@
   The call fails (a failed queue step too) when the platform reads paused without `paused: true` after it. A
   `no_schedule` or `no_path` read in the call's tick is read again every 10 ticks for up to 300 (the game updates a
   platform later: Cinder flew 39 ticks after one). A queue step waits for that read and fails only if it still reads
-  so; a direct call's reply has `recheck`, and the second read comes as a tell from platform_schedule. On failure the
+  so; a direct call's reply has `recheck`, and the second read comes as a tell from platform_schedule. A platform
+  paused before the call and left paused takes the change: the reply has `still_paused`. On failure the
   schedule stays as set, and the reply says what the journals showed: every one-stop
   schedule read no_schedule, and so did longer ones whose current is the stop it waits at; with current on another
   stop they left. One stop that is not where the platform is goes as `[where it is, that stop]`, current 2
