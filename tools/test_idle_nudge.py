@@ -56,7 +56,9 @@ def sonnet_shift07():
             unread += 1
         t += 60
     times = [dt.datetime.fromisoformat(e["t"]).astimezone(dt.timezone.utc).strftime("%H:%M") for e in logged]
-    assert times == ["22:23", "22:43", "23:03", "23:23"], times  # 15:23, 15:43, 16:03, 16:23 PDT: 10 min in, then 20
+    # 15:23 and 16:03 PDT: 10 min in, then (d24 batch168) with nothing new asked of it, the fallback 40 min later (its
+    # back-to-back waits are standing: each began long after its last work); the next would be 80 min after that
+    assert times == ["22:23", "23:03"], times
     assert logged[0]["action"] == "wait_ticks" and "in wait_ticks, your queue's 7 steps start only after it" in sent[0], \
         sent[0]
     # its replies carried each tell (it kept making requests): delivered, though it reads 2 lines of each reply
@@ -84,13 +86,23 @@ def main():
     e = rows[0]
     assert e["sent"] and e["tell_seq"] == 1 and e["standing_min"] == 30 and e["queue"] == "paused with 3 steps" \
         and e["sleeping_min"] == 10 and e["unread"]["unread_chat"] == 7 and "since_last_nudge" not in e, e
-    # at most once per 20 minutes per agent, then again
+    # at most once per 20 minutes per agent; (d24 batch168, viewer Aurora 14:29) a repeat in the same idle stretch goes
+    # on something new asked of it (a request or tell among the harness's unanswered items), else as a fallback at 40
+    # min, then 80 ... at most 4 h
     assert n.step(report, T0 + 400 + 19 * 60, send, rows.append) == []
+    sonnet["open"] = "open for you: 1 request or tell to you unanswered (tell from astra 2m10s ago: the wall is up)"
     again = n.step(report, T0 + 400 + 20 * 60, send, rows.append)
-    assert [x["agent"] for x in again] == ["sonnet", "luna"]
+    assert [x["agent"] for x in again] == ["sonnet"], again
+    assert again[0]["repeat"] == {"n": 2, "why": "a new request or tell to it"}, again[0]
+    luna = report["agents"][2]
+    assert n.due(luna, T0 + 400 + 39 * 60) == ("nudged 39 min ago in this idle stretch and nothing new asked of it "
+                                               "since: the next routine nudge 40 min after the last"), n.due(luna, T0 + 2740)
+    sonnet["open"] = "open for you: 1 request or tell to you unanswered (tell from astra 22m10s ago: the wall is up)"
+    later = n.step(report, T0 + 400 + 40 * 60, send, rows.append)
+    assert [x["agent"] for x in later] == ["luna"] and later[0]["repeat"] == {"n": 2, "why": "fallback"}, later
     # since the last nudge: Sonnet's tell still unread (its replies went to a file), Luna's delivered
     assert again[0]["since_last_nudge"] == {"tell_delivered": False, "requests": True}, again[0]
-    assert again[1]["since_last_nudge"] == {"tell_delivered": True, "requests": True}, again[1]
+    assert later[0]["since_last_nudge"] == {"tell_delivered": True, "requests": True}, later[0]
     # 10 minutes is the line; a dead character, work or a running queue is not idle; a wait is
     assert n.due(row("astra", 9.9), T0 + 900) == "active" and n.due(row("astra", 10), T0 + 900) is None
     assert n.due(row("astra", 30, alive=False), T0 + 900) == "active"

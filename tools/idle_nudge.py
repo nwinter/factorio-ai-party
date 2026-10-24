@@ -33,11 +33,23 @@ for each nudge it did not answer, at most every 4 h; only the idle nudge backs o
 tells go as before). While it rests or does not answer, one handoff tell goes to the first --lead that is active (a
 request of its own in the last 10 min, not resting; else the team member with the most recent request of its own)
 naming what waits on it (unanswered requests and tells, its board items, claims), when anything does.
+(d24 batch168 QK1, operator 14:35, viewer Aurora 14:29: in shift70 Gemini, resting a few minutes at a time to pace its
+quota, got 22 "does not answer" handoffs between 13:52 and 14:32, one a minute; a delivered tell reset the handoff each
+poll.) A short pace rest (resting.json reason pace, at most 30 min) is the agent's own loop pacing itself: no nudge and
+no handoff during it, its time is not standing, and it counts as a sign of life, as a request of its own does. A
+handoff is a cover request sent once per episode: an episode begins when the agent rests (a quota rest, or a pace rest
+over 30 min) or does not answer, and ends when it makes a request of its own; a new episode's handoff waits every_min
+doubled for each handoff already sent for it (at most every 4 h). It names the owner, the items and what waits on it,
+and the board_update cover call for its claims. An idle nudge after the first of an idle stretch goes on an actionable
+change (a new request or tell to it in the harness's unanswered items, a new mention, a watch newly late, stalled,
+invalid or with its final unread) at most every every_min, else as a fallback at every_min doubled for each nudge of
+the stretch (at most every 4 h). A sleep or wait the agent set itself with a known end (sleep_left_s, action_until_s)
+holds the nudge until it ends when it began less than idle_min after the agent's last work (back-to-back waits do not).
 The same supervisor sends a cached factory digest once at deadline - 2 h: what changed since the last digest, each
 fact told to its owner by board claim (factory_digest.py, d17 batch35 D2). --digest-now sends the full census to the
 team (on request) and exits; --dry-run logs without sending.
 """
-import argparse, datetime, json, os, sys, time
+import argparse, datetime, json, os, re, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -252,6 +264,57 @@ def herdr_status(run_dir):
     return status
 
 
+PACE_SHORT_S = 30 * 60   # (d24 batch168) a pace rest this long or shorter is the agent's loop pacing its quota
+
+
+def pace_rests(agent_dir):
+    """The agent's short pace rests on record (resting.json, and resting-last.json where the next turn moves it):
+    [(since, until)]."""
+    out = []
+    for f in (pacing.REST, "resting-last.json"):
+        try:
+            with open(os.path.join(agent_dir, f)) as fh:
+                r = json.load(fh)
+            since, until = float(r["since"]), float(r["until"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if r.get("reason") == "pace" and 0 < until - since <= PACE_SHORT_S:
+            out.append((since, until))
+    return out
+
+
+def short_pace(rest):
+    """A rest row (pacing.resting) that is a short pace rest."""
+    return bool(rest) and rest.get("reason") == "pace" and isinstance(rest.get("since"), (int, float)) \
+        and rest["until"] - rest["since"] <= PACE_SHORT_S
+
+
+def waiting_items(line):
+    """The open line's items (open.lua), none for its "none (no board items of yours, ...)"."""
+    rest = str(line or "").partition(": ")[2].rstrip(".")
+    return [] if rest.startswith("none") else top_items(rest)
+
+
+AGE = re.compile(r"\b(\d+[hm])?\d+[ms]\d*s? ago")
+
+
+def asks(row):
+    """(d24 batch168) What asks something of the agent now: the harness's unanswered requests and tells to it (open.lua:
+    teammates' board requests and tells, never the operator's, so a nudge's own tell is not one), their count, and the
+    unread mentions of it apart from tells: ({"tell from sol: Thanks, IVc...", ...}, count, mentions)."""
+    keys, n = set(), 0
+    for item in waiting_items(row.get("open")):
+        if "unanswered" not in item:
+            continue
+        m = re.match(r"(\d+) ", item)
+        n += int(m.group(1)) if m else 1
+        inner = item.partition("(")[2].rpartition(")")[0]
+        for ex in top_items(inner):
+            keys.add(AGE.sub("", ex).replace("  ", " ")[:60])
+    mentions = max(0, (row.get("unread_mentions") or 0) - (row.get("unread_tells") or 0))
+    return keys, n, mentions
+
+
 class Nudger:
     """The rules, apart from RCON (tests drive it with a fake report and a fake send)."""
 
@@ -276,7 +339,58 @@ class Nudger:
         self.pane_status = pane_status or (lambda name: None)
         self.leads = list(leads or [])
         self.unanswered = {}  # agent -> nudges in a row with no answer (tell not delivered, no request of its own since)
-        self.handed = {}  # agent -> the reason a handoff was sent for, while it does not answer
+        # (d24 batch168) handoffs: one per episode (resting or not answering, until a request of its own), backed off
+        self.episode = {}  # agent -> {"since", "sent"}: its episode now
+        self.handoffs = {}  # agent -> handoffs sent for it
+        self.last_handoff = {}  # agent -> when the last went
+        # (d24 batch168) idle repeats: nudges in its idle stretch now, and what asked something of it at the last one
+        self.stretch = {}  # agent -> nudges sent in its idle stretch
+        self.base = {}  # agent -> {"asks", "n", "mentions", "flagged"} at its last nudge
+        self.waits = {}  # agent -> {"kind", "start", "left", "t"}: its own sleep or wait with a known end
+
+    def agent_dir(self, name):
+        return os.path.join(self.run_dir, name) if self.run_dir else None
+
+    def paced_at(self, name, now):
+        """The latest moment it was in a short pace rest (its loop pacing its quota; now while in one), or None."""
+        ends = [min(u, now) for s, u in pace_rests(self.agent_dir(name)) if s <= now] if self.run_dir else []
+        return max(ends) if ends else None
+
+    def paced_s(self, name, since, now):
+        """Seconds of [since, now] it spent in short pace rests."""
+        if not self.run_dir:
+            return 0
+        return sum(max(0, min(u, now) - max(s, since)) for s, u in pace_rests(self.agent_dir(name)))
+
+    def sign_of_life(self, name, now):
+        """Its latest request of its own, or a short pace rest (its loop pacing itself), whichever is later; None."""
+        times = [t for t in (own_request_at(self.run_dir, name), self.paced_at(name, now)) if t is not None]
+        return max(times) if times else None
+
+    def track_wait(self, row, now):
+        """Its own sleep or wait with a known end, and when it began: a sleep says (sleeping_s); a wait from when this
+        process first saw it, a new one when its time left (action_until_s) jumps up."""
+        name = row["name"]
+        if row.get("sleep_left_s") is not None and row.get("sleeping_s") is not None:
+            self.waits[name] = {"kind": "sleep", "start": now - row["sleeping_s"], "left": row["sleep_left_s"], "t": now}
+            return
+        act, left = row.get("action"), row.get("action_until_s")
+        if act not in WAITS or left is None:
+            self.waits.pop(name, None)
+            return
+        w = self.waits.get(name)
+        if not w or w["kind"] != act or left > w["left"] - (now - w["t"]) + 5:
+            w = {"kind": act, "start": now}
+        w.update(left=left, t=now)
+        self.waits[name] = w
+
+    def own_wait(self, row, now, standing):
+        """(d24 batch168, viewer Aurora 14:29) a sleep or wait it set itself with a known end holds the nudge until it
+        ends, when it began less than idle_min after its last work (back-to-back waits are standing, shift07)."""
+        w = self.waits.get(row["name"])
+        if not w or w["left"] <= 0 or standing - (now - w["start"]) >= self.idle_s:
+            return None
+        return f"in its own {w['kind']} ({minutes(w['left'])} min left)"
 
     def observe(self, row, now):
         """This poll's view of an agent: its own standing count, and what happened since its last nudge."""
@@ -291,15 +405,20 @@ class Nudger:
         else:
             self.busy_polls[name] = 0
             self.idle_since.setdefault(name, now - (row.get("standing_s") or 0))
+        self.track_wait(row, now)
+        ep = self.episode.get(name)
+        if ep:  # (d24 batch168) the episode ends when it makes a request of its own
+            life = self.sign_of_life(name, now)
+            if life is not None and life > ep["since"]:
+                self.episode.pop(name)
         if name in self.last:
             s = self.since.setdefault(name, {"tell_delivered": False, "requests": False})
             if not (row.get("unread_tells") or 0):
                 s["tell_delivered"] = True
             if row.get("last_request_s") is not None and now - row["last_request_s"] > self.last[name]:
                 s["requests"] = True
-            if self.answered(name):
+            if self.answered(name, now):
                 self.unanswered[name] = 0
-                self.handed.pop(name, None)
 
     QUEUE_WORK = ('"action":"queue_submit"', '"action":"queue_repeat"', '"action":"queue_resume"', '"action":"plan_run"')
 
@@ -327,19 +446,22 @@ class Nudger:
             return now - at < min(300, self.idle_s)  # a plan started 8 min ago and long finished is not work now
         return False
 
-    def standing(self, row, now):
+    def standing(self, row, now, raw=False):
         """The harness's count where it reports what it counted (one definition, idle.lua); before that, the longer of
-        the harness's count and this process's own."""
+        the harness's count and this process's own. (d24 batch168) Less its time in short pace rests (raw: with it)."""
         if row.get("counted"):
-            return row.get("standing_s") or 0
-        own = now - self.idle_since[row["name"]] if row["name"] in self.idle_since else 0
-        return max(row.get("standing_s") or 0, own)
+            s = row.get("standing_s") or 0
+        else:
+            own = now - self.idle_since[row["name"]] if row["name"] in self.idle_since else 0
+            s = max(row.get("standing_s") or 0, own)
+        return s if raw else max(0, s - self.paced_s(row["name"], now - s, now))
 
     def due(self, row, now):
         """None when this agent gets a nudge now, else why not (only for agents standing long enough)."""
         if self.members and row["name"] not in self.members:
             return "not on the team"
-        if self.standing(row, now) < self.idle_s or not row.get("alive", True):
+        standing = self.standing(row, now)
+        if standing < self.idle_s or not row.get("alive", True):
             return "active"
         if working(row):
             return "in an action"
@@ -347,6 +469,9 @@ class Nudger:
             return "running a standing order"
         if row.get("measuring"):  # (d20 batch70 AF1) a bounded watch running: uptime, turret_tally, belt_flow
             return f"measuring ({row['measuring']})"
+        held = self.own_wait(row, now, standing)
+        if held:
+            return held
         if self.queue_work(row["name"], now):
             return "queued work in its journal"
         if now - self.start < self.grace_s:
@@ -361,23 +486,52 @@ class Nudger:
             return "after the deadline"
         if now - self.last.get(row["name"], -1e18) < self.every_s:
             return f"nudged in the last {self.every_s / 60:g} min"
+        k = self.stretch_of(row, now)
+        if k and not self.change(row):  # (d24 batch168) a routine repeat: the capped fallback
+            every = min(self.every_s * 2 ** k, self.BACKOFF_MAX)
+            if now - self.last[row["name"]] < every:
+                return (f"nudged {minutes(now - self.last[row['name']])} min ago in this idle stretch and nothing new "
+                        f"asked of it since: the next routine nudge {every / 60:g} min after the last")
         return None
 
-    def answered(self, name):
+    def stretch_of(self, row, now):
+        """Nudges already sent in its idle stretch now (0: it has worked since its last nudge, or never had one)."""
+        last = self.last.get(row["name"])
+        if last is None or now - self.standing(row, now, raw=True) > last:
+            return 0
+        return self.stretch.get(row["name"], 0)
+
+    def change(self, row):
+        """(d24 batch168) what is new and actionable since its last nudge: a request or tell to it among the harness's
+        unanswered items, a mention, a watch newly late, stalled, invalid or with its final unread; '' when nothing."""
+        b = self.base.get(row["name"])
+        if not b:
+            return ""
+        keys, n, mentions = asks(row)
+        out = []
+        if keys - b["asks"] or n > b["n"]:
+            out.append("a new request or tell to it")
+        if mentions > b["mentions"]:
+            out.append("a new mention")
+        if {m.get("id") for m in flagged(row.get("measures"))} - b["flagged"]:
+            out.append("a watch overdue")
+        return ", ".join(out)
+
+    def answered(self, name, now=None):
         """Since its last nudge: the tell was delivered, or the agent made a request of its own (its journal; with no
-        run folder, the harness's count)."""
+        run folder, the harness's count), or (d24 batch168) its loop rested to pace its quota."""
         s = self.since.get(name) or {}
         if s.get("tell_delivered"):
             return True
         if not self.run_dir:
             return bool(s.get("requests"))
-        own = own_request_at(self.run_dir, name)
+        own = self.sign_of_life(name, now if now is not None else time.time())
         return own is not None and own > self.last.get(name, 1e18)
 
     def silence(self, name, now):
         """(k, why): how many nudges it has not answered (a stopped session counts 1 from the start) and the facts."""
         k = self.unanswered.get(name, 0)
-        own = own_request_at(self.run_dir, name)
+        own = self.sign_of_life(name, now)
         quiet_min = minutes(now - own) if own is not None else None
         pane = self.pane_status(name)
         stopped = pane in ("idle", "done") and (own is None or now - own >= self.STOPPED_S)
@@ -416,59 +570,70 @@ class Nudger:
         return best[1] if best else None
 
     def handoff(self, row, why, report, now, send, write):
-        """Once while an agent does not answer (resting, or not answering nudges): a tell to the active lead naming what
-        waits on it (the open items with something unanswered, a claim or a board item), when anything does."""
+        """(d24 batch168) Once per episode (it rests or does not answer, until a request of its own), a cover request to
+        the active lead naming the owner, what waits on it (the open items with something unanswered, a claim or a
+        board item) and the cover asked, when anything waits; a new episode's waits every_min doubled for each handoff
+        already sent for it (at most every 4 h), the idle nudge's back-off."""
         name = row["name"]
-        if name in self.handed:
+        ep = self.episode.setdefault(name, {"since": now, "sent": False})
+        h = self.handoffs.get(name, 0)
+        if ep["sent"] or h and now - self.last_handoff[name] < min(self.every_s * 2 ** h, self.BACKOFF_MAX):
             return None
-        import re
-        items = [x for x in top_items(str(row.get("open") or "").partition(": ")[2].rstrip("."))
+        items = [x for x in waiting_items(row.get("open"))
                  if "unanswered" in x or "board item" in x or re.search(r"\bclaim #\d", x)]
         items = [x for x in items if "unanswered" in x] + [x for x in items if "unanswered" not in x]
         if not items:
             return None
         lead = self.lead_for(name, report, now)
         entry = {"t": datetime.datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds"), "agent": name,
-                 "handoff": True, "why": why, "lead": lead}
+                 "handoff": True, "why": why, "lead": lead, "handoff_n": h + 1,
+                 "episode_since": datetime.datetime.fromtimestamp(ep["since"]).astimezone().isoformat(timespec="seconds")}
         if not lead:
             entry.update(sent=False, error="no active lead (--lead, or a team member with a request of its own in 10 min)")
         else:
-            text = fit(f"Operator (automatic, facts only): {name} does not answer ({why}).",
-                       [" Waiting on it: " + "; ".join(items) + "."])
+            text = cover_text(name, why, items)
             entry["text"] = text
             try:
                 res = send(lead, text)
                 entry.update(sent=True, tell_seq=(res or {}).get("seq"))
+                self.handoffs[name], self.last_handoff[name] = h + 1, now
             except Exception as e:
                 entry.update(sent=False, error=f"{type(e).__name__}: {e}"[:200])
-        self.handed[name] = why
+        ep["sent"] = True
         write(entry)
         return entry
 
     def step(self, report, now, send, write):
         """One poll: nudge every agent that is due; write a log row for each nudge sent (or that failed to send); a
-        handoff to the active lead for one that does not answer."""
+        handoff to the active lead for one that rests (not a short pace rest) or does not answer."""
         out = []
         for row in report.get("agents") or []:
             self.observe(row, now)
             why = self.due(row, now)
             if why is not None:
-                if why.startswith("not answering") or (self.run_dir and pacing.resting(os.path.join(self.run_dir, row["name"]), now)):
-                    h = self.handoff(row, why, report, now, send, write)
+                if self.members and row["name"] not in self.members:
+                    continue
+                rest = self.run_dir and pacing.resting(self.agent_dir(row["name"]), now)
+                if why.startswith("not answering") or rest and not short_pace(rest):
+                    h = self.handoff(row, why if why.startswith("not answering") else pacing.label(rest, now), report,
+                                     now, send, write)
                     if h:
                         out.append(h)
                 continue
             standing = self.standing(row, now)
+            k = self.stretch_of(row, now)
             text = nudge_text(row, standing)
             entry = {"t": datetime.datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds"),
                      "agent": row["name"], "standing_min": minutes(standing), "action": row.get("action"),
                      "queue": queue_text(row.get("queue")), "sleeping_min": minutes(row.get("sleeping_s")) or None,
-                     "unread": {k: row.get(k) or 0 for k in ("unread_chat", "unread_chat_to_you", "unread_mentions",
-                                                             "unread_tells", "unacked_tells", "unread_board")},
+                     "unread": {k_: row.get(k_) or 0 for k_ in ("unread_chat", "unread_chat_to_you", "unread_mentions",
+                                                               "unread_tells", "unacked_tells", "unread_board")},
                      "last_request_min": minutes(row.get("last_request_s")) if row.get("last_request_s") is not None
                      else None, "counted": (row.get("counted") or {}).get("text"), "text": text}
+            if k:  # (d24 batch168) a repeat in the same idle stretch: why it went
+                entry["repeat"] = {"n": k + 1, "why": self.change(row) or "fallback"}
             if flagged(row.get("measures")):
-                entry["watches"] = [{k: m.get(k) for k in ("id", "state", "end_tick", "final_read")} for m in flagged(row.get("measures"))]
+                entry["watches"] = [{k_: m.get(k_) for k_ in ("id", "state", "end_tick", "final_read")} for m in flagged(row.get("measures"))]
             if row["name"] in self.last:  # did a reply carry the last nudge, and has the agent asked anything since?
                 entry["since_last_nudge"] = dict(self.since.get(row["name"]) or {"tell_delivered": False,
                                                                                   "requests": False})
@@ -476,16 +641,36 @@ class Nudger:
                 res = send(row["name"], text)
                 entry.update(sent=True, tell_seq=(res or {}).get("seq"))
                 # the last nudge not answered (its tell not delivered, no request of its own since): one more
-                if row["name"] in self.last and row["name"] in self.since and not self.answered(row["name"]):
+                if row["name"] in self.last and row["name"] in self.since and not self.answered(row["name"], now):
                     self.unanswered[row["name"]] = self.unanswered.get(row["name"], 0) + 1
                 entry["unanswered"] = self.unanswered.get(row["name"], 0) or None
                 self.last[row["name"]] = now
                 self.since[row["name"]] = {"tell_delivered": False, "requests": False}
+                keys, n, mentions = asks(row)
+                self.stretch[row["name"]] = k + 1
+                self.base[row["name"]] = {"asks": keys, "n": n, "mentions": mentions,
+                                          "flagged": {m.get("id") for m in flagged(row.get("measures"))}}
             except Exception as e:
                 entry.update(sent=False, error=f"{type(e).__name__}: {e}"[:200])
             write(entry)
             out.append(entry)
         return out
+
+
+def cover_text(name, why, items):
+    """(d24 batch168, viewer Aurora 14:29: "name Gemini as owner, with a clear cover request") the handoff's text: the
+    owner and its items, the cover asked (board_update cover for its claims), then what waits on it, as the lead reads
+    it."""
+    ids = [i for x in items if "board item" in x for i in re.findall(r"#(\d+)", x)][:3]
+    claims = sorted(set(re.findall(r"\bclaim #(\d+)", " ".join(items))), key=int)[:3]
+    owns = f"{name} owns " + ", ".join("#" + i for i in ids + claims) + " and" if ids or claims else name
+    ask = f" Asked of you until {name} makes a request of its own: cover " + (
+        ", ".join("#" + i for i in ids) + " and what waits on it" if ids else "what waits on it")
+    ask += "".join(f"; board_update {{id: {c}, cover: true}} for its claim #{c} (you hear its alerts with {name})"
+                   for c in claims) + "."
+    waiting = "; ".join(x.replace(" to you ", f" to {name} ").replace("of yours", f"of {name}'s") for x in items)
+    return fit(f"Operator (automatic, facts only): cover request. {owns} does not answer ({why})." + ask,
+               [" Waiting on it: " + waiting + "."])
 
 
 class Harness:

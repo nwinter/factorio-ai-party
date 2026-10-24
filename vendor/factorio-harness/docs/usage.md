@@ -13826,3 +13826,36 @@ Fixed besides gates:
   0.036 ms; spidertron items in our logistic networks, characters and vehicle trunks: 0 (0.11 ms). where_is itself was
   not called on world n (it reads every holder of the surface).
 - Test: tests/d24_batch164.lua (fails on main: where_is spidertron with none stored and two placed gives no `placed`).
+
+## d24 batch168
+
+- QK1 (operator 14:35; viewer Aurora 14:29: "The same Gemini #2035 handoff repeated four times in 3 minutes. Could these
+  share backoff and name Gemini as owner, with a clear cover request?" and "Could routine idle repeats follow actionable
+  changes or overdue checkpoints? Honor bounded watches, keep capped fallback checks for unexplained stalls, and
+  preserve urgent alerts."), tools/idle_nudge.py:
+  - shift70 13:52-14:32: 22 "gemini does not answer" handoffs, one a minute through each of Gemini's pace rests
+    (resting.json reason pace, 5 and 10 min), and one for Grok (out of quota). Two causes: a rest of any kind sent a
+    handoff whatever the reason the agent was not nudged ("active" while it rested), and the once-only mark was cleared
+    on every poll where the agent's last nudge tell had been delivered.
+  - A short pace rest (reason pace, at most 30 min) is the agent's own loop pacing its quota: no nudge and no handoff
+    during it, its time is not standing, and it is a sign of life as a request of its own is (never "not answering").
+  - A handoff is a cover request, once per episode: an episode begins when the agent rests (quota, or a pace rest over
+    30 min) or does not answer, and ends when it makes a request of its own. A new episode's handoff waits every_min
+    doubled for each handoff already sent for that agent, at most 4 h. Text: "Operator (automatic, facts only): cover
+    request. gemini owns #2035, #523 and does not answer (out of quota until 15:59). Asked of you until gemini makes a
+    request of its own: cover #2035 and what waits on it; board_update {id: 523, cover: true} for its claim #523 (you
+    hear its alerts with gemini). Waiting on it: 2 requests or tells to gemini unanswered (...); 1 board item of
+    gemini's (#2035 ...)." The open line's "none (...)" is no item (main read it as one).
+  - Idle repeats: the first nudge of an idle stretch (standing since its last work) goes as before; a later one goes on
+    an actionable change since the last (a new request or tell to it among the harness's unanswered items, which never
+    count the operator's tells; a new mention; a watch newly late, stalled, invalid or with its final unread), at most
+    every every_min, else as a fallback at every_min doubled for each nudge of the stretch (40, 80, 160 min, at most
+    4 h). nudges.jsonl rows carry `repeat` {n, why}. The not-answering back-off applies as before.
+  - A sleep or wait the agent set itself with a known end (idle_report sleep_left_s, action_until_s) holds the nudge
+    until it ends, when it began less than idle_min after its last work; back-to-back waits are standing, as in shift07.
+  - A running bounded watch (measuring), standing orders and the harness's own alerts and tells are unchanged.
+- Test: tools/test_idle_nudge_shift70.py replays 13:47-14:32 from tools/idle_nudge_shift70.json (Gemini's and Grok's
+  journals, Gemini's agy-pace rests, Grok's quota rest, the leads' requests, what each logged handoff named): main's
+  idle_nudge.py gives the 23 notices recorded in nudges.jsonl at the same seconds, this one 1 (Grok's, at 14:30).
+  `--module PATH` replays another idle_nudge.py. It fails on main. tools/test_idle_nudge.py and
+  tools/test_idle_nudge_answer.py take the repeat rule and the cover text.
