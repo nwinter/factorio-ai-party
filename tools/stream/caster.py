@@ -236,6 +236,7 @@ PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "
             "viewer_reply": 7,
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5, "chronicle": 6,
+            "analyst": 5,  # (d23 batch130 CM2) an analyst point as its own beat (analyst_event)
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
@@ -459,15 +460,17 @@ class Differ:
             ev.append({"kind": "segment", "segment": seg})
         plan, pplan = (s.get("board") or {}).get("plan") or {}, (p.get("board") or {}).get("plan") or {}
         if not first and plan and pplan and plan != pplan:  # HOSTS5 item 2: a change to the team plan is news
-            changes = []
+            changes, raw = [], []  # raw: (who, text) for hoststory.PlainPlan's rewrite
             if (plan.get("goals") or "") != (pplan.get("goals") or "") and plan.get("goals"):
                 changes.append(f"new goals: {plan['goals']}")
+                raw.append(("goals", plan["goals"]))
             before = {d.get("name"): d.get("text") for d in pplan.get("doing") or []}
             for d in plan.get("doing") or []:
                 if d.get("text") and before.get(d.get("name")) != d.get("text"):
                     changes.append(f"{d.get('name')} is now on: {d.get('text')}")
+                    raw.append((d.get("name"), d["text"]))
             if changes:
-                ev.append({"kind": "plan", "changes": changes[:4], "agent": None})
+                ev.append({"kind": "plan", "changes": changes[:4], "raw": raw[:4], "agent": None})
         res, pres = s.get("research") or {}, p.get("research") or {}
         if not first and res.get("current") and res.get("current") != pres.get("current"):
             ev.append({"kind": "research_start", "tech": res.get("label")})
@@ -783,6 +786,53 @@ def analyst_pick(analyst, used, kinds=None, min_priority=0):
     return pick_point(dict(analyst, talking_points=pts), used, kinds=kinds)
 
 
+# (d23 batch130 CM2, hosts-proposal idea B) The analyst wrote 2,815 points on d23 and none reached a host prompt: the
+# lull that carried them ran three times all day. A fresh point of priority 2 or more is a beat of its own at
+# priority 5, at most one per ANALYST_EVERY seconds, a topic at most once per ANALYST_TOPIC_GAP (the analyst writes
+# the same topic again each cycle under a new id), shaped as one number and one reason.
+ANALYST_EVERY = 240
+ANALYST_MIN_PRIORITY = 2
+ANALYST_TOPIC_GAP = 1800
+ANALYST_CALL = ("the analyst desk's point (analyst_point), in the hosts' own words: the one number that matters in "
+                "it and the reason behind it, a cause and what it leads to; one number at most, never a list of "
+                "numbers or the number read out alone; say what is, never what the team should do")
+# what an analyst beat's lines may state: the point, and the beat's own plain facts (check_line holds them to these)
+ANALYST_CHECK = ("event", "game_time", "analyst_point", "how_to_call_it", "agent", "on_camera", "shift")
+
+
+def topic_key(p):
+    """A point's topic for the topic gap: its words in order ("steady-spm" and "spm-steady" are one topic)."""
+    return "topic:" + "-".join(sorted(str(p.get("topic") or p.get("id") or "").lower().split("-")))
+
+
+def analyst_aired(topics, p, now):
+    """Note a point on air for analyst_event: its topic and its text."""
+    topics[topic_key(p)] = now
+    topics["text:" + str(p.get("text") or "")] = now
+
+
+def analyst_event(s, used, topics, now):
+    """An analyst beat for this snapshot, or None: the best fresh point of ANALYST_MIN_PRIORITY or more whose id is
+    unused and whose topic (or much the same text) has not aired in the last ANALYST_TOPIC_GAP seconds."""
+    an = (s or {}).get("analyst") or {}
+    lately = [k[5:] for k, t in topics.items() if k.startswith("text:") and now - t < ANALYST_TOPIC_GAP]
+    pts = [p for p in an.get("talking_points") or [] if isinstance(p, dict)
+           and int(p.get("priority") or 2) >= ANALYST_MIN_PRIORITY and p.get("id") not in used
+           and now - topics.get(topic_key(p), -1e9) >= ANALYST_TOPIC_GAP
+           and not any(near_same(str(p.get("text") or ""), x, 0.5) for x in lately)
+           and (p.get("expires") or now + 1) > now and p.get("text")]
+    if not pts:
+        return None
+    # the snapshot lists them best first (analyst_board.public: priority, then newest)
+    return {"kind": "analyst", "point": pts[0], "t": now, "prio": PRIORITY["analyst"]}
+
+
+def checked_facts(e, facts):
+    """What check_line holds a beat's lines to: an analyst beat's to the point (the background and the memo's numbers
+    are not its to say), any other beat's to all its facts."""
+    return {k: facts[k] for k in ANALYST_CHECK if k in facts} if e.get("kind") == "analyst" else facts
+
+
 def analyst_facts(f, e, s):
     """The analyst's material for this beat: its point (said in the hosts' words, numbers kept), its corrections
     for what is on screen, and the headline and what comes next on the opener."""
@@ -790,6 +840,8 @@ def analyst_facts(f, e, s):
     if e.get("point"):
         from analyst_board import point_facts
         f["analyst_point"] = point_facts(e["point"])
+        if e["kind"] == "analyst":
+            f["how_to_call_it"] = ANALYST_CALL
         if e["kind"] == "lull":
             f["angle"] = ("the analyst's point; say it in the hosts' own words and keep its numbers"
                           + (f" ({f['angle']})" if f.get("angle") and e.get("angle") != "analyst" else ""))
@@ -895,9 +947,9 @@ def card_facts(seg):
     return f
 
 
-def story_facts(f, e, story=None, gate=None, now=None):
-    """hoststory.py's part of a beat's facts: why an attack is a beat at all, the run's story memo (for understanding,
-    not for reciting), and quiet hits of the last minutes (a word at most)."""
+def story_facts(f, e, story=None, gate=None, now=None, arrivals=None):
+    """hoststory.py's part of a beat's facts: why an attack or an arrival is a beat at all, the run's story memo (for
+    understanding, not for reciting), and quiet hits and routine arrivals of the last minutes (a word at most)."""
     if e.get("why_it_matters"):
         f["why_it_matters"] = e["why_it_matters"]
     memo = story.facts() if story else None
@@ -906,6 +958,9 @@ def story_facts(f, e, story=None, gate=None, now=None):
     quiet = gate.quiet_note(now or time.time()) if gate else None
     if quiet:
         f["quiet_hits"] = quiet
+    traffic = arrivals.traffic_note(now or time.time()) if arrivals else None
+    if traffic:
+        f["traffic"] = traffic
     return f
 
 
@@ -954,7 +1009,7 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "arrival":  # a platform's later arrival: another trip done, not a headline
         f["arrival"] = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
         f["how_to_call_it"] = ("a space platform finished another trip (it has been here before): one line, where it "
-                               "came from and who is aboard if the facts say; no big moment")
+                               "came from and why_it_matters, who is aboard if the facts say; no big moment")
     if e["kind"] in HEADLINE_KINDS:  # eng/hostguide: a headline, said as a clear call with the name and the stakes
         if e.get("facts"):
             f["headline"] = {k: v for k, v in e["facts"].items() if v not in (None, "", [])}
@@ -1821,6 +1876,9 @@ class LLMWriter:
                     "max_tokens": max(max_tokens * 4, 1200), "temperature": 0.9, "usage": {"include": True}}
             if getattr(self, "route_by_latency", False):  # urgent beats: the fastest provider, not the cheapest
                 body["provider"] = {"sort": "latency"}
+            if getattr(self, "reasoning", None) is not None:
+                # (CM3) Haiku 5.5 on OpenRouter spent all 2,000 tokens of a plan rewrite reasoning and returned nothing
+                body["reasoning"] = self.reasoning
             req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                          data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
@@ -2257,7 +2315,30 @@ class Caster:
         import hoststory
         run_dir = getattr(a, "run_dir", None)
         self.gate = hoststory.AttackGate(os.path.join(run_dir, "threat-history.json") if run_dir else None)
-        self.story = hoststory.StoryMemo(os.path.join(run_dir, "host-memo.json") if run_dir else None)
+        run_block = getattr(a, "run_block", "") or hoststory.run_block_path(run_dir)
+        self.story = hoststory.StoryMemo(os.path.join(run_dir, "host-memo.json") if run_dir else None,
+                                         run_block=run_block)
+        # (CM3) the plan's goals and lines in plain English: one small model call at most every ten minutes
+        self.plain = hoststory.PlainPlan(self.plain_writer(ai), os.path.join(run_dir, "host-plain.json") if run_dir else None)
+        # (d23 batch130 CM1) a routine docking is a traffic count; the routes flown this shift kept in the run folder
+        self.arrivals = hoststory.ArrivalGate(os.path.join(run_dir, "host-arrivals.json") if run_dir else None)
+
+    def plain_writer(self, ai=None):
+        """(CM3) The writer of hoststory.PlainPlan's rewrite: --plain-model, else the low model, else the main one, on
+        the main writer's service; None for the template writer."""
+        a = self.a
+        model = getattr(a, "plain_model", "") or getattr(a, "low_model", "") or a.model
+        if a.writer == "or" and model:
+            w = LLMWriter("or", model, timeout=a.writer_timeout)
+            w.reasoning = {"enabled": False}
+            return w
+        if a.writer == "claude":
+            return LLMWriter("claude", getattr(a, "plain_model", "") or "haiku", bin=a.claude_bin,
+                             timeout=a.writer_timeout)
+        if a.writer == "cf":
+            return LLMWriter("cf", getattr(a, "plain_model", "") or a.model or DEFAULT_MODEL, ai=ai,
+                             timeout=a.writer_timeout)
+        return None
 
     # -- plumbing
     def on_snapshot(self, s):
@@ -2268,7 +2349,11 @@ class Caster:
             if yt.get("watching_t") and (not reads or reads[-1][0] != yt["watching_t"]):
                 reads.append((yt["watching_t"], yt.get("watching")))
             now = time.time()
-            gate, story = self.__dict__.get("gate"), self.__dict__.get("story")
+            gate, story, arrivals = self.__dict__.get("gate"), self.__dict__.get("story"), self.__dict__.get("arrivals")
+            plain = self.__dict__.get("plain")
+            if plain:  # (CM3) the hosts see the plan in plain English, never the agents' shorthand
+                plain.tick(s, now)
+                self.snap = plain.view(s)
             for e in self.differ.diff(s):
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
@@ -2284,14 +2369,25 @@ class Caster:
                 elif e["kind"] == "chat":
                     # the hosts hear a chat line only once it aired in the agent's voice (yield_to), not as it is typed
                     self.chat_q.append(e)
-                elif gate:  # an attack is a beat only when it matters (hoststory.AttackGate); the rest as before
-                    self.events.extend(gate.admit(e, s, now))
+                elif e["kind"] == "plan" and plain:  # (CM3) a plan change waits for its rewrite
+                    self.events.extend(plain.admit(e, now))
                 else:
-                    self.events.append(e)
+                    # an attack or an arrival is a beat only when it matters (hoststory.AttackGate, ArrivalGate)
+                    for x in arrivals.admit(e, s, now) if arrivals else [e]:
+                        self.events.extend(gate.admit(x, s, now) if gate else [x])
             if gate:
                 self.events.extend(gate.poll(s, now))
+            if plain:
+                self.events.extend(plain.poll(now))
+            # (CM2) an analyst point as a beat of its own, one per ANALYST_EVERY seconds
+            if "events" in self.__dict__ and now - self.__dict__.get("analyst_t", 0.0) >= ANALYST_EVERY and not any(
+                    e["kind"] == "analyst" for e in self.events):
+                ae = analyst_event(s, self.__dict__.get("used_points") or set(),
+                                   self.__dict__.setdefault("analyst_topics", {}), now)
+                if ae:
+                    self.events.append(ae)
             if story:
-                story.update(s, now)
+                story.update(self.snap, now)
 
     def status(self):
         try:
@@ -2693,6 +2789,8 @@ class Caster:
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
+        if e["kind"] == "analyst":  # (CM2) the next analyst beat waits ANALYST_EVERY from this one, aired or not
+            self.analyst_t = t_start
         facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
@@ -2717,7 +2815,8 @@ class Caster:
         used = self.used_framings()
         if used:  # HOSTS6 item 2: a memory of framings across the shift, not only the last few lines
             facts["framings_used_lately"] = used
-        story_facts(facts, e, getattr(self, "story", None), getattr(self, "gate", None), time.time())
+        story_facts(facts, e, getattr(self, "story", None), getattr(self, "gate", None), time.time(),
+                    getattr(self, "arrivals", None))
         # the site's open poll (pollstrip.py): offered while 20 minutes have passed since the hosts last mentioned one
         poll = pollstrip.host_facts(s, getattr(self, "poll_said", 0.0), time.time(), POLL_URL)
         if poll and e["prio"] < URGENT:
@@ -2727,6 +2826,7 @@ class Caster:
         lines, backend, err, lat = [], "template", None, 0.0
         directions = []  # (BI2) the writer's delivery for each kept line
         writer = self.fast if self.fast and e["prio"] >= URGENT else self.main_writer()
+        checked = checked_facts(e, facts)
         if writer and self.breakers["writer"].ok():
             try:
                 note = ""
@@ -2737,7 +2837,7 @@ class Caster:
                     err, kept = (None if cand else "empty"), []
                     dirs = list(getattr(writer, "last_directions", None) or [])
                     for who, line in cand[:n + 1]:  # keep the exchange up to its first unusable line
-                        err = check_line(line, facts, names, recent + [x for _, x in kept]) or self.repeat_fault(line)
+                        err = check_line(line, checked, names, recent + [x for _, x in kept]) or self.repeat_fault(line)
                         if err:
                             log(f"[{who}] rejected ({err}): {line}")
                             break
@@ -2792,6 +2892,8 @@ class Caster:
         self.stats["caster_lines"] += len(lines)
         if e.get("point") and backend != "template":  # the writer built on the point: never offer it again
             self.point_used(e["point"].get("id"))
+            # (CM2) nor its topic for a while: the analyst posts the same topic again each cycle under a new id
+            analyst_aired(self.__dict__.setdefault("analyst_topics", {}), e["point"], time.time())
         # (BI2) the writer's deliveries ride on the event (stand-ins for speak_lines take the old arguments)
         self.speak_lines(lines, dict(e, directions=directions) if any(directions) else e, facts, backend, err, lat, t_start)
 
@@ -2998,7 +3100,8 @@ class Caster:
 
     def cost(self):
         hrs =max(1e-6, (time.time() - self.t0) / 3600)
-        w = sum(x.spent for x in (self.writer, self.fast, getattr(self, "low", None)) if x)
+        w = sum(x.spent for x in (self.writer, self.fast, getattr(self, "low", None),
+                                   getattr(getattr(self, "plain", None), "writer", None)) if x)
         t = sum(x.spent for x in (self.tts, self.tts_fallback) if x)
         c = self.classifier.spent
         return {"minutes": round(hrs * 60, 1), "writer_usd": round(w, 4), "tts_usd": round(t, 4),
@@ -3163,6 +3266,12 @@ def parser():
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
                     help="fast writer for urgent events: a Workers AI model id, or or:<OpenRouter model> (e.g. "
                          "or:anthropic/claude-haiku-5.5); '' to use the main writer for everything")
+    ap.add_argument("--plain-model", default="",
+                    help="(d23 batch130 CM3) the model that rewrites the team plan in plain English for the hosts, at "
+                         "most one call per 10 minutes; default --low-model, else --model")
+    ap.add_argument("--run-block", default="",
+                    help="(CM3) the 'run so far' text in every host prompt, read again every 3 minutes (default "
+                         "runs/host-run-so-far.md beside --run-dir, started from tools/stream/host-run-so-far.md)")
     ap.add_argument("--low-model", default="",
                     help="--writer or: a cheaper OpenRouter model for non-urgent lines while YouTube's \"watching now\" "
                          "is 0, or 1 for over 10 minutes (e.g. anthropic/claude-haiku-5.5); --model with 2+ watching, a "

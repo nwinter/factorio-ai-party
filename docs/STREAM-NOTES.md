@@ -1557,6 +1557,53 @@ Nick (d23 10:28): a narrated camera tour, scripted ahead. tools/stream/tour.py p
   host-view-source.
 - Test: `tools/test_obs_rehook.py`.
 
+## The hosts: arrivals gated, analyst beats (2026-10-23, d20 batch130 CM1-CM2)
+From the hosts proposal (d23 18:40, section 3). On d23, 47% of host beats were dockings, and no analyst point reached
+a host prompt.
+- CM1, hoststory.ArrivalGate. An arrival (kind `arrival`) is a beat only when one of these holds:
+  - it is the route's first this shift, by any platform;
+  - it brings science or eggs, the platform's first delivery of that kind on that route this shift;
+  - the team's goals name the ship;
+  - it ends a leg of 60 game minutes or more.
+
+  The reasons go into `why_it_matters`. Every other arrival is a `traffic` fact ("N routine platform arrivals in the
+  last 10 minutes"), which a beat may use in a word. Space firsts pass and are noted. What was seen is kept in
+  `runs/RUN/host-arrivals.json`.
+- model.py's arrival alert now carries `leg_minutes` (from the route memory) and `carrying` (science and eggs in the
+  hub). A new shift also reads `visited` and `reached` from the shifts before it. Before this, every ferry's next
+  arrival at each planet aired as a priority-10 first ("Kestrel II reaches Fulgora": 62 of d23's 71 space beats).
+- CM2. A fresh analyst point of priority 2 or more is a beat (kind `analyst`, priority 5). The limits: one per 240 s,
+  aired or not, and one topic per 30 minutes, because the analyst posts each topic again every cycle under a new id.
+  `how_to_call_it` asks for the one number, its cause and what it leads to. check_line holds the lines to the
+  point's facts (ANALYST_CHECK), so background numbers are rejected.
+- Replay: `python3 tools/stream/hosts_replay.py [--day 20261023]` runs a day's caster logs and every chronicle
+  arrival through the gate, and counts the analyst beats that would have aired. On d23, 523 exchanges became 256, and
+  logged arrivals went from 248 to 43. The chronicles had 11-19 speaking arrivals per shift out of 177-346. About 122
+  analyst beats would have aired.
+- Tests: tools/stream/test_hoststory.py (arrival_tests, analyst_tests), test_route_direction.py.
+
+### The run in plain English (CM3)
+- Every host prompt's `story` memo carries `run_so_far`, a block of about 340 words written from the d23 synthesis
+  report. It lives in `runs/host-run-so-far.md`, beside the shift folders, and the caster creates it from
+  `tools/stream/host-run-so-far.md` when it is missing. The memo reads it again at each rebuild (every 3 minutes),
+  so an edit airs without a restart. `--run-block PATH` points the caster at another file.
+- The plan's goals and each agent's plan line go through hoststory.PlainPlan, which rewrites them in plain English.
+  It makes one call at most every 10 minutes, and only when there is text it has not rewritten yet. The model is
+  `--plain-model`, else `--low-model` (live: Haiku 5.5, with reasoning off; with reasoning on it spent its 2,000
+  tokens thinking and returned nothing).
+  - The prompt carries the agents' and ships' names. It says to rewrite only (add, judge and advise nothing), and to
+    drop ids, ticks and anything the model cannot read.
+  - plain_checked drops a sentence that has a number missing from the note or a number of 7 digits or more (a tick),
+    and keeps whole sentences up to 50 words for goals and 30 for a line.
+  - The hosts' snapshot (`Caster.snap`, so the memo, team_plan and agent facts) has the rewrite only. A text not yet
+    rewritten is left out. The Differ still compares the raw plan.
+  - A plan change waits for its rewrite and then airs in plain English. It is dropped after 15 minutes. Rewrites are
+    kept in `runs/RUN/host-plain.json`.
+- Cost: the rewrite measured $0.00046-0.00057 a call (1,100 tokens in, 400-900 out), at most 6 calls an hour, so
+  under $0.004 an hour. The run block adds about 450 input tokens to each host exchange, while CM1 removes about
+  half the exchanges.
+- Tests: tools/stream/test_hoststory.py (plain_tests).
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

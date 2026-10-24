@@ -335,6 +335,17 @@ PLAT_GUNS = re.compile(r"^(\d+)\s[^:]*:\s*(\d+) empty,\s*(\d+) low")
 PLAT_ROUNDS = re.compile(r"turrets hold (\d+) rounds?")
 PLAT_STACK = re.compile(r"([a-z0-9][\w-]*)(?:@[\w-]+)?\*(\d+)")
 NOT_CARGO = re.compile(r"magazine|ammo|rounds|repair-pack|cannon-shell|rocket$|^rocket\b|railgun-ammo", re.I)
+STORY_CARGO = re.compile(r"science-pack$|egg$")
+
+
+def story_cargo(hub_items):
+    """Science packs and eggs in a hub's items text, the largest first: "1200 agricultural science pack, 20 biter egg";
+    "" for none."""
+    got = {}
+    for n, c in PLAT_STACK.findall(str(hub_items or "")):
+        if STORY_CARGO.search(n):
+            got[n] = got.get(n, 0) + int(c)
+    return ", ".join(f"{c} {n.replace('-', ' ')}" for n, c in sorted(got.items(), key=lambda x: -x[1]))
 HITS_WINDOW_MIN = 5  # status alerts cover the last 5 game minutes (whole minutes): hits per minute over that
 
 
@@ -2146,6 +2157,13 @@ class Model:
             title = f"{name} is back at Nauvis" if planet == "nauvis" else f"{name} arrives at {planet_label(planet)}"
             facts = {"platform": name, "planet": planet_label(planet), "came_from": planet_label(came) if came else None,
                      "aboard": aboard or None, "game_time": fmt_game_time(self.tick / 60)}
+            # (d23 batch130 CM1) what hoststory.ArrivalGate weighs: the leg's game minutes from its departure in the
+            # route memory, and science or eggs in the hub
+            left = self.route_last(name, came, planet, self.tick + 1) if came and self.tick else None
+            if left is not None:
+                facts["leg_minutes"] = round((self.tick - left) / 3600)
+            row = next((p for p in sp.get("platforms") or [] if p.get("name") == name), None) or {}
+            facts["carrying"] = story_cargo(row.get("hub_items")) or None
             trips = self.platform_course.get(name, {})
             trips["arrivals"] = trips.get("arrivals", 0) + 1  # one alert per arrival (keys dedupe within a ttl)
             key = f"arrive:{name}:{planet}:{trips['arrivals']}"
@@ -2164,12 +2182,20 @@ class Model:
         for p in (path, *earlier):  # (AS1) the routes flown, from this run and the runs before it
             try:
                 with open(p) as f:
-                    for name, routes in (json.load(f).get("routes") or {}).items():
-                        for key, ticks in (routes or {}).items():
-                            frm, _, to = str(key).partition(">")
-                            for tick in ticks if isinstance(ticks, list) else ():
-                                if isinstance(tick, int) and frm and to:
-                                    self.add_route(name, frm, to, tick, save=False)
+                    got = json.load(f)
+                # (d23 batch130 CM1) and where each platform has been: a new shift's file started empty, and every
+                # platform's next arrival at each planet aired as a first ("Kestrel II reaches Fulgora", 20 in each
+                # shift's first hour on d23; "Asterion reaches Solar system edge" again at 13:48)
+                for name, planets in (got.get("visited") or {}).items():
+                    self.platform_course.setdefault(name, {"visited": set()})["visited"].update(planets)
+                    self.orbit_known.update((name, pl) for pl in planets)
+                self.planets_reached.update(got.get("reached") or [])
+                for name, routes in (got.get("routes") or {}).items():
+                    for key, ticks in (routes or {}).items():
+                        frm, _, to = str(key).partition(">")
+                        for tick in ticks if isinstance(ticks, list) else ():
+                            if isinstance(tick, int) and frm and to:
+                                self.add_route(name, frm, to, tick, save=False)
             except (OSError, ValueError, AttributeError):
                 continue
         try:
