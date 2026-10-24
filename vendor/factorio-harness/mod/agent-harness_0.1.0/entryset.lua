@@ -141,9 +141,11 @@ return function(api)
     return rows
   end
   -- A dry run (A3): each entry's settings checked as the real call checks them on the ghost it places (api.dry, the
-  -- runtime's checks on a stand-in of that ghost). Rows [{index, name, position, configure, requests, circuit}] ('ok'
-  -- or the refusal), a line, and how many were refused. Wires are checked by place_ghosts' own dry run.
-  function M.dry(p, entries)
+  -- runtime's checks on a stand-in of that ghost). Rows [{index, name, position, configure, requests, circuit, wires}]
+  -- ('ok' or the refusal), a line, and how many were refused. Each wire's ends by the live wire's rules (d20 batch122,
+  -- Astra #2087: from_side on a belt read ok, the live call refused it): the entry, and at to an entry of this call
+  -- (entries) or what stands there (ctx: platform, surface).
+  function M.dry(p, entries, ctx)
     local rows, ok_n, failed = {}, 0, {}
     for i, e in ipairs(entries) do
       if has(e) then
@@ -158,6 +160,15 @@ return function(api)
             if ok then row[k[1]] = 'ok'; ok_n = ok_n + 1
             else row[k[1]] = api.reason(res); failed[#failed+1] = string.format('entry %d %s: %s', i, k[1], row[k[1]]) end
           end
+        end
+        for j, w in ipairs(type(e.wires) == 'table' and e.wires or {}) do
+          local to = api.position(w.to)
+          local label = string.format('%s to %s', w.color or 'copper', at(to))
+          local ok, res = pcall(api.dry, p, e, 'wire', {to=to, color=w.color, from_side=w.from_side, to_side=w.to_side,
+            entries=entries, ctx=ctx or {}})
+          row.wires = row.wires or {}
+          if ok then row.wires[j] = label .. ': ok'; ok_n = ok_n + 1
+          else row.wires[j] = label .. ': ' .. api.reason(res); failed[#failed+1] = string.format('entry %d wire %d: %s', i, j, api.reason(res)) end
         end
         rows[#rows+1] = row
       end
