@@ -819,7 +819,9 @@ return function(api)
         estimate and {leg=w.leg,paused=pl.paused,platform=pl} or nil end
       local loc=pl.space_location and pl.space_location.name
       local conn=pl.space_connection
-      local where=loc and ('at '..loc) or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'
+      local l=conn and api.leg and api.leg(pl)  -- (CN1) the leg as flown
+      local where=loc and ('at '..loc) or l and string.format('flying %s->%s %d%%',l.from,l.to,math.floor(l.flown*100+0.5))
+        or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'
       return loc~=nil and (c.location==nil or loc==c.location),c.platform..' '..where
     end,
     -- Its departure (Gemini, 16:50): met while it is not stopped at `location` (a planet), else at no stop (flying, or

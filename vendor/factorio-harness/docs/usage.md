@@ -2822,7 +2822,15 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   paused and drifting back). `at` is the leg the same way, with the share of it flown (`gleba->nauvis 73%`; Luna,
   shift12: it used to keep the connection's own order, `nauvis->gleba 27%` for the same place, while `leg` said
   `gleba->nauvis`). Stopped, `at` is the location; at a location while the game still has the platform on its path
-  (`state: on_the_path`, as when it leaves), `at` says `gleba (on its path, not stopped)`. The `platform_arrived` wait
+  (`state: on_the_path`, as when it leaves), `at` says `gleba (on its path, not stopped)`. The end it flies to is the
+  schedule's stop when that is an end of the connection; a stop beyond it (d23 batch131, Astra #2088: Asterion's
+  guard set Aquilo 5552 km out on solar-system-edge->shattered-planet) picks the end with the shorter way on to it
+  (km left to that end plus the shortest way from it); else the way `distance` moved since the last read (not
+  paused); else the end it did not come from. A platform headed back to the end it left reads `turned_back: true` and
+  `at` `back to solar-system-edge, 2625 km left (turned back on solar-system-edge->shattered-planet)`; `leg_left_km`,
+  `eta_min`, `eta_to`, wait ETAs, `platform_endurance`, `flight_watch` and the fuel alerts (a new trend per leg as
+  flown) all take that leg, and so does the stream's ship card. On a 2.0.77 copy of world n the same case read
+  3,995,048 km left and an Aquilo ETA of 228,986 s before, 4,208 km and 2,948 s after. The `platform_arrived` wait
   reads the same rule (freight.lua), so it is met exactly when the row shows the platform stopped there; its `saw`
   says `Sunward at gleba, on its path (not stopped)` then, and in flight `Sunward flying gleba->nauvis 73%`.
 - Freight, on the `platforms` row with `platform` set (`fh platform NAME`; Luna, shift12 12:47: of 995 agricultural

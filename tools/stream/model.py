@@ -322,6 +322,8 @@ HUB_LOST = re.compile(r"space[ -]platform[ -]hub", re.I)
 def platform_place(p):
     """Where a platform is, for the hosts: "in orbit of Vulcanus", "travelling from Nauvis to Vulcanus"."""
     w = platform_where(p)
+    if w["route"] and w["route"].get("turned_back"):
+        return f"turned back, travelling to {w['route']['to']}"
     if w["route"]:
         return f"travelling from {w['route']['from']} to {w['route']['to']}"
     return f"in orbit of {w['where']}" if w["where"] and w["where"] != "in transit" else "in transit"
@@ -462,7 +464,10 @@ def platform_where(p):
         if p.get("toward") == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
             a, b, pct = b, a, 100 - pct
         route = {"from": planet_label(a), "to": planet_label(b), "pct": pct}
-    where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
+        if p.get("turned_back"):  # (CN1) back to where it left, its far end never reached
+            route["turned_back"] = True
+    where = (f"back to {route['to']} (turned back)" if route and route.get("turned_back") else
+             f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit")
     speed = p.get("speed")
     out = {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
             "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
@@ -2371,6 +2376,8 @@ class Model:
                 for planet in c["visited"]:
                     self.orbit_known.add((name, planet))
             p["toward"] = toward
+            # (d23 batch131 CN1, Astra #2088) headed back to the place it left: a turn back mid-connection
+            p["turned_back"] = bool(c.get("orbit")) and toward == c.get("orbit")
             out.append(p)
         return out
 
