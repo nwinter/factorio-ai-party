@@ -265,7 +265,7 @@ local stop={valid=true,backer_name='Base',position={x=3,y=-5}}
 local v=T.train_view(train({state=6,schedule=sch,station=stop,fuel={{name='coal',count=5}},items={{name='iron-ore',count=40}}}))
 eq(v.state,'wait_station'); eq(v.why,'at stop Base (3,-5): waits for time 10s or item_count iron-ore > 100')
 eq(v.schedule[1],'Iron: full'); eq(v.current,2); eq(v.at_stop.stop,'Base'); eq(v.cargo,'iron-ore 40'); eq(v.carriages,'1 locomotive, 1 wagon')
-eq(v.fuel[1],'(1,-5): coal 5')
+eq(v.fuel[1],'(1,-5) carriage 1, faces the train\'s front: coal 5; nothing burning')
 local sig={valid=true,name='rail-signal',position={x=2.5,y=-20.5},signal_state=1}
 v=T.train_view(train({state=4,schedule=sch,signal=sig,fuel={{name='coal',count=5}}}))
 eq(v.why,'stopped at rail-signal (2.5,-20.5) (closed)')
@@ -282,7 +282,7 @@ v=T.train_view(train({state=2,schedule={current=1,records={{station='Nowhere'}}}
 eq(v.why,'no train stop is named Nowhere')
 -- On its way with no fuel left: it stands still.
 v=T.train_view(train({state=0,schedule=sch,speed=0}))
-eq(v.why,'stands still: no fuel in its locomotives'); eq(v.fuel[1],'(1,-5): no fuel')
+eq(v.why,'stands still: no fuel in its locomotives'); eq(v.fuel[1],'(1,-5) carriage 1, faces the train\'s front: no fuel; nothing burning')
 v=T.train_view(train({state=8}))
 eq(v.state,'manual_control'); eq(v.why,'manual mode')
 
