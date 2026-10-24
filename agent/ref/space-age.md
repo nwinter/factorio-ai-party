@@ -536,6 +536,9 @@
   pack's research units, and made and used a minute. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. Its drops list: the last 4 drops of it into a landing pad on that
   surface, each with what the pad showed after (`landed, then taken by construction robots: drop #N ...`).
+  An item that places a vehicle (spidertron, car, tank, locomotive, wagons): `total` is what is stored (as items);
+  `scope_line` and `placed` give our vehicles of it placed, on every surface (where, unit_number, the read that reads one).
+  `stock` and `supply` say both the same way.
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
   and so do tell, chat, `chat_ack`, say, operator, the board, `flight_watch {id}` or `{}`, research, platform calls,
