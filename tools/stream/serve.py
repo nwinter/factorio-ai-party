@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
 from analyst_board import AnalystBoard  # noqa: E402
+from tourlay import TourOverlay  # noqa: E402
 from director import Director  # noqa: E402
 from onecam import OneCam, onair_doing, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
@@ -295,8 +296,9 @@ def map_memory_paths(run_dir, hops=5, name="map-memory.json"):
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None, look=None, show=None, host=None, board_all=None):
+                 platform=None, look=None, show=None, host=None, board_all=None, tour=None):
     audio = audio or AudioHub()
+    tour = tour or TourOverlay()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
 
@@ -404,6 +406,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     return self.send(409, b'{"error": "platform needs the onecam director"}', "application/json")
                 code, reply = platform.request(body)
                 return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/tour/overlay":  # (CK3) what the tour shows over the camera (tourlay.py; static/tourlay.js)
+                code, reply = tour.post(body, time.time())
+                return self.send(code, json.dumps(reply).encode(), "application/json")
             if path == "/look/extend":  # (CK1) the current look's end moved, no chart read (the tour's renewals)
                 if not look:
                     return self.send(409, b'{"error": "look needs the onecam director"}', "application/json")
@@ -432,6 +437,9 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/hostview" and host:
                 code, reply = host.request({"on": False})
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if self.path.split("?", 1)[0] == "/tour/overlay":
+                code, reply = tour.clear()
                 return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/look" and look:
                 code, reply = look.clear()
@@ -676,6 +684,7 @@ def main():
     lib = library.Library(os.path.join(os.path.dirname(os.path.abspath(a.run)), "blueprints", "index.json")) \
         if a.run and not a.mock else None
     analyst = AnalystBoard()
+    tour = TourOverlay()  # (CK3) the tour's overlay entries (tourlay.py)
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
     audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
@@ -829,6 +838,7 @@ def main():
                     # (d17 batch35 D4) what each agent does and which places its claims hold, for routing by content
                     feed.relay.set_team(router.Team.from_snapshot(snap, list(model.board["items"].values())))
                 snap["analyst"] = analyst.public(now)
+                snap["tour"] = tour.public(now)  # (CK3) the tour's marks, captions and clip over the camera
                 snap["poll"] = polls.step(now) if polls else None
                 snap["library"] = lib.public() if lib else None
                 if highlights:
@@ -862,7 +872,7 @@ def main():
                                                                     analyst=analyst, follow=follow, audio=audio,
                                                                     director=director, platform=platform, look=look,
                                                                     show=show, host=host,
-                                                                    board_all=board_all))
+                                                                    board_all=board_all, tour=tour))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

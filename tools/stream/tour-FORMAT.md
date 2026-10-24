@@ -27,6 +27,7 @@ shot each, with one narrator reading each stop's narration. Check a script with
 | `hold_s` | no | seconds added after the narration's tail (0 to 30) |
 | `seconds` | no | the length of a stop **without** narration (default 8). Not used when there is a narration |
 | `move` | no | the camera moving within the stop: pan, zoom, a path (below) |
+| `marks` | no | arrows, circles, boxes and labels drawn at map positions over the shot (below) |
 
 ### target
 
@@ -62,6 +63,37 @@ comes from its narration, so `"to_s": "end"` and the defaults follow the clip.
 - On a ship, give a path (its first point is the start, in platform tiles), or a deck spot in the target
   (`{"platform": "Asterion", "x": 0, "y": -40, "zoom": 1}`) with `to` or `zoom`.
 - `dry-run` prints each move with its times.
+
+## marks: annotations on the shot
+
+`marks` is a list (at most 12) of things drawn over the camera at map positions. They stay on their spot while the
+camera moves, and fade in and out (0.3 s).
+
+```json
+"marks": [
+  {"type": "circle", "at": {"x": 52, "y": 54}, "radius": 4, "text": "the landing pad"},
+  {"type": "arrow", "at": {"x": 75, "y": 30}, "from": "ne", "text": "the first assemblers", "from_s": 8},
+  {"type": "box", "at": {"x": 45, "y": 52}, "w": 10, "h": 6, "color": "yellow", "text": "old smelters", "to_s": -2},
+  {"type": "label", "at": {"x": 70, "y": 52}, "text": "2 belts, 15/s", "color": "green"}
+]
+```
+
+| type | draws | its own fields |
+|---|---|---|
+| `circle` | a ring round the spot, the text below it | `radius` in tiles (default 6) |
+| `arrow` | an arrow pointing at the spot, the text at its tail | `from`: the tail's side, `n`, `ne`, `e`, `se`, `s`, `sw`, `w`, `nw` (default) or a map spot `{x, y}`; `length` in pixels (30 to 400, default 110) |
+| `box` | a rectangle centred on the spot, the text below it | `w`, `h` in tiles (default 12) |
+| `label` | a dot on the spot and the text beside it | `text` is required |
+
+Every mark: `at` {x, y} (map tiles on the stop's surface; a ship's in platform tiles), `text` (at most 60
+characters), `from_s` and `to_s` (seconds from the cut, like a move's; default the whole stop; `"end"` or a negative
+number counts from the end), `color` (`orange` default, `yellow`, `red`, `green`, `blue`, `white`, or `#rrggbb`).
+
+- A mark only shows while its spot is in the frame. `dry-run` lists each stop's marks and says when one is out of
+  the frame while it should show ("mark 2 out of the frame at 12 s"); it cannot check a whole ship's frame (the
+  director frames it at run time).
+- Text is kept inside the camera; long text near an edge is moved in.
+- An urgent event (an attack) can still put a small inset window over the top right of the camera.
 
 ## Timing
 

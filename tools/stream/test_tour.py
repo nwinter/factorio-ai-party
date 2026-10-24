@@ -117,6 +117,7 @@ class FakeService:
     def __init__(self, clock, refuse=(), platforms=("Spindle",), queued=()):
         self.clock, self.refuse, self.platforms, self.queued = clock, set(refuse), platforms, list(queued)
         self.calls, self.look_hold, self.clips, self.seq, self.cancelled = [], None, [], 0, []
+        self.overlays = []
 
     def call(self, method, path, body=None, timeout=10):
         self.calls.append((round(self.clock() - 1000, 2), method, path, body))
@@ -131,7 +132,10 @@ class FakeService:
             until = max(now, body["cut_at"]) + body["seconds"]
             self.look_hold = {"by": body["by"], "until": until, "label": body["label"], "id": body["id"],
                               "cut_at": body["cut_at"]}
-            return 200, {"until": until}
+            if "platform" in body:  # the director's frame of the ship
+                return 200, {"until": until, "surface": "platform-1", "position": {"x": 0, "y": -3}, "zoom": 0.6}
+            return 200, {"until": until, "surface": body["surface"], "position": {"x": body["x"], "y": body["y"]},
+                         "zoom": body.get("zoom", 0.75), **({"move": body["move"]} if isinstance(body.get("move"), dict) else {})}
         if (method, path) == ("POST", "/look/extend"):
             if not self.look_hold or self.look_hold["id"] != body["id"]:
                 return 409, {"error": "no look on"}
@@ -141,6 +145,12 @@ class FakeService:
             self.look_hold = None
             return 200, {}
         if (method, path) == ("DELETE", "/platform"):
+            return 200, {}
+        if (method, path) == ("POST", "/tour/overlay"):
+            self.overlays.append(body)
+            return 200, {"id": body["id"]}
+        if (method, path) == ("DELETE", "/tour/overlay"):
+            self.overlays.append(None)
             return 200, {}
         if (method, path) == ("POST", "/audio"):
             self.seq += 1
@@ -332,6 +342,27 @@ def moves():
     assert b["move"] == "pan" and b["move_s"] == 25 and b["platform"] == "Spindle"
 
 
+def overlays():
+    """(CK3) A stop with marks posts them with the view the look gave (its move too), ahead of the cut; the end clears."""
+    with tempfile.TemporaryDirectory() as d:
+        marks = [{"type": "circle", "at": {"x": 12, "y": -5}, "text": "the pad", "to_s": -2}]
+        ship = dict(SHIP, marks=[{"type": "arrow", "at": {"x": 0, "y": 10}, "from": "e"}])
+        t, svc, clock, rows = tour_with(d, [dict(LOOK, marks=marks, move={"zoom": 1}), LONG, ship], clip_s=6.0)
+        t.run(rows)
+        a, s = [o for o in svc.overlays if o]
+        log = [json.loads(x) for x in open(t.log_path)]
+        cut_a = next(r["cut"] for r in log if r.get("id") == "a")
+        assert a["id"] == "a" and a["cut"] == cut_a and a["length"] == tour.LEAD_S + 6 + tour.TAIL_S
+        assert a["marks"][0]["text"] == "the pad" and a["marks"][0]["to_s"] == -2.0
+        assert a["view"]["position"] == {"x": 10.0, "y": -5.0} and a["view"]["move"]["segments"][0]["pts"][1]["zoom"] == 1
+        assert a["until"] == cut_a + a["length"] + tour.LOOK_SPARE_S
+        assert s["view"] == {"surface": "platform-1", "position": {"x": 0, "y": -3}, "zoom": 0.6}, "a ship: the frame given"
+        assert svc.overlays[-1] is None, "the end clears the overlay"
+        assert len([o for o in svc.overlays if o]) == 2, "a stop with no marks posts none"
+    why = [w for _, x, w in tour.checked([dict(LOOK, marks=[{"type": "star", "at": {"x": 0, "y": 0}}])])]
+    assert why == ["mark 1: type must be one of arrow, circle, box, label"], why
+
+
 class Args:
     pass
 
@@ -382,7 +413,7 @@ def cli_dry_run():
 
 if __name__ == "__main__":
     for f in (script_checks, timing, prepare_clips, run_tour, agent_gaps, skip_and_stop, operator_hold_kept, moves,
-              caster_hush, cli_dry_run):
+              overlays, caster_hush, cli_dry_run):
         f()
         print("ok", f.__name__)
     print("test_tour: all ok")

@@ -38,6 +38,7 @@ import argparse, base64, hashlib, json, os, signal, sys, time, urllib.error, url
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
+import tourlay  # noqa: E402
 
 LOG_DIR = os.path.join(HERE, "logs")
 HUSH_FILE = os.path.join(LOG_DIR, "hosts-hush.json")  # caster.py HUSH_FILE
@@ -186,8 +187,9 @@ def checked(stops):
         if s:
             try:
                 move_for(s, 60.0)
+                s["marks"] = tourlay.check_marks(raw.get("marks") if isinstance(raw, dict) else None)
             except ValueError as x:
-                s, why = None, str(x) if str(x).startswith("move") else f"move: {x}"
+                s, why = None, str(x) if str(x).startswith(("move", "mark")) else f"move: {x}"
         if s:
             seen.add(s["id"])
         out.append((i, s, why))
@@ -351,6 +353,16 @@ def timeline(rows, manifest, out, lead=LEAD_S, tail=TAIL_S):
     return plan, bad
 
 
+def view_frac():
+    """The share of a client's width the on-air hole shows (cuts.view_frac of static/layout.json's main hole)."""
+    try:
+        with open(os.path.join(HERE, "static", "layout.json")) as f:
+            _, _, w, h = json.load(f)["cams"]["main"]
+        return round(min(1.0, (w / h) / (1920 / 1080)), 3)
+    except (OSError, ValueError, KeyError, TypeError):
+        return 1.0
+
+
 def move_text(mv):
     """ "0.0-15.6 s (60, 40) z0.5 -> (90, 40) z0.8 inout; ..." """
     return "; ".join(f"{g['t0']:.1f}-{g['t1']:.1f} s " + " -> ".join(f"({p['x']:g}, {p['y']:g}) z{p['zoom']:g}"
@@ -380,6 +392,17 @@ def print_timeline(rows, manifest, out, platforms=None, lead=LEAD_S, tail=TAIL_S
         mv = move_for(s, length)
         if isinstance(mv, dict):
             print(f"{'':22}move: {move_text(mv)}")
+        if s.get("marks"):
+            off = []
+            if "x" in s["target"]:  # (a whole ship's frame is the director's: not known here)
+                view = {"position": {"x": s["target"]["x"], "y": s["target"]["y"]},
+                        "zoom": s["target"].get("zoom", 0.75)}
+                if isinstance(mv, dict):
+                    view["move"] = mv
+                off = tourlay.offscreen(view, s["marks"], length, view_frac())
+            print(f"{'':22}marks: " + ", ".join(f"{m['type']}" + (f" '{m['text']}'" if m.get("text") else "")
+                                                for m in s["marks"])
+                  + "".join(f"   [mark {i + 1} out of the frame at {t:g} s]" for i, t in off))
         t += length
     for i, why in bad:
         print(f"  skip  stop {i + 1}: {why}")
@@ -520,6 +543,26 @@ class Tour:
             self.sleep(min(0.5, max(0.01, t - self.now())))
         return not self.want_stop()
 
+    def overlay(self, s, look, cut, end, length):
+        """(CK3) The stop's marks (and CK4 captions, CK5 clip) for the page, with the view the look reply gave."""
+        body = self.overlay_body(s, look, cut, end, length)
+        if not body:
+            return
+        code, r = self.svc.call("POST", "/tour/overlay", body)
+        if code != 200:
+            log(f"[tour] {s['id']}: the overlay was refused (HTTP {code}: {(r or {}).get('error')})")
+
+    def overlay_body(self, s, look, cut, end, length):
+        if not s.get("marks"):
+            return None
+        view = {"surface": look.get("surface") or s["target"].get("surface"),
+                "position": look.get("position") or {"x": s["target"].get("x"), "y": s["target"].get("y")},
+                "zoom": look.get("zoom") or s["target"].get("zoom") or 0.75}
+        if isinstance(look.get("move"), dict):
+            view["move"] = look["move"]
+        return {"id": s["id"], "cut": round(cut, 3), "until": round(end + LOOK_SPARE_S, 3), "length": round(length, 3),
+                "view": view, "marks": s["marks"]}
+
     def narrate(self, s, clip, at):
         with open(clip["path"], "rb") as f:
             audio = f.read()
@@ -619,6 +662,7 @@ class Tour:
                     skipped += 1
                     left -= length
                     continue  # the next stop takes this cut
+                self.overlay(s, r, cut, end, length)
                 cid = self.narrate(s, clip, narr_at) if clip else None
                 if clip and not cid:
                     log(f"[tour] {s['id']}: the service refused the narration clip")
@@ -686,6 +730,10 @@ class Tour:
             except Exception:
                 pass
         self.scheduled = []
+        try:
+            self.svc.call("DELETE", "/tour/overlay", timeout=3)
+        except Exception:
+            pass
         for kind in ("look", "platform"):
             try:
                 self.release(kind)

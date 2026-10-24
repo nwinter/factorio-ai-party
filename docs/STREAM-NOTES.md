@@ -1592,6 +1592,24 @@ Nick (17:30): "get the timing really tight between the shot durations and the me
 - Deploy: cameras.lua is harness Lua: the moves play smoothly after the harness install on world n; until then the
   fallback. The stream service restart (cp1) covers the rest.
 
+## The tour, version 2: marks on the shot (2026-10-23, d20 batch128 CK3)
+
+- A stop's `marks` (tools/stream/tour-FORMAT.md): arrow, circle, box, label at map positions, with text, colour and
+  times from the cut. tourlay.py checks them; tour.py posts each stop's entry (POST /tour/overlay {id, cut, until,
+  length, view, marks}) with the look, its view the look reply's (spot, zoom, move; a ship's the director's frame);
+  serve.py keeps at most 3 entries (each gone at its until; DELETE /tour/overlay at the tour's end) and puts them in
+  the snapshot as `tour`.
+- The page: static/tourlay.js (index.html, portrait.html; ?tourlay=0 off) draws the entry on now as SVG in
+  #cam-main over the capture's whole box, from the cut (the look's `aired` when the look on air has its id), every
+  animation frame. World to screen: a tile is 32 * zoom * (hole height / 1080) px (a hole wider than 16:9: width /
+  1920; the clients keep a 1080-line view, mapframes.py), about the hole's centre at the camera's position, which
+  during a move is camerapath.py's math in JS (tourlay_selftest.mjs checks the same five points as Python and Lua).
+  Text is kept inside the hole. Seen on `serve.py --mock` (overlay_shot.sh): ring, arrow, box and label on their
+  tiles at zoom 0.8.
+- dry-run lists each stop's marks and finds a mark out of the frame while it shows (the move sampled every 2 s).
+- Tests: test_tourlay.py (marks, the store, off the frame, HTTP, the page's geometry in node), test_tour.py
+  `overlays`. Deploy: the stream service restart and page refresh (cp1) cover it.
+
 ## Camera crops after a shift change (2026-10-23, d23 batch124b)
 - Nick 16:28: the main view was letterboxed, with a background camera on another planet showing.
 - After the 16:20 shift change, "stream cam1" and "stream cam3" had crop 0, while cam2 had 492/492. stream_scene
