@@ -61,6 +61,6 @@
   {"t": "2026-10-23 03:46", "kind": "shift", "text": "Shift 62 started; 9 of 9 agents up, no harness Lua errors in the first 8 minutes."},
   {"t": "2026-10-23 07:50", "kind": "shift", "text": "Shift 63 change began."},
   {"t": "2026-10-24 15:46", "kind": "deploy", "text": "Harness runtime deployed (01fb6129).", "affected": "harness runtime"},
-  {"t": "2026-10-24 15:46", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": null}
+  {"t": "2026-10-24 15:46", "kind": "restart", "text": "Stream service and hosts restarting.", "affected": "stream service", "recovered": "2026-10-24 15:46"}
  ]
 }
