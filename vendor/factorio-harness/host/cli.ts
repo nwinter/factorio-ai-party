@@ -630,6 +630,8 @@ function exitCode(reply: Reply): number {
   if (ends.some(r => r && typeof r === 'object' && r.still_running !== undefined && r.still_running !== false)) return STILL_RUNNING_EXIT;
   // A place_ghosts or build dry run that fails (d17 batch18 A3, Sol): an entry blocked or a setting refused.
   if (reply.ok && reply.result && typeof reply.result === 'object' && reply.result.dry_run === true && reply.result.dry_run_ok === false) return 1;
+  // A live place_ghosts that placed its ghosts and had settings refused (d24 batch142 PN2, Astra #2134): verdict partial.
+  if (reply.ok && reply.result && typeof reply.result === 'object' && reply.result.dry_run !== true && typeof reply.result.verdict === 'string' && reply.result.verdict.startsWith('partial:')) return 1;
   return reply.ok ? 0 : 1;
 }
 /** Sets the exit status; exit 3 also says on stderr that the action goes on (Grok, d15: a tell ended --wait on a
