@@ -378,7 +378,7 @@ return function(api)
   -- planet ask; a request from another planet keeps nothing there. Swift at Nauvis kept its 501 magazines under
   -- firearm-magazine 500..2000 from nauvis (pads asking 1461, the copy of world n, 2026-10-17); Cinder at Nauvis sent
   -- all 85 of its foundation down under space-platform-foundation 50..inf from fulgora (shift33, about tick 27162800).
-  M.KEEP_RULE='at a stop the hub keeps what its active requests importing from that planet allow, their maxes added up: no max keeps all of it; with a max it sends down all it holds above it to the landing pad there, whether the pad asks or not; an item no such request names goes down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing there (2.0.77, d24: Petrel at Nauvis kept all 1980 calcite under 200..inf from nauvis with the pad asking 2000, and sent all above 200 under 200..200)'
+  M.KEEP_RULE='at a stop the hub keeps what its active requests importing from that planet allow, their maxes added up: no max keeps all of it; with a max it sends down all it holds above it to the landing pad there, whether the pad asks or not; an item no such request names goes down as far as the pads there ask (their ask less what they hold); a request from another planet keeps nothing there (2.0.77, d24: Petrel at Nauvis kept all 1980 calcite under 200..inf from nauvis with the pad asking 2000, and sent all above 200 under 200..200). All it holds over the hub\'s max (the maxes of its active requests for the item added up, any planet) goes to its trash within a second, in flight too, and down at the first stop it waits at, asked or not (2.0.77, d24: Meridian-V flying to Nauvis, bioflux 20..30 from gleba: its 150 over 30 went down at Nauvis, 30 stayed aboard)'
   -- Per item whose kept stock a change alters: what goes down at each stop after it. The stops: where it waits now,
   -- then its schedule's in order. before, after: hub_keep_at.
   function M.sends_down(hub,pl,before,after)
@@ -424,15 +424,28 @@ return function(api)
       if differs and held>0 and #lines<12 then
         local left=held
         local parts={}
+        -- (d24 batch141 PM1, Sol #2125) over the hub's max: to its trash now, down at the first stop, asked or not; the
+        -- pads there then hold it
+        local cap,capped=0,false
+        for _,list in pairs(after) do if list[n] then capped=true; cap=cap+list[n] end end
+        local dumped={}
+        if capped and cap<left then
+          local first=stops[1]
+          parts[#parts+1]=string.format('%d over its max %d go to the hub\'s trash now and down %s, asked or not',left-cap,cap,
+            not first and 'at the first planet it stops at' or first.here and 'to '..first.planet..' (here)' or 'to '..first.planet..' at its next stop')
+          if first then dumped[first.planet]=left-cap end
+          left=cap
+        end
         for _,st in ipairs(stops) do
           local pd=pad(st.planet)
-          local want=(pd.ask[n] or 0)-(pd.hold[n] or 0)
+          local want=(pd.ask[n] or 0)-(pd.hold[n] or 0)-(dumped[st.planet] or 0)
           local keep=(after[st.planet] or {})[n] or 0
           -- (PI1) all above a finite max goes down, asked or not; an infinite max keeps it all
           local go=keep==math.huge and 0 or keep>0 and math.max(0,left-keep) or math.max(0,math.min(left,want))
           if go>0 then
             left=left-go
-            parts[#parts+1]=string.format('%d down to %s%s (its landing pads ask %d, hold %d%s)',go,st.planet,st.here and ' (here)' or '',pd.ask[n],pd.hold[n] or 0,
+            -- (d24 batch141 PM1, Sol #2125) a pad that asks none of it: ask 0 (nil made the format fail after the change)
+            parts[#parts+1]=string.format('%d down to %s%s (its landing pads ask %d, hold %d%s)',go,st.planet,st.here and ' (here)' or '',pd.ask[n] or 0,pd.hold[n] or 0,
               keep>0 and string.format('; its requests from %s keep %s',st.planet,keep==math.huge and 'all of it' or tostring(keep)) or '')
           end
         end
@@ -445,7 +458,16 @@ return function(api)
     end
     return #lines>0 and lines or nil
   end
+  local requests_body
+  -- (d24 batch141 PM1) a dry run that fails after it set slots puts them back before the error goes out
   function M.requests(p,a)
+    local ctx={}
+    local ok,r=pcall(requests_body,p,a,ctx)
+    if ok then return r end
+    if ctx.undo then pcall(ctx.undo) end
+    error(r,0)
+  end
+  requests_body=function(p,a,ctx)
     -- remove: the same as clear (Opus, d15 09:20: max 0 was his way to clear a request, and it sent what he held to
     -- the trash).
     if a.remove~=nil then
@@ -466,12 +488,15 @@ return function(api)
     end
     local label,secs,chest=sections_of(p,a)
     local entries=M.check_requests(p,a,label,chest,secs)
+    -- (d24 batch141 PM1) each change as it is made (made.lua): a failure after one answers the changes made
+    local function mark(t) if not a.dry_run and api.made then api.made(t) end end
     local slots_changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
     -- A requester chest's "request from buffer chests" switch.
     local buffers
     if a.from_buffers~=nil then
       local ok,err=pcall(function() chest.request_from_buffers=a.from_buffers end)
       assert(ok,'the game refused from_buffers: '..tostring(err))
+      mark('request from buffer chests '..(a.from_buffers and 'on' or 'off'))
     end
     if chest then pcall(function() buffers=chest.request_from_buffers end) end
     -- Trash unrequested (d17 batch20 C2, Grok: yumako and nutrient chests filled with spoilage, each clear a walk): the
@@ -488,6 +513,7 @@ return function(api)
       local ok,err=pcall(function() tpoint.trash_not_requested=a.trash_unrequested end)
       local now=try(function() return tpoint.trash_not_requested end)
       assert(ok and now==a.trash_unrequested,'the game kept trash unrequested '..(now and 'on' or 'off')..(ok and '' or ': '..tostring(err)))
+      mark('trash unrequested '..(now and 'on' or 'off'))
     end
     -- A hub's Request missing construction materials (Astra, shift12 19:16: a paste switched Starling's off and its
     -- construction requests vanished): switched as the GUI's checkbox does (keep.lua).
@@ -498,6 +524,7 @@ return function(api)
       local on=keep.set_construction(hub,a.construction_requests)
       assert(on==a.construction_requests,'the game kept Request missing construction materials '..(on and 'on' or 'off'))
       switched=true
+      mark('Request missing construction materials '..(on and 'on' or 'off'))
     end
     local changing=slots_changing or a.add_section~=nil or a.remove_section~=nil or a.group~=nil
     -- (d17 batch29 C4) on a hub: what it keeps before the change (sends_down), and for dry_run every manual section's
@@ -523,16 +550,35 @@ return function(api)
     -- clear and active after add_section go to the new section. A dry run's removal switches the section off as its
     -- stand-in (what the hub keeps and sends down reads as without it), put back after.
     local section_change,group_change,made={},nil,{}
+    -- a dry run's undo: sections it added removed, groups, slots and switches, and the kept minimum payloads put back
+    local function undo()
+      for i=secs.sections_count,snap.count+1,-1 do pcall(secs.remove_section,i) end
+      -- a section's group back before its requests: a section in a group writes the group
+      for i,v in pairs(snap.secs) do
+        local s_=secs.get_section(i)
+        if s_ then pcall(M.reqgroups.restore_group,p.force,s_,snap.groups[i] or '') end
+      end
+      for i,v in pairs(snap.secs) do
+        local s_=secs.get_section(i)
+        if s_ then s_.filters=v.filters; if v.active~=nil then s_.active=v.active end end
+      end
+      M.reqgroups.drop_made(p.force,made)
+      local mem=hub and hub.unit_number and api.state and api.state().hub_min_payload
+      if mem then mem[hub.unit_number]=snap.mp end
+    end
+    if snap then ctx.undo=undo end
     if a.remove_section~=nil then
       local rsec=secs.get_section(a.remove_section)
       local r=M.reqgroups.removal(rsec)
       section_change[#section_change+1]=r.line
       if a.dry_run then rsec.active=false else secs.remove_section(a.remove_section) end
+      mark(r.line)
     end
     if a.add_section then
       local nsec=secs.add_section()
       assert(nsec,'the game added no section')
       section_change[#section_change+1]='section '..nsec.index..' added'
+      mark('section '..nsec.index..' added')
       local b={}; for k,v in pairs(a) do b[k]=v end
       b.section=nsec.index; b.add_section=nil; a=b
     end
@@ -541,6 +587,7 @@ return function(api)
       if a.group~=false and not try(function() return p.force.get_logistic_group(a.group) end) then made[a.group]=true end
       group_change=M.reqgroups.set_group(p.force,gsec,a.group)
       section_change[#section_change+1]=group_change.line
+      mark(group_change.line)
     end
     -- changed: a slot set or cleared, or the section switched (friction2: a set the call read as nothing still said
     -- changed_section).
@@ -613,10 +660,11 @@ return function(api)
         mpmem[(f.value.name or '?')..'|'..(type(q)=='table' and q.name or q or 'normal')]=f.minimum_delivery_count
       end
       if a.active==false or a.clear_all then for _,f in pairs(try(function() return sec.filters end) or {}) do note_gone(f) end end
-      if a.active~=nil then sec.active=a.active; changed=true end
+      if a.active~=nil then sec.active=a.active; changed=true; mark('section '..sec.index..' switched '..(a.active and 'on' or 'off')) end
       if a.clear_all then
         for _,f in pairs(try(function() return sec.filters end) or {}) do remember(f) end
         changed=changed or (sec.filters_count or 0)>0; sec.filters={}
+        mark('section '..sec.index..' emptied')
       end
       local sections_touched,seen_sec={},{}
       local function touch(s_) touched=touched or s_; if not seen_sec[s_.index] then seen_sec[s_.index]=true; sections_touched[#sections_touched+1]=s_.index end end
@@ -635,6 +683,7 @@ return function(api)
           note_gone(csec.get_slot(i))
           csec.clear_slot(i); changed=true
           stored[#stored+1]=name..': cleared'..(was and ' (was '..was..')' or '')
+          mark(stored[#stored])
         else stored[#stored+1]=name..': no request to clear in section '..csec.index end
       end
       for k in ipairs(a.set or {}) do
@@ -677,6 +726,7 @@ return function(api)
           ..(read_from and string.format(' (no import planet given: the game set %s)',read_from) or '')
           ..(mp_kept and ' (min payload kept: not named in this edit)' or '')
           ..(mp_back and string.format(' (min payload %d kept from the request cleared before)',mp_back) or '')..(was and was~=now and ' (was '..was..')' or '')
+        mark(stored[#stored])
       end
       -- keep: each named item the hub would now keep less of than it holds is requested up to the count held, in the
       -- section that requests it (else the default one; a new section when that is off), with the dropped request's
@@ -697,6 +747,7 @@ return function(api)
           ksec.set_slot(i,{value={type='item',name=name,quality='normal',comparator='='},min=min,import_from=from,minimum_delivery_count=(old and old.minimum_delivery_count) or g.mp or nil})
           changed=true
           stored[#stored+1]=string.format('%s: kept at the %d the hub holds (%s in section %d)',name,held,filter_text(ksec.get_slot(i),true) or name,ksec.index)
+          mark(stored[#stored])
         else
           stored[#stored+1]=string.format('%s: kept already (the hub holds %d, its requests keep %d)',name,held,M.hub_keep(secs)[name] or 0)
         end
@@ -711,22 +762,38 @@ return function(api)
       end
     end
     if #section_change>0 then changed=true end
-    -- (B1) each section the call changed: recorded with the editor and the tick; whoever set it last before, if someone
-    -- else, is told once
-    if logged and logged.valid and logged.unit_number then
-      local changes=api.editlog.diff(texts_before,section_texts(secs,is_hub_target))
-      if #changes>0 then
-        local pl=a.platform~=nil and M.platform(p,a.platform) or try(function() return logged.surface.platform end)
-        local name=pl and pl.name..' hub' or string.format('%s (%g,%g) on %s',logged.name,logged.position.x,logged.position.y,logged.surface.name)
-        local owed=api.editlog.record('req:'..logged.unit_number,p.name or '?',changes,function(k) return name..' request section '..k end)
-        told=api.editlog.tell(owed,p.name or '?')
+    -- (d24 batch141 PM1, Sol #2125: sends_down failed after the change and the call answered a plain failure) each part
+    -- of the reply after the change is read on its own: one that fails is named with its error in reply_failed, the rest
+    -- stay
+    local out={target=label,from_buffers=buffers}
+    local function part(name,fn)
+      local ok,err=pcall(fn)
+      if not ok then
+        out.reply_failed=out.reply_failed or {}
+        out.reply_failed[#out.reply_failed+1]=name..': '..(tostring(err):gsub('^[^:]*:%d+: ',''))
       end
     end
-    local out={target=label,sections=list_sections(secs,is_hub_target,logged and logged.unit_number or (chest or hub) and (chest or hub).unit_number,is_hub_target and hub or nil),from_buffers=buffers,told_of_edit=told}
-    if before then
-      out.sends_down=M.sends_down(hub,a.platform~=nil and M.platform(p,a.platform) or try(function() return hub.surface.platform end),before,M.hub_keep_at(secs))
-      if out.sends_down then out.sends_down_rule=M.KEEP_RULE end
-    end
+    -- (B1) each section the call changed: recorded with the editor and the tick; whoever set it last before, if someone
+    -- else, is told once
+    part('told_of_edit',function()
+      if logged and logged.valid and logged.unit_number then
+        local changes=api.editlog.diff(texts_before,section_texts(secs,is_hub_target))
+        if #changes>0 then
+          local pl=a.platform~=nil and M.platform(p,a.platform) or try(function() return logged.surface.platform end)
+          local name=pl and pl.name..' hub' or string.format('%s (%g,%g) on %s',logged.name,logged.position.x,logged.position.y,logged.surface.name)
+          local owed=api.editlog.record('req:'..logged.unit_number,p.name or '?',changes,function(k) return name..' request section '..k end)
+          told=api.editlog.tell(owed,p.name or '?')
+        end
+      end
+    end)
+    part('sections',function() out.sections=list_sections(secs,is_hub_target,logged and logged.unit_number or (chest or hub) and (chest or hub).unit_number,is_hub_target and hub or nil) end)
+    out.told_of_edit=told
+    part('sends_down',function()
+      if before then
+        out.sends_down=M.sends_down(hub,a.platform~=nil and M.platform(p,a.platform) or try(function() return hub.surface.platform end),before,M.hub_keep_at(secs))
+        if out.sends_down then out.sends_down_rule=M.KEEP_RULE end
+      end
+    end)
     -- (d17 batch34 B3, Opus: 20 old requesters pulled ore 500 tiles for 20 hours) a dry run of a requester's, a buffer
     -- chest's or the character's requests: the robots' trips for what it would ask beyond what it holds
     if a.dry_run and api.dispatch and type(a.set)=='table' and not (chest and chest.type=='space-platform-hub') then
@@ -746,72 +813,69 @@ return function(api)
     -- (d20 batch53) the index read before a dry run's undo removes a section it added
     local touched_index=touched and try(function() return touched.index end) or a.section
     if snap then
-      for i=secs.sections_count,snap.count+1,-1 do pcall(secs.remove_section,i) end
-      -- a section's group back before its requests: a section in a group writes the group
-      for i,v in pairs(snap.secs) do
-        local s_=secs.get_section(i)
-        if s_ then pcall(M.reqgroups.restore_group,p.force,s_,snap.groups[i] or '') end
-      end
-      for i,v in pairs(snap.secs) do
-        local s_=secs.get_section(i)
-        if s_ then s_.filters=v.filters; if v.active~=nil then s_.active=v.active end end
-      end
-      M.reqgroups.drop_made(p.force,made)
-      local mem=hub and hub.unit_number and api.state and api.state().hub_min_payload
-      if mem then mem[hub.unit_number]=snap.mp end
+      ctx.undo=nil
+      undo()
       out.dry_run=true
       out.dry_note='nothing was changed: sections, stored and sends_down are what the change would make'..(a.remove_section~=nil and ' (the section to remove reads switched off, its stand-in)' or '')
     end
     -- trash unrequested, when set now or on: what robots take to storage (a chest's items no request names).
     local ton=tpoint and try(function() return tpoint.trash_not_requested end)
-    if tpoint and (a.trash_unrequested~=nil or ton) then
-      local named={}
-      for i=1,secs.sections_count or 0 do
-        local s_=secs.get_section(i)
-        if s_ and s_.active~=false then
-          for _,f in pairs(try(function() return s_.filters end) or {}) do local n=f.value and (type(f.value.name)=='string' and f.value.name or try(function() return f.value.name.name end)); if n then named[n]=true end end
+    part('trash_unrequested',function()
+      if tpoint and (a.trash_unrequested~=nil or ton) then
+        local named={}
+        for i=1,secs.sections_count or 0 do
+          local s_=secs.get_section(i)
+          if s_ and s_.active~=false then
+            for _,f in pairs(try(function() return s_.filters end) or {}) do local n=f.value and (type(f.value.name)=='string' and f.value.name or try(function() return f.value.name.name end)); if n then named[n]=true end end
+          end
         end
-      end
-      local away={}
-      if chest then
-        local inv=try(function() return chest.get_inventory(defines.inventory.chest) end)
-        for _,st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-          if not named[st.name] then away[#away+1]=st.name..'*'..st.count end
+        local away={}
+        if chest then
+          local inv=try(function() return chest.get_inventory(defines.inventory.chest) end)
+          for _,st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+            if not named[st.name] then away[#away+1]=st.name..'*'..st.count end
+          end
+          table.sort(away)
         end
-        table.sort(away)
+        out.trash_unrequested=ton and ('on: robots take to storage what no request names'..(chest and (#away>0 and ': '..table.concat(away,' ',1,math.min(#away,8))..(#away>8 and ' ...' or '') or ' (it holds none now)') or ''))
+          or 'off: what no request names stays'
       end
-      out.trash_unrequested=ton and ('on: robots take to storage what no request names'..(chest and (#away>0 and ': '..table.concat(away,' ',1,math.min(#away,8))..(#away>8 and ' ...' or '') or ' (it holds none now)') or ''))
-        or 'off: what no request names stays'
-    end
+    end)
     -- (d20 batch132 PD1, Sol #2093: pods of 1000 and 300 came down for a request of 300, and the circuit-set request
     -- of 1000 was gone when Sol read the pad) a landing pad: what it counts on the way, the cargo pods coming down to
     -- it by the game's count (its requester point's deliveries; 2.0.77 on a copy of world n: 1300 from the hub's launch
     -- to the landing)
-    if chest and chest.type=='cargo-landing-pad' and tpoint then
-      local way={}
-      for _,it in ipairs(try(function() return tpoint.targeted_items_deliver end) or {}) do
-        local q=type(it.quality)=='table' and it.quality.name or it.quality
-        way[#way+1]=it.name..(q and q~='normal' and '@'..q or '')..'*'..it.count
+    part('on_the_way',function()
+      if chest and chest.type=='cargo-landing-pad' and tpoint then
+        local way={}
+        for _,it in ipairs(try(function() return tpoint.targeted_items_deliver end) or {}) do
+          local q=type(it.quality)=='table' and it.quality.name or it.quality
+          way[#way+1]=it.name..(q and q~='normal' and '@'..q or '')..'*'..it.count
+        end
+        table.sort(way)
+        out.on_the_way=#way>0 and table.concat(way,' ')..' (cargo pods coming down to it)' or 'nothing'
       end
-      table.sort(way)
-      out.on_the_way=#way>0 and table.concat(way,' ')..' (cargo pods coming down to it)' or 'nothing'
-    end
+    end)
     -- The character's requests not filled, each with why (personal.lua; Haiku, d15: 10 repair packs never came).
-    if label=='character' and api.personal then
-      local rows=try(function() return api.personal().unfilled(p) end)
-      if rows and #rows>0 then
-        local lines={}
-        for i,r in ipairs(rows) do if i<=12 then lines[i]=r.line end end
-        out.unfilled=lines
+    part('unfilled',function()
+      if label=='character' and api.personal then
+        local rows=try(function() return api.personal().unfilled(p) end)
+        if rows and #rows>0 then
+          local lines={}
+          for i,r in ipairs(rows) do if i<=12 then lines[i]=r.line end end
+          out.unfilled=lines
+        end
       end
-    end
+    end)
     -- Requests set into a section that is off are not made: say so.
-    local off={}
-    for _,row in ipairs(out.sections) do if row.off and #row.requests>0 and not (a.dry_run and row.index==a.remove_section) then off[#off+1]=row.index end end
-    if #off>0 then
-      out.note=string.format('section%s %s %s switched off: %s requests are not made (requests {section, active: true} switches one on)',
-        #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
-    end
+    part('note',function()
+      local off={}
+      for _,row in ipairs(out.sections or {}) do if row.off and #row.requests>0 and not (a.dry_run and row.index==a.remove_section) then off[#off+1]=row.index end end
+      if #off>0 then
+        out.note=string.format('section%s %s %s switched off: %s requests are not made (requests {section, active: true} switches one on)',
+          #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
+      end
+    end)
     out.changed_section=changed and touched_index or nil
     out.sections_note=#others>0 and others or nil
     out.section_change=#section_change>0 and section_change or nil
@@ -819,45 +883,53 @@ return function(api)
     out.group_edit=group_edit
     if changing and not changed then out.unchanged='this call set, cleared and switched nothing in section '..(touched_index or '?') end
     out.stored=stored and #stored>0 and stored or nil
-    if hub and hub.valid and keep then
-      local c=keep.construction(hub)
-      out.construction_requests=c and (switched and 'on (switched on now: the game fills its section from the platform\'s ghosts within a second)' or 'on')
-        or (switched and 'off (switched off now)' or 'off')
-      -- Items a manual section requests too (Astra restored Starling's construction requests by hand): the hub
-      -- requests the sum (checked on 2.0.77: crusher 3 in each made 6).
-      local theirs,both={},{}
-      for _,f in ipairs(c and c.filters or {}) do
-        local v=f.value
-        if v and v.name then theirs[v.name..'@'..(v.quality or 'normal')]=f.min or 0 end
-      end
-      for i=1,c and secs.sections_count or 0 do
-        local s=secs.get_section(i)
-        if s.is_manual and s.active~=false then
-          for _,f in ipairs(s.filters or {}) do
-            local v=f.value
-            local k=v and v.name and v.name..'@'..(v.quality or 'normal')
-            if k and theirs[k] and (f.min or 0)>0 and #both<8 then both[#both+1]=string.format('%s %d+%d',v.name,theirs[k],f.min) end
+    part('construction_requests',function()
+      if hub and hub.valid and keep then
+        local c=keep.construction(hub)
+        out.construction_requests=c and (switched and 'on (switched on now: the game fills its section from the platform\'s ghosts within a second)' or 'on')
+          or (switched and 'off (switched off now)' or 'off')
+        -- Items a manual section requests too (Astra restored Starling's construction requests by hand): the hub
+        -- requests the sum (checked on 2.0.77: crusher 3 in each made 6).
+        local theirs,both={},{}
+        for _,f in ipairs(c and c.filters or {}) do
+          local v=f.value
+          if v and v.name then theirs[v.name..'@'..(v.quality or 'normal')]=f.min or 0 end
+        end
+        for i=1,c and secs.sections_count or 0 do
+          local s=secs.get_section(i)
+          if s.is_manual and s.active~=false then
+            for _,f in ipairs(s.filters or {}) do
+              local v=f.value
+              local k=v and v.name and v.name..'@'..(v.quality or 'normal')
+              if k and theirs[k] and (f.min or 0)>0 and #both<8 then both[#both+1]=string.format('%s %d+%d',v.name,theirs[k],f.min) end
+            end
           end
         end
+        if #both>0 then out.construction_overlap='manual sections request these too, and the hub requests the sum: '..table.concat(both,', ') end
       end
-      if #both>0 then out.construction_overlap='manual sections request these too, and the hub requests the sum: '..table.concat(both,', ') end
-    end
+    end)
     -- A hub: what is over a max goes to its trash, and where the trash goes.
-    if a.platform~=nil or (chest and chest.type=='space-platform-hub') then
-      local pl=a.platform~=nil and M.platform(p,a.platform) or chest.surface.platform
-      local hub=pl and pl.hub
-      if hub and hub.valid then
-        local over={}
-        local main=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
-        for _,e in ipairs(entries) do
-          local held=e.max and main and try(function() return main.get_item_count({name=e.name,quality=e.quality}) end) or 0
-          if e.max and held>e.max then over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d',e.name,held,held-e.max,e.max) end
+    part('hub_trash',function()
+      if a.platform~=nil or (chest and chest.type=='space-platform-hub') then
+        local pl=a.platform~=nil and M.platform(p,a.platform) or chest.surface.platform
+        local hub=pl and pl.hub
+        if hub and hub.valid then
+          local over={}
+          local main=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+          for _,e in ipairs(entries) do
+            local held=e.max and main and try(function() return main.get_item_count({name=e.name,quality=e.quality}) end) or 0
+            if e.max and held>e.max then over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d',e.name,held,held-e.max,e.max) end
+          end
+          local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
+          out.hub_trash=trash and top_items(trash,12) or nil
+          out.over_max=#over>0 and over or nil
+          if out.hub_trash or out.over_max then out.trash_note=M.trash_note(pl,out.over_max~=nil) end
         end
-        local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
-        out.hub_trash=trash and top_items(trash,12) or nil
-        out.over_max=#over>0 and over or nil
-        if out.hub_trash or out.over_max then out.trash_note=M.trash_note(pl,out.over_max~=nil) end
       end
+    end)
+    if out.reply_failed then
+      out.reply_failed_note=(a.dry_run and 'nothing was changed (dry run)' or changed and 'the change was made (stored, changed_section)' or 'nothing was changed')
+        ..'; these parts of the reply failed and are left out'
     end
     return out
   end
@@ -2346,11 +2418,23 @@ return function(api)
     return out1
   end
   function M.platform_schedule_call(p,a)
-    local pl=api.editlog and (a.stops~=nil or a.stop~=nil or a.paused~=nil or a.current~=nil) and select(2,pcall(M.platform,p,a.platform)) or nil
-    if type(pl)~='table' then pl=nil end
+    -- (d24 batch141 PM1 cp2) a failed lookup leaves nil: a type check for a table dropped every real platform (userdata,
+    -- as batch100 BJ1 found in platform_schedule), so no schedule edit was recorded on the game
+    local pl
+    if api.editlog and (a.stops~=nil or a.stop~=nil or a.paused~=nil or a.current~=nil) then
+      local found,x=pcall(M.platform,p,a.platform)
+      if found then pl=x end
+    end
     local before=pl and api.editlog and gate_texts(pl)
     local stops_before,paused_before=pl and stop_list(pl),pl and (pl.paused and 'paused' or 'not paused')
-    local out=M.schedule_call(p,a)
+    -- (d24 batch141 PM1) the schedule's change, marked (made.lua) whether the call goes on to fail or not
+    local okm,mpl=pcall(M.platform,p,a.platform)
+    local function sched(x) return stop_list(x)..', current '..tostring(try(function() return x.schedule.current end) or 'none')..(x.paused and ', paused' or '') end
+    local was=okm and mpl and not a.dry_run and sched(mpl)
+    local ok,out=pcall(M.schedule_call,p,a)
+    local now=was and mpl.valid and sched(mpl)
+    if now and now~=was and api.made then api.made(mpl.name..' schedule: '..now..' (was '..was..')') end
+    if not ok then error(out,0) end
     if pl and pl.valid and not a.dry_run then
       local told={}
       -- (the stops' own edit is told with the departure gate's, below)
@@ -2861,6 +2945,10 @@ return function(api)
     local job={kind='drop',platform=pl,planet=loc.name,surface=surface.name,pad=pad and pad.position or nil,pad_e=pad,dest=dest,to=to,
       pods=split.pods,sent={},short={},moved={},want=want,full=a.full==true}
     send(p,job,not job.full and 1 or nil)
+    -- (d24 batch141 PM1) each pod sent, marked (made.lua): a failure after it answers what went
+    for _,x in ipairs(job.sent) do
+      if api.made then api.made(string.format('cargo pod %d sent from %s to %s: %s',x.pod,pl.name,surface.name,tostring(x.items))) end
+    end
     if #job.sent==0 and not job.full then
       assert(#job.pods==0,'the hub has no free cargo hatch right now (each sends one pod every '..(HATCH_TICKS/60)..' s); full: true waits for one')
       error('nothing fit in the cargo pod',0)
@@ -2943,7 +3031,7 @@ return function(api)
       group='with section (or add_section): the GUI\'s logistic group of that section: a name that exists: the section takes the group\'s requests and its own are gone (dropped names them); a new name: the group is made from the section\'s requests; false: it leaves the group keeping a copy of the requests. A set or clear in a section of a group changes every member: group_edit names each other one (a dry run too)',
       groups='true, alone: every named logistic group of our force: name, requests, members_count and members (each entity and section whose GUI shows the group); a group with no members stays',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
-      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (true: the game writes this section, and refuses a script\'s write to it; false: manual), controlled_by (what controls it: a hub\'s construction requests, a silo\'s automatic requests, or the circuit network), requests ["item min..max from planet", "item=n from planet"], imports (a platform hub, a section switched on: each import request "item from planet: asks N, holds H, W on the way, lacks L", on the way being what rockets launched to the hub carry, the hub GUI\'s in-transit count)}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub that alters what its requests keep of an item it holds: what they would keep and kept, by import planet, and what goes down to the landing pads of its stops, where it waits first then its schedule\'s: at each stop their ask less what they hold, beyond what its requests from that planet keep; or that it stays aboard), sends_down_rule (the rule, with the two cases it comes from); call with no set/clear/active to just read'},
+      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (true: the game writes this section, and refuses a script\'s write to it; false: manual), controlled_by (what controls it: a hub\'s construction requests, a silo\'s automatic requests, or the circuit network), requests ["item min..max from planet", "item=n from planet"], imports (a platform hub, a section switched on: each import request "item from planet: asks N, holds H, W on the way, lacks L", on the way being what rockets launched to the hub carry, the hub GUI\'s in-transit count)}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); sends_down (a change on a hub that alters what its requests keep of an item it holds: what they would keep and kept, by import planet, and what goes down to the landing pads of its stops, where it waits first then its schedule\'s: at each stop their ask less what they hold, beyond what its requests from that planet keep; or that it stays aboard), sends_down_rule (the rule, with the cases it comes from); reply_failed (each part of the reply that failed after the change, with its error; the change stands: stored), reply_failed_note; a call that fails partway after a change answers change_made (each change made) and reply_failed (the error); call with no set/clear/active to just read'},
     platform={fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name this reply lacks that the read can have is listed in absent; a name the read never has is refused, with the names there are',platform='optional platform name (or name): the platforms read of that one (as platforms {platform}); none: every platform',name='the same as platform',compact='as platforms',returns='as platforms'},
     platforms={page='with compact: false and no platform named (or eta_to): 1.. the page of full rows, 2 a page (the reply: page, pages, count, next)',fields='optional 1..32 names (a list, or one string with | or ,): only those fields of the reply: a top-level key, a key of each row (platforms, inspect results or entities; rows keep name and position), or one level down (\"hub.cargo\"); a name this reply lacks that the read can have is listed in absent; a name the read never has is refused, with the names there are',eta_to='optional planet name: each platform\'s ETA to it through its schedule (the leg it flies at its cruise speed, its stops\' waits and what an agent\'s queue or order sends it on with, the legs between), or why there is none (no schedule, paused, it does not go there); eta_to lines and on each row {planet, eta_s, line}',departure='returned on each platform: the agents\' queue steps and standing orders that set its schedule (platform_schedule), each with the wait before it, beside the schedule\'s own waits (stops)',compact='the default with no platform named (false: every platform\'s full row, 2 a page: page (1..), pages, count, next): a line a platform: where it is, ammunition aboard (hub and turrets), thruster fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers you were not shown in your last compact read (the rest counted)',request_edits='true: request_edits on each full row (each hub section\'s last edit: who, when, old -> new)',platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks, tile ghosts the foundation rules hold back: one that would split the empty space beside it (the hub looks at a tile\'s 8 neighbours), with the hole on one side that has no ghosts, or one with no foundation among the 8 tiles round it), tile_removals (the marked foundation tiles: marked, go (those the hub removes, one at a time, in order), waiting (each with why, as deconstruct says it)), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop; a rocket cargo item construction robots placed at once counts as came aboard and is said as built at once), what spoiled aboard, rockets launched to it with their cargo, the cargo pods sent down with what each landing pad received (landed: a line a pod, its cargo, where and when, and what the planet\'s landing pad asked of that cargo when the pod left the hub, as the pad\'s window showed it then: each active section asking it with min..max and whether the circuit network sets it, what the pad held, and what the other pods followed to that planet carried of it), those that landed with no pad, and those still in flight (unit numbers, cargo); per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it; spoilable science effective research units now and at the current-speed leg ETA, before lab bonuses), freshness (on every row: spoilable science effective research units now and, when the leg ETA is known, at arrival (before lab bonuses); the hub\'s spoilable items, each one\'s spread as inspect gives it, and for a pack the running research takes how many a unit the running research takes and its units left), engine (the last 60 and 180 s, sampled each second: speed mean, lowest, highest, first and last; each thruster fluid used and made by the surface\'s fluid statistics and in the thrusters\' tanks at start and end; the pumps\' share of time working, from a read of each pump once a second at a phase 7 ticks later each second, so a minute meets every tick of a second once), ammo_rates (per ammo type held or made or used: made and used a minute over the last leg from the surface\'s item statistics (used: turret shots and ammo crafted into other items), every place aboard now; in flight the reserve at the arrival at that rate, or when it runs out first, counted as platform_endurance counts it: ammunition that can reach a turret, rockets on their way up, made at most what the ingredients aboard allow, and binds: the limit that sets what is made; a leg begun before the runtime counted: the last 10 min), incoming (rockets launched to its hub whose cargo pod has not arrived: from, how long ago, cargo, rising or coming down) and incoming_cargo',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown; turned back mid-connection: back to the end it left, km left), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to (the schedule stop when it is an end of the connection, else the end with the shorter way on to it), turned_back, leg_km, leg_left_km, eta_min (at the current speed), schedule, waiting (stopped at the station of its current stop, not paused, the game reading waiting_at_station or no_schedule: \'waiting at stop N (station): conditions false now: each condition with its value [holds|false|not read]\', or hold now; the game reads no_schedule while a platform waits at a stop it was sent to while there), stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_chunks (hub slots asteroid chunks take, one a slot), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, imports (each import request: asks, holds, on the way in rockets launched to the hub (the hub GUI\'s in-transit count), lacks), requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
