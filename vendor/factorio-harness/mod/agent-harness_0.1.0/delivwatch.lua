@@ -72,6 +72,11 @@ return function(api)
     -- no quality but normal in the game: the name alone is every quality
     if not q and (#qs == 0 or (#qs == 1 and qs[1] == 'normal')) then return try(function() return obj.get_item_count(item) end) or 0 end
     if q then return try(function() return obj.get_item_count({name=item, quality=q}) end) or 0 end
+    -- an inventory counts every quality in one call (a copy of world n: 0.7 us, the 5 counts 5.6 us); an entity has no
+    -- filtered count
+    local filtered = try(function() return obj.get_item_count_filtered end)
+    local all = filtered and try(function() return filtered({name=item}) end)
+    if all then return all end
     local n = 0
     for _, x in ipairs(qs) do n = n + (try(function() return obj.get_item_count({name=item, quality=x}) end) or 0) end
     return n

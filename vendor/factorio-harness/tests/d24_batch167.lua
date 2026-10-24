@@ -16,6 +16,9 @@ local function inv(list) local t={} for i,x in ipairs(list) do t[i]=x end
   t.get_item_count=function(n)
     local name,q=type(n)=='table' and n.name or n,type(n)=='table' and n.quality or 'normal'
     local c=0 for _,x in ipairs(list) do if x.name==name and x.quality.name==q then c=c+x.count end end return c end
+  -- get_item_count_filtered {name}: every quality
+  t.get_item_count_filtered=function(f)
+    local c=0 for _,x in ipairs(list) do if x.name==f.name and (not f.quality or x.quality.name==f.quality) then c=c+x.count end end return c end
   return t end
 local aquilo={name='aquilo'}
 aquilo.find_logistic_network_by_position=function() return {network_id=4} end
@@ -140,6 +143,9 @@ do
   local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
   local a=F.pad_asked('aquilo',force,{thruster=2})
   eq(a.items.thruster.hold,15,'13 normal and 2 legendary held'); eq(a.items.thruster.ask,4)
+  local plain=inv(held); plain.get_item_count_filtered=nil
+  p2=ud{valid=true,position={x=-8,y=-22},get_inventory=function() return plain end,get_logistic_sections=function() return {sections_count=0} end}
+  eq(F.pad_asked('aquilo',force,{thruster=2}).items.thruster.hold,15,'per quality')
 end
 print('d24_batch167 QJ1 freight pad_asked: held at every quality: ok')
 game,defines,prototypes=nil,nil,nil

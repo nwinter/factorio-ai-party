@@ -13833,6 +13833,12 @@ Fixed besides gates:
     of thruster@legendary*2. Pod 35664002 was received by the pad (-8,-22) at tick 57799952: #334 and #335 read landed
     2, received 2 in 1 pod, by_platform Asterion=2, by_quality legendary=2, state received; #336 read received 0, no
     landed stage, no arrival, state open. In the hub get_item_count("thruster") read 5 with 2 legendary in it.
+  - Counts with no quality: an inventory uses get_item_count_filtered {name} (every quality in one call, 0.7 us on the
+    copy); an entity (which has no filtered count) sums get_item_count {name, quality} over the visible qualities.
+  - Tick cost (profile_ticks 60 s, copy of world n's 14:47 autosave, 3 open watches from Kestrel IVc): delivwatch.tick
+    median 2.22 ms a second on main's runtime, 2.98 on the branch. Watch 333 (thruster) accounts for it: Kestrel IVc
+    holds 2 legendary thrusters and 0 normal, so main's count read 0 and skipped the stop and pad checks the branch
+    now makes. With 333 cleared: main 1.98, the branch 2.12.
 - d24 batch166 QI1 (operator 13:56: `platform_plan {platform: "Asterion", support: true}` held world n 388 ms in one
   tick, 8271 entities chosen, 0 tiles planned; Sol called it repeatedly): support is a job across ticks.
   - Where the time went (a copy of world n's shift70 save, Asterion, main's runtime 4da9bbeb): choosing 19 ms (the

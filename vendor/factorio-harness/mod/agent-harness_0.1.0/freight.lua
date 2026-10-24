@@ -732,10 +732,15 @@ return function(api)
     end
     local inv = defines.inventory.cargo_landing_pad_main and try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
     -- (QJ1) every quality: get_item_count(name) counts normal only, and cargo is by name with every quality together;
-    -- a count per quality (Nauvis's pad on a copy of world n: get_contents 0.58 ms, 5 counts 6.6 us)
+    -- get_item_count_filtered {name} counts every quality (Nauvis's pad on a copy of world n: get_contents 0.58 ms, 5
+    -- counts per quality 6.6 us, the filtered count 0.7 us)
+    local filtered = inv and try(function() return inv.get_item_count_filtered end)
     for name, it in pairs(items) do
-      local n = 0
-      for _, q in ipairs(inv and qflow.qualities() or {}) do n = n + (try(function() return inv.get_item_count({name=name, quality=q}) end) or 0) end
+      local n = filtered and try(function() return filtered({name=name}) end)
+      if not n then
+        n = 0
+        for _, q in ipairs(inv and qflow.qualities() or {}) do n = n + (try(function() return inv.get_item_count({name=name, quality=q}) end) or 0) end
+      end
       it.hold = n
     end
     -- the pad's own on-the-way count (its requester point's deliveries: the pods sent to it, this one among them once
