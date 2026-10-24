@@ -1577,8 +1577,8 @@ a host prompt.
   `how_to_call_it` asks for the one number, its cause and what it leads to. check_line holds the lines to the
   point's facts (ANALYST_CHECK), so background numbers are rejected.
 - Replay: `python3 tools/stream/hosts_replay.py [--day 20261023]` runs a day's caster logs and every chronicle
-  arrival through the gate, and counts the analyst beats that would have aired. On d23, 515 exchanges became 253, and
-  logged arrivals went from 243 to 43. The chronicles had 11-19 speaking arrivals per shift out of 177-346. About 120
+  arrival through the gate, and counts the analyst beats that would have aired. On d23, 523 exchanges became 256, and
+  logged arrivals went from 248 to 43. The chronicles had 11-19 speaking arrivals per shift out of 177-346. About 122
   analyst beats would have aired.
 - Tests: tools/stream/test_hoststory.py (arrival_tests, analyst_tests), test_route_direction.py.
 
