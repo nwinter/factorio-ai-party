@@ -24,6 +24,7 @@ ACTIONS = {
     "blueprint_place": ("building", "pasting a blueprint"),
     "deconstruct": ("building", "marking for removal"),
     "cancel_deconstruction": ("building", "cancelling removal"),
+    "remove_ghosts": ("building", "removing ghosts"),
     "build": ("building", "building"),
     "construct": ("building", "building"),
     "repair": ("building", "repairing"),

@@ -33,7 +33,7 @@ return function(api)
     build='building', build_path='building', construct='building', place_ghosts='building', belt_route='building',
     pole_route='building', pipe_route='building', wire='building', rotate='building', configure='building',
     revive_ghost='building', paste='building', blueprint_place='building', deconstruct='building',
-    cancel_deconstruction='building', upgrade='building', restore='building', repair='building', circuit='building',
+    cancel_deconstruction='building', remove_ghosts='building', upgrade='building', restore='building', repair='building', circuit='building',
     mine='mining', craft='crafting', cancel_craft='crafting', research='research', research_next='research',
     wait_ticks='waits', wait_until='waits', sleep='waits'}
   -- A running action's kind (state().active), where it differs from KIND.

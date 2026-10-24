@@ -104,6 +104,15 @@
   harness's record of the last 8192 ghost placements and hand builds; else `unknown` and why. `last_user` is the game's
   Last user (a player's); a bot's ghost and what robots build from it have none. Area rows, compact lines and `ghosts`
   rows say it in short.
+- `remove_ghosts {area | positions, surface? | platform?, names?, tiles?, owner?, dry_run?}`: takes entity ghosts away
+  at once by remote view, as the deconstruction planner takes ghosts: charted chunks, no reach, no robots; never a
+  built entity or a tile. `area` up to 256 tiles a side, or 1..64 `positions` (ghosts centred within 0.5 tiles);
+  `names` 1..32 entity or tile names; `tiles: true` adds tile ghosts. By default only the ghosts you placed (the
+  record above; tile ghosts have their own 8192), else the game's last user; `owner: "any"` takes every ghost of ours
+  (`by_owner`), `owner: "sol"` only sol's. At most 256 a call. Reply: `removed` (dry run: `would_remove`), `by_name`,
+  `ghosts` (the first 64: name, position, owner, placed), and `left` with why (`left_others` by agent, `left_unknown`:
+  no record and no last user, `left_uncharted`, `left_over_cap`).
+  Example: `./fh call remove_ghosts --args '{"surface":"vulcanus","area":[[100,20],[140,60]],"dry_run":true}'`
 - `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut

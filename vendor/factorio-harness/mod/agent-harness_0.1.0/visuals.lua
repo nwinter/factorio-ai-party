@@ -17,7 +17,7 @@
 return function(api)
   local M = {}
   local BEAT, SLOW, BUDGET, MAX_SEGMENTS = 10, 30, 30, 24
-  local WORK = {build=true, deconstruct=true, cancel_deconstruction=true, configure=true, rotate=true, repair=true,
+  local WORK = {build=true, deconstruct=true, cancel_deconstruction=true, remove_ghosts=true, configure=true, rotate=true, repair=true,
     flush=true, revive_ghost=true, place_ghosts=true, paste=true, blueprint_place=true, construct=true, circuit_set=true, circuit=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()

@@ -13117,3 +13117,47 @@ Fixed besides gates:
     (was ... current 1)"]`.
 - Tests: tests/d24_batch141.lua (fails on main with Sol's error); tests/d17_batch31.lua's finite-max line now reads the
   trash wording, with the same counts.
+
+
+## d24 batch144 PP1 (eng/d20-batch144): remove_ghosts, one's own ghosts taken away by remote view (Luna #2137)
+- Luna staged a 24-ghost copy of her green circuit draft on Nauvis in (970,596)-(1004,612), charted ground no
+  construction area covers, and saved it as a library blueprint. `deconstruct {dry_run}` there read would_mark 0, and
+  nothing else took the ghosts back; if robot coverage grew there, robots would build the partial copy.
+- In 2.0 a player in remote view removes ghosts anywhere the map is charted (the deconstruction planner over ghosts).
+  `remove_ghosts {area | positions, surface? | platform?, names?, tiles?, owner?, dry_run?}` (removeghosts.lua; in
+  bots.lua's PLATFORM_ACTIONS and SURFACE_ACTIONS; passive: no walk, no queue stop):
+  - scope: `area` up to 256 tiles a side, or 1..64 `positions` (ghosts whose centre is within 0.5 tiles of each);
+    `names` 1..32 entity or tile names; entity ghosts only, tile ghosts too with `tiles: true`. Built entities and
+    tiles are never taken (the search is by type entity-ghost and tile-ghost).
+  - whose: the harness's placement record (ghostlog.lua: the agent whose place_ghosts, route, paste or blueprint_place
+    put it down), else the game's last user (a player's); by default only the caller's, `owner: "any"` every ghost of
+    ours (`by_owner`), `owner: "sol"` only sol's. A ghost in a chunk our force has not charted stays.
+  - at most 256 a call (the search stops at 4096); the ghost is destroyed with raise_destroy and its record forgotten.
+  - reply: `removed` (dry run `would_remove`), `found`, `by_name`, `ghosts` (the first 64: name, tile, position,
+    owner, placed; `more`), `left` with `left_others` {agent: count}, `left_unknown`, `left_uncharted`,
+    `left_over_cap`, `left_why`, `capped_find`, `line`.
+- ghostlog.lua: tile ghosts placed through place_ghosts `tiles` (and the routes' tile ghosts) now get a record too, in a
+  ring of their own (8192, so a platform's foundation does not push out the entities' records); the key uses the tile
+  name. Each record keeps its surface and a numeric position key, and a per-surface count of records at each position
+  (`pidx`) lets a lookup skip ghosts with no record without turning their position into text (2.0.77 container: 8 us
+  a number, 632 ghosts 10 ms). Records from before it are read into the index on the first remove_ghosts call.
+- Measured:
+  - world n (tick 55927300, d24 04:46): the search remove_ghosts makes over Luna's staging area, as a
+    /silent-command read: 24 entity ghosts (8 fast-transport-belt, 6 pipe, 4 medium-electric-pole, 2 bulk-inserter,
+    2 fast-inserter, 1 foundry, 1 passive-provider-chest), chunk charted, 0.25 ms. Luna's own `ghosts` reads there
+    say `ghost by luna (place_ghosts, a call)` for each. No save was made for this one read.
+  - headless copy of world n's 04:42 autosave (pog-b144-headless, this branch deployed): sol's call left all 24
+    (`left_others {luna: 24}`); luna's dry run would remove 24; her live call removed 24 (8 fast-transport-belt, 6
+    pipe, 4 medium-electric-pole, 2 bulk-inserter, 2 fast-inserter, 1 foundry, 1 passive-provider-chest), and a read
+    after found no ghost and the area's 22 neutral trees in place. A mixed case on the same ground (luna's 4
+    stone-wall ghosts and 4 concrete tile ghosts, sol's wall ghost, a built wooden chest): luna's default took the 4
+    walls, `tiles: true` the concrete too, `owner: "sol"` sol's wall, `positions` with `names` one wall; the chest
+    stayed. On platform Chalk, 2 script ghosts (no record) stayed under luna's default call (`left_unknown 2`) and went
+    with `owner: "any"`.
+  - cost on the copy (handler alone, mean of 10): Vulcanus's densest 256x256 square (632 ghosts, none recorded,
+    tiles: true) 1.8 ms own, 1.9 ms any, from 25 ms before the position index; Luna's staging area 0.04 ms. The
+    one-time index build over the copy's 7896 records: 27 ms (kept in storage after). Whole dispatches in the
+    emulated container varied 3-25 ms for `clock` alone.
+- Test: tests/d24_batch144.lua (refusals, dry run and live by owner, unknown, uncharted, names, positions, tile ghosts,
+  owner "sol" and "any", the 256 cap, a record from before the index, the index against the records after removals
+  and after the ring wraps).
