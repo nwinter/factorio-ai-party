@@ -18440,7 +18440,7 @@ M.platdelete=require('platdelete'){platform=function(p,name) return space.platfo
   character_owner=function(c) return M.character_owner(c) end,who=function(p) return M.board.who(p) end}
 function handlers.platform_delete(p,a) return M.platdelete.handler(p,a) end
 -- Hub requests' custom minimum payload, read and set over platforms (minpayload.lua; Gemini 19:50).
-M.minpayload=require('minpayload'){editlog=function() return M.editlog end}
+M.minpayload=require('minpayload'){editlog=function() return M.editlog end,made=function(t) return M.made.mark(t) end}
 function handlers.min_payload(p,a) return M.minpayload.handler(p,a) end
 -- A platform's remaining bill of materials (platbom.lua; B3, Sol 22:50).
 M.platbom=require('platbom'){leg=function(pl) return M.freight.leg_delta(pl) end,platform=function(p,name) return space.platform(p,name) end,cargo=M.cargo,where=function(pl) return M.freight.where(pl) end,
@@ -19002,7 +19002,7 @@ M.platwait=require('platwait'){state=state}
 -- Who edited a request section or a departure gate (editlog.lua; d19 batch41 B1, Sol seq 861).
 M.editlog=require('editlog'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,
   index_of=function(name) local ok,i=pcall(M.bots.index_of,name); if ok and i then return i end; local pl=game.get_player(name); return pl and pl.index or nil end}
-space=space_module{platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
+space=space_module{made=function(t) return M.made.mark(t) end,platform_lists=function(pl) return M.freight and M.freight.platform_lists(pl) end,plat_damaged=function(pl) return M.platalerts.damaged(pl) end,plat_damaged_seed=function(pl,l) return M.platalerts.seed_damaged(pl,l) end,
   plat_damaged_forget=function(pl,u) return M.platalerts.forget_damaged(pl,u) end,editlog=M.editlog,census_typed=function(f,sf,t) return M.census and M.census.typed(f,sf,t) end,deliver=function(index,t) return M.board.deliver(index,t) end,launch_need=function(pl) return M.launchneed.for_platform(pl) end,wait_need=function(pl) return M.launchneed.wait_lines(pl) end,dispatch=function(s,f,jobs) return M.robottrips.preview(s,f,jobs) end,ghost_tally=function() return M.ghosttally end,platwait=function() return M.platwait end,trash_risk=function(e,f) return M.silo.trash_risk(e,f) end,requests_off=function(pl) return M.rocketload.requests_off(pl) end,hub_room=function(hub,items) return M.rocketload.hub_room(hub,items) end,circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name,by) return M.departure and M.departure.lines(name,by) end,departure_all=function() return M.departure and M.departure.all() end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
@@ -20461,6 +20461,12 @@ end)()
     end
   end
 end)()
+-- (d24 batch141 PM1, Sol #2125) a mutating action that marked a change and then failed building its reply answers the
+-- change made and the error (made.lua); wrapped last, round the other wrappers. Checked: requests, platform_schedule,
+-- min_payload and drop build their replies after the change; launch, land and platform_create build theirs from reads
+-- made before it.
+M.made=require('made'){reason=reason}
+M.made.wrap(handlers,{'requests','platform_schedule','min_payload','drop'})
 -- Operator profiler (profile.lua): dispatches, events, the tick and these parts.
 M.profile=require('profile')()
 -- One small constructor per statement: one table of all the parts was "function or expression too complex"
