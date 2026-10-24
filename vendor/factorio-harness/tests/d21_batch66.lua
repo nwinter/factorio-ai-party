@@ -375,7 +375,7 @@ do
   game.tick=game.tick+60; W.tick(game.tick)
   lines=W.lines(sol,h)
   has(lines[1],'delivery watch #1: no longer blocked: landed at the pad (5,6) in logistic network #12')
-  has(lines[2],'delivery watch #1: reached: rocket-silo (12.5,-30.5) holds 200 tungsten-carbide (0 when the watch was set), late, 1s after the deadline')
+  has(lines[2],'delivery watch #1: reached by the stock test: rocket-silo (12.5,-30.5) holds 200 tungsten-carbide (0 when the watch was set), late, 1s after the deadline')
   eq(x.state,'reached')
   -- the read lists it; a requester chest asking none of the item is a blocker; clear
   local rd=W.call(sol,{})
@@ -404,7 +404,9 @@ do
   eq(x.stages.landed.text,'Kestrel II\'s hub holds 20 tungsten-carbide (0 when the watch was set)')
   held.mach=20
   game.tick=game.tick+60; W.tick(game.tick)
-  eq(x.state,'reached'); eq(x.last,'reached')
+  -- (d24 batch146 PR1) from given (nauvis): the stock test is the last stage seen and does not end the watch; no rocket's
+  -- pod from nauvis has been received
+  eq(x.state,'open'); eq(x.last,'reached'); eq(x.received,0)
   game,defines,prototypes=nil,nil,nil
   print('d21_batch66 AB5 delivery_watch: ok')
 end
@@ -554,7 +556,9 @@ do
   eq(#lines,2); has(lines[1],'delivery watch #1: pod 77 from Petrel II\'s hub at nauvis')
   -- (d22 batch107 BQ1) the pad consumer received its count: the stock test read on that tick (it holds 340, 40 at the start)
   has(lines[1],'; received 300 of 300 in 1 pod by cargo-landing-pad (52,54) on nauvis since the watch was set, the last at tick 1042')
-  has(lines[2],'delivery watch #1: reached: cargo-landing-pad (52,54) holds 340 agricultural-science-pack (40 when the watch was set), in time')
+  -- (d24 batch146 PR1) from given: ended by the received total, the stock test said apart; it counts on to the deadline
+  has(lines[2],'delivery watch #1 (300 agricultural-science-pack to cargo-landing-pad (52,54) on nauvis): received 300 of 300 in 1 pod')
+  has(lines[2],'; the stock test: the consumer holds 340 now (40 at the start), seen holding 300 more; reached at tick 1042; still counting until the deadline (29m59s from now): later pods add to received')
   eq(W.row(st.delivwatch.list[2]).arrivals,nil)
   -- up: a rocket's pod to the hub; an item that does not spoil reads so; a gone pod in freight's list stops nothing
   local rinv=inv({stack('iron-plate',100,0)})

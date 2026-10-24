@@ -13293,3 +13293,34 @@ Fixed besides gates:
   3.1 ms on world n. tools/read_cost.py lists `blueprint_library_probe`, `blueprint_library_page` and `library_areas`.
 - Tests: tools/test_bplibrary.py (probe, pages, a revision moving between pages, the older runtime); tests/blueprints.lua
   (probe, pages by name, the strings' budget). Both fail on main.
+## d24 batch146 PR1 (eng/d20-batch146): a delivery watch with from ends by receipt only, and counts on after it ends (Sol #2152)
+- Sol's watch #305 (1 calcite from Needle to Nauvis's pad) ended `reached` when another carrier's pod of 60 landed,
+  with received 0. An ended watch was no longer registered for pods, so it froze while Needle's 8 pods brought 32.
+- Now:
+  - With `from`, the watch ends only when its count is received from that source (that platform's pods; up, rockets
+    from that planet). The stock test stays `stock` {held, at_start, reached, ends_watch: false, line} and never ends
+    it. Its line adds `; with from given it does not end the watch (it ends when N is received from X)`, and the setter
+    hears once that it was met and does not end the watch.
+  - With no `from`, batch134's rule stands: either test ends it. `ended_by` (stock or received) says which, and the end
+    alert reads `reached by the stock test: ...` or `received ...` with the stock test apart.
+  - A watch that ends before its deadline counts on until the deadline (`counting`, `reached_tick`; the line reads
+    `ended by the received total, reached at tick T; still counting until the deadline (...): later pods add to
+    received`). Its pods are still registered and its consumer's count still read. At the deadline the count ends,
+    and the setter hears the total (`the deadline ended its count: received ...`). A watch that ends after its
+    deadline does not count on. `{id, clear: true}` ends it at any time.
+  - A from-watch past its deadline reads `deadline passed, not received from X`.
+- Other watch kinds that end on a stock test: none with a carrier.
+  - wait_until pod_landed counts freight's receipts from its named platform.
+  - wait_until item_count, fluid_count and rocket_parts are stock conditions by design, with no source.
+  - flight_watch, collector_tally, turret_tally, uptime, belt_flow, asteroid_watch and signal_watch end on time or
+    arrival.
+- On a headless copy of world n's 05:55 save (tick 56123930, Petrel II and Petrel III at Nauvis, pad (52,54) empty):
+  a watch for 1 calcite from Petrel II, a drop of 60 from Petrel III, then two drops of 4 from Petrel II.
+  - Before (world n's runtime): the watch read `reached`, received 0, once Petrel III's pod landed. After Petrel II's
+    two pods it still read received 0, and its stock was frozen at 48.
+  - After (this runtime, from the same save): it stayed `open` with the stock test met and `ends_watch: false`.
+    Petrel II's first pod of 4 ended it (`received`, ended_by received, reached_tick 56127746, counting). Its second
+    pod was counted after the end: received 8 in 2 pods, by_platform Petrel II 8.
+- Tests: tests/d24_batch146.lua (fails on main: `before: reached`). tests/d21_batch66.lua, d22_batch107.lua and
+  d23_batch134.lua: their from-watches now end by receipt (d23_batch134's last case was this fault: 150 of 400
+  received from Kestrel IVa, read `reached` on stock 515).
