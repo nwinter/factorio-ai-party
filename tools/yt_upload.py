@@ -188,6 +188,12 @@ class Api:
                 raise SystemExit(f"{method} {url.split('?')[0]}: {e}")
 
 
+def video_type(path):
+    """The upload's media type by the file's suffix (d24: the shift files go up as OBS recorded them, .mkv)."""
+    return {".mp4": "video/mp4", ".mkv": "video/x-matroska", ".mov": "video/quicktime",
+            ".webm": "video/webm"}.get(path.suffix.lower(), "application/octet-stream")
+
+
 def upload_video(api, path, meta, state, state_file, max_mbps=None):
     """videos.insert, resumable: start a session (or reuse the one in state_file), then PUT CHUNK-sized pieces; a
     308 says how much arrived, a 5xx or a dropped connection asks the session where to go on. max_mbps: 8 MiB pieces
@@ -195,12 +201,13 @@ def upload_video(api, path, meta, state, state_file, max_mbps=None):
     chunk = 8 * 1024 * 1024 if max_mbps else CHUNK
     size = path.stat().st_size if path.exists() else int(state.get("size_estimate", 0))
     url = f"{UPLOAD}/videos?uploadType=resumable&part=snippet,status"
-    head = {"X-Upload-Content-Length": str(size), "X-Upload-Content-Type": "video/mp4"}
+    kind = video_type(path)
+    head = {"X-Upload-Content-Length": str(size), "X-Upload-Content-Type": kind}
     if api.dry:
         api.call("POST", url, body=meta, headers=head, quota=QUOTA["videos.insert"])
         chunks = max(1, -(-size // chunk))
         rate = f", at most {max_mbps} Mbit/s: about {size * 8 / max_mbps / 1e6 / 60:.0f} min" if max_mbps else ""
-        print(f"\nPUT (the session URL from the reply's Location header)\n  Content-Type: video/mp4\n"
+        print(f"\nPUT (the session URL from the reply's Location header)\n  Content-Type: {kind}\n"
               f"  {chunks} chunk(s) of up to {chunk // 2**20} MiB, Content-Range: bytes A-B/{size}"
               f"\n  ({size / 1e9:.2f} GB{'' if path.exists() else ', estimated: no file yet'}{rate})")
         return "VIDEO_ID"
@@ -219,7 +226,7 @@ def upload_video(api, path, meta, state, state_file, max_mbps=None):
             piece = f.read(chunk)
             began = time.time()
             req = urllib.request.Request(session, piece, method="PUT", headers={
-                "Authorization": "Bearer " + access_token(), "Content-Type": "video/mp4",
+                "Authorization": "Bearer " + access_token(), "Content-Type": kind,
                 "Content-Range": f"bytes {done}-{done + len(piece) - 1}/{size}"})
             try:
                 with urllib.request.urlopen(req, timeout=600) as r:
