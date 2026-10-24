@@ -26,6 +26,7 @@ local surface={
   end}
 local pl={name='Asterion',surface=surface,force='us',hub=hub}
 local PP=require('platplan'){platform=function() return pl end,position=function(v) return v end}
+PP.SLICE=math.huge  -- (d24 batch166) each plan in its call; tests/d24_batch166.lua reads one as a job
 local r=PP.read({},{platform='Asterion',support=true})
 eq(r.chosen,2,'the rocket and the beam are not chosen')
 eq(r.support.add,0,'no floor planned for a rocket or beam passing'); eq(r.support.footprints,0); eq(r.support.links,0)

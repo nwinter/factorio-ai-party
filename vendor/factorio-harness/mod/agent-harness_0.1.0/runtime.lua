@@ -19125,7 +19125,7 @@ M.endurance=require('endurance'){platform=function(p,name) return space.platform
   leg_speed=function(pl,since,past,by) if M.engine then return M.engine.leg_speed(pl,since,past,by) end end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
-M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end}
+M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end,integer=integer,position=position,floorcheck=function() return M.floorcheck end,state=state}
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 -- (d22 batch78 AN2, Astra #1774) floating chunks, collectors' reach and the collector_tally watch (collectreach.lua)
@@ -20157,6 +20157,7 @@ function M.tick_body(event)
   if M.platdefense and M.platdefense.tick then pcall(M.timed,'platdefense.tick',M.platdefense.tick,event.tick) end  -- planned hulls' sides, a chunk or a slice a tick (platdefense.lua)  -- the live map's networks, a slice a step (netmap.lua)
   if M.seeds then pcall(M.timed,'seeds.tick',M.seeds.tick,event.tick) end  -- seed loops running out (seeds.lua)
   if M.floorcheck then pcall(M.timed,'floorcheck.tick',M.floorcheck.tick) end  -- foundation checks across ticks (floorcheck.lua)
+  if M.platplan and M.platplan.tick then pcall(M.timed,'platplan.tick',M.platplan.tick) end  -- platform_plan support jobs, a slice a tick (platplan.lua)
   if M.ghosttally then pcall(M.timed,'ghosttally.tick',M.ghosttally.tick) end  -- platform ghost tallies across ticks (ghosttally.lua)
   pcall(M.platwait.tick,event.tick)  -- stop waits the harness keeps for platforms, every second (platwait.lua)
   if M.ammofeed then pcall(M.timed,'ammofeed.step',M.ammofeed.step) end  -- a large platform's ammunition trace, read over ticks (ammofeed.lua)

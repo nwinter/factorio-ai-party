@@ -23,12 +23,21 @@ return function()
   M.key = key
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- Whether a tile is empty space (out of the map counts as empty); cache[key] = true/false, kept per check.
+  -- (d24 batch166) cache.grid {x0, y0, w, h, cell, keep} (platplan.lua's support job: arrays by (y - y0) * w + (x - x0) +
+  -- 1) answers before a tile read: built floor (cell 1) is not empty, a foundation tile ghost (cell 2) or a kept tile is.
   local function is_empty(s, x, y, cache)
     local k = key(x, y)
     local v = cache[k]
     if v == nil then
-      local ok, name = pcall(function() return s.get_tile(x, y).name end)
-      v = not ok or name == 'empty-space' or name == 'out-of-map'
+      local g = cache.grid
+      local dx, dy = g and x - g[1], g and y - g[2]
+      local i = g and dx >= 0 and dy >= 0 and dx < g[3] and dy < g[4] and dy * g[3] + dx + 1
+      if i and g[5][i] == 1 then v = false
+      elseif i and (g[5][i] == 2 or g[6][i]) then v = true
+      else
+        local ok, name = pcall(function() return s.get_tile(x, y).name end)
+        v = not ok or name == 'empty-space' or name == 'out-of-map'
+      end
       cache[k] = v
     end
     return v
