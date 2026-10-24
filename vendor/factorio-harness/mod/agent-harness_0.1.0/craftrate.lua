@@ -102,7 +102,8 @@ return function(api)
     local out = M.rates(recipe, speed, pr.machine + research, parts)
     out.recipe = recipe.name
     out.productivity_machine, out.productivity_research = r1(pr.machine * 100) / 100, research ~= 0 and r1(research * 100) / 100 or nil
-    out.line = out.line .. ' (at full speed all the time; status, input and output decide what it makes)'
+    -- (d24 batch171 QN1, Sol 15:09: three plants' rates summed against the platform's statistics, which count every maker)
+    out.line = out.line .. ' (this machine alone, at full speed all the time; status, input and output decide what it makes)'
     local q = try(function() return e.effects.quality end)
     -- The quality effect is stored as 0.1 per 1% the GUI shows (2.0.77: five rare quality-module-1 read 0.8, the GUI 8%;
     -- Astra 05:43 saw "80%").

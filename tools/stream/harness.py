@@ -421,6 +421,51 @@ end
 rcon.print(helpers.table_to_json{ranges = out})
 """
 
+# (d24 batch170 QM1, viewer Caleb: "show a view of the front of Asterion when it is in flight") The hull's box from its
+# foundation tiles, as the harness's asteroid watch finds it (asteroidwatch.lua M.hull: the chunks holding foundation,
+# narrowed to the first and last row and column that hold any), and the bow: the x extent of the foundation in the
+# hull's first ROWS rows. NAMES: {[name] = true} for the platforms to read. Read-only; a few count_tiles_filtered calls
+# per platform, most of them stopping at the first tile (Harness.platform_hulls reads a platform at most every
+# HULL_EVERY s).
+PLATFORM_HULL_LUA = r"""
+local want = NAMES
+local F = "space-platform-foundation"
+local out = {}
+for _, pl in pairs(game.forces.player.platforms) do
+  local ok, s = pcall(function() return pl.valid and want[pl.name] and pl.surface end)
+  if ok and s and s.valid then
+    local x0, y0, x1, y1
+    for ch in s.get_chunks() do
+      local a = ch.area
+      if s.count_tiles_filtered{area = a, name = F, limit = 1} > 0 then
+        x0, y0 = math.min(x0 or a.left_top.x, a.left_top.x), math.min(y0 or a.left_top.y, a.left_top.y)
+        x1, y1 = math.max(x1 or a.right_bottom.x, a.right_bottom.x), math.max(y1 or a.right_bottom.y, a.right_bottom.y)
+      end
+    end
+    if x0 then
+      local function any(ax, ay, bx, by) return s.count_tiles_filtered{area = {{ax, ay}, {bx, by}}, name = F, limit = 1} > 0 end
+      local function lowest(lo, hi, has)
+        while lo < hi do
+          local mid = math.floor((lo + hi) / 2)
+          if has(mid) then hi = mid else lo = mid + 1 end
+        end
+        return lo
+      end
+      local top = lowest(y0 + 1, y1, function(b) return any(x0, y0, x1, b) end) - 1
+      local bottom = y1 - lowest(1, y1 - y0, function(k) return any(x0, y1 - k, x1, y1) end)
+      local left = lowest(x0 + 1, x1, function(b) return any(x0, y0, b, y1) end) - 1
+      local right = x1 - lowest(1, x1 - x0, function(k) return any(x1 - k, y0, x1, y1) end)
+      local by = math.min(bottom + 1, top + ROWS)
+      local bl = lowest(left + 1, right + 1, function(b) return any(left, top, b, by) end) - 1
+      local br = right + 1 - lowest(1, right + 1 - left, function(k) return any(right + 1 - k, top, right + 1, by) end)
+      out[#out + 1] = {name = pl.name, surface = s.name, hull = {left = left, top = top, right = right + 1, bottom = bottom + 1},
+        bow = {left = bl, top = top, right = br + 1, bottom = by}}
+    end
+  end
+end
+rcon.print(helpers.table_to_json{hulls = out})
+"""
+
 # The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05: the live map showed Nauvis only): the
 # harness census's last pass (census.lua: every planet but Nauvis, each building's centre and category, a grid made in
 # steps after the walk), read as an operator census read: part planets lists them (name, buildings, cell, size), part
@@ -610,6 +655,24 @@ class Harness:
                 r["guns"] = [{"x": t["x"], "y": t["y"], "range": ranges[(t["n"], t.get("q") or "normal")]}
                              for t in r.pop("turrets") if ranges.get((t.get("n"), t.get("q") or "normal"))]
         return {r["name"]: r for r in rows}
+
+    BOW_ROWS = 24      # the bow: the foundation's x extent in the hull's first this many rows
+    HULL_EVERY = 600.0  # seconds a platform's hull read stands (agents build in flight; the read is not free)
+
+    def platform_hulls(self, names, now=None):
+        """(d24 batch170 QM1) {name: {surface, hull, bow}} for these platforms (PLATFORM_HULL_LUA: the foundation
+        tiles' box, as the asteroid watch finds it, and the bow's x extent in its first BOW_ROWS rows), each read
+        again after HULL_EVERY s; at most two read per call. A platform without foundation (or gone) is left out."""
+        now = time.time() if now is None else now
+        cache = self.__dict__.setdefault("_hulls", {})  # name -> (read at, row or None)
+        due = sorted(n for n in names if n not in cache or now - cache[n][0] >= self.HULL_EVERY)[:2]
+        if due:
+            want = "{" + ", ".join(f"[ {lua_string(n)} ] = true" for n in due) + "}"
+            rows = self.lua(PLATFORM_HULL_LUA.replace("NAMES", want).replace("ROWS", str(int(self.BOW_ROWS)))).get("hulls")
+            got = {r.get("name"): r for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict)}
+            for n in due:
+                cache[n] = (now, got.get(n))
+        return {n: cache[n][1] for n in names if n in cache and cache[n][1]}
 
     def turret_ranges(self, keys):
         """{(name, quality): range} for these turret kinds; each pair read from the prototypes once (TURRET_RANGE_LUA)

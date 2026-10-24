@@ -212,7 +212,9 @@
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
 - `./shot NAME platform=NAME [at=X,Y]`: a screenshot of a platform by remote view (its hub without `at=`). Its second
   line, as every shot's, says where it was rendered: surface, centre, frame and what of ours stands in it.
-- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
+- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h):
+  what every machine on it made, productivity included. With `item`, `makers`: each crafting machine there whose recipe
+  makes it, at full speed as `inspect` gives it (one machine alone), and their sum.
   `leg: true`: since it last departed (and, stopped, the last full leg): fuel, oxidizer, ammo made and used, cargo
   loaded and dropped, totals and a minute.
   `wait_until {until: "produced", platform, item, at_least}` waits for it.
@@ -322,7 +324,7 @@
   inserters and loaders within 8 tiles with what each reads now), and its landing pads (free slots each; per item the
   hub would send down: count, slots, what the pads can take of it now, `short`). Silos and pads are searched once a
   minute.
-- `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?}`: follows that count to the
+- `delivery_watch {item, count, to: {position, surface | platform}, deadline_min, from?, quality?}`: follows that count to the
   consumer (a silo, chest or machine of ours at the position) and keeps each stage first seen: loaded (a hub holds it;
   up: a silo of `from` has it in its rocket), launched, departed, in_transit, arrived, landed (which landing pad, or
   no pad), network (the pad's logistic network and the consumer's), received (the pods it received since the watch
@@ -343,6 +345,8 @@
   `arrivals`: each pod with it (from the carrier's hub, or a rocket launched to the platform) on the tick it was gone:
   its count and spoilage by stack (0-25/25-50/50-75/75-100% spoiled), read up to the tick before, the pad, hub or
   container it went to and what that held of it on that tick, before robots take any; the setter hears each.
+  `quality` (or item `name@quality`) counts that quality only; none counts every quality (`counts` says which).
+  Received, the landed stage (the same pods), arrivals (each with `by_quality`), the stock test and hub reads count by it.
 - `flight_watch {platform, from?: "now" | "departure", minutes?}`: one platform watched once a second from now (or its
   next departure) to its next arrival or `minutes` (1..480, default 120). Per ammo turret (unit_number, position):
   `least` ammunition seen, `empty_samples` and `empty_ticks`, `longest_empty_ticks` and when it began, its feed from

@@ -19,7 +19,7 @@ eq(r.recipe,'pentapod-egg'); eq(r.crafts_per_min,8); eq(r.seconds_per_craft,7.5)
 eq(r.products[1].per_craft,7); eq(r.products[1].per_min,56); eq(r.products[1].net_per_min,48); eq(r.products[1].ignored_by_productivity,1)
 eq(r.ingredients[2].name,'nutrients'); eq(r.ingredients[2].per_min,240)
 eq(r.line,'8 crafts/min at speed 2 (15s a craft), productivity +50% (the machine\'s own +50%): pentapod-egg 56/min (net 48/min: 8/min goes back in), '
-  ..'1 a craft exempt from productivity (at full speed all the time; status, input and output decide what it makes)')
+  ..'1 a craft exempt from productivity (this machine alone, at full speed all the time; status, input and output decide what it makes)')
 -- The game's own figure counts modules on top of the machine's base; the recipe's research is added to it (d20 batch55
 -- P7, Astra #1426: 2.0.77's productivity_bonus leaves the research out).
 force.recipes['pentapod-egg'].productivity_bonus=0.1
