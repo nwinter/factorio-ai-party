@@ -270,10 +270,26 @@ return function(api)
     r.line = table.concat(parts, '; ')
     return r
   end
+  -- (d24 batch154, the batch149 review's bug 7) a missing id: removed by whom and when (the last GONE_KEPT), and the
+  -- keep rule; or never set.
+  local GONE_KEPT = 64
+  local function missing(id)
+    local s = store()
+    local head = 'no reminder #' .. tostring(id)
+    local rule = 'a reminder is kept until its owner (or the operator) removes it with reminder_remove; one that expired or ran its one due stays, switched off; reminders lists them'
+    for i = #(s.gone or {}), 1, -1 do
+      local x = s.gone[i]
+      if x.id == id then
+        return string.format('%s: "%s" (%s\'s) removed by %s %s ago (tick %d); %s', head, x.name, tostring(x.owner), tostring(x.by), ago(game.tick - x.tick), x.tick, rule)
+      end
+    end
+    if type(id) == 'number' and (id > s.seq or id < 1) then return string.format('%s: none set with that number (the last set is #%d)', head, s.seq) end
+    return string.format('%s: set and since removed, before the last %d removals kept; %s', head, GONE_KEPT, rule)
+  end
   local function find(id)
     assert(type(id) == 'number' and id == math.floor(id), 'id is a reminder number (reminders lists them)')
     local job = store().jobs[id]
-    assert(job, 'no reminder #' .. tostring(id) .. ' (reminders lists them)')
+    if not job then error(missing(id), 0) end
     return job
   end
   local function owner_only(p, job)
@@ -422,7 +438,11 @@ return function(api)
   function M.handlers.reminder_remove(p, a)
     local job = find(a.id)
     owner_only(p, job)
-    store().jobs[job.id] = nil
+    local s = store()
+    s.jobs[job.id] = nil
+    s.gone = s.gone or {}
+    s.gone[#s.gone+1] = {id=job.id, name=tostring(job.name or job.message or ''):sub(1, 60), owner=job.owner, by=api.who(p), tick=game.tick}
+    while #s.gone > GONE_KEPT do table.remove(s.gone, 1) end
     return {removed=job.id, was=row(job)}
   end
   function M.handlers.reminder_snooze(p, a)
@@ -567,7 +587,7 @@ return function(api)
     if a.id ~= nil then
       assert(type(a.id) == 'number', 'id is a reminder number')
       local job = store().jobs[a.id]
-      assert(job, 'no reminder #' .. tostring(a.id) .. ' (reminders lists them)')
+      if not job then error(missing(a.id), 0) end
       if job.serves then pcall(Sv().check, job.serves) end
       local r = row(job, me)
       return {reminders={r}, lines={r.line}, count=1, tick=game.tick}
