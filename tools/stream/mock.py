@@ -261,6 +261,7 @@ class MockSource:
         self.harness_version = 3
         self.space_age = bool(run.get("space_age"))  # a scripted Space Age arc on the wall clock (space_step)
         self.sa_speed = float(run.get("mock_space_speed") or 1.0)
+        self.long_flight = bool(run.get("mock_long_flight"))  # (QM1) a ship on a leg from the solar system edge
         # a few events already on the board when the stream starts
         for _ in range(5):
             self.board_step(time.time() - 60, self.game0)
@@ -637,7 +638,23 @@ class MockSource:
         obs["loadout"] = self.loadout_rows(now)
         if self.space_age:
             self.space_step(now, obs)
+        if self.long_flight:
+            self.long_flight_step(now, obs)
         return obs
+
+    def long_flight_step(self, now, obs):
+        """(d24 batch170 QM1; run "mock_long_flight": true, or simulate.py --long-flight) Asterion flying from the
+        solar system edge to Aquilo, 1% a minute, with the hull and bow live.py adds on such a leg (add_hulls; its
+        d24 box from the foundation tiles)."""
+        pct = min(99, 1 + int((now - self.t0) / 60))
+        view = {"surface": "platform-16", "hub": {"x": 0, "y": 0}, "hub_health": 100,
+                "bounds": {"left": -49.5, "top": -46, "right": 6, "bottom": 229.5},
+                "hull": {"left": -51, "top": -50, "right": 71, "bottom": 230},
+                "bow": {"left": -51, "top": -50, "right": 51, "bottom": -26},
+                "where": {"state": "on_the_path", "at": f"solar-system-edge->aquilo {pct}%", "speed": 2.0}}
+        sp = obs.setdefault("space", {"rockets": 0, "planets": ["nauvis"], "platforms": []})
+        sp.setdefault("platforms", []).append({"name": "Asterion", "at": f"solar-system-edge->aquilo {pct}%",
+                                               "state": "on_the_path", "speed": 2.0, "view": view})
 
     @staticmethod
     def cloud_rows(gsec):

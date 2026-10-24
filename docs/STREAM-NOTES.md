@@ -1740,6 +1740,37 @@ a host prompt.
 - Tests: `tools/stream/test_cuts.py`, `tools/test_obs_hostview.py`, `tools/test_obs_rehook.py`,
   `tools/test_obs_restart.py`.
 
+## A ship's bow on a long flight (2026-10-24, d24 batch170 QM1)
+
+Viewer Caleb (site 14:51-14:52): "can you show the front part of Asterion while in flight for a few seconds each
+round?" While a platform flies a leg to or from the solar system edge or the shattered planet, onecam's rotation gets a
+bow shot (`bow_turn`):
+- The hull: live.py `add_hulls` reads, for each platform on such a leg, its hull's box from its foundation tiles as the
+  harness's asteroid watch finds it (asteroidwatch.lua M.hull: the chunks holding foundation, narrowed to the first and
+  last row and column holding any) and the bow, the foundation's x extent in the hull's first 24 rows
+  (`harness.PLATFORM_HULL_LUA`, `Harness.platform_hulls`). Each platform is read again after 10 minutes, at most two a
+  read. The views' entity bounds cannot do it: PLATFORM_LUA stops at 4000 entities, and Asterion has about 7800 (its
+  bounds read right = 6, the foundation reaches 71). On the d24 shift70 copy (Rosetta): Asterion 386 chunks, hull
+  (-51,-50)..(71,230), bow x -51..51, 4.6-5.3 ms in the game; Chalk, Kestrel II and Meridian-V 2-4 ms.
+- The shot: at a story turn (direct is about to cut to the next agent: a challenger, a rotation, a still subject), a
+  fixed view on the bow for `bow_hold` (8 s; plus `ready_s` with three clients): the bow's width plus 12 tiles across
+  (zoom 0.53 for Asterion), the hull's north edge `bow_ahead` (0.4) down the frame, so the space ahead, where
+  asteroids come in, shows above it. Labelled "Asterion · the bow · travelling to Aquilo (21%) · 57 km/s". Then the
+  story goes to the agent the turn was for ("after the bow: luna").
+- At most once a round: not within `bow_gap` (300 s) of the last one, and the round over: every agent on air in the
+  last `bow_window` (1 h, and still here) had a story since the last bow shot, or `bow_round_max` (20 min) has
+  passed. The first comes `bow_first` (120 s) after a start; not for a ship on air in the last `bow_recent` (120 s).
+- Rank: only at a story turn, so never over an urgent shot, a battle, an incoming group, a follow, a look, a platform
+  hold or a segment (those hold the camera and no story turn comes); never during a replay, a trio or a cut being
+  framed (plat_busy). A danger or edge shot takes a bow shot over. With one camera the client moves there and back.
+- Simulation (`simulate.py --cams onecam --minutes 120 --long-flight`, `--clients 1` for POG_CAMS=1; mock.py
+  `mock_long_flight` flies Asterion edge to Aquilo at 1% a minute with the d24 hull): 7 bow shots in 2 hours with three
+  clients and with one, most at the 20-minute ceiling (the mock's Luna takes most stories, so a full round is rare).
+- Dry run on the live service's snapshot at 15:06 (POG_CAMS=1, Asterion edge to Aquilo 21%, the copy's hull; no
+  command sent): `{player 1, position (0, -43.6), zoom 0.53, surface platform-16}`. The operator's manual look for Caleb
+  at 14:55 was (0, -40) at zoom 0.45.
+- `python3 tools/stream/test_bowcam.py`.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
